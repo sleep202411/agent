@@ -9,8 +9,23 @@ const nextConfig: NextConfig = {
   async rewrites() {
     const contentUrl = process.env.JAVA_CONTENT_URL;
     const studioUrl = process.env.JAVA_STUDIO_URL;
+    const serverUrl = process.env.SERVER_URL;
 
     const rules: Array<{ source: string; destination: string; locale: false }> = [];
+
+    // ─── NestJS Server: /api/agent/*, /api/assistant/*
+    if (serverUrl) {
+      rules.push({
+        source: "/api/agent/:path*",
+        destination: `${serverUrl}/agent/:path*`,
+        locale: false,
+      });
+      rules.push({
+        source: "/api/assistant/:path*",
+        destination: `${serverUrl}/assistant/:path*`,
+        locale: false,
+      });
+    }
 
     // ─── Java Studio Service (8090): /api/*, /anon/*, /studio/*
     if (studioUrl) {
