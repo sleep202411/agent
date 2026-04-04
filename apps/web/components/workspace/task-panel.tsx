@@ -9,6 +9,7 @@ import {
   IconX,
   IconPhoto,
   IconVideo,
+  IconMicrophone,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/src/store";
@@ -34,6 +35,7 @@ const TYPE_CONFIG: Record<
 > = {
   image: { icon: IconPhoto, label: "生成图片" },
   video: { icon: IconVideo, label: "生成视频" },
+  audio: { icon: IconMicrophone, label: "生成音频" },
 };
 
 // ─── Task Item ─────────────────────────────────────────

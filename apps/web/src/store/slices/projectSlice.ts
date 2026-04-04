@@ -577,6 +577,59 @@ function createDefaultAiImageForm(): AiImageFormNestedState {
   };
 }
 
+// ─── AI Audio Form State (nested) ────────────────────
+
+export interface AudioGenerateInput {
+  shotId: string;
+  shotColumnId: string;
+  prompt: string;
+  model?: string;
+  voiceId?: string;
+}
+
+export interface AiAudioFormData {
+  prompt: string;
+  model: string;
+  voiceId: string;
+  count: number;
+}
+
+interface AudioInstanceState {
+  formData: AiAudioFormData;
+  history: HistoryItem[];
+  historyLoading: boolean;
+  previewItem: ResultItem | null;
+}
+
+function audioInstanceKey(shotId: string, shotColumnId: string) {
+  return `${shotId}_${shotColumnId}`;
+}
+
+function createDefaultAudioInstance(): AudioInstanceState {
+  return {
+    formData: { prompt: "", model: "", voiceId: "", count: 1 },
+    history: [],
+    historyLoading: false,
+    previewItem: null,
+  };
+}
+
+interface AiAudioFormNestedState {
+  models: RawAiModel[];
+  modelsLoaded: boolean;
+  currentModel: RawAiModel | null;
+  instances: Record<string, AudioInstanceState>;
+}
+
+function createDefaultAiAudioForm(): AiAudioFormNestedState {
+  return {
+    models: [],
+    modelsLoaded: false,
+    currentModel: null,
+    instances: {},
+  };
+}
+
 // ─── AI Video Form State (nested) ────────────────────
 
 interface AiVideoFormNestedState {
@@ -645,6 +698,9 @@ export interface ProjectInstanceState {
 
   // AI Video Form (merged from aiVideoFormSlice)
   aiVideoForm: AiVideoFormNestedState;
+
+  // AI Audio Form
+  aiAudioForm: AiAudioFormNestedState;
 }
 
 export function createDefaultProjectInstance(): ProjectInstanceState {
@@ -695,6 +751,7 @@ export function createDefaultProjectInstance(): ProjectInstanceState {
 
     aiImageForm: createDefaultAiImageForm(),
     aiVideoForm: createDefaultAiVideoForm(),
+    aiAudioForm: createDefaultAiAudioForm(),
   };
 }
 
@@ -1028,6 +1085,129 @@ export const deleteVideoItem = createAsyncThunk<
   const inst = instProj.aiVideoForm.instances[key];
   if (inst?.previewItem?.id === item.id) {
     dispatch(setVideoPreview({ key, item: null }));
+  }
+});
+
+// ─── Audio Thunks ─────────────────────────────────────
+
+const API_PATH_AUDIO_VOICE = "/api/ai/voice/synthesize";
+
+export const loadAudioModels = createAsyncThunk<void, void, { state: RootState }>(
+  "project/loadAudioModels",
+  async (_, { getState, dispatch }) => {
+    const inst = selectCurrentInstance(getState());
+    if (inst.aiAudioForm.modelsLoaded) return;
+    try {
+      const res = await backendApi.post<RawAiModel[]>(
+        `/api/ai/record/model/list?path=${encodeURIComponent(API_PATH_AUDIO_VOICE)}`
+      );
+      const list = Array.isArray(res) ? res : [];
+      const defaultModel = list.find((m) => m.isDefault) ?? list[0] ?? null;
+      dispatch(setAudioModelsLoaded({ models: list, currentModel: defaultModel }));
+    } catch (err) {
+      console.error("[projectSlice] loadAudioModels failed:", err);
+    }
+  }
+);
+
+export const loadAudioHistory = createAsyncThunk<
+  void,
+  { shotId: string; colId: string },
+  { state: RootState; dispatch: AppDispatch }
+>("project/loadAudioHistory", async ({ shotId, colId }, { getState, dispatch }) => {
+  const key = audioInstanceKey(shotId, colId);
+  dispatch(setAudioHistoryLoading({ key, loading: true }));
+
+  try {
+    interface RecordItem {
+      id?: string;
+      filePath?: string;
+      path?: string;
+      storagePath?: string;
+      createTime?: string;
+      other?: string;
+    }
+    const res = await backendApi.post<{ list?: RecordItem[] }>("/api/ai/record/shot/list", {
+      data: { page: 1, pageSize: 50, shotId, shotcolumnId: colId, type: "audio", sort: 1 },
+    });
+
+    const records = (res as { list?: RecordItem[] })?.list ?? [];
+    const history: HistoryItem[] = records
+      .filter((item) => item.storagePath || item.filePath || item.path)
+      .map((item) => ({
+        id: String(item.id ?? ""),
+        url: buildOssUrl(item.storagePath ?? item.filePath ?? item.path ?? ""),
+        storagePath: item.storagePath ?? item.filePath ?? item.path ?? "",
+        createTime: item.createTime,
+        other: item.other ?? "",
+        fromHistory: true as const,
+      }));
+
+    // Dedup completed tasks already in history
+    const historyPaths = new Set(history.map((h) => h.storagePath).filter(Boolean));
+    const state = getState();
+    const shotTasks = selectTasksByShot(state, shotId, colId);
+    for (const task of shotTasks) {
+      if (
+        task.type === "audio" &&
+        task.status === "completed" &&
+        task.output?.storagePath &&
+        historyPaths.has(task.output.storagePath)
+      ) {
+        dispatch(removeTask(task.id));
+      }
+    }
+
+    dispatch(setAudioHistory({ key, history }));
+  } catch (err) {
+    console.error("[projectSlice] loadAudioHistory failed:", err);
+    dispatch(setAudioHistoryLoading({ key, loading: false }));
+  }
+});
+
+export const initAudioInstance = createAsyncThunk<
+  void,
+  { shotId: string; colId: string; opts?: { defaultPrompt?: string } },
+  { state: RootState; dispatch: AppDispatch }
+>("project/initAudioInstance", async ({ shotId, colId, opts }, { getState, dispatch }) => {
+  await dispatch(loadAudioModels()).unwrap();
+
+  const key = audioInstanceKey(shotId, colId);
+  const instProj = selectCurrentInstance(getState());
+  const existing = instProj.aiAudioForm.instances[key];
+  const inst = existing
+    ? { ...existing, formData: { ...existing.formData } }
+    : createDefaultAudioInstance();
+
+  if (opts?.defaultPrompt && !inst.formData.prompt) {
+    inst.formData.prompt = opts.defaultPrompt;
+  }
+  if (instProj.aiAudioForm.currentModel && !inst.formData.model) {
+    inst.formData.model = String(instProj.aiAudioForm.currentModel.serviceCode ?? "");
+  }
+
+  dispatch(setAudioInstance({ key, instance: inst }));
+  await dispatch(loadAudioHistory({ shotId, colId })).unwrap();
+});
+
+export const deleteAudioItem = createAsyncThunk<
+  void,
+  { shotId: string; colId: string; item: ResultItem },
+  { state: RootState; dispatch: AppDispatch }
+>("project/deleteAudioItem", async ({ shotId, colId, item }, { getState, dispatch }) => {
+  const key = audioInstanceKey(shotId, colId);
+
+  if (item.fromQueue) {
+    dispatch(removeTask(item.id));
+  } else if (item.id) {
+    await backendApi.post(`/api/ai/record/delete/${item.id}`);
+    dispatch(removeAudioHistoryItem({ key, itemId: item.id }));
+  }
+
+  const instProj = selectCurrentInstance(getState());
+  const inst = instProj.aiAudioForm.instances[key];
+  if (inst?.previewItem?.id === item.id) {
+    dispatch(setAudioPreview({ shotId, colId, item: null }));
   }
 });
 
@@ -1596,6 +1776,93 @@ export const projectSlice = createSlice({
         savedModel: action.payload.model,
       };
     },
+
+    // ─── AI Audio Form reducers ─────────────────────────
+
+    setAudioModelsLoaded: (
+      state,
+      action: PayloadAction<{ models: RawAiModel[]; currentModel: RawAiModel | null }>
+    ) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      inst.aiAudioForm.models = action.payload.models;
+      inst.aiAudioForm.modelsLoaded = true;
+      inst.aiAudioForm.currentModel = action.payload.currentModel;
+    },
+
+    setAudioCurrentModel: (state, action: PayloadAction<RawAiModel | null>) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      inst.aiAudioForm.currentModel = action.payload;
+    },
+
+    setAudioInstance: (
+      state,
+      action: PayloadAction<{ key: string; instance: AudioInstanceState }>
+    ) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      inst.aiAudioForm.instances[action.payload.key] = action.payload.instance;
+    },
+
+    updateAudioForm: (
+      state,
+      action: PayloadAction<{ shotId: string; colId: string; updates: Partial<AiAudioFormData> }>
+    ) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      const key = audioInstanceKey(action.payload.shotId, action.payload.colId);
+      const audioInst = inst.aiAudioForm.instances[key] ?? createDefaultAudioInstance();
+      inst.aiAudioForm.instances[key] = {
+        ...audioInst,
+        formData: { ...audioInst.formData, ...action.payload.updates },
+      };
+    },
+
+    setAudioPreview: (
+      state,
+      action: PayloadAction<{ shotId: string; colId: string; item: ResultItem | null }>
+    ) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      const key = audioInstanceKey(action.payload.shotId, action.payload.colId);
+      const audioInst = inst.aiAudioForm.instances[key] ?? createDefaultAudioInstance();
+      inst.aiAudioForm.instances[key] = { ...audioInst, previewItem: action.payload.item };
+    },
+
+    setAudioHistoryLoading: (state, action: PayloadAction<{ key: string; loading: boolean }>) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      const audioInst =
+        inst.aiAudioForm.instances[action.payload.key] ?? createDefaultAudioInstance();
+      inst.aiAudioForm.instances[action.payload.key] = {
+        ...audioInst,
+        historyLoading: action.payload.loading,
+      };
+    },
+
+    setAudioHistory: (state, action: PayloadAction<{ key: string; history: HistoryItem[] }>) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      const audioInst =
+        inst.aiAudioForm.instances[action.payload.key] ?? createDefaultAudioInstance();
+      inst.aiAudioForm.instances[action.payload.key] = {
+        ...audioInst,
+        history: action.payload.history,
+        historyLoading: false,
+      };
+    },
+
+    removeAudioHistoryItem: (state, action: PayloadAction<{ key: string; itemId: string }>) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      const audioInst = inst.aiAudioForm.instances[action.payload.key];
+      if (!audioInst) return;
+      inst.aiAudioForm.instances[action.payload.key] = {
+        ...audioInst,
+        history: audioInst.history.filter((h) => h.id !== action.payload.itemId),
+      };
+    },
   },
 });
 
@@ -1674,6 +1941,15 @@ export const {
   removeVideoHistoryItem,
   setVideoModelsByMode,
   setVideoSavedModel,
+  // AI Audio Form actions
+  setAudioModelsLoaded,
+  setAudioCurrentModel,
+  setAudioInstance,
+  updateAudioForm,
+  setAudioPreview,
+  setAudioHistoryLoading,
+  setAudioHistory,
+  removeAudioHistoryItem,
 } = projectSlice.actions;
 
 // ─── Selectors ──────────────────────────────────────────
@@ -1786,3 +2062,34 @@ export const selectAllVideoResults = (
   shotId: string,
   colId: string
 ): VideoResultItem[] => makeSelectAllVideoResults()(state, shotId, colId);
+
+// ─── AI Audio Form Selectors ──────────────────────────
+
+export const selectAudioInstance = (state: RootState, shotId: string, colId: string) => {
+  const key = audioInstanceKey(shotId, colId);
+  return selectCurrentInstance(state).aiAudioForm.instances[key] ?? null;
+};
+
+export const selectAllAudioResults = (
+  state: RootState,
+  shotId: string,
+  colId: string
+): ResultItem[] => {
+  const key = audioInstanceKey(shotId, colId);
+  const inst = selectCurrentInstance(state).aiAudioForm.instances[key];
+
+  const tasks = selectTasksByShot(state, shotId, colId);
+  const taskItems: ResultItem[] = tasks.filter((t) => t.type === "audio").map(taskToResultItem);
+
+  const historyItems: ResultItem[] = (inst?.history ?? []).map((h) => ({
+    ...h,
+    fromHistory: true,
+  }));
+
+  const taskPaths = new Set(taskItems.map((t) => t.storagePath).filter(Boolean));
+  const dedupedHistory = historyItems.filter(
+    (h) => !h.storagePath || !taskPaths.has(h.storagePath)
+  );
+
+  return [...taskItems, ...dedupedHistory];
+};
