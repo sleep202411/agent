@@ -1,21 +1,29 @@
-# ─── Stage 1: Dependencies ──────────────────────────────
-FROM node:22-alpine AS deps
-WORKDIR /app
+FROM node:22-alpine AS base
 
-COPY package.json package-lock.json ./
+# ─── Stage 1: Prune monorepo ──────────────────────────────
+FROM base AS pruner
+RUN npm install -g turbo@^2
+WORKDIR /app
+COPY . .
+RUN turbo prune web --docker
+
+# ─── Stage 2: Install dependencies ───────────────────────
+FROM base AS deps
+WORKDIR /app
+COPY --from=pruner /app/out/json/ .
 RUN npm ci --ignore-scripts
 
-# ─── Stage 2: Build ─────────────────────────────────────
-FROM node:22-alpine AS builder
+# ─── Stage 3: Build ──────────────────────────────────────
+FROM base AS builder
 WORKDIR /app
+COPY --from=deps /app/ ./
+COPY --from=pruner /app/out/full/ .
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-
-# Build-time env vars (NEXT_PUBLIC_*) are baked into the bundle.
-# Pass them via --build-arg in CI.
 ARG NEXT_PUBLIC_OSS_BASE_URL
 ENV NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL
+
+ARG SERVER_URL
+ENV SERVER_URL=$SERVER_URL
 
 ARG JAVA_STUDIO_URL
 ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
@@ -23,27 +31,26 @@ ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
 ARG JAVA_CONTENT_URL
 ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
 
-RUN npm run build
+RUN npx turbo run build --filter=web
 
-# ─── Stage 3: Runner ────────────────────────────────────
-FROM node:22-alpine AS runner
+# ─── Stage 4: Runner ────────────────────────────────────
+FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-# Don't run as root
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy standalone output + static assets
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# Next.js standalone output in monorepo preserves the apps/web/ path
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
 
 USER nextjs
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["node", "apps/web/server.js"]

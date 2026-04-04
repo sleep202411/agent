@@ -1,67 +1,118 @@
-name: Build & Deploy
+name: Deploy
 
 on:
   push:
     branches: [main, develop]
 
 env:
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com  # 阿里云 ACR 地址，按实际修改
-  IMAGE_NAME: fizzdragon/studio
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com
 
 jobs:
-  build-and-deploy:
+  # ─── Determine environment ─────────────────────────────
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.vars.outputs.env }}
+      tag: ${{ steps.vars.outputs.tag }}
+      deploy_host: ${{ steps.vars.outputs.deploy_host }}
+      deploy_user: ${{ steps.vars.outputs.deploy_user }}
+      oss_base_url: ${{ steps.vars.outputs.oss_base_url }}
+      java_studio_url: ${{ steps.vars.outputs.java_studio_url }}
+      java_content_url: ${{ steps.vars.outputs.java_content_url }}
+    steps:
+      - id: vars
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "env=production"       >> $GITHUB_OUTPUT
+            echo "tag=production"       >> $GITHUB_OUTPUT
+            echo "deploy_host=${{ secrets.PROD_HOST }}"           >> $GITHUB_OUTPUT
+            echo "deploy_user=${{ secrets.PROD_USER }}"           >> $GITHUB_OUTPUT
+            echo "oss_base_url=${{ secrets.PROD_OSS_BASE_URL }}"  >> $GITHUB_OUTPUT
+            echo "java_studio_url=${{ secrets.PROD_JAVA_STUDIO_URL }}"   >> $GITHUB_OUTPUT
+            echo "java_content_url=${{ secrets.PROD_JAVA_CONTENT_URL }}" >> $GITHUB_OUTPUT
+          else
+            echo "env=staging"          >> $GITHUB_OUTPUT
+            echo "tag=staging"          >> $GITHUB_OUTPUT
+            echo "deploy_host=${{ secrets.STAGING_HOST }}"           >> $GITHUB_OUTPUT
+            echo "deploy_user=${{ secrets.STAGING_USER }}"           >> $GITHUB_OUTPUT
+            echo "oss_base_url=${{ secrets.STAGING_OSS_BASE_URL }}"  >> $GITHUB_OUTPUT
+            echo "java_studio_url=${{ secrets.STAGING_JAVA_STUDIO_URL }}"   >> $GITHUB_OUTPUT
+            echo "java_content_url=${{ secrets.STAGING_JAVA_CONTENT_URL }}" >> $GITHUB_OUTPUT
+          fi
+
+  # ─── Build web & server in parallel ────────────────────
+  build-web:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set environment
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "ENV=production" >> $GITHUB_ENV
-            echo "DEPLOY_HOST=${{ secrets.PROD_HOST }}" >> $GITHUB_ENV
-            echo "DEPLOY_USER=${{ secrets.PROD_USER }}" >> $GITHUB_ENV
-            echo "NEXT_PUBLIC_OSS_BASE_URL=${{ secrets.PROD_OSS_BASE_URL }}" >> $GITHUB_ENV
-          else
-            echo "ENV=staging" >> $GITHUB_ENV
-            echo "DEPLOY_HOST=${{ secrets.STAGING_HOST }}" >> $GITHUB_ENV
-            echo "DEPLOY_USER=${{ secrets.STAGING_USER }}" >> $GITHUB_ENV
-            echo "NEXT_PUBLIC_OSS_BASE_URL=${{ secrets.STAGING_OSS_BASE_URL }}" >> $GITHUB_ENV
-          fi
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Login to Alibaba Cloud ACR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v6
         with:
           context: .
+          file: apps/web/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.ENV }}
+            ${{ env.REGISTRY }}/fizzdragon/web:${{ github.sha }}
+            ${{ env.REGISTRY }}/fizzdragon/web:${{ needs.prepare.outputs.tag }}
           build-args: |
-            NEXT_PUBLIC_OSS_BASE_URL=${{ env.NEXT_PUBLIC_OSS_BASE_URL }}
+            NEXT_PUBLIC_OSS_BASE_URL=${{ needs.prepare.outputs.oss_base_url }}
+            SERVER_URL=http://server:3001
+            JAVA_STUDIO_URL=${{ needs.prepare.outputs.java_studio_url }}
+            JAVA_CONTENT_URL=${{ needs.prepare.outputs.java_content_url }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Deploy to ECS
+  build-server:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/fizzdragon/server:${{ github.sha }}
+            ${{ env.REGISTRY }}/fizzdragon/server:${{ needs.prepare.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Deploy to ECS ────────────────────────────────────
+  deploy:
+    needs: [prepare, build-web, build-server]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ env.DEPLOY_HOST }}
-          username: ${{ env.DEPLOY_USER }}
+          host: ${{ needs.prepare.outputs.deploy_host }}
+          username: ${{ needs.prepare.outputs.deploy_user }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.ENV }}
-            docker stop fizzdragon-studio || true
-            docker rm fizzdragon-studio || true
-            docker run -d \
-              --name fizzdragon-studio \
-              --restart unless-stopped \
-              -p 3000:3000 \
-              -e JAVA_STUDIO_URL=${{ secrets[format('{0}_JAVA_STUDIO_URL', env.ENV == 'production' && 'PROD' || 'STAGING')] }} \
-              -e JAVA_CONTENT_URL=${{ secrets[format('{0}_JAVA_CONTENT_URL', env.ENV == 'production' && 'PROD' || 'STAGING')] }} \
-              -e AI_GATEWAY_MODEL=${{ secrets.AI_GATEWAY_MODEL }} \
-              ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.ENV }}
+            cd ~/apps/fizzdragon-platform
+
+            export REGISTRY=${{ env.REGISTRY }}
+            export TAG=${{ needs.prepare.outputs.tag }}
+
+            docker compose pull
+            docker compose up -d --remove-orphans
             docker image prune -f

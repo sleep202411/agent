@@ -1,0 +1,46 @@
+FROM node:22-alpine AS base
+
+# ─── Stage 1: Prune monorepo ──────────────────────────────
+FROM base AS pruner
+RUN npm install -g turbo@^2
+WORKDIR /app
+COPY . .
+RUN turbo prune server --docker
+
+# ─── Stage 2: Install dependencies ───────────────────────
+FROM base AS deps
+WORKDIR /app
+COPY --from=pruner /app/out/json/ .
+RUN npm ci --ignore-scripts
+
+# ─── Stage 3: Build ──────────────────────────────────────
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/ ./
+COPY --from=pruner /app/out/full/ .
+RUN npx turbo run build --filter=server
+
+# ─── Stage 4: Runner ────────────────────────────────────
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nestjs
+
+# Re-install production-only deps in workspace layout
+COPY --from=pruner /app/out/json/ .
+RUN npm ci --ignore-scripts --omit=dev
+
+# Copy compiled output
+COPY --from=builder /app/apps/server/dist ./apps/server/dist
+
+USER nestjs
+
+WORKDIR /app/apps/server
+
+EXPOSE 3001
+
+CMD ["node", "dist/main.js"]

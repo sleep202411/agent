@@ -1,7 +1,12 @@
 node_modules
 .next
+dist
 .git
 .github
 .claude
+.agents
+.turbo
 .env*
+*.tar
 *.md
+!package.json

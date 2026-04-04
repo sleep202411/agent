@@ -1,0 +1,24 @@
+services:
+  web:
+    image: ${REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/fizzdragon/web:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+    networks:
+      - app
+
+  server:
+    image: ${REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/fizzdragon/server:${TAG:-latest}
+    restart: unless-stopped
+    expose:
+      - "3001"
+    env_file:
+      - .env.server
+    networks:
+      - app
+
+networks:
+  app:
+    driver: bridge
