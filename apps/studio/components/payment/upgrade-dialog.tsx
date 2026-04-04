@@ -1,0 +1,396 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
+import {
+  IconCheck,
+  IconCircleCheckFilled,
+  IconCrown,
+  IconDiamond,
+  IconLoader2,
+  IconX,
+} from "@tabler/icons-react";
+import QRCode from "qrcode";
+import { Button } from "@/components/ui/button";
+import LightRays from "@/components/ui/light-rays";
+import { backendApi } from "@/src/lib/api";
+import { cn } from "@/lib/utils";
+
+// ── Types ───────────────────────────────────────────────────
+
+interface VipPackage {
+  id: number;
+  packageName: string;
+  price: number;
+  durationDays: number;
+  description?: string;
+  rights?: string;
+  status: string | number;
+  sortOrder: number;
+}
+
+interface RechargeResult {
+  orderNo: string;
+  url: string;
+}
+interface OrderStatus {
+  status: number;
+}
+
+type Step = "select" | "payment" | "success";
+
+export interface UpgradeDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
+}
+
+// ── Component ───────────────────────────────────────────────
+
+export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogProps) {
+  const t = useTranslations("payment");
+
+  const [packages, setPackages] = useState<VipPackage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<Step>("select");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [qrUrl, setQrUrl] = useState("");
+  const [orderNo, setOrderNo] = useState("");
+  const [paying, setPaying] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const selectedPackage = useMemo(
+    () => packages.find((p) => p.id === selectedId) ?? null,
+    [selectedId, packages]
+  );
+
+  const packageNameMap: Record<string, string> = {
+    VIP1: "Basic · 基础版",
+    VIP2: "Standard · 标准版",
+    VIP3: "Pro · 专业版",
+  };
+
+  const displayName = (name: string) => packageNameMap[name] || name;
+  const displayPrice = (cents: number) => (cents / 100).toFixed(2);
+
+  const parseBenefits = (rights?: string): string[] => {
+    if (!rights) return [];
+    try {
+      const parsed = typeof rights === "string" ? JSON.parse(rights) : rights;
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        return Object.entries(parsed)
+          .map(([key, value]) => {
+            const params: Record<string, unknown> = { value };
+            if (key === "integral_discount") params.discount = Number(value) / 10;
+            const tKey = `rights.${key}` as Parameters<typeof t>[0];
+            const translated = t(tKey, params as never);
+            return String(translated).startsWith("rights.") ? String(value) : translated;
+          })
+          .filter((item): item is string => Boolean(item));
+      }
+      if (Array.isArray(parsed)) return parsed.map(String);
+      return [];
+    } catch {
+      return [];
+    }
+  };
+
+  const bestValueId = useMemo(() => {
+    if (packages.length < 2) return packages[0]?.id ?? null;
+    return packages[1].id;
+  }, [packages]);
+
+  // ── Fetch ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    backendApi
+      .post<VipPackage[]>("/api/payment/query/vip/package", { data: { currency: "CNY" } })
+      .then((res) => {
+        const list = (res ?? [])
+          .filter((p) => p.status === 1 || p.status === "ACTIVE")
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        setPackages(list);
+        if (list.length > 0 && selectedId === null) {
+          setSelectedId(list[Math.min(1, list.length - 1)].id);
+        }
+      })
+      .catch(() => setPackages([]))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setStep("select");
+      setQrUrl("");
+      setOrderNo("");
+      setPaying(false);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    },
+    []
+  );
+
+  // ── Payment ─────────────────────────────────────────────
+
+  const handlePay = useCallback(async () => {
+    if (!selectedPackage) return;
+    setPaying(true);
+    try {
+      const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
+        data: { packageId: selectedPackage.id, type: 2 },
+      });
+      const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
+      setQrUrl(qrDataUrl);
+      setOrderNo(result.orderNo);
+      setStep("payment");
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        try {
+          const s = await backendApi.get<OrderStatus>(
+            `/api/payment/order/status/${result.orderNo}`
+          );
+          if (s.status === 1) {
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+            setStep("success");
+            onSuccess?.();
+          }
+        } catch {
+          /* ignore */
+        }
+      }, 3000);
+    } catch (e) {
+      console.error("[UpgradeDialog]", e);
+    } finally {
+      setPaying(false);
+    }
+  }, [selectedPackage, onSuccess]);
+
+  const handleAlreadyPaid = useCallback(async () => {
+    if (!orderNo) return;
+    try {
+      const s = await backendApi.get<OrderStatus>(`/api/payment/order/status/${orderNo}`);
+      if (s.status === 1) {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        setStep("success");
+        onSuccess?.();
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [orderNo, onSuccess]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background">
+      {/* Light rays background */}
+      <div className="absolute inset-0">
+        <LightRays
+          raysOrigin="top-center"
+          raysColor="#ffffff"
+          raysSpeed={1}
+          lightSpread={0.5}
+          rayLength={3}
+          fadeDistance={1}
+          saturation={1}
+          followMouse
+          mouseInfluence={0.1}
+          className="h-full w-full"
+        />
+      </div>
+
+      {/* Close */}
+      <button
+        type="button"
+        onClick={() => onOpenChange(false)}
+        className="fixed right-6 top-6 z-20 flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <IconX className="size-5" />
+      </button>
+
+      {/* Content */}
+      <div className="relative z-10 flex min-h-full flex-col items-center justify-center overflow-y-auto px-6 py-20">
+        {/* Header */}
+        <div className="mb-3 inline-flex items-center justify-center rounded-full bg-white/10 p-3">
+          <IconCrown className="size-8 text-white" />
+        </div>
+        <h1 className="mb-2 text-3xl font-bold">{t("upgrade")}</h1>
+        <p className="mb-14 text-center text-muted-foreground">
+          解锁更多 AI 创作能力，提升你的制作效率
+        </p>
+
+        {step === "select" && (
+          <>
+            {loading ? (
+              <div className="flex h-48 items-center justify-center">
+                <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="grid w-full max-w-4xl auto-cols-fr grid-flow-col gap-5">
+                {packages.map((pkg) => {
+                  const isSelected = selectedId === pkg.id;
+                  const isBest = bestValueId === pkg.id;
+                  const benefits = parseBenefits(pkg.rights);
+                  return (
+                    <div
+                      key={pkg.id}
+                      onClick={() => setSelectedId(pkg.id)}
+                      className={cn(
+                        "relative flex cursor-pointer flex-col rounded-2xl border p-6 text-left backdrop-blur-sm transition-all",
+                        isSelected
+                          ? "border-white/40 bg-white/5 shadow-lg shadow-white/5"
+                          : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                      )}
+                    >
+                      {isBest && (
+                        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-black">
+                          {t("popular")}
+                        </span>
+                      )}
+
+                      {/* Name */}
+                      <div className="text-lg font-bold">{displayName(pkg.packageName)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {pkg.description || `${pkg.durationDays} ${t("days")}`}
+                      </div>
+
+                      {/* Price */}
+                      <div className="mt-4 mb-1">
+                        <span className="text-3xl font-bold">
+                          <span className="text-lg font-normal text-muted-foreground">¥</span>
+                          {displayPrice(pkg.price)}
+                        </span>
+                        {pkg.durationDays >= 30 && (
+                          <span className="ml-1 text-sm text-muted-foreground">
+                            /{t("perMonth").replace("/", "")}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mb-5 text-xs text-muted-foreground/60">
+                        {pkg.durationDays >= 30
+                          ? `按 ${pkg.durationDays} ${t("days")}计费`
+                          : `${pkg.durationDays} ${t("days")}`}
+                      </div>
+
+                      {/* Subscribe button */}
+                      <div className="mb-6">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedId(pkg.id);
+                            if (isSelected) void handlePay();
+                          }}
+                          disabled={isSelected && paying}
+                          className={cn(
+                            "w-full rounded-full py-2.5 text-center text-sm font-medium transition-colors",
+                            isSelected
+                              ? "bg-primary text-primary-foreground hover:bg-primary-hover"
+                              : "bg-white/10 text-white hover:bg-white/15"
+                          )}
+                        >
+                          {isSelected && paying ? (
+                            <IconLoader2 className="mx-auto size-4 animate-spin" />
+                          ) : isSelected ? (
+                            t("wechatPay")
+                          ) : (
+                            t("selectPlan")
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Benefits */}
+                      <ul className="mt-auto space-y-2.5">
+                        {benefits.map((b, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start gap-2 text-sm text-muted-foreground"
+                          >
+                            <IconCheck className="mt-0.5 size-4 shrink-0 text-white" />
+                            <span>{b}</span>
+                          </li>
+                        ))}
+                        <li className="flex items-start gap-2 text-sm text-muted-foreground/40">
+                          <IconCheck className="mt-0.5 size-4 shrink-0 text-white/20" />
+                          <span>更多权益持续解锁中...</span>
+                        </li>
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Disclaimer */}
+            <p className="mt-10 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground/40">
+              订阅即表示你同意我们的服务条款。套餐为一次性购买，有效期内不支持退款。积分权益将在支付成功后立即发放。本活动最终解释权归
+              FizzDragon 所有。
+            </p>
+          </>
+        )}
+
+        {step === "payment" && (
+          <div className="flex flex-col items-center">
+            <h2 className="mb-2 text-xl font-semibold">{t("wechatPay")}</h2>
+            <p className="mb-8 text-sm text-muted-foreground">{t("scanToPay")}</p>
+            <div className="mb-8 rounded-2xl bg-white p-5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qrUrl} alt="QR" className="size-56" />
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                color="muted"
+                onClick={() => {
+                  if (pollRef.current) {
+                    clearInterval(pollRef.current);
+                    pollRef.current = null;
+                  }
+                  setQrUrl("");
+                  setOrderNo("");
+                  setStep("select");
+                }}
+              >
+                {t("changePlan")}
+              </Button>
+              <Button variant="soft" onClick={() => void handleAlreadyPaid()}>
+                {t("alreadyPaid")}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "success" && (
+          <div className="flex flex-col items-center">
+            <div className="mb-5 flex size-20 items-center justify-center rounded-full bg-white/10">
+              <IconCircleCheckFilled className="size-12 text-white" />
+            </div>
+            <h2 className="mb-2 text-xl font-semibold">{t("paymentSuccess")}</h2>
+            <p className="mb-8 text-sm text-muted-foreground">{t("paymentSuccessDesc")}</p>
+            <Button onClick={() => onOpenChange(false)}>{t("close")}</Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

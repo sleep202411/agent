@@ -1,0 +1,270 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
+import { IconCheck, IconCircleCheckFilled, IconLoader2 } from "@tabler/icons-react";
+import QRCode from "qrcode";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { backendApi } from "@/src/lib/api";
+import { cn } from "@/lib/utils";
+
+// ── Types ───────────────────────────────────────────────────
+
+interface CreditsPackage {
+  id: string;
+  integralAmount: number;
+  originalPrice: number;
+  discountPrice: number;
+  status: number;
+  sortOrder: number;
+}
+
+interface RechargeResult {
+  orderNo: string;
+  url: string;
+}
+interface OrderStatus {
+  status: number;
+}
+
+type Step = "select" | "payment" | "success";
+
+export interface CreditsRechargeDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
+}
+
+// ── Component ───────────────────────────────────────────────
+
+export function CreditsRechargeDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+}: CreditsRechargeDialogProps) {
+  const t = useTranslations("payment");
+
+  const [packages, setPackages] = useState<CreditsPackage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<Step>("select");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [qrUrl, setQrUrl] = useState("");
+  const [orderNo, setOrderNo] = useState("");
+  const [paying, setPaying] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const selectedPackage = packages.find((p) => p.id === selectedId) ?? null;
+  const displayPrice = (cents: number) => (cents / 100).toFixed(2);
+
+  // ── Fetch ───────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    backendApi
+      .post<CreditsPackage[]>("/api/payment/query/package", { data: { currency: "CNY" } })
+      .then((res) => {
+        const list = (res ?? [])
+          .filter((p) => p.status === 1 || (p.status as unknown) === "ACTIVE")
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        setPackages(list);
+        if (list.length > 0 && selectedId === null) setSelectedId(list[0].id);
+      })
+      .catch(() => setPackages([]))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setStep("select");
+      setQrUrl("");
+      setOrderNo("");
+      setPaying(false);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    },
+    []
+  );
+
+  // ── Payment ─────────────────────────────────────────────
+
+  const handlePay = useCallback(async () => {
+    if (!selectedPackage) return;
+    setPaying(true);
+    try {
+      const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
+        data: { packageId: Number(selectedPackage.id), type: 1 },
+      });
+      const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
+      setQrUrl(qrDataUrl);
+      setOrderNo(result.orderNo);
+      setStep("payment");
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        try {
+          const s = await backendApi.get<OrderStatus>(
+            `/api/payment/order/status/${result.orderNo}`
+          );
+          if (s.status === 1) {
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+            setStep("success");
+            onSuccess?.();
+          }
+        } catch {
+          /* ignore */
+        }
+      }, 3000);
+    } catch (e) {
+      console.error("[CreditsRecharge]", e);
+    } finally {
+      setPaying(false);
+    }
+  }, [selectedPackage, onSuccess]);
+
+  const handleAlreadyPaid = useCallback(async () => {
+    if (!orderNo) return;
+    try {
+      const s = await backendApi.get<OrderStatus>(`/api/payment/order/status/${orderNo}`);
+      if (s.status === 1) {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        setStep("success");
+        onSuccess?.();
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [orderNo, onSuccess]);
+
+  // ── Render ──────────────────────────────────────────────
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t("credits")}</DialogTitle>
+          <DialogDescription className="sr-only">选择积分套餐进行充值</DialogDescription>
+        </DialogHeader>
+
+        {step === "select" && (
+          <div className="space-y-4">
+            {loading ? (
+              <div className="flex h-32 items-center justify-center">
+                <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {packages.map((pkg) => {
+                  const isSelected = selectedId === pkg.id;
+                  const hasDiscount =
+                    pkg.originalPrice > 0 && pkg.discountPrice < pkg.originalPrice;
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => setSelectedId(pkg.id)}
+                      className={cn(
+                        "flex flex-col items-center rounded-xl border p-4 transition-all",
+                        isSelected
+                          ? "border-primary bg-primary/5"
+                          : "border-border/60 hover:border-border"
+                      )}
+                    >
+                      <div className="text-2xl font-bold">{pkg.integralAmount}</div>
+                      <div className="mb-3 text-xs text-muted-foreground">{t("creditsUnit")}</div>
+                      <div className="text-lg font-semibold">
+                        <span className="text-sm font-normal text-muted-foreground">¥</span>
+                        {displayPrice(pkg.discountPrice)}
+                      </div>
+                      {hasDiscount && (
+                        <div className="mt-0.5 text-xs text-muted-foreground/50 line-through">
+                          ¥{displayPrice(pkg.originalPrice)}
+                        </div>
+                      )}
+                      {isSelected && <IconCheck className="mt-2 size-4 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {selectedPackage && (
+              <Button className="w-full" onClick={() => void handlePay()} disabled={paying}>
+                {paying && <IconLoader2 className="size-4 animate-spin" />}
+                {t("wechatPay")} ¥{displayPrice(selectedPackage.discountPrice)}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {step === "payment" && (
+          <div className="flex flex-col items-center py-4">
+            <p className="mb-4 text-sm text-muted-foreground">{t("scanToPay")}</p>
+            <div className="mb-6 rounded-xl bg-white p-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={qrUrl} alt="QR" className="size-48" />
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                color="muted"
+                size="sm"
+                onClick={() => {
+                  if (pollRef.current) {
+                    clearInterval(pollRef.current);
+                    pollRef.current = null;
+                  }
+                  setQrUrl("");
+                  setOrderNo("");
+                  setStep("select");
+                }}
+              >
+                {t("changePlan")}
+              </Button>
+              <Button variant="soft" size="sm" onClick={() => void handleAlreadyPaid()}>
+                {t("alreadyPaid")}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "success" && (
+          <div className="flex flex-col items-center py-6">
+            <div className="mb-3 flex size-14 items-center justify-center rounded-full bg-primary/10">
+              <IconCircleCheckFilled className="size-9 text-primary" />
+            </div>
+            <h3 className="mb-1 text-base font-semibold">{t("paymentSuccess")}</h3>
+            <p className="mb-4 text-sm text-muted-foreground">{t("paymentSuccessDesc")}</p>
+            <Button size="sm" onClick={() => onOpenChange(false)}>
+              {t("close")}
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
