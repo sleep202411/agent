@@ -1,0 +1,68 @@
+name: Cleanup Merged Branches
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  cleanup:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete merged feature branches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: branches } = await github.rest.repos.listBranches({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            const featureBranches = branches
+              .filter(b => b.name.startsWith('feature/'))
+              .map(b => b.name);
+
+            if (featureBranches.length === 0) {
+              console.log('No feature branches to clean up');
+              return;
+            }
+
+            // Check which feature branches are merged into main
+            const deleted = [];
+            for (const branch of featureBranches) {
+              try {
+                const { data: comparison } = await github.rest.repos.compareCommits({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  base: 'main',
+                  head: branch,
+                });
+
+                if (comparison.status === 'behind' || comparison.status === 'identical') {
+                  await github.rest.git.deleteRef({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ref: `heads/${branch}`,
+                  });
+                  deleted.push(branch);
+                  console.log(`Deleted: ${branch}`);
+                }
+              } catch (e) {
+                console.log(`Skipped ${branch}: ${e.message}`);
+              }
+            }
+
+            if (deleted.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `🧹 Cleaned up ${deleted.length} merged feature branch(es):\n${deleted.map(b => `- \`${b}\``).join('\n')}`,
+              });
+            }
