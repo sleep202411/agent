@@ -581,10 +581,17 @@
     "popular": "推薦",
     "creditsUnit": "積分",
     "originalPrice": "原價",
-    "rights": {
-      "score": "贈送 {value} 積分",
-      "integral_amount": "贈送 {value} 積分",
-      "integral_discount": "積分消耗 {discount} 折"
+    "plans": {
+      "basic": "Basic · 基礎版",
+      "standard": "Standard · 標準版",
+      "pro": "Pro · 專業版"
+    },
+    "benefits": {
+      "bonusCredits": "贈送 {value} 積分",
+      "creditDiscount": "積分購買享 9 折",
+      "limitedAgent": "限量使用 AI 助手",
+      "unlimitedAgent": "無限制使用 AI 助手",
+      "freeCourses": "課程專屬優惠"
     }
   }
 }

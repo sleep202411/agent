@@ -64,36 +64,38 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
     [selectedId, packages]
   );
 
-  const packageNameMap: Record<string, string> = {
-    VIP1: "Basic · 基础版",
-    VIP2: "Standard · 标准版",
-    VIP3: "Pro · 专业版",
+  const planConfig: Record<string, { name: string; benefits: string[] }> = {
+    VIP1: {
+      name: t("plans.basic"),
+      benefits: [
+        t("benefits.bonusCredits", { value: 1000 }),
+        t("benefits.creditDiscount"),
+        t("benefits.limitedAgent"),
+      ],
+    },
+    VIP2: {
+      name: t("plans.standard"),
+      benefits: [
+        t("benefits.bonusCredits", { value: 2000 }),
+        t("benefits.creditDiscount"),
+        t("benefits.unlimitedAgent"),
+        t("benefits.freeCourses"),
+      ],
+    },
+    VIP3: {
+      name: t("plans.pro"),
+      benefits: [
+        t("benefits.bonusCredits", { value: 3000 }),
+        t("benefits.creditDiscount"),
+        t("benefits.unlimitedAgent"),
+        t("benefits.freeCourses"),
+      ],
+    },
   };
 
-  const displayName = (name: string) => packageNameMap[name] || name;
+  const displayName = (name: string) => planConfig[name]?.name || name;
   const displayPrice = (cents: number) => (cents / 100).toFixed(2);
-
-  const parseBenefits = (rights?: string): string[] => {
-    if (!rights) return [];
-    try {
-      const parsed = typeof rights === "string" ? JSON.parse(rights) : rights;
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-        return Object.entries(parsed)
-          .map(([key, value]) => {
-            const params: Record<string, unknown> = { value };
-            if (key === "integral_discount") params.discount = Number(value) / 10;
-            const tKey = `rights.${key}` as Parameters<typeof t>[0];
-            const translated = t(tKey, params as never);
-            return String(translated).startsWith("rights.") ? String(value) : translated;
-          })
-          .filter((item): item is string => Boolean(item));
-      }
-      if (Array.isArray(parsed)) return parsed.map(String);
-      return [];
-    } catch {
-      return [];
-    }
-  };
+  const getBenefits = (name: string) => planConfig[name]?.benefits || [];
 
   const bestValueId = useMemo(() => {
     if (packages.length < 2) return packages[0]?.id ?? null;
@@ -250,7 +252,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                 {packages.map((pkg) => {
                   const isSelected = selectedId === pkg.id;
                   const isBest = bestValueId === pkg.id;
-                  const benefits = parseBenefits(pkg.rights);
+                  const benefits = getBenefits(pkg.packageName);
                   return (
                     <div
                       key={pkg.id}
@@ -330,10 +332,6 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                             <span>{b}</span>
                           </li>
                         ))}
-                        <li className="flex items-start gap-2 text-sm text-muted-foreground/40">
-                          <IconCheck className="mt-0.5 size-4 shrink-0 text-white/20" />
-                          <span>更多权益持续解锁中...</span>
-                        </li>
                       </ul>
                     </div>
                   );

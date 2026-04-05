@@ -581,10 +581,17 @@
     "popular": "推荐",
     "creditsUnit": "积分",
     "originalPrice": "原价",
-    "rights": {
-      "score": "赠送 {value} 积分",
-      "integral_amount": "赠送 {value} 积分",
-      "integral_discount": "积分消耗 {discount} 折"
+    "plans": {
+      "basic": "Basic · 基础版",
+      "standard": "Standard · 标准版",
+      "pro": "Pro · 专业版"
+    },
+    "benefits": {
+      "bonusCredits": "赠送 {value} 积分",
+      "creditDiscount": "积分购买享 9 折",
+      "limitedAgent": "限量使用 AI 助手",
+      "unlimitedAgent": "无限制使用 AI 助手",
+      "freeCourses": "课程专属优惠"
     }
   }
 }

@@ -581,10 +581,17 @@
     "popular": "Popular",
     "creditsUnit": "credits",
     "originalPrice": "Original",
-    "rights": {
-      "score": "{value} bonus credits",
-      "integral_amount": "{value} bonus credits",
-      "integral_discount": "{discount}x credit discount"
+    "plans": {
+      "basic": "Basic",
+      "standard": "Standard",
+      "pro": "Pro"
+    },
+    "benefits": {
+      "bonusCredits": "{value} bonus credits",
+      "creditDiscount": "10% off credit purchases",
+      "limitedAgent": "Limited AI Agent access",
+      "unlimitedAgent": "Unlimited AI Agent access",
+      "freeCourses": "Exclusive course benefits"
     }
   }
 }
