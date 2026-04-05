@@ -40,9 +40,9 @@ const ENTITY_CONFIG: Record<
   }
 > = {
   role: {
-    title: "导入角色",
-    previewTitle: "导入角色 - 预览",
-    emptyText: "当前没有可导入的角色数据",
+    title: "",
+    previewTitle: "",
+    emptyText: "",
     templateFileName: "role_template.xlsx",
     templateRows: [
       ["name", "description", "prompt"],
@@ -51,9 +51,9 @@ const ENTITY_CONFIG: Record<
     ],
   },
   scene: {
-    title: "导入场景",
-    previewTitle: "导入场景 - 预览",
-    emptyText: "当前没有可导入的场景数据",
+    title: "",
+    previewTitle: "",
+    emptyText: "",
     templateFileName: "scene_template.xlsx",
     templateRows: [
       ["name", "description", "prompt"],
@@ -66,9 +66,9 @@ const ENTITY_CONFIG: Record<
     ],
   },
   prop: {
-    title: "导入道具",
-    previewTitle: "导入道具 - 预览",
-    emptyText: "当前没有可导入的道具数据",
+    title: "",
+    previewTitle: "",
+    emptyText: "",
     templateFileName: "prop_template.xlsx",
     templateRows: [
       ["name", "description", "prompt"],
@@ -163,7 +163,7 @@ export function ImportEntityDialog({
       return;
     }
     if (nextFile.size > 10 * 1024 * 1024) {
-      toast.warning("文件不能超过 10MB");
+      toast.warning(ti("fileSizeLimit"));
       return;
     }
     setFile(nextFile);
@@ -202,7 +202,7 @@ export function ImportEntityDialog({
         worldId,
         datas: [preview.headers, ...preview.rows],
       });
-      toast.success(`已导入 ${preview.rows.length} 条数据`);
+      toast.success(ti("importedCount", { count: preview.rows.length }));
       closePreviewDialog();
       onSuccess?.();
     } catch (error) {
@@ -228,9 +228,7 @@ export function ImportEntityDialog({
           <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-border/70 pb-4">
             <div>
               <DialogTitle>{localizedTitle}</DialogTitle>
-              <DialogDescription>
-                上传 Excel 或 CSV 文件后，系统会先格式化内容，再进入预览编辑。
-              </DialogDescription>
+              <DialogDescription>{ti("uploadDescription")}</DialogDescription>
             </div>
             <Button variant="ghost" color="muted" size="icon-sm" onClick={closeUploadDialog}>
               <IconX className="size-4" />
@@ -249,10 +247,8 @@ export function ImportEntityDialog({
               className="flex h-56 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
             >
               <IconUpload className="mb-4 size-10" />
-              <div className="text-base font-medium">点击或拖拽上传文件</div>
-              <div className="mt-2 text-sm text-muted-foreground">
-                支持 .xls / .xlsx / .csv，单个文件不超过 10MB
-              </div>
+              <div className="text-base font-medium">{ti("clickOrDragUpload")}</div>
+              <div className="mt-2 text-sm text-muted-foreground">{ti("fileFormatHint")}</div>
             </button>
 
             {file ? (
@@ -271,7 +267,7 @@ export function ImportEntityDialog({
             ) : null}
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <div>模板包含 `name / description / prompt` 三列。</div>
+              <div>{ti("templateHint")}</div>
               <Button
                 type="button"
                 variant="ghost"
@@ -286,7 +282,7 @@ export function ImportEntityDialog({
                 }}
               >
                 <IconDownload className="size-3.5" />
-                下载模板
+                {ti("downloadTemplate")}
               </Button>
             </div>
 
@@ -322,7 +318,7 @@ export function ImportEntityDialog({
           <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-border/70 pb-4">
             <div>
               <DialogTitle>{localizedPreviewTitle}</DialogTitle>
-              <DialogDescription>可以先调整表格内容，再批量导入到当前世界观。</DialogDescription>
+              <DialogDescription>{ti("previewEditHint")}</DialogDescription>
             </div>
             <Button variant="ghost" color="muted" size="icon-sm" onClick={closePreviewDialog}>
               <IconX className="size-4" />
@@ -345,7 +341,7 @@ export function ImportEntityDialog({
                     </div>
                   ))}
                   <div className="border-b border-border bg-muted/50 px-3 py-2 text-sm font-medium">
-                    操作
+                    {ti("actionColumn")}
                   </div>
 
                   {preview.rows.map((row, rowIndex) => (
@@ -409,14 +405,14 @@ export function ImportEntityDialog({
                     }
                   >
                     <IconPlus className="size-3.5" />
-                    添加一行
+                    {ti("addRow")}
                   </Button>
                   <Button variant="outline" color="muted" onClick={closePreviewDialog}>
-                    关闭
+                    {tc("close")}
                   </Button>
                   <Button onClick={() => void handleApply()} disabled={applying}>
                     {applying ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
-                    应用
+                    {ti("apply")}
                   </Button>
                 </div>
               </div>

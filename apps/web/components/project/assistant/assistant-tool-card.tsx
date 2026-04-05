@@ -58,7 +58,7 @@ function CardFrame({
 }: {
   title: string;
   description?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   tone?: "default" | "success" | "error";
 }) {
   return (
@@ -72,7 +72,7 @@ function CardFrame({
     >
       <div className="text-sm font-medium">{title}</div>
       {description ? <div className="mt-1 text-xs text-muted-foreground">{description}</div> : null}
-      <div className="mt-3">{children}</div>
+      {children ? <div className="mt-3">{children}</div> : null}
     </div>
   );
 }
@@ -98,18 +98,9 @@ function describeMutationOutput(output: AssistantMutationResult) {
     };
   }
 
-  const entityLabel =
-    output.entityType === "character"
-      ? "角色"
-      : output.entityType === "scene"
-        ? "场景"
-        : output.entityType === "prop"
-          ? "道具"
-          : "项目项";
-
   return {
     title: output.message,
-    meta: `已批量处理 ${count} 个${entityLabel} · ${output.action}`,
+    meta: `${count} · ${output.entityType ?? "item"} · ${output.action}`,
   };
 }
 
@@ -121,6 +112,8 @@ function OptionsCard({
 }: AssistantToolCardProps & {
   part: AssistantToolInvocation<AssistantShowOptionsInput, AssistantShowOptionsResult>;
 }) {
+  const t = useTranslations("ai");
+  const tc = useTranslations("common");
   const input = part.input;
   const [selectedIds, setSelectedIds] = useState<string[]>(
     part.state === "output-available" && part.output?.selectedIds ? part.output.selectedIds : []
@@ -134,18 +127,21 @@ function OptionsCard({
       .map((option) => option.label)
       .join("、");
 
+    const labels = selectedLabels || t("noSelection");
+    const notes = part.output?.notes ? ` · ${part.output.notes}` : "";
+
     return (
       <CardFrame
         title={input.title}
         description={
           processing
-            ? `已提交：${selectedLabels || "未选择"}${part.output?.notes ? ` · ${part.output.notes}` : ""} · 助手正在继续处理`
-            : `已选择：${selectedLabels || "未选择"}${part.output?.notes ? ` · ${part.output.notes}` : ""}`
+            ? `${t("submittedSelections", { labels })}${notes} · ${t("submittedProcessing")}`
+            : `${t("selectedSelections", { labels })}${notes}`
         }
         tone="success"
       >
         <div className="text-xs text-muted-foreground">
-          {processing ? "处理中…" : "选项结果已提交，助手会继续处理。"}
+          {processing ? t("processingResult") : t("optionsSubmittedHint")}
         </div>
       </CardFrame>
     );
@@ -205,7 +201,7 @@ function OptionsCard({
           }
         >
           <IconCheck className="size-3.5" />
-          确认
+          {tc("confirm")}
         </Button>
       </div>
     </CardFrame>
@@ -220,6 +216,8 @@ function ConfirmCard({
 }: AssistantToolCardProps & {
   part: AssistantToolInvocation<AssistantConfirmActionInput, AssistantConfirmActionResult>;
 }) {
+  const t = useTranslations("ai");
+  const tc = useTranslations("common");
   const input = part.input;
   if (!input) return null;
 
@@ -228,12 +226,16 @@ function ConfirmCard({
       <CardFrame
         title={input.title}
         description={
-          part.output?.confirmed ? (processing ? "已确认，助手正在执行" : "已确认执行") : "已取消"
+          part.output?.confirmed
+            ? processing
+              ? t("confirmedExecuting")
+              : t("confirmedDone")
+            : t("cancelled")
         }
         tone={part.output?.confirmed ? "success" : "default"}
       >
         <div className="text-xs text-muted-foreground">
-          {processing ? "处理中…" : "确认结果已提交，助手会继续处理。"}
+          {processing ? t("processingResult") : t("confirmSubmittedHint")}
         </div>
       </CardFrame>
     );
@@ -258,7 +260,7 @@ function ConfirmCard({
           }
         >
           <IconX className="size-3.5" />
-          {input.cancelLabel || "取消"}
+          {input.cancelLabel || tc("cancel")}
         </Button>
         <Button
           size="sm"
@@ -274,7 +276,7 @@ function ConfirmCard({
           }
         >
           <IconCheck className="size-3.5" />
-          {input.confirmLabel || "确认"}
+          {input.confirmLabel || tc("confirm")}
         </Button>
       </div>
     </CardFrame>
@@ -292,6 +294,7 @@ function RoleProposalCard({
     AssistantProposalDecision<AssistantRoleProposal>
   >;
 }) {
+  const t = useTranslations("ai");
   const input = part.input;
   const [items, setItems] = useState<AssistantRoleProposal[]>(
     part.state === "output-available" && part.output?.items ? part.output.items : input?.items || []
@@ -302,23 +305,23 @@ function RoleProposalCard({
   if (part.state === "output-available") {
     return (
       <CardFrame
-        title="角色提案"
-        description={`${input.summary} · ${part.output?.action === "reject" ? "已拒绝" : processing ? "已确认，正在创建" : "已确认"}`}
+        title={t("roleProposal")}
+        description={`${input.summary} · ${part.output?.action === "reject" ? t("rejected") : processing ? t("confirmedCreating") : t("confirmed")}`}
         tone={part.output?.action === "reject" ? "default" : "success"}
       >
         <div className="text-xs text-muted-foreground">
           {part.output?.action === "reject"
-            ? "这组角色提案已被拒绝。"
+            ? t("roleProposalRejected")
             : processing
-              ? `共 ${part.output?.items?.length ?? input.items.length} 个角色，助手正在继续创建。`
-              : `共 ${part.output?.items?.length ?? input.items.length} 个角色，助手会继续执行。`}
+              ? t("roleCountCreating", { count: part.output?.items?.length ?? input.items.length })
+              : t("roleCountDone", { count: part.output?.items?.length ?? input.items.length })}
         </div>
       </CardFrame>
     );
   }
 
   return (
-    <CardFrame title="角色提案" description={input.summary}>
+    <CardFrame title={t("roleProposal")} description={input.summary}>
       <div className="space-y-3">
         {items.map((item, index) => (
           <div
@@ -338,7 +341,7 @@ function RoleProposalCard({
                     )
                   )
                 }
-                placeholder="角色名称"
+                placeholder={t("characterNamePlaceholder")}
               />
               <select
                 value={item.role}
@@ -357,9 +360,9 @@ function RoleProposalCard({
                 }
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                <option value="main">主角</option>
-                <option value="supporting">配角</option>
-                <option value="extra">群演</option>
+                <option value="main">{t("roleMain")}</option>
+                <option value="supporting">{t("roleSupporting")}</option>
+                <option value="extra">{t("roleExtra")}</option>
               </select>
             </div>
 
@@ -376,7 +379,7 @@ function RoleProposalCard({
                 )
               }
               className="mt-2 min-h-20"
-              placeholder="角色简介"
+              placeholder={t("characterBioPlaceholder")}
             />
 
             <Textarea
@@ -392,7 +395,7 @@ function RoleProposalCard({
                 )
               }
               className="mt-2 min-h-20"
-              placeholder="外貌特征"
+              placeholder={t("appearancePlaceholder")}
             />
 
             <Textarea
@@ -408,7 +411,7 @@ function RoleProposalCard({
                 )
               }
               className="mt-2 min-h-20"
-              placeholder="性格描述"
+              placeholder={t("personalityPlaceholder")}
             />
 
             <Textarea
@@ -424,7 +427,7 @@ function RoleProposalCard({
                 )
               }
               className="mt-2 min-h-20"
-              placeholder="AI 提示词"
+              placeholder={t("aiPromptPlaceholder")}
             />
           </div>
         ))}
@@ -448,7 +451,7 @@ function RoleProposalCard({
           }
         >
           <IconX className="size-3.5" />
-          拒绝
+          {t("reject")}
         </Button>
         <Button
           size="sm"
@@ -465,7 +468,7 @@ function RoleProposalCard({
           }
         >
           <IconCheck className="size-3.5" />
-          接受并创建
+          {t("acceptAndCreate")}
         </Button>
       </div>
     </CardFrame>
@@ -485,6 +488,7 @@ function SimpleProposalCard({
   >;
   title: string;
 }) {
+  const t = useTranslations("ai");
   const input = part.input;
   const [items, setItems] = useState<Array<AssistantSceneProposal | AssistantPropProposal>>(
     part.state === "output-available" && part.output?.items ? part.output.items : input?.items || []
@@ -496,15 +500,15 @@ function SimpleProposalCard({
     return (
       <CardFrame
         title={title}
-        description={`${input.summary} · ${part.output?.action === "reject" ? "已拒绝" : processing ? "已确认，正在创建" : "已确认"}`}
+        description={`${input.summary} · ${part.output?.action === "reject" ? t("rejected") : processing ? t("confirmedCreating") : t("confirmed")}`}
         tone={part.output?.action === "reject" ? "default" : "success"}
       >
         <div className="text-xs text-muted-foreground">
           {part.output?.action === "reject"
-            ? "这组提案已被拒绝。"
+            ? t("proposalRejected")
             : processing
-              ? `共 ${part.output?.items?.length ?? input.items.length} 项，助手正在继续创建。`
-              : `共 ${part.output?.items?.length ?? input.items.length} 项，助手会继续执行。`}
+              ? t("itemCountCreating", { count: part.output?.items?.length ?? input.items.length })
+              : t("itemCountDone", { count: part.output?.items?.length ?? input.items.length })}
         </div>
       </CardFrame>
     );
@@ -530,7 +534,7 @@ function SimpleProposalCard({
                   )
                 )
               }
-              placeholder="名称"
+              placeholder={t("namePlaceholder")}
             />
             <Textarea
               value={item.description ?? ""}
@@ -545,7 +549,7 @@ function SimpleProposalCard({
                 )
               }
               className="mt-2 min-h-20"
-              placeholder="描述"
+              placeholder={t("descriptionPlaceholder")}
             />
             <Textarea
               value={item.prompt ?? ""}
@@ -560,7 +564,7 @@ function SimpleProposalCard({
                 )
               }
               className="mt-2 min-h-20"
-              placeholder="提示词"
+              placeholder={t("promptWordPlaceholder")}
             />
           </div>
         ))}
@@ -584,7 +588,7 @@ function SimpleProposalCard({
           }
         >
           <IconX className="size-3.5" />
-          拒绝
+          {t("reject")}
         </Button>
         <Button
           size="sm"
@@ -601,7 +605,7 @@ function SimpleProposalCard({
           }
         >
           <IconCheck className="size-3.5" />
-          接受并创建
+          {t("acceptAndCreate")}
         </Button>
       </div>
     </CardFrame>
@@ -616,6 +620,7 @@ function StoryboardProposalCard({
 }: AssistantToolCardProps & {
   part: AssistantToolInvocation<AssistantStoryboardProposal, AssistantStoryboardDecision>;
 }) {
+  const t = useTranslations("ai");
   const input = part.input;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<AssistantStoryboardProposal | null>(
@@ -627,16 +632,16 @@ function StoryboardProposalCard({
   if (part.state === "output-available") {
     return (
       <CardFrame
-        title="分镜草稿提案"
-        description={`${draft.summary} · ${part.output?.action === "reject" ? "已拒绝" : processing ? "已确认，正在写入" : "已确认"}`}
+        title={t("storyboardProposal")}
+        description={`${draft.summary} · ${part.output?.action === "reject" ? t("rejected") : processing ? t("confirmedCreating") : t("confirmed")}`}
         tone={part.output?.action === "reject" ? "default" : "success"}
       >
         <div className="text-xs text-muted-foreground">
           {part.output?.action === "reject"
-            ? "这版分镜草稿已被拒绝。"
+            ? t("storyboardRejected")
             : processing
-              ? `共 ${draft.rows.length} 行，助手正在继续写入当前剧集。`
-              : `共 ${draft.rows.length} 行，助手会继续保存到当前剧集。`}
+              ? t("storyboardRowsCreating", { count: draft.rows.length })
+              : t("storyboardRowsDone", { count: draft.rows.length })}
         </div>
       </CardFrame>
     );
@@ -644,10 +649,9 @@ function StoryboardProposalCard({
 
   return (
     <>
-      <CardFrame title="分镜草稿提案" description={draft.summary}>
+      <CardFrame title={t("storyboardProposal")} description={draft.summary}>
         <div className="rounded-xl border border-border/70 bg-muted/20 p-3 text-xs text-muted-foreground">
-          当前草稿包含 {draft.headers.length} 列、{draft.rows.length}{" "}
-          行。你可以先查看和轻编辑，再决定是否写入。
+          {t("storyboardDraftHint", { cols: draft.headers.length, rows: draft.rows.length })}
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-2">
@@ -659,7 +663,7 @@ function StoryboardProposalCard({
             onClick={() => setDialogOpen(true)}
           >
             <IconLayoutGrid className="size-3.5" />
-            查看并编辑
+            {t("viewAndEdit")}
           </Button>
 
           <div className="flex items-center gap-2">
@@ -680,7 +684,7 @@ function StoryboardProposalCard({
               }
             >
               <IconX className="size-3.5" />
-              拒绝
+              {t("reject")}
             </Button>
             <Button
               size="sm"
@@ -697,7 +701,7 @@ function StoryboardProposalCard({
               }
             >
               <IconCheck className="size-3.5" />
-              接受并写入
+              {t("acceptAndWrite")}
             </Button>
           </div>
         </div>
@@ -706,7 +710,7 @@ function StoryboardProposalCard({
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-[95vw]">
           <DialogHeader>
-            <DialogTitle>分镜草稿提案</DialogTitle>
+            <DialogTitle>{t("storyboardProposal")}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -775,15 +779,17 @@ export function AssistantToolCard({
   processing = false,
   onApplyResult,
 }: AssistantToolCardProps) {
+  const t = useTranslations("ai");
+  const tc = useTranslations("common");
   const toolName = getAssistantToolName(part);
   const displayName = part.title || getAssistantToolDisplayName(toolName);
 
   if (part.state === "input-streaming") {
     return (
-      <CardFrame title={displayName} description="助手正在准备结构化结果。">
+      <CardFrame title={displayName} description={t("preparingResult")}>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <IconLoader2 className="size-3.5 animate-spin" />
-          正在生成
+          {t("generatingText")}
         </div>
       </CardFrame>
     );
@@ -791,10 +797,10 @@ export function AssistantToolCard({
 
   if (part.state === "output-error") {
     return (
-      <CardFrame title={displayName} description={part.errorText || "工具执行失败"} tone="error">
+      <CardFrame title={displayName} description={part.errorText || t("toolFailed")} tone="error">
         <div className="flex items-center gap-2 text-xs text-destructive">
           <IconAlertCircle className="size-3.5" />
-          请重试或调整指令。
+          {t("toolRetryHint")}
         </div>
       </CardFrame>
     );
@@ -854,7 +860,7 @@ export function AssistantToolCard({
         disabled={disabled}
         processing={processing}
         onApplyResult={onApplyResult}
-        title="场景提案"
+        title={t("sceneProposal")}
       />
     );
   }
@@ -871,7 +877,7 @@ export function AssistantToolCard({
         disabled={disabled}
         processing={processing}
         onApplyResult={onApplyResult}
-        title="道具提案"
+        title={t("propProposal")}
       />
     );
   }
@@ -889,21 +895,24 @@ export function AssistantToolCard({
     );
   }
 
-  if (part.state === "output-available" && isMutationOutput(part.output)) {
-    const description = describeMutationOutput(part.output);
-
-    return (
-      <CardFrame title={displayName} description={description.title} tone="success">
-        <div className="text-xs text-muted-foreground">{description.meta}</div>
-      </CardFrame>
-    );
+  if (part.state === "output-available") {
+    if (isMutationOutput(part.output)) {
+      const description = describeMutationOutput(part.output);
+      return (
+        <CardFrame title={displayName} description={description.title} tone="success">
+          <div className="text-xs text-muted-foreground">{description.meta}</div>
+        </CardFrame>
+      );
+    }
+    // Read-only tools (get_world_assets, etc.) — show completed
+    return <CardFrame title={displayName} description={t("completed")} tone="success" />;
   }
 
   return (
-    <CardFrame title={displayName} description="助手正在执行这一步。">
+    <CardFrame title={displayName} description={t("executingStep")}>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <IconLoader2 className="size-3.5 animate-spin" />
-        执行中
+        {t("executing")}
       </div>
     </CardFrame>
   );

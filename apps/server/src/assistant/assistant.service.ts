@@ -86,10 +86,12 @@ export class AssistantService {
       },
     });
 
+    this.logger.log('Fetching project context...');
     const projectContext = await this.workspace.getProjectContextSummary(
       incomingHeaders,
       wsContext,
     );
+    this.logger.log('Project context ready');
 
     const validationTools = tools as unknown as ToolSet;
     let validatedMessages: AssistantMessage[];
@@ -98,18 +100,36 @@ export class AssistantService {
         messages: payload.messages,
         tools: validationTools,
       } as never);
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `Message validation failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new Error('助手消息格式不合法');
     }
+    this.logger.log(`Validated ${validatedMessages.length} messages`);
 
     const preparedMessages = this.augmentMessages(validatedMessages);
-    const modelInputMessages = preparedMessages.map((msg) => ({
-      ...msg,
-      id: undefined,
-    }));
-    const modelMessages = await convertToModelMessages(modelInputMessages, {
+    const modelMessages = await convertToModelMessages(preparedMessages, {
       tools: validationTools,
     });
+
+    // Strip non-image file parts — alibaba provider only supports images
+    for (const msg of modelMessages) {
+      if (msg.role === 'user' && Array.isArray(msg.content)) {
+        msg.content = msg.content.filter(
+          (part) =>
+            part.type !== 'file' ||
+            ('mediaType' in part &&
+              typeof part.mediaType === 'string' &&
+              part.mediaType.startsWith('image/')),
+        );
+      }
+    }
+
+    const modelId = process.env.AI_MODEL || 'qwen-plus';
+    this.logger.log(
+      `Starting streamText: model=${modelId}, ${modelMessages.length} messages, ${Object.keys(tools).length} tools`,
+    );
 
     const result = streamText({
       model: this.ai.getModel(),
@@ -121,7 +141,24 @@ export class AssistantService {
       temperature: 0.2,
       onError: ({ error }) => {
         const msg = error instanceof Error ? error.message : String(error);
-        this.logger.error(`Stream failed: ${msg}`);
+        this.logger.error(`Stream onError: ${msg}`);
+        if (error instanceof Error && error.stack) {
+          this.logger.error(error.stack);
+        }
+      },
+      onFinish: (event) => {
+        this.logger.log(`Stream finished: reason=${event.finishReason}`);
+      },
+      onStepFinish: (event) => {
+        this.logger.log(`Step finished: reason=${event.finishReason}`);
+        if (event.finishReason === 'error') {
+          this.logger.error(
+            `Step error details: ${JSON.stringify({
+              warnings: event.warnings,
+              response: event.response ? { body: event.response.body } : null,
+            })}`,
+          );
+        }
       },
     });
 
@@ -154,7 +191,7 @@ export class AssistantService {
       .slice(0, 20)
       .join('、');
 
-    return `你是 FizzDragon Studio 项目详情页里的 AI 助手。你的职责是帮助创作者理解项目、提出可执行方案，并在用户明确授权时通过工具修改当前项目。
+    return `你是 FizzDragon Studio 项目详情页里的 StoryOS 助手。你的职责是帮助创作者理解项目、提出可执行方案，并在用户明确授权时通过工具修改当前项目。
 
 [当前项目上下文]
 - projectId: ${context.projectId}
@@ -186,7 +223,8 @@ export class AssistantService {
 2. 若 proposal 被 reject，则尊重用户并询问下一步，而不是擅自执行。
 3. 若已有可用工具能读取信息，请先调用读取工具，不要凭空猜测项目现状。
 4. 读取数据时遵循最佳实践：先用 summary 工具建立全局上下文；查找具体实体时用 search/page 工具；只有在"分析全部角色 / 全部分镜 / 全局一致性检查"这类场景下，才调用 aggregate 工具。
-5. 回复要简洁、具体、可执行，避免空泛表述。`;
+5. 回复要简洁、具体、可执行，避免空泛表述。
+6. 图片生成功能正在开发中，暂不可用。如果用户要求生成图片，请告知该功能正在开发中，目前无法生成图片。`;
   }
 
   private augmentMessages(messages: AssistantMessage[]): AssistantMessage[] {

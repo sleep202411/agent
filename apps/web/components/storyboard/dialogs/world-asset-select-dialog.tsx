@@ -72,13 +72,16 @@ export function WorldAssetSelectDialog({
   const t = useTranslations("storyboard");
   const [selected, setSelected] = useState<WorldAssetOption | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const prev = selectedId
-      ? (items.find((item) => String(item.id) === String(selectedId)) ?? null)
-      : null;
-    setSelected(prev);
-  }, [open, selectedId, items]);
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) {
+      const prev = selectedId
+        ? (items.find((item) => String(item.id) === String(selectedId)) ?? null)
+        : null;
+      setSelected(prev);
+    }
+  }
 
   const handleToggle = useCallback((item: WorldAssetOption) => {
     setSelected((prev) => (prev?.id === item.id ? null : item));

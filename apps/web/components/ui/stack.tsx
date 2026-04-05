@@ -92,13 +92,20 @@ export function Stack({
   const shouldDisableDrag = mobileClickOnly && isMobile;
   const shouldEnableClick = sendToBackOnClick || shouldDisableDrag;
 
+  // Deterministic rotation based on index to avoid impure Math.random() during render
+  const makeRotation = (index: number) => ((index * 7 + 3) % 10) - 5;
+
   const [stack, setStack] = useState(() =>
-    cards.map((content, index) => ({ id: index + 1, content }))
+    cards.map((content, index) => ({ id: index + 1, content, _rotation: makeRotation(index) }))
   );
 
-  useEffect(() => {
-    setStack(cards.map((content, index) => ({ id: index + 1, content })));
-  }, [cards]);
+  const [prevCards, setPrevCards] = useState(cards);
+  if (prevCards !== cards) {
+    setPrevCards(cards);
+    setStack(
+      cards.map((content, index) => ({ id: index + 1, content, _rotation: makeRotation(index) }))
+    );
+  }
 
   const sendToBack = (id: number) => {
     setStack((prev) => {
@@ -127,7 +134,7 @@ export function Stack({
       onMouseLeave={() => pauseOnHover && setIsPaused(false)}
     >
       {stack.map((card, index) => {
-        const randomRotate = randomRotation ? Math.random() * 10 - 5 : 0;
+        const randomRotate = randomRotation ? (card._rotation ?? 0) : 0;
         return (
           <CardRotate
             key={card.id}

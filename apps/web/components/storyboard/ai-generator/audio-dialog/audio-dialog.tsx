@@ -9,7 +9,7 @@ import { AudioVoicePickerDialog } from "./audio-voice-picker-dialog";
 import { useAppDispatch, useAppSelector } from "@/src/store";
 import {
   selectCurrentInstance,
-  selectAllAudioResults,
+  makeSelectAllAudioResults,
   initAudioInstance,
   deleteAudioItem,
   updateAudioForm,
@@ -70,7 +70,8 @@ export function AiAudioGeneratorDialog({
     const key = `${shotId}_${shotColumnId}`;
     return selectCurrentInstance(s).aiAudioForm.instances[key] ?? null;
   });
-  const allResults = useAppSelector((s) => selectAllAudioResults(s, shotId, shotColumnId));
+  const selectAllResults = useMemo(makeSelectAllAudioResults, []);
+  const allResults = useAppSelector((s) => selectAllResults(s, shotId, shotColumnId));
   const { models: cachedVoiceModels } = useRawAiModels(AI_MODEL_PATHS.voice);
   const voiceModels = audioForm.models.length > 0 ? audioForm.models : (cachedVoiceModels ?? []);
 

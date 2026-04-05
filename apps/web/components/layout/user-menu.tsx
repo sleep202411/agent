@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore, useState } from "react";
 import {
   IconArrowBack,
   IconCredits,
@@ -14,6 +14,7 @@ import {
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useTheme } from "next-themes";
+import Link from "next/link";
 import { usePathname, useRouter } from "@/src/i18n/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -55,10 +56,12 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
-
-  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     backendApi
@@ -145,7 +148,7 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
         {/* Theme */}
         {mounted && (
           <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-sm">Theme</span>
+            <span className="text-sm">{tc("theme")}</span>
             <div className="flex rounded-lg border border-border">
               <button
                 type="button"
@@ -187,7 +190,7 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
         <div className="flex items-center justify-between px-3 py-2">
           <div className="flex items-center gap-2">
             <IconLanguage className="size-4 text-muted-foreground" />
-            <span className="text-sm">语言</span>
+            <span className="text-sm">{tc("language")}</span>
           </div>
           <div className="flex rounded-lg border border-border">
             {(
@@ -234,17 +237,17 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
 
         {/* Footer */}
         <div className="flex items-center justify-center gap-3 px-3 py-2 text-[11px] text-muted-foreground">
-          <a href="/terms" className="hover:text-foreground">
+          <Link href="/terms" className="hover:text-foreground">
             Terms
-          </a>
+          </Link>
           <span className="text-border">|</span>
-          <a href="/privacy" className="hover:text-foreground">
+          <Link href="/privacy" className="hover:text-foreground">
             Privacy
-          </a>
+          </Link>
           <span className="text-border">|</span>
-          <a href="/blog" className="hover:text-foreground">
+          <Link href="/blog" className="hover:text-foreground">
             Blog
-          </a>
+          </Link>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

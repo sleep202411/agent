@@ -25,17 +25,23 @@ export interface CompositionProps {
 export const StoryboardComposition: React.FC<CompositionProps> = ({ shots, bgmUrl }) => {
   const { fps } = useVideoConfig();
 
-  let currentFrame = 0;
+  const shotFrames = shots.reduce<{ id: string; from: number; durationInFrames: number }[]>(
+    (acc, shot) => {
+      const durationInFrames = Math.max(Math.round(shot.duration * fps), 1);
+      const from =
+        acc.length > 0 ? acc[acc.length - 1].from + acc[acc.length - 1].durationInFrames : 0;
+      acc.push({ id: shot.id, from, durationInFrames });
+      return acc;
+    },
+    []
+  );
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
-      {shots.map((shot) => {
-        const durationInFrames = Math.max(Math.round(shot.duration * fps), 1);
-        const from = currentFrame;
-        currentFrame += durationInFrames;
-
+      {shots.map((shot, i) => {
+        const frame = shotFrames[i];
         return (
-          <Sequence key={shot.id} from={from} durationInFrames={durationInFrames}>
+          <Sequence key={shot.id} from={frame.from} durationInFrames={frame.durationInFrames}>
             <ShotScene shot={shot} />
           </Sequence>
         );

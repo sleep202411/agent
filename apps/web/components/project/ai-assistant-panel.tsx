@@ -22,7 +22,7 @@ import {
 } from "@tabler/icons-react";
 import { BorderGlow } from "@/components/ui/border-glow";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { marked } from "marked";
+import Markdown from "react-markdown";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { AssistantToolCard } from "@/components/project/assistant/assistant-tool-card";
@@ -58,32 +58,32 @@ const AI_AGENTS = [
   {
     key: "general",
     icon: <IconSparkles className="size-4" />,
-    name: "通用助手",
-    description: "自由提问，智能理解你的需求",
+    nameKey: "generalAgent" as const,
+    descKey: "generalAgentDesc" as const,
   },
   {
     key: "script",
     icon: <IconPencil className="size-4" />,
-    name: "剧本大师",
-    description: "拆剧本、分集、写台词、分析节奏",
+    nameKey: "scriptAgent" as const,
+    descKey: "scriptAgentDesc" as const,
   },
   {
     key: "storyboard",
     icon: <IconMovie className="size-4" />,
-    name: "分镜导演",
-    description: "生成分镜、镜头语言、景别运镜",
+    nameKey: "storyboardAgent" as const,
+    descKey: "storyboardAgentDesc" as const,
   },
   {
     key: "character",
     icon: <IconUser className="size-4" />,
-    name: "角色设计师",
-    description: "提取角色、生成形象、三视图",
+    nameKey: "characterAgent" as const,
+    descKey: "characterAgentDesc" as const,
   },
   {
     key: "scene",
     icon: <IconMapPin className="size-4" />,
-    name: "场景设计师",
-    description: "场景构建、氛围设计、全景图",
+    nameKey: "sceneAgent" as const,
+    descKey: "sceneAgentDesc" as const,
   },
 ] as const;
 
@@ -128,9 +128,56 @@ function isImageMime(mimeType?: string) {
   return Boolean(mimeType?.startsWith("image/"));
 }
 
-function renderMarkdown(text: string) {
-  return marked.parse(text || "", { breaks: true, gfm: true }) as string;
-}
+const markdownComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-3 last:mb-0">{children}</p>,
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong className="font-semibold">{children}</strong>
+  ),
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul className="mb-3 list-disc space-y-1 pl-4 last:mb-0">{children}</ul>
+  ),
+  ol: ({ children }: { children?: React.ReactNode }) => (
+    <ol className="mb-3 list-decimal space-y-1 pl-4 last:mb-0">{children}</ol>
+  ),
+  li: ({ children }: { children?: React.ReactNode }) => <li>{children}</li>,
+  code: ({ children, className }: { children?: React.ReactNode; className?: string }) => {
+    const isBlock = className?.includes("language-");
+    if (isBlock) {
+      return (
+        <code className="block overflow-x-auto rounded-lg bg-black/20 p-3 text-xs">{children}</code>
+      );
+    }
+    return <code className="rounded bg-black/20 px-1.5 py-0.5 text-xs">{children}</code>;
+  },
+  h1: ({ children }: { children?: React.ReactNode }) => (
+    <h1 className="mb-2 text-base font-bold">{children}</h1>
+  ),
+  h2: ({ children }: { children?: React.ReactNode }) => (
+    <h2 className="mb-2 text-sm font-bold">{children}</h2>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h3 className="mb-1 text-sm font-semibold">{children}</h3>
+  ),
+  blockquote: ({ children }: { children?: React.ReactNode }) => (
+    <blockquote className="mb-3 border-l-2 border-foreground/20 pl-3 italic last:mb-0">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-3 border-border" />,
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="mb-3 overflow-x-auto last:mb-0">
+      <table className="w-full border-collapse text-xs">{children}</table>
+    </div>
+  ),
+  th: ({ children }: { children?: React.ReactNode }) => (
+    <th className="border border-border bg-black/10 px-2 py-1 text-left font-semibold">
+      {children}
+    </th>
+  ),
+  td: ({ children }: { children?: React.ReactNode }) => (
+    <td className="border border-border px-2 py-1">{children}</td>
+  ),
+};
 
 function AssistantFilePreview({ attachment }: { attachment: AssistantAttachment }) {
   const href = attachment.previewUrl || attachment.url || attachment.path || "#";
@@ -182,12 +229,12 @@ function MessageBubble({
     >
       <div
         className={cn(
-          "max-w-[85%] px-2 py-2 text-[13px] leading-relaxed",
+          "max-w-full overflow-hidden px-2 py-2 text-[13px] leading-relaxed break-words",
           message.role === "user" ? "rounded-xl bg-muted" : ""
         )}
       >
         {message.metadata?.attachments?.length ? (
-          <div className="mb-2 grid gap-2">
+          <div className="mb-2 grid gap-2 overflow-hidden">
             {message.metadata.attachments.map((attachment) => (
               <AssistantFilePreview key={attachment.id} attachment={attachment} />
             ))}
@@ -200,9 +247,13 @@ function MessageBubble({
               return (
                 <div
                   key={`${message.id}-text-${index}`}
-                  className="prose prose-sm max-w-none text-foreground prose-p:my-2 prose-pre:overflow-x-auto prose-pre:rounded-xl prose-pre:bg-black/20 prose-pre:p-3 prose-code:text-foreground prose-strong:text-foreground prose-a:text-primary"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(part.text) }}
-                />
+                  className="max-w-none text-[13px] leading-relaxed"
+                >
+                  <Markdown components={markdownComponents}>{part.text}</Markdown>
+                  {part.state === "streaming" && (
+                    <span className="inline-block h-4 w-0.5 animate-pulse bg-foreground/60" />
+                  )}
+                </div>
               );
             }
 
@@ -295,6 +346,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const [selectedAgent, setSelectedAgent] = useState("general");
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const currentAgent = AI_AGENTS.find((a) => a.key === selectedAgent) ?? AI_AGENTS[0];
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -313,12 +365,22 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const submittingToolCallId = conversation?.submittingToolCallId ?? null;
   const error = conversation?.error ?? null;
 
+  // Auto-scroll: track the last message content length to detect streaming updates
+  const lastMessageLength = useMemo(() => {
+    const last = messages[messages.length - 1];
+    if (!last) return 0;
+    return last.parts.reduce(
+      (len, p) => len + ("text" in p && typeof p.text === "string" ? p.text.length : 0),
+      0
+    );
+  }, [messages]);
+
   useEffect(() => {
     messagesRef.current?.scrollTo({
       top: messagesRef.current.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, sending]);
+  }, [messages, sending, lastMessageLength]);
 
   // 当 store 中 draftInput 被清空时（发送后），同步清空 contentEditable DOM
   useEffect(() => {
@@ -566,22 +628,25 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
                 <IconPlus className="size-4" />
               </Button>
 
-              <Popover>
+              <Popover open={agentMenuOpen} onOpenChange={setAgentMenuOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" color="muted" size="sm" className="gap-1">
                     {currentAgent.icon}
-                    <span className="text-xs">{currentAgent.name}</span>
+                    <span className="text-xs">{t(currentAgent.nameKey)}</span>
                     <IconChevronDown className="size-3 text-muted-foreground" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="start" side="top" className="w-[260px] p-1.5">
+                <PopoverContent align="start" side="top" className="w-[260px] p-2!important gap-2">
                   {AI_AGENTS.map((agent) => (
                     <button
                       key={agent.key}
                       type="button"
-                      onClick={() => setSelectedAgent(agent.key)}
+                      onClick={() => {
+                        setSelectedAgent(agent.key);
+                        setAgentMenuOpen(false);
+                      }}
                       className={cn(
-                        "flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-3 py-2 text-left transition-colors",
+                        "flex w-full cursor-pointer items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors",
                         selectedAgent === agent.key
                           ? "bg-primary/10 text-primary"
                           : "hover:bg-muted"
@@ -589,8 +654,8 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
                     >
                       <span className="mt-0.5 shrink-0">{agent.icon}</span>
                       <div className="min-w-0">
-                        <div className="text-xs font-medium">{agent.name}</div>
-                        <div className="text-[11px] text-muted-foreground">{agent.description}</div>
+                        <div className="text-xs font-medium">{t(agent.nameKey)}</div>
+                        <div className="text-[11px] text-muted-foreground">{t(agent.descKey)}</div>
                       </div>
                     </button>
                   ))}

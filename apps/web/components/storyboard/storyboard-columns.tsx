@@ -24,7 +24,8 @@ export function createStoryboardColumns(
   onUpdateCell: (shotId: string, field: keyof StoryboardShot, value: unknown) => void,
   onDelete: (shotId: string) => void,
   editState: CellEditingState,
-  mentionItems: MentionItem[]
+  mentionItems: MentionItem[],
+  t?: (key: string) => string
 ) {
   return [
     col.display({
@@ -37,7 +38,7 @@ export function createStoryboardColumns(
     }),
 
     col.accessor("imageUrl", {
-      header: "缩略图",
+      header: t?.("columnThumbnail") ?? "缩略图",
       size: 120,
       cell: ({ row }) => (
         <ThumbnailCell
@@ -50,7 +51,7 @@ export function createStoryboardColumns(
 
     col.accessor("description", {
       id: "description",
-      header: "画面描述",
+      header: t?.("columnDescription") ?? "画面描述",
       size: 280,
       cell: ({ row }) => (
         <EditableTextCell
@@ -59,7 +60,9 @@ export function createStoryboardColumns(
           onSave={(v) => onUpdateCell(row.original.id, "description", v)}
           onStartEdit={() => editState.startEdit(row.index, "description")}
           onStopEdit={editState.stopEdit}
-          placeholder="描述画面内容... 输入 @ 引用角色/场景/道具"
+          placeholder={
+            t?.("descriptionCellPlaceholder") ?? "描述画面内容... 输入 @ 引用角色/场景/道具"
+          }
           mentionItems={mentionItems}
         />
       ),
@@ -67,7 +70,7 @@ export function createStoryboardColumns(
 
     col.accessor("videoPrompt", {
       id: "videoPrompt",
-      header: "视频描述",
+      header: t?.("columnVideoPrompt") ?? "视频描述",
       size: 200,
       cell: ({ row }) => (
         <EditableTextCell
@@ -76,7 +79,7 @@ export function createStoryboardColumns(
           onSave={(v) => onUpdateCell(row.original.id, "videoPrompt", v)}
           onStartEdit={() => editState.startEdit(row.index, "videoPrompt")}
           onStopEdit={editState.stopEdit}
-          placeholder="视频生成提示词..."
+          placeholder={t?.("videoPromptCellPlaceholder") ?? "视频生成提示词..."}
           mentionItems={mentionItems}
         />
       ),
@@ -84,7 +87,7 @@ export function createStoryboardColumns(
 
     col.accessor("shotSize", {
       id: "shotSize",
-      header: "景别",
+      header: t?.("columnShotSize") ?? "景别",
       size: 90,
       cell: ({ row }) => (
         <SelectCell
@@ -100,7 +103,7 @@ export function createStoryboardColumns(
 
     col.accessor("cameraMovement", {
       id: "cameraMovement",
-      header: "运镜",
+      header: t?.("columnCameraMovement") ?? "运镜",
       size: 90,
       cell: ({ row }) => (
         <SelectCell
@@ -116,7 +119,7 @@ export function createStoryboardColumns(
 
     col.accessor("dialogue", {
       id: "dialogue",
-      header: "对白",
+      header: t?.("columnDialogue") ?? "对白",
       size: 180,
       cell: ({ row }) => (
         <EditableTextCell
@@ -125,7 +128,7 @@ export function createStoryboardColumns(
           onSave={(v) => onUpdateCell(row.original.id, "dialogue", v)}
           onStartEdit={() => editState.startEdit(row.index, "dialogue")}
           onStopEdit={editState.stopEdit}
-          placeholder="角色对白... 输入 @ 引用角色"
+          placeholder={t?.("dialogueCellPlaceholder") ?? "角色对白... 输入 @ 引用角色"}
           mentionItems={mentionItems}
           allowedMentionTypes={["character"]}
           showAvatar={false}
@@ -136,7 +139,7 @@ export function createStoryboardColumns(
 
     col.accessor("narration", {
       id: "narration",
-      header: "旁白",
+      header: t?.("columnNarration") ?? "旁白",
       size: 150,
       cell: ({ row }) => (
         <EditableTextCell
@@ -145,7 +148,7 @@ export function createStoryboardColumns(
           onSave={(v) => onUpdateCell(row.original.id, "narration", v)}
           onStartEdit={() => editState.startEdit(row.index, "narration")}
           onStopEdit={editState.stopEdit}
-          placeholder="旁白文本..."
+          placeholder={t?.("narrationCellPlaceholder") ?? "旁白文本..."}
           mentionItems={mentionItems}
         />
       ),
@@ -153,7 +156,7 @@ export function createStoryboardColumns(
 
     col.accessor("duration", {
       id: "duration",
-      header: "时长",
+      header: t?.("columnDuration") ?? "时长",
       size: 70,
       cell: ({ row }) => (
         <NumberCell
@@ -168,7 +171,7 @@ export function createStoryboardColumns(
 
     col.display({
       id: "actions",
-      header: "操作",
+      header: t?.("columnActions") ?? "操作",
       size: 80,
       cell: ({ row }) => (
         <ActionCell

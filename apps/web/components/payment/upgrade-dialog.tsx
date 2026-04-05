@@ -237,9 +237,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
           <IconCrown className="size-8 text-white" />
         </div>
         <h1 className="mb-2 text-3xl font-bold">{t("upgrade")}</h1>
-        <p className="mb-14 text-center text-muted-foreground">
-          解锁更多 AI 创作能力，提升你的制作效率
-        </p>
+        <p className="mb-14 text-center text-muted-foreground">{t("unlockMore")}</p>
 
         {step === "select" && (
           <>
@@ -290,7 +288,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                       </div>
                       <div className="mb-5 text-xs text-muted-foreground/60">
                         {pkg.durationDays >= 30
-                          ? `按 ${pkg.durationDays} ${t("days")}计费`
+                          ? t("billingPeriod", { days: pkg.durationDays, unit: t("days") })
                           : `${pkg.durationDays} ${t("days")}`}
                       </div>
 
@@ -341,8 +339,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
 
             {/* Disclaimer */}
             <p className="mt-10 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground/40">
-              订阅即表示你同意我们的服务条款。套餐为一次性购买，有效期内不支持退款。积分权益将在支付成功后立即发放。本活动最终解释权归
-              FizzDragon 所有。
+              {t("disclaimer")}
             </p>
           </>
         )}

@@ -132,7 +132,7 @@ export function LipSyncCell({ cell, shotId, shotColumnId, row, column }: LipSync
         }
       }
     },
-    [cell?.id, files, updateFilesState]
+    [cell, files, updateFilesState]
   );
 
   const handleGenerateSuccess = useCallback(() => {

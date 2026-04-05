@@ -467,8 +467,8 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
 
       toast.info(
         type === "image"
-          ? `开始导出 ${finalAssets.length} 张定稿图片`
-          : `开始导出 ${finalAssets.length} 个定稿视频`
+          ? t("startExportImages", { count: finalAssets.length })
+          : t("startExportVideos", { count: finalAssets.length })
       );
 
       for (const asset of finalAssets) {
@@ -536,7 +536,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
         setBatchGenerating({ shotId: item.shotId, columnId: item.columnId, generating: true })
       )
     );
-    toast.info(`已开始批量生成 ${queue.length} 个镜头`);
+    toast.info(t("startBatchGenerate", { count: queue.length }));
 
     try {
       let interrupted = false;
@@ -633,7 +633,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
         setBatchGenerating({ shotId: item.shotId, columnId: item.columnId, generating: true })
       )
     );
-    toast.info(`已开始批量生成 ${queue.length} 条配音`);
+    toast.info(t("startBatchVoice", { count: queue.length }));
 
     try {
       let interrupted = false;
@@ -728,13 +728,13 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
                   {isImageColumn ? (
                     <DropdownMenuItem onSelect={() => void handleBatchExport("image")}>
                       <IconDownload className="size-4" />
-                      批量导出定稿图
+                      {t("batchExportFinalizedImages")}
                     </DropdownMenuItem>
                   ) : null}
                   {isVideoColumn ? (
                     <DropdownMenuItem onSelect={() => void handleBatchExport("video")}>
                       <IconDownload className="size-4" />
-                      批量导出定稿视频
+                      {t("batchExportFinalizedVideos")}
                     </DropdownMenuItem>
                   ) : null}
                 </DropdownMenuContent>
@@ -784,9 +784,9 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
           className="rounded-xl border border-border bg-[#262626] text-white sm:max-w-[420px]"
         >
           <DialogHeader>
-            <DialogTitle>自动关联</DialogTitle>
+            <DialogTitle>{t("autoAssociateTitle")}</DialogTitle>
             <DialogDescription className="text-xs text-[#8F8F92]">
-              按旧 workspace 逻辑自动回填当前列关联内容。
+              {t("autoAssociateDesc")}
             </DialogDescription>
           </DialogHeader>
           <Field
@@ -799,9 +799,9 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
               disabled={autoloadLoading}
             />
             <div className="space-y-1">
-              <FieldLabel className="text-sm font-medium">覆盖已有内容</FieldLabel>
+              <FieldLabel className="text-sm font-medium">{t("overwriteExisting")}</FieldLabel>
               <FieldDescription className="text-xs text-[#8F8F92]">
-                打开后会重新覆盖旧数据，关闭则只补齐空白项。
+                {t("overwriteExistingDesc")}
               </FieldDescription>
             </div>
           </Field>
@@ -837,9 +837,9 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
           className="rounded-xl border border-border bg-[#262626] text-white sm:max-w-[420px]"
         >
           <DialogHeader>
-            <DialogTitle>一键关联角色配音</DialogTitle>
+            <DialogTitle>{t("voiceAutoAssociateTitle")}</DialogTitle>
             <DialogDescription className="text-xs text-[#8F8F92]">
-              按旧 workspace 逻辑，用角色配置的一键配音信息回填当前列。
+              {t("voiceAutoAssociateDesc")}
             </DialogDescription>
           </DialogHeader>
           <Field
@@ -852,9 +852,9 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
               disabled={voiceAutoloadLoading}
             />
             <div className="space-y-1">
-              <FieldLabel className="text-sm font-medium">覆盖已有内容</FieldLabel>
+              <FieldLabel className="text-sm font-medium">{t("overwriteExisting")}</FieldLabel>
               <FieldDescription className="text-xs text-[#8F8F92]">
-                打开后会覆盖已有配音，关闭则只补齐空白项。
+                {t("voiceOverwriteDesc")}
               </FieldDescription>
             </div>
           </Field>

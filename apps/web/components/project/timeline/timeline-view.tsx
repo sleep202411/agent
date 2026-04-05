@@ -93,6 +93,7 @@ import {
 export function TimelineView() {
   const ts = useTranslations("storyboard");
   const tc = useTranslations("common");
+  const tt = useTranslations("timeline");
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((state) => state.project.currentProjectId);
   const detail = useAppSelector((state) => selectCurrentInstance(state).detail);
@@ -767,8 +768,8 @@ export function TimelineView() {
                   <path d="M21 15l-5-5L5 21" />
                 </svg>
               </div>
-              <span className="text-base font-medium text-[#888]">暂无可预览分镜</span>
-              <span className="text-[13px] text-[#555]">当前剧集还没有带图片或视频的镜头</span>
+              <span className="text-base font-medium text-[#888]">{tt("noPreviewShots")}</span>
+              <span className="text-[13px] text-[#555]">{tt("noPreviewShotsHint")}</span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
@@ -798,7 +799,10 @@ export function TimelineView() {
                 />
               </div>
               <div className="text-sm text-muted-foreground">
-                镜头 {Math.min(currentShotIndex + 1, Math.max(shots.length, 1))} / {shots.length}
+                {tt("shotProgress", {
+                  current: Math.min(currentShotIndex + 1, Math.max(shots.length, 1)),
+                  total: shots.length,
+                })}
               </div>
             </div>
           )}
@@ -852,11 +856,11 @@ export function TimelineView() {
               >
                 {isLoading ? (
                   <div className="flex h-full items-center justify-center px-3 text-sm text-[#666]">
-                    加载中...
+                    {tt("loadingShots")}
                   </div>
                 ) : shots.length === 0 ? (
                   <div className="flex h-full items-center justify-center px-3 text-sm text-[#666]">
-                    暂无镜头
+                    {tt("noShots")}
                   </div>
                 ) : (
                   <div
@@ -1083,12 +1087,10 @@ export function TimelineView() {
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>{ts("shotDuration")}</DialogTitle>
-            <DialogDescription className="sr-only">
-              设置当前镜头在时间线中的播放时长
-            </DialogDescription>
+            <DialogDescription className="sr-only">{tt("setDurationDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <div className="text-sm text-muted-foreground">请输入秒数</div>
+            <div className="text-sm text-muted-foreground">{tt("enterSeconds")}</div>
             <Input
               type="number"
               min={MIN_DURATION}
@@ -1111,7 +1113,7 @@ export function TimelineView() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{tc("delete")}</AlertDialogTitle>
-            <AlertDialogDescription>确认删除这个镜头吗？删除后不可恢复。</AlertDialogDescription>
+            <AlertDialogDescription>{tt("confirmDeleteShot")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>

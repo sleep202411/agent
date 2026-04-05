@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import {
   IconDownload,
   IconLoader2,
@@ -62,10 +63,13 @@ export function ResultGallery({
   mediaType = "image",
   columns = 3,
   aspectRatio = "square",
-  emptyText = "暂无生成记录",
+  emptyText,
   showActions = true,
   actions = ["collect", "setPreferred", "download", "delete"],
 }: ResultGalleryProps) {
+  const t = useTranslations("storyboard");
+  const resolvedEmptyText = emptyText ?? t("noGenerationRecords");
+
   if (error) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -86,8 +90,8 @@ export function ResultGallery({
   if (items.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-        <p className="text-xs">{emptyText}</p>
-        <p className="text-[11px] text-muted-foreground/60">输入提示词开始生成</p>
+        <p className="text-xs">{resolvedEmptyText}</p>
+        <p className="text-[11px] text-muted-foreground/60">{t("enterPromptToGenerate")}</p>
       </div>
     );
   }
@@ -136,7 +140,7 @@ export function ResultGallery({
             >
               <IconAlertCircle className="size-4 text-destructive/60" />
               <p className="px-2 text-center text-[10px] text-destructive/60">
-                {item.error ?? "失败"}
+                {item.error ?? t("failedStatus")}
               </p>
               <div className="absolute inset-x-0 bottom-0 flex justify-center gap-1 bg-gradient-to-t from-black/60 to-transparent p-1.5">
                 {item.error ? (
@@ -213,7 +217,7 @@ export function ResultGallery({
             {/* Applied badge */}
             {isApplied && (
               <div className="absolute left-1 top-1 rounded bg-primary/90 px-1 py-0.5 text-[9px] font-medium text-white">
-                {isPreferred ? "定稿" : "已用"}
+                {isPreferred ? t("finalized") : t("used")}
               </div>
             )}
 
@@ -230,7 +234,7 @@ export function ResultGallery({
                     "flex size-6 items-center justify-center rounded text-white transition-colors",
                     isApplied ? "bg-primary" : "bg-black/40 hover:bg-primary"
                   )}
-                  title={isApplied ? "移除" : "添加到镜头"}
+                  title={isApplied ? t("removeAction") : t("addToShotTitle")}
                 >
                   <span className="text-[10px]">★</span>
                 </button>
@@ -246,7 +250,7 @@ export function ResultGallery({
                     "flex size-6 items-center justify-center rounded text-white transition-colors",
                     isPreferred ? "bg-primary" : "bg-black/40 hover:bg-primary"
                   )}
-                  title={isPreferred ? "取消定稿" : "设为定稿"}
+                  title={isPreferred ? t("cancelFinalize") : t("setFinalize")}
                 >
                   <IconCircleCheck className="size-3" />
                 </button>
@@ -259,7 +263,7 @@ export function ResultGallery({
                     onSetReference(item);
                   }}
                   className="flex size-6 items-center justify-center rounded bg-black/40 text-white transition-colors hover:bg-primary"
-                  title="设为参考"
+                  title={t("setAsReference")}
                 >
                   <IconReplace className="size-3" />
                 </button>
@@ -272,7 +276,7 @@ export function ResultGallery({
                     onDownload(item);
                   }}
                   className="flex size-6 items-center justify-center rounded bg-black/40 text-white transition-colors hover:bg-primary"
-                  title="下载"
+                  title="Download"
                 >
                   <IconDownload className="size-3" />
                 </button>

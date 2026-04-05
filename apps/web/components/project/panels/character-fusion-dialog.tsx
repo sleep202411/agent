@@ -148,7 +148,7 @@ async function loadAllProps(worldId: string) {
         })();
         return {
           id: String(item.id ?? ""),
-          name: String(item.name ?? "未命名道具"),
+          name: String(item.name ?? ""),
           image: String(item.propImgPath?.[0] ?? item.thumbnail ?? extraImage),
         };
       })
@@ -179,7 +179,9 @@ function PropPickerDialog({
   value: PropOption[];
   onConfirm: (items: PropOption[]) => void;
 }) {
+  const t = useTranslations("character");
   const tc = useTranslations("common");
+  const tp = useTranslations("prop");
   const [keyword, setKeyword] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
@@ -199,15 +201,15 @@ function PropPickerDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>选择道具</DialogTitle>
-          <DialogDescription>选中的道具图片会作为角色溶图的附加参考图。</DialogDescription>
+          <DialogTitle>{t("selectPropTitle")}</DialogTitle>
+          <DialogDescription>{t("selectPropDescription")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <Input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
-            placeholder="搜索道具名称"
+            placeholder={t("searchPropName")}
           />
 
           <div className="max-h-[420px] overflow-auto rounded-xl border border-border">
@@ -248,14 +250,16 @@ function PropPickerDialog({
                           </div>
                         ) : null}
                       </div>
-                      <div className="truncate px-2 py-2 text-center text-sm">{item.name}</div>
+                      <div className="truncate px-2 py-2 text-center text-sm">
+                        {item.name || tp("unnamedProp")}
+                      </div>
                     </button>
                   );
                 })}
               </div>
             ) : (
               <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-                暂无道具
+                {t("noProps")}
               </div>
             )}
           </div>
@@ -366,7 +370,7 @@ export function CharacterFusionDialog({
       setHistory(items);
     } catch (error) {
       console.error("[CharacterFusionDialog] 加载历史失败:", error);
-      toast.error("加载角色溶图记录失败");
+      toast.error(t("fusionHistoryFailed"));
       setHistory([]);
     } finally {
       setHistoryLoading(false);
@@ -455,7 +459,7 @@ export function CharacterFusionDialog({
         setPreviewItem((current) => current ?? nextItem);
       })
       .catch((error) => {
-        const message = error instanceof Error ? error.message : "生成失败";
+        const message = error instanceof Error ? error.message : t("fusionGenerateFailed");
         setQueue((current) =>
           current.map((item) =>
             item.id === nextTask.id ? { ...item, status: "failed", error: message } : item
@@ -472,11 +476,11 @@ export function CharacterFusionDialog({
     const trimmedPrompt = prompt.trim();
     const roleId = Number(character?.id ?? 0);
     if (!trimmedPrompt) {
-      toast.warning("请输入角色溶图描述");
+      toast.warning(t("enterPromptFirst"));
       return;
     }
     if (!roleId || !characterImage) {
-      toast.warning("当前角色缺少底图，无法开始角色溶图");
+      toast.warning(t("missingBaseImage"));
       return;
     }
 
@@ -496,7 +500,7 @@ export function CharacterFusionDialog({
 
     setQueue((current) => [...nextTasks, ...current]);
     queueMicrotask(processQueue);
-    toast.success(`已添加 ${count} 个角色溶图任务`);
+    toast.success(t("fusionTasksAdded", { count }));
   }, [character?.id, characterImage, count, model, processQueue, prompt, selectedProps]);
 
   const handleDelete = useCallback(
@@ -561,7 +565,7 @@ export function CharacterFusionDialog({
     if (!previewItem) return;
     const name = roleName.trim();
     if (!name) {
-      toast.warning("请输入角色形象名称");
+      toast.warning(t("imageNamePlaceholder"));
       return;
     }
     const duplicated = existingRoles.some((role) =>
@@ -574,12 +578,15 @@ export function CharacterFusionDialog({
     void performSelect();
   }, [existingRoles, performSelect, previewItem, roleName]);
 
-  const handleSetReference = useCallback((item: FusionQueueItem) => {
-    const nextUrl = item.url || "";
-    if (!nextUrl) return;
-    setActiveCharacterImage(nextUrl);
-    toast.success("已设为角色底图");
-  }, []);
+  const handleSetReference = useCallback(
+    (item: FusionQueueItem) => {
+      const nextUrl = item.url || "";
+      if (!nextUrl) return;
+      setActiveCharacterImage(nextUrl);
+      toast.success(t("setAsBaseImage"));
+    },
+    [t]
+  );
 
   const handlePreviewVariant = useCallback((name: string, path: string) => {
     const url = ossUrl(path);
@@ -605,10 +612,8 @@ export function CharacterFusionDialog({
           <DialogHeader className="border-b border-border px-6 py-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <DialogTitle>AI 角色溶图</DialogTitle>
-                <DialogDescription>
-                  以当前角色底图为基础，叠加描述和道具参考图生成新的角色形象。
-                </DialogDescription>
+                <DialogTitle>{t("fusionTitle")}</DialogTitle>
+                <DialogDescription>{t("fusionDescription")}</DialogDescription>
               </div>
               <Button
                 variant="ghost"
@@ -659,26 +664,26 @@ export function CharacterFusionDialog({
                       <div className="absolute right-3 top-3 flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm">
                         <IconButton
                           onClick={() => handleSetReference(previewItem)}
-                          title="设为角色底图"
+                          title={t("setAsBaseImageTitle")}
                           icon={<IconReplace className="size-4" />}
                         />
                         <IconButton
                           onClick={() =>
                             previewItem.url && downloadUrl(previewItem.url, "character-fusion.png")
                           }
-                          title="下载"
+                          title={tc("download")}
                           icon={<IconDownload className="size-4" />}
                         />
                         {previewItem.fromHistory || previewItem.fromQueue ? (
                           <IconButton
                             onClick={() => void handleDelete(previewItem)}
-                            title="删除"
+                            title={tc("delete")}
                             icon={<IconTrash className="size-4" />}
                           />
                         ) : null}
                         <IconButton
                           onClick={() => setFullPreviewUrl(previewItem.url || "")}
-                          title="查看大图"
+                          title={tc("viewFullImage")}
                           icon={<IconArrowsMaximize className="size-4" />}
                         />
                       </div>
@@ -687,7 +692,7 @@ export function CharacterFusionDialog({
                         <Input
                           value={roleName}
                           onChange={(event) => setRoleName(event.target.value)}
-                          placeholder="请输入角色形象名称"
+                          placeholder={t("imageNamePlaceholder")}
                           className="h-9 border-white/10 bg-white/5"
                         />
                         <Button
@@ -695,14 +700,14 @@ export function CharacterFusionDialog({
                           disabled={!previewItem || selecting}
                         >
                           {selecting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-                          保存形象
+                          {t("saveImage")}
                         </Button>
                       </div>
                     </>
                   ) : (
                     <div className="flex flex-col items-center gap-2 text-muted-foreground/60">
                       <IconPhoto className="size-8" />
-                      <div className="text-sm">点击左侧记录预览</div>
+                      <div className="text-sm">{t("clickToPreview")}</div>
                     </div>
                   )}
                 </div>
@@ -710,7 +715,7 @@ export function CharacterFusionDialog({
                 {otherImgList.length > 0 ? (
                   <div className="flex w-[128px] shrink-0 flex-col border-l border-border/60">
                     <div className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
-                      其他形象
+                      {t("otherVariants")}
                     </div>
                     <div className="flex-1 overflow-auto p-2">
                       <div className="space-y-2">
@@ -737,10 +742,10 @@ export function CharacterFusionDialog({
                                     const nextUrl = ossUrl(item.path);
                                     if (!nextUrl) return;
                                     setActiveCharacterImage(nextUrl);
-                                    toast.success("已设为角色底图");
+                                    toast.success(t("setAsBaseImage"));
                                   }}
                                   className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:bg-primary group-hover:opacity-100"
-                                  title="设为角色底图"
+                                  title={t("setAsBaseImageTitle")}
                                 >
                                   <IconReplace className="size-3.5" />
                                 </button>
@@ -770,7 +775,7 @@ export function CharacterFusionDialog({
                           className="size-12 rounded-md object-cover"
                         />
                         <span className="max-w-[140px] truncate text-xs text-foreground/85">
-                          {character.name || "角色底图"}
+                          {character.name || t("baseImage")}
                         </span>
                       </div>
                     ) : null}
@@ -808,7 +813,7 @@ export function CharacterFusionDialog({
                       className="flex h-12 items-center gap-1 rounded-lg border border-dashed border-border px-3 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
                     >
                       <IconPlus className="size-4" />
-                      选择道具
+                      {t("selectProp")}
                     </button>
                   </div>
 
@@ -817,7 +822,7 @@ export function CharacterFusionDialog({
                     className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                   >
                     <IconWand className="size-3" />
-                    <span>进入编辑模式</span>
+                    <span>{t("enterEditMode")}</span>
                   </button>
                 </div>
 
@@ -825,7 +830,7 @@ export function CharacterFusionDialog({
                   <Textarea
                     value={prompt}
                     onChange={(event) => setPrompt(event.target.value)}
-                    placeholder="描述你想生成的角色形象，可以结合当前角色和道具参考图"
+                    placeholder={t("fusionPromptPlaceholder")}
                     rows={4}
                     className="min-h-[120px] resize-none border-0 bg-transparent px-0 text-sm leading-relaxed shadow-none outline-none focus-visible:ring-0"
                   />
@@ -909,16 +914,16 @@ export function CharacterFusionDialog({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>形象名称已存在</AlertDialogTitle>
+            <AlertDialogTitle>{t("imageNameExists")}</AlertDialogTitle>
             <AlertDialogDescription>
-              角色形象名“{duplicateName}”已经存在，继续保存会覆盖原有形象。是否继续？
+              {t("imageNameExistsDesc", { name: duplicateName })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void performSelect()} disabled={selecting}>
               {selecting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-              覆盖保存
+              {t("overwriteSave")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -929,7 +934,7 @@ export function CharacterFusionDialog({
         onOpenChange={(open) => !open && setFullPreviewUrl("")}
         type="image"
         src={fullPreviewUrl}
-        name="角色溶图预览"
+        name={t("fusionPreview")}
         link={fullPreviewUrl}
       />
     </>

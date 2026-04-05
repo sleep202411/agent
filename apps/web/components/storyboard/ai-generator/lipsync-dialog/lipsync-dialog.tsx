@@ -53,6 +53,7 @@ export function AiLipSyncGeneratorDialog({
   onGeneratingChange,
   onGenerateSuccess,
 }: AiLipSyncGeneratorDialogProps) {
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const { models: cachedLipSyncModels } = useRawAiModels(AI_MODEL_PATHS.lipSync);
@@ -125,7 +126,9 @@ export function AiLipSyncGeneratorDialog({
       voiceModels.find((item) => String(item.serviceCode ?? "") === voiceModel)?.integralCost ?? 0
     )
   );
-  const title = shotNumber ? `AI 对口型 - 镜头 ${shotNumber}` : "AI 对口型";
+  const title = shotNumber
+    ? t("aiLipSyncTitle", { number: shotNumber })
+    : t("aiLipSyncTitleDefault");
   const previewIsPreferred = currentPreviewItem?.path
     ? currentPreviewItem.path === preferredPath
     : false;
@@ -175,7 +178,7 @@ export function AiLipSyncGeneratorDialog({
         }
       } catch (error) {
         console.error("[AiLipSyncGeneratorDialog] 加载音色失败:", error);
-        toast.error("加载音色失败");
+        toast.error(t("loadVoicesFailed"));
       } finally {
         setLoadingVoices(false);
       }
@@ -316,7 +319,7 @@ export function AiLipSyncGeneratorDialog({
         void loadAudioHistory();
       } catch (error) {
         console.error("[AiLipSyncGeneratorDialog] 初始化失败:", error);
-        toast.error("初始化对口型工具失败");
+        toast.error(t("initLipSyncFailed"));
       } finally {
         if (active) {
           setLoadingLipSyncModels(false);
@@ -417,11 +420,11 @@ export function AiLipSyncGeneratorDialog({
   const handleGenerateAudio = async () => {
     const prompt = narrationText.trim();
     if (!prompt) {
-      toast.warning("请先输入旁白或对白");
+      toast.warning(t("enterNarrationFirst"));
       return;
     }
     if (!audioColumnId) {
-      toast.warning("当前镜头没有配音列，无法生成音频");
+      toast.warning(t("noAudioColumn"));
       return;
     }
 
@@ -496,11 +499,11 @@ export function AiLipSyncGeneratorDialog({
 
   const handleGenerateVideo = async () => {
     if (!referenceVideo.trim()) {
-      toast.warning("请先选择参考视频");
+      toast.warning(t("selectReferenceVideo"));
       return;
     }
     if (!referenceAudio.trim()) {
-      toast.warning("请先选择参考音频");
+      toast.warning(t("selectReferenceAudio"));
       return;
     }
 
@@ -598,7 +601,7 @@ export function AiLipSyncGeneratorDialog({
           <DialogHeader className="shrink-0 border-b border-white/10 px-6 py-4">
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription className="text-xs text-[#8F8F92]">
-              左侧先选或生成音频，右侧配置参考视频与人脸，再把结果保存到当前镜头的对口型列。
+              {t("aiLipSyncDesc")}
             </DialogDescription>
           </DialogHeader>
 

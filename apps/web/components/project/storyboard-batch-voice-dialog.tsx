@@ -43,6 +43,7 @@ export function StoryboardBatchVoiceDialog({
   onOpenChange,
   onConfirm,
 }: StoryboardBatchVoiceDialogProps) {
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const { models: cachedModels, loading: loadingModels } = useRawAiModels(AI_MODEL_PATHS.voice);
   const models = cachedModels as RawAiModel[];
@@ -114,18 +115,22 @@ export function StoryboardBatchVoiceDialog({
 
   useEffect(() => {
     if (models.length === 0) return;
-    const defaultModel =
+    const defaultModelCode =
       models.find((item) => item.isDefault)?.serviceCode ?? models[0]?.serviceCode ?? "";
-    const modelCode = String(defaultModel);
+    const modelCode = String(defaultModelCode);
     setModel(modelCode);
     if (modelCode) {
-      loadVoices(modelCode);
+      const cleanup = loadVoices(modelCode);
+      return () => {
+        cleanup();
+        stopAudio();
+      };
     }
-
     return () => {
       stopAudio();
     };
-  }, [models, loadVoices]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models]);
 
   const handleModelChange = (nextModelCode: string) => {
     setModel(nextModelCode);
@@ -172,15 +177,15 @@ export function StoryboardBatchVoiceDialog({
         className="gap-0 rounded-xl border border-border bg-[#262626] p-0 text-white sm:max-w-[540px]"
       >
         <DialogHeader className="border-b border-white/10 px-6 py-4">
-          <DialogTitle>批量生成配音</DialogTitle>
+          <DialogTitle>{t("batchVoiceTitle")}</DialogTitle>
           <DialogDescription className="text-xs text-[#8F8F92]">
-            旧 workspace 的配音批量链路：选择模型和音色后，逐个读取对白列生成音频。
+            {t("batchVoiceDesc")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 px-6 py-5">
           <div className="space-y-2">
-            <div className="text-sm font-medium">模型</div>
+            <div className="text-sm font-medium">{t("modelLabel")}</div>
             <NativeSelect
               value={model}
               onChange={(event) => handleModelChange(event.target.value)}
@@ -188,7 +193,7 @@ export function StoryboardBatchVoiceDialog({
               className="w-full"
             >
               <NativeSelectOption value="" disabled>
-                {loadingModels ? "加载模型中..." : "请选择模型"}
+                {loadingModels ? t("loadingModels") : t("selectModel")}
               </NativeSelectOption>
               {modelOptions.map((option) => (
                 <NativeSelectOption key={option.value} value={option.value}>
@@ -197,20 +202,22 @@ export function StoryboardBatchVoiceDialog({
               ))}
             </NativeSelect>
             {currentModelCost ? (
-              <div className="text-xs text-[#8F8F92]">每段配音约消耗 {currentModelCost} 积分</div>
+              <div className="text-xs text-[#8F8F92]">
+                {t("costPerVoice", { cost: currentModelCost })}
+              </div>
             ) : null}
           </div>
 
           <div className="space-y-3">
-            <div className="text-sm font-medium">音色</div>
+            <div className="text-sm font-medium">{t("voiceLabel")}</div>
             {loadingVoices ? (
               <div className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.03] px-4 py-4 text-sm text-[#8F8F92]">
                 <IconLoader2 className="size-4 animate-spin" />
-                加载音色中...
+                {t("loadingVoices")}
               </div>
             ) : !model ? (
               <div className="rounded-lg border border-white/8 bg-white/[0.03] px-4 py-4 text-sm text-[#8F8F92]">
-                请先选择模型
+                {t("selectModelFirst")}
               </div>
             ) : (
               <>
@@ -251,7 +258,7 @@ export function StoryboardBatchVoiceDialog({
                       >
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium">
-                            {voice.voiceName || "未命名音色"}
+                            {voice.voiceName || t("unnamedVoice")}
                           </div>
                           {voice.voiceDescription ? (
                             <div className="mt-1 line-clamp-2 text-xs text-[#8F8F92]">
@@ -261,7 +268,7 @@ export function StoryboardBatchVoiceDialog({
                         </div>
                         <div className="ml-3 flex shrink-0 items-center gap-2">
                           <span className="text-xs text-[#8F8F92]">
-                            {active ? "已选中" : "点击选择"}
+                            {active ? t("voiceSelected") : t("voiceClickToSelect")}
                           </span>
                           <span
                             onClick={(event) => {
@@ -283,7 +290,7 @@ export function StoryboardBatchVoiceDialog({
 
                   {!currentVoices.length ? (
                     <div className="rounded-lg border border-white/8 bg-white/[0.03] px-4 py-4 text-sm text-[#8F8F92]">
-                      当前分组下暂无可用音色
+                      {t("noVoicesInGroup")}
                     </div>
                   ) : null}
                 </div>

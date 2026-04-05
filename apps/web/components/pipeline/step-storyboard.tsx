@@ -74,13 +74,13 @@ export function StepStoryboard() {
     <div className="w-full">
       <div className="mb-1 flex items-center justify-between">
         <div>
-          <h3 className="text-base font-semibold">共 {storyboards.length} 集</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            分镜脚本生成100字符消耗2积分，以实际生成为准
-          </p>
+          <h3 className="text-base font-semibold">
+            {t("totalEpisodes", { count: storyboards.length })}
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">{t("storyboardCreditNote")}</p>
         </div>
         <Button variant="outline" color="muted" size="sm">
-          多选
+          {t("multiSelect")}
         </Button>
       </div>
 
@@ -112,6 +112,7 @@ function StoryboardCard({
   onEdit: () => void;
   onPreview: () => void;
 }) {
+  const t = useTranslations("pipeline");
   const tc = useTranslations("common");
   const totalDuration = storyboard.shots.reduce((sum, shot) => sum + shot.duration, 0);
   const firstImage = storyboard.shots.find((s) => s.imageUrl)?.imageUrl;
@@ -153,15 +154,15 @@ function StoryboardCard({
           <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
               <IconUsers className="size-3.5" />
-              {characterCount} 角色
+              {characterCount} {t("characters")}
             </span>
             <span className="flex items-center gap-1">
               <IconMapPin className="size-3.5" />
-              {sceneCount} 场景
+              {sceneCount} {t("scenes")}
             </span>
             <span className="flex items-center gap-1">
               <IconLayoutList className="size-3.5" />
-              {shotCount} 分镜
+              {shotCount} {t("shots")}
             </span>
           </div>
         </div>

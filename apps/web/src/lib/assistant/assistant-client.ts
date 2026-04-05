@@ -118,7 +118,14 @@ export async function sendAssistantChat({
   const stream = toChunkStream(response.body);
   let latest: AssistantMessage | null = null;
 
+  const placeholderMessage: AssistantMessage = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [],
+  };
+
   for await (const message of readUIMessageStream({
+    message: placeholderMessage as Parameters<typeof readUIMessageStream>[0]["message"],
     stream,
   })) {
     latest = message as AssistantMessage;

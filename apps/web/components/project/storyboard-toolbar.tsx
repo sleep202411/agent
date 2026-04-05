@@ -191,7 +191,7 @@ export function StoryboardToolbar() {
             onClick={() => setShowAiImport(true)}
           >
             <IconDownload className="size-4" />
-            AI Import Storyboard
+            {t("aiImportStoryboard")}
           </Button>
 
           <Button
@@ -205,7 +205,7 @@ export function StoryboardToolbar() {
             ) : (
               <IconUpload className="size-4" />
             )}
-            Export Storyboard
+            {t("exportStoryboard")}
           </Button>
 
           {formattedProjectSize ? (
@@ -215,7 +215,7 @@ export function StoryboardToolbar() {
               color="muted"
               onClick={() => setShowProjectEditor(true)}
             >
-              <span>Project Size: {formattedProjectSize}</span>
+              <span>{`Project Size: ${formattedProjectSize}`}</span>
               <IconPencil className="size-3.5" />
             </Button>
           ) : null}
