@@ -3,74 +3,58 @@ name: Deploy
 on:
   push:
     branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        description: "Deploy target"
+        options:
+          - staging
+          - production
+        default: staging
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
 
 env:
-  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/fizzdragon-pte-ltd-2
 
 jobs:
-  # ─── Determine environment ─────────────────────────────
+  # ─── Resolve deployment targets ───────────────────────
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      env: ${{ steps.vars.outputs.env }}
-      tag: ${{ steps.vars.outputs.tag }}
-      deploy_host: ${{ steps.vars.outputs.deploy_host }}
-      deploy_user: ${{ steps.vars.outputs.deploy_user }}
-      oss_base_url: ${{ steps.vars.outputs.oss_base_url }}
-      java_studio_url: ${{ steps.vars.outputs.java_studio_url }}
-      java_content_url: ${{ steps.vars.outputs.java_content_url }}
+      targets: ${{ steps.resolve.outputs.targets }}
+      server_tag: ${{ steps.resolve.outputs.server_tag }}
     steps:
-      - id: vars
+      - name: Resolve environment
+        id: resolve
         run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "env=production"       >> $GITHUB_OUTPUT
-            echo "tag=production"       >> $GITHUB_OUTPUT
-            echo "deploy_host=${{ secrets.PROD_HOST }}"           >> $GITHUB_OUTPUT
-            echo "deploy_user=${{ secrets.PROD_USER }}"           >> $GITHUB_OUTPUT
-            echo "oss_base_url=${{ secrets.PROD_OSS_BASE_URL }}"  >> $GITHUB_OUTPUT
-            echo "java_studio_url=${{ secrets.PROD_JAVA_STUDIO_URL }}"   >> $GITHUB_OUTPUT
-            echo "java_content_url=${{ secrets.PROD_JAVA_CONTENT_URL }}" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ inputs.environment }}"
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            ENV="production"
           else
-            echo "env=staging"          >> $GITHUB_OUTPUT
-            echo "tag=staging"          >> $GITHUB_OUTPUT
-            echo "deploy_host=${{ secrets.STAGING_HOST }}"           >> $GITHUB_OUTPUT
-            echo "deploy_user=${{ secrets.STAGING_USER }}"           >> $GITHUB_OUTPUT
-            echo "oss_base_url=${{ secrets.STAGING_OSS_BASE_URL }}"  >> $GITHUB_OUTPUT
-            echo "java_studio_url=${{ secrets.STAGING_JAVA_STUDIO_URL }}"   >> $GITHUB_OUTPUT
-            echo "java_content_url=${{ secrets.STAGING_JAVA_CONTENT_URL }}" >> $GITHUB_OUTPUT
+            ENV="staging"
           fi
 
-  # ─── Build web & server in parallel ────────────────────
-  build-web:
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+          if [ "$ENV" = "production" ]; then
+            echo 'targets=["prod-cn","prod-com"]' >> $GITHUB_OUTPUT
+            echo "server_tag=prod" >> $GITHUB_OUTPUT
+          else
+            echo 'targets=["staging"]' >> $GITHUB_OUTPUT
+            echo "server_tag=staging" >> $GITHUB_OUTPUT
+          fi
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Guard production deployment
+        if: github.event_name == 'workflow_dispatch' && inputs.environment == 'production' && github.ref_name != 'main'
+        run: |
+          echo "::error::Production deploys are only allowed from the main branch."
+          exit 1
 
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/web/Dockerfile
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/fizzdragon/web:${{ github.sha }}
-            ${{ env.REGISTRY }}/fizzdragon/web:${{ needs.prepare.outputs.tag }}
-          build-args: |
-            NEXT_PUBLIC_OSS_BASE_URL=${{ needs.prepare.outputs.oss_base_url }}
-            SERVER_URL=http://server:3001
-            JAVA_STUDIO_URL=${{ needs.prepare.outputs.java_studio_url }}
-            JAVA_CONTENT_URL=${{ needs.prepare.outputs.java_content_url }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
+  # ─── Build server image (once, shared across targets) ─
   build-server:
     needs: prepare
     runs-on: ubuntu-latest
@@ -82,8 +66,8 @@ jobs:
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/build-push-action@v6
         with:
@@ -91,27 +75,82 @@ jobs:
           file: apps/server/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/fizzdragon/server:${{ github.sha }}
-            ${{ env.REGISTRY }}/fizzdragon/server:${{ needs.prepare.outputs.tag }}
+            ${{ env.IMAGE_PREFIX }}/studio-server:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ─── Deploy to ECS ────────────────────────────────────
-  deploy:
-    needs: [prepare, build-web, build-server]
+  # ─── Build web image (per target, NEXT_PUBLIC vars may differ) ─
+  build-web:
+    needs: prepare
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.prepare.outputs.targets) }}
+    environment: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}-${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
+          build-args: |
+            NEXT_PUBLIC_OSS_BASE_URL=${{ vars.OSS_BASE_URL }}
+            SERVER_URL=http://server:3001
+            JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
+            JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
+          cache-from: type=gha,scope=${{ matrix.target }}-web
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}-web
+
+  # ─── Deploy to target servers ─────────────────────────
+  deploy:
+    needs: [prepare, build-server, build-web]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.prepare.outputs.targets) }}
+    environment: ${{ matrix.target }}
+    concurrency:
+      group: deploy-${{ matrix.target }}
+      cancel-in-progress: false
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ needs.prepare.outputs.deploy_host }}
-          username: ${{ needs.prepare.outputs.deploy_user }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           script: |
-            cd ~/apps/fizzdragon-platform
+            cd ~/apps/fizzdragon-studio
 
-            export REGISTRY=${{ env.REGISTRY }}
-            export TAG=${{ needs.prepare.outputs.tag }}
+            # Persist tags so docker compose survives server reboot
+            cat > .env << EOF
+            IMAGE_PREFIX=${{ env.IMAGE_PREFIX }}
+            WEB_TAG=${{ matrix.target }}
+            SERVER_TAG=${{ needs.prepare.outputs.server_tag }}
+            EOF
+
+            # Server runtime config
+            cat > .env.server << EOF
+            JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
+            JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
+            ALIBABA_API_KEY=${{ secrets.ALIBABA_API_KEY }}
+            AI_MODEL=qwen-plus
+            PORT=3001
+            EOF
 
             docker compose pull
             docker compose up -d --remove-orphans

@@ -1,6 +1,6 @@
 services:
   web:
-    image: ${REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/fizzdragon/web:${TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/fizzdragon-pte-ltd-2}/studio-web:${WEB_TAG:-latest}
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -10,7 +10,7 @@ services:
       - app
 
   server:
-    image: ${REGISTRY:-registry.cn-hangzhou.aliyuncs.com}/fizzdragon/server:${TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/fizzdragon-pte-ltd-2}/studio-server:${SERVER_TAG:-latest}
     restart: unless-stopped
     expose:
       - "3001"
