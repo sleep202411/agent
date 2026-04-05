@@ -43,6 +43,7 @@ skills-lock.json
 
 # Docker
 *.tar
+docker-compose.staging.yml
 
 # TypeScript
 *.tsbuildinfo
