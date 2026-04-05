@@ -902,10 +902,6 @@ export function AssistantToolCard({
     return <CardFrame title={displayName} description="已完成" tone="success" />;
   }
 
-  if (part.state === "result") {
-    return <CardFrame title={displayName} description="已完成" tone="success" />;
-  }
-
   return (
     <CardFrame title={displayName} description="助手正在执行这一步。">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
