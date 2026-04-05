@@ -180,6 +180,12 @@ jobs:
           SERVER_TAG=${{ needs.prepare.outputs.server_tag }}
           EOF
 
+          cat > .env.web << EOF
+          SERVER_URL=http://server:3001
+          JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
+          JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
+          EOF
+
           cat > .env.server << EOF
           JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
           JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
