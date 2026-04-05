@@ -117,9 +117,11 @@ export class AssistantService {
     for (const msg of modelMessages) {
       if (msg.role === 'user' && Array.isArray(msg.content)) {
         msg.content = msg.content.filter(
-          (part: any) =>
+          (part) =>
             part.type !== 'file' ||
-            (part.mediaType && part.mediaType.startsWith('image/')),
+            ('mediaType' in part &&
+              typeof part.mediaType === 'string' &&
+              part.mediaType.startsWith('image/')),
         );
       }
     }

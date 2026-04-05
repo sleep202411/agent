@@ -49,7 +49,7 @@ export class AssistantController {
         {
           projectId: body.projectId,
           messages: body.messages,
-          workspaceContext: body.workspaceContext as any,
+          workspaceContext: body.workspaceContext,
         },
         req.headers as Record<string, string | string[] | undefined>,
       );

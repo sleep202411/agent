@@ -29,11 +29,19 @@ export class AiService implements OnModuleInit {
   private readonly provider = createAlibaba({
     apiKey: process.env.ALIBABA_API_KEY,
     baseURL: process.env.ALIBABA_BASE_URL,
-    fetch: async (url, init) => {
+    fetch: async (
+      url: string | URL | globalThis.Request,
+      init?: RequestInit,
+    ) => {
       if (typeof init?.body === 'string') {
-        const body = JSON.parse(init.body);
-        if (body?.messages) {
-          // Log each message for debugging
+        const body = JSON.parse(init.body) as {
+          messages?: {
+            role: string;
+            content: unknown;
+            tool_calls?: unknown;
+          }[];
+        };
+        if (body.messages) {
           for (let i = 0; i < body.messages.length; i++) {
             const m = body.messages[i];
             this.logger.log(
@@ -55,7 +63,7 @@ export class AiService implements OnModuleInit {
 
   getModel(modelId?: string): LanguageModelV3 {
     const id = modelId || process.env.AI_MODEL || 'qwen-plus';
-    return this.provider(id) as LanguageModelV3;
+    return this.provider(id);
   }
 
   getSkill(name: string): Skill {

@@ -4,7 +4,7 @@ import { Readable } from 'stream';
 /**
  * Pipe a Web API Response (from AI SDK) to an Express response.
  */
-export async function pipeWebResponseToExpress(
+export function pipeWebResponseToExpress(
   webResponse: globalThis.Response,
   expressRes: ExpressResponse,
 ) {
