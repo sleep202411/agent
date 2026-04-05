@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
-import { gateway } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModelV3 } from '@ai-sdk/provider';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,10 +26,14 @@ export class AiService implements OnModuleInit {
     this.loadSkills();
   }
 
+  private readonly provider = createOpenAI({
+    baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    apiKey: process.env.ALIBABA_API_KEY,
+  });
+
   getModel(modelId?: string): LanguageModelV3 {
-    const id =
-      modelId || process.env.AI_GATEWAY_MODEL || 'anthropic/claude-sonnet-4';
-    return gateway.languageModel(id);
+    const id = modelId || process.env.AI_MODEL || 'qwen-plus';
+    return this.provider(id) as LanguageModelV3;
   }
 
   getSkill(name: string): Skill {

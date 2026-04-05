@@ -34,9 +34,16 @@ export class WorkspaceService {
 
   // ─── Internal helpers ───────────────────────────────────
 
-  private getBaseUrl() {
-    const url = process.env.WORKSPACE_API_URL;
-    if (!url) throw new Error('WORKSPACE_API_URL is not configured');
+  private getBaseUrl(path: string) {
+    // /user, /project, /vedio, /personal → Java Content
+    // /api, /anon, /studio → Java Studio
+    if (/^\/(user|project|vedio|personal)/.test(path)) {
+      const url = process.env.JAVA_CONTENT_URL;
+      if (!url) throw new Error('JAVA_CONTENT_URL is not configured');
+      return url.replace(/\/$/, '');
+    }
+    const url = process.env.JAVA_STUDIO_URL;
+    if (!url) throw new Error('JAVA_STUDIO_URL is not configured');
     return url.replace(/\/$/, '');
   }
 
@@ -58,7 +65,7 @@ export class WorkspaceService {
     const controller = new AbortController();
     const timeoutMs = options?.timeoutMs ?? 60_000;
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const url = `${this.getBaseUrl()}${path}`;
+    const url = `${this.getBaseUrl(path)}${path}`;
     const method = options?.method ?? 'POST';
 
     try {
@@ -99,16 +106,16 @@ export class WorkspaceService {
   private getWorldAssetRoutes(type: WorkspaceAssetType) {
     const map = {
       character: {
-        list: '/user/world/list/worldrole',
-        search: '/user/world/search/worldrole',
+        list: '/api/user/world/list/worldrole',
+        search: '/api/user/world/search/worldrole',
       },
       scene: {
-        list: '/user/world/list/worldscene',
-        search: '/user/world/search/worldscene',
+        list: '/api/user/world/list/worldscene',
+        search: '/api/user/world/search/worldscene',
       },
       prop: {
-        list: '/user/world/list/worldprop',
-        search: '/user/world/search/worldprop',
+        list: '/api/user/world/list/worldprop',
+        search: '/api/user/world/search/worldprop',
       },
     } as const;
     return map[type];
