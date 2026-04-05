@@ -125,12 +125,19 @@ push 到 develop/main
 
 ### 触发规则
 
-| 触发条件          | 动作                                 |
-| ----------------- | ------------------------------------ |
-| PR → develop/main | CI 检查（lint + type check + build） |
-| push → develop    | 自动部署 → staging                   |
-| push → main       | 自动部署 → production                |
-| workflow_dispatch | 手动选择 staging/production          |
+| 触发条件          | 动作                                   |
+| ----------------- | -------------------------------------- |
+| PR → develop/main | CI 检查（lint + type check + build）   |
+| push → develop    | 自动部署 → staging                     |
+| push → main       | 自动部署 → production                  |
+| workflow_dispatch | 手动选择 staging/production            |
+| PR 评论 `/deploy` | 从 PR 分支部署 → staging（无需 merge） |
+
+### PR 部署命令
+
+在 PR 的评论中输入 `/deploy`，即可将当前 PR 的分支直接部署到 staging 环境，无需先 merge 到 develop。
+
+部署触发后会在评论上出现 🚀 表情确认。适用于 feature 分支的快速验证。
 
 ### 镜像策略
 
