@@ -108,7 +108,7 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
           build-args: |
             NEXT_PUBLIC_OSS_BASE_URL=${{ vars.OSS_BASE_URL }}
-            SERVER_URL=http://localhost:3001
+            SERVER_URL=http://server:3001
             JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
             JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
           cache-from: type=gha,scope=${{ matrix.target }}-web
