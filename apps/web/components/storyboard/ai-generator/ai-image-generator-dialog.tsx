@@ -27,6 +27,7 @@ import { PromptInput } from "./prompt-input";
 import { ResultGallery } from "./result-gallery";
 import { backendApi } from "@/src/lib/api";
 import { submitImageTask, retryImageTask } from "@/src/lib/ai-image-queue";
+import { useTranslations } from "next-intl";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
@@ -81,6 +82,8 @@ export function AiImageGeneratorDialog({
   onSetPreferred,
   onGeneratePrompt,
 }: AiImageGeneratorDialogProps) {
+  const t = useTranslations("storyboard");
+  const tc = useTranslations("common");
   const [prefixPrompt, setPrefixPrompt] = useState("");
   const [suffixPrompt, setSuffixPrompt] = useState("");
   const activeEpisode = useAppSelector((s) => selectActiveProjectEpisode(s));
@@ -180,7 +183,7 @@ export function AiImageGeneratorDialog({
   }));
 
   const cost = (selectedNormalized?.cost ?? 0) * (formData.count || 1);
-  const title = shotNumber ? `AI 生图 - 镜头 ${shotNumber}` : "AI 生图";
+  const title = shotNumber ? t("aiImageTitle", { number: shotNumber }) : t("aiImageTitleDefault");
 
   useEffect(() => {
     if (!open) return;
@@ -303,13 +306,13 @@ export function AiImageGeneratorDialog({
     if (isEditMode) {
       const prompt = formData.prompt.trim();
       if (!prompt) {
-        toast.warning("请输入提示词");
+        toast.warning(t("enterPrompt"));
         return;
       }
 
       const images = formData.referenceImages.map((item) => item.path).filter(Boolean);
       if (images.length === 0) {
-        toast.warning("请先上传参考图");
+        toast.warning(t("uploadReferenceFirst"));
         return;
       }
 
@@ -329,7 +332,7 @@ export function AiImageGeneratorDialog({
           watermark: false,
         });
       }
-      toast.success(`已添加 ${count} 个编辑任务`);
+      toast.success(t("addedEditTasks", { count }));
       return;
     }
 
@@ -337,7 +340,7 @@ export function AiImageGeneratorDialog({
       .filter(Boolean)
       .join("\n");
     if (!fullPrompt) {
-      toast.warning("请输入提示词");
+      toast.warning(t("enterPrompt"));
       return;
     }
 
@@ -361,7 +364,7 @@ export function AiImageGeneratorDialog({
       });
     }
 
-    toast.success(`已添加 ${count} 个生成任务`);
+    toast.success(t("addedGenerateTasks", { count }));
   };
 
   const handlePreview = (item: ResultItem) => {
@@ -375,7 +378,7 @@ export function AiImageGeneratorDialog({
     try {
       await store.dispatch(deleteImageItem({ shotId, colId: shotColumnId, item }));
     } catch {
-      toast.error("删除失败");
+      toast.error(tc("deleteFailed"));
     }
   };
 
@@ -405,20 +408,20 @@ export function AiImageGeneratorDialog({
       key: "collect",
       icon: <IconStar className="size-4" />,
       active: isPreviewApplied,
-      title: isPreviewApplied ? "移除" : "添加",
+      title: isPreviewApplied ? t("removeAction") : t("addAction"),
       onClick: () => previewItem && onCollect(previewItem),
     },
     onSetPreferred && {
       key: "prefer",
       icon: <IconCircleCheck className="size-4" />,
       active: isPreviewPreferred,
-      title: isPreviewPreferred ? "取消定稿" : "设为定稿",
+      title: isPreviewPreferred ? t("cancelFinalize") : t("setFinalize"),
       onClick: () => previewItem && onSetPreferred(previewItem),
     },
     {
       key: "download",
       icon: <IconDownload className="size-4" />,
-      title: "下载",
+      title: tc("download"),
       onClick: () => {
         if (!previewUrl) return;
         const link = document.createElement("a");
@@ -430,19 +433,19 @@ export function AiImageGeneratorDialog({
     {
       key: "delete",
       icon: <IconTrash className="size-4" />,
-      title: "删除",
+      title: tc("delete"),
       onClick: () => previewItem && handleDelete(previewItem),
     },
     {
       key: "fullscreen",
       icon: <IconArrowsMaximize className="size-4" />,
-      title: "全屏预览",
+      title: t("fullscreenPreview"),
       onClick: () => setFullPreviewUrl(previewUrl || null),
     },
     previewItem?.other && {
       key: "meta",
       icon: <IconFileText className="size-4" />,
-      title: "查看详情",
+      title: t("viewDetails"),
       metaContent: previewItem.other,
     },
   ].filter(Boolean) as ToolbarAction[];
@@ -450,34 +453,34 @@ export function AiImageGeneratorDialog({
   const actionItems = [
     {
       key: "edit",
-      label: "编辑",
+      label: t("editAction"),
       icon: <IconPencil className="size-3.5" />,
       active: isEditMode,
       onClick: handleToggleEditMode,
     },
     {
       key: "repaint",
-      label: "重绘",
+      label: t("repaintAction"),
       icon: <IconBrush className="size-3.5" />,
     },
     {
       key: "erase",
-      label: "消除",
+      label: t("eraseAction"),
       icon: <IconEraser className="size-3.5" />,
     },
     {
       key: "enhance",
-      label: "增强",
+      label: t("enhanceAction"),
       icon: <IconShieldCheck className="size-3.5" />,
     },
     {
       key: "cutout",
-      label: "抠图",
+      label: t("cutoutAction"),
       icon: <IconScissors className="size-3.5" />,
     },
     {
       key: "multi-angle",
-      label: "多视角",
+      label: t("multiAngleAction"),
       icon: <IconRotate360 className="size-3.5" />,
     },
   ];
@@ -522,7 +525,7 @@ export function AiImageGeneratorDialog({
           <MediaPreviewPanel
             type="image"
             previewUrl={previewUrl ?? ""}
-            emptyText="点击左侧图片预览"
+            emptyText={t("clickLeftImagePreview")}
             className="flex-[6]"
             toolbarActions={imageToolbarActions}
             bottomActions={actionItems}

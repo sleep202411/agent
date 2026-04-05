@@ -148,7 +148,7 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
         {/* Theme */}
         {mounted && (
           <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-sm">Theme</span>
+            <span className="text-sm">{tc("theme")}</span>
             <div className="flex rounded-lg border border-border">
               <button
                 type="button"
@@ -190,7 +190,7 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
         <div className="flex items-center justify-between px-3 py-2">
           <div className="flex items-center gap-2">
             <IconLanguage className="size-4 text-muted-foreground" />
-            <span className="text-sm">语言</span>
+            <span className="text-sm">{tc("language")}</span>
           </div>
           <div className="flex rounded-lg border border-border">
             {(

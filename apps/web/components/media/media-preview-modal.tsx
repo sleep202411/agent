@@ -36,8 +36,8 @@ interface MediaPreviewModalProps {
   onDelete?: () => void | Promise<void>;
 }
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "未知";
+function formatDateTime(value?: string | null, fallback = "Unknown") {
+  if (!value) return fallback;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString();
@@ -184,7 +184,7 @@ export function MediaPreviewModal({
                 </div>
               )
             ) : (
-              <div className="text-sm text-muted-foreground">当前素材暂不支持预览</div>
+              <div className="text-sm text-muted-foreground">{t("previewNotSupported")}</div>
             )}
           </div>
 
@@ -210,7 +210,7 @@ export function MediaPreviewModal({
                 disabled={!copyTarget}
               >
                 <IconCopy className="size-4" />
-                复制链接
+                {t("copyLink")}
               </Button>
               {onDelete ? (
                 <Button
@@ -250,9 +250,10 @@ export function MediaPreviewModal({
           </div>
 
           <div className="mt-6 flex-1 space-y-5 overflow-auto">
-            <InfoBlock label="名称" value={resolvedName} />
+            <InfoBlock label={t("labelName")} value={resolvedName} fallback={t("notAvailable")} />
             <InfoBlock
-              label="链接"
+              label={t("labelLink")}
+              fallback={t("notAvailable")}
               value={
                 copyTarget ? (
                   <div className="flex items-start gap-2">
@@ -265,14 +266,21 @@ export function MediaPreviewModal({
                       <IconExternalLink className="size-4" />
                     </button>
                   </div>
-                ) : (
-                  "暂无"
-                )
+                ) : undefined
               }
             />
-            <InfoBlock label="日期" value={formatDateTime(createdAt)} />
+            <InfoBlock
+              label={t("labelDate")}
+              value={formatDateTime(createdAt, t("unknown"))}
+              fallback={t("notAvailable")}
+            />
             {details.map((detail) => (
-              <InfoBlock key={detail.label} label={detail.label} value={detail.value} />
+              <InfoBlock
+                key={detail.label}
+                label={detail.label}
+                value={detail.value}
+                fallback={t("notAvailable")}
+              />
             ))}
           </div>
         </aside>
@@ -292,12 +300,20 @@ export function MediaPreviewModal({
   );
 }
 
-function InfoBlock({ label, value }: { label: string; value?: React.ReactNode }) {
+function InfoBlock({
+  label,
+  value,
+  fallback = "N/A",
+}: {
+  label: string;
+  value?: React.ReactNode;
+  fallback?: string;
+}) {
   return (
     <div className="space-y-2">
       <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
       <div className="rounded-2xl border border-border bg-muted/20 px-3 py-3 text-sm text-foreground">
-        {value ?? "暂无"}
+        {value ?? fallback}
       </div>
     </div>
   );

@@ -580,7 +580,7 @@ export function ScriptView() {
 
           <div className="space-y-4">
             <Field>
-              <FieldLabel>每分钟镜头数</FieldLabel>
+              <FieldLabel>{t("shotsPerMinute")}</FieldLabel>
               <Input
                 type="number"
                 min={1}
@@ -599,7 +599,7 @@ export function ScriptView() {
                 checked={generateWithAssets}
                 onCheckedChange={(checked) => setGenerateWithAssets(checked === true)}
               />
-              <FieldLabel>同时分析角色、场景和道具</FieldLabel>
+              <FieldLabel>{t("analyzeAssets")}</FieldLabel>
             </Field>
           </div>
 
@@ -619,9 +619,7 @@ export function ScriptView() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{tc("replace")}</DialogTitle>
-            <DialogDescription>
-              编辑器里已经有内容，导入文件会覆盖当前文本。确认继续吗？
-            </DialogDescription>
+            <DialogDescription>{t("replaceConfirmDesc")}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
@@ -652,8 +650,8 @@ export function ScriptView() {
       <Dialog open={showStoryboardResult} onOpenChange={setShowStoryboardResult}>
         <DialogContent className="max-w-[96vw]">
           <DialogHeader>
-            <DialogTitle>AI 分镜结果</DialogTitle>
-            <DialogDescription>可以先调整表格内容，再应用到当前剧集的分镜表。</DialogDescription>
+            <DialogTitle>{t("aiStoryboardResult")}</DialogTitle>
+            <DialogDescription>{t("aiStoryboardResultDesc")}</DialogDescription>
           </DialogHeader>
 
           {storyboardRows.length > 0 ? (
@@ -710,7 +708,7 @@ export function ScriptView() {
                     checked={autoload}
                     onCheckedChange={(checked) => setAutoload(checked === true)}
                   />
-                  <FieldLabel>自动关联人物 / 场景 / 道具</FieldLabel>
+                  <FieldLabel>{t("autoAssociate")}</FieldLabel>
                 </Field>
 
                 <div className="flex items-center gap-2">
@@ -722,7 +720,7 @@ export function ScriptView() {
                     }
                   >
                     <IconPlus className="size-3.5" />
-                    添加一行
+                    {t("addRow")}
                   </Button>
                   <Button
                     variant="outline"
@@ -740,14 +738,14 @@ export function ScriptView() {
                     ) : (
                       <IconSparkles className="size-3.5" />
                     )}
-                    应用到分镜表
+                    {t("applyToStoryboard")}
                   </Button>
                 </div>
               </div>
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-border px-6 py-16 text-center text-sm text-muted-foreground">
-              当前没有可展示的分镜内容
+              {t("noStoryboardPreview")}
             </div>
           )}
         </DialogContent>

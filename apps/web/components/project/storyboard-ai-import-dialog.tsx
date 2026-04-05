@@ -81,6 +81,7 @@ export function StoryboardAiImportDialog({
   columns: ShotColumn[];
 }) {
   const tc = useTranslations("common");
+  const ts = useTranslations("storyboard");
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -116,11 +117,11 @@ export function StoryboardAiImportDialog({
   const handleSelectFile = (nextFile?: File | null) => {
     if (!nextFile) return;
     if (!/\.xlsx?$/.test(nextFile.name.toLowerCase())) {
-      toast.warning("请选择 .xls 或 .xlsx 文件");
+      toast.warning(ts("selectXlsFile"));
       return;
     }
     if (nextFile.size > 10 * 1024 * 1024) {
-      toast.warning("文件不能超过 10MB");
+      toast.warning(ts("fileSizeLimit10"));
       return;
     }
     setFile(nextFile);
@@ -158,7 +159,7 @@ export function StoryboardAiImportDialog({
       closeUploadDialog();
     } catch (error) {
       console.error("[StoryboardAiImportDialog] AI 导入失败:", error);
-      toast.error(error instanceof Error ? error.message : "AI 导入失败");
+      toast.error(error instanceof Error ? error.message : ts("aiImportFailed"));
     } finally {
       setImporting(false);
     }
@@ -182,12 +183,12 @@ export function StoryboardAiImportDialog({
       if (result.warning) {
         toast.warning(result.warning);
       } else {
-        toast.success("分镜表已更新");
+        toast.success(ts("storyboardUpdated"));
       }
       closePreviewDialog();
     } catch (error) {
       console.error("[StoryboardAiImportDialog] 应用分镜表失败:", error);
-      toast.error(error instanceof Error ? error.message : "应用分镜表失败");
+      toast.error(error instanceof Error ? error.message : ts("applyStoryboardFailed"));
     } finally {
       setApplying(false);
     }
@@ -202,10 +203,8 @@ export function StoryboardAiImportDialog({
         <DialogContent showCloseButton={false} className="sm:max-w-[640px]">
           <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-border/70 pb-4">
             <div>
-              <DialogTitle>AI 导入分镜表</DialogTitle>
-              <DialogDescription>
-                上传 Excel 文件后，系统会先将内容解析成可编辑的分镜表。
-              </DialogDescription>
+              <DialogTitle>{ts("aiImportTitle")}</DialogTitle>
+              <DialogDescription>{ts("aiImportDesc")}</DialogDescription>
             </div>
             <Button variant="ghost" color="muted" size="icon-sm" onClick={closeUploadDialog}>
               <IconX className="size-4" />
@@ -224,10 +223,8 @@ export function StoryboardAiImportDialog({
               className="flex h-56 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground"
             >
               <IconUpload className="mb-4 size-10" />
-              <div className="text-base font-medium">点击或拖拽上传 Excel 文件</div>
-              <div className="mt-2 text-sm text-muted-foreground">
-                支持 .xls / .xlsx，单个文件不超过 10MB
-              </div>
+              <div className="text-base font-medium">{ts("clickOrDragUpload")}</div>
+              <div className="mt-2 text-sm text-muted-foreground">{ts("excelSizeHint")}</div>
             </button>
 
             {file ? (
@@ -276,8 +273,8 @@ export function StoryboardAiImportDialog({
         <DialogContent showCloseButton={false} className="max-w-[95vw]">
           <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-border/70 pb-4">
             <div>
-              <DialogTitle>AI 导入分镜表 - 预览</DialogTitle>
-              <DialogDescription>可以先调整表格内容，再应用到当前剧集的分镜表。</DialogDescription>
+              <DialogTitle>{ts("aiImportPreviewTitle")}</DialogTitle>
+              <DialogDescription>{ts("aiImportPreviewDesc")}</DialogDescription>
             </div>
             <Button variant="ghost" color="muted" size="icon-sm" onClick={closePreviewDialog}>
               <IconX className="size-4" />
@@ -302,7 +299,7 @@ export function StoryboardAiImportDialog({
                     </div>
                   ))}
                   <div className="border-b border-border bg-muted/50 px-3 py-2 text-sm font-medium">
-                    操作
+                    {ts("actionCol")}
                   </div>
 
                   {preview.rows.map((row, rowIndex) => (
@@ -356,7 +353,7 @@ export function StoryboardAiImportDialog({
                     checked={autoload}
                     onCheckedChange={(checked) => setAutoload(checked === true)}
                   />
-                  <FieldLabel>自动关联人物 / 场景 / 道具</FieldLabel>
+                  <FieldLabel>{ts("autoAssociate")}</FieldLabel>
                 </Field>
 
                 <div className="flex items-center gap-2">
@@ -375,14 +372,14 @@ export function StoryboardAiImportDialog({
                     }
                   >
                     <IconPlus className="size-3.5" />
-                    添加一行
+                    {ts("addRow")}
                   </Button>
                   <Button variant="outline" color="muted" onClick={closePreviewDialog}>
                     {tc("close")}
                   </Button>
                   <Button onClick={() => void handleApply()} disabled={applying}>
                     {applying ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
-                    应用到分镜表
+                    {ts("applyToStoryboard")}
                   </Button>
                 </div>
               </div>

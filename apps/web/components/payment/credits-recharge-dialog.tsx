@@ -167,7 +167,7 @@ export function CreditsRechargeDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t("credits")}</DialogTitle>
-          <DialogDescription className="sr-only">选择积分套餐进行充值</DialogDescription>
+          <DialogDescription className="sr-only">{t("creditsRechargeDesc")}</DialogDescription>
         </DialogHeader>
 
         {step === "select" && (

@@ -58,32 +58,32 @@ const AI_AGENTS = [
   {
     key: "general",
     icon: <IconSparkles className="size-4" />,
-    name: "通用助手",
-    description: "自由提问，智能理解你的需求",
+    nameKey: "generalAgent" as const,
+    descKey: "generalAgentDesc" as const,
   },
   {
     key: "script",
     icon: <IconPencil className="size-4" />,
-    name: "剧本大师",
-    description: "拆剧本、分集、写台词、分析节奏",
+    nameKey: "scriptAgent" as const,
+    descKey: "scriptAgentDesc" as const,
   },
   {
     key: "storyboard",
     icon: <IconMovie className="size-4" />,
-    name: "分镜导演",
-    description: "生成分镜、镜头语言、景别运镜",
+    nameKey: "storyboardAgent" as const,
+    descKey: "storyboardAgentDesc" as const,
   },
   {
     key: "character",
     icon: <IconUser className="size-4" />,
-    name: "角色设计师",
-    description: "提取角色、生成形象、三视图",
+    nameKey: "characterAgent" as const,
+    descKey: "characterAgentDesc" as const,
   },
   {
     key: "scene",
     icon: <IconMapPin className="size-4" />,
-    name: "场景设计师",
-    description: "场景构建、氛围设计、全景图",
+    nameKey: "sceneAgent" as const,
+    descKey: "sceneAgentDesc" as const,
   },
 ] as const;
 
@@ -632,7 +632,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
                 <PopoverTrigger asChild>
                   <Button variant="ghost" color="muted" size="sm" className="gap-1">
                     {currentAgent.icon}
-                    <span className="text-xs">{currentAgent.name}</span>
+                    <span className="text-xs">{t(currentAgent.nameKey)}</span>
                     <IconChevronDown className="size-3 text-muted-foreground" />
                   </Button>
                 </PopoverTrigger>
@@ -654,8 +654,8 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
                     >
                       <span className="mt-0.5 shrink-0">{agent.icon}</span>
                       <div className="min-w-0">
-                        <div className="text-xs font-medium">{agent.name}</div>
-                        <div className="text-[11px] text-muted-foreground">{agent.description}</div>
+                        <div className="text-xs font-medium">{t(agent.nameKey)}</div>
+                        <div className="text-[11px] text-muted-foreground">{t(agent.descKey)}</div>
                       </div>
                     </button>
                   ))}

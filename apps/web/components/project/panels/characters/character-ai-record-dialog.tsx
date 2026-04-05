@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { IconCirclePlus, IconLoader2, IconWand, IconX } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
@@ -29,6 +30,8 @@ export function CharacterAiRecordDialog({
   selectedPath?: string;
   onSelect: (path: string) => void;
 }) {
+  const t = useTranslations("character");
+  const tc = useTranslations("common");
   const [records, setRecords] = useState<AssetRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [previewPath, setPreviewPath] = useState("");
@@ -49,7 +52,7 @@ export function CharacterAiRecordDialog({
       setRecords(list);
     } catch (error) {
       console.error("[CharacterAiRecordDialog] 获取历史失败:", error);
-      toast.error("获取 AI 记录失败");
+      toast.error(t("getAiRecordFailed"));
     } finally {
       setLoading(false);
     }
@@ -83,7 +86,7 @@ export function CharacterAiRecordDialog({
           className="w-[1000px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 sm:max-w-[1000px]"
         >
           <div className="flex items-center justify-between border-b border-border px-6 py-4">
-            <DialogTitle>AI 生图</DialogTitle>
+            <DialogTitle>{t("aiGenerateImage")}</DialogTitle>
             <button
               type="button"
               onClick={() => onOpenChange(false)}
@@ -103,7 +106,7 @@ export function CharacterAiRecordDialog({
                 >
                   <div className="flex flex-col items-center gap-2 text-xs">
                     <IconWand className="size-5" />
-                    <span>AI 生图</span>
+                    <span>{t("aiGenerateImage")}</span>
                   </div>
                 </button>
 
@@ -157,14 +160,14 @@ export function CharacterAiRecordDialog({
                   className="max-h-full max-w-full rounded-lg object-contain p-4"
                 />
               ) : (
-                <div className="text-sm text-muted-foreground">点击左侧图片预览</div>
+                <div className="text-sm text-muted-foreground">{t("clickToPreviewImage")}</div>
               )}
             </div>
           </div>
 
           <DialogFooter className="mt-0">
             <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
-              取消
+              {tc("cancel")}
             </Button>
             <Button
               onClick={() => {
@@ -175,7 +178,7 @@ export function CharacterAiRecordDialog({
               }}
               disabled={!selectedRecordPath && !previewPath}
             >
-              确认
+              {tc("confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

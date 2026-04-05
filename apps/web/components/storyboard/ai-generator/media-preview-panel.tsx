@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { IconPhoto, IconVideo } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { FloatingToolbar, type ToolbarAction } from "@/components/ui/floating-toolbar";
@@ -27,6 +28,8 @@ export function MediaPreviewPanel({
   bottomActions,
   className,
 }: MediaPreviewPanelProps) {
+  const t = useTranslations("storyboard");
+
   return (
     <div
       className={cn(
@@ -74,7 +77,7 @@ export function MediaPreviewPanel({
               ) : (
                 <IconPhoto className="size-10" />
               ))}
-            <p className="text-sm">{emptyText ?? "点击左侧预览"}</p>
+            <p className="text-sm">{emptyText ?? t("clickLeftPreview")}</p>
           </div>
         )}
       </div>

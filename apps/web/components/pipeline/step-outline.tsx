@@ -77,7 +77,7 @@ export function StepOutline({ streamingOutline }: StepOutlineProps) {
           <div className="flex gap-4">
             <Field orientation="horizontal" className="w-auto">
               <FieldLabel className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                视频风格:
+                {t("videoStyleLabel")}
               </FieldLabel>
               <Select
                 value={outline.videoStyle}
@@ -89,17 +89,17 @@ export function StepOutline({ streamingOutline }: StepOutlineProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="3D, CG动画">3D, CG动画</SelectItem>
-                  <SelectItem value="2D动画">2D动画</SelectItem>
-                  <SelectItem value="写实">写实</SelectItem>
-                  <SelectItem value="水墨风">水墨风</SelectItem>
-                  <SelectItem value="赛博朋克">赛博朋克</SelectItem>
+                  <SelectItem value="3D, CG动画">{t("style3DCG")}</SelectItem>
+                  <SelectItem value="2D动画">{t("style2D")}</SelectItem>
+                  <SelectItem value="写实">{t("styleRealistic")}</SelectItem>
+                  <SelectItem value="水墨风">{t("styleInkWash")}</SelectItem>
+                  <SelectItem value="赛博朋克">{t("styleCyberpunk")}</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
             <Field orientation="horizontal" className="w-auto">
               <FieldLabel className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                画面比例:
+                {t("aspectRatioLabel")}
               </FieldLabel>
               <Select
                 value={outline.aspectRatio}
@@ -161,7 +161,9 @@ export function StepOutline({ streamingOutline }: StepOutlineProps) {
       {/* ─── Right: Episodes with scripts ─── */}
       <div className="flex-1 min-w-0 overflow-auto">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">分集剧情 · {outline.episodes.length} 集</h3>
+          <h3 className="text-sm font-semibold">
+            {t("episodePlots", { count: outline.episodes.length })}
+          </h3>
         </div>
 
         <div className="space-y-3">
@@ -177,7 +179,7 @@ export function StepOutline({ streamingOutline }: StepOutlineProps) {
                         updateEpisode({ id: episode.id, updates: { title: e.target.value } })
                       )
                     }
-                    placeholder={`第${index + 1}集标题`}
+                    placeholder={t("episodeTitlePlaceholder", { index: index + 1 })}
                     className="w-full bg-transparent text-sm font-semibold focus:outline-none"
                   />
                   <textarea
@@ -206,7 +208,7 @@ export function StepOutline({ streamingOutline }: StepOutlineProps) {
               {/* Script area */}
               <div className="border-t border-border px-4 py-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-medium text-muted-foreground">剧本</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t("script")}</span>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button variant="ghost" color="muted" size="icon-xs">
                       <IconRefresh className="size-3.5" />
@@ -232,7 +234,7 @@ export function StepOutline({ streamingOutline }: StepOutlineProps) {
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
           >
             <IconPlus className="size-4" />
-            添加章节
+            {t("addChapter")}
           </button>
         </div>
       </div>
@@ -243,15 +245,17 @@ export function StepOutline({ streamingOutline }: StepOutlineProps) {
 // ─── Thinking Process ──────────────────────────────────
 
 function ThinkingProcess({ data }: { data: Partial<StoryOutlineResult> }) {
+  const t = useTranslations("pipeline");
   const items: string[] = [];
 
-  if (data.title) items.push(`标题: ${data.title}`);
-  if (data.genre) items.push(`类型: ${data.genre}`);
-  if (data.videoStyle) items.push(`风格: ${data.videoStyle}`);
-  if (data.background) items.push(`背景: ${truncate(data.background, 60)}`);
-  if (data.conflict) items.push(`冲突: ${truncate(data.conflict, 60)}`);
+  if (data.title) items.push(t("thinkingTitle", { value: data.title }));
+  if (data.genre) items.push(t("thinkingGenre", { value: data.genre }));
+  if (data.videoStyle) items.push(t("thinkingStyle", { value: data.videoStyle }));
+  if (data.background)
+    items.push(t("thinkingBackground", { value: truncate(data.background, 60) }));
+  if (data.conflict) items.push(t("thinkingConflict", { value: truncate(data.conflict, 60) }));
   if (data.episodes && data.episodes.length > 0) {
-    items.push(`已生成 ${data.episodes.length} 集...`);
+    items.push(t("thinkingEpisodes", { count: data.episodes.length }));
   }
 
   if (items.length === 0) return null;

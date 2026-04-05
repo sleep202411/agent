@@ -131,6 +131,7 @@ export function AiVideoGeneratorDialog({
   onGeneratingChange,
   onGenerateSuccess,
 }: AiVideoGeneratorDialogProps) {
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const dispatch = useAppDispatch();
   const episodes = useAppSelector((s) => selectCurrentInstance(s).episodes);
@@ -216,45 +217,45 @@ export function AiVideoGeneratorDialog({
     ? appliedPaths.includes(previewItem.storagePath)
     : false;
   const isPreviewPreferred = previewItem?.storagePath === preferredPath;
-  const previewBadge = isPreviewPreferred ? "\u5B9A\u7A3F" : isPreviewApplied ? "\u5DF2\u7528" : "";
+  const previewBadge = isPreviewPreferred ? t("finalized") : isPreviewApplied ? t("used") : "";
 
   const videoToolbarActions: ToolbarAction[] = [
     onCollect && {
       key: "collect",
       icon: <IconStar className="size-4" />,
       active: isPreviewApplied,
-      title: isPreviewApplied ? "\u79FB\u9664" : "\u6DFB\u52A0\u5230\u955C\u5934",
+      title: isPreviewApplied ? t("removeAction") : t("addToShotTitle"),
       onClick: () => previewItem && onCollect(previewItem),
     },
     onSetPreferred && {
       key: "prefer",
       icon: <IconCircleCheck className="size-4" />,
       active: isPreviewPreferred,
-      title: "\u8BBE\u4E3A\u5B9A\u7A3F",
+      title: t("setFinalize"),
       onClick: () => previewItem && onSetPreferred(previewItem),
     },
     {
       key: "download",
       icon: <IconDownload className="size-4" />,
-      title: "\u4E0B\u8F7D",
+      title: tc("download"),
       onClick: () => previewItem && handleDownload(previewItem),
     },
     {
       key: "delete",
       icon: <IconTrash className="size-4" />,
-      title: "\u5220\u9664",
+      title: tc("delete"),
       onClick: () => previewItem && void handleDelete(previewItem),
     },
     {
       key: "fullscreen",
       icon: <IconArrowsMaximize className="size-4" />,
-      title: "\u5168\u5C4F\u9884\u89C8",
+      title: t("fullscreenPreview"),
       onClick: () => setFullscreenOpen(true),
     },
     previewItem?.other && {
       key: "meta",
       icon: <IconFileText className="size-4" />,
-      title: "\u67E5\u770B\u8BE6\u60C5",
+      title: t("viewDetails"),
       metaContent: previewItem.other,
     },
   ].filter(Boolean) as ToolbarAction[];
@@ -278,17 +279,15 @@ export function AiVideoGeneratorDialog({
     return baseCost * sizeMultiplier * durationMultiplier * Math.max(1, count);
   }, [count, currentModel?.integralCost, size, sizeOptions, videoLength, videoLengthOptions]);
 
-  const title = shotNumber
-    ? `AI \u751F\u89C6\u9891 - \u955C\u5934 ${shotNumber}`
-    : "AI \u751F\u89C6\u9891";
+  const title = shotNumber ? t("aiVideoTitle", { number: shotNumber }) : t("aiVideoTitleDefault");
   const modeExitLabel = editMode
     ? editMode === "outpainting"
-      ? "\u9000\u51FA\u753B\u9762\u6269\u5C55"
+      ? t("exitOutpainting")
       : editMode === "extend"
-        ? "\u9000\u51FA\u5EF6\u957F\u6A21\u5F0F"
+        ? t("exitExtend")
         : editMode === "localEdit"
-          ? "\u9000\u51FA\u5C40\u90E8\u7F16\u8F91"
-          : "\u9000\u51FA\u91CD\u7ED8\u6A21\u5F0F"
+          ? t("exitLocalEdit")
+          : t("exitRepaint")
     : "";
 
   // ─── Initialization effect ────────────────────────────
@@ -625,7 +624,7 @@ export function AiVideoGeneratorDialog({
       }
 
       if (!previewItem) {
-        toast.warning("\u8BF7\u5148\u9009\u62E9\u4E00\u4E2A\u89C6\u9891\u7ED3\u679C");
+        toast.warning(t("selectVideoResult"));
         return;
       }
 
@@ -653,7 +652,7 @@ export function AiVideoGeneratorDialog({
       // Load models for the new edit mode
       await dispatch(loadVideoModels({ mode: nextMode })).unwrap();
     },
-    [dispatch, editMode, exitEditMode, key, model, previewItem, resetEditModeRefs]
+    [dispatch, editMode, exitEditMode, key, model, previewItem, resetEditModeRefs, t]
   );
 
   const handleUploadModeChange = useCallback(
@@ -856,7 +855,7 @@ export function AiVideoGeneratorDialog({
       .filter(Boolean)
       .join("\n");
     if (!fullPrompt) {
-      toast.warning("\u8BF7\u8F93\u5165\u89C6\u9891\u63D0\u793A\u8BCD");
+      toast.warning(t("enterVideoPrompt"));
       return;
     }
 
@@ -873,7 +872,7 @@ export function AiVideoGeneratorDialog({
     if (activeMode === "reference") {
       const reference = referenceImages[0];
       if (!reference?.path) {
-        toast.warning("\u8BF7\u5148\u9009\u62E9\u53C2\u8003\u56FE");
+        toast.warning(t("selectReferenceImage"));
         return;
       }
       inputBase.referenceImageUrl = ossUrl(reference.path);
@@ -881,18 +880,18 @@ export function AiVideoGeneratorDialog({
       const firstFrame = firstFrames[0];
       const lastFrame = lastFrames[0];
       if (!firstFrame?.path) {
-        toast.warning("\u8BF7\u5148\u4E0A\u4F20\u9996\u5E27\u56FE");
+        toast.warning(t("uploadFirstFrame"));
         return;
       }
       if (!lastFrame?.path) {
-        toast.warning("\u8BF7\u5148\u4E0A\u4F20\u5C3E\u5E27\u56FE");
+        toast.warning(t("uploadLastFrame"));
         return;
       }
       inputBase.startFrameImageUrl = ossUrl(firstFrame.path);
       inputBase.endFrameImageUrl = ossUrl(lastFrame.path);
     } else if (activeMode === "multiReference") {
       if (multiRefImages.length === 0) {
-        toast.warning("\u8BF7\u5148\u4E0A\u4F20\u53C2\u8003\u56FE");
+        toast.warning(t("uploadReferenceImage"));
         return;
       }
       inputBase.refImageUrls = multiRefImages.map((item) => ossUrl(item.path));
@@ -900,7 +899,7 @@ export function AiVideoGeneratorDialog({
     } else if (activeMode === "repaint") {
       const videoRef = repaintRefVideos[0];
       if (!videoRef?.path) {
-        toast.warning("\u8BF7\u5148\u9009\u62E9\u89C6\u9891");
+        toast.warning(t("selectVideoFirst"));
         return;
       }
       inputBase.videoUrl = ossUrl(videoRef.path);
@@ -913,11 +912,11 @@ export function AiVideoGeneratorDialog({
       const videoRef = localEditRefVideo[0];
       const maskImage = localEditMaskImage[0];
       if (!videoRef?.path) {
-        toast.warning("\u8BF7\u5148\u9009\u62E9\u89C6\u9891");
+        toast.warning(t("selectVideoFirst"));
         return;
       }
       if (!maskImage?.path) {
-        toast.warning("\u8BF7\u5148\u4E0A\u4F20\u906E\u7F69\u56FE");
+        toast.warning(t("uploadMaskImage"));
         return;
       }
       inputBase.videoUrl = ossUrl(videoRef.path);
@@ -932,7 +931,7 @@ export function AiVideoGeneratorDialog({
       const firstClip = extendFirstClip[0];
       const lastClip = extendLastClip[0];
       if (!firstClip?.path && !lastClip?.path) {
-        toast.warning("\u8BF7\u81F3\u5C11\u4E0A\u4F20\u9996\u7247\u6BB5\u6216\u5C3E\u7247\u6BB5");
+        toast.warning(t("uploadFirstOrLastClip"));
         return;
       }
       inputBase.firstClipUrl = firstClip?.path ? ossUrl(firstClip.path) : undefined;
@@ -946,7 +945,7 @@ export function AiVideoGeneratorDialog({
     } else if (activeMode === "outpainting") {
       const videoRef = outpaintingRefVideo[0];
       if (!videoRef?.path) {
-        toast.warning("\u8BF7\u5148\u9009\u62E9\u89C6\u9891");
+        toast.warning(t("selectVideoFirst"));
         return;
       }
       inputBase.videoUrl = ossUrl(videoRef.path);
@@ -967,9 +966,7 @@ export function AiVideoGeneratorDialog({
       );
     }
 
-    toast.success(
-      `\u5DF2\u6DFB\u52A0 ${Math.max(1, count)} \u4E2A\u89C6\u9891\u751F\u6210\u4EFB\u52A1`
-    );
+    toast.success(t("addedVideoTasks", { count: Math.max(1, count) }));
   };
 
   // ─── Reference setter callbacks for VideoReferencePanel ──
@@ -1057,17 +1054,17 @@ export function AiVideoGeneratorDialog({
               <p className="mt-1 text-xs text-muted-foreground">
                 {editMode
                   ? editMode === "repaint"
-                    ? "\u91CD\u7ED8\u6A21\u5F0F"
+                    ? t("repaintMode")
                     : editMode === "localEdit"
-                      ? "\u5C40\u90E8\u7F16\u8F91\u6A21\u5F0F"
+                      ? t("localEditMode")
                       : editMode === "extend"
-                        ? "\u5EF6\u957F\u6A21\u5F0F"
-                        : "\u753B\u9762\u6269\u5C55\u6A21\u5F0F"
+                        ? t("extendMode")
+                        : t("outpaintingMode")
                   : uploadMode === "frames"
-                    ? "\u9996\u5C3E\u5E27\u6A21\u5F0F"
+                    ? t("framesMode")
                     : uploadMode === "multiReference"
-                      ? "\u591A\u53C2\u8003\u56FE\u6A21\u5F0F"
-                      : "\u53C2\u8003\u56FE\u6A21\u5F0F"}
+                      ? t("multiReferenceMode")
+                      : t("referenceMode")}
               </p>
             </div>
             <button
@@ -1106,78 +1103,78 @@ export function AiVideoGeneratorDialog({
               type="video"
               previewUrl={previewUrl}
               badge={previewBadge}
-              emptyText="\u70B9\u51FB\u5DE6\u4FA7\u89C6\u9891\u9884\u89C8"
+              emptyText={t("videoClickPreview")}
               className="flex-[6]"
               toolbarActions={videoToolbarActions}
               bottomActions={[
                 {
                   key: "repaint",
                   icon: <IconBrush className="size-3.5" />,
-                  label: "\u91CD\u7ED8",
+                  label: t("videoRepaint"),
                   active: editMode === "repaint",
                   onClick: () => void enterEditMode("repaint"),
                 },
                 {
                   key: "localEdit",
                   icon: <IconBoxMultiple className="size-3.5" />,
-                  label: "\u589E\u5220\u7269\u4F53",
+                  label: t("videoLocalEdit"),
                   active: editMode === "localEdit",
                   onClick: () => void enterEditMode("localEdit"),
                 },
                 {
                   key: "adjustments",
                   icon: <IconAdjustments className="size-3.5" />,
-                  label: "\u4FEE\u6539\u5C5E\u6027",
+                  label: t("videoChangeAttribute"),
                   disabled: true,
                 },
                 {
                   key: "storyboard",
                   icon: <IconLayoutGrid className="size-3.5" />,
-                  label: "\u81EA\u5B9A\u4E49\u5206\u955C",
+                  label: t("videoCustomShot"),
                   disabled: true,
                 },
                 {
                   key: "extend",
                   icon: <IconArrowBarRight className="size-3.5" />,
-                  label: "\u5EF6\u957F",
+                  label: t("videoExtend"),
                   active: editMode === "extend",
                   onClick: () => void enterEditMode("extend"),
                 },
                 {
                   key: "outpainting",
                   icon: <IconMaximize className="size-3.5" />,
-                  label: "\u753B\u9762\u6269\u5C55",
+                  label: t("videoOutpainting"),
                   active: editMode === "outpainting",
                   onClick: () => void enterEditMode("outpainting"),
                 },
                 {
                   key: "viewSwitch",
                   icon: <IconEye className="size-3.5" />,
-                  label: "\u89C6\u89D2\u5207\u6362",
+                  label: t("videoAngleSwitch"),
                   disabled: true,
                 },
                 {
                   key: "faceSwap",
                   icon: <IconUserCircle className="size-3.5" />,
-                  label: "\u89D2\u8272\u6362\u8138",
+                  label: t("videoFaceSwap"),
                   disabled: true,
                 },
                 {
                   key: "motionTransfer",
                   icon: <IconWalk className="size-3.5" />,
-                  label: "\u52A8\u4F5C\u8FC1\u79FB",
+                  label: t("videoMotionTransfer"),
                   disabled: true,
                 },
                 {
                   key: "upscale",
                   icon: <IconZoomIn className="size-3.5" />,
-                  label: "\u89C6\u9891\u9AD8\u6E05",
+                  label: t("videoSuperRes"),
                   disabled: true,
                 },
                 {
                   key: "lipsync",
                   icon: <IconMicrophone className="size-3.5" />,
-                  label: "\u5BF9\u53E3\u578B",
+                  label: t("videoLipSync"),
                   disabled: true,
                 },
               ]}
@@ -1256,7 +1253,7 @@ export function AiVideoGeneratorDialog({
                       updateVideoForm({ key, updates: { prefixPrompt: event.target.value } })
                     )
                   }
-                  placeholder="\u524D\u7F6E\u63D0\u793A\u8BCD..."
+                  placeholder={t("prefixPromptPlaceholder")}
                   className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
                 />
               </div>
@@ -1266,7 +1263,7 @@ export function AiVideoGeneratorDialog({
               <RichMentionEditor
                 value={prompt}
                 onChange={(v) => dispatch(updateVideoForm({ key, updates: { prompt: v } }))}
-                placeholder="\u6839\u636E @ \u5F15\u7528\u89D2\u8272\u3001\u573A\u666F\uFF0C\u63CF\u8FF0\u4F60\u60F3\u751F\u6210\u7684\u89C6\u9891\u5185\u5BB9..."
+                placeholder={t("videoPromptEditorPlaceholder")}
                 mentionTypes={["character", "scene", "prop"]}
                 minHeight={96}
                 maxHeight={240}
@@ -1285,7 +1282,7 @@ export function AiVideoGeneratorDialog({
                       updateVideoForm({ key, updates: { suffixPrompt: event.target.value } })
                     )
                   }
-                  placeholder="\u540E\u7F6E\u63D0\u793A\u8BCD..."
+                  placeholder={t("suffixPromptPlaceholder")}
                   className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
                 />
               </div>
@@ -1335,7 +1332,7 @@ export function AiVideoGeneratorDialog({
               {!editMode ? (
                 <div className="flex gap-2">
                   {[
-                    { label: "\u53C2\u8003\u56FE", value: "reference" as const },
+                    { label: t("referenceImageUpload"), value: "reference" as const },
                     { label: "\u9996\u5C3E\u5E27", value: "frames" as const },
                     { label: "\u591A\u53C2\u8003\u56FE", value: "multiReference" as const },
                   ].map((item) => (

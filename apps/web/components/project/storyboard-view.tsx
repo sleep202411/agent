@@ -170,6 +170,7 @@ function StoryboardCell({
   rowIndex: number;
   mentionItems: ReturnType<typeof buildMentionItems>;
 }) {
+  const t = useTranslations("storyboard");
   const cell = findCell(row, col);
   const textValue = getTextValue(cell);
   const shotId = String(row.shotId ?? "");
@@ -216,7 +217,7 @@ function StoryboardCell({
           shotId={shotId}
           shotColumnId={columnId}
           mentionItems={mentionItems}
-          placeholder="输入内容，支持 @角色 / @场景 / @道具"
+          placeholder={t("richtextPlaceholder")}
         />
       );
     case "dialogue":
@@ -227,7 +228,7 @@ function StoryboardCell({
           shotColumnId={columnId}
           mentionItems={mentionItems}
           allowedMentionTypes={["character"]}
-          placeholder="输入对白，支持 @角色"
+          placeholder={t("dialoguePlaceholder")}
           showAvatar={false}
           extraFields={["voiceId", "model"]}
         />
@@ -263,6 +264,7 @@ function VirtualStoryboardTable({
   visibleColumns: ShotColumn[];
   mentionItems: ReturnType<typeof buildMentionItems>;
 }) {
+  const t = useTranslations("storyboard");
   const scrollRef = useRef<HTMLDivElement>(null);
   const tableWidth = visibleColumns.reduce((sum, col) => sum + getColumnWidth(col), 0);
 
@@ -333,9 +335,7 @@ function VirtualStoryboardTable({
         </div>
 
         {rows.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">
-            当前剧集暂无镜头数据
-          </div>
+          <div className="py-12 text-center text-sm text-muted-foreground">{t("noShotsData")}</div>
         ) : null}
       </div>
     </div>
@@ -397,11 +397,11 @@ export function StoryboardView() {
         </div>
       ) : isLoading ? (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">加载分镜表...</p>
+          <p className="text-sm text-muted-foreground">{t("loadingStoryboard")}</p>
         </div>
       ) : visibleColumns.length === 0 && rows.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">暂无分镜数据</p>
+          <p className="text-sm text-muted-foreground">{t("noStoryboardData")}</p>
         </div>
       ) : (
         <VirtualStoryboardTable

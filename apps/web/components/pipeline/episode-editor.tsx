@@ -52,7 +52,7 @@ export function EpisodeEditor({ storyboard, onBack }: EpisodeEditorProps) {
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" disabled>
-            合成全集
+            {t("synthesizeAll")}
           </Button>
         </div>
       </header>
@@ -62,7 +62,7 @@ export function EpisodeEditor({ storyboard, onBack }: EpisodeEditorProps) {
         {/* ─── Left: Asset library ─── */}
         <aside className="w-56 shrink-0 overflow-auto border-r border-border p-4">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-sm font-semibold">资产库</h3>
+            <h3 className="text-sm font-semibold">{t("assetLibrary")}</h3>
             <Button variant="ghost" color="muted" size="icon-xs">
               <IconPlus className="size-4" />
             </Button>
@@ -72,7 +72,7 @@ export function EpisodeEditor({ storyboard, onBack }: EpisodeEditorProps) {
           <div className="mb-4">
             <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
               <IconUsers className="size-3.5" />
-              角色 ({mockCharacters.length})
+              {t("characters")} ({mockCharacters.length})
             </div>
             <div className="flex gap-2">
               {mockCharacters.map((char) => (
@@ -93,7 +93,7 @@ export function EpisodeEditor({ storyboard, onBack }: EpisodeEditorProps) {
           <div>
             <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
               <IconMapPin className="size-3.5" />
-              场景 ({mockScenes.length})
+              {t("scenes")} ({mockScenes.length})
             </div>
             <div className="space-y-2">
               {mockScenes.map((scene) => (
@@ -171,7 +171,7 @@ export function EpisodeEditor({ storyboard, onBack }: EpisodeEditorProps) {
             </div>
           </div>
           <p className="mt-2 text-right text-[10px] text-muted-foreground">
-            视频每秒消耗11积分，以实际生成为准
+            {t("videoCreditNote")}
           </p>
         </div>
       </div>
@@ -186,7 +186,7 @@ export function EpisodeEditor({ storyboard, onBack }: EpisodeEditorProps) {
               {formatDuration(getTotalDuration(storyboard.shots))}
             </span>
           </div>
-          <span className="text-xs text-muted-foreground">多选</span>
+          <span className="text-xs text-muted-foreground">{t("multiSelect")}</span>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
           {storyboard.shots.map((shot, i) => (
@@ -236,21 +236,20 @@ function ShotDetail({
   shotIndex: number;
   totalShots: number;
 }) {
+  const t = useTranslations("pipeline");
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">片段 {shotIndex + 1}</h3>
-          <span className="text-xs text-muted-foreground">
-            片段时长请限制在4-15s。输入&quot;@&quot;可快速调整镜头时长、引用角色、场景、素材
-          </span>
+          <h3 className="text-sm font-semibold">{t("shotNumber", { index: shotIndex + 1 })}</h3>
+          <span className="text-xs text-muted-foreground">{t("shotDurationHint")}</span>
         </div>
       </div>
 
       <div className="space-y-4 rounded-lg border border-border bg-card p-5">
         <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">画面风格和类型:</span> 3D, CG动画, 废土末世,
-          男频科幻/游戏
+          <span className="font-medium text-foreground">{t("visualStyleType")}</span> 3D, CG动画,
+          废土末世, 男频科幻/游戏
         </p>
 
         <p className="text-sm text-muted-foreground">
@@ -260,7 +259,7 @@ function ShotDetail({
         <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
           <div>
             <p className="font-medium text-foreground">
-              分镜{shotIndex + 1} ⏱ {shot.duration}.0 s ; 时间: 日，
+              {t("storyboardShot", { index: shotIndex + 1 })} ⏱ {shot.duration}.0 s ; 时间: 日，
               <span className="mx-1 inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
                 🧑 林萧-基础形象·基础拾荒者形象
               </span>
@@ -277,19 +276,21 @@ function ShotDetail({
                 <span className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
                   🧑 林萧-基础形象·基础拾荒者形象
                 </span>{" "}
-                说：「{shot.dialogue}」
+                {t("says", { dialogue: shot.dialogue })}
               </p>
             </div>
           )}
 
-          {shot.narration && <p className="italic">旁白：{shot.narration}</p>}
+          {shot.narration && (
+            <p className="italic">{t("narrationLabel", { text: shot.narration })}</p>
+          )}
         </div>
       </div>
 
       <div className="mt-4 flex justify-end">
         <Button variant="outline" color="muted">
           <IconEdit className="size-4" />
-          编辑脚本
+          {t("editScript")}
         </Button>
       </div>
     </div>

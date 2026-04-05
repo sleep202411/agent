@@ -36,17 +36,16 @@ function defaultUploadType(assetType: AssetRecordType) {
   return "SHOT_VALUE_IMAGE";
 }
 
-function assetTypeLabel(assetType: AssetRecordType) {
-  if (assetType === "video") return "视频";
-  if (assetType === "audio") return "音频";
-  return "图片";
+function assetTypeLabelKey(assetType: AssetRecordType) {
+  if (assetType === "video") return "typeLabel_video" as const;
+  if (assetType === "audio") return "typeLabel_audio" as const;
+  return "typeLabel_image" as const;
 }
 
-function acceptHint(assetType: AssetRecordType, maxSize: number) {
-  const sizeMb = Math.round(maxSize / 1024 / 1024);
-  if (assetType === "video") return `MP4, MOV, AVI 文件，最大 ${sizeMb}MB`;
-  if (assetType === "audio") return `MP3, WAV, AAC 文件，最大 ${sizeMb}MB`;
-  return `JPG, PNG, WEBP 文件，最大 ${sizeMb}MB`;
+function acceptHintKey(assetType: AssetRecordType) {
+  if (assetType === "video") return "acceptHint_video" as const;
+  if (assetType === "audio") return "acceptHint_audio" as const;
+  return "acceptHint_image" as const;
 }
 
 // ─── Props ──────────────────────────────────────────────
@@ -125,7 +124,7 @@ export function AssetPickerDialog({
 
       for (const file of fileArr) {
         if (file.size > maxSize) {
-          toast.error(`${file.name} 超过大小限制`);
+          toast.error(t("exceedSizeLimit", { name: file.name }));
           continue;
         }
         try {
@@ -139,14 +138,16 @@ export function AssetPickerDialog({
           if (!multiple) break;
         } catch (err) {
           console.error("[AssetPicker] 上传失败:", err);
-          toast.error(err instanceof Error ? err.message : "上传失败");
+          toast.error(err instanceof Error ? err.message : t("uploadFailed"));
         }
       }
 
       setUploading(false);
 
       if (paths.length > 0) {
-        toast.success(`上传成功 ${paths.length} 个${assetTypeLabel(assetType)}`);
+        toast.success(
+          t("uploadSuccessCount", { count: paths.length, type: t(assetTypeLabelKey(assetType)) })
+        );
         onSelect(paths);
         onOpenChange(false);
       }
@@ -236,9 +237,9 @@ export function AssetPickerDialog({
                 <>
                   <IconUpload className="size-7 text-muted-foreground/50" />
                   <div className="text-center">
-                    <p className="text-sm text-muted-foreground">点击上传 / 拖拽文件到这里</p>
+                    <p className="text-sm text-muted-foreground">{t("clickUploadOrDrag")}</p>
                     <p className="mt-1 text-xs text-muted-foreground/60">
-                      {acceptHint(assetType, maxSize)}
+                      {t(acceptHintKey(assetType), { size: Math.round(maxSize / 1024 / 1024) })}
                     </p>
                   </div>
                 </>
@@ -300,7 +301,7 @@ export function AssetPickerDialog({
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium">
-                          {String(asset.name ?? "") || "音频素材"}
+                          {String(asset.name ?? "") || t("audioAsset")}
                         </div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {String(asset.createTime ?? "")}

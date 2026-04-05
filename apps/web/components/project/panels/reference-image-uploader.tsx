@@ -18,7 +18,7 @@ function ossUrl(path?: string): string {
 export function ReferenceImageUploader({
   paths,
   onChange,
-  addLabel = "添加参考图",
+  addLabel,
   maxCount = 6,
 }: {
   paths: string[];
@@ -137,7 +137,7 @@ export function ReferenceImageUploader({
             className="flex h-[105px] w-[140px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
           >
             <IconCirclePlus className="size-5" />
-            <span className="text-xs">{addLabel}</span>
+            <span className="text-xs">{addLabel || tc("addReferenceImage")}</span>
           </button>
         ) : null}
       </div>

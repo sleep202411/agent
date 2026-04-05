@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import { IconCheck, IconChevronDown, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,10 +14,12 @@ function ModelCard({
   model,
   selected,
   onClick,
+  t,
 }: {
   model: AiModel;
   selected: boolean;
   onClick: () => void;
+  t: ReturnType<typeof useTranslations<"model">>;
 }) {
   return (
     <button
@@ -32,14 +35,16 @@ function ModelCard({
           <span className="text-sm font-medium">{model.name}</span>
           {model.isDefault && (
             <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-              推荐
+              {t("recommended")}
             </span>
           )}
         </div>
         {model.description && (
           <p className="mt-0.5 text-xs text-muted-foreground">{model.description}</p>
         )}
-        <p className="mt-0.5 text-[11px] text-muted-foreground/70">约 {model.cost} 积分/次</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+          {t("costPerUse", { cost: model.cost })}
+        </p>
       </div>
       {selected && <IconCheck className="mt-1 size-4 shrink-0 text-primary" />}
     </button>
@@ -65,6 +70,7 @@ export function ModelPicker({
   compact,
   className,
 }: ModelPickerProps) {
+  const t = useTranslations("model");
   const [open, setOpen] = useState(false);
   const selectedModel = models.find((m) => m.id === value);
 
@@ -78,7 +84,7 @@ export function ModelPicker({
           disabled={disabled}
           className={className}
         >
-          <span className="truncate">{selectedModel?.name ?? "选择模型"}</span>
+          <span className="truncate">{selectedModel?.name ?? t("selectModel")}</span>
           <IconChevronDown className="size-3 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
@@ -90,7 +96,7 @@ export function ModelPicker({
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <span className="text-sm font-medium">模型</span>
+          <span className="text-sm font-medium">{t("modelHeader")}</span>
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -103,13 +109,16 @@ export function ModelPicker({
         {/* Model list */}
         <div className="max-h-[50vh] overflow-y-auto overscroll-contain p-1.5">
           {models.length === 0 ? (
-            <div className="py-8 text-center text-xs text-muted-foreground">暂无可用模型</div>
+            <div className="py-8 text-center text-xs text-muted-foreground">
+              {t("noModelsAvailable")}
+            </div>
           ) : (
             models.map((model) => (
               <ModelCard
                 key={model.id}
                 model={model}
                 selected={model.id === value}
+                t={t}
                 onClick={() => {
                   onChange(model.id);
                   setOpen(false);

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { IconX, IconPencil, IconPlus } from "@tabler/icons-react";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
 import { cn } from "@/lib/utils";
@@ -75,6 +76,7 @@ export function PromptInput({
   onToggleEditMode,
   onSubmit,
 }: PromptInputProps) {
+  const t = useTranslations("storyboard");
   const canSubmit = prompt.trim().length > 0 && !loading;
 
   return (
@@ -105,7 +107,7 @@ export function PromptInput({
               className="flex size-20 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary"
             >
               <IconPlus className="size-4" />
-              <span className="text-[10px]">参考图</span>
+              <span className="text-[10px]">{t("referenceImageUpload")}</span>
             </button>
           )}
         </div>
@@ -122,7 +124,7 @@ export function PromptInput({
             )}
           >
             <IconPencil className="size-3" />
-            <span>{editMode ? "退出编辑模式" : "进入编辑模式"}</span>
+            <span>{editMode ? t("exitEditMode") : t("enterEditModeLabel")}</span>
           </button>
         ) : null}
       </div>
@@ -136,7 +138,7 @@ export function PromptInput({
               type="text"
               value={prefixPrompt}
               onChange={(e) => onPrefixChange(e.target.value)}
-              placeholder="前置提示词..."
+              placeholder={t("prefixPromptPlaceholder")}
               className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
             />
           </div>
@@ -162,7 +164,7 @@ export function PromptInput({
         <RichMentionEditor
           value={prompt}
           onChange={onPromptChange}
-          placeholder="根据 @ 引用角色、场景，描述你想生成的画面..."
+          placeholder={t("promptEditorPlaceholder")}
           mentionTypes={["character", "scene", "prop"]}
           minHeight={48}
           className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
@@ -180,7 +182,7 @@ export function PromptInput({
               type="text"
               value={suffixPrompt}
               onChange={(e) => onSuffixChange(e.target.value)}
-              placeholder="后置提示词..."
+              placeholder={t("suffixPromptPlaceholder")}
               className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
             />
           </div>
@@ -217,7 +219,7 @@ export function PromptInput({
             ]}
             value={count}
             onChange={(v) => onCountChange(Number(v))}
-            groupLabel="生成数量"
+            groupLabel={t("generateCountLabel")}
           />
 
           <GenerateButton onClick={onSubmit} loading={loading} cost={cost} />

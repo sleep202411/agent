@@ -34,7 +34,7 @@ export function CreationComposer() {
       setUploadedText(text);
       setUploadedFileName(file.name);
       if (!prompt.trim()) {
-        setPrompt(`基于上传的小说《${file.name.replace(/\.[^.]+$/, "")}》生成短剧视频`);
+        setPrompt(t("novelPromptTemplate", { name: file.name.replace(/\.[^.]+$/, "") }));
       }
     };
     reader.readAsText(file);
@@ -174,7 +174,7 @@ export function CreationComposer() {
                 <div className="flex items-center gap-1.5">
                   <span className="flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary">
                     <IconMovie className="size-3.5" />
-                    短剧 Agent
+                    {t("shortDramaAgent")}
                   </span>
                 </div>
                 <Button

@@ -163,7 +163,7 @@ export function PropImageSection({
             ? result.replace(`${OSS_BASE}/`, "")
             : String(result ?? "");
         if (!nextPath) {
-          throw new Error("未生成有效图片");
+          throw new Error(tc("noValidImage"));
         }
         const nextImages = [...images];
         nextImages[index] = nextPath;
@@ -200,7 +200,7 @@ export function PropImageSection({
           ? result.replace(`${OSS_BASE}/`, "")
           : String(result ?? "");
       if (!nextPath) {
-        throw new Error("未生成有效三视图");
+        throw new Error(tc("noValidThreeView"));
       }
       onThreeViewChange(nextPath);
       toast.success(tc("threeViewSuccess"));

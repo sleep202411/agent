@@ -1,6 +1,7 @@
 "use client";
 
 import { IconLoader2, IconPhoto, IconTrash, IconWand } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
@@ -27,6 +28,9 @@ export function CharacterList({
   onDelete: (character: CharacterPanelItem) => void;
   onLoadMore: () => void;
 }) {
+  const t = useTranslations("character");
+  const tc = useTranslations("common");
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -49,7 +53,7 @@ export function CharacterList({
   if (characters.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-14 text-sm text-muted-foreground">
-        暂无角色
+        {t("noCharacters")}
       </div>
     );
   }
@@ -73,7 +77,7 @@ export function CharacterList({
                 onClick={() => onSelectVersion(character)}
                 className="truncate text-left text-sm font-medium text-foreground transition-colors hover:text-primary"
               >
-                {character.name || "未命名角色"}
+                {character.name || t("unnamedCharacter")}
               </button>
 
               <div className="flex items-center gap-1.5">
@@ -87,7 +91,7 @@ export function CharacterList({
                     onClick={() => onFusion(character)}
                   >
                     <IconWand className="size-3.5" />
-                    AI 溶图
+                    {t("aiFusion")}
                   </Button>
                 ) : null}
 
@@ -129,7 +133,7 @@ export function CharacterList({
                   )}
                 </div>
                 <div className="w-[120px] truncate py-1 text-center text-xs text-muted-foreground">
-                  {character.name || "未命名角色"}
+                  {character.name || t("unnamedCharacter")}
                 </div>
               </button>
 
@@ -167,10 +171,10 @@ export function CharacterList({
             disabled={loadingMore}
           >
             {loadingMore ? <IconLoader2 className="size-4 animate-spin" /> : null}
-            加载更多
+            {tc("loadMore")}
           </Button>
         ) : (
-          "没有更多数据"
+          tc("noMoreData")
         )}
       </div>
     </div>

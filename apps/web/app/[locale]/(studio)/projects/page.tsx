@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useLocale } from "next-intl";
 import { IconPlus, IconDots, IconLoader2, IconLayoutGrid, IconFolder } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import { CreationComposer } from "@/components/workspace/creation-composer";
 import {
   DropdownMenu,
@@ -31,6 +32,7 @@ function ossUrl(path: string | null | undefined): string | null {
 
 export default function ProjectsPage() {
   const locale = useLocale();
+  const tw = useTranslations("workspace");
   const { groups, totalProducts, isLoading } = useWorldsWithProducts();
   const [creating, setCreating] = useState(false);
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("grouped");
@@ -46,19 +48,17 @@ export default function ProjectsPage() {
     <div className="flex flex-col gap-10 px-8 pb-24 pt-10">
       {/* Header */}
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
-        <p className="text-sm text-muted-foreground">
-          Create, edit and manage your AI animation projects.
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">{tw("projectsPageTitle")}</h1>
+        <p className="text-sm text-muted-foreground">{tw("projectsPageDesc")}</p>
       </header>
 
       {/* Project Grid */}
       <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold">My Projects</h2>
+            <h2 className="text-lg font-semibold">{tw("myProjects")}</h2>
             <p className="text-sm text-muted-foreground">
-              {totalProducts} project{totalProducts !== 1 ? "s" : ""}
+              {tw("projectCount", { count: totalProducts })}
             </p>
           </div>
           <ToggleGroup
@@ -66,10 +66,10 @@ export default function ProjectsPage() {
             value={viewMode}
             onValueChange={(v) => v && setViewMode(v as "flat" | "grouped")}
           >
-            <ToggleGroupItem value="flat" aria-label="平铺展示">
+            <ToggleGroupItem value="flat" aria-label={tw("flatView")}>
               <IconLayoutGrid className="size-4" />
             </ToggleGroupItem>
-            <ToggleGroupItem value="grouped" aria-label="按世界分组">
+            <ToggleGroupItem value="grouped" aria-label={tw("groupedView")}>
               <IconFolder className="size-4" />
             </ToggleGroupItem>
           </ToggleGroup>
@@ -132,6 +132,7 @@ function FlatView({ groups, loading, creating, locale, onCreateProject }: ViewPr
 // ─── Grouped View ───────────────────────────────────────────
 
 function GroupedView({ groups, loading, creating, locale, onCreateProject }: ViewProps) {
+  const tw = useTranslations("workspace");
   return (
     <div className="space-y-10">
       {loading && (
@@ -156,7 +157,7 @@ function GroupedView({ groups, loading, creating, locale, onCreateProject }: Vie
               <div>
                 <h2 className="text-lg font-semibold">{world.name}</h2>
                 <p className="text-sm text-muted-foreground">
-                  {products.length} project{products.length !== 1 ? "s" : ""}
+                  {tw("projectCount", { count: products.length })}
                 </p>
               </div>
             </div>
@@ -247,6 +248,7 @@ function ProductCard({
 // ─── Create Button ──────────────────────────────────────────
 
 function CreateButton({ creating, onClick }: { creating: boolean; onClick: () => void }) {
+  const tw = useTranslations("workspace");
   return (
     <button
       type="button"
@@ -263,7 +265,7 @@ function CreateButton({ creating, onClick }: { creating: boolean; onClick: () =>
           <IconPlus className="size-5" />
         </div>
       )}
-      <span className="text-sm font-medium">{creating ? "Creating..." : "New Project"}</span>
+      <span className="text-sm font-medium">{creating ? tw("creating") : tw("createProject")}</span>
     </button>
   );
 }
@@ -271,11 +273,10 @@ function CreateButton({ creating, onClick }: { creating: boolean; onClick: () =>
 // ─── Empty State ────────────────────────────────────────────
 
 function EmptyState() {
+  const tw = useTranslations("workspace");
   return (
     <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
-      <p className="text-sm text-muted-foreground">
-        No projects yet. Create your first project to get started.
-      </p>
+      <p className="text-sm text-muted-foreground">{tw("noProjectsYetHint")}</p>
     </div>
   );
 }
