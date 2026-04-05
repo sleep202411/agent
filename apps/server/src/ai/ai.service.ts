@@ -28,6 +28,7 @@ export class AiService implements OnModuleInit {
 
   private readonly provider = createAlibaba({
     apiKey: process.env.ALIBABA_API_KEY,
+    baseURL: process.env.ALIBABA_BASE_URL,
     fetch: async (url, init) => {
       if (typeof init?.body === 'string') {
         const body = JSON.parse(init.body);

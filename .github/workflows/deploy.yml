@@ -36,8 +36,11 @@ jobs:
             ENV="${{ inputs.environment }}"
           elif [ "${{ github.ref_name }}" = "main" ]; then
             ENV="production"
-          else
+          elif [ "${{ github.ref_name }}" = "develop" ]; then
             ENV="staging"
+          else
+            echo "::error::Unsupported branch: ${{ github.ref_name }}"
+            exit 1
           fi
 
           if [ "$ENV" = "production" ]; then
@@ -74,9 +77,7 @@ jobs:
           context: .
           file: apps/server/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/studio-server:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
+          tags: ${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -104,9 +105,7 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}-${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
+          tags: ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
           build-args: |
             NEXT_PUBLIC_OSS_BASE_URL=${{ vars.OSS_BASE_URL }}
             SERVER_URL=http://server:3001
@@ -118,7 +117,7 @@ jobs:
   # ─── Deploy to target servers ─────────────────────────
   deploy:
     needs: [prepare, build-server, build-web]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       matrix:
         target: ${{ fromJson(needs.prepare.outputs.targets) }}
@@ -127,31 +126,28 @@ jobs:
       group: deploy-${{ matrix.target }}
       cancel-in-progress: false
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_PASSWORD }}
-          script: |
-            cd ~/apps/fizzdragon-studio
+      - uses: actions/checkout@v4
 
-            # Persist tags so docker compose survives server reboot
-            cat > .env << EOF
-            IMAGE_PREFIX=${{ env.IMAGE_PREFIX }}
-            WEB_TAG=${{ matrix.target }}
-            SERVER_TAG=${{ needs.prepare.outputs.server_tag }}
-            EOF
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Server runtime config
-            cat > .env.server << EOF
-            JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
-            JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
-            ALIBABA_API_KEY=${{ secrets.ALIBABA_API_KEY }}
-            AI_MODEL=qwen-plus
-            PORT=3001
-            EOF
+      - name: Deploy
+        run: |
+          cat > .env << EOF
+          IMAGE_PREFIX=${{ env.IMAGE_PREFIX }}
+          WEB_TAG=${{ matrix.target }}
+          SERVER_TAG=${{ needs.prepare.outputs.server_tag }}
+          EOF
 
-            docker compose pull
-            docker compose up -d --remove-orphans
-            docker image prune -f
+          cat > .env.server << EOF
+          JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
+          JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
+          ALIBABA_API_KEY=${{ secrets.ALIBABA_API_KEY }}
+          ALIBABA_BASE_URL=${{ secrets.ALIBABA_BASE_URL }}
+          AI_MODEL=qwen-plus
+          PORT=3001
+          EOF
+
+          docker compose pull
+          docker compose up -d --remove-orphans
+          docker image prune -f
