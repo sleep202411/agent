@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  IconArrowBack,
   IconCredits,
   IconCrown,
   IconDeviceDesktop,
@@ -212,6 +213,16 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
         </div>
 
         <DropdownMenuSeparator />
+
+        {/* Back to old version (only in iframe) */}
+        {typeof window !== "undefined" && window.self !== window.top && (
+          <DropdownMenuItem
+            onClick={() => window.parent.postMessage({ type: "switchToOldVersion" }, "*")}
+          >
+            <IconArrowBack className="size-4" />
+            {tc("backToOldVersion")}
+          </DropdownMenuItem>
+        )}
 
         {/* Logout */}
         <DropdownMenuItem variant="destructive" onClick={() => void dispatch(logout())}>

@@ -55,6 +55,14 @@ import {
   AiVideoGeneratorDialog,
 } from "@/components/storyboard/ai-generator";
 import { AudioWaveformBars } from "@/components/storyboard/ai-generator/audio-waveform-bars";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { buildOssImageUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -978,55 +986,38 @@ export function SelectCell({
   shotId: string;
   shotColumnId: string;
 }) {
-  const [editing, setEditing] = useState(false);
   const options = parseColumnOptions(column);
   const display = getCellDisplayValue(cell);
-  const [draft, setDraft] = useState(display);
-  const datalistId = `options-${shotColumnId}`;
 
-  return editing ? (
-    <div className="px-2 py-2">
-      <Input
-        autoFocus
-        list={datalistId}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => {
-          setEditing(false);
-          if (draft !== display) {
-            void persistTextCell(shotId, shotColumnId, draft);
+  return (
+    <div className="flex h-full w-full items-center px-2">
+      <Select
+        value={display || undefined}
+        onValueChange={(value) => {
+          const next = value === "__clear__" ? "" : value;
+          if (next !== display) {
+            void persistTextCell(shotId, shotColumnId, next);
           }
         }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            setDraft(display);
-            setEditing(false);
-          }
-          if (event.key === "Enter") {
-            setEditing(false);
-            if (draft !== display) {
-              void persistTextCell(shotId, shotColumnId, draft);
-            }
-          }
-        }}
-      />
-      <datalist id={datalistId}>
-        {options.map((option) => (
-          <option key={option} value={option} />
-        ))}
-      </datalist>
+      >
+        <SelectTrigger className="h-7 w-full border-none bg-transparent shadow-none">
+          <SelectValue placeholder="选择" />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+          {display && (
+            <>
+              <SelectSeparator />
+              <SelectItem value="__clear__">清除</SelectItem>
+            </>
+          )}
+        </SelectContent>
+      </Select>
     </div>
-  ) : (
-    <button
-      type="button"
-      onClick={() => {
-        setDraft(display);
-        setEditing(true);
-      }}
-      className="flex h-full w-full items-center justify-center px-3 text-xs hover:bg-muted/30"
-    >
-      {display || <span className="text-muted-foreground">选择或输入</span>}
-    </button>
   );
 }
 
