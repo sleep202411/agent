@@ -2070,26 +2070,39 @@ export const selectAudioInstance = (state: RootState, shotId: string, colId: str
   return selectCurrentInstance(state).aiAudioForm.instances[key] ?? null;
 };
 
+const EMPTY_AUDIO_HISTORY: ResultItem[] = [];
+const EMPTY_AUDIO_RESULTS: ResultItem[] = [];
+
+export const makeSelectAllAudioResults = () => {
+  const selectShotTasks = makeSelectTasksByShot();
+  return createSelector(
+    [
+      (state: RootState, shotId: string, colId: string) => {
+        const key = audioInstanceKey(shotId, colId);
+        return (
+          selectCurrentInstance(state).aiAudioForm.instances[key]?.history ?? EMPTY_AUDIO_HISTORY
+        );
+      },
+      (state: RootState, shotId: string, colId: string) => selectShotTasks(state, shotId, colId),
+    ],
+    (history, tasks): ResultItem[] => {
+      const taskItems: ResultItem[] = tasks.filter((t) => t.type === "audio").map(taskToResultItem);
+      const historyItems: ResultItem[] = history.map((h) => ({ ...h, fromHistory: true }));
+
+      if (taskItems.length === 0 && historyItems.length === 0) return EMPTY_AUDIO_RESULTS;
+
+      const taskPaths = new Set(taskItems.map((t) => t.storagePath).filter(Boolean));
+      const dedupedHistory = historyItems.filter(
+        (h) => !h.storagePath || !taskPaths.has(h.storagePath)
+      );
+
+      return [...taskItems, ...dedupedHistory];
+    }
+  );
+};
+
 export const selectAllAudioResults = (
   state: RootState,
   shotId: string,
   colId: string
-): ResultItem[] => {
-  const key = audioInstanceKey(shotId, colId);
-  const inst = selectCurrentInstance(state).aiAudioForm.instances[key];
-
-  const tasks = selectTasksByShot(state, shotId, colId);
-  const taskItems: ResultItem[] = tasks.filter((t) => t.type === "audio").map(taskToResultItem);
-
-  const historyItems: ResultItem[] = (inst?.history ?? []).map((h) => ({
-    ...h,
-    fromHistory: true,
-  }));
-
-  const taskPaths = new Set(taskItems.map((t) => t.storagePath).filter(Boolean));
-  const dedupedHistory = historyItems.filter(
-    (h) => !h.storagePath || !taskPaths.has(h.storagePath)
-  );
-
-  return [...taskItems, ...dedupedHistory];
-};
+): ResultItem[] => makeSelectAllAudioResults()(state, shotId, colId);
