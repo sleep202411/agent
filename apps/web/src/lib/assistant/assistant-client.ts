@@ -117,12 +117,27 @@ export async function sendAssistantChat({
 
   const stream = toChunkStream(response.body);
   let latest: AssistantMessage | null = null;
+  let finishReason: string | undefined;
+
+  const placeholderMessage: AssistantMessage = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [],
+  };
 
   for await (const message of readUIMessageStream({
+    message: placeholderMessage,
     stream,
+    onFinish({ finishReason: reason }) {
+      finishReason = reason;
+    },
   })) {
     latest = message as AssistantMessage;
     onMessage(latest);
+  }
+
+  if (finishReason === "error") {
+    throw new Error("AI 处理过程中出现错误，请重试");
   }
 
   return latest;

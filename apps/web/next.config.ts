@@ -13,16 +13,13 @@ const nextConfig: NextConfig = {
 
     const rules: Array<{ source: string; destination: string; locale: false }> = [];
 
-    // ─── NestJS Server: /api/agent/*, /api/assistant/*
+    // ─── NestJS Server: /api/agent/*
+    // Note: /api/assistant/chat is handled by Route Handler (app/api/assistant/chat/route.ts)
+    // for proper SSE streaming support. Only non-chat assistant routes use rewrite.
     if (serverUrl) {
       rules.push({
         source: "/api/agent/:path*",
         destination: `${serverUrl}/agent/:path*`,
-        locale: false,
-      });
-      rules.push({
-        source: "/api/assistant/:path*",
-        destination: `${serverUrl}/assistant/:path*`,
         locale: false,
       });
     }

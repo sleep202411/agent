@@ -58,7 +58,7 @@ function CardFrame({
 }: {
   title: string;
   description?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   tone?: "default" | "success" | "error";
 }) {
   return (
@@ -72,7 +72,7 @@ function CardFrame({
     >
       <div className="text-sm font-medium">{title}</div>
       {description ? <div className="mt-1 text-xs text-muted-foreground">{description}</div> : null}
-      <div className="mt-3">{children}</div>
+      {children ? <div className="mt-3">{children}</div> : null}
     </div>
   );
 }
@@ -889,14 +889,21 @@ export function AssistantToolCard({
     );
   }
 
-  if (part.state === "output-available" && isMutationOutput(part.output)) {
-    const description = describeMutationOutput(part.output);
+  if (part.state === "output-available") {
+    if (isMutationOutput(part.output)) {
+      const description = describeMutationOutput(part.output);
+      return (
+        <CardFrame title={displayName} description={description.title} tone="success">
+          <div className="text-xs text-muted-foreground">{description.meta}</div>
+        </CardFrame>
+      );
+    }
+    // Read-only tools (get_world_assets, etc.) — show completed
+    return <CardFrame title={displayName} description="已完成" tone="success" />;
+  }
 
-    return (
-      <CardFrame title={displayName} description={description.title} tone="success">
-        <div className="text-xs text-muted-foreground">{description.meta}</div>
-      </CardFrame>
-    );
+  if (part.state === "result") {
+    return <CardFrame title={displayName} description="已完成" tone="success" />;
   }
 
   return (

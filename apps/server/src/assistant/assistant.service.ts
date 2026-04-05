@@ -86,10 +86,12 @@ export class AssistantService {
       },
     });
 
+    this.logger.log('Fetching project context...');
     const projectContext = await this.workspace.getProjectContextSummary(
       incomingHeaders,
       wsContext,
     );
+    this.logger.log('Project context ready');
 
     const validationTools = tools as unknown as ToolSet;
     let validatedMessages: AssistantMessage[];
@@ -98,18 +100,34 @@ export class AssistantService {
         messages: payload.messages,
         tools: validationTools,
       } as never);
-    } catch {
+    } catch (err) {
+      this.logger.error(
+        `Message validation failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new Error('助手消息格式不合法');
     }
+    this.logger.log(`Validated ${validatedMessages.length} messages`);
 
     const preparedMessages = this.augmentMessages(validatedMessages);
-    const modelInputMessages = preparedMessages.map((msg) => ({
-      ...msg,
-      id: undefined,
-    }));
-    const modelMessages = await convertToModelMessages(modelInputMessages, {
+    const modelMessages = await convertToModelMessages(preparedMessages, {
       tools: validationTools,
     });
+
+    // Strip non-image file parts — alibaba provider only supports images
+    for (const msg of modelMessages) {
+      if (msg.role === 'user' && Array.isArray(msg.content)) {
+        msg.content = msg.content.filter(
+          (part: any) =>
+            part.type !== 'file' ||
+            (part.mediaType && part.mediaType.startsWith('image/')),
+        );
+      }
+    }
+
+    const modelId = process.env.AI_MODEL || 'qwen-plus';
+    this.logger.log(
+      `Starting streamText: model=${modelId}, ${modelMessages.length} messages, ${Object.keys(tools).length} tools`,
+    );
 
     const result = streamText({
       model: this.ai.getModel(),
@@ -121,7 +139,24 @@ export class AssistantService {
       temperature: 0.2,
       onError: ({ error }) => {
         const msg = error instanceof Error ? error.message : String(error);
-        this.logger.error(`Stream failed: ${msg}`);
+        this.logger.error(`Stream onError: ${msg}`);
+        if (error instanceof Error && error.stack) {
+          this.logger.error(error.stack);
+        }
+      },
+      onFinish: (event) => {
+        this.logger.log(`Stream finished: reason=${event.finishReason}`);
+      },
+      onStepFinish: (event) => {
+        this.logger.log(`Step finished: reason=${event.finishReason}`);
+        if (event.finishReason === 'error') {
+          this.logger.error(
+            `Step error details: ${JSON.stringify({
+              warnings: event.warnings,
+              response: event.response ? { body: event.response.body } : null,
+            })}`,
+          );
+        }
       },
     });
 

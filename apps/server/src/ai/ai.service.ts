@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
-import { createOpenAI } from '@ai-sdk/openai';
+import { createAlibaba } from '@ai-sdk/alibaba';
 import type { LanguageModelV3 } from '@ai-sdk/provider';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,9 +26,30 @@ export class AiService implements OnModuleInit {
     this.loadSkills();
   }
 
-  private readonly provider = createOpenAI({
-    baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+  private readonly provider = createAlibaba({
     apiKey: process.env.ALIBABA_API_KEY,
+    fetch: async (url, init) => {
+      if (typeof init?.body === 'string') {
+        const body = JSON.parse(init.body);
+        if (body?.messages) {
+          // Log each message for debugging
+          for (let i = 0; i < body.messages.length; i++) {
+            const m = body.messages[i];
+            this.logger.log(
+              `  API msg[${i}]: role=${m.role} content_type=${m.content === null ? 'null' : typeof m.content} isArray=${Array.isArray(m.content)} tool_calls=${!!m.tool_calls} content=${JSON.stringify(m.content).slice(0, 200)}`,
+            );
+          }
+          // Fix: DashScope rejects null content on assistant messages
+          for (const m of body.messages) {
+            if (m.role === 'assistant' && m.content == null) {
+              m.content = '';
+            }
+          }
+          init = { ...init, body: JSON.stringify(body) };
+        }
+      }
+      return fetch(url, init);
+    },
   });
 
   getModel(modelId?: string): LanguageModelV3 {

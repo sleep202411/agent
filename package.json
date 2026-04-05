@@ -28,5 +28,8 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "@ai-sdk/alibaba": "^1.0.14"
+  }
 }
