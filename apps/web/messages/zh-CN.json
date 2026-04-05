@@ -171,7 +171,7 @@
     "generatingInviteLink": "正在生成邀请链接",
     "loadingProject": "加载项目中...",
     "loadProjectFailed": "项目加载失败",
-    "aiAssistant": "AI 助手"
+    "aiAssistant": "StoryOS"
   },
   "sidebar": {
     "projects": "项目",
@@ -183,7 +183,7 @@
     "assets": "素材库",
     "music": "音乐",
     "inspiration": "灵感",
-    "aiAssistant": "AI 助手"
+    "aiAssistant": "StoryOS"
   },
   "scene": {
     "title": "场景",
@@ -397,7 +397,7 @@
     "title": "时间线"
   },
   "ai": {
-    "title": "AI 助手",
+    "title": "StoryOS",
     "panelDescription": "单项目单对话，当前会话仅保存在内存中",
     "greeting": "你好，需要什么帮助？",
     "greetingHint": "选择一个快捷指令开始，或直接输入你的需求",
@@ -533,7 +533,7 @@
   "inspiration": {
     "title": "灵感",
     "currentProjectHint": "当前项目的灵感入口",
-    "description": "这里不只是提示文案。你可以从任何卡片直接跳转到对应视图，并打开 AI 助手继续工作。",
+    "description": "这里不只是提示文案。你可以从任何卡片直接跳转到对应视图，并打开 StoryOS 继续工作。",
     "splitStoryboard": "从剧本自动拆分分镜",
     "splitStoryboardDesc": "把当前剧本拆成镜头表，并生成适合分镜和视频的 prompt 草稿。",
     "supplementAssets": "补齐角色与场景设定",
@@ -589,8 +589,8 @@
     "benefits": {
       "bonusCredits": "赠送 {value} 积分",
       "creditDiscount": "积分购买享 9 折",
-      "limitedAgent": "限量使用 AI 助手",
-      "unlimitedAgent": "无限制使用 AI 助手",
+      "limitedAgent": "限量使用 StoryOS",
+      "unlimitedAgent": "无限制使用 StoryOS",
       "freeCourses": "课程专属优惠"
     }
   }

@@ -712,7 +712,7 @@ export function createDefaultProjectInstance(): ProjectInstanceState {
     error: null,
 
     activeTab: "storyboard",
-    activePanel: null,
+    activePanel: "aiAssistant",
     isAiPanelOpen: false,
     isAiPanelExpanded: false,
 

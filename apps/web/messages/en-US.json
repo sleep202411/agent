@@ -171,7 +171,7 @@
     "generatingInviteLink": "Generating invite link",
     "loadingProject": "Loading project...",
     "loadProjectFailed": "Failed to load project",
-    "aiAssistant": "AI Assistant"
+    "aiAssistant": "StoryOS"
   },
   "sidebar": {
     "projects": "Projects",
@@ -183,7 +183,7 @@
     "assets": "Assets",
     "music": "Music",
     "inspiration": "Inspiration",
-    "aiAssistant": "AI Assistant"
+    "aiAssistant": "StoryOS"
   },
   "scene": {
     "title": "Scenes",
@@ -397,7 +397,7 @@
     "title": "Timeline"
   },
   "ai": {
-    "title": "AI Assistant",
+    "title": "StoryOS",
     "panelDescription": "One conversation per project, stored in memory only",
     "greeting": "Hello, how can I help?",
     "greetingHint": "Pick a quick action to start, or type your request directly",
