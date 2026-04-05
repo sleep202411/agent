@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PanelAnimateContext } from "@/components/project/panels/panel-layout";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -44,15 +44,18 @@ export default function ProjectDetailPage() {
     storyboard: true,
   });
 
-  useEffect(() => {
+  const [prevActiveTab, setPrevActiveTab] = useState(activeTab);
+  if (prevActiveTab !== activeTab) {
+    setPrevActiveTab(activeTab);
     setMountedTabs((prev) => (prev[activeTab] ? prev : { ...prev, [activeTab]: true }));
-  }, [activeTab]);
+  }
 
   const activePanel = useAppSelector((s) => selectCurrentInstance(s).activePanel);
-  const prevPanelRef = useRef(activePanel);
-  const shouldAnimatePanel = prevPanelRef.current == null && activePanel != null;
-  // Update ref synchronously after reading, before next render reads it
-  prevPanelRef.current = activePanel;
+  const [prevPanel, setPrevPanel] = useState(activePanel);
+  if (prevPanel !== activePanel) {
+    setPrevPanel(activePanel);
+  }
+  const shouldAnimatePanel = prevPanel == null && activePanel != null;
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);

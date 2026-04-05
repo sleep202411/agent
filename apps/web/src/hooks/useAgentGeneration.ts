@@ -99,7 +99,7 @@ export function useOutlineGeneration() {
 
       realHook.submit(input);
     },
-    [MOCK, realHook.submit, dispatch, setMockLoading]
+    [realHook, dispatch, setMockLoading]
   );
 
   return {
@@ -199,7 +199,7 @@ export function useCharactersGeneration() {
 
       realHook.submit({ outline });
     },
-    [MOCK, realHook.submit, dispatch, setMockLoading]
+    [realHook, dispatch, setMockLoading]
   );
 
   return {
@@ -285,7 +285,7 @@ export function useStoryboardGeneration() {
 
       realHook.submit(input);
     },
-    [MOCK, realHook.submit, dispatch, setMockLoading]
+    [realHook, dispatch, setMockLoading]
   );
 
   return {

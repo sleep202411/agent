@@ -114,18 +114,22 @@ export function StoryboardBatchVoiceDialog({
 
   useEffect(() => {
     if (models.length === 0) return;
-    const defaultModel =
+    const defaultModelCode =
       models.find((item) => item.isDefault)?.serviceCode ?? models[0]?.serviceCode ?? "";
-    const modelCode = String(defaultModel);
+    const modelCode = String(defaultModelCode);
     setModel(modelCode);
     if (modelCode) {
-      loadVoices(modelCode);
+      const cleanup = loadVoices(modelCode);
+      return () => {
+        cleanup();
+        stopAudio();
+      };
     }
-
     return () => {
       stopAudio();
     };
-  }, [models, loadVoices]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models]);
 
   const handleModelChange = (nextModelCode: string) => {
     setModel(nextModelCode);

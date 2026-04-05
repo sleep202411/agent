@@ -208,8 +208,9 @@ export function StoryboardBatchGenerateDialog({
   const sizeOptions = useMemo(() => parseImageSizes(currentModel), [currentModel]);
   const videoDescription = useMemo(() => parseVideoDescription(currentModel), [currentModel]);
 
-  useEffect(() => {
-    if (models.length === 0) return;
+  const [prevModels, setPrevModels] = useState(models);
+  if (prevModels !== models && models.length > 0) {
+    setPrevModels(models);
     const defaultModelCode =
       models.find((item) => item.isDefault)?.serviceCode ?? models[0]?.serviceCode ?? "";
     const defaultModel = models.find(
@@ -223,7 +224,7 @@ export function StoryboardBatchGenerateDialog({
     } else {
       setSize(getPreferredImageSize(parseImageSizes(defaultModel), projectSize));
     }
-  }, [models, isVideo, projectSize]);
+  }
 
   const handleModelChange = (nextModelCode: string) => {
     setModel(nextModelCode);

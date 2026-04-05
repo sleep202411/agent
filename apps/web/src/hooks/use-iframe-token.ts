@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore, useState } from "react";
 
 /**
  * When running inside an iframe (e.g. studio.test.fizzdragon.com embedded in
@@ -37,16 +37,18 @@ const TOKEN_NAME = "satoken";
 const TIMEOUT_MS = 3000;
 
 export function useIframeToken(): boolean {
-  // Always start true to match SSR — avoids hydration mismatch
-  const [ready, setReady] = useState(true);
+  const needsToken = useSyncExternalStore(
+    () => () => {},
+    () => isInIframe() && !getCookie(TOKEN_NAME),
+    () => false
+  );
+
+  const [tokenReceived, setTokenReceived] = useState(false);
 
   useEffect(() => {
-    if (!isInIframe() || getCookie(TOKEN_NAME)) return;
+    if (!needsToken) return;
 
-    // We're in iframe without token — block until parent responds
-    setReady(false);
-
-    const timer = setTimeout(() => setReady(true), TIMEOUT_MS);
+    const timer = setTimeout(() => setTokenReceived(true), TIMEOUT_MS);
 
     function handleMessage(event: MessageEvent) {
       const data = event.data;
@@ -54,7 +56,7 @@ export function useIframeToken(): boolean {
 
       if (data.type === "token" && data.name === TOKEN_NAME && data.value) {
         setCookie(TOKEN_NAME, data.value);
-        setReady(true);
+        setTokenReceived(true);
         clearTimeout(timer);
       }
     }
@@ -66,7 +68,7 @@ export function useIframeToken(): boolean {
       window.removeEventListener("message", handleMessage);
       clearTimeout(timer);
     };
-  }, []);
+  }, [needsToken]);
 
-  return ready;
+  return !needsToken || tokenReceived;
 }

@@ -242,7 +242,7 @@ function ShotDetail({
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold">片段 {shotIndex + 1}</h3>
           <span className="text-xs text-muted-foreground">
-            片段时长请限制在4-15s。输入"@"可快速调整镜头时长、引用角色、场景、素材
+            片段时长请限制在4-15s。输入&quot;@&quot;可快速调整镜头时长、引用角色、场景、素材
           </span>
         </div>
       </div>
