@@ -5,6 +5,7 @@ export const assistantAgentTypes = [
   "character",
   "scene",
   "ad",
+  "novel",
 ] as const;
 
 export type AssistantAgentType = (typeof assistantAgentTypes)[number];

@@ -779,6 +779,8 @@
     "sceneAgentDesc": "场景构建、氛围设计、全景图",
     "adAgent": "广告创意",
     "adAgentDesc": "广告脚本、分镜创作、卖点提炼",
+    "novelAgent": "创作智能体",
+    "novelAgentDesc": "从想法到故事、剧本、分镜一站式创作",
     "entityCharacter": "角色",
     "entityScene": "场景",
     "entityProp": "道具",

@@ -10,6 +10,7 @@ import {
   IconLoader2,
   IconMapPin,
   IconAd,
+  IconBook2,
   IconMovie,
   IconPackage,
   IconPencil,
@@ -93,6 +94,12 @@ const AI_AGENTS = [
     icon: <IconAd className="size-4" />,
     nameKey: "adAgent" as const,
     descKey: "adAgentDesc" as const,
+  },
+  {
+    key: "novel",
+    icon: <IconBook2 className="size-4" />,
+    nameKey: "novelAgent" as const,
+    descKey: "novelAgentDesc" as const,
   },
 ] as const;
 

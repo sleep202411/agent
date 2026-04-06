@@ -141,12 +141,11 @@ export function PropEditDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 p-0 sm:max-w-xl">
-        <DialogHeader className="px-6 py-5">
+        <DialogHeader>
           <DialogTitle>{t("editProp")}</DialogTitle>
-          <p className="sr-only">编辑道具信息</p>
         </DialogHeader>
 
-        <div className="max-h-[60vh] overflow-y-auto px-6 pb-4">
+        <div className="max-h-[60vh] overflow-y-auto p-4">
           <FieldGroup>
             <Field data-invalid={Boolean(errors.name)}>
               <FieldLabel htmlFor="prop-name">{t("propName")}</FieldLabel>

@@ -779,6 +779,8 @@
     "sceneAgentDesc": "Scene building, atmosphere design, panoramas",
     "adAgent": "Ad Creative",
     "adAgentDesc": "Ad scripts, storyboards, selling points",
+    "novelAgent": "Story Creator",
+    "novelAgentDesc": "From idea to story, script, and storyboard",
     "entityCharacter": "character",
     "entityScene": "scene",
     "entityProp": "prop",

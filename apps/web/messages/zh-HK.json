@@ -779,6 +779,8 @@
     "sceneAgentDesc": "場景構建、氛圍設計、全景圖",
     "adAgent": "廣告創意",
     "adAgentDesc": "廣告腳本、分鏡創作、賣點提煉",
+    "novelAgent": "創作智能體",
+    "novelAgentDesc": "從想法到故事、劇本、分鏡一站式創作",
     "entityCharacter": "角色",
     "entityScene": "場景",
     "entityProp": "道具",
