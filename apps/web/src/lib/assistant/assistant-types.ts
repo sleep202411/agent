@@ -204,23 +204,46 @@ export function getAssistantInteractiveToolName(part: AssistantToolInvocation) {
   return toolName;
 }
 
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  // UI 交互工具
+  show_options: "选项确认",
+  confirm_action: "操作确认",
+  // 提案工具
+  propose_characters: "角色提案",
+  propose_scenes: "场景提案",
+  propose_props: "道具提案",
+  propose_storyboard_patch: "分镜草稿提案",
+  // 读取工具
+  get_project_snapshot: "读取项目概况",
+  get_world_assets: "读取世界观资产",
+  search_world_assets: "搜索资产",
+  aggregate_world_assets_for_analysis: "汇总分析资产",
+  get_storyboard_snapshot: "读取分镜概况",
+  query_storyboard_rows: "查询分镜数据",
+  aggregate_storyboard_rows_for_analysis: "汇总分析分镜",
+  // 执行工具
+  update_project_settings: "更新项目设置",
+  create_episode: "创建剧集",
+  update_episode: "更新剧集",
+  delete_episode: "删除剧集",
+  create_character: "创建角色",
+  batch_create_characters: "批量创建角色",
+  update_character: "更新角色",
+  delete_character: "删除角色",
+  create_scene: "创建场景",
+  batch_create_scenes: "批量创建场景",
+  update_scene: "更新场景",
+  delete_scene: "删除场景",
+  create_prop: "创建道具",
+  batch_create_props: "批量创建道具",
+  update_prop: "更新道具",
+  delete_prop: "删除道具",
+  fill_cell: "填写分镜单元格",
+  save_storyboard_draft: "保存分镜草稿",
+};
+
 export function getAssistantToolDisplayName(toolName: string) {
-  switch (toolName) {
-    case "show_options":
-      return "选项确认";
-    case "confirm_action":
-      return "操作确认";
-    case "propose_characters":
-      return "角色提案";
-    case "propose_scenes":
-      return "场景提案";
-    case "propose_props":
-      return "道具提案";
-    case "propose_storyboard_patch":
-      return "分镜草稿提案";
-    default:
-      return toolName;
-  }
+  return TOOL_DISPLAY_NAMES[toolName] ?? toolName;
 }
 
 export function getAssistantMessageText(message: AssistantMessage) {

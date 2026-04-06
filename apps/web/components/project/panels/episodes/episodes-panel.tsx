@@ -105,7 +105,7 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
         <EpisodeList
           episodes={episodes}
           activeEpisodeId={activeEpisodeId}
-          onSelect={(id) => setActiveEpisodeId(id)}
+          onSelect={(id) => store.dispatch(setActiveEpisodeId(id))}
           onEdit={(ep) => setEditingEpisode(ep)}
           onDelete={(ep) => setDeletingEpisode(ep)}
         />

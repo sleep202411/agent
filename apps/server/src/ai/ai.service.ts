@@ -28,7 +28,9 @@ export class AiService implements OnModuleInit {
 
   private readonly provider = createAlibaba({
     apiKey: process.env.ALIBABA_API_KEY,
-    baseURL: process.env.ALIBABA_BASE_URL,
+    ...(process.env.ALIBABA_BASE_URL && {
+      baseURL: process.env.ALIBABA_BASE_URL,
+    }),
     fetch: async (
       url: string | URL | globalThis.Request,
       init?: RequestInit,

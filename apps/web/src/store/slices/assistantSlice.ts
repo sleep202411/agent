@@ -94,8 +94,8 @@ function isSupportedAttachment(file: File) {
   return isTextLikeFile(file) || isDocxFile(file);
 }
 
-const MAX_EXCERPT_CHARS = 3000;
-const MAX_TEXT_FILE_SIZE = 500 * 1024;
+const MAX_EXCERPT_CHARS = 80000;
+const MAX_TEXT_FILE_SIZE = 2 * 1024 * 1024;
 
 async function readDocxText(file: File): Promise<string> {
   try {
@@ -336,26 +336,22 @@ async function applyWorkspaceMutationEffects(
       case "character.updated":
       case "character.deleted":
       case "character.batch_created":
-        dispatch(setActivePanel("characters"));
         dispatch(touchCharacters());
         break;
       case "scene.created":
       case "scene.updated":
       case "scene.deleted":
       case "scene.batch_created":
-        dispatch(setActivePanel("scenes"));
         dispatch(touchScenes());
         break;
       case "prop.created":
       case "prop.updated":
       case "prop.deleted":
       case "prop.batch_created":
-        dispatch(setActivePanel("props"));
         dispatch(touchProps());
         break;
       case "storyboard.cell_filled":
       case "storyboard.saved":
-        dispatch(setActiveTab("storyboard"));
         dispatch(touchStoryboard());
         break;
       default:
@@ -421,9 +417,11 @@ export const addAttachments = createAsyncThunk<
     const { excerpt, truncated } = await readAttachmentExcerpt(file);
 
     if (truncated && !excerpt) {
-      toast.warning(`「${file.name}」内容过大（超过 500KB），AI 将无法读取内容`);
+      toast.warning(`「${file.name}」文件过大（超过 2MB），AI 将无法读取内容`);
     } else if (truncated) {
-      toast.info(`「${file.name}」内容较长，已截取前 3000 字`);
+      toast.info(
+        `「${file.name}」内容较长，已截取前 ${Math.round(MAX_EXCERPT_CHARS / 10000)} 万字`
+      );
     }
 
     const attachmentId = crypto.randomUUID();

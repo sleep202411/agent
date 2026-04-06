@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslations } from "next-intl";
+import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
 import { uploadProjectImage, buildOssUrl } from "@/src/lib/uploads/workspace-upload";
@@ -305,16 +306,16 @@ export function CharacterEditDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className="max-h-[85vh] overflow-hidden p-0 sm:max-w-[600px]"
+          className="flex max-h-[85vh] flex-col overflow-hidden p-0 sm:max-w-[600px]"
         >
           <DialogHeader className="border-b border-border px-6 py-5">
             <DialogTitle>{formData.id ? t("editCharacter") : t("createCharacter")}</DialogTitle>
           </DialogHeader>
 
-          <div className="max-h-[calc(85vh-140px)] overflow-y-auto px-6 py-5">
+          <div className="flex-1 overflow-y-auto px-6 py-5">
             <FieldGroup>
               <Field>
-                <FieldLabel>{t("characterName")}</FieldLabel>
+                <FieldLabel required>{t("characterName")}</FieldLabel>
                 <Input
                   value={formData.name}
                   onChange={(event) => updateForm({ name: event.target.value })}
@@ -324,7 +325,7 @@ export function CharacterEditDialog({
               </Field>
 
               <Field>
-                <FieldLabel>{t("biography")}</FieldLabel>
+                <FieldLabel required>{t("biography")}</FieldLabel>
                 <Textarea
                   value={formData.description}
                   onChange={(event) => updateForm({ description: event.target.value })}
@@ -345,17 +346,23 @@ export function CharacterEditDialog({
                 />
               </Field>
 
-              <Field>
-                <FieldLabel>{t("voiceModel")}</FieldLabel>
-                <div className="flex items-center gap-2">
+              <div className="grid grid-cols-2 gap-3">
+                <Field>
+                  <FieldLabel>{t("voiceModel")}</FieldLabel>
                   <Select
-                    value={formData.voiceModelCode || undefined}
-                    onValueChange={(value) => updateForm({ voiceModelCode: value, voiceId: "" })}
+                    value={formData.voiceModelCode || "__none__"}
+                    onValueChange={(value) =>
+                      updateForm({
+                        voiceModelCode: value === "__none__" ? "" : value,
+                        voiceId: value === "__none__" ? "" : formData.voiceId,
+                      })
+                    }
                   >
-                    <SelectTrigger className="w-full">
+                    <SelectTrigger className="w-full h-9">
                       <SelectValue placeholder={t("voiceModelPlaceholder")} />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" className="max-h-60">
+                      <SelectItem value="__none__">{t("noVoiceModel")}</SelectItem>
                       {voiceModels.map((item) => {
                         const value = String(item.serviceCode ?? "");
                         if (!value) return null;
@@ -367,37 +374,27 @@ export function CharacterEditDialog({
                       })}
                     </SelectContent>
                   </Select>
-                  {formData.voiceModelCode ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      color="muted"
-                      size="sm"
-                      onClick={() => updateForm({ voiceModelCode: "", voiceId: "" })}
-                    >
-                      {t("clearVoice")}
-                    </Button>
-                  ) : null}
-                </div>
-              </Field>
+                </Field>
 
-              {formData.voiceModelCode ? (
                 <Field>
                   <FieldLabel>{t("voice")}</FieldLabel>
-                  <button
-                    type="button"
-                    onClick={() => setVoicePickerOpen(true)}
-                    className="flex h-10 w-full items-center justify-between rounded-md border border-input px-3 text-left text-sm transition-colors hover:border-white/20"
+                  <Select
+                    value={formData.voiceId || undefined}
+                    disabled={!formData.voiceModelCode}
+                    onOpenChange={(open) => {
+                      if (open) setVoicePickerOpen(true);
+                    }}
                   >
-                    <span
-                      className={selectedVoiceName ? "text-foreground" : "text-muted-foreground"}
-                    >
-                      {selectedVoiceName || t("voicePlaceholder")}
-                    </span>
-                    <IconVolume className="size-4 text-muted-foreground" />
-                  </button>
+                    <SelectTrigger className="w-full h-9">
+                      <SelectValue placeholder={t("voicePlaceholder")}>
+                        {selectedVoiceName && formData.voiceModelCode
+                          ? selectedVoiceName
+                          : t("voicePlaceholder")}
+                      </SelectValue>
+                    </SelectTrigger>
+                  </Select>
                 </Field>
-              ) : null}
+              </div>
 
               <Field>
                 <FieldLabel>{t("characterImages")}</FieldLabel>

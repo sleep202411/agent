@@ -31,6 +31,12 @@ ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
 ARG JAVA_CONTENT_URL
 ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
 
+# Next.js 16 (Turbopack) reads env from .env files, not process.env
+RUN echo "NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL" > apps/web/.env.local && \
+    echo "SERVER_URL=$SERVER_URL" >> apps/web/.env.local && \
+    echo "JAVA_STUDIO_URL=$JAVA_STUDIO_URL" >> apps/web/.env.local && \
+    echo "JAVA_CONTENT_URL=$JAVA_CONTENT_URL" >> apps/web/.env.local
+
 RUN npx turbo run build --filter=web
 
 # ─── Stage 4: Runner ────────────────────────────────────

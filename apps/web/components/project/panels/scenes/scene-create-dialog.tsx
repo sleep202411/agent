@@ -43,7 +43,7 @@ export function SceneCreateDialog({
         data: { name: name.trim(), worldId },
       });
       onOpenChange(false);
-      onCreated(result);
+      onCreated({ ...result, name: name.trim() });
     } catch (err) {
       console.error("[CreateScene] 创建失败:", err);
     } finally {

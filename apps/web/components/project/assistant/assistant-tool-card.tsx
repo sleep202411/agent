@@ -11,7 +11,13 @@ import {
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type {
@@ -296,6 +302,7 @@ function RoleProposalCard({
 }) {
   const t = useTranslations("ai");
   const input = part.input;
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [items, setItems] = useState<AssistantRoleProposal[]>(
     part.state === "output-available" && part.output?.items ? part.output.items : input?.items || []
   );
@@ -320,158 +327,171 @@ function RoleProposalCard({
     );
   }
 
+  const roleLabel = (role: string) =>
+    role === "main" ? t("roleMain") : role === "supporting" ? t("roleSupporting") : t("roleExtra");
+
   return (
-    <CardFrame title={t("roleProposal")} description={input.summary}>
-      <div className="space-y-3">
-        {items.map((item, index) => (
-          <div
-            key={`${part.toolCallId}-${index}`}
-            className="rounded-xl border border-border/70 p-3"
-          >
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Input
-                value={item.name}
-                disabled={disabled}
-                onChange={(event) =>
-                  setItems((current) =>
-                    current.map((currentItem, currentIndex) =>
-                      currentIndex === index
-                        ? { ...currentItem, name: event.target.value }
-                        : currentItem
-                    )
-                  )
-                }
-                placeholder={t("characterNamePlaceholder")}
-              />
-              <select
-                value={item.role}
-                disabled={disabled}
-                onChange={(event) =>
-                  setItems((current) =>
-                    current.map((currentItem, currentIndex) =>
-                      currentIndex === index
-                        ? {
-                            ...currentItem,
-                            role: event.target.value as AssistantRoleProposal["role"],
-                          }
-                        : currentItem
-                    )
-                  )
-                }
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="main">{t("roleMain")}</option>
-                <option value="supporting">{t("roleSupporting")}</option>
-                <option value="extra">{t("roleExtra")}</option>
-              </select>
+    <>
+      <CardFrame title={t("roleProposal")} description={input.summary}>
+        <div className="space-y-1.5">
+          {items.map((item, index) => (
+            <div
+              key={`${part.toolCallId}-${index}`}
+              className="flex items-center gap-2 rounded-lg border border-border/50 px-3 py-2"
+            >
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary">
+                {index + 1}
+              </span>
+              <span className="min-w-0 truncate text-sm font-medium">{item.name}</span>
             </div>
+          ))}
+        </div>
 
-            <Textarea
-              value={item.description ?? ""}
-              disabled={disabled}
-              onChange={(event) =>
-                setItems((current) =>
-                  current.map((currentItem, currentIndex) =>
-                    currentIndex === index
-                      ? { ...currentItem, description: event.target.value }
-                      : currentItem
-                  )
-                )
-              }
-              className="mt-2 min-h-20"
-              placeholder={t("characterBioPlaceholder")}
-            />
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <Button
+            variant="outline"
+            color="muted"
+            size="sm"
+            disabled={disabled}
+            onClick={() => setDialogOpen(true)}
+          >
+            <IconLayoutGrid className="size-3.5" />
+            {t("viewAndEdit")}
+          </Button>
 
-            <Textarea
-              value={item.appearance ?? ""}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
               disabled={disabled}
-              onChange={(event) =>
-                setItems((current) =>
-                  current.map((currentItem, currentIndex) =>
-                    currentIndex === index
-                      ? { ...currentItem, appearance: event.target.value }
-                      : currentItem
-                  )
-                )
+              onClick={() =>
+                onApplyResult({
+                  toolCallId: part.toolCallId,
+                  toolName: getAssistantInteractiveToolName(part),
+                  output: {
+                    action: "reject",
+                    items,
+                  } satisfies AssistantProposalDecision<AssistantRoleProposal>,
+                })
               }
-              className="mt-2 min-h-20"
-              placeholder={t("appearancePlaceholder")}
-            />
-
-            <Textarea
-              value={item.personality ?? ""}
+            >
+              <IconX className="size-3.5" />
+              {t("reject")}
+            </Button>
+            <Button
+              size="sm"
               disabled={disabled}
-              onChange={(event) =>
-                setItems((current) =>
-                  current.map((currentItem, currentIndex) =>
-                    currentIndex === index
-                      ? { ...currentItem, personality: event.target.value }
-                      : currentItem
-                  )
-                )
+              onClick={() =>
+                onApplyResult({
+                  toolCallId: part.toolCallId,
+                  toolName: getAssistantInteractiveToolName(part),
+                  output: {
+                    action: jsonEqual(items, input.items) ? "accept" : "accept_edited",
+                    items,
+                  } satisfies AssistantProposalDecision<AssistantRoleProposal>,
+                })
               }
-              className="mt-2 min-h-20"
-              placeholder={t("personalityPlaceholder")}
-            />
-
-            <Textarea
-              value={item.prompt ?? ""}
-              disabled={disabled}
-              onChange={(event) =>
-                setItems((current) =>
-                  current.map((currentItem, currentIndex) =>
-                    currentIndex === index
-                      ? { ...currentItem, prompt: event.target.value }
-                      : currentItem
-                  )
-                )
-              }
-              className="mt-2 min-h-20"
-              placeholder={t("aiPromptPlaceholder")}
-            />
+            >
+              <IconCheck className="size-3.5" />
+              {t("acceptAndCreate")}
+            </Button>
           </div>
-        ))}
-      </div>
+        </div>
+      </CardFrame>
 
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          color="muted"
-          size="sm"
-          disabled={disabled}
-          onClick={() =>
-            onApplyResult({
-              toolCallId: part.toolCallId,
-              toolName: getAssistantInteractiveToolName(part),
-              output: {
-                action: "reject",
-                items,
-              } satisfies AssistantProposalDecision<AssistantRoleProposal>,
-            })
-          }
-        >
-          <IconX className="size-3.5" />
-          {t("reject")}
-        </Button>
-        <Button
-          size="sm"
-          disabled={disabled}
-          onClick={() =>
-            onApplyResult({
-              toolCallId: part.toolCallId,
-              toolName: getAssistantInteractiveToolName(part),
-              output: {
-                action: jsonEqual(items, input.items) ? "accept" : "accept_edited",
-                items,
-              } satisfies AssistantProposalDecision<AssistantRoleProposal>,
-            })
-          }
-        >
-          <IconCheck className="size-3.5" />
-          {t("acceptAndCreate")}
-        </Button>
-      </div>
-    </CardFrame>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-[90vw] sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{t("roleProposal")}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            {items.map((item, index) => (
+              <div
+                key={`${part.toolCallId}-dialog-${index}`}
+                className="rounded-xl border border-border/70 p-4"
+              >
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+                    {index + 1}
+                  </span>
+                  <span className="text-sm font-semibold">
+                    {item.name || t("characterNamePlaceholder")}
+                  </span>
+                </div>
+                <Input
+                  value={item.name}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setItems((current) =>
+                      current.map((c, i) => (i === index ? { ...c, name: event.target.value } : c))
+                    )
+                  }
+                  placeholder={t("characterNamePlaceholder")}
+                />
+                <Textarea
+                  value={item.description ?? ""}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setItems((current) =>
+                      current.map((c, i) =>
+                        i === index ? { ...c, description: event.target.value } : c
+                      )
+                    )
+                  }
+                  className="mt-3 min-h-20"
+                  placeholder={t("characterBioPlaceholder")}
+                />
+                <Textarea
+                  value={item.appearance ?? ""}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setItems((current) =>
+                      current.map((c, i) =>
+                        i === index ? { ...c, appearance: event.target.value } : c
+                      )
+                    )
+                  }
+                  className="mt-3 min-h-20"
+                  placeholder={t("appearancePlaceholder")}
+                />
+                <Textarea
+                  value={item.personality ?? ""}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setItems((current) =>
+                      current.map((c, i) =>
+                        i === index ? { ...c, personality: event.target.value } : c
+                      )
+                    )
+                  }
+                  className="mt-3 min-h-20"
+                  placeholder={t("personalityPlaceholder")}
+                />
+                <Textarea
+                  value={item.prompt ?? ""}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setItems((current) =>
+                      current.map((c, i) =>
+                        i === index ? { ...c, prompt: event.target.value } : c
+                      )
+                    )
+                  }
+                  className="mt-3 min-h-20"
+                  placeholder={t("aiPromptPlaceholder")}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" color="muted" size="sm" onClick={() => setDialogOpen(false)}>
+              {t("backToChat")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -490,6 +510,7 @@ function SimpleProposalCard({
 }) {
   const t = useTranslations("ai");
   const input = part.input;
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [items, setItems] = useState<Array<AssistantSceneProposal | AssistantPropProposal>>(
     part.state === "output-available" && part.output?.items ? part.output.items : input?.items || []
   );
@@ -515,100 +536,150 @@ function SimpleProposalCard({
   }
 
   return (
-    <CardFrame title={title} description={input.summary}>
-      <div className="space-y-3">
-        {items.map((item, index) => (
-          <div
-            key={`${part.toolCallId}-${index}`}
-            className="rounded-xl border border-border/70 p-3"
-          >
-            <Input
-              value={item.name}
-              disabled={disabled}
-              onChange={(event) =>
-                setItems((current) =>
-                  current.map((currentItem, currentIndex) =>
-                    currentIndex === index
-                      ? { ...currentItem, name: event.target.value }
-                      : currentItem
-                  )
-                )
-              }
-              placeholder={t("namePlaceholder")}
-            />
-            <Textarea
-              value={item.description ?? ""}
-              disabled={disabled}
-              onChange={(event) =>
-                setItems((current) =>
-                  current.map((currentItem, currentIndex) =>
-                    currentIndex === index
-                      ? { ...currentItem, description: event.target.value }
-                      : currentItem
-                  )
-                )
-              }
-              className="mt-2 min-h-20"
-              placeholder={t("descriptionPlaceholder")}
-            />
-            <Textarea
-              value={item.prompt ?? ""}
-              disabled={disabled}
-              onChange={(event) =>
-                setItems((current) =>
-                  current.map((currentItem, currentIndex) =>
-                    currentIndex === index
-                      ? { ...currentItem, prompt: event.target.value }
-                      : currentItem
-                  )
-                )
-              }
-              className="mt-2 min-h-20"
-              placeholder={t("promptWordPlaceholder")}
-            />
-          </div>
-        ))}
-      </div>
+    <>
+      <CardFrame title={title} description={input.summary}>
+        <div className="space-y-1.5">
+          {items.map((item, index) => (
+            <div
+              key={`${part.toolCallId}-${index}`}
+              className="flex items-start gap-2 rounded-lg border border-border/50 px-3 py-2"
+            >
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary mt-0.5">
+                {index + 1}
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{item.name}</div>
+                {item.description ? (
+                  <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                    {item.description}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
 
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <Button
-          variant="outline"
-          color="muted"
-          size="sm"
-          disabled={disabled}
-          onClick={() =>
-            onApplyResult({
-              toolCallId: part.toolCallId,
-              toolName: getAssistantInteractiveToolName(part),
-              output: {
-                action: "reject",
-                items,
-              } satisfies AssistantProposalDecision<AssistantSceneProposal | AssistantPropProposal>,
-            })
-          }
-        >
-          <IconX className="size-3.5" />
-          {t("reject")}
-        </Button>
-        <Button
-          size="sm"
-          disabled={disabled}
-          onClick={() =>
-            onApplyResult({
-              toolCallId: part.toolCallId,
-              toolName: getAssistantInteractiveToolName(part),
-              output: {
-                action: jsonEqual(items, input.items) ? "accept" : "accept_edited",
-                items,
-              } satisfies AssistantProposalDecision<AssistantSceneProposal | AssistantPropProposal>,
-            })
-          }
-        >
-          <IconCheck className="size-3.5" />
-          {t("acceptAndCreate")}
-        </Button>
-      </div>
-    </CardFrame>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <Button
+            variant="outline"
+            color="muted"
+            size="sm"
+            disabled={disabled}
+            onClick={() => setDialogOpen(true)}
+          >
+            <IconLayoutGrid className="size-3.5" />
+            {t("viewAndEdit")}
+          </Button>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              disabled={disabled}
+              onClick={() =>
+                onApplyResult({
+                  toolCallId: part.toolCallId,
+                  toolName: getAssistantInteractiveToolName(part),
+                  output: {
+                    action: "reject",
+                    items,
+                  } satisfies AssistantProposalDecision<
+                    AssistantSceneProposal | AssistantPropProposal
+                  >,
+                })
+              }
+            >
+              <IconX className="size-3.5" />
+              {t("reject")}
+            </Button>
+            <Button
+              size="sm"
+              disabled={disabled}
+              onClick={() =>
+                onApplyResult({
+                  toolCallId: part.toolCallId,
+                  toolName: getAssistantInteractiveToolName(part),
+                  output: {
+                    action: jsonEqual(items, input.items) ? "accept" : "accept_edited",
+                    items,
+                  } satisfies AssistantProposalDecision<
+                    AssistantSceneProposal | AssistantPropProposal
+                  >,
+                })
+              }
+            >
+              <IconCheck className="size-3.5" />
+              {t("acceptAndCreate")}
+            </Button>
+          </div>
+        </div>
+      </CardFrame>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-[90vw] sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+            {items.map((item, index) => (
+              <div
+                key={`${part.toolCallId}-dialog-${index}`}
+                className="rounded-xl border border-border/70 p-4"
+              >
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+                    {index + 1}
+                  </span>
+                  <span className="text-sm font-semibold">{item.name || t("namePlaceholder")}</span>
+                </div>
+                <Input
+                  value={item.name}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setItems((current) =>
+                      current.map((c, i) => (i === index ? { ...c, name: event.target.value } : c))
+                    )
+                  }
+                  placeholder={t("namePlaceholder")}
+                />
+                <Textarea
+                  value={item.description ?? ""}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setItems((current) =>
+                      current.map((c, i) =>
+                        i === index ? { ...c, description: event.target.value } : c
+                      )
+                    )
+                  }
+                  className="mt-3 min-h-20"
+                  placeholder={t("descriptionPlaceholder")}
+                />
+                <Textarea
+                  value={item.prompt ?? ""}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    setItems((current) =>
+                      current.map((c, i) =>
+                        i === index ? { ...c, prompt: event.target.value } : c
+                      )
+                    )
+                  }
+                  className="mt-3 min-h-20"
+                  placeholder={t("promptWordPlaceholder")}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" color="muted" size="sm" onClick={() => setDialogOpen(false)}>
+              {t("backToChat")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
