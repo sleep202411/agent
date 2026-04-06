@@ -115,8 +115,7 @@ jobs:
           file: apps/server/Dockerfile
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true
 
   # ─── Build web image (per target, NEXT_PUBLIC vars may differ) ─
   build-web:
@@ -150,8 +149,7 @@ jobs:
             SERVER_URL=http://server:3001
             JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
             JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
-          cache-from: type=gha,scope=${{ matrix.target }}-web
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}-web
+          no-cache: true
 
   # ─── Deploy to target servers ─────────────────────────
   deploy:
