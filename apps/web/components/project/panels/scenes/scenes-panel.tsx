@@ -167,15 +167,13 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
           </Button>
         }
       >
-        <div className="p-3">
-          <SceneList
-            scenes={visibleScenes}
-            onEdit={(s) => setEditScene(s)}
-            hasMore={hasMore}
-            loadingMore={loadingMore}
-            onLoadMore={() => void loadScenes({ reset: false })}
-          />
-        </div>
+        <SceneList
+          scenes={visibleScenes}
+          onEdit={(s) => setEditScene(s)}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={() => void loadScenes({ reset: false })}
+        />
       </PanelLayout>
 
       <SceneCreateDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={handleCreated} />

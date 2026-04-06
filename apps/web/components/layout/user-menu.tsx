@@ -145,46 +145,7 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
 
         <DropdownMenuSeparator />
 
-        {/* Theme */}
-        {mounted && (
-          <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-sm">{tc("theme")}</span>
-            <div className="flex rounded-lg border border-border">
-              <button
-                type="button"
-                onClick={() => setTheme("light")}
-                className={cn(
-                  "flex size-8 items-center justify-center rounded-l-lg transition-colors",
-                  theme === "light" ? "bg-accent text-foreground" : "text-muted-foreground"
-                )}
-              >
-                <IconSun className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme("dark")}
-                className={cn(
-                  "flex size-8 items-center justify-center transition-colors",
-                  theme === "dark" ? "bg-accent text-foreground" : "text-muted-foreground"
-                )}
-              >
-                <IconMoon className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme("system")}
-                className={cn(
-                  "flex size-8 items-center justify-center rounded-r-lg transition-colors",
-                  theme === "system" ? "bg-accent text-foreground" : "text-muted-foreground"
-                )}
-              >
-                <IconDeviceDesktop className="size-3.5" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        <DropdownMenuSeparator />
+        {/* TODO: 暂时隐藏主题切换 */}
 
         {/* Language */}
         <div className="flex items-center justify-between px-3 py-2">
@@ -227,11 +188,11 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
           </DropdownMenuItem>
         )}
 
-        {/* Logout */}
-        <DropdownMenuItem variant="destructive" onClick={() => void dispatch(logout())}>
+        {/* TODO: 暂时隐藏退出登录 */}
+        {/* <DropdownMenuItem variant="destructive" onClick={() => void dispatch(logout())}>
           <IconLogout className="size-4" />
           {tc("logout")}
-        </DropdownMenuItem>
+        </DropdownMenuItem> */}
 
         <DropdownMenuSeparator />
 

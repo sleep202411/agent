@@ -77,7 +77,7 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
 
       if (String(activeEpisodeId) === episodeId) {
         const remaining = episodes.filter((ep) => String(ep.id) !== episodeId);
-        if (remaining[0]?.id) setActiveEpisodeId(String(remaining[0].id));
+        if (remaining[0]?.id) store.dispatch(setActiveEpisodeId(String(remaining[0].id)));
       }
 
       setDeletingEpisode(null);
@@ -96,7 +96,7 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
         onClose={onClose}
         loading={isLoading}
         footer={
-          <Button className="w-full" onClick={() => setCreateOpen(true)}>
+          <Button className="w-full" size="lg" onClick={() => setCreateOpen(true)}>
             <IconPlus className="size-3.5" />
             {t("addEpisode")}
           </Button>

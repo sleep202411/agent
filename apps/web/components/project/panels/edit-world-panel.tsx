@@ -25,7 +25,10 @@ function useWorldSchema() {
       .string()
       .min(1, t("worldNameRequired"))
       .max(50, t("worldNameMaxLength", { max: 50 })),
-    description: z.string().max(500),
+    description: z
+      .string()
+      .min(1, t("storySynopsisRequired"))
+      .max(500, t("storySynopsisMaxLength", { max: 500 })),
     core: z
       .string()
       .min(1, t("storyCoreRequired"))
@@ -155,18 +158,20 @@ export function EditWorldPanel({ onClose }: { onClose: () => void }) {
 
       <button
         type="button"
-        className="group relative w-full overflow-hidden rounded-xl"
+        className="group relative w-full overflow-hidden rounded-xl mb-4"
         onClick={() => fileInputRef.current?.click()}
         disabled={uploading}
       >
         {bannerSrc ? (
-          <img src={bannerSrc} alt="" className="h-32 w-full object-cover" />
+          <img src={bannerSrc} alt="" className="aspect-video w-full object-cover" />
         ) : (
-          <div className="flex h-32 w-full items-center justify-center bg-muted/30">
+          <div className="flex aspect-video w-full items-center justify-center bg-muted/30">
             <span className="text-xs text-muted-foreground">{t("clickUploadCover")}</span>
           </div>
         )}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+        <div
+          className={`absolute inset-0 flex items-center justify-center bg-black/40 transition-opacity ${uploading ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+        >
           {uploading ? (
             <IconLoader2 className="size-5 animate-spin text-white" />
           ) : (
@@ -201,7 +206,9 @@ export function EditWorldPanel({ onClose }: { onClose: () => void }) {
           control={form.control}
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid}>
-              <FieldLabel htmlFor={field.name}>{t("storySynopsis")}</FieldLabel>
+              <FieldLabel htmlFor={field.name} required>
+                {t("storySynopsis")}
+              </FieldLabel>
               <Textarea
                 {...field}
                 id={field.name}

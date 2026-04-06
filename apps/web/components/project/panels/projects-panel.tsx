@@ -163,7 +163,7 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
                         <DropdownMenuItem
                           variant="destructive"
                           onClick={() => handleDelete(String(project.id ?? ""))}
-                          disabled={deletingId === project.id}
+                          disabled={deletingId === project.id || projects.length <= 1}
                         >
                           <IconTrash className="size-3.5" />
                           {tc("delete")}
