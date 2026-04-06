@@ -82,6 +82,7 @@ export interface SendAssistantChatOptions {
   projectId: string;
   messages: AssistantMessage[];
   workspaceContext: AssistantWorkspaceSelection;
+  agentType?: string;
   signal?: AbortSignal;
   onMessage: (message: AssistantMessage) => void;
 }
@@ -90,6 +91,7 @@ export async function sendAssistantChat({
   projectId,
   messages,
   workspaceContext,
+  agentType,
   signal,
   onMessage,
 }: SendAssistantChatOptions) {
@@ -107,6 +109,7 @@ export async function sendAssistantChat({
       projectId,
       messages: sanitizeMessages(messages),
       workspaceContext,
+      agentType,
     }),
     signal,
   });

@@ -777,6 +777,8 @@
     "characterAgentDesc": "Extract characters, generate portraits, three views",
     "sceneAgent": "Scene Designer",
     "sceneAgentDesc": "Scene building, atmosphere design, panoramas",
+    "adAgent": "Ad Creative",
+    "adAgentDesc": "Ad scripts, storyboards, selling points",
     "entityCharacter": "character",
     "entityScene": "scene",
     "entityProp": "prop",

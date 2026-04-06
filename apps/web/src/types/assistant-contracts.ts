@@ -1,3 +1,14 @@
+export const assistantAgentTypes = [
+  "general",
+  "script",
+  "storyboard",
+  "character",
+  "scene",
+  "ad",
+] as const;
+
+export type AssistantAgentType = (typeof assistantAgentTypes)[number];
+
 export const assistantEntityTypes = [
   "project",
   "episode",
@@ -189,6 +200,7 @@ export interface AssistantChatRequest<TMessage = AssistantTransportMessage> {
   projectId: string;
   messages: TMessage[];
   workspaceContext?: Partial<AssistantWorkspaceSelection>;
+  agentType?: AssistantAgentType;
 }
 
 export interface AssistantChatValidationIssue {

@@ -4,7 +4,7 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": ["ai/skills/**/*.skill.md"],
+    "assets": ["ai/skills/**/*.skill.md", "assistant/prompts/**/*.md"],
     "watchAssets": true
   }
 }

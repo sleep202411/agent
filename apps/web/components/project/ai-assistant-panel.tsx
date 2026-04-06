@@ -9,6 +9,7 @@ import {
   IconLayoutGrid,
   IconLoader2,
   IconMapPin,
+  IconAd,
   IconMovie,
   IconPackage,
   IconPencil,
@@ -43,6 +44,7 @@ import { store } from "@/src/store";
 import {
   ensureProject,
   setDraft,
+  setAgentType,
   addAttachments,
   removeAttachment,
   retryAttachment,
@@ -85,6 +87,12 @@ const AI_AGENTS = [
     icon: <IconMapPin className="size-4" />,
     nameKey: "sceneAgent" as const,
     descKey: "sceneAgentDesc" as const,
+  },
+  {
+    key: "ad",
+    icon: <IconAd className="size-4" />,
+    nameKey: "adAgent" as const,
+    descKey: "adAgentDesc" as const,
   },
 ] as const;
 
@@ -365,7 +373,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
 
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const [selectedAgent, setSelectedAgent] = useState("general");
+  const selectedAgent = conversation?.agentType ?? "general";
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const currentAgent = AI_AGENTS.find((a) => a.key === selectedAgent) ?? AI_AGENTS[0];
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -656,20 +664,31 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
                     <IconChevronDown className="size-3 text-muted-foreground" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="start" side="top" className="w-[260px] p-2!important gap-2">
+                <PopoverContent
+                  align="start"
+                  side="top"
+                  className="w-65 border-white/8 bg-white/6 gap-2 p-2 shadow-2xl backdrop-blur-2xl backdrop-saturate-150"
+                >
                   {AI_AGENTS.map((agent) => (
                     <button
                       key={agent.key}
                       type="button"
                       onClick={() => {
-                        setSelectedAgent(agent.key);
+                        if (projectId) {
+                          dispatch(
+                            setAgentType({
+                              projectId,
+                              agentType: agent.key as typeof selectedAgent,
+                            })
+                          );
+                        }
                         setAgentMenuOpen(false);
                       }}
                       className={cn(
                         "flex w-full cursor-pointer items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors",
                         selectedAgent === agent.key
                           ? "bg-primary/10 text-primary"
-                          : "hover:bg-muted"
+                          : "hover:bg-white/10"
                       )}
                     >
                       <span className="mt-0.5 shrink-0">{agent.icon}</span>

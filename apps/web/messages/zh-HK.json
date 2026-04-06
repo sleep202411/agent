@@ -777,6 +777,8 @@
     "characterAgentDesc": "提取角色、生成形象、三視圖",
     "sceneAgent": "場景設計師",
     "sceneAgentDesc": "場景構建、氛圍設計、全景圖",
+    "adAgent": "廣告創意",
+    "adAgentDesc": "廣告腳本、分鏡創作、賣點提煉",
     "entityCharacter": "角色",
     "entityScene": "場景",
     "entityProp": "道具",

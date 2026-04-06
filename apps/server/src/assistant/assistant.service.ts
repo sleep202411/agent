@@ -10,6 +10,11 @@ import {
 import { AiService } from '../ai/ai.service';
 import { WorkspaceService, type WorkspaceContext } from './workspace.service';
 import { createGroupedAssistantTools } from './tools';
+import {
+  loadAgentPrompt,
+  type AssistantAgentType,
+  assistantAgentTypes,
+} from './prompts';
 import type { HeadersLike } from './tools/types';
 
 type Attachment = {
@@ -41,6 +46,7 @@ export class AssistantService {
       projectId: string;
       messages: unknown[];
       workspaceContext?: Partial<WorkspaceContext>;
+      agentType?: string;
     },
     incomingHeaders: HeadersLike,
   ): Promise<{ toUIMessageStreamResponse: () => globalThis.Response }> {
@@ -135,7 +141,7 @@ export class AssistantService {
       model: this.ai.getModel(),
       tools,
       toolChoice: 'auto',
-      system: this.buildSystemPrompt(projectContext),
+      system: this.buildSystemPrompt(projectContext, payload.agentType),
       messages: modelMessages,
       stopWhen: stepCountIs(12),
       temperature: 0.2,
@@ -165,7 +171,12 @@ export class AssistantService {
     return result;
   }
 
-  private buildSystemPrompt(context: ProjectContext) {
+  private buildSystemPrompt(context: ProjectContext, rawAgentType?: string) {
+    const agentType: AssistantAgentType = assistantAgentTypes.includes(
+      rawAgentType as AssistantAgentType,
+    )
+      ? (rawAgentType as AssistantAgentType)
+      : 'general';
     const projectName =
       typeof context.detail?.name === 'string'
         ? context.detail.name
@@ -191,7 +202,7 @@ export class AssistantService {
       .slice(0, 20)
       .join('、');
 
-    return `你是 FizzDragon Studio 项目详情页里的 StoryOS 助手。你的职责是帮助创作者理解项目、提出可执行方案，并在用户明确授权时通过工具修改当前项目。
+    const basePrompt = `你是 FizzDragon Studio 项目详情页里的 StoryOS 助手。你的职责是帮助创作者理解项目、提出可执行方案，并在用户明确授权时通过工具修改当前项目。
 
 [当前项目上下文]
 - projectId: ${context.projectId}
@@ -229,6 +240,9 @@ export class AssistantService {
 8. 当需要批量创建资产（角色/场景/道具）时，必须直接调用 propose 工具生成交互卡片，不要用文本列出方案再让用户输入 accept/reject。
 9. 【强制】任何需要用户确认、选择或决策的场景，都必须调用 confirm_action 或 show_options 工具生成交互卡片。绝对禁止用纯文本要求用户回复"确认"、"accept"、"继续"等。包括但不限于：确认方案是否满意、选择覆盖哪个剧集、选择方案 A 或 B、确认是否继续下一步。
 10. 完整方案模式：当用户要求拆解剧本或执行涉及多个资产类型的复杂任务时，在一次回复中同时调用多个 propose 工具（如 propose_characters + propose_scenes + propose_storyboard_patch），让用户一次性看到完整方案并逐个确认，而不是一步一步串行等待。用户确认某个提案后，自动执行对应的创建操作，无需用户手动输入"继续"。`;
+
+    const agentSection = loadAgentPrompt(agentType);
+    return agentSection ? `${basePrompt}\n\n${agentSection}` : basePrompt;
   }
 
   private augmentMessages(messages: AssistantMessage[]): AssistantMessage[] {

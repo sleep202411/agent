@@ -25,12 +25,13 @@ export class AssistantController {
       projectId?: string;
       messages?: unknown[];
       workspaceContext?: Record<string, unknown>;
+      agentType?: string;
     },
     @Req() req: Request,
     @Res() res: Response,
   ) {
     this.logger.log(
-      `POST /assistant/chat projectId=${body.projectId} messages=${body.messages?.length ?? 0}`,
+      `POST /assistant/chat projectId=${body.projectId} agentType=${body.agentType ?? 'general'} messages=${body.messages?.length ?? 0}`,
     );
 
     if (
@@ -50,6 +51,7 @@ export class AssistantController {
           projectId: body.projectId,
           messages: body.messages,
           workspaceContext: body.workspaceContext,
+          agentType: body.agentType,
         },
         req.headers as Record<string, string | string[] | undefined>,
       );

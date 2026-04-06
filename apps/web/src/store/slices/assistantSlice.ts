@@ -13,6 +13,7 @@ import type {
   AssistantWorkspaceSelection,
   PendingAssistantToolUi,
 } from "@/src/lib/assistant/assistant-types";
+import type { AssistantAgentType } from "@/src/types/assistant-contracts";
 import {
   getAssistantToolName,
   isAssistantInteractiveToolName,
@@ -53,6 +54,7 @@ function createEmptyConversation() {
     messages: [createWelcomeMessage()] as AssistantMessage[],
     draftInput: "",
     attachments: [] as AssistantAttachment[],
+    agentType: "general" as AssistantAgentType,
     sending: false,
     streaming: false,
     error: null as string | null,
@@ -492,11 +494,13 @@ export const sendUserMessage = createAsyncThunk<
   try {
     const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
     const workspaceContext = buildWorkspaceContext(getState());
+    const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
     const finalMessage = await sendAssistantChat({
       projectId,
       messages: nextMessages,
       workspaceContext,
+      agentType,
       onMessage: (message) => {
         dispatch(appendStreamChunk({ projectId, message }));
       },
@@ -536,11 +540,13 @@ export const applyToolResult = createAsyncThunk<
 
   try {
     const workspaceContext = buildWorkspaceContext(getState());
+    const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
     const finalMessage = await sendAssistantChat({
       projectId,
       messages: nextMessages,
       workspaceContext,
+      agentType,
       onMessage: (message) => {
         dispatch(appendStreamChunk({ projectId, message }));
       },
@@ -581,6 +587,15 @@ export const assistantSlice = createSlice({
       const { projectId, expanded } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       state.projects[projectId] = { ...current, panelExpanded: expanded };
+    },
+
+    setAgentType: (
+      state,
+      action: PayloadAction<{ projectId: string; agentType: AssistantAgentType }>
+    ) => {
+      const { projectId, agentType } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = { ...current, agentType };
     },
 
     setDraft: (state, action: PayloadAction<{ projectId: string; draft: string }>) => {
@@ -747,6 +762,7 @@ export const {
   ensureProject,
   setPanelOpen,
   setPanelExpanded,
+  setAgentType,
   setDraft,
   pushAttachment,
   updateAttachment,
