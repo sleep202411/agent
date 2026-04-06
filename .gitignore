@@ -36,6 +36,9 @@ yarn-error.log*
 .DS_Store
 *.pem
 
+# Docker exports
+*.tar.gz
+
 # Claude Code
 .claude/
 .agents/
