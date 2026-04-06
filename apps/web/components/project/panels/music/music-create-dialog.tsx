@@ -14,7 +14,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
 import { backendApi } from "@/src/lib/api";
 import type { RawAiModel } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
@@ -101,56 +108,64 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
 
   return (
     <Dialog open={open} onOpenChange={(v) => (!isGenerating ? onOpenChange(v) : undefined)}>
-      <DialogContent showCloseButton={!isGenerating} className="sm:max-w-[520px]">
+      <DialogContent showCloseButton={!isGenerating} className="sm:max-w-130">
         <DialogHeader>
           <DialogTitle>{t("aiGenerateMusic")}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <div className="text-sm font-medium">{t("musicTitle")}</div>
-            <Input
-              value={formData.title}
-              onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-              placeholder={t("musicTitlePlaceholder")}
-            />
-          </div>
+        <div className="p-4">
+          <FieldGroup>
+            <Field>
+              <FieldLabel>{t("musicTitle")}</FieldLabel>
+              <Input
+                value={formData.title}
+                onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+                placeholder={t("musicTitlePlaceholder")}
+              />
+            </Field>
 
-          <div className="space-y-2">
-            <div className="text-sm font-medium">{t("musicDescription")}</div>
-            <Textarea
-              value={formData.prompt}
-              onChange={(e) => setFormData((prev) => ({ ...prev, prompt: e.target.value }))}
-              placeholder={t("musicDescriptionPlaceholder")}
-              rows={4}
-            />
-          </div>
+            <Field>
+              <FieldLabel required>{t("musicDescription")}</FieldLabel>
+              <Textarea
+                value={formData.prompt}
+                onChange={(e) => setFormData((prev) => ({ ...prev, prompt: e.target.value }))}
+                placeholder={t("musicDescriptionPlaceholder")}
+                rows={4}
+              />
+            </Field>
 
-          <div className="space-y-2">
-            <div className="text-sm font-medium">{t("tags")}</div>
-            <Input
-              value={formData.tags}
-              onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
-              placeholder={t("tagsPlaceholder")}
-            />
-          </div>
+            <Field>
+              <FieldLabel>{t("tags")}</FieldLabel>
+              <Input
+                value={formData.tags}
+                onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
+                placeholder={t("tagsPlaceholder")}
+              />
+            </Field>
 
-          <div className="space-y-2">
-            <div className="text-sm font-medium">{t("model")}</div>
-            <NativeSelect
-              value={formData.model}
-              onChange={(e) => setFormData((prev) => ({ ...prev, model: e.target.value }))}
-            >
-              <NativeSelectOption value="" disabled>
-                {modelOptions.length > 0 ? t("modelPlaceholder") : t("loadingModel")}
-              </NativeSelectOption>
-              {modelOptions.map((option) => (
-                <NativeSelectOption key={option.value} value={option.value}>
-                  {option.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
+            <Field>
+              <FieldLabel>{t("model")}</FieldLabel>
+              <Select
+                value={formData.model}
+                onValueChange={(value) => setFormData((prev) => ({ ...prev, model: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      modelOptions.length > 0 ? t("modelPlaceholder") : t("loadingModel")
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {modelOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </FieldGroup>
         </div>
 
         <DialogFooter>
