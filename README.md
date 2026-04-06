@@ -211,3 +211,19 @@ develop           ← Staging, daily development
 feature/*         ← Feature branches, PR to develop
 hotfix/*          ← Hotfixes, PR to main + develop
 ```
+
+### 分支命名规范
+
+```
+feature/<简短描述>       例: feature/storyos-rebrand
+hotfix/<简短描述>        例: hotfix/login-redirect
+```
+
+### 开发流程
+
+1. 从 develop 创建 feature 分支
+2. 开发完成后 PR to develop
+3. PR 评论 `/deploy` 可直接部署到 staging 验证（无需 merge）
+4. CI 通过后 merge 到 develop（自动部署 staging）
+5. 验证没问题后，develop merge 到 main（自动部署 production）
+6. main merge 后，已合并的 feature 分支自动清理
