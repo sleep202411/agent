@@ -153,7 +153,7 @@ export function MediaPreviewModal({
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[140] bg-background/58 backdrop-blur-2xl">
+    <div className="pointer-events-auto fixed inset-0 z-[140] bg-background/58 backdrop-blur-2xl">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_color-mix(in_oklab,var(--foreground)_10%,transparent),_transparent_38%),radial-gradient(circle_at_bottom,_color-mix(in_oklab,var(--primary)_10%,transparent),_transparent_34%)]" />
       <div className="absolute inset-0" onClick={() => onOpenChange(false)} aria-hidden="true" />
 

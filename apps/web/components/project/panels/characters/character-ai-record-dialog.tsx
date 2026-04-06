@@ -21,7 +21,7 @@ import { getRecordPath, normalizeStoragePath, ROLE_RECORD_COLUMN_ID } from "./ch
 // ─── Loading placeholder type ──────────────────────────
 type LoadingPlaceholder = {
   id: string;
-  loading: true;
+  loading: boolean;
   failed: boolean;
 };
 
@@ -216,7 +216,7 @@ export function CharacterAiRecordDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden p-0 sm:max-w-[1000px]">
-        <DialogHeader className="border-b border-border px-6 py-4">
+        <DialogHeader>
           <DialogTitle>{t("aiGenerateImage")}</DialogTitle>
         </DialogHeader>
 
