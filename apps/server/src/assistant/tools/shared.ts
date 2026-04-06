@@ -31,10 +31,28 @@ export const propProposalSchema = z.object({
   prompt: z.string().optional().describe('道具提示词'),
 });
 
+export const STORYBOARD_API_FIELDS = [
+  'description',
+  'video_prompt',
+  'style_planting',
+  'movement',
+  'dialogue',
+  'shot_size',
+  'perspective',
+  'duration',
+] as const;
+
 export const storyboardProposalSchema = z.object({
   summary: z.string().describe('这版分镜草稿的整体说明'),
-  headers: z.array(z.string()).min(1).describe('表头'),
-  rows: z.array(z.array(z.string())).describe('分镜表行'),
+  headers: z
+    .array(z.string())
+    .min(1)
+    .describe(
+      '表头，必须使用以下固定字段名（按需选用）：description（画面描述）、video_prompt（视频提示词）、style_planting（风格）、movement（运镜）、dialogue（台词）、shot_size（景别）、perspective（视角）、duration（时长）',
+    ),
+  rows: z
+    .array(z.array(z.string()))
+    .describe('分镜表数据行，每行的列顺序必须与 headers 一致'),
 });
 
 export const mutationResultSchema = z.object({

@@ -779,12 +779,12 @@ function StoryboardProposalCard({
       </CardFrame>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-[95vw]">
+        <DialogContent className="w-3xl sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t("storyboardProposal")}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 ">
             <Textarea
               value={draft.summary}
               disabled={disabled}

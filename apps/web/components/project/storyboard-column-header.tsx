@@ -789,22 +789,24 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
               {t("autoAssociateDesc")}
             </DialogDescription>
           </DialogHeader>
-          <Field
-            orientation="horizontal"
-            className="items-start rounded-lg border border-white/8 bg-white/[0.03] px-4 py-3"
-          >
-            <Checkbox
-              checked={recoverOldData}
-              onCheckedChange={(checked) => setRecoverOldData(Boolean(checked))}
-              disabled={autoloadLoading}
-            />
-            <div className="space-y-1">
-              <FieldLabel className="text-sm font-medium">{t("overwriteExisting")}</FieldLabel>
-              <FieldDescription className="text-xs text-[#8F8F92]">
-                {t("overwriteExistingDesc")}
-              </FieldDescription>
-            </div>
-          </Field>
+          <div className="p-4">
+            <Field
+              orientation="horizontal"
+              className="items-start rounded-lg border border-white/8 bg-white/[0.03] px-4 py-3"
+            >
+              <Checkbox
+                checked={recoverOldData}
+                onCheckedChange={(checked) => setRecoverOldData(Boolean(checked))}
+                disabled={autoloadLoading}
+              />
+              <div className="space-y-1">
+                <FieldLabel className="text-sm font-medium">{t("overwriteExisting")}</FieldLabel>
+                <FieldDescription className="text-xs text-[#8F8F92]">
+                  {t("overwriteExistingDesc")}
+                </FieldDescription>
+              </div>
+            </Field>
+          </div>
           <DialogFooter className="border-white/10 bg-transparent">
             <Button
               variant="outline"

@@ -103,32 +103,199 @@ const AI_AGENTS = [
   },
 ] as const;
 
-const quickActionDefs = [
-  {
-    icon: <IconFileText className="size-5" />,
-    titleKey: "breakdownScript" as const,
-    descKey: "breakdownScriptDesc" as const,
-    promptKey: "breakdownScriptPrompt" as const,
-    colors: ["#f87171", "#fb923c", "#f472b6"],
-    glowColor: "0 80 65",
-  },
-  {
-    icon: <IconLayoutGrid className="size-5" />,
-    titleKey: "designStoryboard" as const,
-    descKey: "designStoryboardDesc" as const,
-    promptKey: "designStoryboardPrompt" as const,
-    colors: ["#a78bfa", "#818cf8", "#38bdf8"],
-    glowColor: "250 70 70",
-  },
-  {
-    icon: <IconPackage className="size-5" />,
-    titleKey: "assetAnalysis" as const,
-    descKey: "assetAnalysisDesc" as const,
-    promptKey: "assetAnalysisPrompt" as const,
-    colors: ["#34d399", "#2dd4bf", "#a3e635"],
-    glowColor: "160 70 65",
-  },
-];
+type QuickAction = {
+  icon: React.ReactNode;
+  titleKey: string;
+  descKey: string;
+  promptKey: string;
+  colors: string[];
+  glowColor: string;
+};
+
+const quickActionsByAgent: Record<string, QuickAction[]> = {
+  general: [
+    {
+      icon: <IconFileText className="size-5" />,
+      titleKey: "breakdownScript",
+      descKey: "breakdownScriptDesc",
+      promptKey: "breakdownScriptPrompt",
+      colors: ["#f87171", "#fb923c", "#f472b6"],
+      glowColor: "0 80 65",
+    },
+    {
+      icon: <IconLayoutGrid className="size-5" />,
+      titleKey: "designStoryboard",
+      descKey: "designStoryboardDesc",
+      promptKey: "designStoryboardPrompt",
+      colors: ["#a78bfa", "#818cf8", "#38bdf8"],
+      glowColor: "250 70 70",
+    },
+    {
+      icon: <IconPackage className="size-5" />,
+      titleKey: "assetAnalysis",
+      descKey: "assetAnalysisDesc",
+      promptKey: "assetAnalysisPrompt",
+      colors: ["#34d399", "#2dd4bf", "#a3e635"],
+      glowColor: "160 70 65",
+    },
+  ],
+  script: [
+    {
+      icon: <IconFileText className="size-5" />,
+      titleKey: "qaScriptWrite",
+      descKey: "qaScriptWriteDesc",
+      promptKey: "qaScriptWritePrompt",
+      colors: ["#f87171", "#fb923c", "#f472b6"],
+      glowColor: "0 80 65",
+    },
+    {
+      icon: <IconLayoutGrid className="size-5" />,
+      titleKey: "qaScriptAnalyze",
+      descKey: "qaScriptAnalyzeDesc",
+      promptKey: "qaScriptAnalyzePrompt",
+      colors: ["#a78bfa", "#818cf8", "#38bdf8"],
+      glowColor: "250 70 70",
+    },
+    {
+      icon: <IconPencil className="size-5" />,
+      titleKey: "qaScriptDialogue",
+      descKey: "qaScriptDialogueDesc",
+      promptKey: "qaScriptDialoguePrompt",
+      colors: ["#34d399", "#2dd4bf", "#a3e635"],
+      glowColor: "160 70 65",
+    },
+  ],
+  storyboard: [
+    {
+      icon: <IconMovie className="size-5" />,
+      titleKey: "qaStoryboardSplit",
+      descKey: "qaStoryboardSplitDesc",
+      promptKey: "qaStoryboardSplitPrompt",
+      colors: ["#a78bfa", "#818cf8", "#38bdf8"],
+      glowColor: "250 70 70",
+    },
+    {
+      icon: <IconLayoutGrid className="size-5" />,
+      titleKey: "qaStoryboardOptimize",
+      descKey: "qaStoryboardOptimizeDesc",
+      promptKey: "qaStoryboardOptimizePrompt",
+      colors: ["#f87171", "#fb923c", "#f472b6"],
+      glowColor: "0 80 65",
+    },
+    {
+      icon: <IconMapPin className="size-5" />,
+      titleKey: "qaStoryboardTransition",
+      descKey: "qaStoryboardTransitionDesc",
+      promptKey: "qaStoryboardTransitionPrompt",
+      colors: ["#34d399", "#2dd4bf", "#a3e635"],
+      glowColor: "160 70 65",
+    },
+  ],
+  character: [
+    {
+      icon: <IconUser className="size-5" />,
+      titleKey: "qaCharacterExtract",
+      descKey: "qaCharacterExtractDesc",
+      promptKey: "qaCharacterExtractPrompt",
+      colors: ["#f87171", "#fb923c", "#f472b6"],
+      glowColor: "0 80 65",
+    },
+    {
+      icon: <IconPencil className="size-5" />,
+      titleKey: "qaCharacterDesign",
+      descKey: "qaCharacterDesignDesc",
+      promptKey: "qaCharacterDesignPrompt",
+      colors: ["#a78bfa", "#818cf8", "#38bdf8"],
+      glowColor: "250 70 70",
+    },
+    {
+      icon: <IconPackage className="size-5" />,
+      titleKey: "qaCharacterRelation",
+      descKey: "qaCharacterRelationDesc",
+      promptKey: "qaCharacterRelationPrompt",
+      colors: ["#34d399", "#2dd4bf", "#a3e635"],
+      glowColor: "160 70 65",
+    },
+  ],
+  scene: [
+    {
+      icon: <IconMapPin className="size-5" />,
+      titleKey: "qaSceneCreate",
+      descKey: "qaSceneCreateDesc",
+      promptKey: "qaSceneCreatePrompt",
+      colors: ["#34d399", "#2dd4bf", "#a3e635"],
+      glowColor: "160 70 65",
+    },
+    {
+      icon: <IconLayoutGrid className="size-5" />,
+      titleKey: "qaSceneAnalyze",
+      descKey: "qaSceneAnalyzeDesc",
+      promptKey: "qaSceneAnalyzePrompt",
+      colors: ["#a78bfa", "#818cf8", "#38bdf8"],
+      glowColor: "250 70 70",
+    },
+    {
+      icon: <IconPencil className="size-5" />,
+      titleKey: "qaSceneAtmosphere",
+      descKey: "qaSceneAtmosphereDesc",
+      promptKey: "qaSceneAtmospherePrompt",
+      colors: ["#f87171", "#fb923c", "#f472b6"],
+      glowColor: "0 80 65",
+    },
+  ],
+  ad: [
+    {
+      icon: <IconAd className="size-5" />,
+      titleKey: "qaAdScript",
+      descKey: "qaAdScriptDesc",
+      promptKey: "qaAdScriptPrompt",
+      colors: ["#f87171", "#fb923c", "#f472b6"],
+      glowColor: "0 80 65",
+    },
+    {
+      icon: <IconLayoutGrid className="size-5" />,
+      titleKey: "qaAdStoryboard",
+      descKey: "qaAdStoryboardDesc",
+      promptKey: "qaAdStoryboardPrompt",
+      colors: ["#a78bfa", "#818cf8", "#38bdf8"],
+      glowColor: "250 70 70",
+    },
+    {
+      icon: <IconPackage className="size-5" />,
+      titleKey: "qaAdPlatform",
+      descKey: "qaAdPlatformDesc",
+      promptKey: "qaAdPlatformPrompt",
+      colors: ["#34d399", "#2dd4bf", "#a3e635"],
+      glowColor: "160 70 65",
+    },
+  ],
+  novel: [
+    {
+      icon: <IconBook2 className="size-5" />,
+      titleKey: "qaNovelCreate",
+      descKey: "qaNovelCreateDesc",
+      promptKey: "qaNovelCreatePrompt",
+      colors: ["#f87171", "#fb923c", "#f472b6"],
+      glowColor: "0 80 65",
+    },
+    {
+      icon: <IconFileText className="size-5" />,
+      titleKey: "qaNovelAdapt",
+      descKey: "qaNovelAdaptDesc",
+      promptKey: "qaNovelAdaptPrompt",
+      colors: ["#a78bfa", "#818cf8", "#38bdf8"],
+      glowColor: "250 70 70",
+    },
+    {
+      icon: <IconSparkles className="size-5" />,
+      titleKey: "qaNovelExplore",
+      descKey: "qaNovelExploreDesc",
+      promptKey: "qaNovelExplorePrompt",
+      colors: ["#34d399", "#2dd4bf", "#a3e635"],
+      glowColor: "160 70 65",
+    },
+  ],
+};
 
 const EMPTY_MESSAGES: AssistantMessage[] = [];
 const EMPTY_ATTACHMENTS: AssistantAttachment[] = [];
@@ -485,7 +652,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
               <p className="text-sm font-medium">{t("greeting")}</p>
               <p className="mt-1 text-xs text-muted-foreground">{t("greetingHint")}</p>
             </div>
-            {quickActionDefs.map((action) => {
+            {(quickActionsByAgent[selectedAgent] ?? quickActionsByAgent.general).map((action) => {
               const prompt = t(action.promptKey);
               return (
                 <BorderGlow

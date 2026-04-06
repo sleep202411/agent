@@ -57,14 +57,16 @@ export function PropCreateDialog({
         <DialogHeader>
           <DialogTitle>{t("addProp")}</DialogTitle>
         </DialogHeader>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-          maxLength={20}
-          autoFocus
-          placeholder={t("propNamePlaceholder")}
-        />
+        <div className="p-4">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+            maxLength={20}
+            autoFocus
+            placeholder={t("propNamePlaceholder")}
+          />
+        </div>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}

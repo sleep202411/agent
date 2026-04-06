@@ -134,7 +134,8 @@ export function createExecuteTools({
     }),
 
     batch_create_characters: tool({
-      description: '一次性创建多个角色。仅在用户接受角色提案后调用。',
+      description:
+        '【仅在用户通过 propose_characters 确认后调用】一次性创建多个角色。禁止在未经提案确认的情况下直接调用。',
       inputSchema: z.object({ items: z.array(roleProposalSchema).min(1) }),
       execute: async ({ items }) => {
         const createdIds: string[] = [];
@@ -241,7 +242,8 @@ export function createExecuteTools({
     }),
 
     batch_create_scenes: tool({
-      description: '一次性创建多个场景。仅在用户接受场景提案后调用。',
+      description:
+        '【仅在用户通过 propose_scenes 确认后调用】一次性创建多个场景。禁止在未经提案确认的情况下直接调用。',
       inputSchema: z.object({ items: z.array(sceneProposalSchema).min(1) }),
       execute: async ({ items }) => {
         const createdIds: string[] = [];
@@ -325,7 +327,8 @@ export function createExecuteTools({
     }),
 
     batch_create_props: tool({
-      description: '一次性创建多个道具。仅在用户接受道具提案后调用。',
+      description:
+        '【仅在用户通过 propose_props 确认后调用】一次性创建多个道具。禁止在未经提案确认的情况下直接调用。',
       inputSchema: z.object({ items: z.array(propProposalSchema).min(1) }),
       execute: async ({ items }) => {
         const createdIds: string[] = [];
@@ -406,7 +409,8 @@ export function createExecuteTools({
     }),
 
     save_storyboard_draft: tool({
-      description: '将用户确认后的分镜表草稿保存到当前剧集。',
+      description:
+        '【仅在用户通过 propose_storyboard_patch 确认后调用】将分镜表草稿保存到当前剧集。禁止在未经 propose_storyboard_patch 确认的情况下直接调用此工具。',
       inputSchema: storyboardProposalSchema.extend({
         autoload: z.boolean().optional(),
       }),

@@ -162,14 +162,14 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
           <Button
             data-tour-step="upgrade"
             size="sm"
-            className="bg-gradient-to-r from-purple-600 to-purple-500 text-white hover:from-purple-500 hover:to-purple-400"
+            className="hidden bg-gradient-to-r from-purple-600 to-purple-500 text-white hover:from-purple-500 hover:to-purple-400 xl:flex"
             onClick={() => setUpgradeOpen(true)}
           >
             <IconCrown className="size-3.5" />
             {tc("upgrade")}
           </Button>
 
-          <div className="relative">
+          <div className="relative hidden xl:block">
             <button
               type="button"
               data-tour-step="credits"
@@ -281,7 +281,13 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             ) : null}
           </div>
 
-          <Button variant="outline" color="muted" size="sm" onClick={() => setTeamOpen(true)}>
+          <Button
+            variant="outline"
+            color="muted"
+            size="sm"
+            className="hidden xl:flex"
+            onClick={() => setTeamOpen(true)}
+          >
             <IconUsers className="size-3.5" />
             {tc("team")}
           </Button>
