@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { IconLoader2, IconTrash } from "@tabler/icons-react";
@@ -16,14 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
 import { backendApi } from "@/src/lib/api";
 import { toast } from "sonner";
 import { ReferenceImageUploader } from "../reference-image-uploader";
@@ -153,134 +146,122 @@ export function SceneEditDialog({
           <DialogTitle>{t("editScene")}</DialogTitle>
         </DialogHeader>
 
-        <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="flex flex-1 flex-col overflow-hidden"
-          >
-            <div className="flex-1 space-y-4 overflow-y-auto px-0.5">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("sceneName")}</FormLabel>
-                    <FormControl>
-                      <Input {...field} maxLength={20} placeholder={t("sceneNamePlaceholder")} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="flex flex-1 flex-col overflow-hidden"
+        >
+          <FieldGroup className="flex-1 overflow-y-auto p-4">
+            <Controller
+              name="name"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor={field.name} required>
+                    {t("sceneName")}
+                  </FieldLabel>
+                  <Input
+                    {...field}
+                    id={field.name}
+                    aria-invalid={fieldState.invalid}
+                    maxLength={20}
+                    placeholder={t("sceneNamePlaceholder")}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("sceneDescription")}</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        maxLength={300}
-                        rows={4}
-                        placeholder={t("sceneDescriptionPlaceholder")}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <Controller
+              name="description"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor={field.name}>{t("sceneDescription")}</FieldLabel>
+                  <Textarea
+                    {...field}
+                    id={field.name}
+                    aria-invalid={fieldState.invalid}
+                    maxLength={300}
+                    rows={4}
+                    placeholder={t("sceneDescriptionPlaceholder")}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
 
-              <FormField
-                control={form.control}
-                name="prompt"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{tc("prompt")}</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        maxLength={500}
-                        rows={3}
-                        placeholder={tc("promptPlaceholder")}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <Controller
+              name="prompt"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor={field.name}>{tc("prompt")}</FieldLabel>
+                  <Textarea
+                    {...field}
+                    id={field.name}
+                    aria-invalid={fieldState.invalid}
+                    maxLength={500}
+                    rows={3}
+                    placeholder={tc("promptPlaceholder")}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
 
-              <FormField
-                control={form.control}
-                name="sceneImgPath"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("sceneImages")}</FormLabel>
-                    <FormControl>
-                      <SceneImageSection
-                        sceneId={String(scene?.id ?? "")}
-                        images={field.value}
-                        prompt={form.watch("prompt") || form.watch("description") || ""}
-                        panoramaImagePath={form.watch("panoramaImagePath") ?? ""}
-                        onImagesChange={field.onChange}
-                        onPanoramaChange={(v) => form.setValue("panoramaImagePath", v)}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
+            <Field>
+              <FieldLabel>{t("sceneImages")}</FieldLabel>
+              <SceneImageSection
+                sceneId={String(scene?.id ?? "")}
+                images={form.watch("sceneImgPath")}
+                prompt={form.watch("prompt") || form.watch("description") || ""}
+                panoramaImagePath={form.watch("panoramaImagePath") ?? ""}
+                onImagesChange={(v) => form.setValue("sceneImgPath", v)}
+                onPanoramaChange={(v) => form.setValue("panoramaImagePath", v)}
               />
+            </Field>
 
-              <FormField
-                control={form.control}
-                name="referenceImgPath"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("referenceImages")}</FormLabel>
-                    <FormControl>
-                      <ReferenceImageUploader
-                        paths={field.value}
-                        onChange={field.onChange}
-                        addLabel={tc("addReferenceImage")}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
+            <Field>
+              <FieldLabel>{t("referenceImages")}</FieldLabel>
+              <ReferenceImageUploader
+                paths={form.watch("referenceImgPath")}
+                onChange={(v) => form.setValue("referenceImgPath", v)}
+                addLabel={tc("addReferenceImage")}
               />
-            </div>
+            </Field>
+          </FieldGroup>
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="soft"
-                color="destructive"
-                onClick={handleDelete}
-                disabled={deleting}
-                className="mr-auto"
-                style={{ visibility: scene?.id ? "visible" : "hidden" }}
-              >
-                {deleting ? (
-                  <IconLoader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <IconTrash className="size-3.5" />
-                )}
-                {tc("delete")}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                color="muted"
-                onClick={() => onOpenChange(false)}
-              >
-                {tc("cancel")}
-              </Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting && <IconLoader2 className="size-3.5 animate-spin" />}
-                {tc("save")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="soft"
+              color="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="mr-auto"
+              style={{ visibility: scene?.id ? "visible" : "hidden" }}
+            >
+              {deleting ? (
+                <IconLoader2 className="size-3.5 animate-spin" />
+              ) : (
+                <IconTrash className="size-3.5" />
+              )}
+              {tc("delete")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              color="muted"
+              onClick={() => onOpenChange(false)}
+            >
+              {tc("cancel")}
+            </Button>
+            <Button type="submit" disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting && <IconLoader2 className="size-3.5 animate-spin" />}
+              {tc("save")}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

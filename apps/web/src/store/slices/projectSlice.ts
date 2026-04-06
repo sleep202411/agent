@@ -1288,6 +1288,7 @@ export const projectSlice = createSlice({
     setActiveEpisodeId: (state, action: PayloadAction<string>) => {
       const inst = getInstance(state);
       if (inst) {
+        if (inst.activeEpisodeId === action.payload) return;
         inst.activeEpisodeId = action.payload;
         inst.columns = [];
         inst.rows = [];

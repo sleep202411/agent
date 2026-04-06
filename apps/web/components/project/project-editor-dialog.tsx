@@ -217,7 +217,7 @@ export function ProjectEditorDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 p-0 sm:max-w-[600px]">
-        <DialogHeader className="px-6 py-5">
+        <DialogHeader>
           <DialogTitle>{project?.id ? t("editProject") : t("newProject")}</DialogTitle>
           <p className="sr-only">{t("editProjectInfo")}</p>
         </DialogHeader>
@@ -228,7 +228,7 @@ export function ProjectEditorDialog({
           </div>
         ) : (
           <form id="project-editor-form" onSubmit={handleSave}>
-            <div className="max-h-[60vh] overflow-y-auto px-6 pb-4">
+            <div className="max-h-[60vh] overflow-y-auto p-4">
               <FieldGroup>
                 {/* Type + Name */}
                 <div className="flex gap-4">
@@ -426,7 +426,7 @@ export function ProjectEditorDialog({
               </FieldGroup>
             </div>
 
-            <DialogFooter className="border-t px-6 py-4">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"

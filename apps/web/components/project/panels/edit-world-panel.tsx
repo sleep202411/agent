@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useCallback, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { IconCamera, IconLoader2 } from "@tabler/icons-react";
@@ -10,14 +10,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
 import { backendApi } from "@/src/lib/api";
 import { uploadWorkspaceFile, buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import { PanelLayout } from "./panel-layout";
@@ -160,102 +153,108 @@ export function EditWorldPanel({ onClose }: { onClose: () => void }) {
         }}
       />
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <button
-            type="button"
-            className="group relative w-full overflow-hidden rounded-xl"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
-            {bannerSrc ? (
-              <img src={bannerSrc} alt="" className="h-32 w-full object-cover" />
-            ) : (
-              <div className="flex h-32 w-full items-center justify-center bg-muted/30">
-                <span className="text-xs text-muted-foreground">{t("clickUploadCover")}</span>
-              </div>
-            )}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-              {uploading ? (
-                <IconLoader2 className="size-5 animate-spin text-white" />
-              ) : (
-                <IconCamera className="size-5 text-white" />
-              )}
-            </div>
-          </button>
+      <button
+        type="button"
+        className="group relative w-full overflow-hidden rounded-xl"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+      >
+        {bannerSrc ? (
+          <img src={bannerSrc} alt="" className="h-32 w-full object-cover" />
+        ) : (
+          <div className="flex h-32 w-full items-center justify-center bg-muted/30">
+            <span className="text-xs text-muted-foreground">{t("clickUploadCover")}</span>
+          </div>
+        )}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+          {uploading ? (
+            <IconLoader2 className="size-5 animate-spin text-white" />
+          ) : (
+            <IconCamera className="size-5 text-white" />
+          )}
+        </div>
+      </button>
 
-          <FormField
-            control={form.control}
-            name="name"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t("worldName")}</FormLabel>
-                <FormControl>
-                  <Input {...field} maxLength={50} placeholder={t("worldNamePlaceholder")} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+      <FieldGroup>
+        <Controller
+          name="name"
+          control={form.control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor={field.name} required>
+                {t("worldName")}
+              </FieldLabel>
+              <Input
+                {...field}
+                id={field.name}
+                aria-invalid={fieldState.invalid}
+                maxLength={50}
+                placeholder={t("worldNamePlaceholder")}
+              />
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+            </Field>
+          )}
+        />
 
-          <FormField
-            control={form.control}
-            name="description"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t("storySynopsis")}</FormLabel>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    maxLength={500}
-                    rows={4}
-                    placeholder={t("storySynopsisPlaceholder")}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        <Controller
+          name="description"
+          control={form.control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor={field.name}>{t("storySynopsis")}</FieldLabel>
+              <Textarea
+                {...field}
+                id={field.name}
+                aria-invalid={fieldState.invalid}
+                maxLength={500}
+                rows={4}
+                placeholder={t("storySynopsisPlaceholder")}
+              />
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+            </Field>
+          )}
+        />
 
-          <FormField
-            control={form.control}
-            name="core"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t("storyCore")}</FormLabel>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    maxLength={300}
-                    rows={3}
-                    placeholder={t("storyCorePlaceholder")}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        <Controller
+          name="core"
+          control={form.control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor={field.name} required>
+                {t("storyCore")}
+              </FieldLabel>
+              <Textarea
+                {...field}
+                id={field.name}
+                aria-invalid={fieldState.invalid}
+                maxLength={300}
+                rows={3}
+                placeholder={t("storyCorePlaceholder")}
+              />
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+            </Field>
+          )}
+        />
 
-          <FormField
-            control={form.control}
-            name="devAdvise"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t("devAdvice")}</FormLabel>
-                <FormControl>
-                  <Textarea
-                    {...field}
-                    maxLength={300}
-                    rows={3}
-                    placeholder={t("devAdvicePlaceholder")}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </form>
-      </Form>
+        <Controller
+          name="devAdvise"
+          control={form.control}
+          render={({ field, fieldState }) => (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor={field.name}>{t("devAdvice")}</FieldLabel>
+              <Textarea
+                {...field}
+                id={field.name}
+                aria-invalid={fieldState.invalid}
+                maxLength={300}
+                rows={3}
+                placeholder={t("devAdvicePlaceholder")}
+              />
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+            </Field>
+          )}
+        />
+      </FieldGroup>
     </PanelLayout>
   );
 }
