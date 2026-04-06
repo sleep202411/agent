@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { backendApi, type Paginated } from "@/src/lib/api";
-import { CharacterFusionDialog } from "../character-fusion-dialog";
+import { CharacterFusionDialog } from "../character-fusion/character-fusion-dialog";
 import { ImportEntityDialog } from "../import-entity-dialog";
 import {
   WORKSPACE_FOCUS_ASSET_PANEL_EVENT,

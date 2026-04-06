@@ -10,6 +10,7 @@ import {
   IconPhoto,
   IconVideo,
   IconMicrophone,
+  IconWand,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ const TYPE_CONFIG: Record<
   image: { icon: IconPhoto, labelKey: "taskImage" },
   video: { icon: IconVideo, labelKey: "taskVideo" },
   audio: { icon: IconMicrophone, labelKey: "taskAudio" },
+  fusion: { icon: IconWand, labelKey: "taskFusion" },
 };
 
 // ─── Task Item ─────────────────────────────────────────

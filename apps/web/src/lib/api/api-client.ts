@@ -133,10 +133,15 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
     try {
-      const body = await response.json();
-      message = body.msg || body.message || message;
+      const text = await response.text();
+      try {
+        const body = JSON.parse(text) as Record<string, unknown>;
+        message = String(body.msg || body.message || "") || message;
+      } catch {
+        if (text.trim()) message = text.trim();
+      }
     } catch {
-      /* ignore parse error */
+      /* ignore read error */
     }
     throw new ApiRequestError(`HTTP_${response.status}`, message, response.status);
   }

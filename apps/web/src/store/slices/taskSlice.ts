@@ -2,7 +2,7 @@ import { createSelector, createSlice, type PayloadAction } from "@reduxjs/toolki
 
 // ─── Types ──────────────────────────────────────────────
 
-export type TaskType = "image" | "video" | "audio";
+export type TaskType = "image" | "video" | "audio" | "fusion";
 
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 

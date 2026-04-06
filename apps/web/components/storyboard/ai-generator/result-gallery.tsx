@@ -14,6 +14,8 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { buildOssImageUrl } from "@/src/lib/uploads/workspace-upload";
+
+const FAILED_IMAGE_URL = "https://static.fizzspace.cn/static/pc/generation_failed.jpg";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ResultItem } from "@/src/store/slices/projectSlice";
 
@@ -134,14 +136,15 @@ export function ResultGallery({
             <div
               key={item.id}
               className={cn(
-                "relative flex flex-col items-center justify-center gap-1.5 rounded-lg bg-muted/50",
+                "relative overflow-hidden rounded-lg bg-muted/50",
                 aspectRatio === "video" ? "aspect-video" : "aspect-square"
               )}
             >
-              <IconAlertCircle className="size-4 text-destructive/60" />
-              <p className="px-2 text-center text-[10px] text-destructive/60">
-                {item.error ?? t("failedStatus")}
-              </p>
+              <img
+                src={FAILED_IMAGE_URL}
+                alt=""
+                className="h-full w-full object-cover opacity-80"
+              />
               <div className="absolute inset-x-0 bottom-0 flex justify-center gap-1 bg-gradient-to-t from-black/60 to-transparent p-1.5">
                 {item.error ? (
                   <TooltipProvider delayDuration={100}>

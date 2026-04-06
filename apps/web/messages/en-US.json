@@ -923,6 +923,7 @@
     "taskImage": "Generate Image",
     "taskVideo": "Generate Video",
     "taskAudio": "Generate Audio",
+    "taskFusion": "Character Fusion",
     "justNow": "Just now",
     "minutesAgo": "{count}m ago",
     "hoursAgo": "{count}h ago",

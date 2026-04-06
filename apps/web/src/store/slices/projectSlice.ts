@@ -287,6 +287,14 @@ export interface ImageGenerateInput {
   watermark?: boolean;
 }
 
+export interface FusionGenerateInput {
+  worldRoleId: number;
+  prompt: string;
+  model?: string;
+  characterImageUrl: string;
+  propImageUrls: string[];
+}
+
 export interface AiImageFormData {
   prompt: string;
   model: string;

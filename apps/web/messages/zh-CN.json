@@ -923,6 +923,7 @@
     "taskImage": "生成图片",
     "taskVideo": "生成视频",
     "taskAudio": "生成音频",
+    "taskFusion": "角色溶图",
     "justNow": "刚刚",
     "minutesAgo": "{count} 分钟前",
     "hoursAgo": "{count} 小时前",
