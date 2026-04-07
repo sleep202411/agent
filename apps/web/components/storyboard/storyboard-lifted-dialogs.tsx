@@ -33,8 +33,10 @@ function useShotData(shotId: string | undefined) {
   const rows = useAppSelector((s) => selectCurrentInstance(s).rows);
   const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
-  const row = useMemo(() => rows.find((r) => r.shotId === shotId), [rows, shotId]);
-  return { row, rows, columns, detail };
+  const rowIndex = useMemo(() => rows.findIndex((r) => r.shotId === shotId), [rows, shotId]);
+  const row = rowIndex >= 0 ? rows[rowIndex] : undefined;
+  const shotNumber = rowIndex >= 0 ? rowIndex + 1 : undefined;
+  return { row, rows, columns, detail, shotNumber };
 }
 
 function useCellCallbacks(shotId: string, shotColumnId: string) {
@@ -190,7 +192,6 @@ export function StoryboardLiftedDialogs() {
     <>
       {imageTarget ? (
         <LiftedImageDialog
-          key={`img-${imageTarget.shotId}-${imageTarget.shotColumnId}`}
           shotId={imageTarget.shotId}
           shotColumnId={imageTarget.shotColumnId}
           onClose={closeImageDialog}
@@ -200,7 +201,6 @@ export function StoryboardLiftedDialogs() {
       ) : null}
       {videoTarget ? (
         <LiftedVideoDialog
-          key={`vid-${videoTarget.shotId}-${videoTarget.shotColumnId}`}
           shotId={videoTarget.shotId}
           shotColumnId={videoTarget.shotColumnId}
           onClose={closeVideoDialog}
@@ -225,7 +225,7 @@ function LiftedImageDialog({
   onPrevShot?: () => void;
   onNextShot?: () => void;
 }) {
-  const { row, columns, detail } = useShotData(shotId);
+  const { row, columns, detail, shotNumber } = useShotData(shotId);
   const column = useMemo(
     () => columns.find((c) => String(c.id) === shotColumnId),
     [columns, shotColumnId]
@@ -266,6 +266,7 @@ function LiftedImageDialog({
       }}
       shotId={shotId}
       shotColumnId={shotColumnId}
+      shotNumber={shotNumber}
       defaultPrompt={promptContext.prompt}
       referenceFields={promptContext.referenceFields}
       defaultRefImage={src || undefined}
@@ -293,7 +294,7 @@ function LiftedVideoDialog({
   onPrevShot?: () => void;
   onNextShot?: () => void;
 }) {
-  const { row, columns, detail } = useShotData(shotId);
+  const { row, columns, detail, shotNumber } = useShotData(shotId);
   const column = useMemo(
     () => columns.find((c) => String(c.id) === shotColumnId),
     [columns, shotColumnId]
@@ -333,6 +334,7 @@ function LiftedVideoDialog({
       }}
       shotId={shotId}
       shotColumnId={shotColumnId}
+      shotNumber={shotNumber}
       defaultPrompt={promptContext.prompt}
       defaultReferenceImage={defaultReferenceImagePath}
       referenceFields={promptContext.referenceFields}

@@ -1047,7 +1047,7 @@ export function AiVideoGeneratorDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          className="flex w-245 sm:max-w-245 flex-col overflow-hidden p-0"
+          className="flex w-245 sm:max-w-245 flex-col overflow-visible p-0"
           style={{ height: "min(860px, 90vh)" }}
         >
           <DialogHeader>
@@ -1385,26 +1385,27 @@ export function AiVideoGeneratorDialog({
               </div>
             </div>
           </div>
+          {onPrevShot ? (
+            <button
+              type="button"
+              onClick={onPrevShot}
+              className="fixed top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-white/20"
+              style={{ left: "calc(50% - 554px)" }}
+            >
+              <IconChevronLeft className="size-5" />
+            </button>
+          ) : null}
+          {onNextShot ? (
+            <button
+              type="button"
+              onClick={onNextShot}
+              className="fixed top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white shadow-lg backdrop-blur-md transition-colors hover:bg-white/20"
+              style={{ right: "calc(50% - 554px)" }}
+            >
+              <IconChevronRight className="size-5" />
+            </button>
+          ) : null}
         </DialogContent>
-
-        {onPrevShot ? (
-          <button
-            type="button"
-            onClick={onPrevShot}
-            className="fixed left-[calc(50%-530px)] top-1/2 z-50 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-lg backdrop-blur-sm transition-colors hover:bg-muted"
-          >
-            <IconChevronLeft className="size-6" />
-          </button>
-        ) : null}
-        {onNextShot ? (
-          <button
-            type="button"
-            onClick={onNextShot}
-            className="fixed right-[calc(50%-530px)] top-1/2 z-50 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-lg backdrop-blur-sm transition-colors hover:bg-muted"
-          >
-            <IconChevronRight className="size-6" />
-          </button>
-        ) : null}
       </Dialog>
 
       {pickerConfig ? (
