@@ -188,7 +188,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
           "/api/payment/order/create",
           {
             data: {
-              productId: 1,
+              productId: selectedPackage.id,
               productType: 2, // "vip",
               // successUrl: `${window.location.origin}${window.location.pathname}?payment=success`,
               // cancelUrl: `${window.location.origin}${window.location.pathname}?payment=cancelled`,
@@ -196,13 +196,10 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
           }
         );
         if (result.checkoutUrl) {
-          try {
-            // In iframe: try parent, fallback to current window
-            const target = window.top ?? window;
-            target.open(result.checkoutUrl, "_blank");
-          } catch {
-            // Cross-origin iframe: fall back to current window
-            window.open(result.checkoutUrl, "_blank");
+          if (window.self !== window.top) {
+            window.parent.postMessage({ type: "navigateToPayment", url: result.checkoutUrl }, "*");
+          } else {
+            window.location.href = result.checkoutUrl;
           }
         }
       }

@@ -155,11 +155,10 @@ export function CreditsRechargeDialog({
           }
         );
         if (result.checkoutUrl) {
-          try {
-            const target = window.top ?? window;
-            target.open(result.checkoutUrl, "_blank");
-          } catch {
-            window.open(result.checkoutUrl, "_blank");
+          if (window.self !== window.top) {
+            window.parent.postMessage({ type: "navigateToPayment", url: result.checkoutUrl }, "*");
+          } else {
+            window.location.href = result.checkoutUrl;
           }
         }
       }
