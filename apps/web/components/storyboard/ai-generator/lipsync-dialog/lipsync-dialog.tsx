@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useAppSelector } from "@/src/store";
+import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import {
   Dialog,
@@ -96,7 +98,13 @@ export function AiLipSyncGeneratorDialog({
     () => shotValues.find((item) => item.presetColumnKey === "sound_path"),
     [shotValues]
   );
-  const audioColumnId = String(audioCell?.shotColumnId ?? "");
+  const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
+  const audioColumnId = useMemo(() => {
+    // Prefer shotValues cell, fallback to column definition
+    if (audioCell?.shotColumnId) return String(audioCell.shotColumnId);
+    const col = columns.find((c) => c.presetColumnKey === "sound_path");
+    return col?.id ? String(col.id) : "";
+  }, [audioCell, columns]);
 
   const allVideoItems = useMemo(() => [...videoQueue, ...videoHistory], [videoHistory, videoQueue]);
   const allAudioItems = useMemo(() => [...audioQueue, ...audioHistory], [audioHistory, audioQueue]);
