@@ -2,11 +2,11 @@
 
 ## 环境概览
 
-| 环境           | 域名                      | 服务器                | 用户     | 容器运行时 | 镜像来源       | env 文件              |
-| -------------- | ------------------------- | --------------------- | -------- | ---------- | -------------- | --------------------- |
-| Production COM | fizzstudio.fizzdragon.com | 新加坡 47.237.115.136 | root     | Docker     | 本地构建 + scp | `.env.production.com` |
-| Production CN  | fizzstudio.fizzspace.cn   | CN 服务器             | root     | Docker     | 本地构建 + scp | `.env.production.cn`  |
-| Staging        | test.fizzdragon.com       | 120.26.152.164        | ecs-user | Podman     | GHCR pull      | `.env.staging`        |
+| 环境           | 域名                      | 服务器                | 用户     | 容器运行时 | 镜像来源  | env 文件              |
+| -------------- | ------------------------- | --------------------- | -------- | ---------- | --------- | --------------------- |
+| Production COM | fizzstudio.fizzdragon.com | 新加坡 47.237.115.136 | root     | Docker     | GHCR pull | `.env.production.com` |
+| Production CN  | fizzstudio.fizzspace.cn   | 120.26.152.164        | ecs-user | Podman     | GHCR pull | `.env.production.cn`  |
+| Staging        | test.fizzdragon.com       | 120.26.152.164        | ecs-user | Podman     | GHCR pull | `.env.staging`        |
 
 ## 服务架构
 
@@ -197,12 +197,9 @@ docker ps
 ```bash
 # 本地：构建 + tag + push 到 GHCR（同上步骤 1）
 
-# 服务器：停旧 + pull 新 + 启动
+# 服务器：pull 新镜像 + 自动重建容器
 cd /opt/fizzdragon/platform
-docker stop fizzdragon-web fizzdragon-server
-docker rm fizzdragon-web fizzdragon-server
-podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
-podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
+podman-compose --env-file .env.staging pull
 podman-compose --env-file .env.staging up -d
 ```
 
@@ -258,10 +255,7 @@ docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
 
 # 2. 服务器部署
 ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
-  podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging && \
-  podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging && \
-  podman stop staging-web staging-server 2>/dev/null; \
-  podman rm staging-web staging-server 2>/dev/null; \
+  podman-compose --env-file .env.staging pull && \
   podman-compose --env-file .env.staging up -d && \
   docker ps"
 ```
@@ -287,10 +281,7 @@ docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn
 
 # 2. 服务器部署
 ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
-  podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-cn && \
-  podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn && \
-  podman stop production-cn-web production-cn-server 2>/dev/null; \
-  podman rm production-cn-web production-cn-server 2>/dev/null; \
+  podman-compose --env-file .env.production.cn pull && \
   podman-compose --env-file .env.production.cn up -d && \
   docker ps"
 ```
@@ -298,7 +289,7 @@ ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
 ### Production COM
 
 ```bash
-# 1. 本地构建 + 导出
+# 1. 本地构建 + 推送
 source apps/web/.env.production.com
 docker build --platform linux/amd64 -t fizzdragon-web-com \
   --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
@@ -308,12 +299,15 @@ docker build --platform linux/amd64 -t fizzdragon-web-com \
   --build-arg NEXT_PUBLIC_SITE_REGION=global \
   -f apps/web/Dockerfile .
 docker build --platform linux/amd64 -t fizzdragon-server-com -f apps/server/Dockerfile .
-docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
 
-# 2. 上传 + 部署
-scp fizzdragon-com.tar.gz root@47.237.115.136:/opt/fizzdragon/platform/
+docker tag fizzdragon-web-com ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
+docker tag fizzdragon-server-com ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com
+docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
+docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com
+
+# 2. 服务器部署
 ssh root@47.237.115.136 "cd /opt/fizzdragon/platform && \
-  docker load < fizzdragon-com.tar.gz && \
+  docker compose --env-file .env.production.com pull && \
   docker compose --env-file .env.production.com up -d && \
   docker ps"
 ```
@@ -414,6 +408,8 @@ ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
 ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
 ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-cn
 ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn
+ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
+ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com
 ```
 
 ---
