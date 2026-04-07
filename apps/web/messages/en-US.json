@@ -1152,6 +1152,7 @@
     "paymentFailed": "Payment Failed",
     "paymentFailedDesc": "Payment was not completed. Please try again or contact support.",
     "orderNo": "Order No",
+    "backToCreatorCenter": "Back to Creator Center",
     "changePlan": "Change Plan",
     "popular": "Popular",
     "creditsUnit": "credits",

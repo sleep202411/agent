@@ -1152,6 +1152,7 @@
     "paymentFailed": "支付失敗",
     "paymentFailedDesc": "支付未完成，請重試或聯繫客服。",
     "orderNo": "訂單號",
+    "backToCreatorCenter": "返回創作者中心",
     "changePlan": "更換套餐",
     "popular": "推薦",
     "creditsUnit": "積分",

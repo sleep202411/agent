@@ -86,6 +86,19 @@ export default function PaymentResultPage() {
             <p className="mt-4 text-xs text-muted-foreground">
               {t("orderNo")}: {orderNo}
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.self !== window.top) {
+                  window.parent.postMessage({ type: "navigateToCreatorCenter" }, "*");
+                } else {
+                  window.history.back();
+                }
+              }}
+              className="mt-6 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110"
+            >
+              {t("backToCreatorCenter")}
+            </button>
           </>
         )}
 
