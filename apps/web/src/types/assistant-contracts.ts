@@ -45,7 +45,7 @@ export const assistantMutationActions = [
 
 export type AssistantMutationAction = (typeof assistantMutationActions)[number];
 
-export const assistantUiToolNames = ["show_options", "confirm_action"] as const;
+export const assistantUiToolNames = ["show_options", "confirm_action", "configure_params"] as const;
 
 export type AssistantUiToolName = (typeof assistantUiToolNames)[number];
 
@@ -143,6 +143,28 @@ export interface AssistantConfirmActionInput {
 export interface AssistantConfirmActionResult {
   confirmed: boolean;
   notes?: string;
+}
+
+export interface AssistantConfigureParamsField {
+  key: string;
+  label: string;
+  type: "number" | "text" | "select";
+  defaultValue: string | number;
+  options?: Array<{ label: string; value: string }>;
+  min?: number;
+  max?: number;
+  suffix?: string;
+}
+
+export interface AssistantConfigureParamsInput {
+  title: string;
+  description?: string;
+  fields: AssistantConfigureParamsField[];
+}
+
+export interface AssistantConfigureParamsResult {
+  confirmed: boolean;
+  values?: Record<string, unknown>;
 }
 
 export type AssistantProposalAction = "accept" | "accept_edited" | "reject";

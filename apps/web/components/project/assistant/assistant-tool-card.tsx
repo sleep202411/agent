@@ -34,6 +34,8 @@ import type {
   AssistantSceneProposalInput,
   AssistantShowOptionsInput,
   AssistantShowOptionsResult,
+  AssistantConfigureParamsInput,
+  AssistantConfigureParamsResult,
   AssistantStoryboardDecision,
   AssistantStoryboardProposal,
   AssistantToolResult,
@@ -283,6 +285,149 @@ function ConfirmCard({
         >
           <IconCheck className="size-3.5" />
           {input.confirmLabel || tc("confirm")}
+        </Button>
+      </div>
+    </CardFrame>
+  );
+}
+
+function ConfigureParamsCard({
+  part,
+  disabled,
+  processing,
+  onApplyResult,
+}: AssistantToolCardProps & {
+  part: AssistantToolInvocation<AssistantConfigureParamsInput, AssistantConfigureParamsResult>;
+}) {
+  const t = useTranslations("ai");
+  const tc = useTranslations("common");
+  const input = part.input;
+  const [values, setValues] = useState<Record<string, unknown>>(() => {
+    if (part.state === "output-available" && part.output?.values) return part.output.values;
+    const defaults: Record<string, unknown> = {};
+    input?.fields?.forEach((field) => {
+      defaults[field.key] = field.defaultValue;
+    });
+    return defaults;
+  });
+
+  if (!input) return null;
+
+  if (part.state === "output-available") {
+    if (!part.output?.confirmed) {
+      return (
+        <CardFrame title={input.title} description={t("paramsCancelled")} tone="default">
+          <div className="text-xs text-muted-foreground">{t("paramsCancelledHint")}</div>
+        </CardFrame>
+      );
+    }
+    return (
+      <CardFrame
+        title={input.title}
+        description={processing ? t("paramsConfirmedProcessing") : t("paramsConfirmed")}
+        tone="success"
+      >
+        <div className="flex flex-wrap gap-2">
+          {input.fields.map((field) => (
+            <div
+              key={field.key}
+              className="rounded-lg border border-border/70 bg-muted/20 px-3 py-1.5"
+            >
+              <span className="text-[11px] text-muted-foreground">{field.label}</span>
+              <span className="ml-1.5 text-xs font-semibold text-foreground">
+                {String(part.output?.values?.[field.key] ?? field.defaultValue)}
+                {field.suffix ? ` ${field.suffix}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardFrame>
+    );
+  }
+
+  const updateValue = (key: string, value: unknown) => {
+    setValues((prev) => ({ ...prev, [key]: value }));
+  };
+
+  return (
+    <CardFrame title={input.title} description={input.description}>
+      <div className="space-y-3">
+        {input.fields.map((field) => (
+          <div key={field.key} className="flex items-center gap-3">
+            <label className="w-20 shrink-0 text-xs font-medium text-foreground">
+              {field.label}
+            </label>
+            <div className="flex flex-1 items-center gap-2">
+              {field.type === "number" ? (
+                <input
+                  type="number"
+                  disabled={disabled}
+                  value={Number(values[field.key] ?? field.defaultValue)}
+                  min={field.min}
+                  max={field.max}
+                  onChange={(e) => updateValue(field.key, Number(e.target.value))}
+                  className="w-full rounded-lg border border-border bg-muted/20 px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+                />
+              ) : field.type === "select" ? (
+                <select
+                  disabled={disabled}
+                  value={String(values[field.key] ?? field.defaultValue)}
+                  onChange={(e) => updateValue(field.key, e.target.value)}
+                  className="w-full rounded-lg border border-border bg-muted/20 px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+                >
+                  {field.options?.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  disabled={disabled}
+                  value={String(values[field.key] ?? field.defaultValue)}
+                  onChange={(e) => updateValue(field.key, e.target.value)}
+                  className="w-full rounded-lg border border-border bg-muted/20 px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+                />
+              )}
+              {field.suffix ? (
+                <span className="shrink-0 text-xs text-muted-foreground">{field.suffix}</span>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          color="muted"
+          disabled={disabled}
+          onClick={() =>
+            onApplyResult({
+              toolCallId: part.toolCallId,
+              toolName: getAssistantInteractiveToolName(part),
+              output: { confirmed: false } satisfies AssistantConfigureParamsResult,
+            })
+          }
+        >
+          <IconX className="size-3.5" />
+          {tc("cancel")}
+        </Button>
+        <Button
+          size="sm"
+          disabled={disabled}
+          onClick={() =>
+            onApplyResult({
+              toolCallId: part.toolCallId,
+              toolName: getAssistantInteractiveToolName(part),
+              output: { confirmed: true, values } satisfies AssistantConfigureParamsResult,
+            })
+          }
+        >
+          <IconCheck className="size-3.5" />
+          {tc("confirm")}
         </Button>
       </div>
     </CardFrame>
@@ -882,6 +1027,22 @@ export function AssistantToolCard({
       <OptionsCard
         part={
           part as AssistantToolInvocation<AssistantShowOptionsInput, AssistantShowOptionsResult>
+        }
+        disabled={disabled}
+        processing={processing}
+        onApplyResult={onApplyResult}
+      />
+    );
+  }
+
+  if (toolName === "configure_params") {
+    return (
+      <ConfigureParamsCard
+        part={
+          part as AssistantToolInvocation<
+            AssistantConfigureParamsInput,
+            AssistantConfigureParamsResult
+          >
         }
         disabled={disabled}
         processing={processing}

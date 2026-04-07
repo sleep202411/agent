@@ -17,6 +17,8 @@ import type {
   AssistantSceneProposalInput as SharedAssistantSceneProposalInput,
   AssistantShowOptionsInput as SharedAssistantShowOptionsInput,
   AssistantShowOptionsResult as SharedAssistantShowOptionsResult,
+  AssistantConfigureParamsInput as SharedAssistantConfigureParamsInput,
+  AssistantConfigureParamsResult as SharedAssistantConfigureParamsResult,
   AssistantStoryboardProposal as SharedAssistantStoryboardProposal,
   AssistantStoryboardDecision as SharedAssistantStoryboardDecision,
   AssistantUiToolName as SharedAssistantUiToolName,
@@ -143,6 +145,10 @@ export type AssistantShowOptionsResult = SharedAssistantShowOptionsResult;
 export type AssistantConfirmActionInput = SharedAssistantConfirmActionInput;
 
 export type AssistantConfirmActionResult = SharedAssistantConfirmActionResult;
+
+export type AssistantConfigureParamsInput = SharedAssistantConfigureParamsInput;
+
+export type AssistantConfigureParamsResult = SharedAssistantConfigureParamsResult;
 
 export type AssistantRoleProposal = SharedAssistantRoleProposal;
 

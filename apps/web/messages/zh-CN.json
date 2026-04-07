@@ -185,6 +185,10 @@
     "validateSize": "请选择视频尺寸",
     "validateStyle": "请选择画风"
   },
+  "nav": {
+    "studio": "工作台",
+    "creators": "创作者广场"
+  },
   "sidebar": {
     "projects": "项目",
     "episodes": "剧集",
@@ -743,7 +747,7 @@
     "fileTypeDefault": "文件",
     "breakdownScript": "拆解剧本",
     "breakdownScriptDesc": "提供小说或故事文本，指定集数和每集时长，AI 快速拆分为完整的分集剧本",
-    "breakdownScriptPrompt": "帮我把这个剧本拆成 80 集，每集 2 分钟左右，需要包含每集的场景划分、出场角色和主要剧情节拍。",
+    "breakdownScriptPrompt": "帮我拆解当前剧本，按场景划分镜头，标注每个镜头的出场角色、画面描述和对应的原文段落位置。",
     "designStoryboard": "设计分镜",
     "designStoryboardDesc": "根据剧本自动生成分镜脚本，包含镜头描述、景别、运镜和台词标注",
     "designStoryboardPrompt": "根据第 1 集的剧本，帮我生成 15 个分镜，每个镜头标注景别、运镜和画面描述，生成后直接写入分镜表。",
@@ -846,6 +850,10 @@
     "selectedSelections": "已选择：{labels}",
     "processingResult": "处理中…",
     "optionsSubmittedHint": "选项结果已提交，助手会继续处理。",
+    "paramsCancelled": "参数配置已取消",
+    "paramsCancelledHint": "用户取消了参数配置。",
+    "paramsConfirmed": "参数已确认",
+    "paramsConfirmedProcessing": "参数已确认，正在执行...",
     "confirmedExecuting": "已确认，助手正在执行",
     "confirmedDone": "已确认执行",
     "cancelled": "已取消",

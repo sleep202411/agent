@@ -185,6 +185,10 @@
     "validateSize": "請選擇影片尺寸",
     "validateStyle": "請選擇畫風"
   },
+  "nav": {
+    "studio": "工作台",
+    "creators": "創作者廣場"
+  },
   "sidebar": {
     "projects": "專案",
     "episodes": "劇集",
@@ -747,7 +751,7 @@
     "designStoryboardDesc": "根據劇本自動生成分鏡腳本，包含鏡頭描述、景別、運鏡和台詞標註",
     "assetAnalysis": "資產分析",
     "assetAnalysisDesc": "自動提取劇本中涉及的角色、場景、道具，生成完整的製作資產清單",
-    "breakdownScriptPrompt": "幫我把這個劇本拆成 80 集，每集 2 分鐘左右，需要包含每集的場景劃分、出場角色和主要劇情節拍。",
+    "breakdownScriptPrompt": "幫我拆解目前劇本，按場景劃分鏡頭，標註每個鏡頭的出場角色、畫面描述和對應的原文段落位置。",
     "designStoryboardPrompt": "根據第 1 集的劇本，幫我生成 15 個分鏡，每個鏡頭標註景別、運鏡和畫面描述，生成後直接寫入分鏡表。",
     "assetAnalysisPrompt": "幫我過一遍前 10 集的劇本，把所有出現的角色、場景和道具整理成清單，標註各自出現了幾次，缺失的直接補進專案裡。",
     "qaScriptWrite": "撰寫一集劇本",
@@ -846,6 +850,10 @@
     "selectedSelections": "已選擇：{labels}",
     "processingResult": "處理中…",
     "optionsSubmittedHint": "選項結果已提交，助手會繼續處理。",
+    "paramsCancelled": "參數配置已取消",
+    "paramsCancelledHint": "用戶取消了參數配置。",
+    "paramsConfirmed": "參數已確認",
+    "paramsConfirmedProcessing": "參數已確認，正在執行...",
     "confirmedExecuting": "已確認，助手正在執行",
     "confirmedDone": "已確認執行",
     "cancelled": "已取消",

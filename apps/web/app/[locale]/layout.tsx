@@ -4,6 +4,7 @@ import "../globals.css";
 import { cn } from "@/lib/utils";
 import { Providers } from "@/components/providers";
 import { ThemeProvider } from "@/components/theme-provider";
+import { GlobalNav } from "@/components/layout/global-nav";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
 import { notFound } from "next/navigation";
 import { routing } from "@/src/i18n/routing";
@@ -54,7 +55,10 @@ export default async function LocaleLayout({
       <body className="min-h-full flex flex-col">
         <NextIntlClientProvider>
           <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
-            <Providers>{children}</Providers>
+            <Providers>
+              <GlobalNav />
+              {children}
+            </Providers>
           </ThemeProvider>
         </NextIntlClientProvider>
       </body>

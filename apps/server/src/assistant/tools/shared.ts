@@ -73,6 +73,11 @@ export const confirmResultSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const configureParamsResultSchema = z.object({
+  confirmed: z.boolean(),
+  values: z.record(z.string(), z.unknown()).optional(),
+});
+
 export const roleProposalDecisionSchema = z.object({
   action: z.enum(['accept', 'accept_edited', 'reject']),
   items: z.array(roleProposalSchema).optional(),

@@ -185,6 +185,10 @@
     "validateSize": "Please select video size",
     "validateStyle": "Please select an art style"
   },
+  "nav": {
+    "studio": "Studio",
+    "creators": "Creators"
+  },
   "sidebar": {
     "projects": "Projects",
     "episodes": "Episodes",
@@ -747,7 +751,7 @@
     "designStoryboardDesc": "Auto-generate storyboard scripts from screenplay, including shot descriptions, angles, camera moves and dialogue annotations",
     "assetAnalysis": "Asset Analysis",
     "assetAnalysisDesc": "Auto-extract characters, scenes and props from the script, generate a complete production asset list",
-    "breakdownScriptPrompt": "Help me split this script into 80 episodes, each about 2 minutes long, including scene divisions, character appearances, and main plot beats for each episode.",
+    "breakdownScriptPrompt": "Break down the current script into shots by scene, marking character appearances, visual descriptions, and the corresponding source text positions.",
     "designStoryboardPrompt": "Based on episode 1's script, generate 15 storyboards with shot type, camera movement and scene description for each shot, then write directly to the storyboard.",
     "assetAnalysisPrompt": "Review the first 10 episodes, organize all characters, scenes and props into a list, mark how many times each appears, and add missing ones directly to the project.",
     "qaScriptWrite": "Write an Episode",
@@ -846,6 +850,10 @@
     "selectedSelections": "Selected: {labels}",
     "processingResult": "Processing...",
     "optionsSubmittedHint": "Options submitted, assistant will continue processing.",
+    "paramsCancelled": "Configuration cancelled",
+    "paramsCancelledHint": "User cancelled the configuration.",
+    "paramsConfirmed": "Parameters confirmed",
+    "paramsConfirmedProcessing": "Parameters confirmed, executing...",
     "confirmedExecuting": "Confirmed, assistant is executing",
     "confirmedDone": "Confirmed and executed",
     "cancelled": "Cancelled",
