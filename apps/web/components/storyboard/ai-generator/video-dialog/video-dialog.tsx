@@ -7,6 +7,8 @@ import {
   IconArrowsMaximize,
   IconBoxMultiple,
   IconBrush,
+  IconChevronLeft,
+  IconChevronRight,
   IconCircleCheck,
   IconDownload,
   IconEye,
@@ -129,6 +131,8 @@ export function AiVideoGeneratorDialog({
   onGeneratePrompt,
   onGeneratingChange,
   onGenerateSuccess,
+  onPrevShot,
+  onNextShot,
 }: AiVideoGeneratorDialogProps) {
   const t = useTranslations("storyboard");
   const tc = useTranslations("common");
@@ -1382,6 +1386,25 @@ export function AiVideoGeneratorDialog({
             </div>
           </div>
         </DialogContent>
+
+        {onPrevShot ? (
+          <button
+            type="button"
+            onClick={onPrevShot}
+            className="fixed left-[calc(50%-530px)] top-1/2 z-50 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-lg backdrop-blur-sm transition-colors hover:bg-muted"
+          >
+            <IconChevronLeft className="size-6" />
+          </button>
+        ) : null}
+        {onNextShot ? (
+          <button
+            type="button"
+            onClick={onNextShot}
+            className="fixed right-[calc(50%-530px)] top-1/2 z-50 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-lg backdrop-blur-sm transition-colors hover:bg-muted"
+          >
+            <IconChevronRight className="size-6" />
+          </button>
+        ) : null}
       </Dialog>
 
       {pickerConfig ? (

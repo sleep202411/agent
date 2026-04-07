@@ -6,7 +6,7 @@ import { IconCircleCheck, IconLoader2, IconSparkles } from "@tabler/icons-react"
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
-import { AiImageGeneratorDialog } from "@/components/storyboard/ai-generator";
+import { useStoryboardDialog } from "@/components/storyboard/storyboard-dialog-context";
 import { cn } from "@/lib/utils";
 import { buildOssImageUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { backendApi } from "@/src/lib/api";
@@ -89,9 +89,9 @@ export function ImageCell({
 }) {
   const t = useTranslations("storyboard");
   const tc = useTranslations("common");
+  const { openImageDialog } = useStoryboardDialog();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
@@ -475,7 +475,7 @@ export function ImageCell({
                         clearSingleBatchCompleted({ shotId: shotId, columnId: shotColumnId })
                       );
                     }
-                    setAiOpen(true);
+                    openImageDialog(shotId, shotColumnId);
                   }}
                 >
                   {aiButtonIcon}
@@ -514,7 +514,7 @@ export function ImageCell({
                     clearSingleBatchCompleted({ shotId: shotId, columnId: shotColumnId })
                   );
                 }
-                setAiOpen(true);
+                openImageDialog(shotId, shotColumnId);
               }}
             >
               {aiButtonIcon}
@@ -551,21 +551,6 @@ export function ImageCell({
         onSetPreferred={(path) => handleSetPreferred({ path })}
         onUnsetPreferred={(path) => handleUnsetPreferred(path)}
         onPromptSave={handlePromptSave}
-      />
-
-      <AiImageGeneratorDialog
-        open={aiOpen}
-        onOpenChange={setAiOpen}
-        shotId={shotId}
-        shotColumnId={shotColumnId}
-        defaultPrompt={promptContext.prompt}
-        referenceFields={promptContext.referenceFields}
-        defaultRefImage={src || undefined}
-        appliedPaths={appliedPaths}
-        preferredPath={preferredPath}
-        onCollect={handleCollect}
-        onSetPreferred={handleSetPreferred}
-        onGeneratePrompt={handleGeneratePrompt}
       />
     </>
   );

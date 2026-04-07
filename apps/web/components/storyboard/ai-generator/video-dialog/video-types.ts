@@ -100,6 +100,8 @@ export interface AiVideoGeneratorDialogProps {
   onGeneratePrompt?: (prompt: string) => void;
   onGeneratingChange?: (isGenerating: boolean) => void;
   onGenerateSuccess?: () => void;
+  onPrevShot?: () => void;
+  onNextShot?: () => void;
 }
 
 // ── Utility functions ──────────────────────────────────────────────────

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconArrowsMaximize,
   IconBrush,
+  IconChevronLeft,
+  IconChevronRight,
   IconCircleCheck,
   IconDownload,
   IconEraser,
@@ -65,6 +67,8 @@ interface AiImageGeneratorDialogProps {
   onCollect?: (item: ResultItem) => void;
   onSetPreferred?: (item: ResultItem) => void;
   onGeneratePrompt?: (prompt: string) => void;
+  onPrevShot?: () => void;
+  onNextShot?: () => void;
 }
 
 export function AiImageGeneratorDialog({
@@ -81,6 +85,8 @@ export function AiImageGeneratorDialog({
   onCollect,
   onSetPreferred,
   onGeneratePrompt,
+  onPrevShot,
+  onNextShot,
 }: AiImageGeneratorDialogProps) {
   const t = useTranslations("storyboard");
   const tc = useTranslations("common");
@@ -558,6 +564,25 @@ export function AiImageGeneratorDialog({
           onSubmit={handleGenerate}
         />
       </DialogContent>
+
+      {onPrevShot ? (
+        <button
+          type="button"
+          onClick={onPrevShot}
+          className="fixed left-[calc(50%-530px)] top-1/2 z-50 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-lg backdrop-blur-sm transition-colors hover:bg-muted"
+        >
+          <IconChevronLeft className="size-6" />
+        </button>
+      ) : null}
+      {onNextShot ? (
+        <button
+          type="button"
+          onClick={onNextShot}
+          className="fixed right-[calc(50%-530px)] top-1/2 z-50 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-lg backdrop-blur-sm transition-colors hover:bg-muted"
+        >
+          <IconChevronRight className="size-6" />
+        </button>
+      ) : null}
 
       <AssetPickerDialog
         open={imagePickerOpen}

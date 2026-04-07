@@ -20,8 +20,8 @@ import {
   AiAudioGeneratorDialog,
   AiBasicAudioGeneratorDialog,
   AiLipSyncGeneratorDialog,
-  AiVideoGeneratorDialog,
 } from "@/components/storyboard/ai-generator";
+import { useStoryboardDialog } from "@/components/storyboard/storyboard-dialog-context";
 import { AudioWaveformBars } from "@/components/storyboard/ai-generator/audio-waveform-bars";
 import { cn } from "@/lib/utils";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
@@ -114,9 +114,10 @@ export function MediaCell({
 }) {
   const t = useTranslations("storyboard");
   const tc = useTranslations("common");
+  const { openVideoDialog } = useStoryboardDialog();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false); // Used for audio/lipsync dialogs only
   const [managerOpen, setManagerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -560,7 +561,7 @@ export function MediaCell({
       if (isBatchCompletedCell) {
         store.dispatch(clearSingleBatchCompleted({ shotId: shotId, columnId: shotColumnId }));
       }
-      setAiOpen(true);
+      openVideoDialog(shotId, shotColumnId);
       return;
     }
     if (type === "lip_sync") {
@@ -874,34 +875,6 @@ export function MediaCell({
           defaultPrompt={getDialogueTextFromShotValues(row?.shotValues ?? [])}
           currentAudioPath={path}
           onSelectPaths={handleSelectGeneratedAudios}
-          onGeneratingChange={setIsAiGenerating}
-          onGenerateSuccess={() => {
-            setShowGenerateDone(true);
-            if (doneTimerRef.current) {
-              window.clearTimeout(doneTimerRef.current);
-            }
-            doneTimerRef.current = window.setTimeout(() => {
-              setShowGenerateDone(false);
-              doneTimerRef.current = null;
-            }, 2200);
-          }}
-        />
-      ) : null}
-
-      {isVideoCell ? (
-        <AiVideoGeneratorDialog
-          open={aiOpen}
-          onOpenChange={setAiOpen}
-          shotId={shotId}
-          shotColumnId={shotColumnId}
-          defaultPrompt={promptContext.prompt}
-          defaultReferenceImage={defaultReferenceImagePath}
-          referenceFields={promptContext.referenceFields}
-          appliedPaths={appliedPaths}
-          preferredPath={preferredPath}
-          onCollect={handleCollect}
-          onSetPreferred={handleSetPreferred}
-          onGeneratePrompt={handleGeneratePrompt}
           onGeneratingChange={setIsAiGenerating}
           onGenerateSuccess={() => {
             setShowGenerateDone(true);

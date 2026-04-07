@@ -27,6 +27,8 @@ import {
   ShotNoCell,
 } from "@/components/storyboard/cells";
 import { MusicCell } from "@/components/storyboard/cells/music-cell";
+import { StoryboardDialogProvider } from "@/components/storyboard/storyboard-dialog-context";
+import { StoryboardLiftedDialogs } from "@/components/storyboard/storyboard-lifted-dialogs";
 import { LipSyncCell } from "@/components/project/storyboard-lipsync-cell";
 import { StoryboardColumnHeader } from "@/components/project/storyboard-column-header";
 import { StoryboardToolbar } from "@/components/project/storyboard-toolbar";
@@ -393,28 +395,31 @@ export function StoryboardView() {
   }, []);
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <StoryboardToolbar />
+    <StoryboardDialogProvider>
+      <div className="flex h-full flex-col gap-4">
+        <StoryboardToolbar />
 
-      {!activeEpisodeId ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">{t("episodeNotSelected")}</p>
-        </div>
-      ) : isLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">{t("loadingStoryboard")}</p>
-        </div>
-      ) : visibleColumns.length === 0 && rows.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">{t("noStoryboardData")}</p>
-        </div>
-      ) : (
-        <VirtualStoryboardTable
-          rows={rows}
-          visibleColumns={visibleColumns}
-          mentionItems={mentionItems}
-        />
-      )}
-    </div>
+        {!activeEpisodeId ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-muted-foreground">{t("episodeNotSelected")}</p>
+          </div>
+        ) : isLoading ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-muted-foreground">{t("loadingStoryboard")}</p>
+          </div>
+        ) : visibleColumns.length === 0 && rows.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-muted-foreground">{t("noStoryboardData")}</p>
+          </div>
+        ) : (
+          <VirtualStoryboardTable
+            rows={rows}
+            visibleColumns={visibleColumns}
+            mentionItems={mentionItems}
+          />
+        )}
+      </div>
+      <StoryboardLiftedDialogs />
+    </StoryboardDialogProvider>
   );
 }
