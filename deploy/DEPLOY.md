@@ -1,14 +1,29 @@
 # Fizzdragon Platform 生产环境部署指南
 
-## 服务器信息
+## 环境概览
 
-- 系统：Alibaba Cloud Linux 3.2104 U10 (Pro Edition)
-- 架构：x86_64
-- 包管理器：dnf / yum
+| 环境           | 域名                      | 服务器                | env 文件              |
+| -------------- | ------------------------- | --------------------- | --------------------- |
+| Production COM | fizzstudio.fizzdragon.com | 新加坡 47.237.115.136 | `.env.production.com` |
+| Production CN  | fizzstudio.fizzspace.cn   | CN 服务器             | `.env.production.cn`  |
+| Staging        | test.fizzdragon.com       | —                     | `.env.staging`        |
+| Local          | localhost                 | 本机                  | `.env.local`          |
+
+## 服务架构
+
+```
+Nginx (80/443)
+  └→ fizzdragon-web (Next.js :3000)
+       └→ fizzdragon-server (NestJS :3001)
+             └→ Java Backend (外部)
+             └→ Alibaba AI API (外部)
+```
+
+两个容器通过 Docker Compose 内部网络通信，Web 通过 `http://server:3001` 访问 Server。
 
 ---
 
-## 一、安装基础软件
+## 一、服务器初始化（仅首次）
 
 ### 1. 安装 Docker
 
@@ -24,8 +39,6 @@ dnf install -y docker-ce docker-ce-cli containerd.io
 
 # 启动并设为开机自启
 systemctl enable --now docker
-
-# 验证
 docker --version
 ```
 
@@ -41,45 +54,44 @@ gpgcheck=0
 enabled=1
 EOF
 
-# 安装
+# 安装并启动
 dnf install -y nginx
-
-# 启动并设为开机自启
 systemctl enable --now nginx
-
-# 验证
 nginx -v
+```
+
+### 3. 创建目录
+
+```bash
+mkdir -p /opt/fizzdragon/platform
+mkdir -p /etc/nginx/ssl
 ```
 
 ---
 
 ## 二、配置 HTTPS 证书
 
-### 1. 创建证书目录
+### 1. 上传证书（本地执行）
 
 ```bash
-mkdir -p /etc/nginx/ssl
-```
+# COM 环境
+scp fizzstudio.fizzdragon.com.key fizzstudio.fizzdragon.com.pem root@<服务器IP>:/etc/nginx/ssl/
 
-### 2. 上传证书文件
-
-从本地上传 `.key` 和 `.pem` 文件到服务器：
-
-```bash
-# .com 域名
-scp fizzstudio.fizzspace.com.key fizzstudio.fizzspace.com.pem root@<服务器IP>:/etc/nginx/ssl/
-
-# .cn 域名
+# CN 环境
 scp fizzstudio.fizzspace.cn.key fizzstudio.fizzspace.cn.pem root@<服务器IP>:/etc/nginx/ssl/
 ```
 
-### 3. 上传 nginx 配置
+### 2. 上传 Nginx 配置（本地执行）
 
 ```bash
-scp deploy/nginx/fizzstudio.conf root@<服务器IP>:/etc/nginx/conf.d/fizzstudio.conf
+# COM 环境
+scp deploy/nginx/fizzstudio.fizzdragon.com.conf root@<服务器IP>:/etc/nginx/conf.d/
+
+# CN 环境
+scp deploy/nginx/fizzstudio.fizzspace.cn.conf root@<服务器IP>:/etc/nginx/conf.d/
 ```
 
-### 4. 验证并重载 nginx
+### 3. 验证并重载
 
 ```bash
 nginx -t && systemctl reload nginx
@@ -87,73 +99,114 @@ nginx -t && systemctl reload nginx
 
 ---
 
-## 三、Nginx 配置说明
+## 三、构建 Docker 镜像（本地执行）
 
-配置文件路径：`/etc/nginx/conf.d/fizzstudio.conf`
-
-功能：
-
-- HTTP (80) → 自动 301 跳转到 HTTPS
-- HTTPS (443) → 反向代理到 `127.0.0.1:3000`（Next.js 应用）
-
-如需部署 .cn 域名，复制配置并替换：
-
-- `server_name` → 对应域名
-- `ssl_certificate` → 对应 .pem 文件路径
-- `ssl_certificate_key` → 对应 .key 文件路径
-
----
-
-## 四、部署应用（Docker）
-
-### 1. 构建镜像
+### 1. 构建 Web 镜像
 
 ```bash
-# 在项目根目录
-docker build -t fizzdragon-platform -f apps/web/Dockerfile .
+# 加载对应环境变量（以 COM 为例）
+source apps/web/.env.production.com
+
+# 构建（注意 --platform linux/amd64，因为本地 Mac 是 ARM）
+docker build --platform linux/amd64 -t fizzdragon-web-com \
+  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
+  --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
+  -f apps/web/Dockerfile .
 ```
 
-### 2. 运行容器
+CN 环境：
 
 ```bash
-docker run -d \
-  --name fizzdragon-web \
-  --restart always \
-  -p 3000:3000 \
-  -e NODE_ENV=production \
-  -e NEXT_PUBLIC_OSS_BASE_URL=<你的OSS地址> \
-  -e SERVER_URL=<NestJS后端地址> \
-  fizzdragon-platform
+source apps/web/.env.production.cn
+
+docker build --platform linux/amd64 -t fizzdragon-web-cn \
+  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
+  --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
+  -f apps/web/Dockerfile .
 ```
 
-### 3. 查看日志
+### 2. 构建 Server 镜像
 
 ```bash
-docker logs -f fizzdragon-web
+# Server 镜像不区分环境（环境变量运行时注入）
+docker build --platform linux/amd64 -t fizzdragon-server-com -f apps/server/Dockerfile .
+docker build --platform linux/amd64 -t fizzdragon-server-cn -f apps/server/Dockerfile .
 ```
 
-### 4. 更新部署
+### 3. 导出镜像
 
 ```bash
-# 构建新镜像
-docker build -t fizzdragon-platform -f apps/web/Dockerfile .
+# COM
+docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
 
-# 替换容器
-docker stop fizzdragon-web && docker rm fizzdragon-web
-
-docker run -d \
-  --name fizzdragon-web \
-  --restart always \
-  -p 3000:3000 \
-  -e NODE_ENV=production \
-  -e NEXT_PUBLIC_OSS_BASE_URL=<你的OSS地址> \
-  -e SERVER_URL=<NestJS后端地址> \
-  fizzdragon-platform
+# CN
+docker save fizzdragon-web-cn fizzdragon-server-cn | gzip > fizzdragon-cn.tar.gz
 ```
 
 ---
 
-## 五、防火墙 / 安全组
+## 四、部署（上传到服务器）
+
+### 1. 上传文件（本地执行）
+
+```bash
+# COM 环境
+scp fizzdragon-com.tar.gz deploy/docker-compose.yml deploy/.env.production.com root@47.237.115.136:/opt/fizzdragon/platform/
+
+# CN 环境
+scp fizzdragon-cn.tar.gz deploy/docker-compose.yml deploy/.env.production.cn root@<CN服务器IP>:/opt/fizzdragon/platform/
+```
+
+### 2. 服务器上启动
+
+```bash
+cd /opt/fizzdragon/platform
+
+# 加载镜像
+docker load < fizzdragon-com.tar.gz  # 或 fizzdragon-cn.tar.gz
+
+# 启动服务（使用对应环境的 env 文件）
+docker compose --env-file .env.production.com up -d   # COM
+docker compose --env-file .env.production.cn up -d     # CN
+
+# 确认运行状态
+docker ps
+```
+
+---
+
+## 五、更新部署
+
+代码更新后的完整流程：
+
+```bash
+# 1. 本地构建新镜像
+source apps/web/.env.production.com
+docker build --platform linux/amd64 -t fizzdragon-web-com \
+  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
+  --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
+  -f apps/web/Dockerfile .
+docker build --platform linux/amd64 -t fizzdragon-server-com -f apps/server/Dockerfile .
+
+# 2. 导出
+docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
+
+# 3. 上传
+scp fizzdragon-com.tar.gz root@47.237.115.136:/opt/fizzdragon/platform/
+
+# 4. 服务器上重启
+ssh root@47.237.115.136 "cd /opt/fizzdragon/platform && docker load < fizzdragon-com.tar.gz && docker compose --env-file .env.production.com up -d"
+```
+
+---
+
+## 六、防火墙 / 安全组
 
 确保阿里云安全组开放以下端口：
 
@@ -162,25 +215,67 @@ docker run -d \
 | 22   | SSH                |
 | 80   | HTTP（跳转 HTTPS） |
 | 443  | HTTPS              |
-| 8443 | OpenVPN（如已有）  |
 
 ---
 
-## 六、常用运维命令
+## 七、常用运维命令
 
 ```bash
 # 查看容器状态
 docker ps
 
-# 查看 nginx 状态
-systemctl status nginx
+# 查看日志
+docker logs -f fizzdragon-web      # Web 日志
+docker logs -f fizzdragon-server   # Server 日志
 
-# 重载 nginx 配置（改配置后）
+# 重启服务
+cd /opt/fizzdragon/platform
+docker compose --env-file .env.production.com restart
+
+# 停止服务
+docker compose --env-file .env.production.com down
+
+# 重载 nginx（改配置后）
 nginx -t && systemctl reload nginx
 
 # 查看端口占用
 ss -tlnp
 
-# 查看容器日志
-docker logs -f fizzdragon-web
+# 清理旧镜像
+docker image prune -f
+```
+
+---
+
+## 八、文件结构
+
+### 项目内（deploy/）
+
+```
+deploy/
+├── DEPLOY.md                        # 本文档
+├── docker-compose.yml               # 通用 compose（所有环境共用）
+├── .env.production.com              # 生产 COM 环境变量
+├── .env.production.cn               # 生产 CN 环境变量
+├── .env.staging                     # 测试环境变量
+├── .env.local                       # 本地开发环境变量
+└── nginx/
+    ├── fizzstudio.fizzdragon.com.conf   # COM nginx 配置
+    └── fizzstudio.fizzspace.cn.conf     # CN nginx 配置
+```
+
+### 服务器上
+
+```
+/opt/fizzdragon/platform/
+├── docker-compose.yml               # compose 文件
+├── .env.production.com              # 环境变量（COM）或 .env.production.cn（CN）
+└── fizzdragon-com.tar.gz            # 镜像包（部署后可删除释放空间）
+
+/etc/nginx/
+├── conf.d/
+│   └── fizzstudio.fizzdragon.com.conf   # 或 fizzstudio.fizzspace.cn.conf
+└── ssl/
+    ├── fizzstudio.fizzdragon.com.pem
+    └── fizzstudio.fizzdragon.com.key
 ```

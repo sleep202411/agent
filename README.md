@@ -12,6 +12,14 @@ packages/
   ui/             共享 UI 组件
   eslint-config/  ESLint 配置
   typescript-config/  TypeScript 配置
+deploy/
+  docker-compose.yml       通用 Docker Compose
+  .env.production.com      生产 COM 环境变量
+  .env.production.cn       生产 CN 环境变量
+  .env.staging             测试环境变量
+  .env.local               本地环境变量
+  nginx/                   Nginx 配置
+  DEPLOY.md                部署指南
 ```
 
 ## Getting Started
@@ -40,7 +48,7 @@ npx turbo dev --filter=server
 ### Web (`apps/web/.env.local`)
 
 ```bash
-JAVA_CONTENT_URL=http://120.26.152.164:8090
+JAVA_CONTENT_URL=http://120.26.152.164:8091
 JAVA_STUDIO_URL=http://120.26.152.164:8090
 SERVER_URL=http://localhost:3001
 NEXT_PUBLIC_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com
@@ -49,11 +57,15 @@ NEXT_PUBLIC_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com
 ### Server (`apps/server/.env`)
 
 ```bash
-ALIBABA_API_KEY=your-key
-ALIBABA_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-AI_MODEL=qwen-plus
+JAVA_STUDIO_URL=http://120.26.152.164:8090
+JAVA_CONTENT_URL=http://120.26.152.164:8091
+ALIBABA_API_KEY=sk-xxx
+ALIBABA_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+AI_MODEL=qwen3-max
 PORT=3001
 ```
+
+参考 `apps/web/.env.example` 和 `apps/server/.env.example` 获取完整变量列表。
 
 ## Build
 
@@ -66,128 +78,53 @@ npx turbo build --filter=web
 npx turbo build --filter=server
 ```
 
-## Docker
+## Docker Deployment
 
-### Local Build
+详细部署指南见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md)。
 
-```bash
-# Web
-docker build -f apps/web/Dockerfile \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com \
-  --build-arg SERVER_URL=http://server:3001 \
-  --build-arg JAVA_STUDIO_URL=https://test.fizzdragon.com/test2 \
-  --build-arg JAVA_CONTENT_URL=https://test.fizzdragon.com/test1 \
-  -t fizzdragon/web .
-
-# Server
-docker build -f apps/server/Dockerfile -t fizzdragon/server .
-```
-
-### Docker Compose
+### 快速构建
 
 ```bash
-cp .env.server.example .env.server
-# 编辑 .env.server 填入实际值
-docker compose up -d
+# 加载环境变量
+source apps/web/.env.production.com
+
+# 构建镜像（Mac 需要 --platform linux/amd64）
+docker build --platform linux/amd64 -t fizzdragon-web-com \
+  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
+  --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
+  -f apps/web/Dockerfile .
+
+docker build --platform linux/amd64 -t fizzdragon-server-com \
+  -f apps/server/Dockerfile .
+
+# 导出
+docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
 ```
 
-## CI/CD
-
-### 流程概览
-
-```
-push 到 develop/main
-        │
-        ▼
-┌─── prepare (GitHub 托管) ───────────┐
-│ 判断环境:                            │
-│   main    → production (prod-cn, prod-com) │
-│   develop → staging                  │
-└────────────┬────────────────────────┘
-             │
-       ┌─────┴─────┐
-       ▼           ▼
-  build-server   build-web (按 target 并行)
-  (GitHub 托管)  (GitHub 托管)
-  构建镜像 →     构建镜像 →
-  push ghcr.io   push ghcr.io
-       │           │
-       └─────┬─────┘
-             ▼
-┌─── deploy (self-hosted runner) ─────┐
-│ checkout 代码                        │
-│ login ghcr.io                        │
-│ 写 .env + .env.server               │
-│ docker compose pull                  │
-│ docker compose up -d                 │
-└──────────────────────────────────────┘
-```
-
-### 触发规则
-
-| 触发条件          | 动作                                   |
-| ----------------- | -------------------------------------- |
-| PR → develop/main | CI 检查（lint + type check + build）   |
-| push → develop    | 自动部署 → staging                     |
-| push → main       | 自动部署 → production                  |
-| workflow_dispatch | 手动选择 staging/production            |
-| PR 评论 `/deploy` | 从 PR 分支部署 → staging（无需 merge） |
-
-### PR 部署命令
-
-在 PR 的评论中输入 `/deploy`，即可将当前 PR 的分支直接部署到 staging 环境，无需先 merge 到 develop。
-
-部署触发后会在评论上出现 🚀 表情确认。适用于 feature 分支的快速验证。
-
-### 镜像策略
-
-- 镜像仓库: `ghcr.io/fizzdragon-pte-ltd-2`
-- 使用固定 tag（`staging` / `prod`），每次构建覆盖，不累积旧版本
-- Server 镜像: `studio-server:{staging|prod}`
-- Web 镜像: `studio-web:{staging|prod-cn|prod-com}`
-
-### Self-hosted Runner
-
-部署阶段通过 self-hosted runner 在目标服务器本地执行，不需要 GitHub SSH 到服务器。
-
-**安装 Runner（首次）：**
+### 服务器部署
 
 ```bash
-mkdir actions-runner && cd actions-runner
-# 下载 runner（去 GitHub → Settings → Actions → Runners → New 获取命令）
-tar xzf actions-runner-linux-x64-*.tar.gz
-./config.sh --url https://github.com/Fizzdragon-Pte-Ltd-2 --token <TOKEN>
+# 上传到服务器
+scp fizzdragon-com.tar.gz deploy/docker-compose.yml deploy/.env.production.com root@<IP>:/opt/fizzdragon/platform/
 
-# 安装为系统服务
-sudo ./svc.sh install
-sudo ./svc.sh start
+# 服务器上启动
+cd /opt/fizzdragon/platform
+docker load < fizzdragon-com.tar.gz
+docker compose --env-file .env.production.com up -d
 ```
 
-### GitHub Environment Secrets
+### 多环境
 
-每个 environment（staging / prod-cn / prod-com）需要配置以下 secrets：
+使用同一个 `docker-compose.yml`，通过 `--env-file` 切换环境：
 
-| Secret             | 说明          |
-| ------------------ | ------------- |
-| `ALIBABA_API_KEY`  | 千问 API Key  |
-| `ALIBABA_BASE_URL` | 千问 API 地址 |
-
-**千问 API 地址按区域区分：**
-
-| Environment        | ALIBABA_BASE_URL                                                   |
-| ------------------ | ------------------------------------------------------------------ |
-| staging / prod-com | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`（新加坡） |
-| prod-cn            | `https://dashscope.aliyuncs.com/compatible-mode/v1`（中国大陆）    |
-
-### GitHub Environment Variables
-
-每个 environment 需要配置以下 variables（非敏感信息）：
-
-| Variable           | 说明                  |
-| ------------------ | --------------------- |
-| `JAVA_STUDIO_URL`  | Java Studio 后端地址  |
-| `JAVA_CONTENT_URL` | Java Content 后端地址 |
-| `OSS_BASE_URL`     | OSS 存储地址          |
+```bash
+docker compose --env-file .env.production.com up -d   # COM 生产
+docker compose --env-file .env.production.cn up -d     # CN 生产
+docker compose --env-file .env.staging up -d           # 测试
+docker compose --env-file .env.local up -d             # 本地
+```
 
 ## Architecture
 
@@ -195,10 +132,11 @@ sudo ./svc.sh start
 User → Nginx (443/HTTPS)
          ↓
        Web container (3000)
-         ↓ (internal)
+         ↓ (Docker internal: http://server:3001)
        Server container (3001)
          ↓
-       Java Backend (8090)
+       Java Backend (external)
+       Alibaba AI API (external)
 ```
 
 ## Branch Strategy
@@ -212,18 +150,9 @@ feature/*         ← Feature branches, PR to develop
 hotfix/*          ← Hotfixes, PR to main + develop
 ```
 
-### 分支命名规范
-
-```
-feature/<简短描述>       例: feature/storyos-rebrand
-hotfix/<简短描述>        例: hotfix/login-redirect
-```
-
 ### 开发流程
 
 1. 从 develop 创建 feature 分支
 2. 开发完成后 PR to develop
-3. PR 评论 `/deploy` 可直接部署到 staging 验证（无需 merge）
-4. CI 通过后 merge 到 develop（自动部署 staging）
-5. 验证没问题后，develop merge 到 main（自动部署 production）
-6. main merge 后，已合并的 feature 分支自动清理
+3. CI 通过后 merge 到 develop
+4. 验证没问题后，develop merge 到 main（部署 production）

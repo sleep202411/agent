@@ -62,10 +62,9 @@ export function WorkspaceSidebar() {
         ))}
       </nav>
 
-      {/* TODO: 暂时隐藏主题切换 */}
-      {/* <div className="mt-auto">
+      <div className="mt-auto">
         <ThemeToggle />
-      </div> */}
+      </div>
     </aside>
   );
 }

@@ -1,0 +1,25 @@
+services:
+  web:
+    image: ${WEB_IMAGE:-fizzdragon-web}
+    container_name: fizzdragon-web
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      SERVER_URL: http://server:3001
+    depends_on:
+      - server
+
+  server:
+    image: ${SERVER_IMAGE:-fizzdragon-server}
+    container_name: fizzdragon-server
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: ${PORT:-3001}
+      JAVA_STUDIO_URL: ${JAVA_STUDIO_URL}
+      JAVA_CONTENT_URL: ${JAVA_CONTENT_URL}
+      ALIBABA_API_KEY: ${ALIBABA_API_KEY}
+      ALIBABA_BASE_URL: ${ALIBABA_BASE_URL}
+      AI_MODEL: ${AI_MODEL:-qwen3-max}
