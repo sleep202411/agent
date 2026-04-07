@@ -63,7 +63,8 @@ export function CreditsRechargeDialog({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const selectedPackage = packages.find((p) => p.id === selectedId) ?? null;
-  const displayPrice = (cents: number) => (cents / 100).toFixed(2);
+  const displayPrice = (amount: number) =>
+    siteConfig.region === "cn" ? (amount / 100).toFixed(2) : amount.toFixed(2);
   const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
 
   // ── Fetch ───────────────────────────────────────────────

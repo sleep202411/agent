@@ -96,7 +96,8 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
   };
 
   const displayName = (name: string) => planConfig[name]?.name || name;
-  const displayPrice = (cents: number) => (cents / 100).toFixed(2);
+  const displayPrice = (amount: number) =>
+    siteConfig.region === "cn" ? (amount / 100).toFixed(2) : amount.toFixed(2);
   const getBenefits = (name: string) => planConfig[name]?.benefits || [];
   const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
 
