@@ -50,6 +50,11 @@ export class WorkspaceService {
   private buildHeaders(incoming: HeadersLike) {
     const acceptLanguage = (incoming['accept-language'] as string) || 'zh-CN';
     const cookie = incoming['cookie'] as string | undefined;
+    if (!cookie) {
+      this.logger.warn(
+        'No cookie in incoming headers — Java backend will reject as not logged in',
+      );
+    }
     return {
       'Content-Type': 'application/json',
       'accept-language': acceptLanguage,
@@ -82,17 +87,24 @@ export class WorkspaceService {
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
         this.logger.error(
-          `HTTP ${response.status}: ${errorText.slice(0, 200)}`,
+          `[request] HTTP ${response.status} ${method} ${path}: ${errorText.slice(0, 300)} (cookie: ${incoming['cookie'] ? 'present' : 'MISSING'})`,
         );
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(
+          errorText.includes('Not logged')
+            ? 'Not logged in!'
+            : `HTTP ${response.status}`,
+        );
       }
 
       const body = (await response.json()) as WorkspaceApiBody<T>;
       const isSuccess =
         body.success === true || body.code === 200 || body.code === 'SUCCESS';
       if (!isSuccess) {
-        this.logger.error(`业务失败: ${body.code} ${body.msg || body.message}`);
-        throw new Error(body.msg || body.message || 'workspace 请求失败');
+        const msg = body.msg || body.message || 'workspace 请求失败';
+        this.logger.error(
+          `[request] FAIL ${method} ${path} → code=${body.code} success=${body.success} msg="${msg}" cookie=${incoming['cookie'] ? 'present' : 'MISSING'}`,
+        );
+        throw new Error(msg);
       }
 
       return (body.data ?? null) as T;
@@ -169,15 +181,25 @@ export class WorkspaceService {
         {
           data: { productId: context.projectId, page: 1, pageSize: 100 },
         },
-      ).catch(() => ({ list: [] })),
+      ).catch((err) => {
+        this.logger.warn(
+          `[context] /api/user/world/list/episode failed: ${err.message}`,
+        );
+        return { list: [] };
+      }),
       worldId
         ? this.getWorldAssetSummary(headers, worldId, 'character').catch(
-            () => ({
-              type: 'character' as const,
-              total: 0,
-              sampleNames: [],
-              items: [],
-            }),
+            (err) => {
+              this.logger.warn(
+                `[context] character summary failed: ${err.message}`,
+              );
+              return {
+                type: 'character' as const,
+                total: 0,
+                sampleNames: [],
+                items: [],
+              };
+            },
           )
         : Promise.resolve({
             type: 'character' as const,
@@ -186,12 +208,15 @@ export class WorkspaceService {
             items: [],
           }),
       worldId
-        ? this.getWorldAssetSummary(headers, worldId, 'scene').catch(() => ({
-            type: 'scene' as const,
-            total: 0,
-            sampleNames: [],
-            items: [],
-          }))
+        ? this.getWorldAssetSummary(headers, worldId, 'scene').catch((err) => {
+            this.logger.warn(`[context] scene summary failed: ${err.message}`);
+            return {
+              type: 'scene' as const,
+              total: 0,
+              sampleNames: [],
+              items: [],
+            };
+          })
         : Promise.resolve({
             type: 'scene' as const,
             total: 0,
@@ -199,12 +224,15 @@ export class WorkspaceService {
             items: [],
           }),
       worldId
-        ? this.getWorldAssetSummary(headers, worldId, 'prop').catch(() => ({
-            type: 'prop' as const,
-            total: 0,
-            sampleNames: [],
-            items: [],
-          }))
+        ? this.getWorldAssetSummary(headers, worldId, 'prop').catch((err) => {
+            this.logger.warn(`[context] prop summary failed: ${err.message}`);
+            return {
+              type: 'prop' as const,
+              total: 0,
+              sampleNames: [],
+              items: [],
+            };
+          })
         : Promise.resolve({
             type: 'prop' as const,
             total: 0,
@@ -212,13 +240,18 @@ export class WorkspaceService {
             items: [],
           }),
       episodeId
-        ? this.getStoryboardSummary(headers, episodeId).catch(() => ({
-            episodeId,
-            shotCount: 0,
-            sampleRows: [],
-            columns: [],
-            columnNames: [],
-          }))
+        ? this.getStoryboardSummary(headers, episodeId).catch((err) => {
+            this.logger.warn(
+              `[context] storyboard summary failed: ${err.message}`,
+            );
+            return {
+              episodeId,
+              shotCount: 0,
+              sampleRows: [],
+              columns: [],
+              columnNames: [],
+            };
+          })
         : Promise.resolve({
             episodeId: null,
             shotCount: 0,

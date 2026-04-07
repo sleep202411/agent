@@ -9,6 +9,8 @@ services:
       SERVER_URL: http://server:3001
     depends_on:
       - server
+    networks:
+      - app
 
   server:
     image: ${SERVER_IMAGE:-fizzdragon-server}
@@ -23,3 +25,9 @@ services:
       ALIBABA_API_KEY: ${ALIBABA_API_KEY}
       ALIBABA_BASE_URL: ${ALIBABA_BASE_URL}
       AI_MODEL: ${AI_MODEL:-qwen3-max}
+    networks:
+      - app
+
+networks:
+  app:
+    name: ${COMPOSE_PROJECT_NAME:-fizzdragon}_network

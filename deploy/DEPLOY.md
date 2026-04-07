@@ -119,88 +119,70 @@ docker build --platform linux/amd64 -t fizzdragon-server-<env> -f apps/server/Do
 
 ---
 
-## 四、部署 — Production（Docker + scp）
+## 四、部署 — Production COM（Docker + GHCR）
 
-### 1. 导出镜像
-
-```bash
-docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
-```
-
-### 2. 上传
+### 首次部署
 
 ```bash
-scp fizzdragon-com.tar.gz deploy/docker-compose.yml deploy/.env.production.com root@47.237.115.136:/opt/fizzdragon/platform/
-```
+# 上传配置文件
+scp deploy/docker-compose.yml deploy/.env.production.com root@47.237.115.136:/opt/fizzdragon/platform/
 
-### 3. 服务器上启动
+# 服务器登录 GHCR（首次）
+ssh root@47.237.115.136 "docker login ghcr.io"
 
-```bash
-cd /opt/fizzdragon/platform
-docker load < fizzdragon-com.tar.gz
-docker compose --env-file .env.production.com up -d
-docker ps
+# 拉取并启动
+ssh root@47.237.115.136 "cd /opt/fizzdragon/platform && \
+  docker compose --env-file .env.production.com pull && \
+  docker compose --env-file .env.production.com up -d && \
+  docker ps"
 ```
 
 ### 更新部署
 
 ```bash
-# 本地：构建 + 导出 + 上传（同上）
-
-# 服务器：加载 + 重启
+# 服务器：pull 新镜像 + 自动重建容器
 cd /opt/fizzdragon/platform
-docker load < fizzdragon-com.tar.gz
+docker compose --env-file .env.production.com pull
 docker compose --env-file .env.production.com up -d
 ```
 
 ---
 
-## 五、部署 — Staging（Podman + GHCR）
+## 五、部署 — Staging + Production CN（Podman + GHCR）
 
-### 1. 本地推送镜像到 GHCR
+Staging 和 Production CN 部署在同一台服务器（120.26.152.164），通过独立网络隔离。
 
-```bash
-# 打 tag（注意拼写）
-docker tag fizzdragon-web-staging ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
-docker tag fizzdragon-server-staging ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
-
-# 推送（增量推送，只传变化的 layer）
-docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
-docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
-```
-
-### 2. 上传配置文件
+### 首次部署
 
 ```bash
-scp deploy/docker-compose.yml deploy/.env.staging ecs-user@120.26.152.164:/opt/fizzdragon/platform/
-```
+# 上传配置文件
+scp deploy/docker-compose.yml deploy/.env.staging deploy/.env.production.cn ecs-user@120.26.152.164:/opt/fizzdragon/platform/
 
-### 3. 服务器上拉取并启动
+# 服务器登录 GHCR（首次）
+ssh ecs-user@120.26.152.164 "podman login ghcr.io"
 
-```bash
-# 停旧容器（如有）
-docker stop fizzdragon-web fizzdragon-server 2>/dev/null
-docker rm fizzdragon-web fizzdragon-server 2>/dev/null
+# 启动 Staging
+ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
+  podman-compose --env-file .env.staging pull && \
+  podman-compose --env-file .env.staging up -d"
 
-# 拉取新镜像
-podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
-podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
-
-# 启动
-cd /opt/fizzdragon/platform
-podman-compose --env-file .env.staging up -d
-docker ps
+# 启动 Production CN
+ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
+  podman-compose --env-file .env.production.cn pull && \
+  podman-compose --env-file .env.production.cn up -d"
 ```
 
 ### 更新部署
 
 ```bash
-# 本地：构建 + tag + push 到 GHCR（同上步骤 1）
-
-# 服务器：pull 新镜像 + 自动重建容器
+# Staging: pull + 自动重建
 cd /opt/fizzdragon/platform
 podman-compose --env-file .env.staging pull
 podman-compose --env-file .env.staging up -d
+
+# Production CN: pull + 自动重建
+podman-compose --env-file .env.production.cn pull
+podman-compose --env-file .env.production.cn up -d
 ```
 
 ### 常见问题
@@ -215,6 +197,20 @@ sudo kill <PID>
 ```
 
 **容器依赖删除顺序**：先删 web 再删 server（web depends_on server）。
+
+**同一台服务器跑多个 compose 项目时网络冲突**：
+
+docker-compose.yml 中必须显式定义独立网络（`networks.app.name: ${COMPOSE_PROJECT_NAME}_network`），否则多个 compose 项目会共用 `platform_default` 网络，导致 `server` 这个 network alias 被多个 server 容器注册。web 请求 `http://server:3001` 时会随机解析到任一 server，造成间歇性的 "Not logged in" 或 "HTTP 404" 错误。
+
+```
+# 正确：每个项目独立网络
+staging_network:        staging-web + staging-server
+production-cn_network:  production-cn-web + production-cn-server
+
+# 错误：共用网络导致 DNS 随机解析
+platform_default:       staging-web + staging-server + production-cn-web + production-cn-server
+                        → server alias 指向两个容器，随机轮询
+```
 
 ---
 
