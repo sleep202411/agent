@@ -25,7 +25,7 @@ import {
   SceneReferenceCell,
   SelectCell,
   ShotNoCell,
-} from "@/components/project/storyboard-custom-cells";
+} from "@/components/storyboard/cells";
 import { LipSyncCell } from "@/components/project/storyboard-lipsync-cell";
 import { StoryboardColumnHeader } from "@/components/project/storyboard-column-header";
 import { StoryboardToolbar } from "@/components/project/storyboard-toolbar";
