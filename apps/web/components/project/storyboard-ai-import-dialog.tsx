@@ -92,6 +92,7 @@ export function StoryboardAiImportDialog({
   );
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const dispatch = useAppDispatch();
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
 
@@ -179,7 +180,7 @@ export function StoryboardAiImportDialog({
         autoload,
         replaceExisting: true,
       });
-      touchStoryboard();
+      dispatch(touchStoryboard());
       if (result.warning) {
         toast.warning(result.warning);
       } else {

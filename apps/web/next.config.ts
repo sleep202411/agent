@@ -6,6 +6,12 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const nextConfig: NextConfig = {
   output: "standalone",
   skipTrailingSlashRedirect: true,
+  httpAgentOptions: {
+    keepAlive: true,
+  },
+  experimental: {
+    proxyTimeout: 300_000, // 5 minutes for AI image generation
+  } as Record<string, unknown>,
   async rewrites() {
     const contentUrl = process.env.JAVA_CONTENT_URL;
     const studioUrl = process.env.JAVA_STUDIO_URL;

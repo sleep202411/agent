@@ -85,8 +85,15 @@ export function CharacterAiRecordDialog({
     }
     try {
       setIsLoadingHistory(true);
-      const data = await backendApi.post<Paginated<AssetRecord>>("/api/ai/record/role/list", {
-        data: { page: 1, pageSize: 50, roleId: characterId, type: "img", sort: 0 },
+      const data = await backendApi.post<Paginated<AssetRecord>>("/api/ai/record/shot/list", {
+        data: {
+          page: 1,
+          pageSize: 50,
+          shotcolumnId: -1,
+          shotId: characterId,
+          type: "img",
+          sort: 1,
+        },
       });
       const list = (data?.list ?? [])
         .map((item) => normalizeStoragePath(getRecordPath(item)))
@@ -127,11 +134,11 @@ export function CharacterAiRecordDialog({
     try {
       const result = await backendApi.post<string>("/api/ai/image/generate/basic", {
         data: {
-          shotId: characterId,
-          shotColumnId: ROLE_RECORD_COLUMN_ID,
           prompt: prompt.trim(),
           referenceImageUrl: referenceImageUrl ? buildOssUrl(referenceImageUrl) : undefined,
-          watermark: false,
+          shotColumnId: ROLE_RECORD_COLUMN_ID,
+          shotId: characterId,
+          // watermark: false,
         },
         timeout: 360_000,
       });

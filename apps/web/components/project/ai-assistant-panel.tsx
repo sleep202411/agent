@@ -658,7 +658,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
                 <BorderGlow
                   key={action.titleKey}
                   className="cursor-pointer"
-                  backgroundColor="oklch(0.205 0.006 285.88)"
+                  backgroundColor="var(--color-card)"
                   borderRadius={16}
                   glowRadius={24}
                   glowColor={action.glowColor}

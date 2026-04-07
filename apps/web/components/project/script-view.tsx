@@ -132,6 +132,7 @@ export function ScriptView() {
   const t = useTranslations("script");
   const tc = useTranslations("common");
   const ts = useTranslations("storyboard");
+  const dispatch = useAppDispatch();
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
   const episodesVersion = useAppSelector((s) => selectCurrentInstance(s).episodesVersion);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
@@ -412,7 +413,7 @@ export function ScriptView() {
         autoload,
         replaceExisting: true,
       });
-      touchStoryboard();
+      dispatch(touchStoryboard());
       setShowStoryboardResult(false);
       if (result.warning) {
         toast.warning(result.warning);

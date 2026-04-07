@@ -18,7 +18,6 @@ import {
   IconTrash,
   IconUserCircle,
   IconWalk,
-  IconX,
   IconZoomIn,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -1044,40 +1043,30 @@ export function AiVideoGeneratorDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          showCloseButton={false}
-          className="flex w-[980px] sm:max-w-[980px] flex-col overflow-hidden p-0"
+          className="flex w-245 sm:max-w-245 flex-col overflow-hidden p-0"
           style={{ height: "min(860px, 90vh)" }}
         >
-          <DialogHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-3">
-            <div>
-              <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {editMode
-                  ? editMode === "repaint"
-                    ? t("repaintMode")
-                    : editMode === "localEdit"
-                      ? t("localEditMode")
-                      : editMode === "extend"
-                        ? t("extendMode")
-                        : t("outpaintingMode")
-                  : uploadMode === "frames"
-                    ? t("framesMode")
-                    : uploadMode === "multiReference"
-                      ? t("multiReferenceMode")
-                      : t("referenceMode")}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <IconX className="size-4" />
-            </button>
+          <DialogHeader>
+            <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {editMode
+                ? editMode === "repaint"
+                  ? t("repaintMode")
+                  : editMode === "localEdit"
+                    ? t("localEditMode")
+                    : editMode === "extend"
+                      ? t("extendMode")
+                      : t("outpaintingMode")
+                : uploadMode === "frames"
+                  ? t("framesMode")
+                  : uploadMode === "multiReference"
+                    ? t("multiReferenceMode")
+                    : t("referenceMode")}
+            </p>
           </DialogHeader>
 
-          <div className="flex min-h-0 flex-1 gap-4 overflow-hidden px-4">
-            <div className="flex min-h-0 flex-[4] flex-col overflow-auto">
+          <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
+            <div className="flex min-h-0 flex-4 flex-col overflow-auto">
               <ResultGallery
                 items={allResults}
                 loading={historyLoading}
@@ -1181,7 +1170,7 @@ export function AiVideoGeneratorDialog({
             />
           </div>
 
-          <div className="m-2 overflow-hidden rounded-xl border border-white/15 bg-[#1E1E24]">
+          <div className="overflow-hidden rounded-xl bg-muted/50">
             <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <VideoReferencePanel

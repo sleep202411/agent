@@ -416,7 +416,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       toast.success(t("autoAssociateSuccess"));
       setShowAutoloadDialog(false);
       setRecoverOldData(false);
-      touchStoryboard();
+      store.dispatch(touchStoryboard());
     } catch (error) {
       console.error("[StoryboardColumnHeader] 自动关联失败:", error);
       toast.error(t("autoAssociateFailed"));
@@ -436,7 +436,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       toast.success(t("associateVoiceSuccess"));
       setShowVoiceAutoloadDialog(false);
       setVoiceRecoverOldData(false);
-      touchStoryboard();
+      store.dispatch(touchStoryboard());
     } catch (error) {
       console.error("[StoryboardColumnHeader] 一键关联角色配音失败:", error);
       toast.error(t("associateVoiceFailed"));
@@ -781,7 +781,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       >
         <DialogContent
           showCloseButton={!autoloadLoading}
-          className="rounded-xl border border-border bg-[#262626] text-white sm:max-w-[420px]"
+          className="rounded-xl border border-border bg-card sm:max-w-[420px]"
         >
           <DialogHeader>
             <DialogTitle>{t("autoAssociateTitle")}</DialogTitle>
@@ -836,7 +836,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       >
         <DialogContent
           showCloseButton={!voiceAutoloadLoading}
-          className="rounded-xl border border-border bg-[#262626] text-white sm:max-w-[420px]"
+          className="rounded-xl border border-border bg-card sm:max-w-[420px]"
         >
           <DialogHeader>
             <DialogTitle>{t("voiceAutoAssociateTitle")}</DialogTitle>

@@ -288,7 +288,7 @@ function VirtualStoryboardTable({
     >
       <div style={{ width: tableWidth, minWidth: "100%" }} className="text-sm">
         {/* Header */}
-        <div className="sticky top-0 z-10 flex bg-neutral-800 border-b border-border">
+        <div className="sticky top-0 z-10 flex bg-muted border-b border-border">
           {visibleColumns.map((column) => (
             <div
               key={column.id ?? column.presetColumnKey}

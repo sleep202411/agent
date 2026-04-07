@@ -3,7 +3,7 @@ import type { Asset } from "@/src/store/slices/projectSlice";
 
 const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
 export const PAGE_SIZE = 20;
-export const ROLE_RECORD_COLUMN_ID = "-1";
+export const ROLE_RECORD_COLUMN_ID = -1;
 export const ROLE_THREE_VIEW_COLUMN_ID = -11;
 
 export type CharacterPanelItem = Asset & {
