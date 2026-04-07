@@ -9,6 +9,8 @@ import {
   propProposalDecisionSchema,
   storyboardProposalSchema,
   storyboardProposalDecisionSchema,
+  scriptProposalSchema,
+  scriptProposalDecisionSchema,
 } from './shared';
 
 export function createProposalTools() {
@@ -48,6 +50,13 @@ export function createProposalTools() {
         '提议一版分镜表草稿或局部 patch，由用户确认后再保存到当前剧集。',
       inputSchema: storyboardProposalSchema,
       outputSchema: storyboardProposalDecisionSchema,
+    }),
+
+    propose_script: tool({
+      description:
+        '提议一版剧本内容，由用户预览确认后再写入剧集。当用户要求"写剧本"、"生成剧本"时必须使用此工具，而非直接写入。',
+      inputSchema: scriptProposalSchema,
+      outputSchema: scriptProposalDecisionSchema,
     }),
   };
 }

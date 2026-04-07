@@ -330,6 +330,7 @@ async function applyWorkspaceMutationEffects(
         await refreshProjectDetail(dispatch, projectId);
         break;
       case "episode.created":
+      case "episode.batch_created":
       case "episode.updated":
       case "episode.deleted":
         dispatch(touchEpisodes());

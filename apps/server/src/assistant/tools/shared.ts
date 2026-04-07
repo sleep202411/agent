@@ -102,6 +102,19 @@ export const storyboardProposalDecisionSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const scriptProposalSchema = z.object({
+  episodeId: z.string().describe('要写入剧本的剧集 ID'),
+  episodeTitle: z.string().describe('剧集标题，用于展示'),
+  summary: z.string().describe('剧本概述'),
+  content: z.string().describe('剧本正文内容（HTML 格式）'),
+});
+
+export const scriptProposalDecisionSchema = z.object({
+  action: z.enum(['accept', 'accept_edited', 'reject']),
+  content: z.string().optional().describe('用户编辑后的内容'),
+  notes: z.string().optional(),
+});
+
 export const assetTypeSchema = z.enum(['character', 'scene', 'prop']);
 
 export function buildMutationResult(

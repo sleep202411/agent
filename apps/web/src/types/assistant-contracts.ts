@@ -25,6 +25,7 @@ export type AssistantEntityType = (typeof assistantEntityTypes)[number];
 export const assistantMutationActions = [
   "project.updated",
   "episode.created",
+  "episode.batch_created",
   "episode.updated",
   "episode.deleted",
   "character.created",
@@ -54,6 +55,7 @@ export const assistantProposalToolNames = [
   "propose_scenes",
   "propose_props",
   "propose_storyboard_patch",
+  "propose_script",
 ] as const;
 
 export type AssistantProposalToolName = (typeof assistantProposalToolNames)[number];
@@ -205,6 +207,19 @@ export interface AssistantStoryboardProposal {
   summary: string;
   headers: string[];
   rows: string[][];
+}
+
+export interface AssistantScriptProposalInput {
+  episodeId: string;
+  episodeTitle: string;
+  summary: string;
+  content: string;
+}
+
+export interface AssistantScriptProposalDecision {
+  action: AssistantProposalAction;
+  content?: string;
+  notes?: string;
 }
 
 export interface AssistantProposalDecision<T> {

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
 import {
   IconCheck,
   IconLayoutGrid,
@@ -38,6 +40,8 @@ import type {
   AssistantConfigureParamsResult,
   AssistantStoryboardDecision,
   AssistantStoryboardProposal,
+  AssistantScriptProposalInput,
+  AssistantScriptProposalDecision,
   AssistantToolResult,
   AssistantToolInvocation,
 } from "@/src/lib/assistant/assistant-types";
@@ -79,7 +83,11 @@ function CardFrame({
       )}
     >
       <div className="text-sm font-medium">{title}</div>
-      {description ? <div className="mt-1 text-xs text-muted-foreground">{description}</div> : null}
+      {description ? (
+        <div className="mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">
+          {description}
+        </div>
+      ) : null}
       {children ? <div className="mt-3">{children}</div> : null}
     </div>
   );
@@ -564,68 +572,95 @@ function RoleProposalCard({
                     {item.name || t("characterNamePlaceholder")}
                   </span>
                 </div>
-                <Input
-                  value={item.name}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setItems((current) =>
-                      current.map((c, i) => (i === index ? { ...c, name: event.target.value } : c))
-                    )
-                  }
-                  placeholder={t("characterNamePlaceholder")}
-                />
-                <Textarea
-                  value={item.description ?? ""}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setItems((current) =>
-                      current.map((c, i) =>
-                        i === index ? { ...c, description: event.target.value } : c
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("fieldName")}
+                  </label>
+                  <Input
+                    value={item.name}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setItems((current) =>
+                        current.map((c, i) =>
+                          i === index ? { ...c, name: event.target.value } : c
+                        )
                       )
-                    )
-                  }
-                  className="mt-3 min-h-20"
-                  placeholder={t("characterBioPlaceholder")}
-                />
-                <Textarea
-                  value={item.appearance ?? ""}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setItems((current) =>
-                      current.map((c, i) =>
-                        i === index ? { ...c, appearance: event.target.value } : c
+                    }
+                    placeholder={t("characterNamePlaceholder")}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("fieldDescription")}
+                  </label>
+                  <Textarea
+                    value={item.description ?? ""}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setItems((current) =>
+                        current.map((c, i) =>
+                          i === index ? { ...c, description: event.target.value } : c
+                        )
                       )
-                    )
-                  }
-                  className="mt-3 min-h-20"
-                  placeholder={t("appearancePlaceholder")}
-                />
-                <Textarea
-                  value={item.personality ?? ""}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setItems((current) =>
-                      current.map((c, i) =>
-                        i === index ? { ...c, personality: event.target.value } : c
+                    }
+                    className="min-h-20"
+                    placeholder={t("characterBioPlaceholder")}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("fieldAppearance")}
+                  </label>
+                  <Textarea
+                    value={item.appearance ?? ""}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setItems((current) =>
+                        current.map((c, i) =>
+                          i === index ? { ...c, appearance: event.target.value } : c
+                        )
                       )
-                    )
-                  }
-                  className="mt-3 min-h-20"
-                  placeholder={t("personalityPlaceholder")}
-                />
-                <Textarea
-                  value={item.prompt ?? ""}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setItems((current) =>
-                      current.map((c, i) =>
-                        i === index ? { ...c, prompt: event.target.value } : c
+                    }
+                    className="min-h-20"
+                    placeholder={t("appearancePlaceholder")}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("fieldPersonality")}
+                  </label>
+                  <Textarea
+                    value={item.personality ?? ""}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setItems((current) =>
+                        current.map((c, i) =>
+                          i === index ? { ...c, personality: event.target.value } : c
+                        )
                       )
-                    )
-                  }
-                  className="mt-3 min-h-20"
-                  placeholder={t("aiPromptPlaceholder")}
-                />
+                    }
+                    className="min-h-20"
+                    placeholder={t("personalityPlaceholder")}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("fieldPrompt")}
+                  </label>
+                  <Textarea
+                    value={item.prompt ?? ""}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setItems((current) =>
+                        current.map((c, i) =>
+                          i === index ? { ...c, prompt: event.target.value } : c
+                        )
+                      )
+                    }
+                    className="min-h-20"
+                    placeholder={t("aiPromptPlaceholder")}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -778,42 +813,59 @@ function SimpleProposalCard({
                   </span>
                   <span className="text-sm font-semibold">{item.name || t("namePlaceholder")}</span>
                 </div>
-                <Input
-                  value={item.name}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setItems((current) =>
-                      current.map((c, i) => (i === index ? { ...c, name: event.target.value } : c))
-                    )
-                  }
-                  placeholder={t("namePlaceholder")}
-                />
-                <Textarea
-                  value={item.description ?? ""}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setItems((current) =>
-                      current.map((c, i) =>
-                        i === index ? { ...c, description: event.target.value } : c
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("fieldName")}
+                  </label>
+                  <Input
+                    value={item.name}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setItems((current) =>
+                        current.map((c, i) =>
+                          i === index ? { ...c, name: event.target.value } : c
+                        )
                       )
-                    )
-                  }
-                  className="mt-3 min-h-20"
-                  placeholder={t("descriptionPlaceholder")}
-                />
-                <Textarea
-                  value={item.prompt ?? ""}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    setItems((current) =>
-                      current.map((c, i) =>
-                        i === index ? { ...c, prompt: event.target.value } : c
+                    }
+                    placeholder={t("namePlaceholder")}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("fieldDescription")}
+                  </label>
+                  <Textarea
+                    value={item.description ?? ""}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setItems((current) =>
+                        current.map((c, i) =>
+                          i === index ? { ...c, description: event.target.value } : c
+                        )
                       )
-                    )
-                  }
-                  className="mt-3 min-h-20"
-                  placeholder={t("promptWordPlaceholder")}
-                />
+                    }
+                    className="min-h-20"
+                    placeholder={t("descriptionPlaceholder")}
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                    {t("fieldPrompt")}
+                  </label>
+                  <Textarea
+                    value={item.prompt ?? ""}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setItems((current) =>
+                        current.map((c, i) =>
+                          i === index ? { ...c, prompt: event.target.value } : c
+                        )
+                      )
+                    }
+                    className="min-h-20"
+                    placeholder={t("promptWordPlaceholder")}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -924,7 +976,7 @@ function StoryboardProposalCard({
       </CardFrame>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="w-3xl sm:max-w-3xl">
+        <DialogContent className="max-w-[95vw] sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>{t("storyboardProposal")}</DialogTitle>
           </DialogHeader>
@@ -983,6 +1035,160 @@ function StoryboardProposalCard({
               </table>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+/** Convert plain text with newlines to HTML paragraphs if no HTML tags detected */
+function ensureHtml(text: string): string {
+  if (!text) return "<p></p>";
+  // Already HTML
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  // Plain text → convert to paragraphs
+  return text
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p>${p.replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
+function ScriptProposalCard({
+  part,
+  disabled,
+  processing,
+  onApplyResult,
+}: AssistantToolCardProps & {
+  part: AssistantToolInvocation<AssistantScriptProposalInput, AssistantScriptProposalDecision>;
+}) {
+  const t = useTranslations("ai");
+  const input = part.input;
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const rawContent =
+    part.state === "output-available" && part.output?.content
+      ? part.output.content
+      : input?.content || "";
+  const initialContent = ensureHtml(rawContent);
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [StarterKit],
+    content: initialContent,
+    editable: !disabled && part.state !== "output-available",
+    editorProps: {
+      attributes: {
+        class:
+          "prose prose-sm dark:prose-invert max-w-none min-h-[50vh] px-6 py-4 focus:outline-none",
+      },
+    },
+  });
+
+  const getContent = useCallback(
+    () => editor?.getHTML() ?? initialContent,
+    [editor, initialContent]
+  );
+
+  if (!input) return null;
+
+  if (part.state === "output-available") {
+    return (
+      <CardFrame
+        title={t("scriptProposal")}
+        description={`${input.episodeTitle} · ${part.output?.action === "reject" ? t("rejected") : processing ? t("confirmedCreating") : t("confirmed")}`}
+        tone={part.output?.action === "reject" ? "default" : "success"}
+      >
+        <div className="text-xs text-muted-foreground">
+          {part.output?.action === "reject"
+            ? t("scriptRejected")
+            : processing
+              ? t("scriptSaving")
+              : t("scriptSaved")}
+        </div>
+      </CardFrame>
+    );
+  }
+
+  return (
+    <>
+      <CardFrame
+        title={t("scriptProposal")}
+        description={`${input.episodeTitle} · ${input.summary}`}
+      >
+        <div
+          className="prose prose-sm dark:prose-invert max-h-60 overflow-y-auto rounded-xl border border-border/70 bg-muted/20 p-3"
+          dangerouslySetInnerHTML={{ __html: ensureHtml(rawContent) }}
+        />
+
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <Button
+            variant="outline"
+            color="muted"
+            size="sm"
+            disabled={disabled}
+            onClick={() => setDialogOpen(true)}
+          >
+            <IconLayoutGrid className="size-3.5" />
+            {t("viewAndEdit")}
+          </Button>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              disabled={disabled}
+              onClick={() =>
+                onApplyResult({
+                  toolCallId: part.toolCallId,
+                  toolName: getAssistantInteractiveToolName(part),
+                  output: {
+                    action: "reject",
+                  } satisfies AssistantScriptProposalDecision,
+                })
+              }
+            >
+              <IconX className="size-3.5" />
+              {t("reject")}
+            </Button>
+            <Button
+              size="sm"
+              disabled={disabled}
+              onClick={() => {
+                const content = getContent();
+                onApplyResult({
+                  toolCallId: part.toolCallId,
+                  toolName: getAssistantInteractiveToolName(part),
+                  output: {
+                    action: content === input.content ? "accept" : "accept_edited",
+                    content,
+                  } satisfies AssistantScriptProposalDecision,
+                });
+              }}
+            >
+              <IconCheck className="size-3.5" />
+              {t("acceptAndWrite")}
+            </Button>
+          </div>
+        </div>
+      </CardFrame>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-[90vw] sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>
+              {t("scriptProposal")} · {input.episodeTitle}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto rounded-xl border border-border/70">
+            <EditorContent editor={editor} />
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" color="muted" size="sm" onClick={() => setDialogOpen(false)}>
+              {t("backToChat")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
@@ -1119,6 +1325,22 @@ export function AssistantToolCard({
       <StoryboardProposalCard
         part={
           part as AssistantToolInvocation<AssistantStoryboardProposal, AssistantStoryboardDecision>
+        }
+        disabled={disabled}
+        processing={processing}
+        onApplyResult={onApplyResult}
+      />
+    );
+  }
+
+  if (toolName === "propose_script") {
+    return (
+      <ScriptProposalCard
+        part={
+          part as AssistantToolInvocation<
+            AssistantScriptProposalInput,
+            AssistantScriptProposalDecision
+          >
         }
         disabled={disabled}
         processing={processing}

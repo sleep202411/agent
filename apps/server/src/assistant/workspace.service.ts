@@ -475,6 +475,18 @@ export class WorkspaceService {
     );
   }
 
+  async saveEpisodeScript(
+    headers: HeadersLike,
+    episodeId: string,
+    content: string,
+  ) {
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/user/project/scripts/episode/createOrUpdate',
+      { data: { episodeId, content } },
+    );
+  }
+
   async deleteEpisode(headers: HeadersLike, episodeId: string) {
     return this.request<WorkspaceRecord>(
       headers,

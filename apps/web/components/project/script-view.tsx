@@ -133,6 +133,7 @@ export function ScriptView() {
   const tc = useTranslations("common");
   const ts = useTranslations("storyboard");
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
+  const episodesVersion = useAppSelector((s) => selectCurrentInstance(s).episodesVersion);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
@@ -192,9 +193,10 @@ export function ScriptView() {
 
   useEffect(() => {
     if (!activeEpisodeId || !editor) return;
+    // Skip reload if user has unsaved edits (avoid overwriting)
+    if (changed) return;
 
     setLoading(true);
-    setChanged(false);
     abortRef.current?.();
 
     backendApi
@@ -209,7 +211,7 @@ export function ScriptView() {
         toast.error(t("loadFailed"));
       })
       .finally(() => setLoading(false));
-  }, [activeEpisodeId, editor]);
+  }, [activeEpisodeId, episodesVersion, editor]);
 
   useEffect(() => {
     return () => {

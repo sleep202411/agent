@@ -21,6 +21,8 @@ import type {
   AssistantConfigureParamsResult as SharedAssistantConfigureParamsResult,
   AssistantStoryboardProposal as SharedAssistantStoryboardProposal,
   AssistantStoryboardDecision as SharedAssistantStoryboardDecision,
+  AssistantScriptProposalInput as SharedAssistantScriptProposalInput,
+  AssistantScriptProposalDecision as SharedAssistantScriptProposalDecision,
   AssistantUiToolName as SharedAssistantUiToolName,
   AssistantWorkspaceSelection as SharedAssistantWorkspaceSelection,
   AssistantWorkspaceContext as SharedAssistantWorkspaceContext,
@@ -169,6 +171,10 @@ export type AssistantProposalDecision<T> = SharedAssistantProposalDecision<T>;
 export type AssistantStoryboardDecision =
   SharedAssistantStoryboardDecision<AssistantStoryboardProposal>;
 
+export type AssistantScriptProposalInput = SharedAssistantScriptProposalInput;
+
+export type AssistantScriptProposalDecision = SharedAssistantScriptProposalDecision;
+
 export type AssistantMutationResult = SharedAssistantMutationResult;
 
 export type AssistantEntityType = SharedAssistantEntityType;
@@ -246,6 +252,10 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   delete_prop: "删除道具",
   fill_cell: "填写分镜单元格",
   save_storyboard_draft: "保存分镜草稿",
+  batch_create_episodes: "批量创建剧集",
+  save_episode_script: "保存剧本",
+  propose_script: "剧本提案",
+  configure_params: "参数配置",
 };
 
 export function getAssistantToolDisplayName(toolName: string) {

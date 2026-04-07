@@ -33,6 +33,7 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
   const locale = useLocale();
   const router = useRouter();
 
+  const dispatch = useAppDispatch();
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   const allProjects = useAppSelector((s) => selectCurrentInstance(s).projectList);
@@ -61,7 +62,7 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
     setDeletingId(id);
     try {
       await backendApi.post(`/api/user/world/delete/worldproduct?id=${id}`);
-      touchProjectList();
+      dispatch(touchProjectList());
     } catch (error) {
       console.error("[ProjectsPanel] 删除项目失败:", error);
     } finally {
@@ -184,7 +185,7 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
         project={editingProject}
         onOpenChange={setEditorOpen}
         onSaved={() => {
-          touchProjectList();
+          dispatch(touchProjectList());
         }}
       />
     </>

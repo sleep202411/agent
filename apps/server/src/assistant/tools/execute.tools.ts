@@ -67,8 +67,39 @@ export function createExecuteTools({
       },
     }),
 
+    batch_create_episodes: tool({
+      description:
+        '一次性批量创建多个剧集。分集映射确认后必须使用此工具一次性创建所有剧集，禁止逐个调用 create_episode。返回值包含 episodeMap（标题→ID映射），后续 save_episode_script 必须使用此映射中的 ID。',
+      inputSchema: z.object({
+        titles: z.array(z.string().min(1)).min(1).describe('剧集标题数组'),
+      }),
+      execute: async ({ titles }) => {
+        const episodeMap: Record<string, string> = {};
+        const createdIds: string[] = [];
+        for (const title of titles) {
+          const createdId = await ws.createEpisode(
+            headers,
+            context.projectId,
+            title,
+          );
+          const id = String(createdId);
+          createdIds.push(id);
+          episodeMap[title] = id;
+        }
+        return {
+          ...buildBatchMutationResult(
+            'episode.batch_created',
+            `已创建 ${titles.length} 个剧集`,
+            'episode',
+            createdIds,
+          ),
+          episodeMap,
+        };
+      },
+    }),
+
     update_episode: tool({
-      description: '更新某个剧集的标题或简介。',
+      description: '更新某个剧集的标题或简介。不用于写入剧本内容。',
       inputSchema: z.object({
         id: z.string(),
         title: z.string().optional(),
@@ -82,6 +113,25 @@ export function createExecuteTools({
           '剧集已更新',
           'episode',
           input.id,
+        );
+      },
+    }),
+
+    save_episode_script: tool({
+      description:
+        '【仅在用户通过 propose_script 确认后调用】将剧本内容保存到指定剧集。禁止在未经 propose_script 确认的情况下直接调用此工具。',
+      inputSchema: z.object({
+        episodeId: z.string(),
+        content: z.string().describe('剧本 HTML 内容'),
+      }),
+      outputSchema: mutationResultSchema,
+      execute: async ({ episodeId, content }) => {
+        await ws.saveEpisodeScript(headers, episodeId, content);
+        return buildMutationResult(
+          'episode.updated',
+          '剧本已保存',
+          'episode',
+          episodeId,
         );
       },
     }),

@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { createAlibaba } from '@ai-sdk/alibaba';
+import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModelV3 } from '@ai-sdk/provider';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,7 +27,9 @@ export class AiService implements OnModuleInit {
     this.loadSkills();
   }
 
-  private readonly provider = createAlibaba({
+  private readonly aiProvider = process.env.AI_PROVIDER || 'alibaba';
+
+  private readonly alibabaProvider = createAlibaba({
     apiKey: process.env.ALIBABA_API_KEY,
     baseURL: process.env.ALIBABA_BASE_URL,
     fetch: async (
@@ -61,9 +64,19 @@ export class AiService implements OnModuleInit {
     },
   });
 
+  private readonly deepseekProvider = createOpenAI({
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: 'https://api.deepseek.com',
+  });
+
   getModel(modelId?: string): LanguageModelV3 {
+    if (this.aiProvider === 'deepseek') {
+      const id = modelId || process.env.AI_MODEL || 'deepseek-chat';
+      this.logger.log(`Using DeepSeek provider, model=${id}`);
+      return this.deepseekProvider.chat(id);
+    }
     const id = modelId || process.env.AI_MODEL || 'qwen-plus';
-    return this.provider(id);
+    return this.alibabaProvider(id);
   }
 
   getSkill(name: string): Skill {
@@ -83,21 +96,17 @@ export class AiService implements OnModuleInit {
       return;
     }
 
-    const files = fs
-      .readdirSync(skillsDir)
-      .filter((f) => f.endsWith('.skill.md'));
+    const files = this.findSkillFiles(skillsDir);
     for (const file of files) {
-      const raw = fs.readFileSync(path.join(skillsDir, file), 'utf-8');
+      const raw = fs.readFileSync(file, 'utf-8');
       const { data, content } = matter(raw);
-      if (!data.name) {
-        this.logger.warn(
-          `Skill file "${file}" missing "name" in frontmatter, skipping`,
-        );
-        continue;
-      }
-      this.skills.set(data.name as string, {
+      // Derive name from frontmatter or filename (e.g. screenplay_complete.skill.md → screenplay_complete)
+      const name =
+        (data.name as string | undefined) ||
+        path.basename(file).replace(/\.skill\.md$/, '');
+      this.skills.set(name, {
         metadata: {
-          name: data.name as string,
+          name,
           description: data.description as string | undefined,
           model: data.model as string | undefined,
           temperature: data.temperature as number | undefined,
@@ -107,7 +116,20 @@ export class AiService implements OnModuleInit {
     }
 
     this.logger.log(
-      `Loaded ${this.skills.size} skills: ${[...this.skills.keys()].join(', ')}`,
+      `Loaded ${this.skills.size} skills from ${files.length} files`,
     );
+  }
+
+  private findSkillFiles(dir: string): string[] {
+    const results: string[] = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        results.push(...this.findSkillFiles(fullPath));
+      } else if (entry.name.endsWith('.skill.md')) {
+        results.push(fullPath);
+      }
+    }
+    return results;
   }
 }
