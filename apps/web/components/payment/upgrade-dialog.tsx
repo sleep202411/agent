@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import LightRays from "@/components/ui/light-rays";
 import { backendApi } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
+import { siteConfig } from "@/src/config/site";
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -54,6 +55,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<Step>("select");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [currency, setCurrency] = useState(siteConfig.defaultCurrency);
   const [qrUrl, setQrUrl] = useState("");
   const [orderNo, setOrderNo] = useState("");
   const [paying, setPaying] = useState(false);
@@ -96,6 +98,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
   const displayName = (name: string) => planConfig[name]?.name || name;
   const displayPrice = (cents: number) => (cents / 100).toFixed(2);
   const getBenefits = (name: string) => planConfig[name]?.benefits || [];
+  const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
 
   const bestValueId = useMemo(() => {
     if (packages.length < 2) return packages[0]?.id ?? null;
@@ -107,21 +110,21 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    setSelectedId(null);
     backendApi
-      .post<VipPackage[]>("/api/payment/query/vip/package", { data: { currency: "CNY" } })
+      .post<VipPackage[]>("/api/payment/query/vip/package", { data: { currency } })
       .then((res) => {
         const list = (res ?? [])
           .filter((p) => p.status === 1 || p.status === "ACTIVE")
           .sort((a, b) => a.sortOrder - b.sortOrder);
         setPackages(list);
-        if (list.length > 0 && selectedId === null) {
+        if (list.length > 0) {
           setSelectedId(list[Math.min(1, list.length - 1)].id);
         }
       })
       .catch(() => setPackages([]))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, currency]);
 
   useEffect(() => {
     if (!open) {
@@ -152,31 +155,57 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
     if (!selectedPackage) return;
     setPaying(true);
     try {
-      const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
-        data: { packageId: selectedPackage.id, type: 2 },
-      });
-      const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
-      setQrUrl(qrDataUrl);
-      setOrderNo(result.orderNo);
-      setStep("payment");
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(async () => {
-        try {
-          const s = await backendApi.get<OrderStatus>(
-            `/api/payment/order/status/${result.orderNo}`
-          );
-          if (s.status === 1) {
-            if (pollRef.current) {
-              clearInterval(pollRef.current);
-              pollRef.current = null;
+      if (siteConfig.region === "cn") {
+        // WeChat Pay: show QR code
+        const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
+          data: { packageId: selectedPackage.id, type: 2 },
+        });
+        const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
+        setQrUrl(qrDataUrl);
+        setOrderNo(result.orderNo);
+        setStep("payment");
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          try {
+            const s = await backendApi.get<OrderStatus>(
+              `/api/payment/order/status/${result.orderNo}`
+            );
+            if (s.status === 1) {
+              if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+              setStep("success");
+              onSuccess?.();
             }
-            setStep("success");
-            onSuccess?.();
+          } catch {
+            /* ignore */
           }
-        } catch {
-          /* ignore */
+        }, 3000);
+      } else {
+        // Airwallex: redirect to payment page
+        const result = await backendApi.post<{ checkoutUrl: string; orderNo: string }>(
+          "/api/payment/order/create",
+          {
+            data: {
+              productId: 1,
+              productType: 2, // "vip",
+              // successUrl: `${window.location.origin}${window.location.pathname}?payment=success`,
+              // cancelUrl: `${window.location.origin}${window.location.pathname}?payment=cancelled`,
+            },
+          }
+        );
+        if (result.checkoutUrl) {
+          try {
+            // In iframe: try parent, fallback to current window
+            const target = window.top ?? window;
+            target.open(result.checkoutUrl, "_blank");
+          } catch {
+            // Cross-origin iframe: fall back to current window
+            window.open(result.checkoutUrl, "_blank");
+          }
         }
-      }, 3000);
+      }
     } catch (e) {
       console.error("[UpgradeDialog]", e);
     } finally {
@@ -237,7 +266,28 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
           <IconCrown className="size-8 text-white" />
         </div>
         <h1 className="mb-2 text-3xl font-bold">{t("upgrade")}</h1>
-        <p className="mb-14 text-center text-muted-foreground">{t("unlockMore")}</p>
+        <p className="mb-6 text-center text-muted-foreground">{t("unlockMore")}</p>
+
+        {/* Currency switcher (only for global with multiple currencies) */}
+        {siteConfig.currencies.length > 1 && (
+          <div className="mb-10 flex items-center justify-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1">
+            {siteConfig.currencies.map((c) => (
+              <button
+                key={c.code}
+                type="button"
+                onClick={() => setCurrency(c.code)}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                  currency === c.code
+                    ? "bg-white/10 text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {c.symbol} {c.code}
+              </button>
+            ))}
+          </div>
+        )}
 
         {step === "select" && (
           <>
@@ -277,7 +327,9 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                       {/* Price */}
                       <div className="mt-4 mb-1">
                         <span className="text-3xl font-bold">
-                          <span className="text-lg font-normal text-muted-foreground">¥</span>
+                          <span className="text-lg font-normal text-muted-foreground">
+                            {currencySymbol}
+                          </span>
                           {displayPrice(pkg.price)}
                         </span>
                         {pkg.durationDays >= 30 && (
@@ -312,7 +364,11 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                           {isSelected && paying ? (
                             <IconLoader2 className="mx-auto size-4 animate-spin" />
                           ) : isSelected ? (
-                            t("wechatPay")
+                            siteConfig.region === "cn" ? (
+                              t("wechatPay")
+                            ) : (
+                              t("payNow")
+                            )
                           ) : (
                             t("selectPlan")
                           )}
