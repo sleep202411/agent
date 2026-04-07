@@ -26,6 +26,7 @@ import {
   SelectCell,
   ShotNoCell,
 } from "@/components/storyboard/cells";
+import { MusicCell } from "@/components/storyboard/cells/music-cell";
 import { LipSyncCell } from "@/components/project/storyboard-lipsync-cell";
 import { StoryboardColumnHeader } from "@/components/project/storyboard-column-header";
 import { StoryboardToolbar } from "@/components/project/storyboard-toolbar";
@@ -108,6 +109,7 @@ function getColumnIcon(type?: string): ReactNode {
     case "scene":
       return <IconMapPin className="size-3.5" />;
     case "audio":
+    case "music":
       return <IconMusic className="size-3.5" />;
     default:
       return null;
@@ -145,6 +147,7 @@ const TYPE_COLUMN_WIDTH: Record<string, number> = {
   image: 246,
   video: 246,
   audio: 200,
+  music: 200,
   character: 136,
   scene: 136,
 };
@@ -210,6 +213,8 @@ function StoryboardCell({
           column={col}
         />
       );
+    case "music":
+      return <MusicCell cell={cell} shotId={shotId} shotColumnId={columnId} column={col} />;
     case "richtext":
       return (
         <RichTextCell
