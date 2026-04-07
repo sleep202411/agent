@@ -27,20 +27,24 @@ Nginx (80/443)
 ### Production 服务器（Docker）
 
 ```bash
-# 添加 Docker CE 官方源
-dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+# 检查 Docker 是否已安装，已安装则跳过
+docker --version || {
+  # 添加 Docker CE 官方源
+  dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 
-# 安装 libcgroup 依赖（阿里云系统默认没有）
-rpm -ivh https://vault.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/libcgroup-0.41-19.el8.x86_64.rpm
+  # 安装 libcgroup 依赖（阿里云系统默认没有）
+  rpm -ivh https://vault.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/libcgroup-0.41-19.el8.x86_64.rpm
 
-# 安装 Docker
-dnf install -y docker-ce docker-ce-cli containerd.io
+  # 安装 Docker
+  dnf install -y docker-ce docker-ce-cli containerd.io
 
-# 启动并设为开机自启
-systemctl enable --now docker
+  # 启动并设为开机自启
+  systemctl enable --now docker
+}
 
-# 安装 Nginx
-cat > /etc/yum.repos.d/nginx.repo << 'EOF'
+# 检查 Nginx 是否已安装，已安装则跳过
+nginx -v || {
+  cat > /etc/yum.repos.d/nginx.repo << 'EOF'
 [nginx-stable]
 name=nginx stable repo
 baseurl=http://nginx.org/packages/centos/8/x86_64/
@@ -48,10 +52,11 @@ gpgcheck=0
 enabled=1
 EOF
 
-dnf install -y nginx
-systemctl enable --now nginx
+  dnf install -y nginx
+  systemctl enable --now nginx
+}
 
-# 创建目录
+# 创建目录（已存在则自动跳过）
 mkdir -p /opt/fizzdragon/platform
 mkdir -p /etc/nginx/ssl
 ```
