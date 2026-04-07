@@ -1,13 +1,12 @@
-# Fizzdragon Platform 生产环境部署指南
+# Fizzdragon Platform 部署指南
 
 ## 环境概览
 
-| 环境           | 域名                      | 服务器                | env 文件              |
-| -------------- | ------------------------- | --------------------- | --------------------- |
-| Production COM | fizzstudio.fizzdragon.com | 新加坡 47.237.115.136 | `.env.production.com` |
-| Production CN  | fizzstudio.fizzspace.cn   | CN 服务器             | `.env.production.cn`  |
-| Staging        | test.fizzdragon.com       | —                     | `.env.staging`        |
-| Local          | localhost                 | 本机                  | `.env.local`          |
+| 环境           | 域名                      | 服务器                | 用户     | 容器运行时 | 镜像来源       | env 文件              |
+| -------------- | ------------------------- | --------------------- | -------- | ---------- | -------------- | --------------------- |
+| Production COM | fizzstudio.fizzdragon.com | 新加坡 47.237.115.136 | root     | Docker     | 本地构建 + scp | `.env.production.com` |
+| Production CN  | fizzstudio.fizzspace.cn   | CN 服务器             | root     | Docker     | 本地构建 + scp | `.env.production.cn`  |
+| Staging        | test.fizzdragon.com       | 120.26.152.164        | ecs-user | Podman     | GHCR pull      | `.env.staging`        |
 
 ## 服务架构
 
@@ -19,13 +18,13 @@ Nginx (80/443)
              └→ Alibaba AI API (外部)
 ```
 
-两个容器通过 Docker Compose 内部网络通信，Web 通过 `http://server:3001` 访问 Server。
+两个容器通过 Docker/Podman Compose 内部网络通信，Web 通过 `http://server:3001` 访问 Server。
 
 ---
 
 ## 一、服务器初始化（仅首次）
 
-### 1. 安装 Docker
+### Production 服务器（Docker）
 
 ```bash
 # 添加 Docker CE 官方源
@@ -39,13 +38,8 @@ dnf install -y docker-ce docker-ce-cli containerd.io
 
 # 启动并设为开机自启
 systemctl enable --now docker
-docker --version
-```
 
-### 2. 安装 Nginx
-
-```bash
-# 添加 nginx 官方源
+# 安装 Nginx
 cat > /etc/yum.repos.d/nginx.repo << 'EOF'
 [nginx-stable]
 name=nginx stable repo
@@ -54,155 +48,171 @@ gpgcheck=0
 enabled=1
 EOF
 
-# 安装并启动
 dnf install -y nginx
 systemctl enable --now nginx
-nginx -v
-```
 
-### 3. 创建目录
-
-```bash
+# 创建目录
 mkdir -p /opt/fizzdragon/platform
 mkdir -p /etc/nginx/ssl
 ```
 
+### Staging 服务器（Podman）
+
+Staging 服务器已预装 Podman + podman-compose，无需额外安装。
+
+```bash
+# 创建目录（需要 sudo）
+sudo mkdir -p /opt/fizzdragon/platform
+sudo chown ecs-user:ecs-user /opt/fizzdragon/platform
+
+# 登录 GHCR（首次）
+podman login ghcr.io
+```
+
 ---
 
-## 二、配置 HTTPS 证书
-
-### 1. 上传证书（本地执行）
+## 二、配置 HTTPS 证书（仅 Production）
 
 ```bash
-# COM 环境
-scp fizzstudio.fizzdragon.com.key fizzstudio.fizzdragon.com.pem root@<服务器IP>:/etc/nginx/ssl/
+# 上传证书（本地执行）
+scp <域名>.key <域名>.pem root@<服务器IP>:/etc/nginx/ssl/
 
-# CN 环境
-scp fizzstudio.fizzspace.cn.key fizzstudio.fizzspace.cn.pem root@<服务器IP>:/etc/nginx/ssl/
-```
+# 上传 Nginx 配置
+scp deploy/nginx/<域名>.conf root@<服务器IP>:/etc/nginx/conf.d/
 
-### 2. 上传 Nginx 配置（本地执行）
-
-```bash
-# COM 环境
-scp deploy/nginx/fizzstudio.fizzdragon.com.conf root@<服务器IP>:/etc/nginx/conf.d/
-
-# CN 环境
-scp deploy/nginx/fizzstudio.fizzspace.cn.conf root@<服务器IP>:/etc/nginx/conf.d/
-```
-
-### 3. 验证并重载
-
-```bash
+# 验证并重载
 nginx -t && systemctl reload nginx
 ```
 
 ---
 
-## 三、构建 Docker 镜像（本地执行）
+## 三、构建镜像（本地执行）
 
-### 1. 构建 Web 镜像
+> **重要**：本地 Mac 是 ARM 架构，服务器是 x86_64，必须加 `--platform linux/amd64`。
+
+### 构建 Web 镜像
 
 ```bash
-# 加载对应环境变量（以 COM 为例）
-source apps/web/.env.production.com
+# 加载对应环境变量
+source apps/web/.env.production.com   # 或 .env.production.cn / .env.staging
 
-# 构建（注意 --platform linux/amd64，因为本地 Mac 是 ARM）
-docker build --platform linux/amd64 -t fizzdragon-web-com \
+# 构建
+docker build --platform linux/amd64 -t fizzdragon-web-<env> \
   --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
   --build-arg SERVER_URL=$SERVER_URL \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
+  --build-arg NEXT_PUBLIC_SITE_REGION=$NEXT_PUBLIC_SITE_REGION \
   -f apps/web/Dockerfile .
 ```
 
-CN 环境：
+### 构建 Server 镜像
 
 ```bash
-source apps/web/.env.production.cn
-
-docker build --platform linux/amd64 -t fizzdragon-web-cn \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
-  --build-arg SERVER_URL=$SERVER_URL \
-  --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
-  --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  -f apps/web/Dockerfile .
-```
-
-### 2. 构建 Server 镜像
-
-```bash
-# Server 镜像不区分环境（环境变量运行时注入）
-docker build --platform linux/amd64 -t fizzdragon-server-com -f apps/server/Dockerfile .
-docker build --platform linux/amd64 -t fizzdragon-server-cn -f apps/server/Dockerfile .
-```
-
-### 3. 导出镜像
-
-```bash
-# COM
-docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
-
-# CN
-docker save fizzdragon-web-cn fizzdragon-server-cn | gzip > fizzdragon-cn.tar.gz
+docker build --platform linux/amd64 -t fizzdragon-server-<env> -f apps/server/Dockerfile .
 ```
 
 ---
 
-## 四、部署（上传到服务器）
+## 四、部署 — Production（Docker + scp）
 
-### 1. 上传文件（本地执行）
+### 1. 导出镜像
 
 ```bash
-# COM 环境
-scp fizzdragon-com.tar.gz deploy/docker-compose.yml deploy/.env.production.com root@47.237.115.136:/opt/fizzdragon/platform/
-
-# CN 环境
-scp fizzdragon-cn.tar.gz deploy/docker-compose.yml deploy/.env.production.cn root@<CN服务器IP>:/opt/fizzdragon/platform/
+docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
 ```
 
-### 2. 服务器上启动
+### 2. 上传
+
+```bash
+scp fizzdragon-com.tar.gz deploy/docker-compose.yml deploy/.env.production.com root@47.237.115.136:/opt/fizzdragon/platform/
+```
+
+### 3. 服务器上启动
 
 ```bash
 cd /opt/fizzdragon/platform
-
-# 加载镜像
-docker load < fizzdragon-com.tar.gz  # 或 fizzdragon-cn.tar.gz
-
-# 启动服务（使用对应环境的 env 文件）
-docker compose --env-file .env.production.com up -d   # COM
-docker compose --env-file .env.production.cn up -d     # CN
-
-# 确认运行状态
+docker load < fizzdragon-com.tar.gz
+docker compose --env-file .env.production.com up -d
 docker ps
+```
+
+### 更新部署
+
+```bash
+# 本地：构建 + 导出 + 上传（同上）
+
+# 服务器：加载 + 重启
+cd /opt/fizzdragon/platform
+docker load < fizzdragon-com.tar.gz
+docker compose --env-file .env.production.com up -d
 ```
 
 ---
 
-## 五、更新部署
+## 五、部署 — Staging（Podman + GHCR）
 
-代码更新后的完整流程：
+### 1. 本地推送镜像到 GHCR
 
 ```bash
-# 1. 本地构建新镜像
-source apps/web/.env.production.com
-docker build --platform linux/amd64 -t fizzdragon-web-com \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
-  --build-arg SERVER_URL=$SERVER_URL \
-  --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
-  --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  -f apps/web/Dockerfile .
-docker build --platform linux/amd64 -t fizzdragon-server-com -f apps/server/Dockerfile .
+# 打 tag（注意拼写）
+docker tag fizzdragon-web-staging ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
+docker tag fizzdragon-server-staging ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
 
-# 2. 导出
-docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
-
-# 3. 上传
-scp fizzdragon-com.tar.gz root@47.237.115.136:/opt/fizzdragon/platform/
-
-# 4. 服务器上重启
-ssh root@47.237.115.136 "cd /opt/fizzdragon/platform && docker load < fizzdragon-com.tar.gz && docker compose --env-file .env.production.com up -d"
+# 推送（增量推送，只传变化的 layer）
+docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
+docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
 ```
+
+### 2. 上传配置文件
+
+```bash
+scp deploy/docker-compose.yml deploy/.env.staging ecs-user@120.26.152.164:/opt/fizzdragon/platform/
+```
+
+### 3. 服务器上拉取并启动
+
+```bash
+# 停旧容器（如有）
+docker stop fizzdragon-web fizzdragon-server 2>/dev/null
+docker rm fizzdragon-web fizzdragon-server 2>/dev/null
+
+# 拉取新镜像
+podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
+podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
+
+# 启动
+cd /opt/fizzdragon/platform
+podman-compose --env-file .env.staging up -d
+docker ps
+```
+
+### 更新部署
+
+```bash
+# 本地：构建 + tag + push 到 GHCR（同上步骤 1）
+
+# 服务器：停旧 + pull 新 + 启动
+cd /opt/fizzdragon/platform
+docker stop fizzdragon-web fizzdragon-server
+docker rm fizzdragon-web fizzdragon-server
+podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
+podman pull ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
+podman-compose --env-file .env.staging up -d
+```
+
+### 常见问题
+
+**端口被占用**：
+
+```bash
+# 查看哪个进程占用
+sudo ss -tlnp | grep <端口>
+# 杀掉进程
+sudo kill <PID>
+```
+
+**容器依赖删除顺序**：先删 web 再删 server（web depends_on server）。
 
 ---
 
@@ -225,17 +235,19 @@ ssh root@47.237.115.136 "cd /opt/fizzdragon/platform && docker load < fizzdragon
 docker ps
 
 # 查看日志
-docker logs -f fizzdragon-web      # Web 日志
-docker logs -f fizzdragon-server   # Server 日志
+docker logs -f fizzdragon-web
+docker logs -f fizzdragon-server
 
-# 重启服务
+# 重启服务（Production）
 cd /opt/fizzdragon/platform
 docker compose --env-file .env.production.com restart
 
-# 停止服务
-docker compose --env-file .env.production.com down
+# 重启服务（Staging）
+cd /opt/fizzdragon/platform
+podman-compose --env-file .env.staging down
+podman-compose --env-file .env.staging up -d
 
-# 重载 nginx（改配置后）
+# 重载 nginx
 nginx -t && systemctl reload nginx
 
 # 查看端口占用
@@ -253,29 +265,43 @@ docker image prune -f
 
 ```
 deploy/
-├── DEPLOY.md                        # 本文档
-├── docker-compose.yml               # 通用 compose（所有环境共用）
-├── .env.production.com              # 生产 COM 环境变量
-├── .env.production.cn               # 生产 CN 环境变量
-├── .env.staging                     # 测试环境变量
-├── .env.local                       # 本地开发环境变量
+├── DEPLOY.md                            # 本文档
+├── docker-compose.yml                   # 通用 compose（所有环境共用）
+├── .env.production.com                  # 生产 COM 环境变量
+├── .env.production.cn                   # 生产 CN 环境变量
+├── .env.staging                         # 测试环境变量
+├── .env.local                           # 本地开发环境变量
 └── nginx/
     ├── fizzstudio.fizzdragon.com.conf   # COM nginx 配置
     └── fizzstudio.fizzspace.cn.conf     # CN nginx 配置
 ```
 
-### 服务器上
+### Production 服务器
 
 ```
 /opt/fizzdragon/platform/
-├── docker-compose.yml               # compose 文件
-├── .env.production.com              # 环境变量（COM）或 .env.production.cn（CN）
-└── fizzdragon-com.tar.gz            # 镜像包（部署后可删除释放空间）
+├── docker-compose.yml
+├── .env.production.com  (或 .env.production.cn)
+└── fizzdragon-com.tar.gz  (部署后可删除)
 
 /etc/nginx/
-├── conf.d/
-│   └── fizzstudio.fizzdragon.com.conf   # 或 fizzstudio.fizzspace.cn.conf
-└── ssl/
-    ├── fizzstudio.fizzdragon.com.pem
-    └── fizzstudio.fizzdragon.com.key
+├── conf.d/<域名>.conf
+└── ssl/<域名>.pem + .key
+```
+
+### Staging 服务器
+
+```
+/opt/fizzdragon/platform/
+├── docker-compose.yml
+└── .env.staging
+```
+
+镜像通过 GHCR pull，不需要上传 tar.gz。
+
+### GHCR 镜像地址
+
+```
+ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
+ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
 ```
