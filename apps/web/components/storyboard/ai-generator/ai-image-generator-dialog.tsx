@@ -488,19 +488,11 @@ export function AiImageGeneratorDialog({
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent
-        showCloseButton={false}
         className="flex w-[980px] sm:max-w-[980px] flex-col overflow-hidden p-0"
         style={{ height: "min(860px, 90vh)" }}
       >
-        <DialogHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-3">
+        <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <IconX className="size-4" />
-          </button>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 gap-4 overflow-hidden px-4">
