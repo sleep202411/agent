@@ -499,7 +499,7 @@ export function AiImageGeneratorDialog({
           <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 gap-4 overflow-hidden px-4">
+        <div className="flex min-h-0 flex-1 gap-4 overflow-hidden px-4 pt-4">
           <div className="flex flex-4 flex-col overflow-auto">
             <ResultGallery
               items={allResults}

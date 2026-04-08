@@ -2,7 +2,13 @@ import { driver, type DriveStep } from "driver.js";
 import "driver.js/dist/driver.css";
 import type { GuideStep } from "./guide-steps";
 
-export function createGuideDriver() {
+export interface GuideLabels {
+  prev: string;
+  next: string;
+  done: string;
+}
+
+export function createGuideDriver(labels: GuideLabels) {
   return driver({
     showProgress: true,
     animate: true,
@@ -12,18 +18,18 @@ export function createGuideDriver() {
     allowClose: true,
     disableActiveInteraction: true,
     popoverClass: "fizzdragon-guide-popover",
-    nextBtnText: "下一步",
-    prevBtnText: "上一步",
-    doneBtnText: "完成",
+    nextBtnText: labels.next,
+    prevBtnText: labels.prev,
+    doneBtnText: labels.done,
   });
 }
 
-export function toDriverSteps(steps: GuideStep[]): DriveStep[] {
+export function toDriverSteps(steps: GuideStep[], t: (key: string) => string): DriveStep[] {
   return steps.map((step) => ({
     element: step.element,
     popover: {
-      title: step.title,
-      description: step.description,
+      title: t(step.titleKey),
+      description: t(step.descriptionKey),
       side: step.side,
     },
   }));

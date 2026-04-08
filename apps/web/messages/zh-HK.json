@@ -1228,5 +1228,51 @@
       "unlimitedAgent": "無限制使用 StoryOS",
       "freeCourses": "課程專屬優惠"
     }
+  },
+  "guide": {
+    "prev": "上一步",
+    "next": "下一步",
+    "skip": "跳過",
+    "finish": "完成",
+    "storyboard": {
+      "tabs": {
+        "title": "工作區切換",
+        "description": "在劇本、分鏡表和時間線之間切換不同的創作視圖"
+      },
+      "table": {
+        "title": "分鏡表",
+        "description": "核心創作區，每一行是一個鏡頭。填寫畫面描述後可以 AI 生圖、生視頻"
+      },
+      "aiAssistant": {
+        "title": "AI 助手",
+        "description": "讓 AI 幫你拆劇本、設計分鏡、分析資產，一鍵完成繁瑣的創作工作"
+      },
+      "sidebar": {
+        "title": "資產管理",
+        "description": "管理項目中的角色、場景和道具，AI 生圖時會自動引用這些資產"
+      },
+      "credits": {
+        "title": "積分",
+        "description": "AI 功能消耗積分，點擊查看使用記錄或充值"
+      },
+      "upgrade": {
+        "title": "升級套餐",
+        "description": "解鎖更多 AI 創作能力和專屬權益"
+      }
+    },
+    "timeline": {
+      "preview": {
+        "title": "視頻預覽",
+        "description": "播放分鏡動畫預覽，查看整體效果"
+      },
+      "ruler": {
+        "title": "時間軸",
+        "description": "時間刻度尺，點擊可跳轉到對應時間點"
+      },
+      "track": {
+        "title": "鏡頭軌道",
+        "description": "拖拽鏡頭卡片排序，拖拽右邊緣調整時長"
+      }
+    }
   }
 }

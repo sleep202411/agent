@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { createGuideDriver, toDriverSteps } from "./driver";
 import { guideSteps, type GuideId } from "./guide-steps";
 import { isGuideCompleted, markGuideCompleted } from "./guide-storage";
@@ -14,6 +15,7 @@ interface UseGuideOptions {
 
 export function useGuide(guideId: GuideId, options: UseGuideOptions = {}) {
   const { delay = 800, ready = true } = options;
+  const t = useTranslations("guide");
   const driverRef = useRef<ReturnType<typeof createGuideDriver> | null>(null);
   const startedRef = useRef(false);
 
@@ -25,10 +27,14 @@ export function useGuide(guideId: GuideId, options: UseGuideOptions = {}) {
     const validSteps = steps.filter((s) => document.querySelector(s.element));
     if (validSteps.length === 0) return;
 
-    const d = createGuideDriver();
+    const d = createGuideDriver({
+      prev: t("prev"),
+      next: t("next"),
+      done: t("finish"),
+    });
     driverRef.current = d;
 
-    d.setSteps(toDriverSteps(validSteps));
+    d.setSteps(toDriverSteps(validSteps, t));
     d.drive();
 
     // Mark completed when driver finishes
@@ -39,7 +45,7 @@ export function useGuide(guideId: GuideId, options: UseGuideOptions = {}) {
         driverRef.current = null;
       }
     }, 500);
-  }, [guideId]);
+  }, [guideId, t]);
 
   // Auto-start on first mount if not completed
   useEffect(() => {

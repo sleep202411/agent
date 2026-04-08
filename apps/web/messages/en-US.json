@@ -1228,5 +1228,51 @@
       "unlimitedAgent": "Unlimited AI Agent access",
       "freeCourses": "Exclusive course benefits"
     }
+  },
+  "guide": {
+    "prev": "Previous",
+    "next": "Next",
+    "skip": "Skip",
+    "finish": "Finish",
+    "storyboard": {
+      "tabs": {
+        "title": "Workspace Tabs",
+        "description": "Switch between Script, Storyboard, and Timeline views"
+      },
+      "table": {
+        "title": "Storyboard",
+        "description": "The core creative area — each row is a shot. Fill in the visual description to generate images or videos with AI"
+      },
+      "aiAssistant": {
+        "title": "AI Assistant",
+        "description": "Let AI break down your script, design storyboards, and analyze assets — complete tedious creative work in one click"
+      },
+      "sidebar": {
+        "title": "Asset Management",
+        "description": "Manage characters, scenes, and props in your project — AI will automatically reference these assets when generating images"
+      },
+      "credits": {
+        "title": "Credits",
+        "description": "AI features consume credits — click to view usage history or top up"
+      },
+      "upgrade": {
+        "title": "Upgrade Plan",
+        "description": "Unlock more AI creative power and exclusive benefits"
+      }
+    },
+    "timeline": {
+      "preview": {
+        "title": "Video Preview",
+        "description": "Play the storyboard animation preview to check the overall result"
+      },
+      "ruler": {
+        "title": "Timeline",
+        "description": "Time ruler — click to jump to a specific point in time"
+      },
+      "track": {
+        "title": "Shot Track",
+        "description": "Drag shot cards to reorder, drag the right edge to adjust duration"
+      }
+    }
   }
 }
