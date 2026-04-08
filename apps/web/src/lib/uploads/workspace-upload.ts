@@ -182,13 +182,12 @@ export function getDefaultUploadMaxSize(uploadType: string, file?: File) {
 export function validateWorkspaceUploadFile(file: File, options: UploadWorkspaceFileOptions) {
   const rules = normalizeAccept(options.accept);
   if (rules.length > 0 && !rules.some((rule) => matchesAcceptRule(file, rule))) {
-    return "文件类型不支持";
+    return "unsupportedFileType";
   }
 
   const maxSize = options.maxSize ?? getDefaultUploadMaxSize(options.uploadType, file);
   if (file.size > maxSize) {
-    const maxSizeMb = Math.round(maxSize / 1024 / 1024);
-    return `文件大小不能超过 ${maxSizeMb}MB`;
+    return "fileSizeExceedMb";
   }
 
   return null;

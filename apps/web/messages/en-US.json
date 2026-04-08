@@ -70,7 +70,16 @@
     "savingPlaceholder": "Saving...",
     "coverUpdated": "Cover updated",
     "language": "Language",
-    "theme": "Theme"
+    "theme": "Theme",
+    "unsupportedFileType": "Unsupported file type",
+    "fileSizeExceedMb": "File size cannot exceed {size}MB",
+    "maxAttachments": "Maximum {max} attachments",
+    "maxAttachmentsExceeded": "Maximum {max} attachments, extras ignored",
+    "onlyTextAndWordFiles": "Only text and Word files supported: {name}",
+    "fileExceedsSizeLimit": "{name} exceeds {size} MB, skipped",
+    "duplicateFile": "\"{name}\" already added",
+    "fileTooLargeForAi": "\"{name}\" is too large (over {size}MB), AI cannot read it",
+    "fileContentTruncated": "\"{name}\" is long, truncated to first {size}k chars"
   },
   "tabs": {
     "script": "Script",

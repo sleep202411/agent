@@ -730,7 +730,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
           onChange={(event) => {
             const files = Array.from(event.target.files ?? []);
             if (projectId && files.length > 0) {
-              void dispatch(addAttachments({ projectId: projectId, files: files }));
+              void dispatch(addAttachments({ projectId: projectId, files: files, t: tc }));
             }
             event.currentTarget.value = "";
           }}

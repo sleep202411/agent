@@ -378,32 +378,41 @@ function buildWorkspaceContext(state: RootState): AssistantWorkspaceSelection {
 
 export const addAttachments = createAsyncThunk<
   void,
-  { projectId: string; files: File[] },
+  {
+    projectId: string;
+    files: File[];
+    t: (key: string, params?: Record<string, string | number | Date>) => string;
+  },
   { state: RootState; dispatch: AppDispatch }
->("assistant/addAttachments", async ({ projectId, files }, { dispatch, getState }) => {
+>("assistant/addAttachments", async ({ projectId, files, t }, { dispatch, getState }) => {
   dispatch(ensureProject(projectId));
 
   const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
   const availableSlots = MAX_ATTACHMENTS - current.attachments.length;
 
   if (availableSlots <= 0) {
-    toast.warning(`最多上传 ${MAX_ATTACHMENTS} 个附件`);
+    toast.warning(t("maxAttachments", { max: MAX_ATTACHMENTS }));
     return;
   }
 
   const incoming = files.slice(0, availableSlots);
   if (incoming.length < files.length) {
-    toast.warning(`最多上传 ${MAX_ATTACHMENTS} 个附件，已忽略超出部分`);
+    toast.warning(t("maxAttachmentsExceeded", { max: MAX_ATTACHMENTS }));
   }
 
   for (const file of incoming) {
     if (!isSupportedAttachment(file)) {
-      toast.warning(`暂只支持文本和 Word 文件：${file.name}`);
+      toast.warning(t("onlyTextAndWordFiles", { name: file.name }));
       continue;
     }
 
     if (file.size > MAX_ATTACHMENT_SIZE) {
-      toast.warning(`${file.name} 超过 50 MB，已跳过`);
+      toast.warning(
+        t("fileExceedsSizeLimit", {
+          name: file.name,
+          size: Math.round(MAX_ATTACHMENT_SIZE / 1024 / 1024),
+        })
+      );
       continue;
     }
 
@@ -412,7 +421,7 @@ export const addAttachments = createAsyncThunk<
       getState().assistant.projects[projectId] ?? createEmptyConversation()
     ).attachments;
     if (currentAttachments.some((a) => a.hash === hash)) {
-      toast.warning(`「${file.name}」已添加过，请勿重复上传`);
+      toast.warning(t("duplicateFile", { name: file.name }));
       continue;
     }
 
@@ -420,10 +429,10 @@ export const addAttachments = createAsyncThunk<
     const { excerpt, truncated } = await readAttachmentExcerpt(file);
 
     if (truncated && !excerpt) {
-      toast.warning(`「${file.name}」文件过大（超过 2MB），AI 将无法读取内容`);
+      toast.warning(t("fileTooLargeForAi", { name: file.name, size: 2 }));
     } else if (truncated) {
       toast.info(
-        `「${file.name}」内容较长，已截取前 ${Math.round(MAX_EXCERPT_CHARS / 10000)} 万字`
+        t("fileContentTruncated", { name: file.name, size: Math.round(MAX_EXCERPT_CHARS / 10000) })
       );
     }
 

@@ -70,7 +70,16 @@
     "savingPlaceholder": "保存中...",
     "coverUpdated": "封面已更新",
     "language": "语言",
-    "theme": "主题"
+    "theme": "主题",
+    "unsupportedFileType": "文件类型不支持",
+    "fileSizeExceedMb": "文件大小不能超过 {size}MB",
+    "maxAttachments": "最多上传 {max} 个附件",
+    "maxAttachmentsExceeded": "最多上传 {max} 个附件，已忽略超出部分",
+    "onlyTextAndWordFiles": "暂只支持文本和 Word 文件：{name}",
+    "fileExceedsSizeLimit": "{name} 超过 {size} MB，已跳过",
+    "duplicateFile": "「{name}」已添加过，请勿重复上传",
+    "fileTooLargeForAi": "「{name}」文件过大（超过 {size}MB），AI 将无法读取内容",
+    "fileContentTruncated": "「{name}」内容较长，已截取前 {size} 万字"
   },
   "tabs": {
     "script": "剧本",
