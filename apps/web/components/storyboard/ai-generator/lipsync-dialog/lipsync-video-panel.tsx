@@ -89,6 +89,7 @@ export function LipsyncVideoPanel({
   shotId,
 }: LipsyncVideoPanelProps) {
   const t = useTranslations("storyboard");
+  const tc = useTranslations("common");
   const previewUrl = currentPreviewItem?.path ? ossUrl(currentPreviewItem.path) : "";
 
   const toolbarActions: ToolbarAction[] = currentPreviewItem?.path
@@ -157,7 +158,7 @@ export function LipsyncVideoPanel({
                     ) : item.status === "failed" ? (
                       <div className="flex aspect-video flex-col items-center justify-center gap-1 text-[#E52227]">
                         <IconRefresh className="size-4" />
-                        <span className="text-[10px]">重试</span>
+                        <span className="text-[10px]">{tc("retry")}</span>
                       </div>
                     ) : (
                       <>
@@ -225,14 +226,14 @@ export function LipsyncVideoPanel({
                 className="flex aspect-square w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#E52227]/60 bg-[#E52227]/10 text-[#E52227] transition-colors hover:bg-[#E52227]/15"
               >
                 <IconVideo className="size-6" />
-                <span className="text-xs">上传</span>
+                <span className="text-xs">{tc("upload")}</span>
               </button>
             )}
           </div>
 
           {/* Reference face */}
           <div className="w-[100px] space-y-1.5">
-            <div className="text-xs text-[#8F8F92]">角色</div>
+            <div className="text-xs text-[#8F8F92]">{t("characterLabel")}</div>
             {referenceFace ? (
               <div className="relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-black">
                 <img src={ossUrl(referenceFace)} alt="" className="h-full w-full object-cover" />
@@ -279,11 +280,13 @@ export function LipsyncVideoPanel({
           </NativeSelect>
 
           {lipSyncModelCost ? (
-            <span className="text-[11px] text-[#8F8F92]">{lipSyncModelCost}积分</span>
+            <span className="text-[11px] text-[#8F8F92]">
+              {t("creditsAmount", { cost: lipSyncModelCost })}
+            </span>
           ) : null}
 
           <span className="text-[11px] text-[#8F8F92]">
-            {t("audio")}：
+            {t("audio")}:
             <span className={referenceAudio ? "text-white/90" : "text-[#E52227]"}>
               {referenceAudio ? t("selected") : t("notSelected")}
             </span>

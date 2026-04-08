@@ -50,7 +50,7 @@ export function AudioResultGallery({
   onDownload,
   onDelete,
   onRetry,
-  emptyText = "AI 生成",
+  emptyText = "AI Generation",
 }: AudioResultGalleryProps) {
   const t = useTranslations("storyboard");
   if (!items.length && !loading) {

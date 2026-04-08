@@ -116,7 +116,9 @@ export function MediaReviewPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-white/10 px-5 py-4">
-        <div className="text-sm font-medium text-white/90">评论 ({flatComments.length})</div>
+        <div className="text-sm font-medium text-white/90">
+          {t("commentsCount", { count: flatComments.length })}
+        </div>
       </div>
 
       <div className="border-b border-white/10 px-5 py-4">
@@ -180,12 +182,12 @@ export function MediaReviewPanel({
         ) : !targetId ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-white/35">
             <IconMessageCircle className="size-8" />
-            <span className="text-sm">请选择一个素材</span>
+            <span className="text-sm">{t("selectMaterial")}</span>
           </div>
         ) : flatComments.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-white/35">
             <IconMessageCircle className="size-8" />
-            <span className="text-sm">暂无评论</span>
+            <span className="text-sm">{t("noComments")}</span>
           </div>
         ) : (
           <div className="space-y-3">

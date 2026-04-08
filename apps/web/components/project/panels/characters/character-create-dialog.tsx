@@ -69,24 +69,26 @@ export function QuickCreateCharacterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-105">
         <DialogHeader>
           <DialogTitle>{t("createCharacter")}</DialogTitle>
         </DialogHeader>
-        <Field>
-          <FieldLabel>{t("characterName")}</FieldLabel>
-          <Input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("characterNamePlaceholder")}
-            maxLength={50}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void handleConfirm();
-              }
-            }}
-          />
-        </Field>
+        <div className="p-4">
+          <Field>
+            <FieldLabel>{t("characterName")}</FieldLabel>
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t("characterNamePlaceholder")}
+              maxLength={50}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void handleConfirm();
+                }
+              }}
+            />
+          </Field>
+        </div>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}

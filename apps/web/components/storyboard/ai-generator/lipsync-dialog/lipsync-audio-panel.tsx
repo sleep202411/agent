@@ -258,7 +258,9 @@ export function LipsyncAudioPanel({
             </button>
 
             {voiceModelCost ? (
-              <span className="text-[11px] text-[#8F8F92]">{voiceModelCost}积分</span>
+              <span className="text-[11px] text-[#8F8F92]">
+                {t("creditsAmount", { cost: voiceModelCost })}
+              </span>
             ) : null}
 
             <div className="flex-1" />
@@ -313,7 +315,9 @@ export function LipsyncAudioPanel({
                 {t("loadingVoices")}
               </div>
             ) : !currentVoices.length ? (
-              <div className="py-8 text-center text-sm text-[#8F8F92]">暂无可用音色</div>
+              <div className="py-8 text-center text-sm text-[#8F8F92]">
+                {t("noVoicesAvailable")}
+              </div>
             ) : (
               <div className="space-y-2">
                 {currentVoices.map((voice, index) => {

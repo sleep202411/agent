@@ -380,7 +380,7 @@ export function MediaManagerDialog({
                     ) : (
                       <IconPhoto className="size-12" />
                     )}
-                    <span className="text-sm">暂无素材</span>
+                    <span className="text-sm">{t("noMaterials")}</span>
                   </div>
                 )}
               </div>
@@ -599,11 +599,15 @@ export function MediaManagerDialog({
                         </div>
                       </div>
                     ) : (
-                      <div className="py-10 text-center text-sm text-white/35">请选择一个素材</div>
+                      <div className="py-10 text-center text-sm text-white/35">
+                        {t("selectMaterial")}
+                      </div>
                     )}
 
                     <div>
-                      <div className="mb-3 text-sm font-medium text-white/85">提示词</div>
+                      <div className="mb-3 text-sm font-medium text-white/85">
+                        {t("promptLabelField")}
+                      </div>
                       <Textarea
                         value={prompt}
                         onChange={(event) => setPrompt(event.target.value)}

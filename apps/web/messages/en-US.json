@@ -759,6 +759,9 @@
     "search": "Search",
     "mentionHelp": "Arrow keys to select, Enter/Tab to confirm, Esc to close",
     "voiceNotConfigured": "Voice not configured",
+    "noVoicesAvailable": "No voices available",
+    "characterLabel": "Character",
+    "creditsAmount": "{cost} credits",
     "shot": "Shot"
   },
   "script": {

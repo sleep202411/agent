@@ -57,14 +57,16 @@ export function SceneCreateDialog({
         <DialogHeader>
           <DialogTitle>{t("addScene")}</DialogTitle>
         </DialogHeader>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-          maxLength={20}
-          autoFocus
-          placeholder={t("sceneNamePlaceholder")}
-        />
+        <div className="p-4">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+            maxLength={20}
+            autoFocus
+            placeholder={t("sceneNamePlaceholder")}
+          />
+        </div>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}
