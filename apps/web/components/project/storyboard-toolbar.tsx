@@ -215,7 +215,7 @@ export function StoryboardToolbar() {
               color="muted"
               onClick={() => setShowProjectEditor(true)}
             >
-              <span>{`Project Size: ${formattedProjectSize}`}</span>
+              <span>{`${t("projectSize")}: ${formattedProjectSize}`}</span>
               <IconPencil className="size-3.5" />
             </Button>
           ) : null}

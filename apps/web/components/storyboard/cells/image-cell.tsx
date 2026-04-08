@@ -485,7 +485,9 @@ export function ImageCell({
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-md bg-black/55">
                 <IconLoader2 className="size-5 animate-spin text-white/75" />
-                <span className="text-[11px] font-medium text-white/80">批量生成中...</span>
+                <span className="text-[11px] font-medium text-white/80">
+                  {t("batchGenerating")}
+                </span>
               </div>
             )}
           </div>
@@ -496,12 +498,12 @@ export function ImageCell({
         ) : isBatchGeneratingCell ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
             <IconLoader2 className="size-5 animate-spin text-white/75" />
-            <span className="text-[11px] font-medium text-white/80">批量生成中...</span>
+            <span className="text-[11px] font-medium text-white/80">{t("batchGenerating")}</span>
           </div>
         ) : (
           <div className="flex h-full w-fit flex-col items-stretch justify-center gap-3">
             <Button size="sm" variant="soft" color="muted" onClick={() => setPickerOpen(true)}>
-              选择图片
+              {t("selectImage")}
             </Button>
             <Button
               size="sm"
@@ -518,7 +520,7 @@ export function ImageCell({
               }}
             >
               {aiButtonIcon}
-              AI 生图
+              {t("aiGenerateImage")}
             </Button>
           </div>
         )}

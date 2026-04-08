@@ -70,11 +70,10 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
     }));
   }, [models]);
 
-  useEffect(() => {
-    if (open) {
-      setFormData((prev) => ({ title: "", prompt: "", tags: "", model: prev.model }));
-    }
-  }, [open]);
+  // Only reset form after successful generation, not on open/close
+  const resetForm = () => {
+    setFormData((prev) => ({ title: "", prompt: "", tags: "", model: prev.model }));
+  };
 
   const handleGenerate = async () => {
     if (!formData.prompt.trim()) {
@@ -96,6 +95,7 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
         timeout: 360_000,
       });
       toast.success(t("generateSuccess"));
+      resetForm();
       onOpenChange(false);
       onCreated();
     } catch (error) {
@@ -107,8 +107,8 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => (!isGenerating ? onOpenChange(v) : undefined)}>
-      <DialogContent showCloseButton={!isGenerating} className="sm:max-w-130">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-130">
         <DialogHeader>
           <DialogTitle>{t("aiGenerateMusic")}</DialogTitle>
         </DialogHeader>
@@ -169,12 +169,7 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            color="muted"
-            onClick={() => onOpenChange(false)}
-            disabled={isGenerating}
-          >
+          <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}
           </Button>
           <Button onClick={() => void handleGenerate()} disabled={isGenerating}>
