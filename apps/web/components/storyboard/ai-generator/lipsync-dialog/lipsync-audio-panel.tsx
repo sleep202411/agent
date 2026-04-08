@@ -123,10 +123,10 @@ export function LipsyncAudioPanel({
               {loadingAudioHistory ? (
                 <>
                   <IconLoader2 className="mr-2 size-4 animate-spin" />
-                  加载音频中...
+                  {t("loadingAudio")}
                 </>
               ) : (
-                "暂无音频"
+                t("noAudio")
               )}
             </div>
           ) : (
@@ -170,10 +170,10 @@ export function LipsyncAudioPanel({
                     {/* Label */}
                     <div className="w-full truncate text-center text-xs">
                       {item.status === "generating"
-                        ? "生成中..."
+                        ? t("generatingStatus")
                         : item.status === "failed"
-                          ? "失败，点击重试"
-                          : item.name || `音频 ${index + 1}`}
+                          ? t("failedRetry")
+                          : item.name || t("audioIndex", { index: index + 1 })}
                     </div>
 
                     {/* Selected badge */}
@@ -223,7 +223,7 @@ export function LipsyncAudioPanel({
             className="min-h-0 flex-1 resize-none border-0 bg-transparent text-sm text-white placeholder:text-[#6F6F72] focus-visible:ring-0"
             value={narrationText}
             onChange={(event) => onNarrationTextChange(event.target.value)}
-            placeholder="输入旁白文本..."
+            placeholder={t("narrationPlaceholder")}
           />
 
           {/* Toolbar */}
@@ -235,7 +235,7 @@ export function LipsyncAudioPanel({
               className="h-8 max-w-[160px] bg-transparent text-xs dark:bg-transparent"
             >
               <NativeSelectOption value="" disabled>
-                {loadingVoiceModels ? "加载中..." : "语音模型"}
+                {loadingVoiceModels ? t("loadingModels") : t("voiceModel")}
               </NativeSelectOption>
               {voiceModels.map((item) => {
                 const value = String(item.serviceCode ?? "");
@@ -270,7 +270,7 @@ export function LipsyncAudioPanel({
               disabled={isGenerating}
             >
               {isGenerating ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
-              生成
+              {t("generate")}
             </Button>
           </div>
         </div>
@@ -310,7 +310,7 @@ export function LipsyncAudioPanel({
             {loadingVoices ? (
               <div className="flex items-center justify-center py-8 text-sm text-[#8F8F92]">
                 <IconLoader2 className="mr-2 size-4 animate-spin" />
-                加载音色中...
+                {t("loadingVoices")}
               </div>
             ) : !currentVoices.length ? (
               <div className="py-8 text-center text-sm text-[#8F8F92]">暂无可用音色</div>
@@ -337,7 +337,7 @@ export function LipsyncAudioPanel({
                     >
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">
-                          {voice.voiceName || "未命名音色"}
+                          {voice.voiceName || t("unnamedVoice")}
                         </div>
                         {voice.voiceDescription ? (
                           <div className="mt-1 line-clamp-2 text-xs text-[#8F8F92]">

@@ -2,6 +2,7 @@
 
 import type { CSSProperties, RefObject } from "react";
 import { createPortal } from "react-dom";
+import { useTranslations } from "next-intl";
 import { IconBox, IconLoader2, IconPhoto, IconUser } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -81,6 +82,7 @@ export function MentionPopover({
   tScene,
   tProp,
 }: MentionPopoverProps) {
+  const t = useTranslations("storyboard");
   const renderLoadingSection = (prefix: string) => (
     <div className="mt-3 flex flex-wrap gap-2 first:mt-0">
       {Array.from({ length: 4 }).map((_, index) => (
@@ -102,13 +104,15 @@ export function MentionPopover({
         <div className="mb-2 flex items-center justify-between gap-3 px-1">
           <div className="flex items-center gap-2">
             {searchQuery ? (
-              <span className="text-[13px] font-medium text-primary">搜索: {searchQuery}</span>
+              <span className="text-[13px] font-medium text-primary">
+                {t("search")}: {searchQuery}
+              </span>
             ) : null}
             {isSearching ? (
               <IconLoader2 className="size-3.5 animate-spin text-muted-foreground" />
             ) : null}
           </div>
-          <span className="text-[12px] text-[#666666]">方向键选择，Enter/Tab 确认，Esc 关闭</span>
+          <span className="text-[12px] text-[#666666]">{t("mentionHelp")}</span>
         </div>
 
         <div className="max-h-[360px] overflow-auto">
@@ -163,7 +167,7 @@ export function MentionPopover({
                             </div>
                             {disabled ? (
                               <div className="mt-0.5 text-center text-[11px] text-[#888888]">
-                                未配置语音
+                                {t("voiceNotConfigured")}
                               </div>
                             ) : null}
                           </button>

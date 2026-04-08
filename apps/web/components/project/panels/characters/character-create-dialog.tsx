@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import { IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,8 @@ export function QuickCreateCharacterDialog({
   worldId: string;
   onCreated: (character: CharacterPanelItem) => void;
 }) {
+  const t = useTranslations("character");
+  const tc = useTranslations("common");
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -53,12 +56,12 @@ export function QuickCreateCharacterDialog({
           worldId,
         },
       });
-      toast.success("角色创建成功");
+      toast.success(t("createSuccess"));
       onCreated(normalizeCharacter({ ...result, name: result?.name || trimmed }));
       onOpenChange(false);
     } catch (error) {
       console.error("[QuickCreateCharacterDialog] 创建失败:", error);
-      toast.error("角色创建失败");
+      toast.error(t("createFailed"));
     } finally {
       setCreating(false);
     }
@@ -68,14 +71,14 @@ export function QuickCreateCharacterDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>创建角色</DialogTitle>
+          <DialogTitle>{t("createCharacter")}</DialogTitle>
         </DialogHeader>
         <Field>
-          <FieldLabel>角色名称</FieldLabel>
+          <FieldLabel>{t("characterName")}</FieldLabel>
           <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder="请输入角色名称"
+            placeholder={t("characterNamePlaceholder")}
             maxLength={50}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -86,11 +89,11 @@ export function QuickCreateCharacterDialog({
         </Field>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
-            取消
+            {tc("cancel")}
           </Button>
           <Button onClick={() => void handleConfirm()} disabled={!name.trim() || creating}>
             {creating ? <IconLoader2 className="size-4 animate-spin" /> : null}
-            确认
+            {tc("confirm")}
           </Button>
         </DialogFooter>
       </DialogContent>

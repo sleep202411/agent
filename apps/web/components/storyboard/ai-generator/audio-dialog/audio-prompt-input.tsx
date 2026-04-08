@@ -104,7 +104,7 @@ export function AudioPromptInput({
       <RichMentionEditor
         value={prompt}
         onChange={onPromptChange}
-        placeholder="请输入需要配音的台词文本，支持 @角色"
+        placeholder={t("voicePromptPlaceholder")}
         mentionItems={mentionItems}
         mentionTypes={["character"]}
         showAvatar={false}
@@ -115,9 +115,7 @@ export function AudioPromptInput({
         submitMode="mod"
       />
 
-      <div className="px-2 pb-2 text-[11px] text-[#8F8F92]">
-        未指定时，自动匹配提示词中角色的配音设置
-      </div>
+      <div className="px-2 pb-2 text-[11px] text-[#8F8F92]">{t("autoMatchVoiceHint")}</div>
 
       <div className="flex items-end justify-between gap-4 pt-2">
         <div className="flex items-center gap-3">
@@ -130,7 +128,7 @@ export function AudioPromptInput({
               )}
             >
               <IconWand className="size-4 text-white/75" />
-              <SelectValue placeholder={loading ? "加载模型中" : "选择模型"} />
+              <SelectValue placeholder={loading ? t("loadingModels") : t("selectModel")} />
             </SelectTrigger>
             <SelectContent className="border-white/10 bg-[#2F2F35] text-white">
               {voiceModels.map((item) => (

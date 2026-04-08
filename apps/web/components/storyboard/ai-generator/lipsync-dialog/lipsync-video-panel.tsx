@@ -96,7 +96,7 @@ export function LipsyncVideoPanel({
         {
           key: "download",
           icon: <IconDownload className="size-4" />,
-          title: "下载",
+          title: t("download"),
           onClick: () =>
             onDownload(currentPreviewItem.path, `lip_sync_shot_${shotNumber ?? shotId}.mp4`),
         },
@@ -106,7 +106,7 @@ export function LipsyncVideoPanel({
                 key: "prefer",
                 icon: <IconCircleCheck className="size-4" />,
                 active: previewIsPreferred,
-                title: previewIsPreferred ? "定稿版本" : "设为定稿",
+                title: previewIsPreferred ? t("finalizedVersion") : t("setAsFinalized"),
                 onClick: () =>
                   onSetPreferred({
                     id: currentPreviewItem.id,
@@ -128,7 +128,7 @@ export function LipsyncVideoPanel({
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
             {!allVideoItems.length ? (
               <div className="flex h-full items-center justify-center text-center text-xs text-[#8F8F92]">
-                暂无视频
+                {t("noVideo")}
               </div>
             ) : (
               allVideoItems.map((item, index) => {
@@ -175,7 +175,7 @@ export function LipsyncVideoPanel({
                     )}
                     {selected ? (
                       <div className="absolute inset-x-0 bottom-0 bg-[#E52227] py-0.5 text-center text-[9px] text-white">
-                        预览中
+                        {t("previewing")}
                       </div>
                     ) : null}
                   </button>
@@ -189,7 +189,7 @@ export function LipsyncVideoPanel({
         <MediaPreviewPanel
           type="video"
           previewUrl={previewUrl}
-          emptyText="请选择左侧结果进行预览"
+          emptyText={t("selectLeftToPreview")}
           emptyIcon={<IconMask className="size-10" />}
           toolbarActions={toolbarActions}
           className="flex-1"
@@ -202,7 +202,7 @@ export function LipsyncVideoPanel({
         <div className="flex min-h-0 flex-1 items-start gap-3">
           {/* Reference video */}
           <div className="w-[100px] space-y-1.5">
-            <div className="text-xs text-[#8F8F92]">视频</div>
+            <div className="text-xs text-[#8F8F92]">{t("video")}</div>
             {referenceVideo ? (
               <div className="relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-black">
                 <img
@@ -266,7 +266,7 @@ export function LipsyncVideoPanel({
             className="h-8 max-w-[160px] text-xs"
           >
             <NativeSelectOption value="" disabled>
-              {loadingLipSyncModels ? "加载中..." : "对口型模型"}
+              {loadingLipSyncModels ? t("loadingModels") : t("lipSyncModel")}
             </NativeSelectOption>
             {lipSyncModels.map((item) => {
               const value = String(item.serviceCode ?? "");
@@ -283,9 +283,9 @@ export function LipsyncVideoPanel({
           ) : null}
 
           <span className="text-[11px] text-[#8F8F92]">
-            音频：
+            {t("audio")}：
             <span className={referenceAudio ? "text-white/90" : "text-[#E52227]"}>
-              {referenceAudio ? "已选" : "未选"}
+              {referenceAudio ? t("selected") : t("notSelected")}
             </span>
           </span>
 
@@ -301,7 +301,7 @@ export function LipsyncVideoPanel({
             ) : (
               <IconSparkles className="size-3.5" />
             )}
-            生成对口型
+            {t("generateLipSync")}
           </Button>
         </div>
       </div>

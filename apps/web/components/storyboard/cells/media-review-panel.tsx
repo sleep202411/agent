@@ -49,6 +49,7 @@ export function MediaReviewPanel({
   targetType: "IMAGE" | "VIDEO";
   targetId?: string;
 }) {
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,7 +74,7 @@ export function MediaReviewPanel({
       setComments((data?.list ?? []) as Comment[]);
     } catch (error) {
       console.error("[MediaReviewPanel] 加载评论失败:", error);
-      toast.error("加载评论失败");
+      toast.error(t("loadCommentsFailed"));
     } finally {
       setLoading(false);
     }
@@ -103,7 +104,7 @@ export function MediaReviewPanel({
         return true;
       } catch (error) {
         console.error("[MediaReviewPanel] 保存评论失败:", error);
-        toast.error("评论保存失败");
+        toast.error(t("saveCommentFailed"));
         return false;
       } finally {
         setSubmitting(false);
@@ -128,7 +129,7 @@ export function MediaReviewPanel({
             }}
             className="w-full rounded-lg border border-dashed border-white/10 px-3 py-3 text-left text-sm text-white/45 transition-colors hover:border-primary/40 hover:text-white/70"
           >
-            添加评论
+            {t("addComment")}
           </button>
         ) : (
           <div className="space-y-3">
@@ -136,7 +137,7 @@ export function MediaReviewPanel({
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               rows={4}
-              placeholder="输入评论内容"
+              placeholder={t("commentPlaceholder")}
               className="border-white/10 bg-black/20 text-white/90 placeholder:text-white/35"
             />
             <div className="flex justify-end gap-2">
@@ -163,7 +164,7 @@ export function MediaReviewPanel({
                 }}
               >
                 {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-                发送
+                {t("send")}
               </Button>
             </div>
           </div>
@@ -174,7 +175,7 @@ export function MediaReviewPanel({
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-white/45">
             <IconLoader2 className="mr-2 size-4 animate-spin" />
-            加载评论中
+            {t("loadingComments")}
           </div>
         ) : !targetId ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-white/35">
@@ -200,7 +201,7 @@ export function MediaReviewPanel({
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-white/90">
-                        {String(comment.nickname ?? "未知用户")}
+                        {String(comment.nickname ?? t("unknownUser"))}
                       </div>
                       <div className="mt-1 text-xs text-white/35">
                         {formatMediaTime(String(comment.createTime ?? ""))}
@@ -215,7 +216,7 @@ export function MediaReviewPanel({
                             await loadComments();
                           } catch (error) {
                             console.error("[MediaReviewPanel] 删除评论失败:", error);
-                            toast.error("删除评论失败");
+                            toast.error(t("deleteCommentFailed"));
                           }
                         }}
                         className="text-xs text-white/35 transition-colors hover:text-destructive"
@@ -239,7 +240,7 @@ export function MediaReviewPanel({
                         }}
                         className="text-xs text-white/45 transition-colors hover:text-white/80"
                       >
-                        回复
+                        {t("replyAction")}
                       </button>
                     ) : null}
                   </div>
@@ -255,7 +256,7 @@ export function MediaReviewPanel({
                           }))
                         }
                         rows={3}
-                        placeholder="输入回复内容"
+                        placeholder={t("replyPlaceholder")}
                         className="border-white/10 bg-black/20 text-white/90 placeholder:text-white/35"
                       />
                       <div className="flex justify-end gap-2">
@@ -268,7 +269,7 @@ export function MediaReviewPanel({
                             setReplyDrafts((current) => ({ ...current, [commentId]: "" }));
                           }}
                         >
-                          取消
+                          {tc("cancel")}
                         </Button>
                         <Button
                           type="button"
@@ -282,7 +283,7 @@ export function MediaReviewPanel({
                           }}
                         >
                           {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-                          发送回复
+                          {t("sendReply")}
                         </Button>
                       </div>
                     </div>

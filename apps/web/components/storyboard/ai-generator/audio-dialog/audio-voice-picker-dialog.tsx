@@ -72,12 +72,12 @@ export function AudioVoicePickerDialog({
             {loading ? (
               <div className="flex items-center gap-2 px-2 py-10 text-sm text-[#8F8F92]">
                 <IconLoader2 className="size-4 animate-spin" />
-                加载语音中...
+                {t("loadingVoices")}
               </div>
             ) : noModel ? (
-              <div className="px-2 py-10 text-sm text-[#8F8F92]">请先选择模型</div>
+              <div className="px-2 py-10 text-sm text-[#8F8F92]">{t("selectModelFirst")}</div>
             ) : !currentVoices.length ? (
-              <div className="px-2 py-10 text-sm text-[#8F8F92]">当前分组下暂无语音</div>
+              <div className="px-2 py-10 text-sm text-[#8F8F92]">{t("noVoicesInGroup")}</div>
             ) : (
               currentVoices.map((voice, index) => {
                 const id = String(voice.voiceId ?? "");
@@ -100,7 +100,7 @@ export function AudioVoicePickerDialog({
                   >
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium text-white">
-                        {voice.voiceName || "未命名语音"}
+                        {voice.voiceName || t("unnamedVoice")}
                       </div>
                       {voice.voiceDescription ? (
                         <div className="mt-1 line-clamp-1 text-xs text-[#8F8F92]">

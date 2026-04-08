@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import {
   IconPlayerPlay,
   IconPlus,
@@ -156,6 +157,7 @@ export function VideoReferencePanel({
   onSetExtendLastFrame,
   onSetOutpaintingRefVideo,
 }: VideoReferencePanelProps) {
+  const t = useTranslations("storyboard");
   const multiRefSubjectImages = multiRefImages.filter((item) => item.typeTag !== "bg");
   const multiRefBgImages = multiRefImages.filter((item) => item.typeTag === "bg");
 
@@ -172,7 +174,7 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="视频"
+          label={t("video")}
           items={repaintRefVideos}
           mediaType="video"
           maxCount={1}
@@ -180,7 +182,7 @@ export function VideoReferencePanel({
           onRemove={() => onSetRepaintRefVideos([])}
         />
         <ReferenceGroup
-          label="参考图"
+          label={t("referenceImage")}
           items={repaintRefImage}
           mediaType="img"
           maxCount={1}
@@ -195,7 +197,7 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="视频"
+          label={t("video")}
           items={localEditRefVideo}
           mediaType="video"
           maxCount={1}
@@ -203,7 +205,7 @@ export function VideoReferencePanel({
           onRemove={() => onSetLocalEditRefVideo([])}
         />
         <ReferenceGroup
-          label="遮罩图"
+          label={t("maskImage")}
           items={localEditMaskImage}
           mediaType="img"
           maxCount={1}
@@ -211,7 +213,7 @@ export function VideoReferencePanel({
           onRemove={() => onSetLocalEditMaskImage([])}
         />
         <ReferenceGroup
-          label="参考图"
+          label={t("referenceImage")}
           items={localEditRefImage}
           mediaType="img"
           maxCount={1}
@@ -264,7 +266,7 @@ export function VideoReferencePanel({
   if (editMode === "outpainting") {
     return (
       <ReferenceGroup
-        label="视频"
+        label={t("video")}
         items={outpaintingRefVideo}
         mediaType="video"
         maxCount={1}
@@ -336,7 +338,7 @@ export function VideoReferencePanel({
 
   return (
     <ReferenceGroup
-      label="参考图"
+      label={t("referenceImage")}
       items={referenceImages}
       mediaType="img"
       maxCount={1}

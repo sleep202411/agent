@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { Field, FieldLabel } from "@/components/ui/field";
 import type { EditMode } from "./video-types";
 
@@ -36,16 +37,17 @@ export function VideoModeSettings({
   outpaintingRight,
   onOutpaintingChange,
 }: VideoModeSettingsProps) {
+  const t = useTranslations("storyboard");
   if (editMode === "repaint") {
     return (
       <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] px-4 py-3">
         <ToolbarSelect
           value={controlCondition}
           options={[
-            { label: "姿态+肢体+面部", value: "posebodyface" },
-            { label: "姿态+肢体", value: "posebody" },
-            { label: "深度", value: "depth" },
-            { label: "涂鸦", value: "scribble" },
+            { label: t("posebodyface"), value: "posebodyface" },
+            { label: t("posebody"), value: "posebody" },
+            { label: t("depth"), value: "depth" },
+            { label: t("scribble"), value: "scribble" },
           ]}
           onChange={onControlConditionChange}
         />
@@ -63,8 +65,8 @@ export function VideoModeSettings({
             onChange={(event) => onMaskTypeChange(event.target.value as "tracking" | "fixed")}
             className="rounded-lg bg-white/[0.06] px-3 py-2 text-white/85 outline-none"
           >
-            <option value="tracking">跟踪</option>
-            <option value="fixed">固定</option>
+            <option value="tracking">{t("tracking")}</option>
+            <option value="fixed">{t("fixed")}</option>
           </select>
         </Field>
         {maskType === "tracking" ? (
@@ -88,7 +90,7 @@ export function VideoModeSettings({
             min="0"
             value={maskFrameId}
             onChange={(event) => onMaskFrameIdChange(event.target.value)}
-            placeholder="可选"
+            placeholder={t("optional")}
             className="w-24 rounded-lg bg-white/[0.06] px-3 py-2 text-white/85 outline-none"
           />
         </Field>
@@ -102,10 +104,10 @@ export function VideoModeSettings({
       value: number;
       direction: "top" | "bottom" | "left" | "right";
     }> = [
-      { label: "上", value: outpaintingTop, direction: "top" },
-      { label: "下", value: outpaintingBottom, direction: "bottom" },
-      { label: "左", value: outpaintingLeft, direction: "left" },
-      { label: "右", value: outpaintingRight, direction: "right" },
+      { label: t("top"), value: outpaintingTop, direction: "top" },
+      { label: t("bottom"), value: outpaintingBottom, direction: "bottom" },
+      { label: t("left"), value: outpaintingLeft, direction: "left" },
+      { label: t("right"), value: outpaintingRight, direction: "right" },
     ];
 
     return (

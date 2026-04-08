@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AudioResultGallery } from "./audio-result-gallery";
@@ -61,6 +62,7 @@ export function AiAudioGeneratorDialog({
   onGeneratingChange,
   onGenerateSuccess,
 }: AiAudioGeneratorDialogProps) {
+  const t = useTranslations("storyboard");
   const dispatch = useAppDispatch();
 
   // ─── Redux state ──────────────────────────────────────
@@ -231,7 +233,7 @@ export function AiAudioGeneratorDialog({
         }
         setActiveVoiceLang(Object.keys(groups)[0] ?? "");
       } catch {
-        toast.error("加载音色失败");
+        toast.error(t("loadVoicesFailed"));
       } finally {
         setLoadingVoices(false);
       }
@@ -346,7 +348,7 @@ export function AiAudioGeneratorDialog({
   const handleGenerate = () => {
     const prompt = formData.prompt.trim();
     if (!prompt) {
-      toast.warning("请先输入旁白或对白");
+      toast.warning(t("enterNarrationFirst"));
       return;
     }
     for (let i = 0; i < formData.count; i++) {
@@ -371,9 +373,9 @@ export function AiAudioGeneratorDialog({
     setSelectingPath(path);
     try {
       await onSelectPath(path);
-      toast.success("已更新当前镜头配音");
+      toast.success(t("voiceUpdated"));
     } catch {
-      toast.error("更新配音失败");
+      toast.error(t("voiceUpdateFailed"));
     } finally {
       setSelectingPath("");
     }
@@ -407,7 +409,7 @@ export function AiAudioGeneratorDialog({
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader className="px-6 pb-3 pt-5">
-            <DialogTitle>AI 配音</DialogTitle>
+            <DialogTitle>{t("aiVoice")}</DialogTitle>
           </DialogHeader>
 
           <div className="px-4 pb-4">

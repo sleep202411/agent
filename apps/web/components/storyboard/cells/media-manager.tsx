@@ -75,6 +75,7 @@ export function MediaManagerDialog({
   const [mode, setMode] = useState<MediaManagerMode>("edit");
   const [activePath, setActivePath] = useState("");
   const [fileDetails, setFileDetails] = useState<FileDetail | null>(null);
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [prompt, setPrompt] = useState("");
@@ -229,20 +230,20 @@ export function MediaManagerDialog({
   const handleLocalUpload = useCallback(
     async (rawFile: File) => {
       if (maxReached) {
-        toast.warning("最多添加 10 个素材");
+        toast.warning(t("maxMaterials", { max: 10 }));
         return;
       }
       const isValidType = isVideo
         ? rawFile.type.startsWith("video/")
         : rawFile.type.startsWith("image/");
       if (!isValidType) {
-        toast.warning(isVideo ? "请选择视频文件" : "请选择图片文件");
+        toast.warning(isVideo ? t("pleaseSelectVideoFile") : t("pleaseSelectImageFile"));
         return;
       }
 
       const maxSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
       if (rawFile.size > maxSize) {
-        toast.warning(`文件大小不能超过${maxSize / (1024 * 1024)}MB`);
+        toast.warning(t("fileSizeExceed", { size: maxSize / (1024 * 1024) }));
         return;
       }
 
@@ -329,7 +330,7 @@ export function MediaManagerDialog({
                           ) : (
                             <IconCircleCheck className="size-3.5" />
                           )}
-                          {preferredLoading ? "处理中..." : "定稿版本"}
+                          {preferredLoading ? t("processingPreferred") : t("finalizedVersion")}
                         </Button>
                       ) : (
                         <Button
@@ -346,7 +347,7 @@ export function MediaManagerDialog({
                           ) : (
                             <IconCircleCheck className="size-3.5" />
                           )}
-                          {preferredLoading ? "处理中..." : "设为定稿"}
+                          {preferredLoading ? t("processingPreferred") : t("setAsFinalized")}
                         </Button>
                       )}
                       <Button
@@ -389,7 +390,7 @@ export function MediaManagerDialog({
                   <div className="flex min-w-max items-center justify-center gap-3">
                     {!hasPreferred ? (
                       <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg bg-[#2A2A2A] px-2 text-center text-xs text-white/55">
-                        暂未定稿
+                        {t("notFinalized")}
                       </div>
                     ) : null}
 
@@ -490,7 +491,7 @@ export function MediaManagerDialog({
                       mode === "edit" ? "bg-primary text-white" : "text-white/55 hover:text-white"
                     )}
                   >
-                    编辑
+                    {t("editTab")}
                   </button>
                   <button
                     type="button"
@@ -500,7 +501,7 @@ export function MediaManagerDialog({
                       mode === "review" ? "bg-primary text-white" : "text-white/55 hover:text-white"
                     )}
                   >
-                    审阅
+                    {t("reviewTab")}
                   </button>
                 </div>
                 <Button
@@ -512,7 +513,7 @@ export function MediaManagerDialog({
                   onClick={handleShare}
                 >
                   <IconExternalLink className="size-4" />
-                  {isVideo ? "分享视频" : "分享图片"}
+                  {isVideo ? t("shareVideo") : t("shareImage")}
                 </Button>
               </div>
 
@@ -538,7 +539,7 @@ export function MediaManagerDialog({
                             (detailMatchesActiveFile ? fileDetails?.name : undefined) ??
                               activeFile.name ??
                               activeFile.path?.split("/").pop() ??
-                              "未知文件"
+                              t("unknownFile")
                           )}
                         </div>
                         <div className="mt-2 flex items-center gap-2 text-xs text-white/45">
@@ -557,12 +558,12 @@ export function MediaManagerDialog({
                             {String(
                               (detailMatchesActiveFile ? fileDetails?.userName : undefined) ??
                                 (detailMatchesActiveFile ? fileDetails?.nickname : undefined) ??
-                                "未知用户"
+                                t("unknownUser")
                             )}
                           </span>
                           <span className="text-white/20">·</span>
                           <span>
-                            更新于{" "}
+                            {t("updatedAt")}{" "}
                             {formatMediaTime(
                               String(
                                 (detailMatchesActiveFile ? fileDetails?.updateTime : undefined) ??
@@ -608,11 +609,11 @@ export function MediaManagerDialog({
                         onChange={(event) => setPrompt(event.target.value)}
                         onBlur={() => void handlePromptBlur()}
                         rows={8}
-                        placeholder="输入当前素材对应的提示词"
+                        placeholder={t("promptFieldPlaceholder")}
                         className="border-white/10 bg-black/20 text-white/90 placeholder:text-white/35"
                       />
                       <div className="mt-2 text-right text-xs text-white/35">
-                        {savingPrompt ? "保存中..." : `${prompt.length}/3000`}
+                        {savingPrompt ? t("savingPrompt") : `${prompt.length}/3000`}
                       </div>
                     </div>
                   </div>
@@ -626,9 +627,9 @@ export function MediaManagerDialog({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogTitle>{t("confirmDeleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {isVideo ? "确定要删除这个视频吗？" : "确定要删除这张图片吗？"}
+              {isVideo ? t("confirmDeleteVideo") : t("confirmDeleteImage")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

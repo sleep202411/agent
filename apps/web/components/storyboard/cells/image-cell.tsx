@@ -299,7 +299,7 @@ export function ImageCell({
         updateFilesState(nextFiles, typeof latestCell?.id === "string" ? latestCell.id : undefined);
       } catch (error) {
         console.error("[ImageCell] 取消定稿失败:", error);
-        toast.error("取消定稿失败");
+        toast.error(t("cancelFinalizedFailed"));
       }
     },
     [cell?.id, files, shotColumnId, shotId, updateFilesState]
@@ -332,7 +332,7 @@ export function ImageCell({
         })
       );
       if (!previousFiles.some((file) => file.path === targetPath)) {
-        toast.error("素材加入管理失败");
+        toast.error(t("addToManageFailed"));
         return;
       }
       const cellId = typeof latestCell?.id === "string" ? latestCell.id : cell?.id;
@@ -349,7 +349,7 @@ export function ImageCell({
         updateFilesState(nextFiles, typeof latestCell?.id === "string" ? latestCell.id : undefined);
       } catch (error) {
         console.error("[ImageCell] 设置定稿失败:", error);
-        toast.error("设置定稿失败");
+        toast.error(t("setFinalizedFailed"));
       }
     },
     [
@@ -463,7 +463,7 @@ export function ImageCell({
             {!isBatchGeneratingCell ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-md bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
                 <Button size="sm" variant="soft" color="muted" onClick={() => setManagerOpen(true)}>
-                  图片管理
+                  {t("imageManagement")}
                 </Button>
                 <Button
                   size="sm"
@@ -494,7 +494,7 @@ export function ImageCell({
           </div>
         ) : isDragOver ? (
           <div className="flex h-full w-full items-center justify-center text-center text-xs text-primary">
-            拖拽图片到这里
+            {t("dragImageHere")}
           </div>
         ) : isBatchGeneratingCell ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">

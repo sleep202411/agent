@@ -167,7 +167,7 @@ export function AiBasicAudioGeneratorDialog({
   const modelOptions = useMemo<Array<{ label: string; value: string }>>(
     () =>
       models.map((item) => ({
-        label: String(item.serviceName ?? item.serviceCode ?? "模型"),
+        label: String(item.serviceName ?? item.serviceCode ?? t("modelLabel")),
         value: String(item.serviceCode ?? ""),
       })),
     [models]
@@ -291,7 +291,7 @@ export function AiBasicAudioGeneratorDialog({
           .then((result) => {
             const audio = parseGeneratedAudio(result);
             if (!audio) {
-              throw new Error("没有生成可用音频");
+              throw new Error(t("noValidAudio"));
             }
             generatedWhileOpenRef.current = true;
             setGeneratedAudios((current) => [audio, ...current]);

@@ -30,6 +30,7 @@ export function AssetReferenceCard({
   onClick: () => void;
   onOpenPanel?: () => void;
 }) {
+  const t = useTranslations("storyboard");
   return (
     <div
       role="button"
@@ -59,7 +60,7 @@ export function AssetReferenceCard({
               onOpenPanel();
             }}
             className="absolute right-1 top-1 flex size-6 items-center justify-center rounded-full border border-black/20 bg-black/60 text-white opacity-0 transition-opacity hover:bg-black/75 group-hover:opacity-100"
-            title="打开侧边栏资产"
+            title={t("openSidebarAsset")}
           >
             <IconExternalLink className="size-3.5" />
           </button>

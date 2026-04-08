@@ -10,6 +10,7 @@ import {
   useVideoConfig,
   interpolate,
 } from "remotion";
+import { useTranslations } from "next-intl";
 import type { Shot } from "@/src/store/slices/agentSlice";
 
 // ─── Types ──────────────────────────────────────────────
@@ -56,6 +57,7 @@ export const StoryboardComposition: React.FC<CompositionProps> = ({ shots, bgmUr
 // ─── Single Shot Scene ──────────────────────────────────
 
 function ShotScene({ shot }: { shot: Shot }) {
+  const t = useTranslations("storyboard");
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
 
@@ -104,7 +106,7 @@ function ShotScene({ shot }: { shot: Shot }) {
           borderRadius: 6,
         }}
       >
-        镜头 {shot.shotNumber}
+        {t("shot")} {shot.shotNumber}
       </div>
 
       {/* Dialogue audio */}
