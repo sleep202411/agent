@@ -1326,8 +1326,8 @@ export function AiVideoGeneratorDialog({
                 <div className="flex gap-2">
                   {[
                     { label: t("referenceImageUpload"), value: "reference" as const },
-                    { label: "\u9996\u5C3E\u5E27", value: "frames" as const },
-                    { label: "\u591A\u53C2\u8003\u56FE", value: "multiReference" as const },
+                    { label: t("framesTab"), value: "frames" as const },
+                    { label: t("multiReferenceTab"), value: "multiReference" as const },
                   ].map((item) => (
                     <button
                       key={item.value}

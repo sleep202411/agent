@@ -59,7 +59,7 @@ export function VideoModeSettings({
     return (
       <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] px-4 py-3 text-xs text-muted-foreground">
         <Field orientation="horizontal" className="w-auto">
-          <FieldLabel className="text-xs text-muted-foreground">掩码类型</FieldLabel>
+          <FieldLabel className="text-xs text-muted-foreground">{t("maskTypeLabel")}</FieldLabel>
           <select
             value={maskType}
             onChange={(event) => onMaskTypeChange(event.target.value as "tracking" | "fixed")}
@@ -71,7 +71,9 @@ export function VideoModeSettings({
         </Field>
         {maskType === "tracking" ? (
           <Field orientation="horizontal" className="w-auto">
-            <FieldLabel className="text-xs text-muted-foreground">扩展比例</FieldLabel>
+            <FieldLabel className="text-xs text-muted-foreground">
+              {t("expandRatioLabel")}
+            </FieldLabel>
             <input
               type="range"
               min="0"
@@ -84,7 +86,7 @@ export function VideoModeSettings({
           </Field>
         ) : null}
         <Field orientation="horizontal" className="w-auto">
-          <FieldLabel className="text-xs text-muted-foreground">掩码帧</FieldLabel>
+          <FieldLabel className="text-xs text-muted-foreground">{t("maskFrameLabel")}</FieldLabel>
           <input
             type="number"
             min="0"

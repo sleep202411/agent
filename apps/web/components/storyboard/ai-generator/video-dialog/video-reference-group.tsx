@@ -228,7 +228,7 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="首片段"
+          label={t("firstClipLabel")}
           items={extendFirstClip}
           mediaType="video"
           maxCount={1}
@@ -236,7 +236,7 @@ export function VideoReferencePanel({
           onRemove={() => onSetExtendFirstClip([])}
         />
         <ReferenceGroup
-          label="尾片段"
+          label={t("lastClipLabel")}
           items={extendLastClip}
           mediaType="video"
           maxCount={1}
@@ -244,7 +244,7 @@ export function VideoReferencePanel({
           onRemove={() => onSetExtendLastClip([])}
         />
         <ReferenceGroup
-          label="首帧图"
+          label={t("firstFrameImage")}
           items={extendFirstFrame}
           mediaType="img"
           maxCount={1}
@@ -252,7 +252,7 @@ export function VideoReferencePanel({
           onRemove={() => onSetExtendFirstFrame([])}
         />
         <ReferenceGroup
-          label="尾帧图"
+          label={t("lastFrameImage")}
           items={extendLastFrame}
           mediaType="img"
           maxCount={1}
@@ -280,7 +280,7 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="首帧"
+          label={t("firstFrame")}
           items={firstFrames}
           mediaType="img"
           maxCount={1}
@@ -288,7 +288,7 @@ export function VideoReferencePanel({
           onRemove={() => onSetFirstFrames([])}
         />
         <ReferenceGroup
-          label="尾帧"
+          label={t("lastFrame")}
           items={lastFrames}
           mediaType="img"
           maxCount={1}
@@ -303,7 +303,7 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="主体"
+          label={t("subjectLabel")}
           items={multiRefSubjectImages}
           mediaType="img"
           maxCount={1}
@@ -316,12 +316,12 @@ export function VideoReferencePanel({
           type="button"
           onClick={swapMultiRefTypes}
           className="flex size-8 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-          title="交换主体和背景"
+          title={t("swapSubjectBackground")}
         >
           <IconRepeat className="size-4" />
         </button>
         <ReferenceGroup
-          label="背景"
+          label={t("backgroundLabel")}
           items={multiRefBgImages}
           mediaType="img"
           maxCount={2}
