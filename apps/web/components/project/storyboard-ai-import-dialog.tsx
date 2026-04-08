@@ -201,15 +201,10 @@ export function StoryboardAiImportDialog({
         open={open}
         onOpenChange={(nextOpen) => (nextOpen ? onOpenChange(true) : closeUploadDialog())}
       >
-        <DialogContent showCloseButton={false} className="sm:max-w-[640px]">
-          <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-border/70 pb-4">
-            <div>
-              <DialogTitle>{ts("aiImportTitle")}</DialogTitle>
-              <DialogDescription>{ts("aiImportDesc")}</DialogDescription>
-            </div>
-            <Button variant="ghost" color="muted" size="icon-sm" onClick={closeUploadDialog}>
-              <IconX className="size-4" />
-            </Button>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader className="border-b border-border/70 pb-4">
+            <DialogTitle>{ts("aiImportTitle")}</DialogTitle>
+            <DialogDescription>{ts("aiImportDesc")}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -271,15 +266,10 @@ export function StoryboardAiImportDialog({
         open={Boolean(preview)}
         onOpenChange={(nextOpen) => (!nextOpen ? closePreviewDialog() : undefined)}
       >
-        <DialogContent showCloseButton={false} className="max-w-[95vw]">
-          <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-border/70 pb-4">
-            <div>
-              <DialogTitle>{ts("aiImportPreviewTitle")}</DialogTitle>
-              <DialogDescription>{ts("aiImportPreviewDesc")}</DialogDescription>
-            </div>
-            <Button variant="ghost" color="muted" size="icon-sm" onClick={closePreviewDialog}>
-              <IconX className="size-4" />
-            </Button>
+        <DialogContent className="max-w-[95vw]">
+          <DialogHeader className="border-b border-border/70 pb-4">
+            <DialogTitle>{ts("aiImportPreviewTitle")}</DialogTitle>
+            <DialogDescription>{ts("aiImportPreviewDesc")}</DialogDescription>
           </DialogHeader>
 
           {preview ? (

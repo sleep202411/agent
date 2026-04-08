@@ -302,10 +302,7 @@ export function CharacterFusionDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          showCloseButton={false}
-          className="w-[980px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 sm:max-w-[980px]"
-        >
+        <DialogContent className="w-[980px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 sm:max-w-[980px]">
           <DialogHeader>
             <DialogTitle>{t("fusionTitle")}</DialogTitle>
             <DialogDescription>{t("fusionDescription")}</DialogDescription>

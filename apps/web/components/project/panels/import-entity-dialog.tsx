@@ -224,15 +224,10 @@ export function ImportEntityDialog({
         open={open}
         onOpenChange={(nextOpen) => (nextOpen ? onOpenChange(true) : closeUploadDialog())}
       >
-        <DialogContent showCloseButton={false} className="sm:max-w-[640px]">
-          <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-border/70 pb-4">
-            <div>
-              <DialogTitle>{localizedTitle}</DialogTitle>
-              <DialogDescription>{ti("uploadDescription")}</DialogDescription>
-            </div>
-            <Button variant="ghost" color="muted" size="icon-sm" onClick={closeUploadDialog}>
-              <IconX className="size-4" />
-            </Button>
+        <DialogContent className="sm:max-w-[640px]">
+          <DialogHeader className="border-b border-border/70 pb-4">
+            <DialogTitle>{localizedTitle}</DialogTitle>
+            <DialogDescription>{ti("uploadDescription")}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -314,15 +309,10 @@ export function ImportEntityDialog({
         open={Boolean(preview)}
         onOpenChange={(nextOpen) => (!nextOpen ? closePreviewDialog() : undefined)}
       >
-        <DialogContent showCloseButton={false} className="max-w-[95vw]">
-          <DialogHeader className="flex-row items-start justify-between gap-4 border-b border-border/70 pb-4">
-            <div>
-              <DialogTitle>{localizedPreviewTitle}</DialogTitle>
-              <DialogDescription>{ti("previewEditHint")}</DialogDescription>
-            </div>
-            <Button variant="ghost" color="muted" size="icon-sm" onClick={closePreviewDialog}>
-              <IconX className="size-4" />
-            </Button>
+        <DialogContent className="max-w-[95vw]">
+          <DialogHeader className="border-b border-border/70 pb-4">
+            <DialogTitle>{localizedPreviewTitle}</DialogTitle>
+            <DialogDescription>{ti("previewEditHint")}</DialogDescription>
           </DialogHeader>
 
           {preview ? (

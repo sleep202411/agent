@@ -1084,7 +1084,7 @@ export function TimelineView() {
       ) : null}
 
       <Dialog open={durationDialogOpen} onOpenChange={setDurationDialogOpen}>
-        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{ts("shotDuration")}</DialogTitle>
             <DialogDescription className="sr-only">{tt("setDurationDesc")}</DialogDescription>

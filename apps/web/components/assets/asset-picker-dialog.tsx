@@ -13,7 +13,7 @@ import {
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { buildOssUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { AssetRecordType, AssetRecord } from "@/src/types/workspace";
@@ -202,22 +202,12 @@ export function AssetPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="w-[720px] max-w-[calc(100vw-2rem)] p-0 sm:max-w-[720px]"
-      >
+      <DialogContent className="w-[720px] max-w-[calc(100vw-2rem)] p-0 sm:max-w-[720px]">
         <div className="flex h-[720px] flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl">
           {/* Header */}
-          <div className="flex shrink-0 items-center justify-between px-6 py-4">
-            <h2 className="text-base font-semibold">{t("materialPreview")}</h2>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              ✕
-            </button>
-          </div>
+          <DialogHeader className="shrink-0 px-6 py-4">
+            <DialogTitle className="text-base font-semibold">{t("materialPreview")}</DialogTitle>
+          </DialogHeader>
 
           {/* Upload area */}
           <div className="shrink-0 px-6">

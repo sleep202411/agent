@@ -14,7 +14,6 @@ import {
   IconTrash,
   IconUser,
   IconVideo,
-  IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -286,19 +285,9 @@ export function MediaManagerDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          showCloseButton={false}
-          className="h-[85vh] w-[90vw] max-w-[1400px] overflow-hidden border-none bg-[#1A1A1A] p-0 text-white sm:max-w-[1400px]"
-        >
+        <DialogContent className="h-[85vh] w-[90vw] max-w-[1400px] overflow-hidden border-none bg-[#1A1A1A] p-0 text-white sm:max-w-[1400px]">
           <div className="relative flex h-full min-h-0">
             <span className="sr-only">{title}</span>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="absolute right-4 top-4 z-20 flex size-9 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-black/70"
-            >
-              <IconX className="size-5" />
-            </button>
 
             <div className="flex min-h-0 flex-1 flex-col">
               <div

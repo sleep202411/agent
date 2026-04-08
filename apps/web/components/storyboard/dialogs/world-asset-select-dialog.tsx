@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { IconCheck, IconHome, IconLoader2, IconMask, IconUser, IconX } from "@tabler/icons-react";
+import { IconCheck, IconHome, IconLoader2, IconMask, IconUser } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import {
   Dialog,
@@ -95,19 +95,11 @@ export function WorldAssetSelectDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        showCloseButton={false}
         className="flex flex-col overflow-hidden p-0"
         style={{ width: 700, maxWidth: "calc(100vw - 2rem)", height: "min(520px, 80vh)" }}
       >
-        <DialogHeader className="flex flex-row items-center justify-between px-5 pt-4 pb-3">
+        <DialogHeader className="px-5 pt-4 pb-3">
           <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <IconX className="size-4" />
-          </button>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-auto px-5">

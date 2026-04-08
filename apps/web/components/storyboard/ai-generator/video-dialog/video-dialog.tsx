@@ -1421,7 +1421,7 @@ export function AiVideoGeneratorDialog({
       ) : null}
 
       <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
-        <DialogContent showCloseButton={false} className="max-w-5xl">
+        <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>{"\u89C6\u9891\u9884\u89C8"}</DialogTitle>
           </DialogHeader>

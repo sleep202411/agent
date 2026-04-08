@@ -5,7 +5,13 @@ import { IconCheck, IconLoader2, IconWand, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { backendApi } from "@/src/lib/api";
 
 const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
@@ -254,22 +260,14 @@ export function AssetAiRecordDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent
-        showCloseButton={false}
         className="w-[1000px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 sm:max-w-[1000px]"
         onInteractOutside={(event) => event.preventDefault()}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle>{title}</DialogTitle>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <IconX className="size-4" />
-          </button>
-        </div>
+        </DialogHeader>
 
         <div className="flex h-[520px] gap-5 p-5">
           <div className="flex min-w-0 flex-1 flex-col">
