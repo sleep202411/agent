@@ -29,54 +29,51 @@ type PreviewState = {
   rows: string[][];
 };
 
-const ENTITY_CONFIG: Record<
-  ImportEntityType,
-  {
-    title: string;
-    previewTitle: string;
-    emptyText: string;
-    templateFileName: string;
-    templateRows: string[][];
-  }
-> = {
-  role: {
-    title: "",
-    previewTitle: "",
-    emptyText: "",
-    templateFileName: "role_template.xlsx",
-    templateRows: [
-      ["name", "description", "prompt"],
-      ["艾拉", "精灵族弓箭手，性格冷静", "一位身穿绿色斗篷的精灵女弓箭手，银白色长发，蓝色眼睛"],
-      ["雷克斯", "人类骑士，正义感强", "一位身穿银色铠甲的人类男骑士，短黑发，棕色眼睛，手持长剑"],
-    ],
-  },
-  scene: {
-    title: "",
-    previewTitle: "",
-    emptyText: "",
-    templateFileName: "scene_template.xlsx",
-    templateRows: [
-      ["name", "description", "prompt"],
-      [
-        "魔法森林",
-        "充满魔法能量的古老森林",
-        "一片神秘的古老森林，树木高大茂密，空中飘浮着发光的魔法粒子",
+interface EntityConfigItem {
+  title: string;
+  previewTitle: string;
+  emptyText: string;
+  templateFileName: string;
+  templateRows: string[][];
+}
+
+function buildEntityConfig(t: (key: string) => string): Record<ImportEntityType, EntityConfigItem> {
+  return {
+    role: {
+      title: "",
+      previewTitle: "",
+      emptyText: "",
+      templateFileName: "role_template.xlsx",
+      templateRows: [
+        ["name", "description", "prompt"],
+        [t("roleSample1Name"), t("roleSample1Desc"), t("roleSample1Prompt")],
+        [t("roleSample2Name"), t("roleSample2Desc"), t("roleSample2Prompt")],
       ],
-      ["王城广场", "繁华的城市中心广场", "中世纪风格的城市广场，石板地面，周围有商铺和喷泉"],
-    ],
-  },
-  prop: {
-    title: "",
-    previewTitle: "",
-    emptyText: "",
-    templateFileName: "prop_template.xlsx",
-    templateRows: [
-      ["name", "description", "prompt"],
-      ["光之剑", "传说中的圣剑，可释放光芒", "一把发出金色光芒的长剑，剑柄镶嵌蓝色宝石"],
-      ["治愈药水", "恢复生命值的魔法药水", "一瓶发着淡绿色光芒的药水，装在透明玻璃瓶中"],
-    ],
-  },
-};
+    },
+    scene: {
+      title: "",
+      previewTitle: "",
+      emptyText: "",
+      templateFileName: "scene_template.xlsx",
+      templateRows: [
+        ["name", "description", "prompt"],
+        [t("sceneSample1Name"), t("sceneSample1Desc"), t("sceneSample1Prompt")],
+        [t("sceneSample2Name"), t("sceneSample2Desc"), t("sceneSample2Prompt")],
+      ],
+    },
+    prop: {
+      title: "",
+      previewTitle: "",
+      emptyText: "",
+      templateFileName: "prop_template.xlsx",
+      templateRows: [
+        ["name", "description", "prompt"],
+        [t("propSample1Name"), t("propSample1Desc"), t("propSample1Prompt")],
+        [t("propSample2Name"), t("propSample2Desc"), t("propSample2Prompt")],
+      ],
+    },
+  };
+}
 
 function arrayToPreview(rows: string[][]): PreviewState | null {
   if (!Array.isArray(rows) || rows.length < 2) return null;
@@ -110,7 +107,7 @@ export function ImportEntityDialog({
 }) {
   const ti = useTranslations("importDialog");
   const tc = useTranslations("common");
-  const config = ENTITY_CONFIG[entityType];
+  const config = buildEntityConfig(ti)[entityType];
   const titleMap: Record<ImportEntityType, string> = {
     role: ti("importCharacter"),
     scene: ti("importScene"),

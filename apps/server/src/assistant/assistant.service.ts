@@ -141,7 +141,11 @@ export class AssistantService {
       model: this.ai.getModel(),
       tools,
       toolChoice: 'auto',
-      system: this.buildSystemPrompt(projectContext, payload.agentType),
+      system: this.buildSystemPrompt(
+        projectContext,
+        payload.agentType,
+        wsContext.locale,
+      ),
       messages: modelMessages,
       stopWhen: stepCountIs(12),
       temperature: 0.2,
@@ -171,7 +175,11 @@ export class AssistantService {
     return result;
   }
 
-  private buildSystemPrompt(context: ProjectContext, rawAgentType?: string) {
+  private buildSystemPrompt(
+    context: ProjectContext,
+    rawAgentType?: string,
+    locale?: string,
+  ) {
     const agentType: AssistantAgentType = assistantAgentTypes.includes(
       rawAgentType as AssistantAgentType,
     )
@@ -314,8 +322,21 @@ Step 5: 逐集生成分镜
 [资产去重规则]
 创建角色/场景/道具前，必须检查项目上下文中的"已有角色/场景/道具"列表，跳过同名实体。禁止创建重名资产。`;
 
+    // Language instruction based on user locale
+    const langMap: Record<string, string> = {
+      'en-US':
+        'You MUST respond in English. All text output, tool arguments, and generated content must be in English.',
+      'zh-HK':
+        '你必須使用繁體中文回覆。所有文字輸出、工具參數和生成的內容都必須使用繁體中文。',
+    };
+    const langInstruction = langMap[locale ?? ''] ?? '';
+    const langSection = langInstruction
+      ? `\n\n[語言/Language]\n${langInstruction}`
+      : '';
+
     const agentSection = loadAgentPrompt(agentType);
-    return agentSection ? `${basePrompt}\n\n${agentSection}` : basePrompt;
+    const agentPart = agentSection ? `\n\n${agentSection}` : '';
+    return `${basePrompt}${langSection}${agentPart}`;
   }
 
   private augmentMessages(messages: AssistantMessage[]): AssistantMessage[] {

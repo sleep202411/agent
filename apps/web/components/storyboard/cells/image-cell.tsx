@@ -56,12 +56,13 @@ function ImageManagerDialog({
   onUnsetPreferred: (path: string) => Promise<void>;
   onPromptSave: (fileId: string, prompt: string) => Promise<void>;
 }) {
+  const t = useTranslations("storyboard");
   return (
     <MediaManagerDialog
       open={open}
       onOpenChange={onOpenChange}
       mediaType="image"
-      title="图片管理"
+      title={t("imageManagement")}
       projectId={projectId}
       files={files}
       preferredPath={preferredPath}
