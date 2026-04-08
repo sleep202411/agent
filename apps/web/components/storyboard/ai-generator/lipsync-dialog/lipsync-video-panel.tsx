@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import {
   IconCircleCheck,
   IconDownload,
@@ -87,6 +88,7 @@ export function LipsyncVideoPanel({
   shotNumber,
   shotId,
 }: LipsyncVideoPanelProps) {
+  const t = useTranslations("storyboard");
   const previewUrl = currentPreviewItem?.path ? ossUrl(currentPreviewItem.path) : "";
 
   const toolbarActions: ToolbarAction[] = currentPreviewItem?.path
@@ -249,7 +251,7 @@ export function LipsyncVideoPanel({
                 className="flex aspect-square w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#E52227]/60 bg-[#E52227]/10 text-[#E52227] transition-colors hover:bg-[#E52227]/15"
               >
                 <IconUserCircle className="size-6" />
-                <span className="text-xs">选择角色</span>
+                <span className="text-xs">{t("selectCharacter")}</span>
               </button>
             )}
           </div>

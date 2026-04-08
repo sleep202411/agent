@@ -1,5 +1,6 @@
 "use client";
 
+import { useTranslations } from "next-intl";
 import { IconLoader2, IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +34,7 @@ export function AudioVoicePickerDialog({
   loading,
   noModel,
 }: AudioVoicePickerDialogProps) {
+  const t = useTranslations("storyboard");
   const langOptions = Object.keys(voiceGroups);
   const currentVoices = activeVoiceLang ? (voiceGroups[activeVoiceLang] ?? []) : [];
 
@@ -43,7 +45,7 @@ export function AudioVoicePickerDialog({
         className="gap-0 rounded-2xl border-white/10 bg-[#2F2F35] p-0 text-white ring-0 sm:max-w-[560px]"
       >
         <DialogHeader className="border-b border-white/10 px-5 py-4">
-          <DialogTitle className="text-lg font-medium text-white">选择语音</DialogTitle>
+          <DialogTitle className="text-lg font-medium text-white">{t("selectVoice")}</DialogTitle>
         </DialogHeader>
 
         <div className="px-4 pb-4 pt-3">

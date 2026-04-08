@@ -662,7 +662,7 @@ export function MediaCell({
                         disabled={isBatchGeneratingCell}
                         onClick={handleAudioUpload}
                       >
-                        上传音频
+                        {t("uploadAudio")}
                       </Button>
                       <Button
                         size="sm"
@@ -672,7 +672,7 @@ export function MediaCell({
                         onClick={handleAiGenerate}
                       >
                         {aiButtonIcon}
-                        AI 生成
+                        {t("aiGenerate")}
                       </Button>
                     </div>
                   </div>
@@ -696,11 +696,11 @@ export function MediaCell({
               ) : (
                 <div className="flex w-fit flex-col items-stretch justify-center gap-3">
                   <Button size="sm" variant="soft" color="muted" onClick={handleAudioUpload}>
-                    上传音频
+                    {t("uploadAudio")}
                   </Button>
                   <Button size="sm" variant="soft" color="muted" onClick={handleAiGenerate}>
                     {aiButtonIcon}
-                    AI 生成
+                    {t("aiGenerate")}
                   </Button>
                 </div>
               )}
@@ -761,11 +761,11 @@ export function MediaCell({
           ) : (
             <div className="flex h-full w-fit flex-col items-stretch justify-center gap-3">
               <Button size="sm" variant="soft" color="muted" onClick={() => setPickerOpen(true)}>
-                选择视频
+                {t("selectVideo")}
               </Button>
               <Button size="sm" variant="soft" color="muted" onClick={handleAiGenerate}>
                 {aiButtonIcon}
-                AI 生视频
+                {t("aiGenerateVideo")}
               </Button>
             </div>
           )

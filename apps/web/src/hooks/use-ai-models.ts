@@ -41,7 +41,7 @@ export function useAiModelsPreload() {
           );
           const rawModels = (raw ?? []) as RawAiModel[];
           store.dispatch(setAiRawModelCache({ path, models: rawModels }));
-          const models = rawModels.map(normalizeAiModel);
+          const models = rawModels.map((m) => normalizeAiModel(m));
           store.dispatch(setAiModelCache({ path, models }));
         } catch (err) {
           console.error(`[useAiModelsPreload] Failed to load models for ${path}:`, err);

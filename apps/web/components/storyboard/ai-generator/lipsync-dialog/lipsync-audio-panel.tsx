@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   IconCheck,
   IconDownload,
@@ -108,6 +109,7 @@ export function LipsyncAudioPanel({
   isGenerating,
   audioColumnId,
 }: LipsyncAudioPanelProps) {
+  const t = useTranslations("storyboard");
   const [voiceDialogOpen, setVoiceDialogOpen] = useState(false);
   const voiceName = selectedVoiceName(voiceId, voiceGroups);
 
@@ -252,7 +254,7 @@ export function LipsyncAudioPanel({
               className="flex h-8 items-center gap-1.5 rounded-md border border-white/10 px-2.5 text-xs text-white transition-colors hover:border-white/20 disabled:opacity-50"
             >
               <IconMicrophone className="size-3.5" />
-              {voiceName || "选择语音"}
+              {voiceName || t("selectVoice")}
             </button>
 
             {voiceModelCost ? (
@@ -278,8 +280,8 @@ export function LipsyncAudioPanel({
       <Dialog open={voiceDialogOpen} onOpenChange={setVoiceDialogOpen}>
         <DialogContent className="gap-0 rounded-xl border border-white/10 bg-[#262626] p-0 text-white sm:max-w-2xl">
           <DialogHeader className="border-b border-white/10 px-5 py-4">
-            <DialogTitle className="text-base">选择语音</DialogTitle>
-            <DialogDescription className="sr-only">选择 TTS 音色</DialogDescription>
+            <DialogTitle className="text-base">{t("selectVoice")}</DialogTitle>
+            <DialogDescription className="sr-only">{t("selectTtsVoice")}</DialogDescription>
           </DialogHeader>
 
           {/* Language tabs */}
@@ -347,7 +349,7 @@ export function LipsyncAudioPanel({
                         {active ? (
                           <IconCheck className="size-4 text-[#E52227]" />
                         ) : (
-                          <span className="text-xs text-[#8F8F92]">选择</span>
+                          <span className="text-xs text-[#8F8F92]">{t("select")}</span>
                         )}
                         <span
                           onClick={(e) => {

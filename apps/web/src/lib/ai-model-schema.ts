@@ -106,46 +106,11 @@ function buildSizeLabels(sizes: unknown[]): Record<string, string> {
   return labels;
 }
 
-// ─── Model Description Map ──────────────────────────────
-
-/**
- * Short descriptions for known models.
- * Key matches serviceCode or serviceName (case-insensitive).
- * Only descriptions — name comes from backend's serviceName.
- */
-const MODEL_DESCRIPTION_MAP: Record<string, string> = {
-  // Image
-  "seed-1.6": "字节跳动 Seed 系列，擅长写实人像和复杂场景，色彩细腻",
-  "wan2.5": "阿里通义万相，生成速度快，适合快速预览和迭代",
-  "wan2.5-i2i-preview": "通义万相图生图模式，基于参考图风格化生成",
-  "google/nano-banana": "Google 轻量模型，速度极快，适合草图和概念验证",
-  "google/nano-banana-pro": "Google 增强版，画面质量更高，细节更丰富",
-  "bytedance/seedream-4.5": "字节跳动最新模型，画面精致，风格多样，支持中文理解",
-  "gem:3.1-2k": "GEM 系列 2K 超高清输出，适合需要大尺寸印刷的场景",
-  "gem:3.1-1k": "GEM 系列 1K 标准输出，画质与速度的平衡之选",
-  mj_imagine: "Midjourney 经典模式，一次生成 4 张 2x2 网格图",
-  "mj:v7": "Midjourney 最新 v7 模型，艺术表现力强，风格独特",
-  // Video
-  "kwaivgi/kling-v2.6": "快手可灵 2.6，运动幅度大，适合动作场景",
-  "wan2.6-i2v-flash": "通义万相极速版，3 秒出片，适合快速预览",
-  "wan2.6-i2v": "通义万相标准版，画面稳定，动态自然",
-  "minimax/hailuo-02": "MiniMax 海螺 02，人物表情细腻，适合对话场景",
-  "minimax/hailuo-2.3": "海螺最新版，运动一致性强，画面更稳定",
-  "kling-3.0-720p": "可灵 3.0 标清版，性价比高，适合批量生成",
-  "kling-3.0-1080p": "可灵 3.0 高清版，画质细腻，适合最终成片",
-  "hailuo-2.3-768p": "海螺 2.3 标清版，低成本快速生成",
-  "hailuo-2.3-1080p": "海螺 2.3 高清版，画质清晰，适合正式输出",
-};
-
-function getModelDescription(raw: RawAiModel): string | undefined {
-  const code = String(raw.serviceCode ?? "").toLowerCase();
-  const name = String(raw.serviceName ?? "").toLowerCase();
-  return MODEL_DESCRIPTION_MAP[code] ?? MODEL_DESCRIPTION_MAP[name];
-}
+import { getModelDescription } from "./ai-model-descriptions";
 
 // ─── Normalize ──────────────────────────────────────────
 
-export function normalizeAiModel(raw: RawAiModel): AiModel {
+export function normalizeAiModel(raw: RawAiModel, locale = "zh-CN"): AiModel {
   const desc = parseDescription(raw.description);
   const sizes = Array.isArray(desc.size) ? desc.size : [];
   const videoLengths = Array.isArray(desc.videoLength) ? desc.videoLength : [];
@@ -186,7 +151,7 @@ export function normalizeAiModel(raw: RawAiModel): AiModel {
   return {
     id: raw.serviceCode ?? String(raw.id ?? ""),
     name: raw.serviceName ?? "",
-    description: getModelDescription(raw),
+    description: getModelDescription(raw.serviceCode, raw.serviceName, locale),
     provider: extractProvider(raw.serviceCode),
     type,
     isDefault: raw.isDefault ?? false,

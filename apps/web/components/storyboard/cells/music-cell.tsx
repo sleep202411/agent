@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { IconLoader2, IconPlayerPause, IconPlayerPlay, IconUpload } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { AudioWaveformBars } from "@/components/storyboard/ai-generator/audio-waveform-bars";
@@ -35,6 +36,7 @@ export function MusicCell({
   shotColumnId: string;
   column?: ShotColumn;
 }) {
+  const t = useTranslations("storyboard");
   const [isHovering, setIsHovering] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -91,10 +93,10 @@ export function MusicCell({
           );
         }
 
-        toast.success("音频上传成功");
+        toast.success(t("uploadSuccess"));
       } catch (error) {
         console.error("[MusicCell] 上传失败:", error);
-        toast.error("上传失败");
+        toast.error(t("uploadFailed"));
       } finally {
         setUploading(false);
       }
@@ -147,7 +149,7 @@ export function MusicCell({
         {uploading ? (
           <div className="flex flex-col items-center gap-2">
             <IconLoader2 className="size-5 animate-spin text-white/75" />
-            <span className="text-[11px] text-white/60">上传中...</span>
+            <span className="text-[11px] text-white/60">{t("uploading")}</span>
           </div>
         ) : src ? (
           <div className="flex w-full items-center gap-3">
@@ -184,7 +186,7 @@ export function MusicCell({
           <div className="flex w-fit flex-col items-stretch justify-center gap-3">
             <Button size="sm" variant="soft" color="muted" onClick={handleUpload}>
               <IconUpload className="size-3.5" />
-              上传音频
+              {t("uploadAudio")}
             </Button>
           </div>
         )}

@@ -10,8 +10,8 @@ const nextConfig: NextConfig = {
     keepAlive: true,
   },
   experimental: {
-    proxyTimeout: 300_000, // 5 minutes for AI image generation
-  } as Record<string, unknown>,
+    proxyTimeout: 600_000, // 10 minutes for AI image/music generation
+  },
   async rewrites() {
     const contentUrl = process.env.JAVA_CONTENT_URL;
     const studioUrl = process.env.JAVA_STUDIO_URL;

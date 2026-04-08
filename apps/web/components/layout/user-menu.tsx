@@ -74,6 +74,7 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
   const displayEmail = userInfo?.email || userInfo?.phone || "";
   const avatarUrl = userInfo?.headImg ? String(userInfo.headImg) : undefined;
   const initials = displayName.slice(0, 1).toUpperCase();
+  const userLevel = typeof userInfo?.userLevel === "string" ? userInfo.userLevel : "";
 
   const switchLocale = (nextLocale: string) => {
     if (nextLocale === locale) return;
@@ -102,7 +103,14 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
             <AvatarFallback>{initials}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{displayName}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="truncate text-sm font-medium">{displayName}</p>
+              {userLevel && (
+                <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                  {userLevel}
+                </span>
+              )}
+            </div>
             {displayEmail && (
               <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
             )}

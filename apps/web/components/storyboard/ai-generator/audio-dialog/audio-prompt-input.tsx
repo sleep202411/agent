@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useTranslations } from "next-intl";
 import {
   IconArrowUp,
   IconChevronDown,
@@ -82,6 +83,7 @@ export function AudioPromptInput({
   onSubmit,
   characters,
 }: AudioPromptInputProps) {
+  const t = useTranslations("storyboard");
   const mentionItems = useMemo<MentionItem[]>(
     () =>
       characters
@@ -150,7 +152,9 @@ export function AudioPromptInput({
           >
             <span className="pointer-events-none absolute inset-0 rounded-lg border border-[#E52227]/35 opacity-70" />
             <IconMicrophone className="size-4 text-white/75" />
-            <span className="flex-1 truncate text-left">{selectedVoiceName || "选择语音"}</span>
+            <span className="flex-1 truncate text-left">
+              {selectedVoiceName || t("selectVoice")}
+            </span>
             {hasVoice && onClearVoice ? (
               <span
                 onClick={(e) => {
