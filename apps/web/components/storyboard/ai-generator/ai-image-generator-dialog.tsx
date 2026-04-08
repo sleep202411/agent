@@ -16,14 +16,12 @@ import {
   IconShieldCheck,
   IconStar,
   IconTrash,
-  IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
-import { cn } from "@/lib/utils";
+import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import type { ToolbarAction } from "@/components/ui/floating-toolbar";
-import { ModelPicker } from "@/components/ui/schema-field/model-picker";
 import { MediaPreviewPanel } from "./media-preview-panel";
 import { PromptInput } from "./prompt-input";
 import { ResultGallery } from "./result-gallery";
@@ -162,7 +160,7 @@ export function AiImageGeneratorDialog({
     (s) => selectCurrentInstance(s).aiImageForm.currentEditModel
   );
 
-  const allResults = selectAllImageResults(store.getState(), shotId, shotColumnId);
+  const allResults = useAppSelector((s) => selectAllImageResults(s, shotId, shotColumnId));
 
   // Use preloaded normalized models from cache (stable empty ref to avoid re-renders)
   const cachedModels =
@@ -593,26 +591,14 @@ export function AiImageGeneratorDialog({
         multiple
       />
 
-      {fullPreviewUrl ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85"
-          onClick={() => setFullPreviewUrl(null)}
-        >
-          <img
-            src={fullPreviewUrl}
-            alt=""
-            className="max-h-[85vh] max-w-[85vw] rounded-lg object-contain"
-            onClick={(event) => event.stopPropagation()}
-          />
-          <button
-            type="button"
-            onClick={() => setFullPreviewUrl(null)}
-            className="absolute right-6 top-6 flex size-9 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/30"
-          >
-            <IconX className="size-5" />
-          </button>
-        </div>
-      ) : null}
+      <MediaPreviewModal
+        open={!!fullPreviewUrl}
+        onOpenChange={(open) => {
+          if (!open) setFullPreviewUrl(null);
+        }}
+        type="image"
+        src={fullPreviewUrl}
+      />
     </Dialog>
   );
 }
