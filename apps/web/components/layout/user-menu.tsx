@@ -66,7 +66,19 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
   useEffect(() => {
     backendApi
       .get<UserInfo>("/user/query/user/info")
-      .then((data) => setUserInfo(data))
+      .then((data) => {
+        if (data) {
+          setUserInfo(data);
+        } else {
+          // Fallback: this API returns { info: {...} } instead of { data: {...} }
+          fetch("/user/query/user/info", { credentials: "include" })
+            .then((res) => res.json())
+            .then((body) => {
+              if (body?.info) setUserInfo(body.info);
+            })
+            .catch(() => {});
+        }
+      })
       .catch(() => {});
   }, []);
 

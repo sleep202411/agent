@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { IconCheck, IconPlus, IconX } from "@tabler/icons-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { getCellDisplayValue, parseColumnOptions, persistTextCell } from "./cell-utils";
 import type { ShotColumn, ShotValue } from "@/src/store/slices/projectSlice";
@@ -18,6 +19,7 @@ export function SelectCell({
   shotId: string;
   shotColumnId: string;
 }) {
+  const t = useTranslations("storyboard");
   const options = parseColumnOptions(column);
   const display = getCellDisplayValue(cell);
   const [open, setOpen] = useState(false);
@@ -72,7 +74,7 @@ export function SelectCell({
             className="flex h-7 w-full items-center rounded-md px-2 text-xs hover:bg-muted/30"
           >
             <span className={display ? "text-foreground" : "text-muted-foreground"}>
-              {display || "选择"}
+              {display || t("select")}
             </span>
           </button>
         </PopoverTrigger>
@@ -88,7 +90,7 @@ export function SelectCell({
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="搜索或输入..."
+              placeholder={t("searchOrEnter")}
               className="w-full rounded-md border border-border bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
             />
           </div>
@@ -118,7 +120,9 @@ export function SelectCell({
               </button>
             )}
             {filteredOptions.length === 0 && !inputValue.trim() && (
-              <div className="px-2 py-3 text-center text-xs text-muted-foreground">无选项</div>
+              <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                {t("noOptions")}
+              </div>
             )}
           </div>
           {display && (
@@ -129,7 +133,7 @@ export function SelectCell({
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
               >
                 <IconX className="size-3" />
-                <span>清除</span>
+                <span>{t("clear")}</span>
               </button>
             </div>
           )}

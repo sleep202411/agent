@@ -166,7 +166,7 @@ export function MusicCell({
               >
                 <Button size="sm" variant="soft" color="muted" onClick={handleUpload}>
                   <IconUpload className="size-3.5" />
-                  替换音频
+                  {t("replaceAudio")}
                 </Button>
               </div>
             </div>
@@ -198,7 +198,7 @@ export function MusicCell({
           onOpenChange={setPreviewOpen}
           type="audio"
           src={src}
-          name={column?.columnName ?? "音乐"}
+          name={column?.columnName ?? t("music")}
         />
       )}
     </>

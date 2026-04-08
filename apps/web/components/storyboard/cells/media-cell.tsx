@@ -75,12 +75,13 @@ function VideoManagerDialog({
   onUnsetPreferred: (path: string) => Promise<void>;
   onPromptSave: (fileId: string, prompt: string) => Promise<void>;
 }) {
+  const t = useTranslations("storyboard");
   return (
     <MediaManagerDialog
       open={open}
       onOpenChange={onOpenChange}
       mediaType="video"
-      title="视频管理"
+      title={t("videoManagement")}
       projectId={projectId}
       files={files}
       preferredPath={preferredPath}
@@ -352,7 +353,7 @@ export function MediaCell({
         })
       );
       if (!previousFiles.some((file) => file.path === targetPath)) {
-        toast.error("素材加入管理失败");
+        toast.error(t("assetAddFailed"));
         return;
       }
       const cellId = typeof latestCell?.id === "string" ? latestCell.id : cell?.id;
@@ -369,7 +370,7 @@ export function MediaCell({
         updateFilesState(nextFiles, typeof latestCell?.id === "string" ? latestCell.id : undefined);
       } catch (error) {
         console.error("[MediaCell] 设置定稿失败:", error);
-        toast.error("设置定稿失败");
+        toast.error(t("setFinalizeFailed"));
       }
     },
     [cell?.id, files, persistMediaPaths, shotColumnId, shotId, updateFilesState]
@@ -404,7 +405,7 @@ export function MediaCell({
         updateFilesState(nextFiles, typeof latestCell?.id === "string" ? latestCell.id : undefined);
       } catch (error) {
         console.error("[MediaCell] 取消定稿失败:", error);
-        toast.error("取消定稿失败");
+        toast.error(t("cancelFinalizeFailed"));
       }
     },
     [cell?.id, files, shotColumnId, shotId, updateFilesState]
@@ -441,12 +442,12 @@ export function MediaCell({
         acceptedAudioMimeTypes.has(file.type) || [".mp3", ".wav"].includes(extension);
 
       if (isVideoCell && !file.type.startsWith("video/")) {
-        toast.error("请上传视频文件");
+        toast.error(t("pleaseUploadVideo"));
         return;
       }
 
       if (isAudioCell && !isAcceptedAudioFile) {
-        toast.error("请上传 mp3 或 wav 音频文件");
+        toast.error(t("pleaseUploadAudio"));
         return;
       }
 
@@ -632,7 +633,7 @@ export function MediaCell({
             </div>
           ) : isDragOver && !src ? (
             <div className="flex h-full w-full items-center justify-center text-center text-xs text-primary">
-              拖拽音频到这里
+              {t("dragAudioHere")}
             </div>
           ) : (
             <div
@@ -691,7 +692,9 @@ export function MediaCell({
               ) : isBatchGeneratingCell ? (
                 <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
                   <IconLoader2 className="size-5 animate-spin text-white/75" />
-                  <span className="text-[11px] font-medium text-white/80">批量生成中...</span>
+                  <span className="text-[11px] font-medium text-white/80">
+                    {t("batchGenerating")}
+                  </span>
                 </div>
               ) : (
                 <div className="flex w-fit flex-col items-stretch justify-center gap-3">
@@ -734,7 +737,7 @@ export function MediaCell({
                       color="muted"
                       onClick={() => setManagerOpen(true)}
                     >
-                      视频管理
+                      {t("videoManagement")}
                     </Button>
                     <Button size="sm" variant="soft" color="muted" onClick={handleAiGenerate}>
                       {aiButtonIcon}
@@ -744,19 +747,21 @@ export function MediaCell({
                 ) : (
                   <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-md bg-black/55">
                     <IconLoader2 className="size-5 animate-spin text-white/75" />
-                    <span className="text-[11px] font-medium text-white/80">批量生成中...</span>
+                    <span className="text-[11px] font-medium text-white/80">
+                      {t("batchGenerating")}
+                    </span>
                   </div>
                 )}
               </div>
             </div>
           ) : isDragOver ? (
             <div className="flex h-full w-full items-center justify-center text-center text-xs text-primary">
-              拖拽视频到这里
+              {t("dragVideoHere")}
             </div>
           ) : isBatchGeneratingCell ? (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
               <IconLoader2 className="size-5 animate-spin text-white/75" />
-              <span className="text-[11px] font-medium text-white/80">批量生成中...</span>
+              <span className="text-[11px] font-medium text-white/80">{t("batchGenerating")}</span>
             </div>
           ) : (
             <div className="flex h-full w-fit flex-col items-stretch justify-center gap-3">
@@ -780,7 +785,9 @@ export function MediaCell({
             ) : (
               <IconVideo className="size-6" />
             )}
-            <span className="text-[11px]">{type === "lip_sync" ? "对口型视频" : "视频素材"}</span>
+            <span className="text-[11px]">
+              {type === "lip_sync" ? t("lipSyncVideo") : t("videoAsset")}
+            </span>
           </div>
         )}
 
@@ -794,7 +801,7 @@ export function MediaCell({
             ) : null}
             <Button size="sm" onClick={() => setPickerOpen(true)}>
               <IconVideo className="size-3.5" />
-              素材
+              {t("assets")}
             </Button>
             <Button size="sm" variant="soft" color="muted" onClick={handleAiGenerate}>
               <IconSparkles className="size-3.5" />
@@ -840,7 +847,7 @@ export function MediaCell({
         onOpenChange={setPreviewOpen}
         type={type === "audio" ? "audio" : "video"}
         src={src}
-        name={type === "audio" ? "音频预览" : "视频预览"}
+        name={type === "audio" ? t("audioPreview") : t("videoPreview")}
         link={src}
       />
 

@@ -9,6 +9,7 @@ import {
   IconRefresh,
   IconTrash,
 } from "@tabler/icons-react";
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { AudioWaveformBars } from "@/components/storyboard/ai-generator/audio-waveform-bars";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -51,6 +52,7 @@ export function AudioResultGallery({
   onRetry,
   emptyText = "AI 生成",
 }: AudioResultGalleryProps) {
+  const t = useTranslations("storyboard");
   if (!items.length && !loading) {
     return (
       <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-white/15 bg-white/[0.02]">
@@ -91,7 +93,7 @@ export function AudioResultGallery({
                   className="flex w-full items-center justify-center gap-2 px-3 py-4 text-xs text-white/55 transition-colors hover:text-white/85"
                 >
                   <IconRefresh className="size-4 text-[#E52227]" />
-                  <span>{item.error || "生成失败"}</span>
+                  <span>{item.error || t("generationFailed")}</span>
                 </button>
               </div>
             );
@@ -154,14 +156,16 @@ export function AudioResultGallery({
                           ) : current ? (
                             <span className="inline-flex items-center gap-1">
                               <IconCheck className="size-3" />
-                              当前
+                              {t("current")}
                             </span>
                           ) : (
-                            "选择"
+                            t("select")
                           )}
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>{current ? "当前使用" : "使用此音频"}</TooltipContent>
+                      <TooltipContent>
+                        {current ? t("currentlyUsing") : t("useThisAudio")}
+                      </TooltipContent>
                     </Tooltip>
                   )}
 
