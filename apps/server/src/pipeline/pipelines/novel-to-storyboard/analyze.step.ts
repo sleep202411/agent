@@ -1,0 +1,341 @@
+import { Logger } from '@nestjs/common';
+import { generateObject } from 'ai';
+import type { LanguageModelV3 } from '@ai-sdk/provider';
+import { withRetry, runWithConcurrency } from '../../engine/retry';
+
+/** Minimal context type — replaces the old pipeline engine types */
+export type AnalyzeContext = {
+  input: Record<string, unknown>;
+  global: Record<string, unknown>;
+  stepResults: Record<string, unknown>;
+};
+
+type EmitFn = (...args: unknown[]) => void;
+import { analyzeResultSchema, type AnalyzeResult } from './schemas';
+
+const logger = new Logger('AnalyzeStep');
+
+/**
+ * Texts below this threshold go full-text in one LLM call.
+ * Above this, split into chunks and analyze in parallel.
+ */
+const FULL_TEXT_THRESHOLD = 30_000;
+const CHUNK_TARGET_SIZE = 10_000;
+const CHUNK_OVERLAP = 500;
+const ANALYZE_CONCURRENCY = 5;
+
+// ── Prompts ──
+
+const FULL_TEXT_SYSTEM_PROMPT = `You are a professional novel/screenplay analyst. Analyze the full text and extract structured information.
+
+Requirements:
+1. **Characters**: Extract all named characters. Merge different names that refer to the same person (e.g. "Rose Waterford" and "Miss Waterford" are the same person).
+2. **Locations**: Extract all locations/settings that appear.
+3. **Outline**: Write a one-sentence summary for each chapter or major section.
+4. **Style**: Determine the genre (realistic/fantasy/sci-fi/romance/mystery/comedy etc.).
+5. **Language**: Detect the primary language of the source text (e.g. "English", "Chinese").
+
+Important:
+- The aliases field must list ALL name variants that appear in the text.
+- Do not miss any named character, even if they appear only once.
+- Outline index starts from 0.
+- If the text has no clear chapter divisions, create outline entries based on natural story segments.
+- ALL output text (names, descriptions, summaries) must be in the SAME LANGUAGE as the source text.`;
+
+const CHUNK_SYSTEM_PROMPT = `You are a professional novel/screenplay analyst. Analyze this text segment and extract information.
+
+Requirements:
+1. Extract all characters (with aliases) and locations from this segment.
+2. Write one outline entry (title + one-sentence summary) for this segment.
+3. Determine the genre/style.
+4. Detect the language of the source text.
+
+Important:
+- This is a segment of a longer text. Only extract information actually present in this segment.
+- If the same person has multiple names, merge them into one character's aliases.
+- Outline index starts from 0 within this segment.
+- ALL output text must be in the SAME LANGUAGE as the source text.`;
+
+const DEDUP_SYSTEM_PROMPT = `You are a text analysis expert. Below are character lists and location lists extracted from multiple segments of a long text. Due to segmented extraction, there are many duplicates and variants.
+
+Your tasks:
+1. **Merge characters**: Combine entries that refer to the same person. Keep the most complete description, merge all aliases. Determine importance (main/supporting/extra).
+   - e.g. "Rose Waterford" and "Miss Waterford" are the same person
+   - e.g. "Mrs. Strickland" and "Amy" and "Strickland's wife" are the same person
+   - Remove generic descriptors (e.g. "Unnamed Woman", "the narrator") and merge them as aliases into the actual character
+2. **Merge locations**: Combine entries that refer to the same place. Keep the most specific description.
+   - e.g. "Strickland's dining room" and "Strickland residence dining-room" are the same
+   - Delete overly vague entries (e.g. "indoor location", "conversation setting")
+3. Output the deduplicated character and location lists. Maintain the original schema format.
+4. ALL output text must remain in the SAME LANGUAGE as the input data.`;
+
+// ── Helpers ──
+
+/**
+ * Split text into overlapping chunks at paragraph boundaries.
+ */
+function splitIntoChunks(text: string): string[] {
+  const paragraphs = text.split(/\n\s*\n/);
+  const chunks: string[] = [];
+  let buffer = '';
+
+  for (const para of paragraphs) {
+    if (buffer.length + para.length > CHUNK_TARGET_SIZE && buffer.length > 0) {
+      chunks.push(buffer);
+      const tail = buffer.slice(-CHUNK_OVERLAP);
+      buffer = tail;
+    }
+    buffer += (buffer ? '\n\n' : '') + para;
+  }
+
+  if (buffer.trim()) {
+    chunks.push(buffer);
+  }
+
+  return chunks;
+}
+
+/**
+ * Code-level merge: fast pass to combine partial results.
+ * Deduplicates by exact name match. Semantic dedup is done by LLM afterwards.
+ */
+function codeMergeResults(partials: AnalyzeResult[]): AnalyzeResult {
+  const charMap = new Map<string, AnalyzeResult['characters'][number]>();
+  for (const partial of partials) {
+    for (const char of partial.characters) {
+      const key = char.name.toLowerCase().trim();
+      const existing = charMap.get(key);
+      if (existing) {
+        const allAliases = new Set([...existing.aliases, ...char.aliases]);
+        existing.aliases = [...allAliases];
+        if (char.description.length > existing.description.length) {
+          existing.description = char.description;
+        }
+        if (
+          char.relationships &&
+          (!existing.relationships ||
+            char.relationships.length > existing.relationships.length)
+        ) {
+          existing.relationships = char.relationships;
+        }
+      } else {
+        charMap.set(key, { ...char });
+      }
+    }
+  }
+
+  const locMap = new Map<string, AnalyzeResult['locations'][number]>();
+  for (const partial of partials) {
+    for (const loc of partial.locations) {
+      const key = loc.name.toLowerCase().trim();
+      if (!locMap.has(key)) {
+        locMap.set(key, loc);
+      }
+    }
+  }
+
+  const outlines = partials.flatMap((p) => p.outline);
+  outlines.forEach((item, i) => {
+    item.index = i;
+  });
+
+  const styles = partials.map((p) => p.style).filter(Boolean);
+  const style = styles[0] ?? 'realistic';
+  const timePeriod = partials.find((p) => p.timePeriod)?.timePeriod;
+  const languages = partials.map((p) => p.language).filter(Boolean);
+  const language = languages[0] ?? 'English';
+
+  return {
+    characters: [...charMap.values()],
+    locations: [...locMap.values()],
+    outline: outlines,
+    style,
+    timePeriod,
+    language,
+  };
+}
+
+// ── Main ──
+
+export async function analyzeStep(
+  _input: unknown,
+  context: AnalyzeContext,
+  emit: EmitFn,
+  model: LanguageModelV3,
+): Promise<AnalyzeResult> {
+  const text = context.input.text as string;
+  logger.log(
+    `Starting analyze step: ${text.length} chars, threshold=${FULL_TEXT_THRESHOLD}, config=${JSON.stringify(context.input.config ?? {})}`,
+  );
+
+  let result: AnalyzeResult;
+
+  if (text.length <= FULL_TEXT_THRESHOLD) {
+    // ── Short text: single LLM call ──
+    logger.log(`Short text mode: single LLM call with ${text.length} chars`);
+    emit({
+      type: 'step:progress',
+      stepId: 'analyze',
+      current: 0,
+      total: 1,
+      message: `正在分析全文（${text.length} 字）...`,
+    });
+
+    const { object } = await withRetry(
+      () =>
+        generateObject({
+          model,
+          schema: analyzeResultSchema,
+          system: FULL_TEXT_SYSTEM_PROMPT,
+          prompt: text,
+          temperature: 0.3,
+        }),
+      { maxRetries: 2, label: 'analyze-full' },
+    );
+
+    logger.log(
+      `Full-text analyze done: ${object.characters.length} characters, ${object.locations.length} locations, ${object.outline.length} outline items`,
+    );
+    result = object;
+  } else {
+    // ── Long text: split → parallel analyze → code merge → LLM dedup ──
+    const chunks = splitIntoChunks(text);
+    logger.log(
+      `Long text mode: ${text.length} chars → ${chunks.length} chunks (target ${CHUNK_TARGET_SIZE}/chunk, overlap ${CHUNK_OVERLAP})`,
+    );
+    logger.log(`Chunk sizes: ${chunks.map((c) => c.length).join(', ')}`);
+
+    emit({
+      type: 'step:progress',
+      stepId: 'analyze',
+      current: 0,
+      total: chunks.length + 1, // +1 for dedup step
+      message: `文本较长（${text.length} 字），拆分为 ${chunks.length} 段并行分析...`,
+    });
+
+    // Phase 1: Parallel chunk analysis
+    let completed = 0;
+    const tasks = chunks.map((chunk, i) => async (): Promise<AnalyzeResult> => {
+      logger.log(
+        `Analyzing chunk ${i + 1}/${chunks.length} (${chunk.length} chars)`,
+      );
+      const { object } = await withRetry(
+        () =>
+          generateObject({
+            model,
+            schema: analyzeResultSchema,
+            system: CHUNK_SYSTEM_PROMPT,
+            prompt: chunk,
+            temperature: 0.3,
+          }),
+        { maxRetries: 2, label: `analyze-chunk-${i + 1}` },
+      );
+      completed++;
+      logger.log(
+        `Chunk ${i + 1} done: ${object.characters.length} chars, ${object.locations.length} locs`,
+      );
+      emit({
+        type: 'step:progress',
+        stepId: 'analyze',
+        current: completed,
+        total: chunks.length + 1,
+        message: `已分析 ${completed}/${chunks.length} 段`,
+      });
+      return object;
+    });
+
+    const partials = await runWithConcurrency(tasks, ANALYZE_CONCURRENCY);
+
+    // Phase 2: Code-level merge (fast, exact match)
+    const codeMerged = codeMergeResults(partials);
+    logger.log(
+      `Code merge done: ${codeMerged.characters.length} characters, ${codeMerged.locations.length} locations (before LLM dedup)`,
+    );
+
+    // Phase 3: LLM dedup (semantic merge)
+    emit({
+      type: 'step:progress',
+      stepId: 'analyze',
+      current: chunks.length,
+      total: chunks.length + 1,
+      message: `正在用 AI 去重合并 ${codeMerged.characters.length} 个角色、${codeMerged.locations.length} 个场景...`,
+    });
+
+    const dedupInput = JSON.stringify(
+      {
+        characters: codeMerged.characters.map((c) => ({
+          name: c.name,
+          aliases: c.aliases,
+          role: c.role,
+          description: c.description.slice(0, 100),
+        })),
+        locations: codeMerged.locations.map((l) => ({
+          name: l.name,
+          description: l.description.slice(0, 80),
+        })),
+      },
+      null,
+      0,
+    );
+
+    logger.log(`LLM dedup input: ${dedupInput.length} chars`);
+
+    const dedupSchema = analyzeResultSchema.pick({
+      characters: true,
+      locations: true,
+    });
+
+    try {
+      const { object: deduped } = await withRetry(
+        () =>
+          generateObject({
+            model,
+            schema: dedupSchema,
+            system: DEDUP_SYSTEM_PROMPT,
+            prompt: dedupInput,
+            temperature: 0.1,
+          }),
+        { maxRetries: 2, label: 'analyze-dedup' },
+      );
+
+      logger.log(
+        `LLM dedup done: ${codeMerged.characters.length} → ${deduped.characters.length} characters, ${codeMerged.locations.length} → ${deduped.locations.length} locations`,
+      );
+
+      result = {
+        characters: deduped.characters,
+        locations: deduped.locations,
+        outline: codeMerged.outline,
+        style: codeMerged.style,
+        timePeriod: codeMerged.timePeriod,
+        language: codeMerged.language,
+      };
+    } catch (error) {
+      // LLM dedup failed — fall back to code-merged result
+      logger.warn(`LLM dedup failed, using code-merged result: ${error}`);
+      result = codeMerged;
+    }
+  }
+
+  // Write results to global context
+  context.global.characters = result.characters;
+  context.global.locations = result.locations;
+  context.global.outline = result.outline;
+  context.global.style = result.style;
+  context.global.language = result.language ?? 'English';
+
+  logger.log(`Detected language: ${result.language}`);
+  logger.log(
+    `Analyze step complete: ${result.characters.length} characters, ${result.locations.length} locations, ${result.outline.length} outline items, style="${result.style}"`,
+  );
+
+  emit({
+    type: 'step:progress',
+    stepId: 'analyze',
+    current: 1,
+    total: 1,
+    message: `提取到 ${result.characters.length} 个角色，${result.locations.length} 个场景`,
+  });
+
+  return result;
+}

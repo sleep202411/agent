@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useTranslations } from "next-intl";
-import { IconPlus } from "@tabler/icons-react";
+import { IconPlus, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import {
@@ -31,6 +31,7 @@ import {
 
 export function ScenesPanel({ onClose }: { onClose: () => void }) {
   const t = useTranslations("scene");
+  const tc = useTranslations("common");
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const scenes = useAppSelector((s) => selectCurrentInstance(s).scenes);
   const isLoading = useAppSelector((s) => selectCurrentInstance(s).isScenesLoading);
@@ -161,6 +162,16 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
         title={t("title")}
         onClose={onClose}
         loading={isLoading}
+        actions={
+          <button
+            type="button"
+            onClick={() => void loadScenes({ reset: true })}
+            className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title={tc("refresh")}
+          >
+            <IconRefresh className="size-3.5" />
+          </button>
+        }
         footer={
           <Button className="w-full" size="lg" variant="solid" onClick={() => setCreateOpen(true)}>
             <IconPlus className="size-3.5" /> {t("addScene")}

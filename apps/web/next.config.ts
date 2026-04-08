@@ -21,7 +21,7 @@ const nextConfig: NextConfig = {
 
     // ─── NestJS Server: /api/agent/*
     // Note: /api/assistant/chat is handled by Route Handler (app/api/assistant/chat/route.ts)
-    // for proper SSE streaming support. Only non-chat assistant routes use rewrite.
+    // using node:http to avoid SSE buffering and undici body timeout.
     if (serverUrl) {
       rules.push({
         source: "/api/agent/:path*",

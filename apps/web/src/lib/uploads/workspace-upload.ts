@@ -227,19 +227,19 @@ export async function uploadFileToSignedUrl(
   });
 
   if (!response.ok) {
-    throw new Error("上传失败");
+    throw new Error("Upload failed");
   }
 
   return extractStoragePathFromSignedUrl(signedUrl);
 }
 
-// ─── MD5 去重缓存 ──────────────────────────────────────
+// ─── MD5 dedup cache ──────────────────────────────────────
 
 const uploadedMd5Cache = new Map<string, UploadedWorkspaceFile>();
 
 export class DuplicateFileError extends Error {
   constructor(fileName: string) {
-    super(`文件「${fileName}」已上传过，请勿重复上传`);
+    super(`duplicateFile:${fileName}`);
     this.name = "DuplicateFileError";
   }
 }
@@ -257,7 +257,7 @@ export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFi
     throw new Error(validationError);
   }
 
-  // MD5 去重：相同文件不重复上传
+  // MD5 dedup: skip re-uploading identical files
   const hash = await computeFileHash(file);
   if (uploadedMd5Cache.has(hash)) {
     throw new DuplicateFileError(file.name);
@@ -279,7 +279,7 @@ export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFi
   );
 
   if (!uploadInfo.url) {
-    throw new Error("未获取到上传地址");
+    throw new Error("Failed to get upload URL");
   }
 
   const path = await uploadFileToSignedUrl(uploadInfo.url, file, {

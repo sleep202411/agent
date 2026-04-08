@@ -92,38 +92,26 @@ function isDocxFile(file: File) {
   );
 }
 
+function isPdfFile(file: File) {
+  return file.type === "application/pdf" || getFileExtension(file.name) === "pdf";
+}
+
 function isSupportedAttachment(file: File) {
-  return isTextLikeFile(file) || isDocxFile(file);
+  return isTextLikeFile(file) || isDocxFile(file) || isPdfFile(file);
 }
 
 const MAX_EXCERPT_CHARS = 80000;
 const MAX_TEXT_FILE_SIZE = 2 * 1024 * 1024;
 
-async function readDocxText(file: File): Promise<string> {
-  try {
-    const mammoth = await import("mammoth");
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return result.value.trim();
-  } catch {
-    return "";
-  }
-}
-
 async function readAttachmentExcerpt(file: File): Promise<{ excerpt: string; truncated: boolean }> {
-  // Docx files
-  if (isDocxFile(file)) {
-    try {
-      const text = await readDocxText(file);
-      if (!text) return { excerpt: "", truncated: false };
-      const truncated = text.length > MAX_EXCERPT_CHARS;
-      return { excerpt: text.slice(0, MAX_EXCERPT_CHARS), truncated };
-    } catch {
-      return { excerpt: "", truncated: false };
-    }
+  // PDF and DOCX: text extraction happens server-side.
+  // Frontend only uploads the file; excerpt stays empty.
+  // Server downloads from OSS and extracts text when pipeline starts.
+  if (isPdfFile(file) || isDocxFile(file)) {
+    return { excerpt: "", truncated: false };
   }
 
-  // Plain text files
+  // Plain text files: can extract directly in browser (small files)
   if (!isTextLikeFile(file)) return { excerpt: "", truncated: false };
   if (file.size > MAX_TEXT_FILE_SIZE) {
     return { excerpt: "", truncated: true };
@@ -402,7 +390,7 @@ export const addAttachments = createAsyncThunk<
 
   for (const file of incoming) {
     if (!isSupportedAttachment(file)) {
-      toast.warning(t("onlyTextAndWordFiles", { name: file.name }));
+      toast.warning(t("unsupportedAttachmentType", { name: file.name }));
       continue;
     }
 
@@ -417,10 +405,10 @@ export const addAttachments = createAsyncThunk<
     }
 
     const hash = await computeFileHash(file);
-    const currentAttachments = (
+    const pendingAttachments = (
       getState().assistant.projects[projectId] ?? createEmptyConversation()
     ).attachments;
-    if (currentAttachments.some((a) => a.hash === hash)) {
+    if (pendingAttachments.some((a) => a.hash === hash && a.status !== "error")) {
       toast.warning(t("duplicateFile", { name: file.name }));
       continue;
     }

@@ -79,7 +79,8 @@
     "fileExceedsSizeLimit": "{name} 超過 {size} MB，已跳過",
     "duplicateFile": "「{name}」已新增過，請勿重複上傳",
     "fileTooLargeForAi": "「{name}」檔案過大（超過 {size}MB），AI 將無法讀取內容",
-    "fileContentTruncated": "「{name}」內容較長，已截取前 {size} 萬字"
+    "fileContentTruncated": "「{name}」內容較長，已截取前 {size} 萬字",
+    "unsupportedAttachmentType": "僅支援文字、Word 和 PDF 檔案：{name}"
   },
   "tabs": {
     "script": "劇本",

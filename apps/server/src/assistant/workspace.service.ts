@@ -65,52 +65,86 @@ export class WorkspaceService {
   private async request<T>(
     incoming: HeadersLike,
     path: string,
-    options?: { method?: 'GET' | 'POST'; data?: unknown; timeoutMs?: number },
+    options?: {
+      method?: 'GET' | 'POST';
+      data?: unknown;
+      timeoutMs?: number;
+      maxRetries?: number;
+    },
   ): Promise<T> {
-    const controller = new AbortController();
-    const timeoutMs = options?.timeoutMs ?? 60_000;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const url = `${this.getBaseUrl(path)}${path}`;
     const method = options?.method ?? 'POST';
+    const maxRetries = options?.maxRetries ?? 0;
+    const timeoutMs = options?.timeoutMs ?? 60_000;
 
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: this.buildHeaders(incoming),
-        body:
-          options?.data === undefined
-            ? undefined
-            : JSON.stringify(options.data),
-        signal: controller.signal,
-      });
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        this.logger.error(
-          `[request] HTTP ${response.status} ${method} ${path}: ${errorText.slice(0, 300)} (cookie: ${incoming['cookie'] ? 'present' : 'MISSING'})`,
-        );
-        throw new Error(
-          errorText.includes('Not logged')
-            ? 'Not logged in!'
-            : `HTTP ${response.status}`,
-        );
+      try {
+        const startTime = Date.now();
+        const response = await fetch(url, {
+          method,
+          headers: this.buildHeaders(incoming),
+          body:
+            options?.data === undefined
+              ? undefined
+              : JSON.stringify(options.data),
+          signal: controller.signal,
+        });
+        const elapsed = Date.now() - startTime;
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          this.logger.error(
+            `[request] HTTP ${response.status} ${method} ${path} (${elapsed}ms): ${errorText.slice(0, 300)}`,
+          );
+          if (attempt < maxRetries && response.status >= 500) {
+            this.logger.warn(
+              `[request] Retrying ${method} ${path} (attempt ${attempt + 1}/${maxRetries})`,
+            );
+            await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+            continue;
+          }
+          throw new Error(
+            errorText.includes('Not logged')
+              ? 'Not logged in!'
+              : `HTTP ${response.status}`,
+          );
+        }
+
+        const body = (await response.json()) as WorkspaceApiBody<T>;
+        const isSuccess =
+          body.success === true || body.code === 200 || body.code === 'SUCCESS';
+        if (!isSuccess) {
+          const msg = body.msg || body.message || 'workspace 请求失败';
+          this.logger.error(
+            `[request] FAIL ${method} ${path} (${elapsed}ms) → code=${body.code} msg="${msg}"`,
+          );
+          throw new Error(msg);
+        }
+
+        this.logger.log(`[request] OK ${method} ${path} (${elapsed}ms)`);
+        return (body.data ?? null) as T;
+      } catch (error) {
+        if (
+          attempt < maxRetries &&
+          error instanceof Error &&
+          (error.name === 'AbortError' || error.message.includes('fetch'))
+        ) {
+          this.logger.warn(
+            `[request] ${error.message}, retrying ${method} ${path} (attempt ${attempt + 1}/${maxRetries})`,
+          );
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
       }
-
-      const body = (await response.json()) as WorkspaceApiBody<T>;
-      const isSuccess =
-        body.success === true || body.code === 200 || body.code === 'SUCCESS';
-      if (!isSuccess) {
-        const msg = body.msg || body.message || 'workspace 请求失败';
-        this.logger.error(
-          `[request] FAIL ${method} ${path} → code=${body.code} success=${body.success} msg="${msg}" cookie=${incoming['cookie'] ? 'present' : 'MISSING'}`,
-        );
-        throw new Error(msg);
-      }
-
-      return (body.data ?? null) as T;
-    } finally {
-      clearTimeout(timer);
     }
+
+    throw new Error(`[request] Max retries exceeded for ${method} ${path}`);
   }
 
   // ─── Asset routes ───────────────────────────────────────
@@ -480,10 +514,13 @@ export class WorkspaceService {
     episodeId: string,
     content: string,
   ) {
+    this.logger.log(
+      `[saveEpisodeScript] episode=${episodeId} content=${content.length} chars`,
+    );
     return this.request<WorkspaceRecord>(
       headers,
       '/api/user/project/scripts/episode/createOrUpdate',
-      { data: { episodeId, content } },
+      { data: { episodeId, content }, maxRetries: 2 },
     );
   }
 
@@ -582,6 +619,90 @@ export class WorkspaceService {
     });
   }
 
+  /**
+   * Batch create assets via the AI chat batch APIs.
+   *
+   * datas format: [["name", "description", "prompt"], ["角色A", "描述", "prompt"], ...]
+   * First row is header, rest are data rows. Header only supports: name, description, prompt.
+   */
+  /**
+   * List all episodes for a project. Returns array of { id, title, ... }.
+   */
+  async listEpisodes(
+    headers: HeadersLike,
+    projectId: string,
+  ): Promise<Array<{ id: string; title: string }>> {
+    const result = await this.request<{
+      list?: Array<{ id: unknown; title?: string }>;
+    }>(headers, '/api/user/world/list/episode', {
+      data: { productId: projectId, page: 1, pageSize: 999 },
+    });
+    return (result?.list ?? []).map((ep) => ({
+      id: String(ep.id),
+      title: String(ep.title ?? ''),
+    }));
+  }
+
+  async batchCreateRoles(
+    headers: HeadersLike,
+    worldId: string,
+    datas: string[][],
+  ) {
+    this.logger.log(
+      `[batchCreateRoles] ${datas.length - 1} roles for world ${worldId}`,
+    );
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/ai/chat/batch/create/role',
+      { data: { worldId, datas }, maxRetries: 2 },
+    );
+  }
+
+  async batchCreateScenes(
+    headers: HeadersLike,
+    worldId: string,
+    datas: string[][],
+  ) {
+    this.logger.log(
+      `[batchCreateScenes] ${datas.length - 1} scenes for world ${worldId}`,
+    );
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/ai/chat/batch/create/scene',
+      { data: { worldId, datas }, maxRetries: 2 },
+    );
+  }
+
+  async batchCreateProps(
+    headers: HeadersLike,
+    worldId: string,
+    datas: string[][],
+  ) {
+    this.logger.log(
+      `[batchCreateProps] ${datas.length - 1} props for world ${worldId}`,
+    );
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/ai/chat/batch/create/prop',
+      { data: { worldId, datas }, maxRetries: 2 },
+    );
+  }
+
+  async batchAddEpisodes(
+    headers: HeadersLike,
+    projectId: string,
+    titles: string[],
+  ) {
+    this.logger.log(
+      `[batchAddEpisodes] ${titles.length} episodes for project ${projectId}`,
+    );
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/user/world/batch/add/episode',
+      { data: { productId: projectId, titles }, maxRetries: 2 },
+    );
+  }
+
   async saveStoryboardDraft(
     headers: HeadersLike,
     data: {
@@ -591,6 +712,9 @@ export class WorkspaceService {
       autoload?: boolean;
     },
   ) {
+    this.logger.log(
+      `[saveStoryboardDraft] episode=${data.episodeId} rows=${data.rows.length} cols=${data.headers.join(',')}`,
+    );
     return this.request<WorkspaceRecord>(
       headers,
       '/api/ai/chat/save/storyboard',

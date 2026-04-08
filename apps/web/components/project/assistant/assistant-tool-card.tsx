@@ -370,10 +370,17 @@ function ConfigureParamsCard({
                 <input
                   type="number"
                   disabled={disabled}
-                  value={Number(values[field.key] ?? field.defaultValue)}
+                  value={String(values[field.key] ?? field.defaultValue)}
                   min={field.min}
                   max={field.max}
-                  onChange={(e) => updateValue(field.key, Number(e.target.value))}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    updateValue(field.key, raw === "" ? "" : Number(raw));
+                  }}
+                  onBlur={(e) => {
+                    const num = Number(e.target.value);
+                    if (!Number.isNaN(num)) updateValue(field.key, num);
+                  }}
                   className="w-full rounded-lg border border-border bg-muted/20 px-3 py-1.5 text-sm text-foreground outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
                 />
               ) : field.type === "select" ? (

@@ -21,7 +21,8 @@ export function createExecuteTools({
 }: AssistantToolContext) {
   return {
     update_project_settings: tool({
-      description: '更新当前项目的基础设置。指令明确且字段齐全时可直接调用。',
+      description:
+        'Update current project settings. Call directly when instructions are clear.',
       inputSchema: z.object({
         name: z.string().optional(),
         description: z.string().optional(),
@@ -41,7 +42,7 @@ export function createExecuteTools({
         });
         return buildMutationResult(
           'project.updated',
-          '项目设置已更新',
+          'Project settings updated',
           'project',
           context.projectId,
         );
@@ -49,7 +50,7 @@ export function createExecuteTools({
     }),
 
     create_episode: tool({
-      description: '为当前项目创建一个剧集。',
+      description: 'Create an episode for the current project.',
       inputSchema: z.object({ title: z.string().min(1) }),
       outputSchema: mutationResultSchema,
       execute: async ({ title }) => {
@@ -60,7 +61,7 @@ export function createExecuteTools({
         );
         return buildMutationResult(
           'episode.created',
-          `剧集「${title}」已创建`,
+          `Episode "${title}" created`,
           'episode',
           String(createdId),
         );
@@ -69,9 +70,9 @@ export function createExecuteTools({
 
     batch_create_episodes: tool({
       description:
-        '一次性批量创建多个剧集。分集映射确认后必须使用此工具一次性创建所有剧集，禁止逐个调用 create_episode。返回值包含 episodeMap（标题→ID映射），后续 save_episode_script 必须使用此映射中的 ID。',
+        'Batch create multiple episodes at once. Must use this instead of calling create_episode in a loop. Returns episodeMap (title→ID mapping).',
       inputSchema: z.object({
-        titles: z.array(z.string().min(1)).min(1).describe('剧集标题数组'),
+        titles: z.array(z.string().min(1)).min(1).describe('Episode titles'),
       }),
       execute: async ({ titles }) => {
         const episodeMap: Record<string, string> = {};
@@ -89,7 +90,7 @@ export function createExecuteTools({
         return {
           ...buildBatchMutationResult(
             'episode.batch_created',
-            `已创建 ${titles.length} 个剧集`,
+            `Created ${titles.length} episodes`,
             'episode',
             createdIds,
           ),
@@ -99,7 +100,8 @@ export function createExecuteTools({
     }),
 
     update_episode: tool({
-      description: '更新某个剧集的标题或简介。不用于写入剧本内容。',
+      description:
+        'Update an episode title or description. Not for saving script content.',
       inputSchema: z.object({
         id: z.string(),
         title: z.string().optional(),
@@ -110,7 +112,7 @@ export function createExecuteTools({
         await ws.updateEpisode(headers, input);
         return buildMutationResult(
           'episode.updated',
-          '剧集已更新',
+          'Episode updated',
           'episode',
           input.id,
         );
@@ -119,17 +121,17 @@ export function createExecuteTools({
 
     save_episode_script: tool({
       description:
-        '【仅在用户通过 propose_script 确认后调用】将剧本内容保存到指定剧集。禁止在未经 propose_script 确认的情况下直接调用此工具。',
+        'Save script content to a specific episode. Only call after user confirms via propose_script.',
       inputSchema: z.object({
         episodeId: z.string(),
-        content: z.string().describe('剧本 HTML 内容'),
+        content: z.string().describe('Script HTML content'),
       }),
       outputSchema: mutationResultSchema,
       execute: async ({ episodeId, content }) => {
         await ws.saveEpisodeScript(headers, episodeId, content);
         return buildMutationResult(
           'episode.updated',
-          '剧本已保存',
+          'Script saved',
           'episode',
           episodeId,
         );
@@ -137,14 +139,15 @@ export function createExecuteTools({
     }),
 
     delete_episode: tool({
-      description: '删除某个剧集。仅当用户明确点名要删除时调用。',
+      description:
+        'Delete an episode. Only when user explicitly requests deletion.',
       inputSchema: z.object({ id: z.string() }),
       outputSchema: mutationResultSchema,
       execute: async ({ id }) => {
         await ws.deleteEpisode(headers, id);
         return buildMutationResult(
           'episode.deleted',
-          '剧集已删除',
+          'Episode deleted',
           'episode',
           id,
         );
@@ -152,7 +155,7 @@ export function createExecuteTools({
     }),
 
     create_character: tool({
-      description: '创建一个角色到当前世界观。',
+      description: 'Create a character in the current world.',
       inputSchema: roleProposalSchema,
       outputSchema: mutationResultSchema,
       execute: async (input) => {
@@ -176,7 +179,7 @@ export function createExecuteTools({
         })) as Record<string, unknown>;
         return buildMutationResult(
           'character.created',
-          `角色「${input.name}」已创建`,
+          `Character "${input.name}" created`,
           'character',
           toEntityId(result),
         );
@@ -185,7 +188,7 @@ export function createExecuteTools({
 
     batch_create_characters: tool({
       description:
-        '【仅在用户通过 propose_characters 确认后调用】一次性创建多个角色。禁止在未经提案确认的情况下直接调用。',
+        'Batch create multiple characters. Only call after user confirms via propose_characters.',
       inputSchema: z.object({ items: z.array(roleProposalSchema).min(1) }),
       execute: async ({ items }) => {
         const createdIds: string[] = [];
@@ -213,7 +216,7 @@ export function createExecuteTools({
         }
         return buildBatchMutationResult(
           'character.batch_created',
-          `已创建 ${items.length} 个角色`,
+          `Created ${items.length} characters`,
           'character',
           createdIds,
         );
@@ -221,7 +224,7 @@ export function createExecuteTools({
     }),
 
     update_character: tool({
-      description: '更新一个角色。',
+      description: 'Update a character.',
       inputSchema: roleProposalSchema.extend({ id: z.string() }),
       outputSchema: mutationResultSchema,
       execute: async (input) => {
@@ -246,7 +249,7 @@ export function createExecuteTools({
         });
         return buildMutationResult(
           'character.updated',
-          '角色已更新',
+          'Character updated',
           'character',
           input.id,
         );
@@ -254,14 +257,15 @@ export function createExecuteTools({
     }),
 
     delete_character: tool({
-      description: '删除一个角色。仅当用户明确点名要删除时调用。',
+      description:
+        'Delete a character. Only when user explicitly requests deletion.',
       inputSchema: z.object({ id: z.string() }),
       outputSchema: mutationResultSchema,
       execute: async ({ id }) => {
         await ws.deleteCharacter(headers, id);
         return buildMutationResult(
           'character.deleted',
-          '角色已删除',
+          'Character deleted',
           'character',
           id,
         );
@@ -269,7 +273,7 @@ export function createExecuteTools({
     }),
 
     create_scene: tool({
-      description: '创建一个场景到当前世界观。',
+      description: 'Create a scene in the current world.',
       inputSchema: sceneProposalSchema,
       outputSchema: mutationResultSchema,
       execute: async (input) => {
@@ -284,7 +288,7 @@ export function createExecuteTools({
         })) as Record<string, unknown>;
         return buildMutationResult(
           'scene.created',
-          `场景「${input.name}」已创建`,
+          `Scene "${input.name}" created`,
           'scene',
           toEntityId(result),
         );
@@ -293,7 +297,7 @@ export function createExecuteTools({
 
     batch_create_scenes: tool({
       description:
-        '【仅在用户通过 propose_scenes 确认后调用】一次性创建多个场景。禁止在未经提案确认的情况下直接调用。',
+        'Batch create multiple scenes. Only call after user confirms via propose_scenes.',
       inputSchema: z.object({ items: z.array(sceneProposalSchema).min(1) }),
       execute: async ({ items }) => {
         const createdIds: string[] = [];
@@ -312,7 +316,7 @@ export function createExecuteTools({
         }
         return buildBatchMutationResult(
           'scene.batch_created',
-          `已创建 ${items.length} 个场景`,
+          `Created ${items.length} scenes`,
           'scene',
           createdIds,
         );
@@ -320,7 +324,7 @@ export function createExecuteTools({
     }),
 
     update_scene: tool({
-      description: '更新一个场景。',
+      description: 'Update a scene.',
       inputSchema: sceneProposalSchema.extend({ id: z.string() }),
       outputSchema: mutationResultSchema,
       execute: async (input) => {
@@ -336,7 +340,7 @@ export function createExecuteTools({
         });
         return buildMutationResult(
           'scene.updated',
-          '场景已更新',
+          'Scene updated',
           'scene',
           input.id,
         );
@@ -344,17 +348,23 @@ export function createExecuteTools({
     }),
 
     delete_scene: tool({
-      description: '删除一个场景。仅当用户明确点名要删除时调用。',
+      description:
+        'Delete a scene. Only when user explicitly requests deletion.',
       inputSchema: z.object({ id: z.string() }),
       outputSchema: mutationResultSchema,
       execute: async ({ id }) => {
         await ws.deleteScene(headers, id);
-        return buildMutationResult('scene.deleted', '场景已删除', 'scene', id);
+        return buildMutationResult(
+          'scene.deleted',
+          'Scene deleted',
+          'scene',
+          id,
+        );
       },
     }),
 
     create_prop: tool({
-      description: '创建一个道具到当前世界观。',
+      description: 'Create a prop in the current world.',
       inputSchema: propProposalSchema,
       outputSchema: mutationResultSchema,
       execute: async (input) => {
@@ -369,7 +379,7 @@ export function createExecuteTools({
         })) as Record<string, unknown>;
         return buildMutationResult(
           'prop.created',
-          `道具「${input.name}」已创建`,
+          `Prop "${input.name}" created`,
           'prop',
           toEntityId(result),
         );
@@ -378,7 +388,7 @@ export function createExecuteTools({
 
     batch_create_props: tool({
       description:
-        '【仅在用户通过 propose_props 确认后调用】一次性创建多个道具。禁止在未经提案确认的情况下直接调用。',
+        'Batch create multiple props. Only call after user confirms via propose_props.',
       inputSchema: z.object({ items: z.array(propProposalSchema).min(1) }),
       execute: async ({ items }) => {
         const createdIds: string[] = [];
@@ -397,7 +407,7 @@ export function createExecuteTools({
         }
         return buildBatchMutationResult(
           'prop.batch_created',
-          `已创建 ${items.length} 个道具`,
+          `Created ${items.length} props`,
           'prop',
           createdIds,
         );
@@ -405,7 +415,7 @@ export function createExecuteTools({
     }),
 
     update_prop: tool({
-      description: '更新一个道具。',
+      description: 'Update a prop.',
       inputSchema: propProposalSchema.extend({ id: z.string() }),
       outputSchema: mutationResultSchema,
       execute: async (input) => {
@@ -421,7 +431,7 @@ export function createExecuteTools({
         });
         return buildMutationResult(
           'prop.updated',
-          '道具已更新',
+          'Prop updated',
           'prop',
           input.id,
         );
@@ -429,17 +439,18 @@ export function createExecuteTools({
     }),
 
     delete_prop: tool({
-      description: '删除一个道具。仅当用户明确点名要删除时调用。',
+      description:
+        'Delete a prop. Only when user explicitly requests deletion.',
       inputSchema: z.object({ id: z.string() }),
       outputSchema: mutationResultSchema,
       execute: async ({ id }) => {
         await ws.deleteProp(headers, id);
-        return buildMutationResult('prop.deleted', '道具已删除', 'prop', id);
+        return buildMutationResult('prop.deleted', 'Prop deleted', 'prop', id);
       },
     }),
 
     fill_cell: tool({
-      description: '为当前剧集的某个分镜单元格写入内容。',
+      description: 'Fill a storyboard cell with content.',
       inputSchema: z.object({
         shotId: z.string(),
         shotColumnId: z.string(),
@@ -451,7 +462,7 @@ export function createExecuteTools({
         await ws.fillCell(headers, input);
         return buildMutationResult(
           'storyboard.cell_filled',
-          '分镜单元格已更新',
+          'Storyboard cell updated',
           'shot_value',
           `${input.shotId}:${input.shotColumnId}`,
         );
@@ -460,7 +471,7 @@ export function createExecuteTools({
 
     save_storyboard_draft: tool({
       description:
-        '【仅在用户通过 propose_storyboard_patch 确认后调用】将分镜表草稿保存到当前剧集。禁止在未经 propose_storyboard_patch 确认的情况下直接调用此工具。',
+        'Save storyboard draft to the current episode. Only call after user confirms via propose_storyboard_patch.',
       inputSchema: storyboardProposalSchema.extend({
         autoload: z.boolean().optional(),
       }),
@@ -474,7 +485,7 @@ export function createExecuteTools({
         });
         return buildMutationResult(
           'storyboard.saved',
-          '分镜草稿已写入当前剧集',
+          'Storyboard draft saved to current episode',
           'storyboard',
           requireEpisodeId(),
         );

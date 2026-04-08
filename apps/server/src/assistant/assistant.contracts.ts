@@ -30,6 +30,7 @@ export const assistantMutationActions = [
   'prop.batch_created',
   'storyboard.cell_filled',
   'storyboard.saved',
+  'storyboard.pipeline_applied',
 ] as const;
 
 export type AssistantMutationAction = (typeof assistantMutationActions)[number];

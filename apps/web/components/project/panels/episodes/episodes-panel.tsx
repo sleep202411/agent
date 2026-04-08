@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { IconLoader2, IconPlus, IconTrash } from "@tabler/icons-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { IconLoader2, IconPlus, IconRefresh, IconTrash } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { store } from "@/src/store";
 import {
   addEpisodeToStore,
   setActiveEpisodeId,
+  setEpisodes,
   removeEpisodeFromStore,
   selectCurrentInstance,
   type Episode,
@@ -51,6 +52,29 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
   const [editingEpisode, setEditingEpisode] = useState<Episode | null>(null);
   const [deletingEpisode, setDeletingEpisode] = useState<Episode | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const dispatch = useAppDispatch();
+
+  // Silent refresh when panel opens (if data exists)
+  const refreshEpisodes = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const data = await backendApi.post<{ list?: Episode[] }>("/api/user/world/list/episode", {
+        data: { productId: projectId, page: 1, pageSize: 999 },
+      });
+      if (data?.list) {
+        store.dispatch(setEpisodes(data.list));
+      }
+    } catch {
+      // silent fail
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (episodes.length > 0) {
+      void refreshEpisodes();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const currentEpisode = useMemo(
     () => episodes.find((episode) => String(episode.id) === String(activeEpisodeId)),
@@ -95,6 +119,16 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
         title={t("title")}
         onClose={onClose}
         loading={isLoading}
+        actions={
+          <button
+            type="button"
+            onClick={() => void refreshEpisodes()}
+            className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title={tc("refresh")}
+          >
+            <IconRefresh className="size-3.5" />
+          </button>
+        }
         footer={
           <Button className="w-full" size="lg" onClick={() => setCreateOpen(true)}>
             <IconPlus className="size-3.5" />

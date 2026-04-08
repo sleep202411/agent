@@ -79,7 +79,8 @@
     "fileExceedsSizeLimit": "{name} exceeds {size} MB, skipped",
     "duplicateFile": "\"{name}\" already added",
     "fileTooLargeForAi": "\"{name}\" is too large (over {size}MB), AI cannot read it",
-    "fileContentTruncated": "\"{name}\" is long, truncated to first {size}k chars"
+    "fileContentTruncated": "\"{name}\" is long, truncated to first {size}k chars",
+    "unsupportedAttachmentType": "Only text, Word, and PDF files supported: {name}"
   },
   "tabs": {
     "script": "Script",

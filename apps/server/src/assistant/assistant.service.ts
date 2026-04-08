@@ -8,6 +8,7 @@ import {
   type UIMessage,
 } from 'ai';
 import { AiService } from '../ai/ai.service';
+import { ScriptAgentService } from '../pipeline/script-agent.service';
 import { WorkspaceService, type WorkspaceContext } from './workspace.service';
 import { createGroupedAssistantTools } from './tools';
 import {
@@ -39,6 +40,7 @@ export class AssistantService {
   constructor(
     private readonly ai: AiService,
     private readonly workspace: WorkspaceService,
+    private readonly scriptAgent: ScriptAgentService,
   ) {}
 
   async chat(
@@ -74,23 +76,34 @@ export class AssistantService {
           : undefined,
     };
 
-    const tools = createGroupedAssistantTools({
-      headers: incomingHeaders,
-      ws: this.workspace,
-      context: wsContext,
-      requireWorldId: () => {
-        if (!wsContext.worldId)
-          throw new Error(
-            '当前项目缺少 worldId，暂时无法操作角色、场景或道具。',
-          );
-        return wsContext.worldId;
+    // Collect attachment data via side channel (not through AI output)
+    const messages = payload.messages as AssistantMessage[];
+    const attachmentFullText = this.collectAttachmentTexts(messages);
+    const attachmentInfos = this.collectAttachmentInfos(messages);
+
+    const tools = createGroupedAssistantTools(
+      {
+        headers: incomingHeaders,
+        ws: this.workspace,
+        context: wsContext,
+        requireWorldId: () => {
+          if (!wsContext.worldId)
+            throw new Error(
+              '当前项目缺少 worldId，暂时无法操作角色、场景或道具。',
+            );
+          return wsContext.worldId;
+        },
+        requireEpisodeId: () => {
+          if (!wsContext.episodeId)
+            throw new Error('当前未选中剧集，暂时无法读取或写入分镜。');
+          return wsContext.episodeId;
+        },
+        getAttachmentText: () => attachmentFullText,
+        getAttachments: () => attachmentInfos,
       },
-      requireEpisodeId: () => {
-        if (!wsContext.episodeId)
-          throw new Error('当前未选中剧集，暂时无法读取或写入分镜。');
-        return wsContext.episodeId;
-      },
-    });
+      this.ai,
+      this.scriptAgent,
+    );
 
     this.logger.log('Fetching project context...');
     const projectContext = await this.workspace.getProjectContextSummary(
@@ -147,7 +160,7 @@ export class AssistantService {
         wsContext.locale,
       ),
       messages: modelMessages,
-      stopWhen: stepCountIs(12),
+      stopWhen: stepCountIs(20),
       temperature: 0.2,
       onError: ({ error }) => {
         const msg = error instanceof Error ? error.message : String(error);
@@ -246,78 +259,10 @@ export class AssistantService {
 8. 当用户上传了附件时，必须优先从附件内容中分析和提取信息。附件内容在消息的 [附件上下文] 部分。
 9. 图片生成功能正在开发中，暂不可用。
 
-[剧本拆解全流程 — 必须严格按顺序执行]
-当用户要求"拆解剧本"、"分集"、"把这个小说改编成短剧"等任务时，必须按以下固定步骤执行：
-
-Step 1: 采集参数
-- 调用 configure_params 让用户配置：集数、每集时长(分钟，默认2)、每分钟镜头数(默认15，范围12-20)
-- 这三个参数是全链路的核心约束，后续所有步骤都必须遵守
-
-Step 2: 分集映射（Episode Mapping）— 一次性处理所有集
-- 分析原文/附件内容，一次性生成全部集数的分集映射表
-- 每集包含：集号、对应原文范围、标题、一句话剧情、起承转合、结尾钩子、场景列表、出场角色
-- 用文本向用户展示完整映射表，调用 confirm_action 让用户确认
-- 确认后调用 batch_create_episodes 一次性创建所有剧集（禁止逐个创建）
-
-Step 3: 资产提取（角色 + 场景 + 道具）— 从全部内容中充分提取
-- 从原文/附件的全部内容中提取所有角色、场景、道具（不是只看第一集）
-- 【充分提取 — 数量参考】：
-  · 角色：提取所有有台词或重要戏份的人物。10集以上的项目通常有10-30个角色。
-  · 场景：提取原文中出现的所有具体地点（如"周家大厅"、"厨房"、"街道"、"祠堂"、"比赛现场"等），不要合并为笼统的"房间"。10集以上通常有15-40个场景。
-  · 道具：提取剧情中出现的所有关键物品（武器、信物、食材、文件、工具等）。通常有10-20个道具。
-  · 如果你提取出的场景/道具少于10个，重新扫描全文补充遗漏。
-- 【去重】先检查上下文中的"已有角色/场景/道具"，跳过已存在的同名实体
-- 同时调用 propose_characters + propose_scenes + propose_props
-- 用户确认后批量创建
-
-Step 4: 逐集生成剧本
-- 按 Step 2 的映射，逐集生成可拍摄格式剧本
-- 每集用 propose_script 展示给用户确认
-- 用户确认后通过 save_episode_script 写入
-- 完成一集后调用 confirm_action 询问"继续下一集？"
-
-Step 5: 逐集生成分镜
-- 基于该集剧本，生成镜头级分镜表
-- 每集用 propose_storyboard_patch 展示给用户确认
-- 用户确认后写入分镜表
-- 完成一集后调用 confirm_action 询问"继续下一集？"
-
-[剧本格式 — Shootable Script Format]
-剧本必须使用可拍摄格式，禁止纯散文：
-- 每段以时间码开头（如 0:00-0:15），时间连续覆盖整集时长
-- 画面描述行以 [Visual] 开头（现在时态 + 主动语态，可拍摄的外显画面）
-- 音效行以 [SFX/Ambience] 开头（动词大写）
-- 角色对白：角色名 (括号语) 台词
-- 内心独白用 (V.O.) 标注
-输出语言必须跟随用户输入语言（中文输入→中文输出）。示例：
-0:00-0:15
-[Visual] 外景 天界斩仙台 - 白天。云端仙境，流光溢彩，斩仙台高耸入云。天兵天将用铁链锁住周禾，按压在斩仙台的铡刀下。
-[Visual] 周禾身着白色仙袍，面容刚毅，眼中带着不甘与愤怒。
-[SFX/Ambience] 仙界钟声回荡；铁链哗哗作响；远处众仙窃窃私语。
-玉皇大帝 (威严地) 周禾，你身为天上厨神，竟敢勾结魔界，泄露天庭食谱。今日在斩仙台，朕要亲自监斩！
-
-[分镜质量标准]
-1. 分镜表每行 = 一个镜头（3-5秒），不是集摘要。禁止把"第N集标题"写入分镜表。
-2. 镜头密度：每分钟 12-20 个镜头（Step 1 参数约束）
-3. 画面描述(description)必须是电影级可拍摄描述，120-220字，包含：
-   - 场景环境（光影、空间、物件、氛围）
-   - 角色外貌、服装、姿态、表情细节
-   - 色调、材质、空间层次
-   ❌ 错误示例：掌柜盘算孔乙己的欠账，面露不满。
-   ✅ 正确示例：民国初期，江南小镇街道，咸亨酒店门口曲尺形柜台，木质招牌。柜台后站着一位中年掌柜，身穿长衫，低头翻看泛黄账本，一手拨算盘，眉头微蹙，嘴角下撇。柜台上摆着未盖的酒坛和几只碗。街道青石板路，薄雾，淡雅怀旧色调，写实风格，电影感光影。
-4. Image_Prompt 格式：[主体描述], [动作/姿态], [环境/场景], [光影/色彩], [风格], [画质参数]，120-220字
-5. Video_Prompt 三段式（英文）：1) Camera movement 2) Visual description 3) Sound
-6. 场景列只写稳定环境名（不写动作/事件），道具列只写实体道具（不写环境/天气/声音）
-7. 同一 Scene_ID 的所有镜头复用同一套光线(Scene_Lighting)和服装(Costume)
-8. dialogue 和 narration 必须区分：台词=角色说的话，旁白=VO/内心独白
-9. 【语言规则】中文输入时，所有字段必须用中文：
-   - description（画面描述）：中文
-   - video_prompt（视频提示词）：中文
-   - style_planting（风格）：中文
-   - movement（运镜）：中文（如"推镜"、"摇镜"、"跟拍"，不要写"Push"、"Pan"）
-   - shot_size（景别）：中文（如"近景"、"中景"、"全景"，不要写"Close-up"、"Medium shot"）
-   - perspective（视角）：中文（如"平视"、"俯拍"、"仰拍"，不要写"Eye level"、"High angle"）
-   - dialogue（台词）：中文
+[剧本拆解]
+当用户要求"拆解剧本"、"生成分镜"、"把小说改编成短剧"等任务时：
+- 如果用户上传了文件或提供了完整剧本文本，使用 start_pipeline 工具启动智能分镜 pipeline。pipeline 会自动完成角色提取、场景拆分、镜头细化，用户在过程中确认。
+- 如果用户只是想讨论剧本结构、写一小段对白、或调整某个场景，使用常规对话或 propose_script 工具。
 
 [资产去重规则]
 创建角色/场景/道具前，必须检查项目上下文中的"已有角色/场景/道具"列表，跳过同名实体。禁止创建重名资产。`;
@@ -365,15 +310,61 @@ Step 5: 逐集生成分镜
   }
 
   private buildAttachmentContext(attachments: Attachment[]) {
+    const AI_EXCERPT_LIMIT = 2000; // AI only sees a short excerpt for decision-making
     const lines = attachments.map((att, i) => {
       const parts = [
         `${i + 1}. 文件名：${att.name}`,
         `类型：${att.mimeType || 'unknown'}`,
+        `字数：${att.excerpt?.length ?? 0}`,
       ];
       if (att.url) parts.push(`地址：${att.url}`);
-      if (att.excerpt) parts.push(`内容摘要：${att.excerpt}`);
+      if (att.excerpt) {
+        const truncated =
+          att.excerpt.length > AI_EXCERPT_LIMIT
+            ? att.excerpt.slice(0, AI_EXCERPT_LIMIT) +
+              '\n...(内容已截断，完整文本已通过附件通道传递，可直接调用 start_pipeline 处理)'
+            : att.excerpt;
+        parts.push(`内容摘要：${truncated}`);
+      }
       return parts.join('\n');
     });
     return `[附件上下文]\n${lines.join('\n\n')}`;
+  }
+
+  /**
+   * Collect full attachment text from all user messages.
+   * Only contains text for plain-text files (PDF/DOCX excerpts are empty).
+   */
+  private collectAttachmentTexts(messages: AssistantMessage[]): string {
+    const texts: string[] = [];
+    for (const msg of messages) {
+      if (msg.role !== 'user') continue;
+      for (const att of msg.metadata?.attachments ?? []) {
+        if (att.excerpt) texts.push(att.excerpt);
+      }
+    }
+    return texts.join('\n\n');
+  }
+
+  /**
+   * Collect attachment metadata from all user messages.
+   * Used by pipeline tools to download files from OSS for server-side extraction.
+   */
+  private collectAttachmentInfos(
+    messages: AssistantMessage[],
+  ): import('./tools/types').AttachmentInfo[] {
+    const result: import('./tools/types').AttachmentInfo[] = [];
+    for (const msg of messages) {
+      if (msg.role !== 'user') continue;
+      for (const att of msg.metadata?.attachments ?? []) {
+        result.push({
+          name: att.name,
+          mimeType: att.mimeType,
+          url: att.url,
+          excerpt: att.excerpt,
+        });
+      }
+    }
+    return result;
   }
 }

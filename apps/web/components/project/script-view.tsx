@@ -194,11 +194,15 @@ export function ScriptView() {
 
   useEffect(() => {
     if (!activeEpisodeId || !editor) return;
-    // Skip reload if user has unsaved edits (avoid overwriting)
-    if (changed) return;
 
-    setLoading(true);
+    setChanged(false);
     abortRef.current?.();
+
+    // Silent reload if editor already has content; show loading only on first load
+    const hasExistingContent = editor.getText().trim().length > 0;
+    if (!hasExistingContent) {
+      setLoading(true);
+    }
 
     backendApi
       .post<{ content?: string }>(`/api/user/project/scripts/episode/detail/${activeEpisodeId}`)
@@ -208,8 +212,10 @@ export function ScriptView() {
         editor.commands.setContent(content || "<p></p>");
       })
       .catch((error) => {
-        console.error("[ScriptView] 加载剧本失败:", error);
-        toast.error(t("loadFailed"));
+        console.error("[ScriptView] load script failed:", error);
+        if (!hasExistingContent) {
+          toast.error(t("loadFailed"));
+        }
       })
       .finally(() => setLoading(false));
   }, [activeEpisodeId, episodesVersion, editor]);

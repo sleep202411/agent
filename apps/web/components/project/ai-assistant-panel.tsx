@@ -411,6 +411,40 @@ function AssistantFilePreview({ attachment }: { attachment: AssistantAttachment 
   );
 }
 
+/**
+ * Animated thinking indicator for pipeline tools.
+ * Cycles through step descriptions to show the AI is actively working.
+ */
+function PipelineThinkingIndicator({ label, steps }: { label: string; steps: string[] }) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+      if (steps.length > 0) {
+        setStepIndex((prev) => (prev + 1) % steps.length);
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [steps.length]);
+
+  return (
+    <div className="rounded-xl border border-dashed border-border/70 bg-black/10 px-3 py-2">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <IconLoader2 className="size-3.5 animate-spin" />
+        <span>{label}</span>
+        <span className="text-muted-foreground/50">({elapsed}s)</span>
+      </div>
+      {steps.length > 0 ? (
+        <div className="mt-1.5 text-xs text-muted-foreground/70 transition-opacity duration-500">
+          {steps[stepIndex]}...
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MessageBubble({
   message,
   sending,
@@ -512,9 +546,67 @@ function MessageBubble({
             }
 
             if (isAssistantToolPart(part)) {
+              const toolName = getAssistantToolName(part);
+              // Script agent tools: show as thinking process, not as a card
+              const agentToolLabels: Record<string, { label: string; steps: string[] }> = {
+                analyze_text: {
+                  label: "Analyzing script",
+                  steps: [
+                    "Extracting characters and aliases",
+                    "Identifying scenes and locations",
+                    "Generating chapter outline",
+                    "Detecting language and style",
+                  ],
+                },
+                map_episodes: {
+                  label: "Mapping episodes",
+                  steps: [
+                    "Analyzing narrative arcs",
+                    "Distributing chapters to episodes",
+                    "Balancing episode lengths",
+                  ],
+                },
+                create_episodes_and_assets: { label: "Creating episodes & assets", steps: [] },
+                generate_scripts: {
+                  label: "Generating scripts",
+                  steps: [
+                    "Writing shootable format",
+                    "Adding dialogue and actions",
+                    "Inserting visual descriptions",
+                    "Saving to episodes",
+                  ],
+                },
+                generate_storyboard: {
+                  label: "Generating storyboard",
+                  steps: [
+                    "Composing shot descriptions",
+                    "Setting camera angles",
+                    "Writing video prompts",
+                    "Saving to episodes",
+                  ],
+                },
+              };
+              const pipelineInfo = agentToolLabels[toolName];
+              if (
+                pipelineInfo &&
+                part.state !== "output-available" &&
+                part.state !== "output-error"
+              ) {
+                return (
+                  <PipelineThinkingIndicator
+                    key={`${message.id}-${part.toolCallId}-thinking`}
+                    label={pipelineInfo.label}
+                    steps={pipelineInfo.steps}
+                  />
+                );
+              }
+              // Pipeline tools with output — hide entirely (AI text handles the messaging)
+              if (pipelineInfo) {
+                return null;
+              }
               return (
                 <AssistantToolCard
-                  key={`${message.id}-${part.toolCallId}-${getAssistantToolName(part)}-${part.state}`}
+                  key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
                   part={part}
                   disabled={sending}
                   processing={sending && submittingToolCallId === part.toolCallId}
