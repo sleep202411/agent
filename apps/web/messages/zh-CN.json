@@ -515,8 +515,8 @@
     "addAtLeastOneOption": "请至少添加一个选项",
     "batchGenerateImages": "批量生成图片",
     "batchGenerateVideos": "批量生成视频",
-    "batchGenerateImagesDesc": "设置模型和尺寸后，按旧 workspace 队列逐个生成。",
-    "batchGenerateVideosDesc": "设置模型、尺寸和时长后，按旧 workspace 队列逐个生成。",
+    "batchGenerateImagesDesc": "设置模型和尺寸后，按队列逐个生成。",
+    "batchGenerateVideosDesc": "设置模型、尺寸和时长后，按队列逐个生成。",
     "modelLabel": "模型",
     "loadingModels": "加载模���中...",
     "selectModel": "请选择模型",
@@ -1308,7 +1308,7 @@
       "pro": "Pro · 专业版"
     },
     "benefits": {
-      "bonusCredits": "赠送 {value} 积分",
+      "bonusCredits": "包含 {value} 积分",
       "creditDiscount": "积分购买享 9 折",
       "limitedAgent": "限量使用 StoryOS",
       "unlimitedAgent": "无限制使用 StoryOS",

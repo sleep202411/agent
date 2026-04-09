@@ -1308,7 +1308,7 @@
       "pro": "Pro"
     },
     "benefits": {
-      "bonusCredits": "{value} bonus credits",
+      "bonusCredits": "Includes {value} credits",
       "creditDiscount": "10% off credit purchases",
       "limitedAgent": "Limited AI Agent access",
       "unlimitedAgent": "Unlimited AI Agent access",

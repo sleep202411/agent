@@ -515,8 +515,8 @@
     "addAtLeastOneOption": "請至少新增一個選項",
     "batchGenerateImages": "批次生成圖片",
     "batchGenerateVideos": "批次生成影片",
-    "batchGenerateImagesDesc": "設定模型和尺寸後，按舊 workspace 佇列逐個生成。",
-    "batchGenerateVideosDesc": "設定模型、尺寸和時長後，按舊 workspace 佇列逐個生成。",
+    "batchGenerateImagesDesc": "設定模型和尺寸後，按佇列逐個生成。",
+    "batchGenerateVideosDesc": "設定模型、尺寸和時長後，按佇列逐個生成。",
     "modelLabel": "模型",
     "loadingModels": "載入模型中...",
     "selectModel": "請選擇模型",
@@ -1308,7 +1308,7 @@
       "pro": "Pro · 專業版"
     },
     "benefits": {
-      "bonusCredits": "贈送 {value} 積分",
+      "bonusCredits": "包含 {value} 積分",
       "creditDiscount": "積分購買享 9 折",
       "limitedAgent": "限量使用 StoryOS",
       "unlimitedAgent": "無限制使用 StoryOS",
