@@ -19,25 +19,19 @@ WORKDIR /app
 COPY --from=deps /app/ ./
 COPY --from=pruner /app/out/full/ .
 
-# Vite env vars (VITE_ prefix, baked into client bundle at build time)
+# Build args
 ARG VITE_OSS_BASE_URL
-ENV VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL
-
 ARG VITE_SITE_REGION
-ENV VITE_SITE_REGION=$VITE_SITE_REGION
-
 ARG VITE_PARENT_ORIGIN
-ENV VITE_PARENT_ORIGIN=$VITE_PARENT_ORIGIN
-
-# Server-only env vars (used by vite.config proxy, not baked into client)
 ARG SERVER_URL
-ENV SERVER_URL=$SERVER_URL
-
 ARG JAVA_STUDIO_URL
-ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
-
 ARG JAVA_CONTENT_URL
-ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
+
+# Write .env file for Vite to pick up VITE_* vars at build time
+RUN printf "VITE_OSS_BASE_URL=%s\nVITE_SITE_REGION=%s\nVITE_PARENT_ORIGIN=%s\nSERVER_URL=%s\nJAVA_STUDIO_URL=%s\nJAVA_CONTENT_URL=%s\n" \
+  "$VITE_OSS_BASE_URL" "$VITE_SITE_REGION" "$VITE_PARENT_ORIGIN" \
+  "$SERVER_URL" "$JAVA_STUDIO_URL" "$JAVA_CONTENT_URL" \
+  > apps/web/.env.production
 
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npx turbo run build --filter=web
