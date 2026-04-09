@@ -34,9 +34,13 @@ ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
 ARG NEXT_PUBLIC_SITE_REGION
 ENV NEXT_PUBLIC_SITE_REGION=$NEXT_PUBLIC_SITE_REGION
 
+ARG NEXT_PUBLIC_PARENT_ORIGIN
+ENV NEXT_PUBLIC_PARENT_ORIGIN=$NEXT_PUBLIC_PARENT_ORIGIN
+
 # Next.js 16 (Turbopack) reads env from .env files, not process.env
 RUN echo "NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL" > apps/web/.env.local && \
     echo "NEXT_PUBLIC_SITE_REGION=$NEXT_PUBLIC_SITE_REGION" >> apps/web/.env.local && \
+    echo "NEXT_PUBLIC_PARENT_ORIGIN=$NEXT_PUBLIC_PARENT_ORIGIN" >> apps/web/.env.local && \
     echo "SERVER_URL=$SERVER_URL" >> apps/web/.env.local && \
     echo "JAVA_STUDIO_URL=$JAVA_STUDIO_URL" >> apps/web/.env.local && \
     echo "JAVA_CONTENT_URL=$JAVA_CONTENT_URL" >> apps/web/.env.local

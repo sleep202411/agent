@@ -204,18 +204,11 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
       ]);
       setMembers(memberList ?? []);
       if (code) {
-        let origin: string | null = null;
-        try {
-          origin = window.top?.location?.origin ?? null;
-        } catch {
-          /* cross-origin */
-        }
-        if (origin) {
-          const worldId = String(project.worldId ?? "");
-          setInviteLink(
-            `${origin}/pages/invite/invite?code=${String(code)}&projectId=${String(project.id)}${worldId ? `&worldId=${worldId}` : ""}`
-          );
-        }
+        const origin = process.env.NEXT_PUBLIC_PARENT_ORIGIN || window.location.origin;
+        const worldId = String(project.worldId ?? "");
+        setInviteLink(
+          `${origin}/pages/invite/invite?code=${String(code)}&projectId=${String(project.id)}${worldId ? `&worldId=${worldId}` : ""}`
+        );
       }
     } catch (error) {
       console.error("[ProjectTeamDialog] load failed:", error);
