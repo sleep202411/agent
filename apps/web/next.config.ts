@@ -28,6 +28,12 @@ const nextConfig: NextConfig = {
         destination: `${serverUrl}/agent/:path*`,
         locale: false,
       });
+      // Progress endpoint for background analyze (non-streaming, rewrite is fine)
+      rules.push({
+        source: "/api/assistant/progress/:path*",
+        destination: `${serverUrl}/assistant/progress/:path*`,
+        locale: false,
+      });
     }
 
     // ─── Java Studio Service (8090): /api/*, /anon/*, /studio/*

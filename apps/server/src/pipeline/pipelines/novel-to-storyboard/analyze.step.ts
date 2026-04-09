@@ -20,9 +20,9 @@ const logger = new Logger('AnalyzeStep');
  * Above this, split into chunks and analyze in parallel.
  */
 const FULL_TEXT_THRESHOLD = 30_000;
-const CHUNK_TARGET_SIZE = 10_000;
+const CHUNK_TARGET_SIZE = 15_000;
 const CHUNK_OVERLAP = 500;
-const ANALYZE_CONCURRENCY = 5;
+const ANALYZE_CONCURRENCY = 8;
 
 // ── Prompts ──
 
@@ -157,11 +157,19 @@ function codeMergeResults(partials: AnalyzeResult[]): AnalyzeResult {
 
 // ── Main ──
 
+export type AnalyzeProgressCallback = (progress: {
+  phase: 'chunking' | 'analyzing' | 'merging' | 'deduping' | 'done';
+  current: number;
+  total: number;
+  message: string;
+}) => void;
+
 export async function analyzeStep(
   _input: unknown,
   context: AnalyzeContext,
   emit: EmitFn,
   model: LanguageModelV3,
+  onProgress?: AnalyzeProgressCallback,
 ): Promise<AnalyzeResult> {
   const text = context.input.text as string;
   logger.log(
@@ -205,12 +213,11 @@ export async function analyzeStep(
     );
     logger.log(`Chunk sizes: ${chunks.map((c) => c.length).join(', ')}`);
 
-    emit({
-      type: 'step:progress',
-      stepId: 'analyze',
+    onProgress?.({
+      phase: 'chunking',
       current: 0,
-      total: chunks.length + 1, // +1 for dedup step
-      message: `文本较长（${text.length} 字），拆分为 ${chunks.length} 段并行分析...`,
+      total: chunks.length,
+      message: `Split into ${chunks.length} chunks`,
     });
 
     // Phase 1: Parallel chunk analysis
@@ -234,12 +241,11 @@ export async function analyzeStep(
       logger.log(
         `Chunk ${i + 1} done: ${object.characters.length} chars, ${object.locations.length} locs`,
       );
-      emit({
-        type: 'step:progress',
-        stepId: 'analyze',
+      onProgress?.({
+        phase: 'analyzing',
         current: completed,
-        total: chunks.length + 1,
-        message: `已分析 ${completed}/${chunks.length} 段`,
+        total: chunks.length,
+        message: `Analyzed ${completed}/${chunks.length} chunks`,
       });
       return object;
     });
@@ -253,25 +259,23 @@ export async function analyzeStep(
     );
 
     // Phase 3: LLM dedup (semantic merge)
-    emit({
-      type: 'step:progress',
-      stepId: 'analyze',
-      current: chunks.length,
-      total: chunks.length + 1,
-      message: `正在用 AI 去重合并 ${codeMerged.characters.length} 个角色、${codeMerged.locations.length} 个场景...`,
+    onProgress?.({
+      phase: 'deduping',
+      current: 0,
+      total: 1,
+      message: `Deduplicating ${codeMerged.characters.length} characters, ${codeMerged.locations.length} locations...`,
     });
 
+    // Slim dedup input: only names + aliases (no descriptions) to reduce tokens
     const dedupInput = JSON.stringify(
       {
         characters: codeMerged.characters.map((c) => ({
           name: c.name,
           aliases: c.aliases,
           role: c.role,
-          description: c.description.slice(0, 100),
         })),
         locations: codeMerged.locations.map((l) => ({
           name: l.name,
-          description: l.description.slice(0, 80),
         })),
       },
       null,
