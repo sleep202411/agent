@@ -21,6 +21,7 @@ void i18n.use(initReactI18next).init({
     suffix: "}",
   },
   returnNull: false,
+  showSupportNotice: false,
 });
 
 export default i18n;

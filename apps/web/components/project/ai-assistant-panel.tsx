@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconArrowsMaximize,
   IconArrowsMinimize,
-  IconCheck,
   IconChevronDown,
   IconFileText,
   IconLayoutGrid,
@@ -381,88 +380,6 @@ function AssistantFilePreview({ attachment }: { attachment: AssistantAttachment 
 }
 
 /**
- * Progress indicator for background analyze_text.
- * Polls /api/assistant/progress/:sessionId every 3s.
- * Auto-sends a chat message when analysis completes.
- */
-function AnalyzeProgressIndicator({
-  sessionId,
-  onComplete,
-}: {
-  sessionId: string;
-  onComplete: () => void;
-}) {
-  const [progress, setProgress] = useState({
-    phase: "starting",
-    current: 0,
-    total: 0,
-    message: "Starting...",
-  });
-  const completedRef = useRef(false);
-
-  useEffect(() => {
-    if (!sessionId || completedRef.current) return;
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/aurora/assistant/progress/${sessionId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setProgress(data);
-          if (data.phase === "done" && !completedRef.current) {
-            completedRef.current = true;
-            onComplete();
-          }
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    void poll();
-    const interval = setInterval(() => void poll(), 3000);
-    return () => clearInterval(interval);
-  }, [sessionId, onComplete]);
-
-  const isDone = progress.phase === "done";
-  const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
-
-  return (
-    <div
-      className={cn(
-        "rounded-xl border border-dashed px-3 py-2",
-        isDone ? "border-emerald-500/30 bg-emerald-500/10" : "border-border/70 bg-black/10"
-      )}
-    >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {isDone ? (
-          <IconCheck className="size-3.5 text-emerald-500" />
-        ) : (
-          <IconLoader2 className="size-3.5 animate-spin" />
-        )}
-        <span>{isDone ? "Analysis complete" : "Analyzing script"}</span>
-        {!isDone && progress.total > 0 ? (
-          <span className="text-muted-foreground/50">
-            {progress.current}/{progress.total} ({percent}%)
-          </span>
-        ) : null}
-      </div>
-      {progress.message ? (
-        <div className="mt-1.5 text-xs text-muted-foreground/70">{progress.message}</div>
-      ) : null}
-      {!isDone && progress.total > 0 ? (
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted/30">
-          <div
-            className="h-full rounded-full bg-primary/60 transition-all duration-500"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/**
  * Animated thinking indicator for pipeline tools.
  * Cycles through step descriptions to show the AI is actively working.
  */
@@ -648,27 +565,6 @@ function MessageBubble({
                     key={`${message.id}-${part.toolCallId}-thinking`}
                     label={pipelineInfo.label}
                     steps={pipelineInfo.steps}
-                  />
-                );
-              }
-              // analyze_text with background processing — show progress indicator
-              if (
-                toolName === "analyze_text" &&
-                part.state === "output-available" &&
-                part.output &&
-                typeof part.output === "object" &&
-                "sessionId" in part.output &&
-                "characters" in part.output &&
-                (part.output as { characters: number }).characters === 0
-              ) {
-                const output = part.output as { sessionId: string };
-                return (
-                  <AnalyzeProgressIndicator
-                    key={`${message.id}-${part.toolCallId}-progress`}
-                    sessionId={output.sessionId}
-                    onComplete={() => {
-                      // Nothing — user will see "done" state and send "continue"
-                    }}
                   />
                 );
               }

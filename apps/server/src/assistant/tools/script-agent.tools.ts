@@ -96,8 +96,6 @@ export function createScriptAgentTools(
       description:
         'Analyze an uploaded script/novel to extract characters, locations, and outline. ' +
         'Must be called AFTER configure_params. Text is read from the uploaded attachment automatically. ' +
-        'For short texts (<30K chars), returns results immediately. ' +
-        'For long texts, returns status "processing" — the frontend will show progress and auto-continue when done. ' +
         'Do NOT restate the text content.',
       inputSchema: z.object({
         title: z.string().optional().describe('Script/novel title'),
@@ -120,76 +118,7 @@ export function createScriptAgentTools(
         await store.saveText(sessionId, text);
         await store.saveState(sessionId, { title, config: config ?? {} });
 
-        const isLongText = text.length > 30_000;
-
-        if (isLongText) {
-          // Long text: run in background, return immediately
-          logger.log(`Long text detected, running analyze in background`);
-          await store.saveProgress(sessionId, {
-            phase: 'chunking',
-            current: 0,
-            total: 0,
-            message: 'Starting analysis...',
-          });
-
-          // Fire-and-forget
-          void (async () => {
-            try {
-              const context = {
-                input: { text, config: config ?? {} },
-                global: {} as Record<string, unknown>,
-                stepResults: {} as Record<string, unknown>,
-              };
-              const noopEmit = () => {};
-              const result = await analyzeStep(
-                undefined,
-                context,
-                noopEmit,
-                model,
-                (progress) => {
-                  void store.saveProgress(sessionId, progress);
-                },
-              );
-
-              await store.saveState(sessionId, {
-                title,
-                config: config ?? {},
-                analyze: result,
-                language: result.language,
-                style: result.style,
-              });
-              await store.saveProgress(sessionId, {
-                phase: 'done',
-                current: 1,
-                total: 1,
-                message: `Done. ${result.characters.length} characters, ${result.locations.length} locations.`,
-              });
-              logger.log(
-                `Background analyze done: ${result.characters.length} chars, ${result.locations.length} locs`,
-              );
-            } catch (error) {
-              logger.error(`Background analyze failed: ${error}`);
-              await store.saveProgress(sessionId, {
-                phase: 'done',
-                current: 0,
-                total: 0,
-                message: `Analysis failed: ${error instanceof Error ? error.message : String(error)}`,
-              });
-            }
-          })();
-
-          return {
-            sessionId,
-            characters: 0,
-            locations: 0,
-            outlineSections: 0,
-            language: 'detecting...',
-            style: 'detecting...',
-            summary: `Analysis started in background for ${text.length} characters. The frontend will show progress.`,
-          };
-        }
-
-        // Short text: run synchronously
+        // Run synchronously — SSE stream stays alive during execution
         const context = {
           input: { text, config: config ?? {} },
           global: {} as Record<string, unknown>,

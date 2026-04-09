@@ -84,35 +84,6 @@ export class ScriptAgentService implements OnModuleDestroy {
   }
 
   /**
-   * Save/get progress for long-running operations (e.g. analyze).
-   * Separate from state to allow frequent updates without rewriting full state.
-   */
-  async saveProgress(
-    sessionId: string,
-    progress: {
-      phase: string;
-      current: number;
-      total: number;
-      message: string;
-    },
-  ): Promise<void> {
-    await this.set(`${sessionId}:progress`, JSON.stringify(progress));
-  }
-
-  async getProgress(
-    sessionId: string,
-  ): Promise<{
-    phase: string;
-    current: number;
-    total: number;
-    message: string;
-  } | null> {
-    const raw = await this.get(`${sessionId}:progress`);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  }
-
-  /**
    * Save large text separately (not in state JSON) to keep state compact.
    */
   async saveText(sessionId: string, text: string): Promise<void> {
