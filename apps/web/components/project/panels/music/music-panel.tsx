@@ -1,8 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconPlus } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { backendApi, type Paginated } from "@/src/lib/api";

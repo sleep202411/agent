@@ -1,6 +1,4 @@
-"use client";
-
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Field, FieldLabel } from "@/components/ui/field";
 import type { EditMode } from "./video-types";
 

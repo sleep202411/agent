@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { MOCK_CREATORS } from "@/components/creators/creators-mock";
 import { CreatorsHero } from "@/components/creators/creators-hero";

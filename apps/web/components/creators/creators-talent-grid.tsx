@@ -1,5 +1,3 @@
-"use client";
-
 import { SKILL_OPTIONS, LEVEL_OPTIONS, SORT_OPTIONS, type Creator } from "./creators-mock";
 import { CreatorsTalentCard } from "./creators-talent-card";
 

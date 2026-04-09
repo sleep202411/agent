@@ -1,7 +1,5 @@
-"use client";
-
 import { IconMusic } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import type { AssetRecord } from "@/src/types/workspace";
 import { MusicCard } from "./music-card";
 

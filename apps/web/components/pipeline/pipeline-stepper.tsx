@@ -1,5 +1,3 @@
-"use client";
-
 import { cn } from "@/lib/utils";
 import { IconCheck } from "@tabler/icons-react";
 import type { AgentStep, StepStatus } from "@/src/store/slices/agentSlice";

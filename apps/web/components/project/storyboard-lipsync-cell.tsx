@@ -1,8 +1,6 @@
-"use client";
-
 import { useCallback, useRef, useState } from "react";
 import { IconCircleCheck, IconLoader2, IconSparkles } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AiLipSyncGeneratorDialog } from "@/components/storyboard/ai-generator";
@@ -18,8 +16,9 @@ import {
 } from "@/src/store/slices/projectSlice";
 import { backendApi } from "@/src/lib/api";
 import { toast } from "sonner";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string) {
   if (!path) return "";

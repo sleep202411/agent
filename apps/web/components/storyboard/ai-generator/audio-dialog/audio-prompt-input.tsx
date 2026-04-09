@@ -1,7 +1,5 @@
-"use client";
-
 import { useMemo } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconArrowUp,
   IconChevronDown,
@@ -23,8 +21,9 @@ import {
 import type { RawAiModel } from "@/src/types/workspace";
 import type { MentionItem } from "@/components/storyboard/editor/mention-node";
 import type { Asset } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function getRoleImagePath(role?: Asset) {
   const roleImgPath = Array.isArray(role?.roleImgPath)

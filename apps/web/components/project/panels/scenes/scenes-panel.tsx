@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconPlus, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { backendApi, type Paginated } from "@/src/lib/api";

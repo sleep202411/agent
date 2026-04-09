@@ -1,13 +1,12 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCirclePlus, IconLoader2, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string): string {
   if (!path) return "";

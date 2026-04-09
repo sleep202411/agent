@@ -34,6 +34,8 @@ const configs: Record<SiteRegion, SiteConfig> = {
   },
 };
 
-const region = (process.env.NEXT_PUBLIC_SITE_REGION as SiteRegion) || "global";
+import { env } from "@/src/env";
+
+const region = (env.SITE_REGION as SiteRegion) || "global";
 
 export const siteConfig = configs[region];

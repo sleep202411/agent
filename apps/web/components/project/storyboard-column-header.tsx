@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { IconDotsVertical, IconDownload, IconLoader2, IconWand } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -20,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { backendApi } from "@/src/lib/api";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   BatchGenerateConfig,
   StoryboardBatchGenerateDialog,
@@ -43,6 +41,7 @@ import {
   StoryboardBatchVoiceDialog,
 } from "@/components/project/storyboard-batch-voice-dialog";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
+import { env } from "@/src/env";
 
 const BATCH_INTERVAL = 10_000;
 const IMAGE_DEFAULT_PRESET_KEYS = ["description", "shot_size", "perspective", "style_planting"];
@@ -78,7 +77,7 @@ type VoiceBatchItem = {
   text: string;
 };
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string) {
   if (!path) return "";

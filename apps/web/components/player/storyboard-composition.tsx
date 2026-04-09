@@ -1,5 +1,3 @@
-"use client";
-
 import {
   AbsoluteFill,
   Sequence,
@@ -10,7 +8,7 @@ import {
   useVideoConfig,
   interpolate,
 } from "remotion";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import type { Shot } from "@/src/store/slices/agentSlice";
 
 // ─── Types ──────────────────────────────────────────────

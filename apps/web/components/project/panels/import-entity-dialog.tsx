@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -10,7 +8,7 @@ import {
   IconUpload,
   IconX,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {

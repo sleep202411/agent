@@ -1,5 +1,3 @@
-"use client";
-
 import {
   IconCheck,
   IconDownload,
@@ -9,7 +7,7 @@ import {
   IconRefresh,
   IconTrash,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { AudioWaveformBars } from "@/components/storyboard/ai-generator/audio-waveform-bars";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";

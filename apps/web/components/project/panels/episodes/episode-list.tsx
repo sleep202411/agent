@@ -1,7 +1,5 @@
-"use client";
-
 import { IconDeviceTv } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import type { Episode } from "@/src/store/slices/projectSlice";
 import { EpisodeCard } from "./episode-card";
 

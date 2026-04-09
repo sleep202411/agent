@@ -1,5 +1,3 @@
-"use client";
-
 export type AssetPanelTarget = "characters" | "scenes" | "props";
 
 export interface AssetPanelFocusDetail {

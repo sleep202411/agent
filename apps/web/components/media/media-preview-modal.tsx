@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -10,7 +8,7 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AudioPlayer } from "@/components/media/audio-player";

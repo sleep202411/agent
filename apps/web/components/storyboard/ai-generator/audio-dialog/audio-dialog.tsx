@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AudioResultGallery } from "./audio-result-gallery";
@@ -26,8 +24,9 @@ import {
 } from "@/src/lib/storyboard-dialogue";
 import { backendApi } from "@/src/lib/api";
 import type { VoiceOptionItem } from "@/src/types/workspace";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string | null) {
   if (!path) return "";

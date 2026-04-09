@@ -1,5 +1,3 @@
-"use client";
-
 import { IconDownload, IconPlayerPause, IconPlayerPlay, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";

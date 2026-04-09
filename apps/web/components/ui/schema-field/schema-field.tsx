@@ -1,8 +1,6 @@
-"use client";
-
 import { useMemo } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { getFieldLabel, getEnumLabel, type AiModelInputSchema } from "@/src/lib/ai-model-schema";
 import { SegmentedControl } from "./segmented-control";

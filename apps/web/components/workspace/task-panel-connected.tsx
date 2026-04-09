@@ -1,5 +1,3 @@
-"use client";
-
 import { useAppSelector } from "@/src/store";
 import { TaskPanel } from "./task-panel";
 

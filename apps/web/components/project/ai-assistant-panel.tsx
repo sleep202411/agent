@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconArrowsMaximize,
@@ -27,7 +25,7 @@ import { BorderGlow } from "@/components/ui/border-glow";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { AssistantToolCard } from "@/components/project/assistant/assistant-tool-card";
 import { PanelLayout } from "@/components/project/panels/panel-layout";
@@ -71,36 +69,6 @@ const AI_AGENTS = [
     icon: <IconPencil className="size-4" />,
     nameKey: "scriptAgent" as const,
     descKey: "scriptAgentDesc" as const,
-  },
-  {
-    key: "storyboard",
-    icon: <IconMovie className="size-4" />,
-    nameKey: "storyboardAgent" as const,
-    descKey: "storyboardAgentDesc" as const,
-  },
-  {
-    key: "character",
-    icon: <IconUser className="size-4" />,
-    nameKey: "characterAgent" as const,
-    descKey: "characterAgentDesc" as const,
-  },
-  {
-    key: "scene",
-    icon: <IconMapPin className="size-4" />,
-    nameKey: "sceneAgent" as const,
-    descKey: "sceneAgentDesc" as const,
-  },
-  {
-    key: "ad",
-    icon: <IconAd className="size-4" />,
-    nameKey: "adAgent" as const,
-    descKey: "adAgentDesc" as const,
-  },
-  {
-    key: "novel",
-    icon: <IconBook2 className="size-4" />,
-    nameKey: "novelAgent" as const,
-    descKey: "novelAgentDesc" as const,
   },
 ] as const;
 
@@ -437,7 +405,7 @@ function AnalyzeProgressIndicator({
 
     const poll = async () => {
       try {
-        const res = await fetch(`/api/assistant/progress/${sessionId}`);
+        const res = await fetch(`/aurora/assistant/progress/${sessionId}`);
         if (res.ok) {
           const data = await res.json();
           setProgress(data);

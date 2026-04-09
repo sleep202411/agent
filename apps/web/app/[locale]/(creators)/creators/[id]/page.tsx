@@ -1,8 +1,6 @@
-"use client";
-
 import { useState } from "react";
-import Link from "next/link";
-import { useParams } from "next/navigation";
+import { Link } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import {
   IconArrowLeft,
   IconStar,
@@ -129,7 +127,7 @@ const SKILL_COLORS = [
 type Tab = "overview" | "portfolio" | "reviews";
 
 export default function CreatorDetailPage() {
-  const params = useParams();
+  const params = useParams({ strict: false });
   const id = params.id as string;
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [showContact, setShowContact] = useState(false);

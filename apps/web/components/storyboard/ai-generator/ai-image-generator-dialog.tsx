@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconArrowsMaximize,
@@ -27,7 +25,7 @@ import { PromptInput } from "./prompt-input";
 import { ResultGallery } from "./result-gallery";
 import { backendApi } from "@/src/lib/api";
 import { submitImageTask, retryImageTask } from "@/src/lib/ai-image-queue";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";

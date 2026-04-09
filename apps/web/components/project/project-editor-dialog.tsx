@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { IconLoader2, IconUpload, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -24,7 +22,7 @@ import { backendApi } from "@/src/lib/api";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 import type { ProjectDictionaries, ProjectOptionItem } from "@/src/types/workspace";
 import { buildOssUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
 

@@ -1,5 +1,3 @@
-"use client";
-
 import { IconHome } from "@tabler/icons-react";
 import { Stack } from "@/components/ui/stack";
 import { buildOssImageUrl } from "@/src/lib/uploads/workspace-upload";

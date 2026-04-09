@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useMemo, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";

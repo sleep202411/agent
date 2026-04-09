@@ -1,9 +1,7 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearch } from "@tanstack/react-router";
 import { IconCircleCheck, IconCircleX, IconLoader2 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { backendApi } from "@/src/lib/api";
 
 type PaymentStatus = "loading" | "success" | "failed";
@@ -17,8 +15,8 @@ interface OrderStatusResponse {
 
 export default function PaymentResultPage() {
   const t = useTranslations("payment");
-  const searchParams = useSearchParams();
-  const orderNo = searchParams.get("order_id") ?? searchParams.get("orderNo") ?? "";
+  const search = useSearch({ strict: false }) as Record<string, string | undefined>;
+  const orderNo = search.order_id ?? search.orderNo ?? "";
   const [status, setStatus] = useState<PaymentStatus>("loading");
   const [order, setOrder] = useState<OrderStatusResponse | null>(null);
 

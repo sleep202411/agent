@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,8 +37,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { useTranslations, useLocale } from "next-intl";
-import { Link } from "@/src/i18n/navigation";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { Link } from "@tanstack/react-router";
 
 export default function Home() {
   const t = useTranslations("common");

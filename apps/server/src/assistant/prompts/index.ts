@@ -1,15 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-export const assistantAgentTypes = [
-  'general',
-  'script',
-  'storyboard',
-  'character',
-  'scene',
-  'ad',
-  'novel',
-] as const;
+export const assistantAgentTypes = ['general', 'script'] as const;
 
 export type AssistantAgentType = (typeof assistantAgentTypes)[number];
 

@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Thin re-export barrel – keeps existing imports working after the split.
  * All implementation now lives in @/components/storyboard/cells/.

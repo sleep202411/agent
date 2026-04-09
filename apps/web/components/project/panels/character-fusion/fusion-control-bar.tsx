@@ -1,8 +1,6 @@
-"use client";
-
 import { useMemo } from "react";
 import { IconLoader2, IconPlayerPlay, IconPlus, IconX } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,

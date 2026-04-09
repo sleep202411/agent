@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useSyncExternalStore, useState } from "react";
 import {
   IconArrowBack,
@@ -12,10 +10,9 @@ import {
   IconSettings,
   IconSun,
 } from "@tabler/icons-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations, setLanguage } from "@/src/i18n/i18n";
 import { useTheme } from "next-themes";
-import Link from "next/link";
-import { usePathname, useRouter } from "@/src/i18n/navigation";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,8 +50,8 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
   const tc = useTranslations("common");
   const dispatch = useAppDispatch();
   const locale = useLocale();
-  const router = useRouter();
-  const pathname = usePathname();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(
     () => () => {},
@@ -90,7 +87,10 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
 
   const switchLocale = (nextLocale: string) => {
     if (nextLocale === locale) return;
-    router.replace(pathname, { locale: nextLocale });
+    setLanguage(nextLocale);
+    // Update URL: replace current locale segment with new one
+    const newPath = pathname.replace(`/${locale}`, `/${nextLocale}`);
+    void navigate({ to: newPath, replace: true });
   };
 
   return (
@@ -257,15 +257,15 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
 
         {/* Footer */}
         <div className="flex items-center justify-center gap-3 px-3 py-2 text-[11px] text-muted-foreground">
-          <Link href="/terms" className="hover:text-foreground">
+          <Link to="/terms" className="hover:text-foreground">
             Terms
           </Link>
           <span className="text-border">|</span>
-          <Link href="/privacy" className="hover:text-foreground">
+          <Link to="/privacy" className="hover:text-foreground">
             Privacy
           </Link>
           <span className="text-border">|</span>
-          <Link href="/blog" className="hover:text-foreground">
+          <Link to="/blog" className="hover:text-foreground">
             Blog
           </Link>
         </div>

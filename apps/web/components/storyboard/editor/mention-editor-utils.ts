@@ -1,5 +1,6 @@
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { Asset } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
 export interface MentionSearchCharacter {
   id: string;
@@ -25,7 +26,7 @@ export interface MentionFlatItem {
   model?: string;
 }
 
-export const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+export const OSS_BASE = env.OSS_BASE_URL;
 export const PAGE_SIZE = 50;
 export const DEFAULT_POPOVER_WIDTH = 520;
 export const POPOVER_MARGIN = 12;

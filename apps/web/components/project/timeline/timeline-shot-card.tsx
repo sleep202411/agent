@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   IconDots,
@@ -11,7 +9,7 @@ import {
   IconVideo,
   IconVideoPlus,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,

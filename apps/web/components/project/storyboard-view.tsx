@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -33,7 +31,7 @@ import { LipSyncCell } from "@/components/project/storyboard-lipsync-cell";
 import { StoryboardColumnHeader } from "@/components/project/storyboard-column-header";
 import { StoryboardToolbar } from "@/components/project/storyboard-toolbar";
 import { TextCell } from "@/components/storyboard/cells/text-cell";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useGuide } from "@/src/lib/guide/use-guide";
 import { backendApi } from "@/src/lib/api";
 import { useAppSelector, useAppDispatch } from "@/src/store";

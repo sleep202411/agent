@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback } from "react";
 import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { useAppSelector, useAppDispatch } from "@/src/store";
@@ -45,7 +43,7 @@ export function useOutlineGeneration() {
   const dispatch = useAppDispatch();
 
   const realHook = useObject({
-    api: "/api/agent/outline",
+    api: "/aurora/agent/outline",
     schema: storyOutlineSchema,
     fetch: (url, init) => fetch(url, { ...init, credentials: "include" }),
     onFinish: ({ object }) => {
@@ -90,7 +88,7 @@ export function useCharactersGeneration() {
   const dispatch = useAppDispatch();
 
   const realHook = useObject({
-    api: "/api/agent/characters",
+    api: "/aurora/agent/characters",
     schema: charactersAndScenesSchema,
     fetch: (url, init) => fetch(url, { ...init, credentials: "include" }),
     onFinish: ({ object }) => {
@@ -158,7 +156,7 @@ export function useStoryboardGeneration() {
   const outline = useAppSelector((s) => s.agent.outline);
 
   const realHook = useObject({
-    api: "/api/agent/storyboard",
+    api: "/aurora/agent/storyboard",
     schema: storyboardSchema,
     fetch: (url, init) => fetch(url, { ...init, credentials: "include" }),
     onFinish: ({ object }) => {

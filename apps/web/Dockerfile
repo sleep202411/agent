@@ -19,9 +19,17 @@ WORKDIR /app
 COPY --from=deps /app/ ./
 COPY --from=pruner /app/out/full/ .
 
-ARG NEXT_PUBLIC_OSS_BASE_URL
-ENV NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL
+# Vite env vars (VITE_ prefix, baked into client bundle at build time)
+ARG VITE_OSS_BASE_URL
+ENV VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL
 
+ARG VITE_SITE_REGION
+ENV VITE_SITE_REGION=$VITE_SITE_REGION
+
+ARG VITE_PARENT_ORIGIN
+ENV VITE_PARENT_ORIGIN=$VITE_PARENT_ORIGIN
+
+# Server-only env vars (used by vite.config proxy, not baked into client)
 ARG SERVER_URL
 ENV SERVER_URL=$SERVER_URL
 
@@ -30,20 +38,6 @@ ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
 
 ARG JAVA_CONTENT_URL
 ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
-
-ARG NEXT_PUBLIC_SITE_REGION
-ENV NEXT_PUBLIC_SITE_REGION=$NEXT_PUBLIC_SITE_REGION
-
-ARG NEXT_PUBLIC_PARENT_ORIGIN
-ENV NEXT_PUBLIC_PARENT_ORIGIN=$NEXT_PUBLIC_PARENT_ORIGIN
-
-# Next.js 16 (Turbopack) reads env from .env files, not process.env
-RUN echo "NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL" > apps/web/.env.local && \
-    echo "NEXT_PUBLIC_SITE_REGION=$NEXT_PUBLIC_SITE_REGION" >> apps/web/.env.local && \
-    echo "NEXT_PUBLIC_PARENT_ORIGIN=$NEXT_PUBLIC_PARENT_ORIGIN" >> apps/web/.env.local && \
-    echo "SERVER_URL=$SERVER_URL" >> apps/web/.env.local && \
-    echo "JAVA_STUDIO_URL=$JAVA_STUDIO_URL" >> apps/web/.env.local && \
-    echo "JAVA_CONTENT_URL=$JAVA_CONTENT_URL" >> apps/web/.env.local
 
 RUN npx turbo run build --filter=web
 
@@ -63,15 +57,15 @@ ARG JAVA_CONTENT_URL
 ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
 
 RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+    adduser --system --uid 1001 appuser
 
-# Next.js standalone output in monorepo preserves the apps/web/ path
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+# TanStack Start build output
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/dist ./apps/web/dist
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/package.json ./apps/web/package.json
+COPY --from=builder --chown=appuser:nodejs /app/node_modules ./node_modules
 
-USER nextjs
+USER appuser
 
 EXPOSE 3000
 
-CMD ["node", "apps/web/server.js"]
+CMD ["node", "apps/web/dist/server/server.js"]

@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconLoader2, IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -14,10 +12,11 @@ import {
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { backendApi } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
 import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+import { env } from "@/src/env";
+const OSS_BASE = env.OSS_BASE_URL;
 
 export interface BatchVoiceConfig {
   model: string;

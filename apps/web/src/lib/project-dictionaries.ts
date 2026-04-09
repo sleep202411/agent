@@ -19,11 +19,11 @@ async function _fetchProjectDictionaries(): Promise<ProjectDictionaries> {
       headers: legacyDictionaryHeaders,
     }),
     backendApi.get<Array<{ id?: string | number; info?: string; picLink?: string }>>(
-      "/api/user/world/static/list/painting/style",
+      "/api/user/world/static/list/painting/style/",
       { headers: legacyDictionaryHeaders }
     ),
     backendApi.get<{ AspectRatioTypeEnum?: Record<string, string> }>(
-      "/anon/enumMeta/getEnumBySimpleName/AspectRatioTypeEnum",
+      "/anon/enumMeta/getEnumBySimpleName/AspectRatioTypeEnum/",
       { headers: legacyDictionaryHeaders }
     ),
   ]);

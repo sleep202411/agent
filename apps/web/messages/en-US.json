@@ -283,6 +283,7 @@
     "voicePlaceholder": "Select character voice",
     "voiceModel": "Voice Model",
     "voiceModelPlaceholder": "Select voice model",
+    "voicePickerTitle": "Character Voice",
     "createSuccess": "Character created",
     "createFailed": "Character creation failed",
     "updateSuccess": "Character updated",

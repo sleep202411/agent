@@ -1,5 +1,3 @@
-"use client";
-
 import { IconMinus, IconPlus } from "@tabler/icons-react";
 
 interface CounterControlProps {

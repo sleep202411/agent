@@ -283,6 +283,7 @@
     "voicePlaceholder": "請選擇角色語音",
     "voiceModel": "語音模型",
     "voiceModelPlaceholder": "請選擇語音模型",
+    "voicePickerTitle": "角色語音",
     "createSuccess": "角色建立成功",
     "createFailed": "角色建立失敗",
     "updateSuccess": "角色更新成功",

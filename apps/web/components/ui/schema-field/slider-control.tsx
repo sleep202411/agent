@@ -1,5 +1,3 @@
-"use client";
-
 interface SliderControlProps {
   value: number;
   onChange: (v: number) => void;

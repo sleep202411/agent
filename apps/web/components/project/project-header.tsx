@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import {
   IconArrowLeft,
   IconChevronRight,
@@ -11,7 +9,7 @@ import {
   IconSparkles,
   IconUsers,
 } from "@tabler/icons-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { ProjectTabs, type ProjectTab } from "./project-tabs";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -130,7 +128,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             </button>
           ) : (
             <Link
-              href={`/${locale}/projects`}
+              to={`/${locale}/projects`}
               className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
             >
               <IconArrowLeft className="size-4" />

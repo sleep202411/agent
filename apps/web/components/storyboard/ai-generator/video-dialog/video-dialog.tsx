@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustments,
@@ -26,7 +24,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import type { ToolbarAction } from "@/components/ui/floating-toolbar";
 import { MediaPreviewPanel } from "../media-preview-panel";

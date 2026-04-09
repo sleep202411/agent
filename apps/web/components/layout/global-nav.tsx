@@ -1,8 +1,6 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
+import { Link } from "@tanstack/react-router";
+import { useLocation } from "@tanstack/react-router";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import {
   IconFlame,
   IconUsers,
@@ -16,7 +14,7 @@ import { UserMenu } from "@/components/layout/user-menu";
 const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment"];
 
 export function GlobalNav() {
-  const pathname = usePathname();
+  const { pathname } = useLocation();
   const locale = useLocale();
   const t = useTranslations("nav");
 
@@ -36,7 +34,7 @@ export function GlobalNav() {
       <div className="mx-auto flex h-14 max-w-screen-2xl items-center justify-between px-6">
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">
-          <Link href={`/${locale}/projects`} className="flex items-center gap-2 shrink-0">
+          <Link to={`/${locale}/projects`} className="flex items-center gap-2 shrink-0">
             <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
               <IconFlame className="size-5 text-primary-foreground" />
             </div>
@@ -50,7 +48,7 @@ export function GlobalNav() {
             {navItems.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
-                href={href}
+                to={href}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors",
                   isActive(href)

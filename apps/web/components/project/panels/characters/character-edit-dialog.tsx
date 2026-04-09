@@ -1,7 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  IconChevronDown,
   IconDeviceFloppy,
   IconLoader2,
   IconTrash,
@@ -29,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
@@ -375,21 +374,24 @@ export function CharacterEditDialog({
 
                 <Field>
                   <FieldLabel>{t("voice")}</FieldLabel>
-                  <Select
-                    value={formData.voiceId || undefined}
+                  <button
+                    type="button"
                     disabled={!formData.voiceModelCode}
-                    onOpenChange={(open) => {
-                      if (open) setVoicePickerOpen(true);
-                    }}
+                    onClick={() => setVoicePickerOpen(true)}
+                    className={cn(
+                      "flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors",
+                      "hover:bg-accent hover:text-accent-foreground",
+                      "disabled:cursor-not-allowed disabled:opacity-50",
+                      formData.voiceId ? "text-foreground" : "text-muted-foreground"
+                    )}
                   >
-                    <SelectTrigger className="w-full h-9">
-                      <SelectValue placeholder={t("voicePlaceholder")}>
-                        {selectedVoiceName && formData.voiceModelCode
-                          ? selectedVoiceName
-                          : t("voicePlaceholder")}
-                      </SelectValue>
-                    </SelectTrigger>
-                  </Select>
+                    <span className="truncate">
+                      {selectedVoiceName && formData.voiceModelCode
+                        ? selectedVoiceName
+                        : t("voicePlaceholder")}
+                    </span>
+                    <IconChevronDown className="size-4 shrink-0 opacity-50" />
+                  </button>
                 </Field>
               </div>
 

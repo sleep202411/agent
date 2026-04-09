@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 
 type WorkspaceSidebarItemProps = Readonly<{
@@ -11,7 +11,7 @@ type WorkspaceSidebarItemProps = Readonly<{
 export function WorkspaceSidebarItem({ href, label, icon, isActive }: WorkspaceSidebarItemProps) {
   return (
     <Link
-      href={href}
+      to={href}
       aria-current={isActive ? "page" : undefined}
       className="flex flex-col items-center transition-colors"
     >

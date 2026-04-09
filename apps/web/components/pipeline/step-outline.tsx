@@ -1,7 +1,5 @@
-"use client";
-
 import { IconPlus, IconTrash, IconRefresh } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {

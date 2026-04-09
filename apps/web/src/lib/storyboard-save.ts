@@ -1,5 +1,6 @@
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { Asset, ShotColumn, ShotRow, ShotValue } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
 export type StoryboardTableData = {
   headers: string[];
@@ -95,7 +96,7 @@ type StoryboardEntityBackfillRow = {
   propIds: string[];
 };
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 const STORYBOARD_SAVE_FIELD_ORDER = [
   "shot_no",
   "scene",

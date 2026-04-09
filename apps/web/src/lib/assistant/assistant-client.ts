@@ -1,5 +1,3 @@
-"use client";
-
 import { readUIMessageStream, uiMessageChunkSchema, type UIMessageChunk } from "ai";
 import { parseJsonEventStream } from "@ai-sdk/provider-utils";
 import type {
@@ -95,7 +93,7 @@ export async function sendAssistantChat({
   signal,
   onMessage,
 }: SendAssistantChatOptions) {
-  const response = await fetch("/api/assistant/chat", {
+  const response = await fetch("/aurora/assistant/chat", {
     method: "POST",
     credentials: "include",
     headers: {

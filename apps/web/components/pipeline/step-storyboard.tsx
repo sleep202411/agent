@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import {
   IconEdit,
@@ -11,7 +9,7 @@ import {
   IconLayoutList,
   IconArrowLeft,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { EpisodeEditor } from "@/components/pipeline/episode-editor";

@@ -1,8 +1,6 @@
-"use client";
-
 import { useState } from "react";
 import { IconPlus, IconTrash, IconEdit, IconPhoto } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";

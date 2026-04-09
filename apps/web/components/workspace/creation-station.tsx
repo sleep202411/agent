@@ -1,8 +1,6 @@
-"use client";
-
 import { useRef, useState } from "react";
 import { IconSparkles, IconDice5, IconUpload, IconFile, IconX } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";

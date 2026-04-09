@@ -1,8 +1,7 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconCopy, IconLoader2, IconMail, IconUserPlus } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
+import { env } from "@/src/env";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -204,7 +203,7 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
       ]);
       setMembers(memberList ?? []);
       if (code) {
-        const origin = process.env.NEXT_PUBLIC_PARENT_ORIGIN || window.location.origin;
+        const origin = env.PARENT_ORIGIN || window.location.origin;
         const worldId = String(project.worldId ?? "");
         setInviteLink(
           `${origin}/pages/invite/invite?code=${String(code)}&projectId=${String(project.id)}${worldId ? `&worldId=${worldId}` : ""}`

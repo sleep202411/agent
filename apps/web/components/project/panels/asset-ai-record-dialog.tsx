@@ -1,9 +1,7 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconCheck, IconLoader2, IconWand, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,8 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { backendApi } from "@/src/lib/api";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 type LoadingItem = {
   id: string;

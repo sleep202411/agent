@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -7,10 +5,11 @@ import {
   IconCheck,
   IconLayoutGrid,
   IconLoader2,
+  IconPencil,
   IconX,
   IconAlertCircle,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -1083,7 +1082,7 @@ function ScriptProposalCard({
     immediatelyRender: false,
     extensions: [StarterKit],
     content: initialContent,
-    editable: !disabled && part.state !== "output-available",
+    editable: true,
     editorProps: {
       attributes: {
         class:
@@ -1123,61 +1122,58 @@ function ScriptProposalCard({
         title={t("scriptProposal")}
         description={`${input.episodeTitle} · ${input.summary}`}
       >
-        <div
-          className="prose prose-sm dark:prose-invert max-h-60 overflow-y-auto rounded-xl border border-border/70 bg-muted/20 p-3"
-          dangerouslySetInnerHTML={{ __html: ensureHtml(rawContent) }}
-        />
+        <button
+          type="button"
+          onClick={() => setDialogOpen(true)}
+          className="group/preview w-full cursor-pointer rounded-xl border border-border/70 bg-muted/20 text-left transition-colors hover:border-primary/40 hover:bg-muted/30"
+        >
+          <div
+            className="prose prose-sm dark:prose-invert max-h-60 overflow-y-auto p-3"
+            dangerouslySetInnerHTML={{ __html: ensureHtml(rawContent) }}
+          />
+          <div className="flex items-center gap-1.5 border-t border-border/50 px-3 py-2 text-xs text-muted-foreground transition-colors group-hover/preview:text-primary">
+            <IconPencil className="size-3" />
+            {t("viewAndEdit")}
+          </div>
+        </button>
 
-        <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="mt-3 flex items-center justify-end gap-2">
           <Button
             variant="outline"
             color="muted"
             size="sm"
             disabled={disabled}
-            onClick={() => setDialogOpen(true)}
+            onClick={() =>
+              onApplyResult({
+                toolCallId: part.toolCallId,
+                toolName: getAssistantInteractiveToolName(part),
+                output: {
+                  action: "reject",
+                } satisfies AssistantScriptProposalDecision,
+              })
+            }
           >
-            <IconLayoutGrid className="size-3.5" />
-            {t("viewAndEdit")}
+            <IconX className="size-3.5" />
+            {t("reject")}
           </Button>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              color="muted"
-              size="sm"
-              disabled={disabled}
-              onClick={() =>
-                onApplyResult({
-                  toolCallId: part.toolCallId,
-                  toolName: getAssistantInteractiveToolName(part),
-                  output: {
-                    action: "reject",
-                  } satisfies AssistantScriptProposalDecision,
-                })
-              }
-            >
-              <IconX className="size-3.5" />
-              {t("reject")}
-            </Button>
-            <Button
-              size="sm"
-              disabled={disabled}
-              onClick={() => {
-                const content = getContent();
-                onApplyResult({
-                  toolCallId: part.toolCallId,
-                  toolName: getAssistantInteractiveToolName(part),
-                  output: {
-                    action: content === input.content ? "accept" : "accept_edited",
-                    content,
-                  } satisfies AssistantScriptProposalDecision,
-                });
-              }}
-            >
-              <IconCheck className="size-3.5" />
-              {t("acceptAndWrite")}
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            disabled={disabled}
+            onClick={() => {
+              const content = getContent();
+              onApplyResult({
+                toolCallId: part.toolCallId,
+                toolName: getAssistantInteractiveToolName(part),
+                output: {
+                  action: content === input.content ? "accept" : "accept_edited",
+                  content,
+                } satisfies AssistantScriptProposalDecision,
+              });
+            }}
+          >
+            <IconCheck className="size-3.5" />
+            {t("acceptAndWrite")}
+          </Button>
         </div>
       </CardFrame>
 
@@ -1191,10 +1187,50 @@ function ScriptProposalCard({
           <div className="flex-1 overflow-y-auto rounded-xl border border-border/70">
             <EditorContent editor={editor} />
           </div>
-          <DialogFooter className="mt-4">
+          <DialogFooter className="mt-4 sm:justify-between">
             <Button variant="outline" color="muted" size="sm" onClick={() => setDialogOpen(false)}>
               {t("backToChat")}
             </Button>
+            {part.state !== "output-available" && (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  color="muted"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => {
+                    setDialogOpen(false);
+                    onApplyResult({
+                      toolCallId: part.toolCallId,
+                      toolName: getAssistantInteractiveToolName(part),
+                      output: { action: "reject" } satisfies AssistantScriptProposalDecision,
+                    });
+                  }}
+                >
+                  <IconX className="size-3.5" />
+                  {t("reject")}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => {
+                    const content = getContent();
+                    setDialogOpen(false);
+                    onApplyResult({
+                      toolCallId: part.toolCallId,
+                      toolName: getAssistantInteractiveToolName(part),
+                      output: {
+                        action: content === input.content ? "accept" : "accept_edited",
+                        content,
+                      } satisfies AssistantScriptProposalDecision,
+                    });
+                  }}
+                >
+                  <IconCheck className="size-3.5" />
+                  {t("acceptAndWrite")}
+                </Button>
+              </div>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

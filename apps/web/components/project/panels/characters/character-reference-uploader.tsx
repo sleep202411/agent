@@ -1,8 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCirclePlus, IconLoader2, IconX } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";

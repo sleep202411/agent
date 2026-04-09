@@ -1,5 +1,3 @@
-"use client";
-
 import { IconSearch, IconUsers, IconBriefcase, IconMovie, IconTrophy } from "@tabler/icons-react";
 import { MOCK_STATS, MOCK_HOT_SKILLS } from "./creators-mock";
 

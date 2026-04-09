@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconLoader2, IconPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -15,7 +13,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { StoryboardImportResult } from "@/src/types/workspace";
 import { saveStoryboardTableWithBackfill } from "@/src/lib/storyboard-save";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import {
   touchStoryboard,

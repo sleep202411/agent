@@ -1,5 +1,3 @@
-"use client";
-
 import { DragonIcon } from "@/components/project/assistant/dragon-icon";
 import { cn } from "@/lib/utils";
 

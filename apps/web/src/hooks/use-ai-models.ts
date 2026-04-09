@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect } from "react";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import {
   IconArrowLeft,
@@ -13,7 +11,7 @@ import {
   IconEdit,
   IconPhoto,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { EpisodeStoryboard, Shot } from "@/src/store/slices/agentSlice";

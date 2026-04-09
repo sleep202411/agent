@@ -162,6 +162,7 @@ export class AssistantService {
       messages: modelMessages,
       stopWhen: stepCountIs(20),
       temperature: 0.2,
+      toolCallStreaming: true,
       onError: ({ error }) => {
         const msg = error instanceof Error ? error.message : String(error);
         this.logger.error(`Stream onError: ${msg}`);

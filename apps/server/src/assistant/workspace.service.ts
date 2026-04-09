@@ -109,7 +109,7 @@ export class WorkspaceService {
           throw new Error(
             errorText.includes('Not logged')
               ? 'Not logged in!'
-              : `HTTP ${response.status}`,
+              : `HTTP ${response.status} on ${method} ${path}: ${errorText.slice(0, 500)}`,
           );
         }
 

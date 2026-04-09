@@ -1,8 +1,6 @@
-"use client";
-
 import type { CSSProperties, RefObject } from "react";
 import { createPortal } from "react-dom";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconBox, IconLoader2, IconPhoto, IconUser } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

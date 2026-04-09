@@ -1,8 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { useNavigate } from "@tanstack/react-router";
 import { IconDots, IconLoader2, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,11 +13,12 @@ import {
 import { PanelLayout } from "./panel-layout";
 import { ProjectEditorDialog } from "@/components/project/project-editor-dialog";
 import { backendApi } from "@/src/lib/api";
+import { env } from "@/src/env";
 import type { ProjectOptionItem } from "@/src/types/workspace";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { touchProjectList, selectCurrentInstance } from "@/src/store/slices/projectSlice";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string) {
   if (!path) return "";
@@ -31,7 +30,7 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
   const locale = useLocale();
-  const router = useRouter();
+  const navigate = useNavigate();
 
   const dispatch = useAppDispatch();
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
@@ -44,8 +43,6 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const projects = allProjects as ProjectOptionItem[];
-
-  const emptyMessage = t("noProjects");
 
   const openCreate = () => {
     setEditingProject(null);
@@ -64,10 +61,19 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
       await backendApi.post(`/api/user/world/delete/worldproduct?id=${id}`);
       dispatch(touchProjectList());
     } catch (error) {
-      console.error("[ProjectsPanel] 删除项目失败:", error);
+      console.error("[ProjectsPanel] delete project failed:", error);
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const navigateToProject = (project: ProjectOptionItem) => {
+    if (!project.id) return;
+    const nextWorldId = String(project.worldId ?? worldId ?? "");
+    void navigate({
+      to: `/${locale}/projects/${project.id}${nextWorldId ? `?worldId=${nextWorldId}` : ""}`,
+    });
+    onClose();
   };
 
   return (
@@ -100,17 +106,11 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
                       active ? "border-border bg-muted/30" : "border-border/50 hover:bg-muted/20"
                     )}
                   >
-                    {/* 封面 */}
+                    {/* Cover */}
                     <button
                       type="button"
                       className="flex h-14 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/30"
-                      onClick={() => {
-                        if (!project.id) return;
-                        const nextWorldId = String(project.worldId ?? worldId ?? "");
-                        const nextUrl = `/${locale}/projects/${project.id}${nextWorldId ? `?worldId=${nextWorldId}` : ""}`;
-                        router.push(nextUrl);
-                        onClose();
-                      }}
+                      onClick={() => navigateToProject(project)}
                     >
                       {project.imagePath ? (
                         <img
@@ -123,17 +123,11 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
                       )}
                     </button>
 
-                    {/* 文案 */}
+                    {/* Info */}
                     <button
                       type="button"
                       className="min-w-0 flex-1 text-left"
-                      onClick={() => {
-                        if (!project.id) return;
-                        const nextWorldId = String(project.worldId ?? worldId ?? "");
-                        const nextUrl = `/${locale}/projects/${project.id}${nextWorldId ? `?worldId=${nextWorldId}` : ""}`;
-                        router.push(nextUrl);
-                        onClose();
-                      }}
+                      onClick={() => navigateToProject(project)}
                     >
                       <p className="truncate text-sm font-medium">
                         {project.name || t("unnamedProject")}
@@ -145,7 +139,7 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
                       </p>
                     </button>
 
-                    {/* 操作点 */}
+                    {/* Actions */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" color="muted" size="icon-xs" className="shrink-0">

@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconCheck,
@@ -14,14 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { RawAiModel, AssetRecord } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
 import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 const MAX_CONCURRENT = 4;
 const REQUEST_INTERVAL = 1000;
 const MAX_QUEUE_SIZE = 8;

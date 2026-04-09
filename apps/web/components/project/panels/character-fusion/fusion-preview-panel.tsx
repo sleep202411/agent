@@ -1,5 +1,3 @@
-"use client";
-
 import {
   IconArrowsMaximize,
   IconDownload,
@@ -8,7 +6,7 @@ import {
   IconReplace,
   IconTrash,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

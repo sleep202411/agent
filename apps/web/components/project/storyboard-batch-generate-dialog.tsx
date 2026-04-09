@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import type { RawAiModel } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
 import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";

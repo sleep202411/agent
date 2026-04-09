@@ -1,5 +1,3 @@
-"use client";
-
 import { IconStar, IconTrophy, IconClock, IconWorld, IconUserPlus } from "@tabler/icons-react";
 import { LEVEL_COLORS, AVAILABILITY_CONFIG, type Creator } from "./creators-mock";
 

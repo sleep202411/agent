@@ -1,9 +1,7 @@
-"use client";
-
 import { useMemo, useRef, useState } from "react";
 import { IconCheck, IconPlus, IconX } from "@tabler/icons-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { getCellDisplayValue, parseColumnOptions, persistTextCell } from "./cell-utils";
 import type { ShotColumn, ShotValue } from "@/src/store/slices/projectSlice";

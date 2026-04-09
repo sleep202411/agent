@@ -1,8 +1,6 @@
-"use client";
-
 import { useRef, useState } from "react";
 import { IconSparkles, IconPlus, IconX, IconFile, IconMovie } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "motion/react";
 import { api } from "@/src/lib/api";

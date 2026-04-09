@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconDots,
   IconLoader2,
@@ -25,8 +23,9 @@ import { backendApi } from "@/src/lib/api";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { AssetAiRecordDialog } from "../asset-ai-record-dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 const MAX_IMAGES = 6;
 
 function ossUrl(path?: string) {

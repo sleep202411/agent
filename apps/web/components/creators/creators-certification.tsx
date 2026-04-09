@@ -1,5 +1,3 @@
-"use client";
-
 import { IconAward, IconCircleCheck, IconBolt, IconLock } from "@tabler/icons-react";
 import { MOCK_CERT_LEVELS, LEVEL_COLORS } from "./creators-mock";
 

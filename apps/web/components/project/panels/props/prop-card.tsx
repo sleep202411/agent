@@ -1,5 +1,3 @@
-"use client";
-
 import { IconMask } from "@tabler/icons-react";
 import { ImageCollage } from "@/components/ui/image-collage";
 import { buildOssImageUrl } from "@/src/lib/uploads/workspace-upload";

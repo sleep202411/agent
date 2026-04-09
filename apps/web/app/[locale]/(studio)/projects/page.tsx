@@ -1,10 +1,8 @@
-"use client";
-
 import { useState } from "react";
-import Link from "next/link";
-import { useLocale } from "next-intl";
+import { Link } from "@tanstack/react-router";
+import { useLocale } from "@/src/i18n/i18n";
 import { IconPlus, IconDots, IconLoader2, IconLayoutGrid, IconFolder } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { CreationComposer } from "@/components/workspace/creation-composer";
 import {
   DropdownMenu,
@@ -20,7 +18,9 @@ import {
   type WorldGroup,
 } from "@/src/hooks/use-worlds";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+import { env } from "@/src/env";
+
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path: string | null | undefined): string | null {
   if (!path) return null;
@@ -200,7 +200,7 @@ function ProductCard({
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-border">
-      <Link href={`/${locale}/projects/${product.id}?worldId=${product.worldId}`} target="_blank">
+      <Link to={`/${locale}/projects/${product.id}?worldId=${product.worldId}`} target="_blank">
         <div className="relative h-40 w-full bg-muted">
           {cover ? (
             <img src={cover} alt="" className="size-full object-cover" />
@@ -218,7 +218,7 @@ function ProductCard({
       </Link>
       <div className="flex items-start justify-between gap-2 p-3">
         <Link
-          href={`/${locale}/projects/${product.id}?worldId=${product.worldId}`}
+          to={`/${locale}/projects/${product.id}?worldId=${product.worldId}`}
           target="_blank"
           className="min-w-0 flex-1"
         >

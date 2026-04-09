@@ -1,4 +1,5 @@
 import type { RawAiModel, AssetRecord } from "@/src/types/workspace";
+import { env } from "@/src/env";
 
 export type { RawAiModel, AssetRecord };
 
@@ -111,7 +112,7 @@ export function ossUrl(path?: string) {
   if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("blob:")) {
     return path;
   }
-  return `${process.env.NEXT_PUBLIC_OSS_BASE_URL ?? ""}/${path}`;
+  return `${env.OSS_BASE_URL}/${path}`;
 }
 
 export function getVideoThumbnail(path?: string) {

@@ -1,9 +1,7 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { PanelAnimateContext } from "@/components/project/panels/panel-layout";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useTranslations } from "@/src/i18n/i18n";
 import { ProjectHeader } from "@/components/project/project-header";
 import { ProjectSidebar } from "@/components/project/project-sidebar";
 import { AiAssistantPanel } from "@/components/project/ai-assistant-panel";
@@ -30,9 +28,8 @@ import { setActivePanel, selectCurrentInstance } from "@/src/store/slices/projec
 
 export default function ProjectDetailPage() {
   const t = useTranslations("project");
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   const { detail, isLoading, isEpisodesLoading, error } = useProjectDetail();
   useStoryboardData();
@@ -83,8 +80,8 @@ export default function ProjectDetailPage() {
 
     if (!changed) return;
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [activeEpisodeId, pathname, router, worldId]);
+    void navigate({ to: query ? `${pathname}?${query}` : pathname, replace: true });
+  }, [activeEpisodeId, pathname, navigate, worldId]);
 
   const panelContent = useMemo(() => {
     switch (activePanel) {
@@ -172,26 +169,20 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      <style jsx global>{`
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @keyframes dragon-float {
-          0%,
-          100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4px); }
         }
-
         @keyframes dragon-orbit {
-          from {
-            transform: translate(-50%, -50%) rotate(0deg) translateX(22px) rotate(0deg);
-          }
-          to {
-            transform: translate(-50%, -50%) rotate(360deg) translateX(22px) rotate(-360deg);
-          }
+          from { transform: translate(-50%, -50%) rotate(0deg) translateX(22px) rotate(0deg); }
+          to { transform: translate(-50%, -50%) rotate(360deg) translateX(22px) rotate(-360deg); }
         }
-      `}</style>
+      `,
+        }}
+      />
     </div>
   );
 }

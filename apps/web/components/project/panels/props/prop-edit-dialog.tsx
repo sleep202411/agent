@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconLoader2, IconTrash } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {

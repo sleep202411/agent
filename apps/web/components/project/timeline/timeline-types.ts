@@ -1,4 +1,5 @@
 import type { ShotRow, ShotColumn, ShotValue } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
 // ─── Constants ─────────────────────────────────────────
 
@@ -12,7 +13,7 @@ export const PLAYHEAD_OFFSET = 12;
 export const PLAYHEAD_SCREEN_POSITION = 0.25;
 export const MIN_DURATION = 0.5;
 export const MAX_DURATION = 300;
-export const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+export const OSS_BASE = env.OSS_BASE_URL;
 
 // ─── Types ─────────────────────────────────────────────
 

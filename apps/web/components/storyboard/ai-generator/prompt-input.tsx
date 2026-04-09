@@ -1,6 +1,4 @@
-"use client";
-
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconX, IconPencil, IconPlus } from "@tabler/icons-react";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
 import { cn } from "@/lib/utils";
@@ -9,8 +7,9 @@ import { SelectControl } from "@/components/ui/schema-field/select-control";
 import { ModelPicker } from "@/components/ui/schema-field/model-picker";
 import type { AiModel } from "@/src/lib/ai-model-schema";
 import type { AiSizeOption } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string): string | null {
   if (!path) return null;

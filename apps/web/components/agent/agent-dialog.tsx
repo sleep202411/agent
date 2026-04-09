@@ -1,9 +1,7 @@
-"use client";
-
 import { useEffect, useRef } from "react";
 import { IconX } from "@tabler/icons-react";
 import { api } from "@/src/lib/api";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

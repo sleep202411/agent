@@ -1,7 +1,5 @@
-"use client";
-
 import { IconCheck, IconLoader2, IconMusic } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { IconVideo } from "@tabler/icons-react";
 import { buildOssImageUrl, buildOssVideoThumbnail } from "@/src/lib/uploads/workspace-upload";

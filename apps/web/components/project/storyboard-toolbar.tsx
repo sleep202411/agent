@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { IconDownload, IconLoader2, IconPencil, IconPlus, IconUpload } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -11,7 +9,7 @@ import { backendApi } from "@/src/lib/api";
 import { exportStoryboard } from "@/src/lib/storyboard-export";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 import type { ProjectOptionItem } from "@/src/types/workspace";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import {
   setRows as setRowsAction,

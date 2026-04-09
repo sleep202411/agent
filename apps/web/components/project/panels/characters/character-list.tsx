@@ -1,7 +1,5 @@
-"use client";
-
 import { IconLoader2, IconPhoto, IconTrash, IconWand } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";

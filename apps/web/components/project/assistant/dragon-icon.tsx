@@ -1,5 +1,3 @@
-"use client";
-
 export function DragonIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 90 90" className={className} aria-hidden="true">
