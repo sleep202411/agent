@@ -251,24 +251,59 @@ export function createScriptAgentTools(
         const projectId = ctx.context.projectId;
         const results: string[] = [];
 
-        // 1. Batch create episodes
-        const titles = episodeMap.map((ep) => ep.title);
-        logger.log(
-          `Creating ${titles.length} episodes for project ${projectId}`,
+        // 1. Check existing episodes to avoid duplicates
+        const existingEpisodes = await ctx.ws.listEpisodes(
+          ctx.headers,
+          projectId,
         );
-        try {
-          await ctx.ws.batchAddEpisodes(ctx.headers, projectId, titles);
-          results.push(`${titles.length} episodes`);
-        } catch (error) {
-          logger.error(`batchAddEpisodes failed: ${error}`);
-          throw new Error(
-            `Failed to create episodes: ${error instanceof Error ? error.message : error}`,
+        const existingTitles = new Set(existingEpisodes.map((e) => e.title));
+        logger.log(`Project has ${existingEpisodes.length} existing episodes`);
+
+        // Add episode number prefix to ensure unique titles
+        const titlesWithPrefix = episodeMap.map(
+          (ep) => `Ep.${ep.episodeNumber} ${ep.title}`,
+        );
+
+        // Filter out already existing titles
+        const newTitles = titlesWithPrefix.filter(
+          (t) => !existingTitles.has(t),
+        );
+
+        if (newTitles.length > 0) {
+          logger.log(
+            `Creating ${newTitles.length} new episodes (${titlesWithPrefix.length - newTitles.length} already exist)`,
           );
+          try {
+            await ctx.ws.batchAddEpisodes(ctx.headers, projectId, newTitles);
+            results.push(`${newTitles.length} episodes`);
+          } catch (error) {
+            logger.error(`batchAddEpisodes failed: ${error}`);
+            throw new Error(
+              `Failed to create episodes: ${error instanceof Error ? error.message : error}`,
+            );
+          }
+        } else {
+          logger.log('All episodes already exist, skipping creation');
+          results.push(`${titlesWithPrefix.length} episodes (already existed)`);
         }
 
-        // Re-fetch episode list to get actual IDs (reliable regardless of API response format)
+        // Re-fetch to get complete list with IDs
         const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
         logger.log(`Project now has ${allEpisodes.length} episodes`);
+
+        // Build ordered episode ID list matching our episodeMap
+        const orderedEpisodeIds: string[] = titlesWithPrefix.map((title) => {
+          const match = allEpisodes.find((e) => e.title === title);
+          return match?.id ?? '';
+        });
+
+        // Save ordered IDs to session for generate_scripts/storyboard
+        await store.saveState(sessionId, {
+          ...state,
+          episodesCreated: true,
+          orderedEpisodeIds,
+          titlesWithPrefix,
+        });
 
         // 2. Batch create characters
         const characters = analyze.characters ?? [];
@@ -301,9 +336,6 @@ export function createScriptAgentTools(
             results.push(`scenes failed`);
           }
         }
-
-        // Save to state
-        await store.saveState(sessionId, { ...state, episodesCreated: true });
 
         return buildMutationResult(
           'episode.batch_created',
@@ -343,34 +375,47 @@ export function createScriptAgentTools(
           outlineTo: number;
           summary: string;
         }>;
+        const orderedEpisodeIds = (state.orderedEpisodeIds as string[]) ?? [];
         const language = (state.language as string) ?? 'English';
         const text = await store.getText(sessionId);
         if (!text) throw new Error('Source text not found.');
-
-        // Fetch episode IDs from project (reliable, works regardless of who created them)
         const projectId = ctx.context.projectId;
-        const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
-        logger.log(
-          `generate_scripts: project has ${allEpisodes.length} episodes`,
-        );
 
-        // Match episodes by title
         const batch = episodeMap.filter(
           (ep) => ep.episodeNumber >= batchFrom && ep.episodeNumber <= batchTo,
         );
 
         logger.log(
-          `generate_scripts: batch ${batchFrom}-${batchTo} (${batch.length} episodes)`,
+          `generate_scripts: batch ${batchFrom}-${batchTo} (${batch.length} episodes), ${orderedEpisodeIds.length} IDs in session`,
         );
+
+        // Use ordered IDs from session, fallback to fetching from project
+        let episodeIds = orderedEpisodeIds;
+        if (episodeIds.length === 0) {
+          const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
+          const titlesWithPrefix = episodeMap.map(
+            (ep) => `Ep.${ep.episodeNumber} ${ep.title}`,
+          );
+          episodeIds = titlesWithPrefix.map((title) => {
+            const match = allEpisodes.find((e) => e.title === title);
+            return match?.id ?? '';
+          });
+          logger.log(
+            `Fetched episode IDs from project: ${episodeIds.filter(Boolean).length} matched`,
+          );
+        }
 
         const characterList = analyze.characters
           .slice(0, 20)
           .map((c) => `${c.name}: ${c.description}`)
           .join('\n');
 
+        // Generate scripts in parallel
         let completed = 0;
-        let saved = 0;
+        const scriptResults: Array<{ epIndex: number; html: string }> = [];
+
         const tasks = batch.map((ep) => async () => {
+          const epIndex = ep.episodeNumber - 1;
           const outlineSlice = analyze.outline
             .filter((o) => o.index >= ep.outlineFrom && o.index <= ep.outlineTo)
             .map((o) => `${o.title}: ${o.summary}`)
@@ -384,7 +429,6 @@ export function createScriptAgentTools(
             Math.floor(text.length * endRatio),
           );
 
-          // Use generateText (not generateObject) for free-form script text
           const { text: scriptText } = await withRetry(
             () =>
               generateText({
@@ -411,40 +455,63 @@ Rules:
             { maxRetries: 2, label: `script-ep-${ep.episodeNumber}` },
           );
 
-          // Convert plain text to HTML for Tiptap editor
-          const htmlContent = textToHtml(scriptText);
-
-          // Find matching episode by title
-          const match = allEpisodes.find((e) => e.title === ep.title);
-          if (match) {
-            try {
-              await ctx.ws.saveEpisodeScript(
-                ctx.headers,
-                match.id,
-                htmlContent,
-              );
-              saved++;
-              logger.log(
-                `Script saved: ep ${ep.episodeNumber} "${ep.title}" → ${match.id} (${scriptText.length} chars)`,
-              );
-            } catch (error) {
-              logger.error(
-                `Failed to save script for ep ${ep.episodeNumber}: ${error}`,
-              );
-            }
-          } else {
-            logger.warn(`No matching episode found for "${ep.title}"`);
-          }
-
+          scriptResults.push({ epIndex, html: textToHtml(scriptText) });
           completed++;
-          logger.log(`Scripts: ${completed}/${batch.length} done`);
+          logger.log(
+            `Scripts: ${completed}/${batch.length} generated (ep ${ep.episodeNumber}, ${scriptText.length} chars)`,
+          );
         });
 
         await runWithConcurrency(tasks, 5);
 
+        // Batch save all scripts at once
+        const batchEpIds: string[] = [];
+        const batchContents: string[] = [];
+
+        for (const result of scriptResults.sort(
+          (a, b) => a.epIndex - b.epIndex,
+        )) {
+          const epId = episodeIds[result.epIndex];
+          if (epId) {
+            batchEpIds.push(epId);
+            batchContents.push(result.html);
+          } else {
+            logger.warn(`No episode ID for index ${result.epIndex}`);
+          }
+        }
+
+        if (batchEpIds.length > 0) {
+          try {
+            await ctx.ws.batchSaveScripts(
+              ctx.headers,
+              projectId,
+              batchEpIds,
+              batchContents,
+            );
+            logger.log(`Batch saved ${batchEpIds.length} scripts`);
+          } catch (error) {
+            logger.error(
+              `Batch save failed, falling back to individual saves: ${error}`,
+            );
+            for (let i = 0; i < batchEpIds.length; i++) {
+              try {
+                await ctx.ws.saveEpisodeScript(
+                  ctx.headers,
+                  batchEpIds[i],
+                  batchContents[i],
+                );
+              } catch (e) {
+                logger.error(
+                  `Individual save failed for ${batchEpIds[i]}: ${e}`,
+                );
+              }
+            }
+          }
+        }
+
         return buildMutationResult(
           'storyboard.saved',
-          `Generated scripts for episodes ${batchFrom}-${batchTo} (${saved}/${completed} saved)`,
+          `Generated scripts for episodes ${batchFrom}-${batchTo} (${batchEpIds.length}/${completed} saved)`,
           'episode',
         );
       },
@@ -479,6 +546,7 @@ Rules:
           outlineTo: number;
           summary: string;
         }>;
+        const orderedEpisodeIds = (state.orderedEpisodeIds as string[]) ?? [];
         const language = (state.language as string) ?? 'English';
         const config =
           (state.config as { shotsPerMinute?: number; style?: string }) ?? {};
@@ -487,10 +555,23 @@ Rules:
 
         const shotsPerMinute = config.shotsPerMinute ?? 15;
         const style = config.style ?? analyze.style;
-
-        // Fetch episode IDs from project
         const projectId = ctx.context.projectId;
-        const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
+
+        // Use ordered IDs from session, fallback to fetching
+        let episodeIds = orderedEpisodeIds;
+        if (episodeIds.length === 0) {
+          const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
+          const titlesWithPrefix = episodeMap.map(
+            (ep) => `Ep.${ep.episodeNumber} ${ep.title}`,
+          );
+          episodeIds = titlesWithPrefix.map((title) => {
+            const match = allEpisodes.find((e) => e.title === title);
+            return match?.id ?? '';
+          });
+          logger.log(
+            `Fetched episode IDs: ${episodeIds.filter(Boolean).length} matched`,
+          );
+        }
 
         const batch = episodeMap.filter(
           (ep) => ep.episodeNumber >= batchFrom && ep.episodeNumber <= batchTo,
@@ -550,9 +631,9 @@ Rules:
 
           totalShots += object.shots.length;
 
-          // Write to correct episode by title match
-          const match = allEpisodes.find((e) => e.title === ep.title);
-          if (match && object.shots.length > 0) {
+          // Write to correct episode by index
+          const epId = episodeIds[ep.episodeNumber - 1];
+          if (epId && object.shots.length > 0) {
             const headers = [
               'description',
               'dialogue',
@@ -572,20 +653,20 @@ Rules:
 
             try {
               await ctx.ws.saveStoryboardDraft(ctx.headers, {
-                episodeId: match.id,
+                episodeId: epId,
                 headers,
                 rows,
               });
               saved++;
               logger.log(
-                `Storyboard saved: ep ${ep.episodeNumber} → ${match.id} (${object.shots.length} shots)`,
+                `Storyboard saved: ep ${ep.episodeNumber} → ${epId} (${object.shots.length} shots)`,
               );
             } catch (error) {
               logger.error(
                 `Failed to save storyboard for ep ${ep.episodeNumber}: ${error}`,
               );
             }
-          } else if (!match) {
+          } else if (!epId) {
             logger.warn(`No matching episode for "${ep.title}"`);
           }
 

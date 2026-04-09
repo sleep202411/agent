@@ -703,6 +703,50 @@ export class WorkspaceService {
     );
   }
 
+  /**
+   * Batch save scripts to multiple episodes at once.
+   * episodeIds and contents must be same length and correspond 1:1.
+   * Use empty string for episodes without a script.
+   */
+  async batchSaveScripts(
+    headers: HeadersLike,
+    projectId: string,
+    episodeIds: string[],
+    contents: string[],
+  ) {
+    this.logger.log(
+      `[batchSaveScripts] ${episodeIds.length} scripts for project ${projectId}`,
+    );
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/user/project/scripts/episode/batch/createOrUpdate',
+      {
+        data: { projectId, episodeIds, contents },
+        maxRetries: 2,
+        timeoutMs: 120_000,
+      },
+    );
+  }
+
+  /**
+   * Move an episode before another episode for sorting.
+   * Pass beforeStoryBoardId=null to move to the end.
+   */
+  async sortEpisode(
+    headers: HeadersLike,
+    projectId: string,
+    storyBoardId: string,
+    beforeStoryBoardId: string | null,
+  ) {
+    this.logger.log(
+      `[sortEpisode] move ${storyBoardId} before ${beforeStoryBoardId ?? 'END'} in project ${projectId}`,
+    );
+    return this.request<WorkspaceRecord>(headers, '/api/user/storyBoard/sort', {
+      data: { projectId, storyBoardId, beforeStoryBoardId },
+      maxRetries: 1,
+    });
+  }
+
   async saveStoryboardDraft(
     headers: HeadersLike,
     data: {
