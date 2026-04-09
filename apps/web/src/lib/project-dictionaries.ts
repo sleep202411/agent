@@ -15,7 +15,7 @@ export function fetchProjectDictionaries(): Promise<ProjectDictionaries> {
 async function _fetchProjectDictionaries(): Promise<ProjectDictionaries> {
   const legacyDictionaryHeaders = { "accept-language": "en-US" } as const;
   const [typeMapResult, styleOptionsResult, sizeMetaResult] = await Promise.allSettled([
-    backendApi.get<Record<string, string>>("/api/user/world/static/list/proudct/type", {
+    backendApi.get<Record<string, string>>("/api/user/world/static/list/proudct/type/", {
       headers: legacyDictionaryHeaders,
     }),
     backendApi.get<Array<{ id?: string | number; info?: string; picLink?: string }>>(
