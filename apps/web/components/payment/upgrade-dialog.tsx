@@ -403,7 +403,6 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
             <h2 className="mb-2 text-xl font-semibold">{t("wechatPay")}</h2>
             <p className="mb-8 text-sm text-muted-foreground">{t("scanToPay")}</p>
             <div className="mb-8 rounded-2xl bg-white p-5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrUrl} alt="QR" className="size-56" />
             </div>
             <div className="flex gap-3">

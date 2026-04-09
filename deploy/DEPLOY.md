@@ -12,7 +12,7 @@
 
 ```
 Nginx (80/443)
-  └→ fizzdragon-web (Next.js :3000)
+  └→ fizzdragon-web (TanStack Start :3000)
        └→ fizzdragon-server (NestJS :3001)
              ├→ Redis (6379) — Script Agent 会话状态缓存
              ├→ Java Backend (外部)
@@ -129,11 +129,11 @@ source apps/web/.env.production.com   # 或 .env.production.cn / .env.staging
 
 # 构建
 docker build --platform linux/amd64 -t fizzdragon-web-<env> \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
   --build-arg SERVER_URL=$SERVER_URL \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  --build-arg NEXT_PUBLIC_SITE_REGION=$NEXT_PUBLIC_SITE_REGION \
+  --build-arg VITE_SITE_REGION=$VITE_SITE_REGION \
   -f apps/web/Dockerfile .
 ```
 
@@ -262,11 +262,11 @@ platform_default:       staging-web + staging-server + production-cn-web + produ
 # 1. 本地构建 + 推送
 source apps/web/.env.staging
 docker build --platform linux/amd64 -t fizzdragon-web-staging \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
   --build-arg SERVER_URL=$SERVER_URL \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  --build-arg NEXT_PUBLIC_SITE_REGION=$NEXT_PUBLIC_SITE_REGION \
+  --build-arg VITE_SITE_REGION=$VITE_SITE_REGION \
   -f apps/web/Dockerfile .
 docker build --platform linux/amd64 -t fizzdragon-server-staging -f apps/server/Dockerfile .
 
@@ -288,11 +288,11 @@ ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
 # 1. 本地构建 + 推送
 source apps/web/.env.production.cn
 docker build --platform linux/amd64 -t fizzdragon-web-cn \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
   --build-arg SERVER_URL=$SERVER_URL \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  --build-arg NEXT_PUBLIC_SITE_REGION=cn \
+  --build-arg VITE_SITE_REGION=cn \
   -f apps/web/Dockerfile .
 docker build --platform linux/amd64 -t fizzdragon-server-cn -f apps/server/Dockerfile .
 
@@ -314,11 +314,11 @@ ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
 # 1. 本地构建 + 推送
 source apps/web/.env.production.com
 docker build --platform linux/amd64 -t fizzdragon-web-com \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
   --build-arg SERVER_URL=$SERVER_URL \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  --build-arg NEXT_PUBLIC_SITE_REGION=global \
+  --build-arg VITE_SITE_REGION=global \
   -f apps/web/Dockerfile .
 docker build --platform linux/amd64 -t fizzdragon-server-com -f apps/server/Dockerfile .
 

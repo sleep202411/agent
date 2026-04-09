@@ -39,6 +39,7 @@ ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
 ARG JAVA_CONTENT_URL
 ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
 
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npx turbo run build --filter=web
 
 # ─── Stage 4: Runner ────────────────────────────────────
@@ -49,23 +50,14 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-ARG SERVER_URL
-ENV SERVER_URL=$SERVER_URL
-ARG JAVA_STUDIO_URL
-ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
-ARG JAVA_CONTENT_URL
-ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
-
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 appuser
 
-# TanStack Start build output
-COPY --from=builder --chown=appuser:nodejs /app/apps/web/dist ./apps/web/dist
-COPY --from=builder --chown=appuser:nodejs /app/apps/web/package.json ./apps/web/package.json
-COPY --from=builder --chown=appuser:nodejs /app/node_modules ./node_modules
+# Nitro build output (self-contained, no node_modules needed)
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/.output ./.output
 
 USER appuser
 
 EXPOSE 3000
 
-CMD ["node", "apps/web/dist/server/server.js"]
+CMD ["node", ".output/server/index.mjs"]

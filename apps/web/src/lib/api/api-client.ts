@@ -2,7 +2,7 @@
  * Backend API Client
  *
  * HTTP client for Java backend services.
- * Requests go to /api/* which Next.js rewrites proxy to the appropriate backend:
+ * Requests go to /api/* which Vite dev-server / TanStack Start proxy to the appropriate backend:
  *   /api/user/* → USER_API_URL (projects, storyboard, world, files)
  *   /api/ai/*   → AI_API_URL (image/video/audio generation, models)
  */
@@ -49,7 +49,7 @@ export class ApiRequestError extends Error {
 // ============ Core ============
 
 function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
-  // Ensure absolute URL to bypass Next.js locale routing
+  // Ensure absolute URL for SSR compatibility
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const base = path.startsWith("http") ? path : `${origin}${path}`;
   if (!params) return base;
@@ -64,7 +64,7 @@ function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
 function getCookieLocale(): Locale | null {
   if (typeof document === "undefined") return null;
 
-  const match = document.cookie.match(/(?:^|;\s*)NEXT_LOCALE=([^;]+)/);
+  const match = document.cookie.match(/(?:^|;\s*)locale=([^;]+)/);
   const locale = match?.[1];
   if (locale && locales.includes(locale as Locale)) {
     return locale as Locale;

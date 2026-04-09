@@ -6,7 +6,7 @@ Turborepo monorepo for FizzDragon Studio — AI-powered video content creation p
 
 ```
 apps/
-  web/            Next.js 前端（Studio + 主站）
+  web/            TanStack Start + Vite 前端（Studio + 主站）
   server/         NestJS 后端（AI Agent + Assistant）
 packages/
   ui/             共享 UI 组件
@@ -38,10 +38,10 @@ npx turbo dev --filter=web
 npx turbo dev --filter=server
 ```
 
-| Service         | URL                   |
-| --------------- | --------------------- |
-| Web (Next.js)   | http://localhost:3000 |
-| Server (NestJS) | http://localhost:3001 |
+| Service              | URL                   |
+| -------------------- | --------------------- |
+| Web (TanStack Start) | http://localhost:3000 |
+| Server (NestJS)      | http://localhost:3001 |
 
 ## Environment Variables
 
@@ -51,7 +51,7 @@ npx turbo dev --filter=server
 JAVA_CONTENT_URL=http://120.26.152.164:8091
 JAVA_STUDIO_URL=http://120.26.152.164:8090
 SERVER_URL=http://localhost:3001
-NEXT_PUBLIC_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com
+VITE_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com
 ```
 
 ### Server (`apps/server/.env`)
@@ -90,7 +90,7 @@ source apps/web/.env.production.com
 
 # 构建镜像（Mac 需要 --platform linux/amd64）
 docker build --platform linux/amd64 -t fizzdragon-web-com \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL \
+  --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
   --build-arg SERVER_URL=$SERVER_URL \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
