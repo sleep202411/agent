@@ -351,8 +351,8 @@ async function applyWorkspaceMutationEffects(
   }
 }
 
-function buildWorkspaceContext(state: RootState): AssistantWorkspaceSelection {
-  const inst = selectCurrentInstance(state);
+function buildWorkspaceContext(state: RootState, projectId: string): AssistantWorkspaceSelection {
+  const inst = state.project.instances[projectId] ?? selectCurrentInstance(state);
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
@@ -405,13 +405,6 @@ export const addAttachments = createAsyncThunk<
     }
 
     const hash = await computeFileHash(file);
-    const pendingAttachments = (
-      getState().assistant.projects[projectId] ?? createEmptyConversation()
-    ).attachments;
-    if (pendingAttachments.some((a) => a.hash === hash && a.status !== "error")) {
-      toast.warning(t("duplicateFile", { name: file.name }));
-      continue;
-    }
 
     const previewUrl = isImageMime(file.type) ? URL.createObjectURL(file) : "";
     const { excerpt, truncated } = await readAttachmentExcerpt(file);
@@ -491,7 +484,7 @@ export const sendUserMessage = createAsyncThunk<
 
   try {
     const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
-    const workspaceContext = buildWorkspaceContext(getState());
+    const workspaceContext = buildWorkspaceContext(getState(), projectId);
     const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
     const finalMessage = await sendAssistantChat({
@@ -537,7 +530,7 @@ export const applyToolResult = createAsyncThunk<
   );
 
   try {
-    const workspaceContext = buildWorkspaceContext(getState());
+    const workspaceContext = buildWorkspaceContext(getState(), projectId);
     const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
     const finalMessage = await sendAssistantChat({

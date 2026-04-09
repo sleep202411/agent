@@ -24,6 +24,7 @@ import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { backendApi } from "@/src/lib/api";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { AssetAiRecordDialog } from "../asset-ai-record-dialog";
+import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 
 const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
 const MAX_IMAGES = 6;
@@ -58,6 +59,7 @@ export function SceneImageSection({
   const [previewUrl, setPreviewUrl] = useState("");
   const [localPreviewUrl, setLocalPreviewUrl] = useState("");
   const [aiRecordOpen, setAiRecordOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [generatingPanorama, setGeneratingPanorama] = useState(false);
   const [menuOpenIndex, setMenuOpenIndex] = useState(-1);
 
@@ -237,6 +239,7 @@ export function SceneImageSection({
                     className={`absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-1 py-1.5 transition-opacity ${menuOpenIndex === index ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                   >
                     <Button
+                      type="button"
                       size="icon-xs"
                       variant="soft"
                       color="muted"
@@ -246,6 +249,7 @@ export function SceneImageSection({
                       <IconMaximize className="size-3.5" />
                     </Button>
                     <Button
+                      type="button"
                       size="icon-xs"
                       variant="soft"
                       color="muted"
@@ -255,6 +259,7 @@ export function SceneImageSection({
                       <IconReplace className="size-3.5" />
                     </Button>
                     <Button
+                      type="button"
                       size="icon-xs"
                       variant="soft"
                       color="muted"
@@ -264,7 +269,7 @@ export function SceneImageSection({
                     </Button>
                     <DropdownMenu onOpenChange={(open) => setMenuOpenIndex(open ? index : -1)}>
                       <DropdownMenuTrigger asChild>
-                        <Button size="icon-xs" variant="soft" color="muted">
+                        <Button type="button" size="icon-xs" variant="soft" color="muted">
                           <IconDots className="size-3.5" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -296,11 +301,18 @@ export function SceneImageSection({
 
           {!uploading && images.length < MAX_IMAGES ? (
             <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/10">
-              <Button size="sm" variant="soft" color="muted" onClick={() => openUpload()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="soft"
+                color="muted"
+                onClick={() => setPickerOpen(true)}
+              >
                 <IconUpload className="size-3.5" />
                 {tc("upload")}
               </Button>
               <Button
+                type="button"
                 size="sm"
                 variant="soft"
                 color="muted"
@@ -337,6 +349,7 @@ export function SceneImageSection({
                 ) : panoramaUrl ? (
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/70 to-transparent px-1 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
                     <Button
+                      type="button"
                       size="icon-xs"
                       variant="soft"
                       color="muted"
@@ -346,6 +359,7 @@ export function SceneImageSection({
                       <IconMaximize className="size-3.5" />
                     </Button>
                     <Button
+                      type="button"
                       size="icon-xs"
                       variant="soft"
                       color="muted"
@@ -355,6 +369,7 @@ export function SceneImageSection({
                       <IconWand className="size-3.5" />
                     </Button>
                     <Button
+                      type="button"
                       size="icon-xs"
                       variant="soft"
                       color="destructive"
@@ -369,6 +384,7 @@ export function SceneImageSection({
             ) : (
               <div className="flex h-full items-center justify-center">
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
                   color="muted"
@@ -381,6 +397,18 @@ export function SceneImageSection({
           </div>
         </div>
       </div>
+
+      <AssetPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        assetType="img"
+        multiple
+        onSelect={(paths) => {
+          const next = [...images, ...paths].slice(0, MAX_IMAGES);
+          onImagesChange(next);
+          setPickerOpen(false);
+        }}
+      />
 
       <AssetAiRecordDialog
         open={aiRecordOpen}

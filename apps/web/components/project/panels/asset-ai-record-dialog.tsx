@@ -258,7 +258,7 @@ export function AssetAiRecordDialog({
   }, [allImages, onOpenChange, onSelect, previewPath, selectedIndex]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="w-[1000px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 sm:max-w-[1000px]"
         onInteractOutside={(event) => event.preventDefault()}
@@ -308,13 +308,14 @@ export function AssetAiRecordDialog({
                     ) : isFailed(item) ? (
                       <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-black/30 text-[11px] text-muted-foreground">
                         <IconX className="size-5 text-destructive" />
-                        <span>生成失败</span>
+                        <span>Failed</span>
                       </div>
                     ) : (
                       <>
                         <img src={ossUrl(path)} alt="" className="h-full w-full object-cover" />
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={(event) => {
                             event.stopPropagation();
                             setSelectedIndex((current) => (current === index ? null : index));
@@ -329,7 +330,7 @@ export function AssetAiRecordDialog({
                           }`}
                         >
                           <IconCheck className="size-3" />
-                        </button>
+                        </div>
                       </>
                     )}
                   </button>

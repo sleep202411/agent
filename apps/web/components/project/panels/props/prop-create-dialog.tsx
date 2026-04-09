@@ -39,11 +39,11 @@ export function PropCreateDialog({
     if (!name.trim() || !worldId) return;
     setCreating(true);
     try {
-      const result = await backendApi.post<Asset>("/api/user/world/create/worldprop", {
+      const id = await backendApi.post<string>("/api/user/world/create/worldprop", {
         data: { name: name.trim(), worldId },
       });
       onOpenChange(false);
-      onCreated(result);
+      onCreated({ id: String(id), name: name.trim() } as Asset);
     } catch (err) {
       console.error("[CreateProp] 创建失败:", err);
     } finally {

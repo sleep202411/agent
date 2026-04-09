@@ -229,6 +229,7 @@ function Button({
 
   return (
     <button
+      type="button"
       data-slot="button"
       data-variant={variant}
       data-color={color}

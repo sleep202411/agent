@@ -77,6 +77,7 @@ export function MediaPreviewModal({
     const originalOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.stopImmediatePropagation();
         onOpenChange(false);
       }
     };

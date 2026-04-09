@@ -102,7 +102,7 @@ export function WorldAssetSelectDialog({
           <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-auto px-5">
+        <div className="min-h-0 flex-1 overflow-auto p-4">
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <EmptyIcon kind={kind} />
@@ -153,7 +153,7 @@ export function WorldAssetSelectDialog({
           )}
         </div>
 
-        <DialogFooter className="px-5 pb-4 pt-3">
+        <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}
           </Button>
