@@ -49,7 +49,6 @@ export class ApiRequestError extends Error {
 // ============ Core ============
 
 function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
-  // Ensure absolute URL for SSR compatibility
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const base = path.startsWith("http") ? path : `${origin}${path}`;
   if (!params) return base;

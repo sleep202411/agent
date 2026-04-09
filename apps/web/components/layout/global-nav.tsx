@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useLocation } from "@tanstack/react-router";
-import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconFlame,
   IconUsers,
@@ -15,7 +15,6 @@ const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment"];
 
 export function GlobalNav() {
   const { pathname } = useLocation();
-  const locale = useLocale();
   const t = useTranslations("nav");
 
   // Hide on studio, project editor, and auth pages
@@ -23,8 +22,8 @@ export function GlobalNav() {
   if (shouldHide) return null;
 
   const navItems = [
-    { href: `/${locale}/projects`, label: t("studio"), icon: IconLayoutDashboard },
-    { href: `/${locale}/creators`, label: t("creators"), icon: IconUsers },
+    { href: "/projects", label: t("studio"), icon: IconLayoutDashboard },
+    { href: "/creators", label: t("creators"), icon: IconUsers },
   ];
 
   const isActive = (href: string) => pathname.startsWith(href);
@@ -34,7 +33,7 @@ export function GlobalNav() {
       <div className="mx-auto flex h-14 max-w-screen-2xl items-center justify-between px-6">
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">
-          <Link to={`/${locale}/projects`} className="flex items-center gap-2 shrink-0">
+          <Link to="/projects" className="flex items-center gap-2 shrink-0">
             <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
               <IconFlame className="size-5 text-primary-foreground" />
             </div>

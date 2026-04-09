@@ -246,55 +246,34 @@ export function createScriptAgentTools(
         if (!episodeMap?.length)
           throw new Error('No episode mapping. Run map_episodes first.');
 
-        const worldId = ctx.requireWorldId();
         const projectId = ctx.context.projectId;
         const results: string[] = [];
 
-        // 1. Check existing episodes to avoid duplicates
-        const existingEpisodes = await ctx.ws.listEpisodes(
-          ctx.headers,
-          projectId,
-        );
-        const existingTitles = new Set(existingEpisodes.map((e) => e.title));
-        logger.log(`Project has ${existingEpisodes.length} existing episodes`);
-
-        // Add episode number prefix to ensure unique titles
-        const titlesWithPrefix = episodeMap.map(
-          (ep) => `Ep.${ep.episodeNumber} ${ep.title}`,
+        // 1. Create episodes sequentially, collecting IDs directly
+        const language = (state.language as string) ?? 'English';
+        const isChinese = /chinese|中文/i.test(language);
+        const titlesWithPrefix = episodeMap.map((ep) =>
+          isChinese
+            ? `第${ep.episodeNumber}集:${ep.title}`
+            : `Ep.${ep.episodeNumber} ${ep.title}`,
         );
 
-        // Filter out already existing titles
-        const newTitles = titlesWithPrefix.filter(
-          (t) => !existingTitles.has(t),
-        );
-
-        if (newTitles.length > 0) {
-          logger.log(
-            `Creating ${newTitles.length} new episodes (${titlesWithPrefix.length - newTitles.length} already exist)`,
+        let orderedEpisodeIds: string[];
+        try {
+          orderedEpisodeIds = await ctx.ws.batchAddEpisodes(
+            ctx.headers,
+            projectId,
+            titlesWithPrefix,
           );
-          try {
-            await ctx.ws.batchAddEpisodes(ctx.headers, projectId, newTitles);
-            results.push(`${newTitles.length} episodes`);
-          } catch (error) {
-            logger.error(`batchAddEpisodes failed: ${error}`);
-            throw new Error(
-              `Failed to create episodes: ${error instanceof Error ? error.message : error}`,
-            );
-          }
-        } else {
-          logger.log('All episodes already exist, skipping creation');
-          results.push(`${titlesWithPrefix.length} episodes (already existed)`);
+          const created = orderedEpisodeIds.filter(Boolean).length;
+          results.push(`${created} episodes`);
+          logger.log(`Created ${created}/${titlesWithPrefix.length} episodes`);
+        } catch (error) {
+          logger.error(`batchAddEpisodes failed: ${error}`);
+          throw new Error(
+            `Failed to create episodes: ${error instanceof Error ? error.message : error}`,
+          );
         }
-
-        // Re-fetch to get complete list with IDs
-        const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
-        logger.log(`Project now has ${allEpisodes.length} episodes`);
-
-        // Build ordered episode ID list matching our episodeMap
-        const orderedEpisodeIds: string[] = titlesWithPrefix.map((title) => {
-          const match = allEpisodes.find((e) => e.title === title);
-          return match?.id ?? '';
-        });
 
         // Save ordered IDs to session for generate_scripts/storyboard
         await store.saveState(sessionId, {
@@ -304,36 +283,41 @@ export function createScriptAgentTools(
           titlesWithPrefix,
         });
 
-        // 2. Batch create characters
-        const characters = analyze.characters ?? [];
-        if (characters.length > 0) {
-          try {
-            const roleDatas: string[][] = [
-              ['name', 'description'],
-              ...characters.map((c) => [c.name, c.description ?? '']),
-            ];
-            await ctx.ws.batchCreateRoles(ctx.headers, worldId, roleDatas);
-            results.push(`${characters.length} characters`);
-          } catch (error) {
-            logger.error(`batchCreateRoles failed: ${error}`);
-            results.push(`characters failed`);
+        // 2. Batch create characters + scenes (requires worldId)
+        const worldId = ctx.context.worldId;
+        if (worldId) {
+          const characters = analyze.characters ?? [];
+          if (characters.length > 0) {
+            try {
+              const roleDatas: string[][] = [
+                ['name', 'description'],
+                ...characters.map((c) => [c.name, c.description ?? '']),
+              ];
+              await ctx.ws.batchCreateRoles(ctx.headers, worldId, roleDatas);
+              results.push(`${characters.length} characters`);
+            } catch (error) {
+              logger.error(`batchCreateRoles failed: ${error}`);
+              results.push(`characters failed`);
+            }
           }
-        }
 
-        // 3. Batch create scenes
-        const locations = analyze.locations ?? [];
-        if (locations.length > 0) {
-          try {
-            const sceneDatas: string[][] = [
-              ['name', 'description'],
-              ...locations.map((l) => [l.name, l.description ?? '']),
-            ];
-            await ctx.ws.batchCreateScenes(ctx.headers, worldId, sceneDatas);
-            results.push(`${locations.length} scenes`);
-          } catch (error) {
-            logger.error(`batchCreateScenes failed: ${error}`);
-            results.push(`scenes failed`);
+          const locations = analyze.locations ?? [];
+          if (locations.length > 0) {
+            try {
+              const sceneDatas: string[][] = [
+                ['name', 'description'],
+                ...locations.map((l) => [l.name, l.description ?? '']),
+              ];
+              await ctx.ws.batchCreateScenes(ctx.headers, worldId, sceneDatas);
+              results.push(`${locations.length} scenes`);
+            } catch (error) {
+              logger.error(`batchCreateScenes failed: ${error}`);
+              results.push(`scenes failed`);
+            }
           }
+        } else {
+          logger.warn('No worldId — skipping character/scene creation');
+          results.push('characters/scenes skipped (no worldId)');
         }
 
         return buildMutationResult(
@@ -558,17 +542,32 @@ Rules:
 
         // Use ordered IDs from session, fallback to fetching
         let episodeIds = orderedEpisodeIds;
+        logger.log(
+          `Session orderedEpisodeIds: ${episodeIds.length} IDs, first 3: ${episodeIds.slice(0, 3).join(', ')}`,
+        );
         if (episodeIds.length === 0) {
           const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
           const titlesWithPrefix = episodeMap.map(
             (ep) => `Ep.${ep.episodeNumber} ${ep.title}`,
+          );
+          logger.log(
+            `Trying to match ${titlesWithPrefix.length} titles against ${allEpisodes.length} episodes`,
+          );
+          logger.log(
+            `Expected titles: ${titlesWithPrefix.slice(0, 3).join(' | ')}`,
+          );
+          logger.log(
+            `Actual titles: ${allEpisodes
+              .slice(0, 3)
+              .map((e) => e.title)
+              .join(' | ')}`,
           );
           episodeIds = titlesWithPrefix.map((title) => {
             const match = allEpisodes.find((e) => e.title === title);
             return match?.id ?? '';
           });
           logger.log(
-            `Fetched episode IDs: ${episodeIds.filter(Boolean).length} matched`,
+            `Fetched episode IDs: ${episodeIds.filter(Boolean).length}/${episodeIds.length} matched`,
           );
         }
 

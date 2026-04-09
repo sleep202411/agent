@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useNavigate } from "@tanstack/react-router";
 import { IconDots, IconLoader2, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -29,7 +29,6 @@ function ossUrl(path?: string) {
 export function ProjectsPanel({ onClose }: { onClose: () => void }) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
-  const locale = useLocale();
   const navigate = useNavigate();
 
   const dispatch = useAppDispatch();
@@ -71,7 +70,7 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
     if (!project.id) return;
     const nextWorldId = String(project.worldId ?? worldId ?? "");
     void navigate({
-      to: `/${locale}/projects/${project.id}${nextWorldId ? `?worldId=${nextWorldId}` : ""}`,
+      to: `/projects/${project.id}${nextWorldId ? `?worldId=${nextWorldId}` : ""}`,
     });
     onClose();
   };

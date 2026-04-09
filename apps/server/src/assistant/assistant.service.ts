@@ -54,14 +54,12 @@ export class AssistantService {
   ): Promise<{ toUIMessageStreamResponse: () => globalThis.Response }> {
     const wsContext: WorkspaceContext = {
       projectId: payload.projectId,
-      worldId:
-        typeof payload.workspaceContext?.worldId === 'string'
-          ? payload.workspaceContext.worldId
-          : undefined,
-      episodeId:
-        typeof payload.workspaceContext?.episodeId === 'string'
-          ? payload.workspaceContext.episodeId
-          : undefined,
+      worldId: payload.workspaceContext?.worldId
+        ? String(payload.workspaceContext.worldId)
+        : undefined,
+      episodeId: payload.workspaceContext?.episodeId
+        ? String(payload.workspaceContext.episodeId)
+        : undefined,
       activeTab:
         typeof payload.workspaceContext?.activeTab === 'string'
           ? payload.workspaceContext.activeTab

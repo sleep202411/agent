@@ -35,9 +35,12 @@ export function createExecuteTools({
       }),
       outputSchema: mutationResultSchema,
       execute: async (input) => {
+        // Fetch current project to merge with updates (API requires full object)
+        const current = await ws.getProjectDetail(headers, context.projectId);
         await ws.updateProject(headers, {
+          ...current,
           id: context.projectId,
-          worldId: context.worldId ?? undefined,
+          worldId: context.worldId ?? current?.worldId ?? undefined,
           ...input,
         });
         return buildMutationResult(

@@ -3,7 +3,7 @@ import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
 import { WorkspaceHeader } from "@/components/workspace/workspace-header";
 import { AgentDialog } from "@/components/agent/agent-dialog";
 
-export const Route = createFileRoute("/$locale/_studio")({
+export const Route = createFileRoute("/_studio")({
   component: StudioLayout,
 });
 

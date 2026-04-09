@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useLocale } from "@/src/i18n/i18n";
 import { IconPlus, IconDots, IconLoader2, IconLayoutGrid, IconFolder } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { CreationComposer } from "@/components/workspace/creation-composer";
@@ -31,7 +30,6 @@ function ossUrl(path: string | null | undefined): string | null {
 // ─── Page ───────────────────────────────────────────────────
 
 export default function ProjectsPage() {
-  const locale = useLocale();
   const tw = useTranslations("workspace");
   const { groups, totalProducts, isLoading } = useWorldsWithProducts();
   const [creating, setCreating] = useState(false);
@@ -80,7 +78,6 @@ export default function ProjectsPage() {
             groups={groups}
             loading={isLoading}
             creating={creating}
-            locale={locale}
             onCreateProject={handleCreateProject}
           />
         ) : (
@@ -88,7 +85,6 @@ export default function ProjectsPage() {
             groups={groups}
             loading={isLoading}
             creating={creating}
-            locale={locale}
             onCreateProject={handleCreateProject}
           />
         )}
@@ -105,13 +101,12 @@ type ViewProps = {
   groups: WorldGroup[];
   loading: boolean;
   creating: boolean;
-  locale: string;
   onCreateProject: () => void;
 };
 
 // ─── Flat View ──────────────────────────────────────────────
 
-function FlatView({ groups, loading, creating, locale, onCreateProject }: ViewProps) {
+function FlatView({ groups, loading, creating, onCreateProject }: ViewProps) {
   const allProducts = groups.flatMap((g) =>
     g.products.map((p) => ({ product: p, world: g.world }))
   );
@@ -122,7 +117,7 @@ function FlatView({ groups, loading, creating, locale, onCreateProject }: ViewPr
       {loading && Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
       {!loading &&
         allProducts.map(({ product, world }) => (
-          <ProductCard key={product.id} product={product} world={world} locale={locale} />
+          <ProductCard key={product.id} product={product} world={world} />
         ))}
       {!loading && allProducts.length === 0 && <EmptyState />}
     </div>
@@ -131,7 +126,7 @@ function FlatView({ groups, loading, creating, locale, onCreateProject }: ViewPr
 
 // ─── Grouped View ───────────────────────────────────────────
 
-function GroupedView({ groups, loading, creating, locale, onCreateProject }: ViewProps) {
+function GroupedView({ groups, loading, creating, onCreateProject }: ViewProps) {
   const tw = useTranslations("workspace");
   return (
     <div className="space-y-10">
@@ -163,7 +158,7 @@ function GroupedView({ groups, loading, creating, locale, onCreateProject }: Vie
             </div>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {products.map((p) => (
-                <ProductCard key={p.id} product={p} world={world} locale={locale} />
+                <ProductCard key={p.id} product={p} world={world} />
               ))}
             </div>
           </div>
@@ -187,20 +182,12 @@ function GroupedView({ groups, loading, creating, locale, onCreateProject }: Vie
 
 // ─── Product Card ────────────────────────────────────────────
 
-function ProductCard({
-  product,
-  world,
-  locale,
-}: {
-  product: V1WorldProduct;
-  world: V1World;
-  locale: string;
-}) {
+function ProductCard({ product, world }: { product: V1WorldProduct; world: V1World }) {
   const cover = ossUrl(product.imagePath);
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-border">
-      <Link to={`/${locale}/projects/${product.id}?worldId=${product.worldId}`} target="_blank">
+      <Link to={`/projects/${product.id}?worldId=${product.worldId}`} target="_blank">
         <div className="relative h-40 w-full bg-muted">
           {cover ? (
             <img src={cover} alt="" className="size-full object-cover" />
@@ -218,7 +205,7 @@ function ProductCard({
       </Link>
       <div className="flex items-start justify-between gap-2 p-3">
         <Link
-          to={`/${locale}/projects/${product.id}?worldId=${product.worldId}`}
+          to={`/projects/${product.id}?worldId=${product.worldId}`}
           target="_blank"
           className="min-w-0 flex-1"
         >

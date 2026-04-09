@@ -9,27 +9,28 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LocaleRouteImport } from './routes/$locale'
+import { Route as StudioRouteImport } from './routes/_studio'
+import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as LocaleIndexRouteImport } from './routes/$locale/index'
-import { Route as LocaleStudioRouteImport } from './routes/$locale/_studio'
-import { Route as LocaleAuthRouteImport } from './routes/$locale/_auth'
-import { Route as LocaleCreatorsIndexRouteImport } from './routes/$locale/creators.index'
-import { Route as LocaleProjectsIdRouteImport } from './routes/$locale/projects_.$id'
-import { Route as LocalePaymentResultRouteImport } from './routes/$locale/payment.result'
-import { Route as LocaleCreatorsIdRouteImport } from './routes/$locale/creators_.$id'
-import { Route as LocaleStudioThemePreviewRouteImport } from './routes/$locale/_studio.theme-preview'
-import { Route as LocaleStudioTasksRouteImport } from './routes/$locale/_studio.tasks'
-import { Route as LocaleStudioSettingsRouteImport } from './routes/$locale/_studio.settings'
-import { Route as LocaleStudioProjectsRouteImport } from './routes/$locale/_studio.projects'
-import { Route as LocaleStudioAssetsRouteImport } from './routes/$locale/_studio.assets'
-import { Route as LocaleAuthRegisterRouteImport } from './routes/$locale/_auth.register'
-import { Route as LocaleAuthLoginRouteImport } from './routes/$locale/_auth.login'
-import { Route as LocaleAuthForgotPasswordRouteImport } from './routes/$locale/_auth.forgot-password'
+import { Route as CreatorsIndexRouteImport } from './routes/creators.index'
+import { Route as ProjectsIdRouteImport } from './routes/projects_.$id'
+import { Route as PaymentResultRouteImport } from './routes/payment.result'
+import { Route as CreatorsIdRouteImport } from './routes/creators_.$id'
+import { Route as StudioThemePreviewRouteImport } from './routes/_studio.theme-preview'
+import { Route as StudioTasksRouteImport } from './routes/_studio.tasks'
+import { Route as StudioSettingsRouteImport } from './routes/_studio.settings'
+import { Route as StudioProjectsRouteImport } from './routes/_studio.projects'
+import { Route as StudioAssetsRouteImport } from './routes/_studio.assets'
+import { Route as AuthRegisterRouteImport } from './routes/_auth.register'
+import { Route as AuthLoginRouteImport } from './routes/_auth.login'
+import { Route as AuthForgotPasswordRouteImport } from './routes/_auth.forgot-password'
 
-const LocaleRoute = LocaleRouteImport.update({
-  id: '/$locale',
-  path: '/$locale',
+const StudioRoute = StudioRouteImport.update({
+  id: '/_studio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/_auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -37,202 +38,189 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LocaleIndexRoute = LocaleIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => LocaleRoute,
-} as any)
-const LocaleStudioRoute = LocaleStudioRouteImport.update({
-  id: '/_studio',
-  getParentRoute: () => LocaleRoute,
-} as any)
-const LocaleAuthRoute = LocaleAuthRouteImport.update({
-  id: '/_auth',
-  getParentRoute: () => LocaleRoute,
-} as any)
-const LocaleCreatorsIndexRoute = LocaleCreatorsIndexRouteImport.update({
+const CreatorsIndexRoute = CreatorsIndexRouteImport.update({
   id: '/creators/',
   path: '/creators/',
-  getParentRoute: () => LocaleRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-const LocaleProjectsIdRoute = LocaleProjectsIdRouteImport.update({
+const ProjectsIdRoute = ProjectsIdRouteImport.update({
   id: '/projects_/$id',
   path: '/projects/$id',
-  getParentRoute: () => LocaleRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-const LocalePaymentResultRoute = LocalePaymentResultRouteImport.update({
+const PaymentResultRoute = PaymentResultRouteImport.update({
   id: '/payment/result',
   path: '/payment/result',
-  getParentRoute: () => LocaleRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-const LocaleCreatorsIdRoute = LocaleCreatorsIdRouteImport.update({
+const CreatorsIdRoute = CreatorsIdRouteImport.update({
   id: '/creators_/$id',
   path: '/creators/$id',
-  getParentRoute: () => LocaleRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-const LocaleStudioThemePreviewRoute =
-  LocaleStudioThemePreviewRouteImport.update({
-    id: '/theme-preview',
-    path: '/theme-preview',
-    getParentRoute: () => LocaleStudioRoute,
-  } as any)
-const LocaleStudioTasksRoute = LocaleStudioTasksRouteImport.update({
+const StudioThemePreviewRoute = StudioThemePreviewRouteImport.update({
+  id: '/theme-preview',
+  path: '/theme-preview',
+  getParentRoute: () => StudioRoute,
+} as any)
+const StudioTasksRoute = StudioTasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
-  getParentRoute: () => LocaleStudioRoute,
+  getParentRoute: () => StudioRoute,
 } as any)
-const LocaleStudioSettingsRoute = LocaleStudioSettingsRouteImport.update({
+const StudioSettingsRoute = StudioSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => LocaleStudioRoute,
+  getParentRoute: () => StudioRoute,
 } as any)
-const LocaleStudioProjectsRoute = LocaleStudioProjectsRouteImport.update({
+const StudioProjectsRoute = StudioProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
-  getParentRoute: () => LocaleStudioRoute,
+  getParentRoute: () => StudioRoute,
 } as any)
-const LocaleStudioAssetsRoute = LocaleStudioAssetsRouteImport.update({
+const StudioAssetsRoute = StudioAssetsRouteImport.update({
   id: '/assets',
   path: '/assets',
-  getParentRoute: () => LocaleStudioRoute,
+  getParentRoute: () => StudioRoute,
 } as any)
-const LocaleAuthRegisterRoute = LocaleAuthRegisterRouteImport.update({
+const AuthRegisterRoute = AuthRegisterRouteImport.update({
   id: '/register',
   path: '/register',
-  getParentRoute: () => LocaleAuthRoute,
+  getParentRoute: () => AuthRoute,
 } as any)
-const LocaleAuthLoginRoute = LocaleAuthLoginRouteImport.update({
+const AuthLoginRoute = AuthLoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => LocaleAuthRoute,
+  getParentRoute: () => AuthRoute,
 } as any)
-const LocaleAuthForgotPasswordRoute =
-  LocaleAuthForgotPasswordRouteImport.update({
-    id: '/forgot-password',
-    path: '/forgot-password',
-    getParentRoute: () => LocaleAuthRoute,
-  } as any)
+const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => AuthRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/$locale': typeof LocaleStudioRouteWithChildren
-  '/$locale/': typeof LocaleIndexRoute
-  '/$locale/forgot-password': typeof LocaleAuthForgotPasswordRoute
-  '/$locale/login': typeof LocaleAuthLoginRoute
-  '/$locale/register': typeof LocaleAuthRegisterRoute
-  '/$locale/assets': typeof LocaleStudioAssetsRoute
-  '/$locale/projects': typeof LocaleStudioProjectsRoute
-  '/$locale/settings': typeof LocaleStudioSettingsRoute
-  '/$locale/tasks': typeof LocaleStudioTasksRoute
-  '/$locale/theme-preview': typeof LocaleStudioThemePreviewRoute
-  '/$locale/creators/$id': typeof LocaleCreatorsIdRoute
-  '/$locale/payment/result': typeof LocalePaymentResultRoute
-  '/$locale/projects/$id': typeof LocaleProjectsIdRoute
-  '/$locale/creators/': typeof LocaleCreatorsIndexRoute
+  '/forgot-password': typeof AuthForgotPasswordRoute
+  '/login': typeof AuthLoginRoute
+  '/register': typeof AuthRegisterRoute
+  '/assets': typeof StudioAssetsRoute
+  '/projects': typeof StudioProjectsRoute
+  '/settings': typeof StudioSettingsRoute
+  '/tasks': typeof StudioTasksRoute
+  '/theme-preview': typeof StudioThemePreviewRoute
+  '/creators/$id': typeof CreatorsIdRoute
+  '/payment/result': typeof PaymentResultRoute
+  '/projects/$id': typeof ProjectsIdRoute
+  '/creators/': typeof CreatorsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/$locale': typeof LocaleIndexRoute
-  '/$locale/forgot-password': typeof LocaleAuthForgotPasswordRoute
-  '/$locale/login': typeof LocaleAuthLoginRoute
-  '/$locale/register': typeof LocaleAuthRegisterRoute
-  '/$locale/assets': typeof LocaleStudioAssetsRoute
-  '/$locale/projects': typeof LocaleStudioProjectsRoute
-  '/$locale/settings': typeof LocaleStudioSettingsRoute
-  '/$locale/tasks': typeof LocaleStudioTasksRoute
-  '/$locale/theme-preview': typeof LocaleStudioThemePreviewRoute
-  '/$locale/creators/$id': typeof LocaleCreatorsIdRoute
-  '/$locale/payment/result': typeof LocalePaymentResultRoute
-  '/$locale/projects/$id': typeof LocaleProjectsIdRoute
-  '/$locale/creators': typeof LocaleCreatorsIndexRoute
+  '/forgot-password': typeof AuthForgotPasswordRoute
+  '/login': typeof AuthLoginRoute
+  '/register': typeof AuthRegisterRoute
+  '/assets': typeof StudioAssetsRoute
+  '/projects': typeof StudioProjectsRoute
+  '/settings': typeof StudioSettingsRoute
+  '/tasks': typeof StudioTasksRoute
+  '/theme-preview': typeof StudioThemePreviewRoute
+  '/creators/$id': typeof CreatorsIdRoute
+  '/payment/result': typeof PaymentResultRoute
+  '/projects/$id': typeof ProjectsIdRoute
+  '/creators': typeof CreatorsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/$locale': typeof LocaleRouteWithChildren
-  '/$locale/_auth': typeof LocaleAuthRouteWithChildren
-  '/$locale/_studio': typeof LocaleStudioRouteWithChildren
-  '/$locale/': typeof LocaleIndexRoute
-  '/$locale/_auth/forgot-password': typeof LocaleAuthForgotPasswordRoute
-  '/$locale/_auth/login': typeof LocaleAuthLoginRoute
-  '/$locale/_auth/register': typeof LocaleAuthRegisterRoute
-  '/$locale/_studio/assets': typeof LocaleStudioAssetsRoute
-  '/$locale/_studio/projects': typeof LocaleStudioProjectsRoute
-  '/$locale/_studio/settings': typeof LocaleStudioSettingsRoute
-  '/$locale/_studio/tasks': typeof LocaleStudioTasksRoute
-  '/$locale/_studio/theme-preview': typeof LocaleStudioThemePreviewRoute
-  '/$locale/creators_/$id': typeof LocaleCreatorsIdRoute
-  '/$locale/payment/result': typeof LocalePaymentResultRoute
-  '/$locale/projects_/$id': typeof LocaleProjectsIdRoute
-  '/$locale/creators/': typeof LocaleCreatorsIndexRoute
+  '/_auth': typeof AuthRouteWithChildren
+  '/_studio': typeof StudioRouteWithChildren
+  '/_auth/forgot-password': typeof AuthForgotPasswordRoute
+  '/_auth/login': typeof AuthLoginRoute
+  '/_auth/register': typeof AuthRegisterRoute
+  '/_studio/assets': typeof StudioAssetsRoute
+  '/_studio/projects': typeof StudioProjectsRoute
+  '/_studio/settings': typeof StudioSettingsRoute
+  '/_studio/tasks': typeof StudioTasksRoute
+  '/_studio/theme-preview': typeof StudioThemePreviewRoute
+  '/creators_/$id': typeof CreatorsIdRoute
+  '/payment/result': typeof PaymentResultRoute
+  '/projects_/$id': typeof ProjectsIdRoute
+  '/creators/': typeof CreatorsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/$locale'
-    | '/$locale/'
-    | '/$locale/forgot-password'
-    | '/$locale/login'
-    | '/$locale/register'
-    | '/$locale/assets'
-    | '/$locale/projects'
-    | '/$locale/settings'
-    | '/$locale/tasks'
-    | '/$locale/theme-preview'
-    | '/$locale/creators/$id'
-    | '/$locale/payment/result'
-    | '/$locale/projects/$id'
-    | '/$locale/creators/'
+    | '/forgot-password'
+    | '/login'
+    | '/register'
+    | '/assets'
+    | '/projects'
+    | '/settings'
+    | '/tasks'
+    | '/theme-preview'
+    | '/creators/$id'
+    | '/payment/result'
+    | '/projects/$id'
+    | '/creators/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/$locale'
-    | '/$locale/forgot-password'
-    | '/$locale/login'
-    | '/$locale/register'
-    | '/$locale/assets'
-    | '/$locale/projects'
-    | '/$locale/settings'
-    | '/$locale/tasks'
-    | '/$locale/theme-preview'
-    | '/$locale/creators/$id'
-    | '/$locale/payment/result'
-    | '/$locale/projects/$id'
-    | '/$locale/creators'
+    | '/forgot-password'
+    | '/login'
+    | '/register'
+    | '/assets'
+    | '/projects'
+    | '/settings'
+    | '/tasks'
+    | '/theme-preview'
+    | '/creators/$id'
+    | '/payment/result'
+    | '/projects/$id'
+    | '/creators'
   id:
     | '__root__'
     | '/'
-    | '/$locale'
-    | '/$locale/_auth'
-    | '/$locale/_studio'
-    | '/$locale/'
-    | '/$locale/_auth/forgot-password'
-    | '/$locale/_auth/login'
-    | '/$locale/_auth/register'
-    | '/$locale/_studio/assets'
-    | '/$locale/_studio/projects'
-    | '/$locale/_studio/settings'
-    | '/$locale/_studio/tasks'
-    | '/$locale/_studio/theme-preview'
-    | '/$locale/creators_/$id'
-    | '/$locale/payment/result'
-    | '/$locale/projects_/$id'
-    | '/$locale/creators/'
+    | '/_auth'
+    | '/_studio'
+    | '/_auth/forgot-password'
+    | '/_auth/login'
+    | '/_auth/register'
+    | '/_studio/assets'
+    | '/_studio/projects'
+    | '/_studio/settings'
+    | '/_studio/tasks'
+    | '/_studio/theme-preview'
+    | '/creators_/$id'
+    | '/payment/result'
+    | '/projects_/$id'
+    | '/creators/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  LocaleRoute: typeof LocaleRouteWithChildren
+  AuthRoute: typeof AuthRouteWithChildren
+  StudioRoute: typeof StudioRouteWithChildren
+  CreatorsIdRoute: typeof CreatorsIdRoute
+  PaymentResultRoute: typeof PaymentResultRoute
+  ProjectsIdRoute: typeof ProjectsIdRoute
+  CreatorsIndexRoute: typeof CreatorsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/$locale': {
-      id: '/$locale'
-      path: '/$locale'
-      fullPath: '/$locale'
-      preLoaderRoute: typeof LocaleRouteImport
+    '/_studio': {
+      id: '/_studio'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof StudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_auth': {
+      id: '/_auth'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -242,176 +230,134 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/$locale/': {
-      id: '/$locale/'
-      path: '/'
-      fullPath: '/$locale/'
-      preLoaderRoute: typeof LocaleIndexRouteImport
-      parentRoute: typeof LocaleRoute
-    }
-    '/$locale/_studio': {
-      id: '/$locale/_studio'
-      path: ''
-      fullPath: '/$locale'
-      preLoaderRoute: typeof LocaleStudioRouteImport
-      parentRoute: typeof LocaleRoute
-    }
-    '/$locale/_auth': {
-      id: '/$locale/_auth'
-      path: ''
-      fullPath: '/$locale'
-      preLoaderRoute: typeof LocaleAuthRouteImport
-      parentRoute: typeof LocaleRoute
-    }
-    '/$locale/creators/': {
-      id: '/$locale/creators/'
+    '/creators/': {
+      id: '/creators/'
       path: '/creators'
-      fullPath: '/$locale/creators/'
-      preLoaderRoute: typeof LocaleCreatorsIndexRouteImport
-      parentRoute: typeof LocaleRoute
+      fullPath: '/creators/'
+      preLoaderRoute: typeof CreatorsIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/$locale/projects_/$id': {
-      id: '/$locale/projects_/$id'
+    '/projects_/$id': {
+      id: '/projects_/$id'
       path: '/projects/$id'
-      fullPath: '/$locale/projects/$id'
-      preLoaderRoute: typeof LocaleProjectsIdRouteImport
-      parentRoute: typeof LocaleRoute
+      fullPath: '/projects/$id'
+      preLoaderRoute: typeof ProjectsIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/$locale/payment/result': {
-      id: '/$locale/payment/result'
+    '/payment/result': {
+      id: '/payment/result'
       path: '/payment/result'
-      fullPath: '/$locale/payment/result'
-      preLoaderRoute: typeof LocalePaymentResultRouteImport
-      parentRoute: typeof LocaleRoute
+      fullPath: '/payment/result'
+      preLoaderRoute: typeof PaymentResultRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/$locale/creators_/$id': {
-      id: '/$locale/creators_/$id'
+    '/creators_/$id': {
+      id: '/creators_/$id'
       path: '/creators/$id'
-      fullPath: '/$locale/creators/$id'
-      preLoaderRoute: typeof LocaleCreatorsIdRouteImport
-      parentRoute: typeof LocaleRoute
+      fullPath: '/creators/$id'
+      preLoaderRoute: typeof CreatorsIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/$locale/_studio/theme-preview': {
-      id: '/$locale/_studio/theme-preview'
+    '/_studio/theme-preview': {
+      id: '/_studio/theme-preview'
       path: '/theme-preview'
-      fullPath: '/$locale/theme-preview'
-      preLoaderRoute: typeof LocaleStudioThemePreviewRouteImport
-      parentRoute: typeof LocaleStudioRoute
+      fullPath: '/theme-preview'
+      preLoaderRoute: typeof StudioThemePreviewRouteImport
+      parentRoute: typeof StudioRoute
     }
-    '/$locale/_studio/tasks': {
-      id: '/$locale/_studio/tasks'
+    '/_studio/tasks': {
+      id: '/_studio/tasks'
       path: '/tasks'
-      fullPath: '/$locale/tasks'
-      preLoaderRoute: typeof LocaleStudioTasksRouteImport
-      parentRoute: typeof LocaleStudioRoute
+      fullPath: '/tasks'
+      preLoaderRoute: typeof StudioTasksRouteImport
+      parentRoute: typeof StudioRoute
     }
-    '/$locale/_studio/settings': {
-      id: '/$locale/_studio/settings'
+    '/_studio/settings': {
+      id: '/_studio/settings'
       path: '/settings'
-      fullPath: '/$locale/settings'
-      preLoaderRoute: typeof LocaleStudioSettingsRouteImport
-      parentRoute: typeof LocaleStudioRoute
+      fullPath: '/settings'
+      preLoaderRoute: typeof StudioSettingsRouteImport
+      parentRoute: typeof StudioRoute
     }
-    '/$locale/_studio/projects': {
-      id: '/$locale/_studio/projects'
+    '/_studio/projects': {
+      id: '/_studio/projects'
       path: '/projects'
-      fullPath: '/$locale/projects'
-      preLoaderRoute: typeof LocaleStudioProjectsRouteImport
-      parentRoute: typeof LocaleStudioRoute
+      fullPath: '/projects'
+      preLoaderRoute: typeof StudioProjectsRouteImport
+      parentRoute: typeof StudioRoute
     }
-    '/$locale/_studio/assets': {
-      id: '/$locale/_studio/assets'
+    '/_studio/assets': {
+      id: '/_studio/assets'
       path: '/assets'
-      fullPath: '/$locale/assets'
-      preLoaderRoute: typeof LocaleStudioAssetsRouteImport
-      parentRoute: typeof LocaleStudioRoute
+      fullPath: '/assets'
+      preLoaderRoute: typeof StudioAssetsRouteImport
+      parentRoute: typeof StudioRoute
     }
-    '/$locale/_auth/register': {
-      id: '/$locale/_auth/register'
+    '/_auth/register': {
+      id: '/_auth/register'
       path: '/register'
-      fullPath: '/$locale/register'
-      preLoaderRoute: typeof LocaleAuthRegisterRouteImport
-      parentRoute: typeof LocaleAuthRoute
+      fullPath: '/register'
+      preLoaderRoute: typeof AuthRegisterRouteImport
+      parentRoute: typeof AuthRoute
     }
-    '/$locale/_auth/login': {
-      id: '/$locale/_auth/login'
+    '/_auth/login': {
+      id: '/_auth/login'
       path: '/login'
-      fullPath: '/$locale/login'
-      preLoaderRoute: typeof LocaleAuthLoginRouteImport
-      parentRoute: typeof LocaleAuthRoute
+      fullPath: '/login'
+      preLoaderRoute: typeof AuthLoginRouteImport
+      parentRoute: typeof AuthRoute
     }
-    '/$locale/_auth/forgot-password': {
-      id: '/$locale/_auth/forgot-password'
+    '/_auth/forgot-password': {
+      id: '/_auth/forgot-password'
       path: '/forgot-password'
-      fullPath: '/$locale/forgot-password'
-      preLoaderRoute: typeof LocaleAuthForgotPasswordRouteImport
-      parentRoute: typeof LocaleAuthRoute
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof AuthForgotPasswordRouteImport
+      parentRoute: typeof AuthRoute
     }
   }
 }
 
-interface LocaleAuthRouteChildren {
-  LocaleAuthForgotPasswordRoute: typeof LocaleAuthForgotPasswordRoute
-  LocaleAuthLoginRoute: typeof LocaleAuthLoginRoute
-  LocaleAuthRegisterRoute: typeof LocaleAuthRegisterRoute
+interface AuthRouteChildren {
+  AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
+  AuthLoginRoute: typeof AuthLoginRoute
+  AuthRegisterRoute: typeof AuthRegisterRoute
 }
 
-const LocaleAuthRouteChildren: LocaleAuthRouteChildren = {
-  LocaleAuthForgotPasswordRoute: LocaleAuthForgotPasswordRoute,
-  LocaleAuthLoginRoute: LocaleAuthLoginRoute,
-  LocaleAuthRegisterRoute: LocaleAuthRegisterRoute,
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthForgotPasswordRoute: AuthForgotPasswordRoute,
+  AuthLoginRoute: AuthLoginRoute,
+  AuthRegisterRoute: AuthRegisterRoute,
 }
 
-const LocaleAuthRouteWithChildren = LocaleAuthRoute._addFileChildren(
-  LocaleAuthRouteChildren,
-)
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
-interface LocaleStudioRouteChildren {
-  LocaleStudioAssetsRoute: typeof LocaleStudioAssetsRoute
-  LocaleStudioProjectsRoute: typeof LocaleStudioProjectsRoute
-  LocaleStudioSettingsRoute: typeof LocaleStudioSettingsRoute
-  LocaleStudioTasksRoute: typeof LocaleStudioTasksRoute
-  LocaleStudioThemePreviewRoute: typeof LocaleStudioThemePreviewRoute
+interface StudioRouteChildren {
+  StudioAssetsRoute: typeof StudioAssetsRoute
+  StudioProjectsRoute: typeof StudioProjectsRoute
+  StudioSettingsRoute: typeof StudioSettingsRoute
+  StudioTasksRoute: typeof StudioTasksRoute
+  StudioThemePreviewRoute: typeof StudioThemePreviewRoute
 }
 
-const LocaleStudioRouteChildren: LocaleStudioRouteChildren = {
-  LocaleStudioAssetsRoute: LocaleStudioAssetsRoute,
-  LocaleStudioProjectsRoute: LocaleStudioProjectsRoute,
-  LocaleStudioSettingsRoute: LocaleStudioSettingsRoute,
-  LocaleStudioTasksRoute: LocaleStudioTasksRoute,
-  LocaleStudioThemePreviewRoute: LocaleStudioThemePreviewRoute,
+const StudioRouteChildren: StudioRouteChildren = {
+  StudioAssetsRoute: StudioAssetsRoute,
+  StudioProjectsRoute: StudioProjectsRoute,
+  StudioSettingsRoute: StudioSettingsRoute,
+  StudioTasksRoute: StudioTasksRoute,
+  StudioThemePreviewRoute: StudioThemePreviewRoute,
 }
 
-const LocaleStudioRouteWithChildren = LocaleStudioRoute._addFileChildren(
-  LocaleStudioRouteChildren,
-)
-
-interface LocaleRouteChildren {
-  LocaleAuthRoute: typeof LocaleAuthRouteWithChildren
-  LocaleStudioRoute: typeof LocaleStudioRouteWithChildren
-  LocaleIndexRoute: typeof LocaleIndexRoute
-  LocaleCreatorsIdRoute: typeof LocaleCreatorsIdRoute
-  LocalePaymentResultRoute: typeof LocalePaymentResultRoute
-  LocaleProjectsIdRoute: typeof LocaleProjectsIdRoute
-  LocaleCreatorsIndexRoute: typeof LocaleCreatorsIndexRoute
-}
-
-const LocaleRouteChildren: LocaleRouteChildren = {
-  LocaleAuthRoute: LocaleAuthRouteWithChildren,
-  LocaleStudioRoute: LocaleStudioRouteWithChildren,
-  LocaleIndexRoute: LocaleIndexRoute,
-  LocaleCreatorsIdRoute: LocaleCreatorsIdRoute,
-  LocalePaymentResultRoute: LocalePaymentResultRoute,
-  LocaleProjectsIdRoute: LocaleProjectsIdRoute,
-  LocaleCreatorsIndexRoute: LocaleCreatorsIndexRoute,
-}
-
-const LocaleRouteWithChildren =
-  LocaleRoute._addFileChildren(LocaleRouteChildren)
+const StudioRouteWithChildren =
+  StudioRoute._addFileChildren(StudioRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  LocaleRoute: LocaleRouteWithChildren,
+  AuthRoute: AuthRouteWithChildren,
+  StudioRoute: StudioRouteWithChildren,
+  CreatorsIdRoute: CreatorsIdRoute,
+  PaymentResultRoute: PaymentResultRoute,
+  ProjectsIdRoute: ProjectsIdRoute,
+  CreatorsIndexRoute: CreatorsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

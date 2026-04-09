@@ -6,7 +6,6 @@ import {
   IconFlame,
 } from "@tabler/icons-react";
 import { useLocation } from "@tanstack/react-router";
-import { useLocale } from "@/src/i18n/i18n";
 import { WorkspaceSidebarItem } from "./workspace-sidebar-item";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -35,11 +34,9 @@ const workspaceItems = [
 
 export function WorkspaceSidebar() {
   const { pathname } = useLocation();
-  const locale = useLocale();
 
   const isItemActive = (path: string) => {
-    const fullPath = `/${locale}${path}`;
-    return pathname === fullPath || pathname.startsWith(`${fullPath}/`);
+    return pathname === path || pathname.startsWith(`${path}/`);
   };
 
   return (
@@ -52,7 +49,7 @@ export function WorkspaceSidebar() {
         {workspaceItems.map((item) => (
           <WorkspaceSidebarItem
             key={item.path}
-            href={`/${locale}${item.path}`}
+            href={item.path}
             label={item.label}
             icon={item.icon}
             isActive={isItemActive(item.path)}

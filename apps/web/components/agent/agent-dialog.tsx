@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { IconX } from "@tabler/icons-react";
 import { api } from "@/src/lib/api";
 import { useTranslations } from "@/src/i18n/i18n";
+import { localizeUrl } from "@/src/i18n/locale-url";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -238,7 +239,9 @@ export function AgentDialog() {
 
       // 4. Close dialog and navigate to project
       store.dispatch(close());
-      window.location.href = `/projects/${projectId}`;
+      // Full reload to init project state. localizeUrl adds locale prefix if needed.
+      const target = new URL(`/projects/${projectId}`, window.location.origin);
+      window.location.href = localizeUrl(target).pathname;
     } catch (err) {
       console.error("[applyToProject] Failed:", err);
     }

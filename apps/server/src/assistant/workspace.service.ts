@@ -483,6 +483,16 @@ export class WorkspaceService {
 
   // ─── Public: Mutations ──────────────────────────────────
 
+  async getProjectDetail(
+    headers: HeadersLike,
+    projectId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      headers,
+      `/api/user/project/detail/${projectId}`,
+    );
+  }
+
   async updateProject(headers: HeadersLike, data: Record<string, unknown>) {
     return this.request<WorkspaceRecord>(
       headers,
@@ -648,14 +658,22 @@ export class WorkspaceService {
     worldId: string,
     datas: string[][],
   ) {
+    // datas[0] is header row ["name", "description"], rest are data rows
+    const rows = datas.slice(1);
     this.logger.log(
-      `[batchCreateRoles] ${datas.length - 1} roles for world ${worldId}`,
+      `[batchCreateRoles] ${rows.length} roles for world ${worldId} (sequential)`,
     );
-    return this.request<WorkspaceRecord>(
-      headers,
-      '/api/ai/chat/batch/create/role',
-      { data: { worldId, datas }, maxRetries: 2 },
-    );
+    for (const row of rows) {
+      try {
+        await this.request<WorkspaceRecord>(
+          headers,
+          '/api/user/world/create/worldrole',
+          { data: { worldId, name: row[0], description: row[1] ?? '' } },
+        );
+      } catch (error) {
+        this.logger.error(`[batchCreateRoles] Failed "${row[0]}": ${error}`);
+      }
+    }
   }
 
   async batchCreateScenes(
@@ -663,14 +681,21 @@ export class WorkspaceService {
     worldId: string,
     datas: string[][],
   ) {
+    const rows = datas.slice(1);
     this.logger.log(
-      `[batchCreateScenes] ${datas.length - 1} scenes for world ${worldId}`,
+      `[batchCreateScenes] ${rows.length} scenes for world ${worldId} (sequential)`,
     );
-    return this.request<WorkspaceRecord>(
-      headers,
-      '/api/ai/chat/batch/create/scene',
-      { data: { worldId, datas }, maxRetries: 2 },
-    );
+    for (const row of rows) {
+      try {
+        await this.request<WorkspaceRecord>(
+          headers,
+          '/api/user/world/create/worldscene',
+          { data: { worldId, name: row[0], description: row[1] ?? '' } },
+        );
+      } catch (error) {
+        this.logger.error(`[batchCreateScenes] Failed "${row[0]}": ${error}`);
+      }
+    }
   }
 
   async batchCreateProps(
@@ -678,29 +703,47 @@ export class WorkspaceService {
     worldId: string,
     datas: string[][],
   ) {
+    const rows = datas.slice(1);
     this.logger.log(
-      `[batchCreateProps] ${datas.length - 1} props for world ${worldId}`,
+      `[batchCreateProps] ${rows.length} props for world ${worldId} (sequential)`,
     );
-    return this.request<WorkspaceRecord>(
-      headers,
-      '/api/ai/chat/batch/create/prop',
-      { data: { worldId, datas }, maxRetries: 2 },
-    );
+    for (const row of rows) {
+      try {
+        await this.request<WorkspaceRecord>(
+          headers,
+          '/api/user/world/create/worldprop',
+          { data: { worldId, name: row[0], description: row[1] ?? '' } },
+        );
+      } catch (error) {
+        this.logger.error(`[batchCreateProps] Failed "${row[0]}": ${error}`);
+      }
+    }
   }
 
   async batchAddEpisodes(
     headers: HeadersLike,
     projectId: string,
     titles: string[],
-  ) {
+  ): Promise<string[]> {
     this.logger.log(
-      `[batchAddEpisodes] ${titles.length} episodes for project ${projectId}`,
+      `[batchAddEpisodes] ${titles.length} episodes for project ${projectId} (sequential)`,
     );
-    return this.request<WorkspaceRecord>(
-      headers,
-      '/api/user/world/batch/add/episode',
-      { data: { productId: projectId, titles }, maxRetries: 2 },
-    );
+    const ids: string[] = [];
+    for (const title of titles) {
+      try {
+        const createdId = await this.request<string | number>(
+          headers,
+          '/api/user/storyBoard/create',
+          { data: { projectId, name: title }, maxRetries: 2 },
+        );
+        ids.push(String(createdId));
+        this.logger.log(`[batchAddEpisodes] Created "${title}" → ${createdId}`);
+      } catch (error) {
+        this.logger.error(`[batchAddEpisodes] Failed "${title}": ${error}`);
+        ids.push('');
+      }
+    }
+    return ids;
   }
 
   /**

@@ -11,6 +11,7 @@ import {
   IconSun,
 } from "@tabler/icons-react";
 import { useLocale, useTranslations, setLanguage } from "@/src/i18n/i18n";
+import { setCurrentLocale } from "@/src/i18n/locale-url";
 import { useTheme } from "next-themes";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -86,11 +87,10 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
   const userLevel = typeof userInfo?.userLevel === "string" ? userInfo.userLevel : "";
 
   const switchLocale = (nextLocale: string) => {
-    if (nextLocale === locale) return;
+    setCurrentLocale(nextLocale);
     setLanguage(nextLocale);
-    // Update URL: replace current locale segment with new one
-    const newPath = pathname.replace(`/${locale}`, `/${nextLocale}`);
-    void navigate({ to: newPath, replace: true });
+    // Navigate to same internal path — rewrite output applies the new locale
+    void navigate({ to: pathname, replace: true });
   };
 
   return (

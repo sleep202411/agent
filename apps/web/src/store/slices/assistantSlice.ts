@@ -497,6 +497,8 @@ export const sendUserMessage = createAsyncThunk<
       },
     });
 
+    // Detect incomplete stream: if the last message has tool calls still in progress,
+    // the stream was truncated (timeout, network error, etc.)
     dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
     await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
   } catch (error) {
