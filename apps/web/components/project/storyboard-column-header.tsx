@@ -529,7 +529,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       return;
     }
 
-    setBatchGeneratingActive(true);
+    store.dispatch(setBatchGeneratingActive(true));
     queue.forEach((item) =>
       store.dispatch(
         setBatchGenerating({ shotId: item.shotId, columnId: item.columnId, generating: true })
@@ -596,7 +596,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
         toast.success(t("batchGenerateComplete"));
       }
     } finally {
-      clearBatchGenerating();
+      store.dispatch(clearBatchGenerating());
     }
   };
 
@@ -626,7 +626,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       return;
     }
 
-    setBatchGeneratingActive(true);
+    store.dispatch(setBatchGeneratingActive(true));
     queue.forEach((item) =>
       store.dispatch(
         setBatchGenerating({ shotId: item.shotId, columnId: item.columnId, generating: true })
@@ -677,7 +677,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
         toast.success(t("batchVoiceComplete"));
       }
     } finally {
-      clearBatchGenerating();
+      store.dispatch(clearBatchGenerating());
     }
   };
 

@@ -183,6 +183,7 @@
     "generatingInviteLink": "Generating invite link",
     "loadingProject": "Loading project...",
     "loadProjectFailed": "Failed to load project",
+    "leaveWhileBatchGenerating": "Batch generation is in progress. Leaving will cancel the tasks. Are you sure you want to leave?",
     "aiAssistant": "StoryOS",
     "uploadCover": "Upload Cover",
     "unnamedStyle": "Unnamed style",

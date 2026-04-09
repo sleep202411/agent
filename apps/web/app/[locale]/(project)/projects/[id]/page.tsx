@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PanelAnimateContext } from "@/components/project/panels/panel-layout";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useBlocker, useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslations } from "@/src/i18n/i18n";
 import { ProjectHeader } from "@/components/project/project-header";
 import { ProjectSidebar } from "@/components/project/project-sidebar";
@@ -35,6 +35,28 @@ export default function ProjectDetailPage() {
   useStoryboardData();
   useWorldAssets();
   useAiModelsPreload();
+
+  const batchGeneratingActive = useAppSelector(
+    (s) => selectCurrentInstance(s).batchGeneratingActive
+  );
+
+  // Block in-app navigation when batch generation is active
+  useBlocker({
+    shouldBlockFn: () => {
+      if (!batchGeneratingActive) return false;
+      return !window.confirm(t("leaveWhileBatchGenerating"));
+    },
+  });
+
+  // Block browser close / refresh
+  useEffect(() => {
+    if (!batchGeneratingActive) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [batchGeneratingActive]);
 
   const activeTab = useAppSelector((s) => selectCurrentInstance(s).activeTab);
   const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({

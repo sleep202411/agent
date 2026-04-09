@@ -183,6 +183,7 @@
     "generatingInviteLink": "正在生成邀请链接",
     "loadingProject": "加载项目中...",
     "loadProjectFailed": "项目加载失败",
+    "leaveWhileBatchGenerating": "当前有正在进行的批量生成任务，离开后任务将丢失，确定要离开吗？",
     "aiAssistant": "StoryOS",
     "uploadCover": "上传封面",
     "unnamedStyle": "未命名画风",
