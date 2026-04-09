@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { IconClock } from "@tabler/icons-react";
 import { Input } from "@/components/ui/input";
 import { getCellDisplayValue, persistTextCell } from "./cell-utils";
@@ -15,6 +16,7 @@ export function DurationCell({
   shotId: string;
   shotColumnId: string;
 }) {
+  const t = useTranslations("storyboard");
   const [editing, setEditing] = useState(false);
   const display = getCellDisplayValue(cell);
   const [draft, setDraft] = useState(display);
@@ -57,7 +59,11 @@ export function DurationCell({
       className="flex h-full w-full items-center justify-center gap-1 px-3 text-xs text-foreground hover:bg-muted/30"
     >
       <IconClock className="size-3.5 text-muted-foreground" />
-      {display ? `${display} s` : <span className="text-muted-foreground">填写时长</span>}
+      {display ? (
+        `${display} s`
+      ) : (
+        <span className="text-muted-foreground">{t("fillDuration")}</span>
+      )}
     </button>
   );
 }

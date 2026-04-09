@@ -23,9 +23,10 @@ function isInIframe(): boolean {
   }
 }
 
-function setCookie(name: string, value: string, days = 30) {
-  const expires = new Date(Date.now() + days * 864e5).toUTCString();
-  document.cookie = `${name}=${encodeURIComponent(value)};path=/;expires=${expires}`;
+function setCookie(name: string, value: string) {
+  // Session cookie — no expires, cleared when browser closes.
+  // Always refreshed from parent on every page load.
+  document.cookie = `${name}=${encodeURIComponent(value)};path=/`;
 }
 
 function getCookie(name: string): string | null {
@@ -37,9 +38,10 @@ const TOKEN_NAME = "satoken";
 const TIMEOUT_MS = 3000;
 
 export function useIframeToken(): boolean {
+  // Always request from parent on every load — don't rely on cached cookie
   const needsToken = useSyncExternalStore(
     () => () => {},
-    () => isInIframe() && !getCookie(TOKEN_NAME),
+    () => isInIframe(),
     () => false
   );
 
