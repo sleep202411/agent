@@ -119,7 +119,12 @@ nginx -t && systemctl reload nginx
 
 ## 三、构建镜像（本地执行）
 
-> **重要**：本地 Mac 是 ARM 架构，服务器是 x86_64，必须加 `--platform linux/amd64`。
+> **重要**：
+>
+> - 本地 Mac 是 ARM 架构，服务器是 x86_64，必须加 `--platform linux/amd64`
+> - Web 构建必须传 `--build-arg`，Vite 通过 `.env.production` 文件读取 `VITE_*` 变量（Dockerfile 内部自动生成）
+> - `SERVER_URL` 固定为 `http://server:3001`（Docker 内部通信），不要用 env 文件里的 `localhost`
+> - 缺少 `VITE_OSS_BASE_URL` 会在构建时报错
 
 ### 构建 Web 镜像
 
@@ -127,21 +132,37 @@ nginx -t && systemctl reload nginx
 # 加载对应环境变量
 source apps/web/.env.production.com   # 或 .env.production.cn / .env.staging
 
-# 构建
-docker build --platform linux/amd64 -t fizzdragon-web-<env> \
+# 构建（注意 SERVER_URL 固定为 Docker 内部地址）
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-web:<tag> \
   --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
-  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg VITE_SITE_REGION=$VITE_SITE_REGION \
+  --build-arg VITE_PARENT_ORIGIN=$VITE_PARENT_ORIGIN \
+  --build-arg SERVER_URL=http://server:3001 \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  --build-arg VITE_SITE_REGION=$VITE_SITE_REGION \
   -f apps/web/Dockerfile .
 ```
 
 ### 构建 Server 镜像
 
 ```bash
-docker build --platform linux/amd64 -t fizzdragon-server-<env> -f apps/server/Dockerfile .
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-server:<tag> \
+  -f apps/server/Dockerfile .
 ```
+
+### 环境变量对照表
+
+| 参数                 | Staging                                       | Prod CN                                   | Prod COM                                        |
+| -------------------- | --------------------------------------------- | ----------------------------------------- | ----------------------------------------------- |
+| `VITE_OSS_BASE_URL`  | `fizzspace-test.oss-cn-hangzhou.aliyuncs.com` | `shotive.oss-cn-hangzhou.aliyuncs.com`    | `fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com` |
+| `VITE_SITE_REGION`   | `global`                                      | `cn`                                      | `global`                                        |
+| `VITE_PARENT_ORIGIN` | `https://test.fizzdragon.com`                 | `https://fizzdragon.fizzspace.cn`         | `https://fizzdragon.com`                        |
+| `JAVA_STUDIO_URL`    | `https://test.fizzdragon.com/test2`           | `https://fizzdragon.fizzspace.cn/studio`  | `https://fizzdragon.com/studio`                 |
+| `JAVA_CONTENT_URL`   | `https://test.fizzdragon.com/test1`           | `https://fizzdragon.fizzspace.cn/content` | `https://fizzdragon.com/content`                |
+| Web tag              | `staging`                                     | `production-cn`                           | `production-com`                                |
+| Server tag           | `staging`                                     | `production-cn`                           | `production-com`                                |
+
+> 环境变量定义在 `apps/web/.env.staging`、`.env.production.cn`、`.env.production.com` 中
 
 ---
 
@@ -261,17 +282,17 @@ platform_default:       staging-web + staging-server + production-cn-web + produ
 ```bash
 # 1. 本地构建 + 推送
 source apps/web/.env.staging
-docker build --platform linux/amd64 -t fizzdragon-web-staging \
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging \
   --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
-  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg VITE_SITE_REGION=$VITE_SITE_REGION \
+  --build-arg VITE_PARENT_ORIGIN=$VITE_PARENT_ORIGIN \
+  --build-arg SERVER_URL=http://server:3001 \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  --build-arg VITE_SITE_REGION=$VITE_SITE_REGION \
   -f apps/web/Dockerfile .
-docker build --platform linux/amd64 -t fizzdragon-server-staging -f apps/server/Dockerfile .
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging \
+  -f apps/server/Dockerfile .
 
-docker tag fizzdragon-web-staging ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
-docker tag fizzdragon-server-staging ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
 
@@ -287,17 +308,17 @@ ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
 ```bash
 # 1. 本地构建 + 推送
 source apps/web/.env.production.cn
-docker build --platform linux/amd64 -t fizzdragon-web-cn \
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-cn \
   --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
-  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg VITE_SITE_REGION=$VITE_SITE_REGION \
+  --build-arg VITE_PARENT_ORIGIN=$VITE_PARENT_ORIGIN \
+  --build-arg SERVER_URL=http://server:3001 \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  --build-arg VITE_SITE_REGION=cn \
   -f apps/web/Dockerfile .
-docker build --platform linux/amd64 -t fizzdragon-server-cn -f apps/server/Dockerfile .
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn \
+  -f apps/server/Dockerfile .
 
-docker tag fizzdragon-web-cn ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-cn
-docker tag fizzdragon-server-cn ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-cn
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn
 
@@ -313,17 +334,17 @@ ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
 ```bash
 # 1. 本地构建 + 推送
 source apps/web/.env.production.com
-docker build --platform linux/amd64 -t fizzdragon-web-com \
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com \
   --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
-  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg VITE_SITE_REGION=$VITE_SITE_REGION \
+  --build-arg VITE_PARENT_ORIGIN=$VITE_PARENT_ORIGIN \
+  --build-arg SERVER_URL=http://server:3001 \
   --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
   --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
-  --build-arg VITE_SITE_REGION=global \
   -f apps/web/Dockerfile .
-docker build --platform linux/amd64 -t fizzdragon-server-com -f apps/server/Dockerfile .
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com \
+  -f apps/server/Dockerfile .
 
-docker tag fizzdragon-web-com ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
-docker tag fizzdragon-server-com ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com
 
