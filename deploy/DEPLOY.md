@@ -14,11 +14,37 @@
 Nginx (80/443)
   └→ fizzdragon-web (Next.js :3000)
        └→ fizzdragon-server (NestJS :3001)
-             └→ Java Backend (外部)
+             ├→ Redis (6379) — Script Agent 会话状态缓存
+             ├→ Java Backend (外部)
              └→ Alibaba AI API (外部)
 ```
 
-两个容器通过 Docker/Podman Compose 内部网络通信，Web 通过 `http://server:3001` 访问 Server。
+三个容器通过 Docker/Podman Compose 内部网络通信：
+
+- Web 通过 `http://server:3001` 访问 Server
+- Server 通过 `redis://redis:6379` 访问 Redis
+
+### Redis
+
+Script Agent（剧本智能体）使用 Redis 缓存会话状态（分析结果、剧集映射等），24 小时自动过期。
+
+**镜像配置**：
+
+- 国内服务器：Docker Hub 被墙，使用 GHCR 镜像 `ghcr.io/fizzdragon-pte-ltd-2/redis:7-alpine`
+- 新加坡服务器：直接使用官方 `redis:7-alpine`
+- 通过 `REDIS_IMAGE` 环境变量控制（默认 `redis:7-alpine`）
+
+**数据持久化**：使用 Docker named volume `redis_data`，`docker compose down` 不会丢数据，`down -v` 才会清除。
+
+**更新 GHCR Redis 镜像**（当需要升级 Redis 版本时，本地执行）：
+
+```bash
+docker pull --platform linux/amd64 redis:7-alpine  # 或新版本号
+# 用 buildx 确保 amd64 架构
+cat <<'DOCKERFILE' | docker buildx build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/redis:7-alpine --push -
+FROM --platform=linux/amd64 redis:7-alpine
+DOCKERFILE
+```
 
 ---
 
@@ -406,6 +432,7 @@ ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-cn
 ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn
 ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
 ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com
+ghcr.io/fizzdragon-pte-ltd-2/redis:7-alpine              # 国内服务器使用（Docker Hub 被墙）
 ```
 
 ---

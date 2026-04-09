@@ -34,7 +34,7 @@ services:
       - app
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-redis
     restart: always
     command: redis-server --appendonly yes
