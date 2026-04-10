@@ -1,4 +1,4 @@
-import { DragonIcon } from "@/components/project/assistant/dragon-icon";
+import { DragonIcon } from "./dragon-icon";
 import { cn } from "@/lib/utils";
 
 interface DragonMascotProps {

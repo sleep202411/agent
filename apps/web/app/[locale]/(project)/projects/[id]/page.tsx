@@ -4,7 +4,7 @@ import { useBlocker, useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslations } from "@/src/i18n/i18n";
 import { ProjectHeader } from "@/components/project/project-header";
 import { ProjectSidebar } from "@/components/project/project-sidebar";
-import { AiAssistantPanel } from "@/components/project/ai-assistant-panel";
+import { AiAssistantPanel } from "@/components/project/ai-assistant";
 import { ScriptView } from "@/components/project/script-view";
 import { StoryboardView } from "@/components/project/storyboard-view";
 import { TimelineView } from "@/components/project/timeline";
