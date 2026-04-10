@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  IconAlertTriangle,
-  IconCheck,
-  IconLoader2,
-  IconPlayerPlay,
-  IconX,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { backendApi } from "@/src/lib/api";
 
 // ─── Types ─────────────────────────────────────────────
@@ -32,6 +27,76 @@ interface TaskCardProps {
 }
 
 const BAR_COUNT = 24;
+
+// Phase → i18n key mapping
+const PHASE_I18N_KEY: Record<string, string> = {
+  queued: "taskPhaseQueued",
+  analyzing: "taskPhaseAnalyzing",
+  chunking: "taskPhaseChunking",
+  merging: "taskPhaseMerging",
+  deduping: "taskPhaseDeduping",
+  generating: "taskPhaseGenerating",
+  processing: "taskPhaseProcessing",
+};
+
+// ─── Smooth progress hook ─────────────────────────────
+
+function useSmoothProgress(realPct: number, isTerminal: boolean) {
+  const [display, setDisplay] = useState(realPct);
+  const realRef = useRef(realPct);
+  const displayRef = useRef(realPct);
+  const rafRef = useRef<number | null>(null);
+
+  // Update real target when it changes
+  useEffect(() => {
+    realRef.current = realPct;
+    // If real jumped ahead, snap display to real immediately
+    if (realPct > displayRef.current + 5) {
+      displayRef.current = realPct;
+      setDisplay(realPct);
+    }
+  }, [realPct]);
+
+  // Terminal → snap to 100
+  useEffect(() => {
+    if (isTerminal) {
+      displayRef.current = 100;
+      setDisplay(100);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    }
+  }, [isTerminal]);
+
+  // Slow creep between polls (~0.3%/s, never exceeding real + 8%)
+  useEffect(() => {
+    if (isTerminal) return;
+
+    let lastTime = performance.now();
+
+    const tick = (now: number) => {
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      const real = realRef.current;
+      const cur = displayRef.current;
+      const ceiling = Math.min(real + 8, 99); // never hit 100 on fake progress
+
+      if (cur < ceiling) {
+        const next = Math.min(cur + dt * 0.3, ceiling);
+        displayRef.current = next;
+        setDisplay(Math.round(next));
+      }
+
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [isTerminal]);
+
+  return display;
+}
 
 // ─── Component ─────────────────────────────────────────
 
@@ -105,6 +170,30 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
     onContinue(progress?.result);
   };
 
+  // ─── Derived state ─────────────────────────────────────
+
+  const isTerminal =
+    progress?.status === "done" ||
+    progress?.status === "failed" ||
+    progress?.status === "cancelled";
+
+  // Cap at 99% while still processing — only show 100% when truly done
+  const rawPct =
+    progress && progress.chunksTotal > 0
+      ? Math.round((progress.chunksCompleted / progress.chunksTotal) * 100)
+      : (progress?.progress ?? 0);
+  const realPct = !isTerminal ? Math.min(rawPct, 99) : rawPct;
+
+  const smoothPct = useSmoothProgress(realPct, !!isTerminal);
+  const filledBars = Math.round((smoothPct / 100) * BAR_COUNT);
+
+  // Phase title
+  const phaseTitle = progress
+    ? PHASE_I18N_KEY[progress.phase]
+      ? t(PHASE_I18N_KEY[progress.phase])
+      : t("taskPhaseProcessing")
+    : "";
+
   // ─── Render ────────────────────────────────────────────
 
   if (!progress) {
@@ -115,16 +204,6 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
       </div>
     );
   }
-
-  const isTerminal =
-    progress.status === "done" || progress.status === "failed" || progress.status === "cancelled";
-
-  const pct =
-    progress.chunksTotal > 0
-      ? Math.round((progress.chunksCompleted / progress.chunksTotal) * 100)
-      : progress.progress;
-
-  const filledBars = Math.round((pct / 100) * BAR_COUNT);
 
   return (
     <div>
@@ -139,12 +218,12 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
           ) : progress.status === "failed" || progress.status === "cancelled" ? (
             <span className="flex items-center gap-1.5">
               <IconAlertTriangle className="size-4 text-destructive" />
-              {progress.status === "failed" ? t("toolFailed") : t("taskCancelConfirm")}
+              {t("toolFailed")}
             </span>
           ) : (
             <span className="flex items-center gap-1.5">
               <IconLoader2 className="size-4 animate-spin text-primary" />
-              {t("generatingText")}
+              {phaseTitle}
             </span>
           )}
         </h3>
@@ -161,28 +240,30 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
                 : "bg-primary/15 text-primary"
             )}
           >
-            {pct}%
+            {smoothPct}%
           </span>
 
           {/* Cancel button */}
           {!isTerminal &&
             (confirmCancel ? (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                color="destructive"
+                size="xs"
                 onClick={() => void handleCancel()}
-                className="rounded-md px-2 py-0.5 text-[11px] font-medium text-destructive transition-colors hover:bg-white/8"
               >
                 {t("taskCancelConfirm")}
-              </button>
+              </Button>
             ) : (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                color="muted"
+                size="icon-xs"
                 onClick={() => void handleCancel()}
                 title={t("taskCancelTooltip")}
-                className="flex size-6 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-white/8 hover:text-foreground"
               >
                 <IconX className="size-3.5" />
-              </button>
+              </Button>
             ))}
         </div>
       </div>
@@ -206,27 +287,24 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
           </div>
         )}
 
-      {/* Row 3: Segmented bar progress (vertical bars with gradient) */}
+      {/* Row 3: Segmented bar progress */}
       <div className="mt-3 flex items-end gap-0.75">
         {Array.from({ length: BAR_COUNT }, (_, i) => {
           const filled = i < filledBars;
           const ratio = i / BAR_COUNT;
 
-          // Gradient: primary → orange → muted
           let bg: string;
           if (!filled) {
             bg = "rgb(255 255 255 / 0.08)";
           } else if (progress.status === "done") {
-            bg = "rgb(34 197 94 / 0.7)"; // green
+            bg = "rgb(34 197 94 / 0.7)";
           } else if (ratio < 0.5) {
-            // primary (red) → orange
             const t2 = ratio / 0.5;
             const r = Math.round(255 * (1 - t2 * 0.1));
             const g = Math.round(60 + t2 * 100);
             const b = Math.round(50 * (1 - t2));
             bg = `rgb(${r} ${g} ${b} / 0.85)`;
           } else {
-            // orange → yellow-ish
             const t2 = (ratio - 0.5) / 0.5;
             const r = Math.round(240 - t2 * 30);
             const g = Math.round(160 + t2 * 40);
@@ -249,14 +327,11 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
 
       {/* Row 4: Action */}
       {progress.status === "done" && !continued && (
-        <button
-          type="button"
-          onClick={handleContinue}
-          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-white/10"
-        >
-          <IconPlayerPlay className="size-3.5" />
-          {t("taskContinue")}
-        </button>
+        <div className="mt-6">
+          <Button variant="solid" color="primary" className="w-full" onClick={handleContinue}>
+            {t("taskContinue")}
+          </Button>
+        </div>
       )}
 
       {progress.status === "done" && continued && (

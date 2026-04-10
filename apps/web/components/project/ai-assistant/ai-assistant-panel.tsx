@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconLoader2, IconSparkles } from "@tabler/icons-react";
+import { IconArrowDown, IconSparkles } from "@tabler/icons-react";
 import { BorderGlow } from "@/components/ui/border-glow";
 import { useTranslations } from "@/src/i18n/i18n";
 import { PanelLayout } from "@/components/project/panels/panel-layout";
@@ -23,6 +23,7 @@ import {
 import { quickActionsByAgent } from "./constants";
 import { MessageBubble, PIPELINE_TOOL_NAMES } from "./message-bubble";
 import { ChatComposer } from "./chat-composer";
+import { useAutoScroll } from "./use-auto-scroll";
 
 // ─── Empty defaults ────────────────────────────────────
 
@@ -118,6 +119,25 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
 
   const renderedMessages = useMemo(() => messages, [messages]);
 
+  // Coarse streaming length — bucketized so we don't trigger scroll on every token
+  // Changes roughly every ~80 chars, enough to keep up without thrashing
+  const streamingBucket = useMemo(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return 0;
+    let len = 0;
+    for (const part of last.parts) {
+      if (part.type === "text" && part.state === "streaming") {
+        len += part.text.length;
+      }
+    }
+    return Math.floor(len / 80);
+  }, [messages]);
+
+  const { isAtBottom, scrollToBottom } = useAutoScroll({
+    containerRef: messagesRef,
+    triggers: [messages.length, sending, streamingBucket],
+  });
+
   const handleTaskContinue = useCallback(
     (taskId: string, result: unknown) => {
       if (!projectId) return;
@@ -149,7 +169,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     >
       <div className="flex h-full flex-col relative">
         {/* Messages area — extra bottom padding so content scrolls behind composer */}
-        <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+        <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-6">
           {/* Welcome + quick actions */}
           {!hasMeaningfulMessages ? (
             <div className="space-y-3">
@@ -207,22 +227,34 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
             />
           ))}
 
-          {/* Thinking indicator */}
+          {/* Typing indicator — shows immediately after user sends */}
           {sending &&
-          !messages.some(
-            (m) =>
-              m.role === "assistant" &&
-              m.parts.some((p) => p.type === "text" && p.state === "streaming")
-          ) ? (
-            <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
-              <IconLoader2 className="size-3.5 animate-spin" />
-              {t("aiReplying")}
-            </div>
-          ) : null}
+            !messages.some(
+              (m) =>
+                m.role === "assistant" &&
+                m.parts.some((p) => p.type === "text" && p.state === "streaming")
+            ) && (
+              <div className="flex justify-start">
+                <div className="flex items-center gap-1 px-3 py-2">
+                  <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:0ms]" />
+                  <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:150ms]" />
+                  <span className="size-1.5 rounded-full bg-muted-foreground/40 animate-bounce [animation-delay:300ms]" />
+                </div>
+              </div>
+            )}
         </div>
 
-        {/* Chat composer */}
-        <div className="shrink-0">
+        {/* Scroll to bottom + Chat composer */}
+        <div className="shrink-0 relative">
+          {!isAtBottom && hasMeaningfulMessages && (
+            <button
+              type="button"
+              onClick={() => scrollToBottom("smooth")}
+              className="absolute -top-10 left-1/2 z-10 -translate-x-1/2 flex size-8 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-opacity hover:bg-muted"
+            >
+              <IconArrowDown className="size-3.5 text-muted-foreground" />
+            </button>
+          )}
           <ChatComposer
             projectId={projectId}
             draftInput={draftInput}
