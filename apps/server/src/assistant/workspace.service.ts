@@ -15,6 +15,7 @@ type WorkspaceApiBody<T = unknown> = {
 type WorkspacePaginated<T = WorkspaceRecord> = {
   list?: T[];
   total?: number;
+  totalCount?: number;
   page?: number;
   pageSize?: number;
 };
@@ -374,7 +375,7 @@ export class WorkspaceService {
         name: params?.name,
       });
       const list = result.list ?? [];
-      total = Number(result.total ?? total ?? list.length);
+      total = Number(result.totalCount ?? result.total ?? total ?? list.length);
       aggregated.push(...list);
       if (list.length < pageSize || aggregated.length >= total) break;
       page += 1;
@@ -427,14 +428,17 @@ export class WorkspaceService {
         page: 1,
         pageSize: 5,
       }).catch(() => ({
-        list: [],
+        list: [] as WorkspaceRecord[],
+        totalCount: 0,
         total: 0,
       })),
     ]);
 
     return {
       episodeId,
-      shotCount: Number(rows.total ?? rows.list?.length ?? 0),
+      shotCount: Number(
+        rows.totalCount ?? rows.total ?? rows.list?.length ?? 0,
+      ),
       sampleRows: rows.list ?? [],
       columns,
       columnNames: this.dedupeStrings(
@@ -467,7 +471,7 @@ export class WorkspaceService {
         presetColumnKeys: params?.presetColumnKeys,
       });
       const list = result.list ?? [];
-      total = Number(result.total ?? total ?? list.length);
+      total = Number(result.totalCount ?? result.total ?? total ?? list.length);
       aggregated.push(...list);
       if (list.length < pageSize || aggregated.length >= total) break;
       page += 1;
@@ -498,6 +502,21 @@ export class WorkspaceService {
       headers,
       '/api/user/world/update/worldproduct',
       { data },
+    );
+  }
+
+  async updateWorld(headers: HeadersLike, data: Record<string, unknown>) {
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/user/world/update/world',
+      { data },
+    );
+  }
+
+  async getWorldDetail(headers: HeadersLike, worldId: string) {
+    return this.request<Record<string, unknown>>(
+      headers,
+      `/api/user/world/query/world?id=${worldId}`,
     );
   }
 

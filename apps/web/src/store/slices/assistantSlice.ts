@@ -25,6 +25,7 @@ import {
   setActivePanel,
   setActiveTab,
   touchProjectList,
+  touchWorld,
   touchEpisodes,
   touchCharacters,
   touchScenes,
@@ -316,6 +317,9 @@ async function applyWorkspaceMutationEffects(
       case "project.updated":
         dispatch(touchProjectList());
         await refreshProjectDetail(dispatch, projectId);
+        break;
+      case "world.updated":
+        dispatch(touchWorld());
         break;
       case "episode.created":
       case "episode.batch_created":

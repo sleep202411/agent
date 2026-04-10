@@ -52,6 +52,44 @@ export function createExecuteTools({
       },
     }),
 
+    update_world: tool({
+      description:
+        'Update the current world (世界观) settings such as name, synopsis, story core, and development advice. Fetch current values first via get_project_snapshot if needed.',
+      inputSchema: z.object({
+        name: z.string().optional().describe('World name (世界名称)'),
+        description: z
+          .string()
+          .optional()
+          .describe('Story synopsis (故事梗概)'),
+        core: z.string().optional().describe('Story core / theme (故事核)'),
+        devAdvise: z
+          .string()
+          .optional()
+          .describe('Development advice (开发建议)'),
+      }),
+      outputSchema: mutationResultSchema,
+      execute: async (input) => {
+        const worldId = requireWorldId();
+        const current = await ws.getWorldDetail(headers, worldId);
+        await ws.updateWorld(headers, {
+          id: worldId,
+          name: current?.name,
+          description: current?.description,
+          core: current?.core,
+          devAdvise: current?.devAdvise,
+          bannerLink: current?.bannerLink ?? '',
+          filePath: current?.filePath ?? '',
+          ...input,
+        });
+        return buildMutationResult(
+          'world.updated',
+          'World settings updated',
+          'world',
+          worldId,
+        );
+      },
+    }),
+
     create_episode: tool({
       description: 'Create an episode for the current project.',
       inputSchema: z.object({ title: z.string().min(1) }),

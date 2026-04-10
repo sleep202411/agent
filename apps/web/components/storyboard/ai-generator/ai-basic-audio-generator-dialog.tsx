@@ -460,8 +460,8 @@ export function AiBasicAudioGeneratorDialog({
           <DialogTitle className="text-base font-medium">{t("aiAudioTitle")}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex h-[600px] min-h-0 gap-5 px-6 pb-5">
-          <div className="flex w-[300px] shrink-0 flex-col gap-4 overflow-y-auto">
+        <div className="flex h-150 min-h-0 gap-5 px-4 pb-5">
+          <div className="flex w-75 shrink-0 flex-col gap-4 overflow-y-auto">
             <section className="space-y-2">
               <div className="text-sm font-medium text-foreground">{t("audioPromptLabel")}</div>
               <Textarea

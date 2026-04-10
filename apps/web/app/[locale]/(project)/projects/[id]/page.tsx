@@ -31,7 +31,7 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  const { detail, isLoading, isEpisodesLoading, error } = useProjectDetail();
+  const { detail, episodes, isLoading, isEpisodesLoading, error } = useProjectDetail();
   useStoryboardData();
   useWorldAssets();
   useAiModelsPreload();
@@ -132,8 +132,9 @@ export default function ProjectDetailPage() {
     }
   }, [activePanel]);
 
-  // 必要接口未完成前显示全屏 loading
-  const essentialLoading = isLoading || isEpisodesLoading || (!detail && !error);
+  // 必要接口未完成前显示全屏 loading（已有剧集数据时后台静默刷新，不阻塞页面）
+  const essentialLoading =
+    isLoading || (isEpisodesLoading && episodes.length === 0) || (!detail && !error);
 
   if (essentialLoading) {
     return (

@@ -1,5 +1,6 @@
 export const assistantEntityTypes = [
   'project',
+  'world',
   'episode',
   'character',
   'scene',
@@ -12,6 +13,7 @@ export type AssistantEntityType = (typeof assistantEntityTypes)[number];
 
 export const assistantMutationActions = [
   'project.updated',
+  'world.updated',
   'episode.created',
   'episode.batch_created',
   'episode.updated',

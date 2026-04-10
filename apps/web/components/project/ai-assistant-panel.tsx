@@ -627,22 +627,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const submittingToolCallId = conversation?.submittingToolCallId ?? null;
   const error = conversation?.error ?? null;
 
-  // Auto-scroll: track the last message content length to detect streaming updates
-  const lastMessageLength = useMemo(() => {
-    const last = messages[messages.length - 1];
-    if (!last) return 0;
-    return last.parts.reduce(
-      (len, p) => len + ("text" in p && typeof p.text === "string" ? p.text.length : 0),
-      0
-    );
-  }, [messages]);
-
-  useEffect(() => {
-    messagesRef.current?.scrollTo({
-      top: messagesRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [messages, sending, lastMessageLength]);
+  // TODO: auto-scroll to bottom — needs dedicated implementation
 
   // 当 store 中 draftInput 被清空时（发送后），同步清空 contentEditable DOM
   useEffect(() => {
@@ -651,6 +636,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     }
   }, [draftInput]);
 
+  const hasPendingTools = pendingToolUi.length > 0;
   const hasMeaningfulMessages = messages.length > 1;
   const hasUploadingAttachments = attachments.some(
     (attachment) => attachment.status === "uploading"
@@ -873,7 +859,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
             onKeyDown={(event) => {
               if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                 event.preventDefault();
-                if (projectId) void dispatch(sendUserMessage(projectId));
+                if (projectId && !hasPendingTools) void dispatch(sendUserMessage(projectId));
               }
             }}
           />
@@ -937,9 +923,12 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
             </div>
             <Button
               size="icon-sm"
-              onClick={() => projectId && void dispatch(sendUserMessage(projectId))}
+              onClick={() =>
+                projectId && !hasPendingTools && void dispatch(sendUserMessage(projectId))
+              }
               disabled={
                 sending ||
+                hasPendingTools ||
                 hasUploadingAttachments ||
                 !projectId ||
                 (!draftInput.trim() && attachments.every((a) => a.status !== "uploaded"))
