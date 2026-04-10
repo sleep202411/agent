@@ -23,6 +23,7 @@ import {
   SceneReferenceCell,
   SelectCell,
   ShotNoCell,
+  SoundPathCell,
 } from "@/components/storyboard/cells";
 import { MusicCell } from "@/components/storyboard/cells/music-cell";
 import { StoryboardDialogProvider } from "@/components/storyboard/storyboard-dialog-context";
@@ -108,6 +109,7 @@ function getColumnIcon(type?: string): ReactNode {
       return <IconUserFilled className="size-3.5" />;
     case "scene":
       return <IconMapPin className="size-3.5" />;
+    case "sound_path":
     case "audio":
     case "music":
       return <IconMusic className="size-3.5" />;
@@ -202,17 +204,8 @@ function StoryboardCell({
       return (
         <LipSyncCell cell={cell} shotId={shotId} shotColumnId={columnId} row={row} column={col} />
       );
-    case "audio":
-      return (
-        <MediaCell
-          cell={cell}
-          shotId={shotId}
-          shotColumnId={columnId}
-          type="audio"
-          row={row}
-          column={col}
-        />
-      );
+    case "sound_path":
+      return <SoundPathCell cell={cell} shotId={shotId} shotColumnId={columnId} row={row} />;
     case "music":
       return <MusicCell cell={cell} shotId={shotId} shotColumnId={columnId} column={col} />;
     case "richtext":

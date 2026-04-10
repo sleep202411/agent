@@ -6,4 +6,5 @@ export { CharacterCell } from "./character-cell";
 export { SceneReferenceCell } from "./scene-cell";
 export { ImageCell } from "./image-cell";
 export { MediaCell } from "./media-cell";
+export { SoundPathCell } from "./sound-path-cell";
 export { buildMentionItems, renderMentionPreviewHtml } from "./cell-utils";

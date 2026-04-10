@@ -83,6 +83,7 @@ export type ResolvedColumnType =
   | "shot_no"
   | "image"
   | "video"
+  | "sound_path"
   | "audio"
   | "music"
   | "richtext"
@@ -176,7 +177,7 @@ function resolveColumn(col: ShotColumn): ShotColumn {
       resolved = "lip_sync";
       break;
     case "sound_path":
-      resolved = "audio";
+      resolved = "sound_path";
       break;
     case "music":
       resolved = "music";
