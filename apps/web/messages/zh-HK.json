@@ -23,6 +23,7 @@
     "unnamed": "未命名",
     "copySuccess": "已複製連結",
     "copyFailed": "複製連結失敗",
+    "manualCopyHint": "請手動複製以下連結：",
     "maxUploadCount": "最多上傳 {max} 張",
     "fileSizeLimit": "檔案不能超過 {size}MB",
     "selectImageFile": "請選擇圖片檔案",
@@ -1176,6 +1177,7 @@
     "labelName": "名稱",
     "labelLink": "連結",
     "labelDate": "日期",
+    "labelPrompt": "提示詞",
     "notAvailable": "暫無"
   },
   "music": {

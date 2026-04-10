@@ -23,6 +23,7 @@
     "unnamed": "未命名",
     "copySuccess": "已复制链接",
     "copyFailed": "复制链接失败",
+    "manualCopyHint": "请手动复制以下链接：",
     "maxUploadCount": "最多上传 {max} 张",
     "fileSizeLimit": "文件不能超过 {size}MB",
     "selectImageFile": "请选择图片文件",
@@ -1176,6 +1177,7 @@
     "labelName": "名称",
     "labelLink": "链接",
     "labelDate": "日期",
+    "labelPrompt": "提示词",
     "notAvailable": "暂无"
   },
   "music": {

@@ -23,6 +23,7 @@
     "unnamed": "Unnamed",
     "copySuccess": "Link copied",
     "copyFailed": "Copy link failed",
+    "manualCopyHint": "Please copy the link manually:",
     "maxUploadCount": "Maximum {max} images allowed",
     "fileSizeLimit": "File size cannot exceed {size}MB",
     "selectImageFile": "Please select an image file",
@@ -1176,6 +1177,7 @@
     "labelName": "Name",
     "labelLink": "Link",
     "labelDate": "Date",
+    "labelPrompt": "Prompt",
     "notAvailable": "N/A"
   },
   "music": {

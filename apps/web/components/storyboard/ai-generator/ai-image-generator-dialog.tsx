@@ -596,6 +596,7 @@ export function AiImageGeneratorDialog({
         }}
         type="image"
         src={fullPreviewUrl}
+        prompt={formData.prompt}
       />
     </Dialog>
   );

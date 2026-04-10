@@ -737,13 +737,10 @@ export function TimelineView() {
 
   return (
     <>
-      <div
-        className="flex h-full flex-col overflow-hidden rounded-[10px] border border-white/10"
-        onWheel={handleWheel}
-      >
+      <div className="flex h-full flex-col overflow-hidden" onWheel={handleWheel}>
         <div
           data-tour-step="timeline-preview"
-          className="flex min-h-[400px] flex-1 flex-col items-center justify-center overflow-auto p-4"
+          className="flex min-min-h-100 flex-1 flex-col items-center justify-center overflow-auto p-4"
         >
           {isLoading ? (
             <div className="flex h-[383px] w-[680px] flex-col items-center justify-center gap-4 rounded-lg border border-[#2A2A2A] bg-[#1A1A1A]">

@@ -28,6 +28,7 @@ interface MediaPreviewModalProps {
   src?: string | null;
   name?: string | null;
   link?: string | null;
+  prompt?: string | null;
   createdAt?: string | null;
   details?: MediaPreviewDetail[];
   onDownload?: () => void | Promise<void>;
@@ -53,6 +54,7 @@ export function MediaPreviewModal({
   src,
   name,
   link,
+  prompt,
   createdAt,
   details = [],
   onDownload,
@@ -105,9 +107,22 @@ export function MediaPreviewModal({
     try {
       await navigator.clipboard.writeText(copyTarget);
       toast.success(tc("copySuccess"));
-    } catch (error) {
-      console.error("[MediaPreviewModal] 复制链接失败:", error);
-      toast.error(tc("copyFailed"));
+    } catch {
+      // Clipboard API blocked (iframe / permissions policy) — try execCommand fallback
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = copyTarget;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        toast.success(tc("copySuccess"));
+      } catch {
+        // Both methods blocked — prompt user to copy manually
+        window.prompt(tc("manualCopyHint"), copyTarget);
+      }
     }
   };
 
@@ -152,11 +167,11 @@ export function MediaPreviewModal({
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="pointer-events-auto fixed inset-0 z-[140] bg-background/58 backdrop-blur-2xl">
+    <div className="pointer-events-auto fixed inset-0 z-140 bg-background/58 backdrop-blur-2xl flex items-center justify-center">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_color-mix(in_oklab,var(--foreground)_10%,transparent),_transparent_38%),radial-gradient(circle_at_bottom,_color-mix(in_oklab,var(--primary)_10%,transparent),_transparent_34%)]" />
       <div className="absolute inset-0" onClick={() => onOpenChange(false)} aria-hidden="true" />
 
-      <div className="relative mx-auto flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-[1800px] gap-4 px-2 py-4">
+      <div className="relative mx-auto flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-450 gap-4 p-4">
         <div
           className="flex min-h-0 min-w-0 flex-1 flex-col px-3 py-2"
           onClick={(event) => event.stopPropagation()}
@@ -273,6 +288,16 @@ export function MediaPreviewModal({
               value={formatDateTime(createdAt, t("unknown"))}
               fallback={t("notAvailable")}
             />
+            {prompt ? (
+              <InfoBlock
+                label={t("labelPrompt")}
+                value={
+                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                    {prompt}
+                  </p>
+                }
+              />
+            ) : null}
             {details.map((detail) => (
               <InfoBlock
                 key={detail.label}
