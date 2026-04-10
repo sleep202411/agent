@@ -660,15 +660,24 @@ export class WorkspaceService {
   async listEpisodes(
     headers: HeadersLike,
     projectId: string,
-  ): Promise<Array<{ id: string; title: string }>> {
+  ): Promise<
+    Array<{ id: string; title: string; sort: number; introduction?: string }>
+  > {
     const result = await this.request<{
-      list?: Array<{ id: unknown; title?: string }>;
+      list?: Array<{
+        id: unknown;
+        title?: string;
+        sort?: number;
+        introduction?: string;
+      }>;
     }>(headers, '/api/user/world/list/episode', {
       data: { productId: projectId, page: 1, pageSize: 999 },
     });
     return (result?.list ?? []).map((ep) => ({
       id: String(ep.id),
       title: String(ep.title ?? ''),
+      sort: Number(ep.sort ?? 0),
+      introduction: ep.introduction,
     }));
   }
 
@@ -721,10 +730,13 @@ export class WorkspaceService {
     );
     for (const row of rows) {
       try {
+        const name = row[0];
+        const description = row[1] ?? '';
+        const prompt = row[2] ?? description;
         await this.request<WorkspaceRecord>(
           headers,
           '/api/user/world/create/worldscene',
-          { data: { worldId, name: row[0], description: row[1] ?? '' } },
+          { data: { worldId, name, description, prompt } },
         );
       } catch (error) {
         this.logger.error(`[batchCreateScenes] Failed "${row[0]}": ${error}`);
@@ -754,30 +766,130 @@ export class WorkspaceService {
     }
   }
 
+  private static readonly SORT_GAP = 1024;
+  private static readonly MIN_SORT_GAP = 2;
+
+  /**
+   * Reorder all episodes with even spacing (SORT_GAP).
+   * Call this when sort gaps are too tight to insert new episodes.
+   */
+  async reorderEpisodes(
+    headers: HeadersLike,
+    projectId: string,
+  ): Promise<void> {
+    const episodes = await this.listEpisodes(headers, projectId);
+    episodes.sort((a, b) => a.sort - b.sort);
+
+    const datas = episodes.map((ep, index) => ({
+      id: ep.id,
+      title: ep.title,
+      sort: (index + 1) * WorkspaceService.SORT_GAP,
+      projectId,
+    }));
+
+    await this.batchUpdateEpisodes(headers, datas);
+    this.logger.log(
+      `[reorderEpisodes] Reordered ${episodes.length} episodes for project ${projectId}`,
+    );
+  }
+
+  /**
+   * Ensure sort gaps are large enough for inserting new items.
+   * If any adjacent gap is smaller than MIN_SORT_GAP, trigger a full reorder.
+   */
+  private async ensureSortGaps(
+    headers: HeadersLike,
+    projectId: string,
+    episodes: Array<{ id: string; title: string; sort: number }>,
+  ): Promise<Array<{ id: string; title: string; sort: number }>> {
+    const sorted = [...episodes].sort((a, b) => a.sort - b.sort);
+    let needsReorder = false;
+
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].sort - sorted[i - 1].sort < WorkspaceService.MIN_SORT_GAP) {
+        needsReorder = true;
+        break;
+      }
+    }
+
+    if (!needsReorder) return sorted;
+
+    this.logger.log(`[ensureSortGaps] Sort gaps too tight, triggering reorder`);
+    await this.reorderEpisodes(headers, projectId);
+    const refreshed = await this.listEpisodes(headers, projectId);
+    return refreshed.sort((a, b) => a.sort - b.sort);
+  }
+
   async batchAddEpisodes(
     headers: HeadersLike,
     projectId: string,
     titles: string[],
   ): Promise<string[]> {
     this.logger.log(
-      `[batchAddEpisodes] ${titles.length} episodes for project ${projectId} (sequential)`,
+      `[batchAddEpisodes] ${titles.length} episodes for project ${projectId}`,
     );
-    const ids: string[] = [];
-    for (const title of titles) {
-      try {
-        const createdId = await this.request<string | number>(
-          headers,
-          '/api/user/storyBoard/create',
-          { data: { projectId, name: title }, maxRetries: 2 },
-        );
-        ids.push(String(createdId));
-        this.logger.log(`[batchAddEpisodes] Created "${title}" → ${createdId}`);
-      } catch (error) {
-        this.logger.error(`[batchAddEpisodes] Failed "${title}": ${error}`);
-        ids.push('');
-      }
+
+    // 1. Get existing episodes, ensure sort gaps are healthy
+    let existing = await this.listEpisodes(headers, projectId);
+    existing = await this.ensureSortGaps(headers, projectId, existing);
+
+    let maxSort = 0;
+    for (const ep of existing) {
+      if (ep.sort > maxSort) maxSort = ep.sort;
     }
+
+    // 2. Assign sort values: increment by SORT_GAP from max
+    const datas = titles.map((title, index) => ({
+      title,
+      projectId,
+      sort: maxSort + (index + 1) * WorkspaceService.SORT_GAP,
+    }));
+
+    // 3. Batch create via updateOrAdd API
+    try {
+      await this.request(headers, '/api/user/world/batch/updateOrAdd/episode', {
+        data: { datas },
+        maxRetries: 2,
+      });
+      this.logger.log(
+        `[batchAddEpisodes] Batch created ${titles.length} episodes`,
+      );
+    } catch (error) {
+      this.logger.error(`[batchAddEpisodes] Batch create failed: ${error}`);
+      throw error;
+    }
+
+    // 4. Re-fetch episode list and match by sort to get IDs in order
+    const updated = await this.listEpisodes(headers, projectId);
+    const sortToId = new Map<number, string>();
+    for (const ep of updated) {
+      sortToId.set(ep.sort, ep.id);
+    }
+
+    const ids = datas.map((item) => sortToId.get(item.sort) ?? '');
+    const matched = ids.filter(Boolean).length;
+    this.logger.log(
+      `[batchAddEpisodes] Matched ${matched}/${titles.length} episodes by sort`,
+    );
+
     return ids;
+  }
+
+  async batchUpdateEpisodes(
+    headers: HeadersLike,
+    datas: Array<{
+      id: string;
+      title?: string;
+      introduction?: string;
+      sort?: number;
+      projectId: string;
+    }>,
+  ) {
+    this.logger.log(`[batchUpdateEpisodes] updating ${datas.length} episodes`);
+    return this.request(headers, '/api/user/world/batch/updateOrAdd/episode', {
+      data: { datas },
+      maxRetries: 2,
+    });
   }
 
   /**

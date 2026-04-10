@@ -10,7 +10,14 @@ export const characterInfoSchema = z.object({
     .describe('main/supporting/extra'),
   description: z
     .string()
-    .describe('Appearance and personality, under 50 words'),
+    .describe(
+      'Character biography: background, personality, story role, relationships. Under 80 words.',
+    ),
+  prompt: z
+    .string()
+    .describe(
+      'AI image generation prompt — pure visual appearance ONLY: facial features, hairstyle, clothing, expression, body type, art style. Under 40 words. Must NOT repeat biography.',
+    ),
   relationships: z
     .string()
     .describe('Relationships with other characters')
@@ -19,7 +26,16 @@ export const characterInfoSchema = z.object({
 
 export const locationInfoSchema = z.object({
   name: z.string().describe('Location name'),
-  description: z.string().describe('Visual description, under 30 words'),
+  description: z
+    .string()
+    .describe(
+      'Scene description: narrative function, mood, what happens here. Under 40 words.',
+    ),
+  prompt: z
+    .string()
+    .describe(
+      'AI image generation prompt — pure visual ONLY: spatial layout, lighting, colors, objects, atmosphere, art style. Under 40 words. Must NOT repeat description.',
+    ),
 });
 
 export const chapterOutlineSchema = z.object({

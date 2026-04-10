@@ -116,27 +116,64 @@ export function createExecuteTools({
         titles: z.array(z.string().min(1)).min(1).describe('Episode titles'),
       }),
       execute: async ({ titles }) => {
+        const createdIds = await ws.batchAddEpisodes(
+          headers,
+          context.projectId,
+          titles,
+        );
         const episodeMap: Record<string, string> = {};
-        const createdIds: string[] = [];
-        for (const title of titles) {
-          const createdId = await ws.createEpisode(
-            headers,
-            context.projectId,
-            title,
-          );
-          const id = String(createdId);
-          createdIds.push(id);
-          episodeMap[title] = id;
-        }
+        titles.forEach((title, i) => {
+          if (createdIds[i]) episodeMap[title] = createdIds[i];
+        });
         return {
           ...buildBatchMutationResult(
             'episode.batch_created',
             `Created ${titles.length} episodes`,
             'episode',
-            createdIds,
+            createdIds.filter(Boolean),
           ),
           episodeMap,
         };
+      },
+    }),
+
+    reorder_episodes: tool({
+      description:
+        'Reorder all episodes by their title number. Call this when episodes are out of order. ' +
+        'First call get_project_snapshot to see the current episode list, then call this tool.',
+      inputSchema: z.object({}),
+      outputSchema: mutationResultSchema,
+      execute: async () => {
+        const episodes = await ws.listEpisodes(headers, context.projectId);
+
+        // Extract episode number from title (e.g. "第1集:xxx" → 1, "Ep.1 xxx" → 1)
+        const withNumber = episodes.map((ep) => {
+          const match = ep.title.match(/(?:第(\d+)集|Ep\.?\s*(\d+))/i);
+          const num = match ? Number(match[1] ?? match[2]) : Infinity;
+          return { ...ep, episodeNumber: num };
+        });
+
+        // Sort by episode number, then by original sort for ties
+        withNumber.sort(
+          (a, b) => a.episodeNumber - b.episodeNumber || a.sort - b.sort,
+        );
+
+        // Assign new sort values with even spacing
+        const SORT_GAP = 1024;
+        const datas = withNumber.map((ep, index) => ({
+          id: ep.id,
+          title: ep.title,
+          sort: (index + 1) * SORT_GAP,
+          projectId: context.projectId,
+        }));
+
+        await ws.batchUpdateEpisodes(headers, datas);
+
+        return buildMutationResult(
+          'episode.updated',
+          `Reordered ${episodes.length} episodes by title number`,
+          'episode',
+        );
       },
     }),
 

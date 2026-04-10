@@ -13,27 +13,52 @@ export const roleProposalSchema = z.object({
     .enum(['main', 'supporting', 'extra'])
     .default('supporting')
     .describe('角色类型'),
-  description: z.string().optional().describe('角色简介'),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      'Character biography for human readers: background, personality, story role, relationships. Can be literary and detailed.',
+    ),
   appearance: z.string().optional().describe('角色外貌'),
   personality: z.string().optional().describe('角色性格'),
   prompt: z
     .string()
     .optional()
     .describe(
-      'AI image generation prompt (English). Describe the character visual appearance for AI image generation: facial features, hairstyle, clothing, expression, body type, etc. Example: "A young Chinese man with short black hair, wearing a dark blue Tang suit, determined expression, athletic build"',
+      'AI image generation prompt — pure visual description ONLY. Focus on: facial features, hairstyle, hair color, clothing, expression, body type, lighting, art style. Must NOT repeat the description/biography. Example: "A young Chinese man, short black hair, dark blue Tang suit, determined expression, athletic build, cinematic lighting"',
     ),
 });
 
 export const sceneProposalSchema = z.object({
   name: z.string().describe('场景名称'),
-  description: z.string().optional().describe('场景描述'),
-  prompt: z.string().optional().describe('场景提示词'),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      'Scene description for human readers: narrative function, mood, story significance, what happens here.',
+    ),
+  prompt: z
+    .string()
+    .optional()
+    .describe(
+      'AI image generation prompt — pure visual description ONLY. Focus on: spatial layout, lighting, colors, objects, atmosphere, weather, time of day, art style. Must NOT repeat the description. Example: "A dimly lit ancient Chinese palace hall, red wooden pillars, golden dragon carvings, moonlight through lattice windows, cinematic wide shot"',
+    ),
 });
 
 export const propProposalSchema = z.object({
   name: z.string().describe('道具名称'),
-  description: z.string().optional().describe('道具描述'),
-  prompt: z.string().optional().describe('道具提示词'),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      'Prop description for human readers: what it is, story significance, who uses it.',
+    ),
+  prompt: z
+    .string()
+    .optional()
+    .describe(
+      'AI image generation prompt — pure visual description ONLY. Focus on: shape, material, color, texture, size, details. Must NOT repeat the description. Example: "An ancient bronze dagger with jade handle, intricate engravings, dark patina, studio lighting on black background"',
+    ),
 });
 
 export const STORYBOARD_API_FIELDS = [

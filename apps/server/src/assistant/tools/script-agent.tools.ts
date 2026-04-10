@@ -294,7 +294,9 @@ export function createScriptAgentTools(
                 ...characters.map((c) => [
                   c.name,
                   c.description ?? '',
-                  c.description ?? '',
+                  (c as Record<string, unknown>).prompt
+                    ? String((c as Record<string, unknown>).prompt)
+                    : (c.description ?? ''),
                 ]),
               ];
               await ctx.ws.batchCreateRoles(ctx.headers, worldId, roleDatas);
@@ -309,8 +311,14 @@ export function createScriptAgentTools(
           if (locations.length > 0) {
             try {
               const sceneDatas: string[][] = [
-                ['name', 'description'],
-                ...locations.map((l) => [l.name, l.description ?? '']),
+                ['name', 'description', 'prompt'],
+                ...locations.map((l) => [
+                  l.name,
+                  l.description ?? '',
+                  (l as Record<string, unknown>).prompt
+                    ? String((l as Record<string, unknown>).prompt)
+                    : (l.description ?? ''),
+                ]),
               ];
               await ctx.ws.batchCreateScenes(ctx.headers, worldId, sceneDatas);
               results.push(`${locations.length} scenes`);
