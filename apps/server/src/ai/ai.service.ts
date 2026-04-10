@@ -60,6 +60,15 @@ export class AiService implements OnModuleInit {
           init = { ...init, body: JSON.stringify(body) };
         }
       }
+      // Disable content moderation for staging / production-com
+      if (process.env.DISABLE_CONTENT_MODERATION === 'true' && init) {
+        const headers = new Headers(init.headers);
+        headers.set(
+          'X-DashScope-DataInspection',
+          '{"input":"disable","output":"disable"}',
+        );
+        init = { ...init, headers };
+      }
       return fetch(url, init);
     },
   });
