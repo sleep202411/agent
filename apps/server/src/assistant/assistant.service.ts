@@ -9,8 +9,11 @@ import {
 } from 'ai';
 import { AiService } from '../ai/ai.service';
 import { ScriptAgentService } from '../pipeline/script-agent.service';
+import { TaskService } from '../pipeline/task/task.service';
+import { TaskQueue } from '../pipeline/task/task.queue';
+import { TaskWorker } from '../pipeline/task/task.worker';
 import { WorkspaceService, type WorkspaceContext } from './workspace.service';
-import { createGroupedAssistantTools } from './tools';
+import { createGroupedAssistantTools, type UserTier } from './tools';
 import {
   loadAgentPrompt,
   type AssistantAgentType,
@@ -37,11 +40,34 @@ type ProjectContext = Awaited<
 export class AssistantService {
   private readonly logger = new Logger(AssistantService.name);
 
+  private taskWorker: TaskWorker | null = null;
+
   constructor(
     private readonly ai: AiService,
     private readonly workspace: WorkspaceService,
     private readonly scriptAgent: ScriptAgentService,
-  ) {}
+    private readonly taskService: TaskService,
+    private readonly taskQueue: TaskQueue,
+  ) {
+    // Create task worker and start BullMQ processing
+    if (taskService) {
+      this.taskWorker = new TaskWorker(
+        taskService,
+        () => this.ai.getModel(),
+        (sessionId, state) => this.scriptAgent.saveState(sessionId, state),
+      );
+      // Start worker in-process unless DISABLE_INLINE_WORKER is set.
+      // In a multi-server setup, run worker.ts separately and set DISABLE_INLINE_WORKER=true.
+      if (taskQueue && process.env.DISABLE_INLINE_WORKER !== 'true') {
+        taskQueue.startWorker(this.taskWorker);
+        this.logger.log('Inline task worker started');
+      } else if (process.env.DISABLE_INLINE_WORKER === 'true') {
+        this.logger.log(
+          'Inline task worker disabled — use standalone worker.ts',
+        );
+      }
+    }
+  }
 
   async chat(
     payload: {
@@ -49,6 +75,7 @@ export class AssistantService {
       messages: unknown[];
       workspaceContext?: Partial<WorkspaceContext>;
       agentType?: string;
+      userTier?: UserTier;
     },
     incomingHeaders: HeadersLike,
   ): Promise<{ toUIMessageStreamResponse: () => globalThis.Response }> {
@@ -84,6 +111,7 @@ export class AssistantService {
         headers: incomingHeaders,
         ws: this.workspace,
         context: wsContext,
+        userId: payload.userId,
         requireWorldId: () => {
           if (!wsContext.worldId)
             throw new Error(
@@ -98,10 +126,14 @@ export class AssistantService {
         },
         getAttachmentText: () => attachmentFullText,
         getAttachments: () => attachmentInfos,
+        taskService: this.taskService,
+        taskWorker: this.taskWorker ?? undefined,
+        taskQueue: this.taskQueue ?? undefined,
       },
       this.ai,
       this.scriptAgent,
-    );
+      payload.userTier ?? 'pro',
+    ) as ToolSet;
 
     this.logger.log('Fetching project context...');
     const projectContext = await this.workspace.getProjectContextSummary(
@@ -252,6 +284,7 @@ export class AssistantService {
 3. 先调用读取工具了解现状，不要凭空猜测。
 4. 回复简洁、具体、可执行。不要提及工具名称。
 5. 任何需要用户确认的场景，必须调用 confirm_action 或 show_options 生成交互卡片。禁止用纯文本要求用户回复"确认"。
+10. 【重要】调用 show_options、confirm_action、configure_params 工具之前，你必须先在回复中输出至少一句说明文字（比如"好的，请选择画面风格："），然后再调用工具。绝对禁止跳过文字直接调用这些工具。这是硬性要求。
 6. 当需要批量创建资产时，必须直接调用 propose 工具生成交互卡片。
 7. 涉及数值参数时，必须调用 configure_params 生成参数表单。
 8. 当用户上传了附件时，必须优先从附件内容中分析和提取信息。附件内容在消息的 [附件上下文] 部分。

@@ -123,26 +123,25 @@ export function createScriptAgentTools(
 
         logger.log(`analyze_text: ${text.length} chars, session=${sessionId}`);
 
-        // Save session for later steps
-        await store.saveState(sessionId, { title, config: config ?? {} });
-
         // If task infrastructure is available, run async
         if (taskService && taskQueue) {
           const task = await taskService.create({
             type: 'analyze',
             projectId: ctx.context.projectId,
+            userId: ctx.userId,
             sessionId,
             input: {
               title,
-              text,
               config: config ?? {},
               attachmentUrl: firstAttachment?.url,
               attachmentMimeType: firstAttachment?.mimeType,
+              // Don't store full text in task.input — it's saved separately below
             },
           });
 
-          // Save text to Redis for worker to access
+          // Save text first, then session state — ensures text is available if crash occurs
           await taskService.saveText(task.id, text);
+          await store.saveState(sessionId, { title, config: config ?? {} });
 
           // Enqueue via BullMQ for background processing
           await taskQueue.enqueue(task.id);
@@ -682,9 +681,13 @@ Rules:
         }
 
         function injectMentions(text: string): string {
+          // Sort by name length descending to avoid substring collisions
+          // e.g. "王五" must be matched before "王"
+          const sorted = [...mentionMap.values()].sort(
+            (a, b) => b.name.length - a.name.length,
+          );
           let result = text;
-          for (const entry of mentionMap.values()) {
-            // Replace exact name occurrences with mention tags (case insensitive)
+          for (const entry of sorted) {
             const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const regex = new RegExp(escaped, 'gi');
             result = result.replace(regex, buildMention(entry));
