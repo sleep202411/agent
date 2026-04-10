@@ -470,17 +470,6 @@ export function ScriptView() {
           }}
         />
 
-        <div className="flex items-center justify-end border-b border-border px-3 py-2.5">
-          <Button onClick={handleGenerateStoryboard} disabled={generating}>
-            {generating ? (
-              <IconLoader2 className="size-3.5 animate-spin" />
-            ) : (
-              <IconSparkles className="size-3.5" />
-            )}
-            {generating ? tc("generating") : t("generateStoryboard")}
-          </Button>
-        </div>
-
         <div className="flex items-center gap-0.5 border-b border-border px-3 py-1.5">
           <ToolbarButton
             icon={<IconBold className="size-4" />}

@@ -143,8 +143,13 @@ export function createExecuteTools({
 
     delete_episode: tool({
       description:
-        'Delete an episode. Only when user explicitly requests deletion.',
-      inputSchema: z.object({ id: z.string() }),
+        'Delete an episode. Only when user explicitly requests deletion. The id must be the numeric episode ID obtained from get_project_snapshot, NOT the episode name.',
+      inputSchema: z.object({
+        id: z
+          .string()
+          .regex(/^\d+$/, 'id must be a numeric episode ID, not a name')
+          .describe('Numeric episode ID from get_project_snapshot'),
+      }),
       outputSchema: mutationResultSchema,
       execute: async ({ id }) => {
         await ws.deleteEpisode(headers, id);
@@ -261,8 +266,10 @@ export function createExecuteTools({
 
     delete_character: tool({
       description:
-        'Delete a character. Only when user explicitly requests deletion.',
-      inputSchema: z.object({ id: z.string() }),
+        'Delete a character. Only when user explicitly requests deletion. The id must be the numeric ID from get_world_assets or search_world_assets.',
+      inputSchema: z.object({
+        id: z.string().regex(/^\d+$/, 'id must be a numeric ID'),
+      }),
       outputSchema: mutationResultSchema,
       execute: async ({ id }) => {
         await ws.deleteCharacter(headers, id);
@@ -352,8 +359,10 @@ export function createExecuteTools({
 
     delete_scene: tool({
       description:
-        'Delete a scene. Only when user explicitly requests deletion.',
-      inputSchema: z.object({ id: z.string() }),
+        'Delete a scene. Only when user explicitly requests deletion. The id must be the numeric ID from get_world_assets or search_world_assets.',
+      inputSchema: z.object({
+        id: z.string().regex(/^\d+$/, 'id must be a numeric ID'),
+      }),
       outputSchema: mutationResultSchema,
       execute: async ({ id }) => {
         await ws.deleteScene(headers, id);
@@ -443,8 +452,10 @@ export function createExecuteTools({
 
     delete_prop: tool({
       description:
-        'Delete a prop. Only when user explicitly requests deletion.',
-      inputSchema: z.object({ id: z.string() }),
+        'Delete a prop. Only when user explicitly requests deletion. The id must be the numeric ID from get_world_assets or search_world_assets.',
+      inputSchema: z.object({
+        id: z.string().regex(/^\d+$/, 'id must be a numeric ID'),
+      }),
       outputSchema: mutationResultSchema,
       execute: async ({ id }) => {
         await ws.deleteProp(headers, id);
