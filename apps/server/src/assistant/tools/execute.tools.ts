@@ -188,7 +188,18 @@ export function createExecuteTools({
       inputSchema: z.object({
         id: z.string(),
         title: z.string().optional(),
-        introduction: z.string().optional(),
+        introduction: z
+          .string()
+          .optional()
+          .describe('Episode description/synopsis'),
+        frontPrompt: z
+          .string()
+          .optional()
+          .describe('Prefix prompt prepended to each shot image/video prompt'),
+        behindPrompt: z
+          .string()
+          .optional()
+          .describe('Suffix prompt appended to each shot image/video prompt'),
       }),
       outputSchema: mutationResultSchema,
       execute: async (input) => {
@@ -215,6 +226,8 @@ export function createExecuteTools({
               id: z.string(),
               title: z.string().optional(),
               introduction: z.string().optional(),
+              frontPrompt: z.string().optional(),
+              behindPrompt: z.string().optional(),
             }),
           )
           .min(1),

@@ -255,6 +255,8 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   fill_cell: "Fill Cell",
   save_storyboard_draft: "Save Storyboard",
   batch_create_episodes: "Create Episodes",
+  batch_update_episodes: "Update Episodes",
+  reorder_episodes: "Reorder Episodes",
   save_episode_script: "Save Script",
   // Script agent tools
   analyze_text: "Analyzing Script",

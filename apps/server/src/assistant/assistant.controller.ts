@@ -11,6 +11,7 @@ import {
 import type { Request, Response } from 'express';
 import { AssistantService } from './assistant.service';
 import { pipeWebResponseToExpress } from '../common/stream.util';
+import { CurrentUser, type AuthUser } from '../auth';
 
 @Controller('assistant')
 export class AssistantController {
@@ -27,11 +28,12 @@ export class AssistantController {
       workspaceContext?: Record<string, unknown>;
       agentType?: string;
     },
+    @CurrentUser() user: AuthUser,
     @Req() req: Request,
     @Res() res: Response,
   ) {
     this.logger.log(
-      `POST /assistant/chat projectId=${body.projectId} agentType=${body.agentType ?? 'general'} messages=${body.messages?.length ?? 0}`,
+      `POST /assistant/chat userId=${user.userId} projectId=${body.projectId} agentType=${body.agentType ?? 'general'} messages=${body.messages?.length ?? 0}`,
     );
 
     if (
@@ -52,6 +54,8 @@ export class AssistantController {
           messages: body.messages,
           workspaceContext: body.workspaceContext,
           agentType: body.agentType,
+          userId: user.userId,
+          userTier: user.userLevel ?? 'free',
         },
         req.headers as Record<string, string | string[] | undefined>,
       );

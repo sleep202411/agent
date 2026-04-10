@@ -1,3 +1,4 @@
+import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
@@ -34,14 +35,15 @@ function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): s
       return null;
   }
 }
-import { AssistantToolCard } from "./assistant-tool-card";
+// Old AssistantToolCard removed — replaced by inline ToolIndicator
 import { AssistantFilePreview, PipelineThinkingIndicator } from "./sub-components";
 import { markdownComponents } from "./markdown-components";
 import {
   getAssistantToolName,
+  getAssistantToolDisplayName,
   isAssistantToolPart,
   type AssistantMessage,
-  type AssistantToolResult,
+  type AssistantToolInvocation,
 } from "@/src/lib/assistant/assistant-types";
 
 // ─── Pipeline tool config ──────────────────────────────
@@ -93,23 +95,53 @@ const AGENT_TOOL_LABELS: Record<string, { label: string; steps: string[] }> = {
   },
 };
 
+// ─── Compact tool indicator ───────────────────────────
+
+function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantToolInvocation }) {
+  const displayName = getAssistantToolDisplayName(toolName);
+  const isDone = part.state === "output-available";
+  const isError = part.state === "output-error" || part.state === "output-denied";
+  const isLoading = !isDone && !isError;
+
+  // Extract a short entity label from output (e.g. episode title, character name)
+  let entityLabel: string | null = null;
+  if (isDone || isError) {
+    const output = part.output as Record<string, unknown> | undefined;
+    const msg = output?.message as string | undefined;
+    if (msg && msg.length < 60) entityLabel = msg;
+  }
+
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
+      {isLoading ? (
+        <IconLoader2 className="size-3 animate-spin text-muted-foreground/50" />
+      ) : isError ? (
+        <IconX className="size-3 text-destructive/70" />
+      ) : (
+        <IconCheck className="size-3 text-green-500/70" />
+      )}
+      <span className="font-medium">{displayName}</span>
+      {entityLabel && (
+        <span className="rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
+          {entityLabel}
+        </span>
+      )}
+      {isError && part.errorText && (
+        <span className="text-[11px] text-destructive/70">{part.errorText}</span>
+      )}
+    </div>
+  );
+}
+
 // ─── Props ─────────────────────────────────────────────
 
 interface MessageBubbleProps {
   message: AssistantMessage;
-  sending: boolean;
-  submittingToolCallId: string | null;
-  onApplyToolResult: (result: AssistantToolResult) => void;
 }
 
 // ─── Component ─────────────────────────────────────────
 
-export function MessageBubble({
-  message,
-  sending,
-  submittingToolCallId,
-  onApplyToolResult,
-}: MessageBubbleProps) {
+export function MessageBubble({ message }: MessageBubbleProps) {
   const t = useTranslations("ai");
 
   // Collect tool result summaries to render as separate "user-like" bubbles
@@ -272,12 +304,10 @@ export function MessageBubble({
                 }
 
                 return (
-                  <AssistantToolCard
+                  <ToolIndicator
                     key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
+                    toolName={toolName}
                     part={part}
-                    disabled={sending}
-                    processing={sending && submittingToolCallId === part.toolCallId}
-                    onApplyResult={onApplyToolResult}
                   />
                 );
               }

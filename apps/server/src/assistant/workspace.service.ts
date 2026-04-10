@@ -953,6 +953,8 @@ export class WorkspaceService {
       title?: string;
       introduction?: string;
       sort?: number;
+      frontPrompt?: string;
+      behindPrompt?: string;
       projectId: string;
     }>,
   ) {
@@ -972,8 +974,8 @@ export class WorkspaceService {
         introduction: d.introduction ?? cur?.introduction ?? '',
         sort: d.sort ?? cur?.sort ?? 0,
         videoLength: cur?.videoLength ?? 0,
-        frontPrompt: cur?.frontPrompt ?? '',
-        behindPrompt: cur?.behindPrompt ?? '',
+        frontPrompt: d.frontPrompt ?? cur?.frontPrompt ?? '',
+        behindPrompt: d.behindPrompt ?? cur?.behindPrompt ?? '',
       };
     });
 

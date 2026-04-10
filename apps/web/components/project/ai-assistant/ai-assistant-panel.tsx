@@ -61,7 +61,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const attachments = conversation?.attachments ?? EMPTY_ATTACHMENTS;
   const sending = conversation?.sending ?? false;
   const pendingToolUi = conversation?.pendingToolUi ?? EMPTY_PENDING_TOOLS;
-  const submittingToolCallId = conversation?.submittingToolCallId ?? null;
   const error = conversation?.error ?? null;
 
   useEffect(() => {
@@ -216,15 +215,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
 
           {/* Message list */}
           {renderedMessages.map((message) => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              sending={sending}
-              submittingToolCallId={submittingToolCallId}
-              onApplyToolResult={(result) => {
-                if (projectId) void dispatch(applyToolResult({ projectId, result }));
-              }}
-            />
+            <MessageBubble key={message.id} message={message} />
           ))}
 
           {/* Typing indicator — shows immediately after user sends */}
