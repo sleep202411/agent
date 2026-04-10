@@ -40,7 +40,7 @@ export class AuthService {
         return null;
       }
 
-      const response = await fetch(`${baseUrl}/user/query/user/info`, {
+      const response = await fetch(`${baseUrl}/content/user/query/user/info`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -57,6 +57,7 @@ export class AuthService {
         success?: boolean;
         code?: number | string;
         data?: Record<string, unknown>;
+        info?: Record<string, unknown>;
         msg?: string;
         message?: string;
       };
@@ -64,13 +65,13 @@ export class AuthService {
       const isSuccess =
         body.success === true || body.code === 200 || body.code === 'SUCCESS';
 
-      if (!isSuccess || !body.data) {
+      // API returns user info in `info` field (not `data`)
+      const data = body.info ?? body.data;
+      if (!isSuccess || !data) {
         const msg = body.msg || body.message || 'unknown';
         this.logger.warn(`Auth validation rejected: ${msg}`);
         return null;
       }
-
-      const data = body.data;
       const user: AuthUser = {
         userId: String(data.id ?? data.userId ?? ''),
         userName: (data.userName as string) ?? undefined,

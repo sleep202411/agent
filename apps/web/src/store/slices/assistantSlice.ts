@@ -3,7 +3,11 @@ import { toast } from "sonner";
 import { backendApi } from "@/src/lib/api";
 import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
 import { uploadWorkspaceFile, computeFileHash } from "@/src/lib/uploads/workspace-upload";
-import { sendAssistantChat } from "@/src/lib/assistant/assistant-client";
+import {
+  sendAssistantChat,
+  fetchConversationHistory,
+  clearConversation as clearConversationApi,
+} from "@/src/lib/assistant/assistant-client";
 import type {
   AssistantAttachment,
   AssistantMessage,
@@ -63,6 +67,14 @@ function createEmptyConversation() {
     panelExpanded: false,
     pendingToolUi: [] as PendingAssistantToolUi[],
     submittingToolCallId: null as string | null,
+    /** Whether history has been loaded from server */
+    historyLoaded: false,
+    /** Number of messages loaded from server history (for separator) */
+    historyMessageCount: 0,
+    /** Message limit for the current tier */
+    messageLimit: 50,
+    /** Current tier name */
+    tier: "free" as string,
   };
 }
 
@@ -459,6 +471,58 @@ export const retryAttachment = createAsyncThunk<
   await uploadAttachmentFile(dispatch, getState, projectId, attachmentId);
 });
 
+// ─── Load history from server ─────────────────────────
+
+export const loadHistory = createAsyncThunk<
+  void,
+  string,
+  { state: RootState; dispatch: AppDispatch }
+>("assistant/loadHistory", async (projectId, { dispatch, getState }) => {
+  dispatch(ensureProject(projectId));
+  const current = getState().assistant.projects[projectId];
+  if (current?.historyLoaded) return;
+
+  try {
+    const data = await fetchConversationHistory(projectId);
+    dispatch(
+      setHistory({
+        projectId,
+        messages: data.messages as AssistantMessage[],
+        messageLimit: data.messageLimit,
+        tier: data.tier,
+      })
+    );
+  } catch (error) {
+    // History load failure is non-fatal — just use empty conversation
+    console.warn("[assistant] Failed to load history:", error);
+    dispatch(markHistoryLoaded({ projectId }));
+  }
+});
+
+// ─── Clear conversation ───────────────────────────────
+
+export const newConversation = createAsyncThunk<
+  void,
+  string,
+  { state: RootState; dispatch: AppDispatch }
+>("assistant/newConversation", async (projectId, { dispatch }) => {
+  try {
+    const data = await clearConversationApi(projectId);
+    dispatch(resetProjectConversation(projectId));
+    dispatch(
+      setMessageLimit({
+        projectId,
+        messageLimit: data.messageLimit,
+      })
+    );
+  } catch (error) {
+    console.warn("[assistant] Failed to clear conversation:", error);
+    dispatch(resetProjectConversation(projectId));
+  }
+});
+
+// ─── Send single user message ─────────────────────────
+
 export const sendUserMessage = createAsyncThunk<
   void,
   string,
@@ -487,13 +551,13 @@ export const sendUserMessage = createAsyncThunk<
   dispatch(commitUserMessage({ projectId, userMessage }));
 
   try {
-    const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
     const workspaceContext = buildWorkspaceContext(getState(), projectId);
     const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
+    // Send only the single new user message — server loads history
     const finalMessage = await sendAssistantChat({
       projectId,
-      messages: nextMessages,
+      userMessage,
       workspaceContext,
       agentType,
       onMessage: (message) => {
@@ -501,14 +565,23 @@ export const sendUserMessage = createAsyncThunk<
       },
     });
 
-    // Detect incomplete stream: if the last message has tool calls still in progress,
-    // the stream was truncated (timeout, network error, etc.)
     dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
     await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "AI 请求失败";
-    dispatch(streamError({ projectId, error: message }));
-    toast.error(message);
+    const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+    // Handle message limit error
+    if (errMsg.startsWith("MESSAGE_LIMIT_REACHED:")) {
+      const [, current, max] = errMsg.split(":");
+      dispatch(
+        streamError({
+          projectId,
+          error: `MESSAGE_LIMIT_REACHED:${current}:${max}`,
+        })
+      );
+      return;
+    }
+    dispatch(streamError({ projectId, error: errMsg }));
+    toast.error(errMsg);
   }
 });
 
@@ -521,6 +594,7 @@ export const applyToolResult = createAsyncThunk<
   const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
   if (current.sending) return;
 
+  // Update local messages with tool result
   const nextMessages = current.messages.map((message) =>
     message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === result.toolCallId)
       ? cloneMessageWithToolResult(message, result)
@@ -539,9 +613,26 @@ export const applyToolResult = createAsyncThunk<
     const workspaceContext = buildWorkspaceContext(getState(), projectId);
     const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
+    // Build a synthetic user message containing the tool result
+    // The server will match this with the pending tool invocation
+    const toolResultMessage: AssistantMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          text: `[Tool Result: ${result.toolName}]`,
+          state: "done",
+        },
+      ],
+      metadata: {
+        toolResult: result,
+      } as Record<string, unknown>,
+    };
+
     const finalMessage = await sendAssistantChat({
       projectId,
-      messages: nextMessages,
+      userMessage: toolResultMessage,
       workspaceContext,
       agentType,
       onMessage: (message) => {
@@ -552,9 +643,9 @@ export const applyToolResult = createAsyncThunk<
     dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
     await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "AI 请求失败";
-    dispatch(streamError({ projectId, error: message }));
-    toast.error(message);
+    const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+    dispatch(streamError({ projectId, error: errMsg }));
+    toast.error(errMsg);
   }
 });
 
@@ -742,6 +833,43 @@ export const assistantSlice = createSlice({
       };
     },
 
+    setHistory: (
+      state,
+      action: PayloadAction<{
+        projectId: string;
+        messages: AssistantMessage[];
+        messageLimit: number;
+        tier: string;
+      }>
+    ) => {
+      const { projectId, messages, messageLimit, tier } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      const welcomeMsg = createWelcomeMessage();
+      state.projects[projectId] = {
+        ...current,
+        messages: messages.length > 0 ? [welcomeMsg, ...messages] : [welcomeMsg],
+        historyLoaded: true,
+        historyMessageCount: messages.length,
+        messageLimit,
+        tier,
+      };
+    },
+
+    markHistoryLoaded: (state, action: PayloadAction<{ projectId: string }>) => {
+      const { projectId } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = { ...current, historyLoaded: true };
+    },
+
+    setMessageLimit: (
+      state,
+      action: PayloadAction<{ projectId: string; messageLimit: number }>
+    ) => {
+      const { projectId, messageLimit } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = { ...current, messageLimit };
+    },
+
     resetProjectConversation: (state, action: PayloadAction<string>) => {
       const projectId = action.payload;
       const current = state.projects[projectId];
@@ -750,6 +878,7 @@ export const assistantSlice = createSlice({
         ...createEmptyConversation(),
         panelOpen: current?.panelOpen ?? false,
         panelExpanded: current?.panelExpanded ?? false,
+        historyLoaded: true,
       };
     },
   },
@@ -769,6 +898,9 @@ export const {
   appendStreamChunk,
   finalizeAssistantMessage,
   streamError,
+  setHistory,
+  markHistoryLoaded,
+  setMessageLimit,
   resetProjectConversation,
 } = assistantSlice.actions;
 

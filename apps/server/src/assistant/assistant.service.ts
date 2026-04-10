@@ -3,7 +3,6 @@ import {
   convertToModelMessages,
   stepCountIs,
   streamText,
-  validateUIMessages,
   type ToolSet,
   type UIMessage,
 } from 'ai';
@@ -13,6 +12,11 @@ import { TaskService } from '../pipeline/task/task.service';
 import { TaskQueue } from '../pipeline/task/task.queue';
 import { TaskWorker } from '../pipeline/task/task.worker';
 import { WorkspaceService, type WorkspaceContext } from './workspace.service';
+import {
+  ConversationService,
+  getLimitsForTier,
+  type StoredMessage,
+} from './conversation.service';
 import { createGroupedAssistantTools, type UserTier } from './tools';
 import {
   loadAgentPrompt,
@@ -20,6 +24,8 @@ import {
   assistantAgentTypes,
 } from './prompts';
 import type { HeadersLike } from './tools/types';
+
+// ─── Types ─────────────────────────────────────────────
 
 type Attachment = {
   id: string;
@@ -36,6 +42,58 @@ type ProjectContext = Awaited<
   ReturnType<WorkspaceService['getProjectContextSummary']>
 >;
 
+// ─── Tool output stripping for persistence ─────────────
+
+/** Tool names whose output is large (live data) and should not be persisted */
+const STRIP_OUTPUT_TOOLS = new Set([
+  'get_project_snapshot',
+  'get_world_assets',
+  'search_world_assets',
+  'aggregate_world_assets_for_analysis',
+  'get_storyboard_snapshot',
+  'query_storyboard_rows',
+  'aggregate_storyboard_rows_for_analysis',
+]);
+
+/**
+ * Strip large tool outputs from a message before persisting to Redis.
+ * Keeps tool invocation metadata (name, state) but removes bulky live data.
+ */
+function stripForStorage(message: AssistantMessage): StoredMessage {
+  const parts = message.parts.map((part) => {
+    if (
+      typeof part === 'object' &&
+      part !== null &&
+      'type' in part &&
+      typeof (part as Record<string, unknown>).type === 'string'
+    ) {
+      const p = part as Record<string, unknown>;
+      const toolType = String(p.type ?? '');
+
+      // Strip tool output for read-heavy tools
+      if (toolType.startsWith('tool-') && p.output !== undefined) {
+        const toolName = toolType.slice(5);
+        if (STRIP_OUTPUT_TOOLS.has(toolName)) {
+          return { ...p, output: { _stripped: true, _tool: toolName } };
+        }
+      }
+    }
+    return part;
+  });
+
+  return {
+    id: message.id,
+    role: message.role as 'user' | 'assistant',
+    parts,
+    metadata: message.metadata
+      ? { attachments: message.metadata.attachments }
+      : undefined,
+    createdAt: Date.now(),
+  };
+}
+
+// ─── Service ───────────────────────────────────────────
+
 @Injectable()
 export class AssistantService {
   private readonly logger = new Logger(AssistantService.name);
@@ -45,6 +103,7 @@ export class AssistantService {
   constructor(
     private readonly ai: AiService,
     private readonly workspace: WorkspaceService,
+    private readonly conversation: ConversationService,
     private readonly scriptAgent: ScriptAgentService,
     private readonly taskService: TaskService,
     private readonly taskQueue: TaskQueue,
@@ -57,7 +116,6 @@ export class AssistantService {
         (sessionId, state) => this.scriptAgent.saveState(sessionId, state),
       );
       // Start worker in-process unless DISABLE_INLINE_WORKER is set.
-      // In a multi-server setup, run worker.ts separately and set DISABLE_INLINE_WORKER=true.
       if (taskQueue && process.env.DISABLE_INLINE_WORKER !== 'true') {
         taskQueue.startWorker(this.taskWorker);
         this.logger.log('Inline task worker started');
@@ -69,16 +127,78 @@ export class AssistantService {
     }
   }
 
+  // ─── History ────────────────────────────────────────────
+
+  async getHistory(
+    userId: string,
+    projectId: string,
+    tier?: string,
+  ): Promise<{
+    messages: StoredMessage[];
+    messageCount: number;
+    messageLimit: number;
+  }> {
+    const messages = await this.conversation.getMessages(userId, projectId);
+    const limits = getLimitsForTier(tier);
+    return {
+      messages,
+      messageCount: messages.length,
+      messageLimit: limits.maxMessages,
+    };
+  }
+
+  async clearHistory(userId: string, projectId: string): Promise<void> {
+    await this.conversation.clearMessages(userId, projectId);
+  }
+
+  // ─── Chat ──────────────────────────────────────────────
+
   async chat(
     payload: {
       projectId: string;
-      messages: unknown[];
+      /** Single new user message from the client */
+      userMessage: AssistantMessage;
       workspaceContext?: Partial<WorkspaceContext>;
       agentType?: string;
-      userTier?: UserTier;
+      userId: string;
+      userTier?: string;
     },
     incomingHeaders: HeadersLike,
-  ): Promise<{ toUIMessageStreamResponse: () => globalThis.Response }> {
+  ): Promise<{
+    toUIMessageStreamResponse: () => globalThis.Response;
+    /** Call after stream completes to persist the assistant reply */
+    onFinishSave: (assistantMessage: AssistantMessage) => Promise<void>;
+  }> {
+    const { userId, userTier } = payload;
+
+    // 1. Load conversation history
+    const history = await this.conversation.getMessages(
+      userId,
+      payload.projectId,
+    );
+
+    // 2. Check message limit (based on CURRENT tier)
+    const limitCheck = this.conversation.canSendMessage(
+      history.length,
+      userTier,
+    );
+    if (!limitCheck.allowed) {
+      throw new MessageLimitError(limitCheck.current, limitCheck.max);
+    }
+
+    // 3. Append user message to history
+    const userStored = stripForStorage(payload.userMessage);
+    const updatedHistory = [...history, userStored];
+
+    // Save user message immediately (so it persists even if stream fails)
+    await this.conversation.saveMessages(
+      userId,
+      payload.projectId,
+      updatedHistory,
+      userTier,
+    );
+
+    // 4. Build workspace context
     const wsContext: WorkspaceContext = {
       projectId: payload.projectId,
       worldId: payload.workspaceContext?.worldId
@@ -101,17 +221,25 @@ export class AssistantService {
           : undefined,
     };
 
-    // Collect attachment data via side channel (not through AI output)
-    const messages = payload.messages as AssistantMessage[];
-    const attachmentFullText = this.collectAttachmentTexts(messages);
-    const attachmentInfos = this.collectAttachmentInfos(messages);
+    // 5. Collect attachment data from the new user message
+    const allMessages = [
+      ...history.map(
+        (m) => ({ ...m, metadata: m.metadata }) as AssistantMessage,
+      ),
+      payload.userMessage,
+    ];
+    const attachmentFullText = this.collectAttachmentTexts([
+      payload.userMessage,
+    ]);
+    const attachmentInfos = this.collectAttachmentInfos([payload.userMessage]);
 
+    // 6. Build tools
     const tools = createGroupedAssistantTools(
       {
         headers: incomingHeaders,
         ws: this.workspace,
         context: wsContext,
-        userId: payload.userId,
+        userId,
         requireWorldId: () => {
           if (!wsContext.worldId)
             throw new Error(
@@ -132,9 +260,10 @@ export class AssistantService {
       },
       this.ai,
       this.scriptAgent,
-      payload.userTier ?? 'pro',
+      (payload.userTier as UserTier) ?? 'free',
     ) as ToolSet;
 
+    // 7. Build system prompt (fresh from DB, never stored)
     this.logger.log('Fetching project context...');
     const projectContext = await this.workspace.getProjectContextSummary(
       incomingHeaders,
@@ -142,24 +271,10 @@ export class AssistantService {
     );
     this.logger.log('Project context ready');
 
-    const validationTools = tools as unknown as ToolSet;
-    let validatedMessages: AssistantMessage[];
-    try {
-      validatedMessages = await validateUIMessages({
-        messages: payload.messages,
-        tools: validationTools,
-      } as never);
-    } catch (err) {
-      this.logger.error(
-        `Message validation failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      throw new Error('助手消息格式不合法');
-    }
-    this.logger.log(`Validated ${validatedMessages.length} messages`);
-
-    const preparedMessages = this.augmentMessages(validatedMessages);
-    const modelMessages = await convertToModelMessages(preparedMessages, {
-      tools: validationTools,
+    // 8. Prepare messages for LLM
+    const augmented = this.augmentMessages(allMessages);
+    const modelMessages = await convertToModelMessages(augmented, {
+      tools: tools as unknown as ToolSet,
     });
 
     // Strip non-image file parts — alibaba provider only supports images
@@ -175,11 +290,24 @@ export class AssistantService {
       }
     }
 
+    // 9. Trim to context window — keep system + recent messages
+    // TODO: implement token-based trimming when needed
+    const MAX_MESSAGES_TO_LLM = 80;
+    if (modelMessages.length > MAX_MESSAGES_TO_LLM) {
+      const trimmed = modelMessages.slice(-MAX_MESSAGES_TO_LLM);
+      modelMessages.length = 0;
+      modelMessages.push(...trimmed);
+      this.logger.log(
+        `Trimmed to ${MAX_MESSAGES_TO_LLM} messages for LLM context`,
+      );
+    }
+
     const modelId = process.env.AI_MODEL || 'qwen3-max';
     this.logger.log(
       `Starting streamText: model=${modelId}, ${modelMessages.length} messages, ${Object.keys(tools).length} tools`,
     );
 
+    // 10. Stream
     const result = streamText({
       model: this.ai.getModel(),
       tools,
@@ -195,28 +323,30 @@ export class AssistantService {
       onError: ({ error }) => {
         const msg = error instanceof Error ? error.message : String(error);
         this.logger.error(`Stream onError: ${msg}`);
-        if (error instanceof Error && error.stack) {
-          this.logger.error(error.stack);
-        }
-      },
-      onFinish: (event) => {
-        this.logger.log(`Stream finished: reason=${event.finishReason}`);
       },
       onStepFinish: (event) => {
         this.logger.log(`Step finished: reason=${event.finishReason}`);
-        if (event.finishReason === 'error') {
-          this.logger.error(
-            `Step error details: ${JSON.stringify({
-              warnings: event.warnings,
-              response: event.response ? { body: event.response.body } : null,
-            })}`,
-          );
-        }
       },
     });
 
-    return result;
+    return {
+      ...result,
+      onFinishSave: async (assistantMessage: AssistantMessage) => {
+        const assistantStored = stripForStorage(assistantMessage);
+        await this.conversation.appendAndSave(
+          userId,
+          payload.projectId,
+          [assistantStored],
+          userTier,
+        );
+        this.logger.log(
+          `Saved assistant reply: userId=${userId} project=${payload.projectId}`,
+        );
+      },
+    };
   }
+
+  // ─── System prompt ─────────────────────────────────────
 
   private buildSystemPrompt(
     context: ProjectContext,
@@ -298,7 +428,6 @@ export class AssistantService {
 [资产去重规则]
 创建角色/场景/道具前，必须检查项目上下文中的"已有角色/场景/道具"列表，跳过同名实体。禁止创建重名资产。`;
 
-    // Language instruction based on user locale
     const langMap: Record<string, string> = {
       'en-US':
         'You MUST respond in English. All text output, tool arguments, and generated content must be in English.',
@@ -314,6 +443,8 @@ export class AssistantService {
     const agentPart = agentSection ? `\n\n${agentSection}` : '';
     return `${basePrompt}${langSection}${agentPart}`;
   }
+
+  // ─── Message helpers ───────────────────────────────────
 
   private augmentMessages(messages: AssistantMessage[]): AssistantMessage[] {
     return messages.map((message) => {
@@ -341,7 +472,7 @@ export class AssistantService {
   }
 
   private buildAttachmentContext(attachments: Attachment[]) {
-    const AI_EXCERPT_LIMIT = 2000; // AI only sees a short excerpt for decision-making
+    const AI_EXCERPT_LIMIT = 2000;
     const lines = attachments.map((att, i) => {
       const parts = [
         `${i + 1}. 文件名：${att.name}`,
@@ -362,10 +493,6 @@ export class AssistantService {
     return `[附件上下文]\n${lines.join('\n\n')}`;
   }
 
-  /**
-   * Collect full attachment text from all user messages.
-   * Only contains text for plain-text files (PDF/DOCX excerpts are empty).
-   */
   private collectAttachmentTexts(messages: AssistantMessage[]): string {
     const texts: string[] = [];
     for (const msg of messages) {
@@ -377,10 +504,6 @@ export class AssistantService {
     return texts.join('\n\n');
   }
 
-  /**
-   * Collect attachment metadata from all user messages.
-   * Used by pipeline tools to download files from OSS for server-side extraction.
-   */
   private collectAttachmentInfos(
     messages: AssistantMessage[],
   ): import('./tools/types').AttachmentInfo[] {
@@ -397,5 +520,19 @@ export class AssistantService {
       }
     }
     return result;
+  }
+}
+
+// ─── Custom errors ─────────────────────────────────────
+
+export class MessageLimitError extends Error {
+  readonly code = 'MESSAGE_LIMIT_REACHED';
+  constructor(
+    readonly current: number,
+    readonly max: number,
+  ) {
+    super(
+      `Message limit reached (${current}/${max}). Start a new conversation or upgrade your plan.`,
+    );
   }
 }

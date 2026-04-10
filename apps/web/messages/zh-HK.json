@@ -1050,7 +1050,10 @@
     "toolRetryHint": "請重試或調整指令。",
     "completed": "已完成",
     "executingStep": "助手正在執行這一步。",
-    "executing": "執行中"
+    "executing": "執行中",
+    "newConversation": "新對話",
+    "historySeparator": "以上為歷史訊息",
+    "messageLimitReached": "對話已達上限（{current}/{max}條），請開始新對話或升級會員。"
   },
   "pipeline": {
     "storyOutline": "故事大綱",

@@ -1050,7 +1050,10 @@
     "toolRetryHint": "Please retry or adjust your instructions.",
     "completed": "Completed",
     "executingStep": "Assistant is executing this step.",
-    "executing": "Executing"
+    "executing": "Executing",
+    "newConversation": "New Conversation",
+    "historySeparator": "History above",
+    "messageLimitReached": "Conversation limit reached ({current}/{max}). Start a new conversation or upgrade your plan."
   },
   "pipeline": {
     "storyOutline": "Story Outline",

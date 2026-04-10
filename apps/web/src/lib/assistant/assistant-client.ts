@@ -19,15 +19,15 @@ function sanitizeAttachment(attachment: AssistantAttachment): AssistantAttachmen
   };
 }
 
-function sanitizeMessages(messages: AssistantMessage[]): AssistantMessage[] {
-  return messages.map((message) => ({
+function sanitizeMessage(message: AssistantMessage): AssistantMessage {
+  return {
     ...message,
     metadata: message.metadata?.attachments?.length
       ? {
           attachments: message.metadata.attachments.map(sanitizeAttachment),
         }
       : undefined,
-  }));
+  };
 }
 
 function toChunkStream(
@@ -62,7 +62,15 @@ function toChunkStream(
 
 async function parseError(response: Response) {
   try {
-    const data = (await response.json()) as AssistantChatErrorResponse;
+    const data = (await response.json()) as AssistantChatErrorResponse & {
+      code?: string;
+      current?: number;
+      max?: number;
+    };
+    // Handle message limit error
+    if (data.code === "MESSAGE_LIMIT_REACHED") {
+      return `MESSAGE_LIMIT_REACHED:${data.current ?? 0}:${data.max ?? 0}`;
+    }
     if (data.issues?.length) {
       const formattedIssues = data.issues.map((issue) => {
         const path = issue.path.length ? issue.path.join(".") : "request";
@@ -76,9 +84,12 @@ async function parseError(response: Response) {
   }
 }
 
+// ─── Chat API (single message) ─────────────────────────
+
 export interface SendAssistantChatOptions {
   projectId: string;
-  messages: AssistantMessage[];
+  /** Single new user message to send */
+  userMessage: AssistantMessage;
   workspaceContext: AssistantWorkspaceSelection;
   agentType?: string;
   signal?: AbortSignal;
@@ -87,7 +98,7 @@ export interface SendAssistantChatOptions {
 
 export async function sendAssistantChat({
   projectId,
-  messages,
+  userMessage,
   workspaceContext,
   agentType,
   signal,
@@ -105,7 +116,7 @@ export async function sendAssistantChat({
     },
     body: JSON.stringify({
       projectId,
-      messages: sanitizeMessages(messages),
+      userMessage: sanitizeMessage(userMessage),
       workspaceContext,
       agentType,
     }),
@@ -134,4 +145,54 @@ export async function sendAssistantChat({
   }
 
   return latest;
+}
+
+// ─── History API ───────────────────────────────────────
+
+export interface ConversationHistoryResponse {
+  messages: AssistantMessage[];
+  messageCount: number;
+  messageLimit: number;
+  tier: string;
+}
+
+export async function fetchConversationHistory(
+  projectId: string
+): Promise<ConversationHistoryResponse> {
+  const response = await fetch(`/aurora/assistant/history/${projectId}`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load history: HTTP ${response.status}`);
+  }
+
+  const body = (await response.json()) as {
+    success: boolean;
+    data: ConversationHistoryResponse;
+  };
+
+  return body.data;
+}
+
+// ─── Clear API ─────────────────────────────────────────
+
+export async function clearConversation(
+  projectId: string
+): Promise<{ messageCount: number; messageLimit: number }> {
+  const response = await fetch(`/aurora/assistant/clear/${projectId}`, {
+    method: "POST",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to clear conversation: HTTP ${response.status}`);
+  }
+
+  const body = (await response.json()) as {
+    success: boolean;
+    data: { messageCount: number; messageLimit: number };
+  };
+
+  return body.data;
 }

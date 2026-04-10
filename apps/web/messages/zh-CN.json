@@ -1050,7 +1050,10 @@
     "toolRetryHint": "请重试或调整指令。",
     "completed": "已完成",
     "executingStep": "助手正在执行这一步。",
-    "executing": "执行中"
+    "executing": "执行中",
+    "newConversation": "新对话",
+    "historySeparator": "以上为历史消息",
+    "messageLimitReached": "对话已达上限（{current}/{max}条），请开始新对话或升级会员。"
   },
   "pipeline": {
     "storyOutline": "故事大纲",

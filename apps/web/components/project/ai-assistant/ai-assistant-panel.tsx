@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrowDown, IconSparkles } from "@tabler/icons-react";
+import { IconArrowDown, IconMessagePlus, IconSparkles } from "@tabler/icons-react";
 import { BorderGlow } from "@/components/ui/border-glow";
 import { useTranslations } from "@/src/i18n/i18n";
 import { PanelLayout } from "@/components/project/panels/panel-layout";
@@ -18,7 +18,10 @@ import {
   setDraft,
   sendUserMessage,
   applyToolResult,
+  loadHistory,
+  newConversation,
 } from "@/src/store/slices/assistantSlice";
+import { Button } from "@/components/ui/button";
 
 import { quickActionsByAgent } from "./constants";
 import { MessageBubble, PIPELINE_TOOL_NAMES } from "./message-bubble";
@@ -53,6 +56,8 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   useEffect(() => {
     if (projectId) {
       dispatch(ensureProject(projectId));
+      // Load conversation history from server on mount
+      dispatch(loadHistory(projectId));
     }
   }, [dispatch, projectId]);
 
@@ -62,6 +67,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const sending = conversation?.sending ?? false;
   const pendingToolUi = conversation?.pendingToolUi ?? EMPTY_PENDING_TOOLS;
   const error = conversation?.error ?? null;
+  const historyMessageCount = conversation?.historyMessageCount ?? 0;
 
   useEffect(() => {
     if (!draftInput && editorRef.current && editorRef.current.innerText.trim()) {
@@ -162,7 +168,21 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
       }
       title={t("title")}
       description={t("panelDescription")}
-      actions={null}
+      actions={
+        hasMeaningfulMessages ? (
+          <Button
+            variant="ghost"
+            color="muted"
+            size="icon-xs"
+            onClick={() => {
+              if (projectId) dispatch(newConversation(projectId));
+            }}
+            title={t("newConversation")}
+          >
+            <IconMessagePlus className="size-3.5" />
+          </Button>
+        ) : null
+      }
       onClose={onClose}
       footer={null}
     >
@@ -213,9 +233,21 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
             </div>
           ) : null}
 
-          {/* Message list */}
-          {renderedMessages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
+          {/* Message list with history separator */}
+          {renderedMessages.map((message, index) => (
+            <div key={message.id}>
+              {/* History separator: after welcome (index 0) + history messages */}
+              {historyMessageCount > 0 && index === historyMessageCount + 1 && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="flex-1 border-t border-border/40" />
+                  <span className="text-[10px] text-muted-foreground/40">
+                    {t("historySeparator")}
+                  </span>
+                  <div className="flex-1 border-t border-border/40" />
+                </div>
+              )}
+              <MessageBubble message={message} />
+            </div>
           ))}
 
           {/* Typing indicator — shows immediately after user sends */}

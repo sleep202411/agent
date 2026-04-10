@@ -47,9 +47,9 @@ export class WorkspaceService {
   // ─── Internal helpers ───────────────────────────────────
 
   private getBaseUrl(path: string) {
-    // /user, /project, /vedio, /personal → Java Content
+    // /user, /project, /vedio, /personal, /content → Java Content
     // /api, /anon, /studio → Java Studio
-    if (/^\/(user|project|vedio|personal)/.test(path)) {
+    if (/^\/(user|project|vedio|personal|content)/.test(path)) {
       const url = process.env.JAVA_CONTENT_URL;
       if (!url) throw new Error('JAVA_CONTENT_URL is not configured');
       return url.replace(/\/$/, '');
