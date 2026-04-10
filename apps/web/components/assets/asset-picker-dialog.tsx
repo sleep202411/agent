@@ -13,6 +13,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { buildOssUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
+import { getVideoThumbnail } from "@/components/storyboard/cells/cell-utils";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { AssetRecordType, AssetRecord } from "@/src/types/workspace";
 
@@ -200,22 +201,22 @@ export function AssetPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[720px] max-w-[calc(100vw-2rem)] p-0 sm:max-w-[720px]">
-        <div className="flex h-[720px] flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl">
+      <DialogContent className="w-180 max-w-[calc(100vw-2rem)] p-0 sm:max-w-180">
+        <div className="flex h-180 flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl">
           {/* Header */}
-          <DialogHeader className="shrink-0 px-6 py-4">
+          <DialogHeader>
             <DialogTitle className="text-base font-semibold">{t("materialPreview")}</DialogTitle>
           </DialogHeader>
 
           {/* Upload area */}
-          <div className="shrink-0 px-6">
+          <div className="shrink-0 px-4 pt-4">
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={handleClickUpload}
               className={cn(
-                "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 transition-colors",
+                "flex h-42 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed transition-colors",
                 isDragging ? "border-primary bg-primary/5" : "border-border/60 hover:border-border"
               )}
             >
@@ -244,7 +245,7 @@ export function AssetPickerDialog({
           </div>
 
           {/* Tabs */}
-          <div className="flex shrink-0 items-center gap-2 px-6 pt-4">
+          <div className="flex shrink-0 items-center gap-2 px-4 pt-4">
             <TabButton active={tab === "uploads"} onClick={() => setTab("uploads")}>
               {t("recentUploads")}
             </TabButton>
@@ -254,7 +255,7 @@ export function AssetPickerDialog({
           </div>
 
           {/* List */}
-          <div className="flex-1 overflow-auto px-6 pt-3">
+          <div className="flex-1 overflow-auto px-4 my-4">
             {loading ? (
               <div className="flex h-32 items-center justify-center">
                 <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
@@ -320,14 +321,14 @@ export function AssetPickerDialog({
                     >
                       {assetType === "video" ? (
                         <div className="relative h-full w-full bg-muted">
-                          <video
-                            src={src}
+                          <img
+                            src={getVideoThumbnail(src)}
+                            alt=""
                             className="h-full w-full object-cover"
-                            muted
-                            preload="metadata"
+                            loading="lazy"
                           />
                           <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                            <IconPlayerPlay className="size-5 text-white" />
+                            <IconPlayerPlay className="size-5 text-white drop-shadow" />
                           </div>
                         </div>
                       ) : src ? (
@@ -356,7 +357,7 @@ export function AssetPickerDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex shrink-0 items-center justify-end border-t border-border px-6 py-3">
+          <div className="flex shrink-0 items-center justify-end border-t border-border p-4">
             <button
               type="button"
               onClick={handleConfirm}
