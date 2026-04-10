@@ -77,8 +77,9 @@ export function EpisodeEditDialog({
     const episodeId = String(episode.id ?? "");
     if (!episodeId) return;
     try {
+      const projectId = store.getState().project.currentProjectId;
       await backendApi.post("/api/user/world/update/episode", {
-        data: { id: episodeId, ...values },
+        data: { id: episodeId, projectId, ...values },
       });
       store.dispatch(updateEpisodeInStore({ id: episodeId, data: values }));
       toast.success(t("episodeUpdated"));

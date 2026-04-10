@@ -179,7 +179,7 @@ export function createExecuteTools({
 
     update_episode: tool({
       description:
-        'Update an episode title or description. Not for saving script content.',
+        'Update an episode title or description. Not for saving script content. For updating multiple episodes, use batch_update_episodes instead.',
       inputSchema: z.object({
         id: z.string(),
         title: z.string().optional(),
@@ -187,12 +187,46 @@ export function createExecuteTools({
       }),
       outputSchema: mutationResultSchema,
       execute: async (input) => {
-        await ws.updateEpisode(headers, input);
+        await ws.updateEpisode(headers, {
+          ...input,
+          projectId: context.projectId,
+        });
         return buildMutationResult(
           'episode.updated',
           'Episode updated',
           'episode',
           input.id,
+        );
+      },
+    }),
+
+    batch_update_episodes: tool({
+      description:
+        'Batch update multiple episodes at once (title, description, etc.). Must use this instead of calling update_episode in a loop.',
+      inputSchema: z.object({
+        episodes: z
+          .array(
+            z.object({
+              id: z.string(),
+              title: z.string().optional(),
+              introduction: z.string().optional(),
+            }),
+          )
+          .min(1),
+      }),
+      outputSchema: mutationResultSchema,
+      execute: async ({ episodes }) => {
+        await ws.batchUpdateEpisodes(
+          headers,
+          episodes.map((ep) => ({
+            ...ep,
+            projectId: context.projectId,
+          })),
+        );
+        return buildMutationResult(
+          'episode.updated',
+          `Updated ${episodes.length} episodes`,
+          'episode',
         );
       },
     }),

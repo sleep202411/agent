@@ -120,9 +120,15 @@ export function AiImageGeneratorDialog({
           )
         )
       );
+      const projectId = selectCurrentInstance(store.getState()).detail?.id;
       backendApi
         .post("/api/user/world/update/episode", {
-          data: { id: episode.id, frontPrompt: front.trim(), behindPrompt: behind.trim() },
+          data: {
+            id: episode.id,
+            projectId,
+            frontPrompt: front.trim(),
+            behindPrompt: behind.trim(),
+          },
         })
         .catch((err) => console.warn("[AiImageGeneratorDialog] save prompts failed:", err));
     }, 500);
