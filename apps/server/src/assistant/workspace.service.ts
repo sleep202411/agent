@@ -12,6 +12,17 @@ type WorkspaceApiBody<T = unknown> = {
   message?: string;
 };
 
+interface EpisodeRecord {
+  id: string;
+  projectId: string;
+  title: string;
+  sort: number;
+  introduction: string;
+  videoLength: number;
+  frontPrompt: string;
+  behindPrompt: string;
+}
+
 type WorkspacePaginated<T = WorkspaceRecord> = {
   list?: T[];
   total?: number;
@@ -78,6 +89,17 @@ export class WorkspaceService {
     const maxRetries = options?.maxRetries ?? 0;
     const timeoutMs = options?.timeoutMs ?? 60_000;
 
+    // Log request payload (truncate large bodies)
+    const payloadStr =
+      options?.data !== undefined ? JSON.stringify(options.data) : undefined;
+    const payloadPreview =
+      payloadStr && payloadStr.length > 500
+        ? `${payloadStr.slice(0, 500)}...(${payloadStr.length} chars)`
+        : payloadStr;
+    this.logger.log(
+      `[request] → ${method} ${path}${payloadPreview ? ` payload=${payloadPreview}` : ''}`,
+    );
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -125,7 +147,14 @@ export class WorkspaceService {
           throw new Error(msg);
         }
 
-        this.logger.log(`[request] OK ${method} ${path} (${elapsed}ms)`);
+        const dataStr = JSON.stringify(body.data);
+        const dataPreview =
+          dataStr && dataStr.length > 500
+            ? `${dataStr.slice(0, 500)}...(${dataStr.length} chars)`
+            : dataStr;
+        this.logger.log(
+          `[request] ← OK ${method} ${path} (${elapsed}ms) data=${dataPreview}`,
+        );
         return (body.data ?? null) as T;
       } catch (error) {
         if (
@@ -530,11 +559,35 @@ export class WorkspaceService {
     );
   }
 
+  /**
+   * Update an episode. Fetches current data first, merges changes, sends full payload.
+   * The upstream API is a full replacement, not a partial patch.
+   */
   async updateEpisode(headers: HeadersLike, data: Record<string, unknown>) {
+    const projectId = data.projectId as string;
+    const episodeId = String(data.id);
+
+    // Fetch current episode to get all fields
+    const episodes = await this.listEpisodes(headers, projectId);
+    const current = episodes.find((ep) => ep.id === episodeId);
+
+    const merged: EpisodeRecord = {
+      id: episodeId,
+      projectId,
+      title: (data.title as string) ?? current?.title ?? '',
+      introduction:
+        (data.introduction as string) ?? current?.introduction ?? '',
+      sort: (data.sort as number) ?? current?.sort ?? 0,
+      videoLength: (data.videoLength as number) ?? current?.videoLength ?? 0,
+      frontPrompt: (data.frontPrompt as string) ?? current?.frontPrompt ?? '',
+      behindPrompt:
+        (data.behindPrompt as string) ?? current?.behindPrompt ?? '',
+    };
+
     return this.request<WorkspaceRecord>(
       headers,
       '/api/user/world/update/episode',
-      { data },
+      { data: merged },
     );
   }
 
@@ -660,24 +713,21 @@ export class WorkspaceService {
   async listEpisodes(
     headers: HeadersLike,
     projectId: string,
-  ): Promise<
-    Array<{ id: string; title: string; sort: number; introduction?: string }>
-  > {
+  ): Promise<Array<EpisodeRecord>> {
     const result = await this.request<{
-      list?: Array<{
-        id: unknown;
-        title?: string;
-        sort?: number;
-        introduction?: string;
-      }>;
+      list?: Array<Record<string, unknown>>;
     }>(headers, '/api/user/world/list/episode', {
       data: { productId: projectId, page: 1, pageSize: 999 },
     });
     return (result?.list ?? []).map((ep) => ({
       id: String(ep.id),
+      projectId: String(ep.projectId ?? projectId),
       title: String(ep.title ?? ''),
       sort: Number(ep.sort ?? 0),
-      introduction: ep.introduction,
+      introduction: (ep.introduction as string) ?? '',
+      videoLength: Number(ep.videoLength ?? 0),
+      frontPrompt: (ep.frontPrompt as string) ?? '',
+      behindPrompt: (ep.behindPrompt as string) ?? '',
     }));
   }
 
@@ -800,8 +850,8 @@ export class WorkspaceService {
   private async ensureSortGaps(
     headers: HeadersLike,
     projectId: string,
-    episodes: Array<{ id: string; title: string; sort: number }>,
-  ): Promise<Array<{ id: string; title: string; sort: number }>> {
+    episodes: EpisodeRecord[],
+  ): Promise<EpisodeRecord[]> {
     const sorted = [...episodes].sort((a, b) => a.sort - b.sort);
     let needsReorder = false;
 
@@ -873,8 +923,29 @@ export class WorkspaceService {
     );
 
     return ids;
+
+    /* ── Sequential fallback (use if batch API doesn't create storyboard associations) ──
+    const ids: string[] = [];
+    for (const title of titles) {
+      try {
+        const createdId = await this.request<string | number>(
+          headers,
+          '/api/user/storyBoard/create',
+          { data: { projectId, name: title }, maxRetries: 2 },
+        );
+        ids.push(String(createdId));
+      } catch (error) {
+        this.logger.error(`[batchAddEpisodes] Failed "${title}": ${error}`);
+        ids.push('');
+      }
+    }
+    return ids;
+    */
   }
 
+  /**
+   * Batch update episodes. Fetches current data first, merges changes, sends full payload.
+   */
   async batchUpdateEpisodes(
     headers: HeadersLike,
     datas: Array<{
@@ -885,9 +956,30 @@ export class WorkspaceService {
       projectId: string;
     }>,
   ) {
-    this.logger.log(`[batchUpdateEpisodes] updating ${datas.length} episodes`);
+    if (datas.length === 0) return;
+    const projectId = datas[0].projectId;
+
+    // Fetch current episodes to merge with
+    const currentEpisodes = await this.listEpisodes(headers, projectId);
+    const currentMap = new Map(currentEpisodes.map((ep) => [ep.id, ep]));
+
+    const merged: EpisodeRecord[] = datas.map((d) => {
+      const cur = currentMap.get(d.id);
+      return {
+        id: d.id,
+        projectId,
+        title: d.title ?? cur?.title ?? '',
+        introduction: d.introduction ?? cur?.introduction ?? '',
+        sort: d.sort ?? cur?.sort ?? 0,
+        videoLength: cur?.videoLength ?? 0,
+        frontPrompt: cur?.frontPrompt ?? '',
+        behindPrompt: cur?.behindPrompt ?? '',
+      };
+    });
+
+    this.logger.log(`[batchUpdateEpisodes] updating ${merged.length} episodes`);
     return this.request(headers, '/api/user/world/batch/updateOrAdd/episode', {
-      data: { datas },
+      data: { datas: merged },
       maxRetries: 2,
     });
   }
