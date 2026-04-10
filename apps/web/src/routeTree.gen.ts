@@ -8,335 +8,355 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as StudioRouteImport } from './routes/_studio'
-import { Route as AuthRouteImport } from './routes/_auth'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as CreatorsIndexRouteImport } from './routes/creators.index'
-import { Route as ProjectsIdRouteImport } from './routes/projects_.$id'
-import { Route as PaymentResultRouteImport } from './routes/payment.result'
-import { Route as CreatorsIdRouteImport } from './routes/creators_.$id'
-import { Route as StudioThemePreviewRouteImport } from './routes/_studio.theme-preview'
-import { Route as StudioTasksRouteImport } from './routes/_studio.tasks'
-import { Route as StudioSettingsRouteImport } from './routes/_studio.settings'
-import { Route as StudioProjectsRouteImport } from './routes/_studio.projects'
-import { Route as StudioAssetsRouteImport } from './routes/_studio.assets'
-import { Route as AuthRegisterRouteImport } from './routes/_auth.register'
-import { Route as AuthLoginRouteImport } from './routes/_auth.login'
-import { Route as AuthForgotPasswordRouteImport } from './routes/_auth.forgot-password'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as ProfileRouteImport } from "./routes/profile";
+import { Route as StudioRouteImport } from "./routes/_studio";
+import { Route as AuthRouteImport } from "./routes/_auth";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as CreatorsIndexRouteImport } from "./routes/creators.index";
+import { Route as ProjectsIdRouteImport } from "./routes/projects_.$id";
+import { Route as PaymentResultRouteImport } from "./routes/payment.result";
+import { Route as CreatorsIdRouteImport } from "./routes/creators_.$id";
+import { Route as StudioThemePreviewRouteImport } from "./routes/_studio.theme-preview";
+import { Route as StudioTasksRouteImport } from "./routes/_studio.tasks";
+import { Route as StudioSettingsRouteImport } from "./routes/_studio.settings";
+import { Route as StudioProjectsRouteImport } from "./routes/_studio.projects";
+import { Route as StudioAssetsRouteImport } from "./routes/_studio.assets";
+import { Route as AuthRegisterRouteImport } from "./routes/_auth.register";
+import { Route as AuthLoginRouteImport } from "./routes/_auth.login";
+import { Route as AuthForgotPasswordRouteImport } from "./routes/_auth.forgot-password";
 
+const ProfileRoute = ProfileRouteImport.update({
+  id: "/profile",
+  path: "/profile",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const StudioRoute = StudioRouteImport.update({
-  id: '/_studio',
+  id: "/_studio",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AuthRoute = AuthRouteImport.update({
-  id: '/_auth',
+  id: "/_auth",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const CreatorsIndexRoute = CreatorsIndexRouteImport.update({
-  id: '/creators/',
-  path: '/creators/',
+  id: "/creators/",
+  path: "/creators/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ProjectsIdRoute = ProjectsIdRouteImport.update({
-  id: '/projects_/$id',
-  path: '/projects/$id',
+  id: "/projects_/$id",
+  path: "/projects/$id",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const PaymentResultRoute = PaymentResultRouteImport.update({
-  id: '/payment/result',
-  path: '/payment/result',
+  id: "/payment/result",
+  path: "/payment/result",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const CreatorsIdRoute = CreatorsIdRouteImport.update({
-  id: '/creators_/$id',
-  path: '/creators/$id',
+  id: "/creators_/$id",
+  path: "/creators/$id",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const StudioThemePreviewRoute = StudioThemePreviewRouteImport.update({
-  id: '/theme-preview',
-  path: '/theme-preview',
+  id: "/theme-preview",
+  path: "/theme-preview",
   getParentRoute: () => StudioRoute,
-} as any)
+} as any);
 const StudioTasksRoute = StudioTasksRouteImport.update({
-  id: '/tasks',
-  path: '/tasks',
+  id: "/tasks",
+  path: "/tasks",
   getParentRoute: () => StudioRoute,
-} as any)
+} as any);
 const StudioSettingsRoute = StudioSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+  id: "/settings",
+  path: "/settings",
   getParentRoute: () => StudioRoute,
-} as any)
+} as any);
 const StudioProjectsRoute = StudioProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
+  id: "/projects",
+  path: "/projects",
   getParentRoute: () => StudioRoute,
-} as any)
+} as any);
 const StudioAssetsRoute = StudioAssetsRouteImport.update({
-  id: '/assets',
-  path: '/assets',
+  id: "/assets",
+  path: "/assets",
   getParentRoute: () => StudioRoute,
-} as any)
+} as any);
 const AuthRegisterRoute = AuthRegisterRouteImport.update({
-  id: '/register',
-  path: '/register',
+  id: "/register",
+  path: "/register",
   getParentRoute: () => AuthRoute,
-} as any)
+} as any);
 const AuthLoginRoute = AuthLoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+  id: "/login",
+  path: "/login",
   getParentRoute: () => AuthRoute,
-} as any)
+} as any);
 const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
-  id: '/forgot-password',
-  path: '/forgot-password',
+  id: "/forgot-password",
+  path: "/forgot-password",
   getParentRoute: () => AuthRoute,
-} as any)
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/forgot-password': typeof AuthForgotPasswordRoute
-  '/login': typeof AuthLoginRoute
-  '/register': typeof AuthRegisterRoute
-  '/assets': typeof StudioAssetsRoute
-  '/projects': typeof StudioProjectsRoute
-  '/settings': typeof StudioSettingsRoute
-  '/tasks': typeof StudioTasksRoute
-  '/theme-preview': typeof StudioThemePreviewRoute
-  '/creators/$id': typeof CreatorsIdRoute
-  '/payment/result': typeof PaymentResultRoute
-  '/projects/$id': typeof ProjectsIdRoute
-  '/creators/': typeof CreatorsIndexRoute
+  "/": typeof IndexRoute;
+  "/profile": typeof ProfileRoute;
+  "/forgot-password": typeof AuthForgotPasswordRoute;
+  "/login": typeof AuthLoginRoute;
+  "/register": typeof AuthRegisterRoute;
+  "/assets": typeof StudioAssetsRoute;
+  "/projects": typeof StudioProjectsRoute;
+  "/settings": typeof StudioSettingsRoute;
+  "/tasks": typeof StudioTasksRoute;
+  "/theme-preview": typeof StudioThemePreviewRoute;
+  "/creators/$id": typeof CreatorsIdRoute;
+  "/payment/result": typeof PaymentResultRoute;
+  "/projects/$id": typeof ProjectsIdRoute;
+  "/creators/": typeof CreatorsIndexRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/forgot-password': typeof AuthForgotPasswordRoute
-  '/login': typeof AuthLoginRoute
-  '/register': typeof AuthRegisterRoute
-  '/assets': typeof StudioAssetsRoute
-  '/projects': typeof StudioProjectsRoute
-  '/settings': typeof StudioSettingsRoute
-  '/tasks': typeof StudioTasksRoute
-  '/theme-preview': typeof StudioThemePreviewRoute
-  '/creators/$id': typeof CreatorsIdRoute
-  '/payment/result': typeof PaymentResultRoute
-  '/projects/$id': typeof ProjectsIdRoute
-  '/creators': typeof CreatorsIndexRoute
+  "/": typeof IndexRoute;
+  "/profile": typeof ProfileRoute;
+  "/forgot-password": typeof AuthForgotPasswordRoute;
+  "/login": typeof AuthLoginRoute;
+  "/register": typeof AuthRegisterRoute;
+  "/assets": typeof StudioAssetsRoute;
+  "/projects": typeof StudioProjectsRoute;
+  "/settings": typeof StudioSettingsRoute;
+  "/tasks": typeof StudioTasksRoute;
+  "/theme-preview": typeof StudioThemePreviewRoute;
+  "/creators/$id": typeof CreatorsIdRoute;
+  "/payment/result": typeof PaymentResultRoute;
+  "/projects/$id": typeof ProjectsIdRoute;
+  "/creators": typeof CreatorsIndexRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/_auth': typeof AuthRouteWithChildren
-  '/_studio': typeof StudioRouteWithChildren
-  '/_auth/forgot-password': typeof AuthForgotPasswordRoute
-  '/_auth/login': typeof AuthLoginRoute
-  '/_auth/register': typeof AuthRegisterRoute
-  '/_studio/assets': typeof StudioAssetsRoute
-  '/_studio/projects': typeof StudioProjectsRoute
-  '/_studio/settings': typeof StudioSettingsRoute
-  '/_studio/tasks': typeof StudioTasksRoute
-  '/_studio/theme-preview': typeof StudioThemePreviewRoute
-  '/creators_/$id': typeof CreatorsIdRoute
-  '/payment/result': typeof PaymentResultRoute
-  '/projects_/$id': typeof ProjectsIdRoute
-  '/creators/': typeof CreatorsIndexRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/_auth": typeof AuthRouteWithChildren;
+  "/_studio": typeof StudioRouteWithChildren;
+  "/profile": typeof ProfileRoute;
+  "/_auth/forgot-password": typeof AuthForgotPasswordRoute;
+  "/_auth/login": typeof AuthLoginRoute;
+  "/_auth/register": typeof AuthRegisterRoute;
+  "/_studio/assets": typeof StudioAssetsRoute;
+  "/_studio/projects": typeof StudioProjectsRoute;
+  "/_studio/settings": typeof StudioSettingsRoute;
+  "/_studio/tasks": typeof StudioTasksRoute;
+  "/_studio/theme-preview": typeof StudioThemePreviewRoute;
+  "/creators_/$id": typeof CreatorsIdRoute;
+  "/payment/result": typeof PaymentResultRoute;
+  "/projects_/$id": typeof ProjectsIdRoute;
+  "/creators/": typeof CreatorsIndexRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
+  fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
-    | '/'
-    | '/forgot-password'
-    | '/login'
-    | '/register'
-    | '/assets'
-    | '/projects'
-    | '/settings'
-    | '/tasks'
-    | '/theme-preview'
-    | '/creators/$id'
-    | '/payment/result'
-    | '/projects/$id'
-    | '/creators/'
-  fileRoutesByTo: FileRoutesByTo
+    | "/"
+    | "/profile"
+    | "/forgot-password"
+    | "/login"
+    | "/register"
+    | "/assets"
+    | "/projects"
+    | "/settings"
+    | "/tasks"
+    | "/theme-preview"
+    | "/creators/$id"
+    | "/payment/result"
+    | "/projects/$id"
+    | "/creators/";
+  fileRoutesByTo: FileRoutesByTo;
   to:
-    | '/'
-    | '/forgot-password'
-    | '/login'
-    | '/register'
-    | '/assets'
-    | '/projects'
-    | '/settings'
-    | '/tasks'
-    | '/theme-preview'
-    | '/creators/$id'
-    | '/payment/result'
-    | '/projects/$id'
-    | '/creators'
+    | "/"
+    | "/profile"
+    | "/forgot-password"
+    | "/login"
+    | "/register"
+    | "/assets"
+    | "/projects"
+    | "/settings"
+    | "/tasks"
+    | "/theme-preview"
+    | "/creators/$id"
+    | "/payment/result"
+    | "/projects/$id"
+    | "/creators";
   id:
-    | '__root__'
-    | '/'
-    | '/_auth'
-    | '/_studio'
-    | '/_auth/forgot-password'
-    | '/_auth/login'
-    | '/_auth/register'
-    | '/_studio/assets'
-    | '/_studio/projects'
-    | '/_studio/settings'
-    | '/_studio/tasks'
-    | '/_studio/theme-preview'
-    | '/creators_/$id'
-    | '/payment/result'
-    | '/projects_/$id'
-    | '/creators/'
-  fileRoutesById: FileRoutesById
+    | "__root__"
+    | "/"
+    | "/_auth"
+    | "/_studio"
+    | "/profile"
+    | "/_auth/forgot-password"
+    | "/_auth/login"
+    | "/_auth/register"
+    | "/_studio/assets"
+    | "/_studio/projects"
+    | "/_studio/settings"
+    | "/_studio/tasks"
+    | "/_studio/theme-preview"
+    | "/creators_/$id"
+    | "/payment/result"
+    | "/projects_/$id"
+    | "/creators/";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AuthRoute: typeof AuthRouteWithChildren
-  StudioRoute: typeof StudioRouteWithChildren
-  CreatorsIdRoute: typeof CreatorsIdRoute
-  PaymentResultRoute: typeof PaymentResultRoute
-  ProjectsIdRoute: typeof ProjectsIdRoute
-  CreatorsIndexRoute: typeof CreatorsIndexRoute
+  IndexRoute: typeof IndexRoute;
+  AuthRoute: typeof AuthRouteWithChildren;
+  StudioRoute: typeof StudioRouteWithChildren;
+  ProfileRoute: typeof ProfileRoute;
+  CreatorsIdRoute: typeof CreatorsIdRoute;
+  PaymentResultRoute: typeof PaymentResultRoute;
+  ProjectsIdRoute: typeof ProjectsIdRoute;
+  CreatorsIndexRoute: typeof CreatorsIndexRoute;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/_studio': {
-      id: '/_studio'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof StudioRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_auth': {
-      id: '/_auth'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/creators/': {
-      id: '/creators/'
-      path: '/creators'
-      fullPath: '/creators/'
-      preLoaderRoute: typeof CreatorsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/projects_/$id': {
-      id: '/projects_/$id'
-      path: '/projects/$id'
-      fullPath: '/projects/$id'
-      preLoaderRoute: typeof ProjectsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/payment/result': {
-      id: '/payment/result'
-      path: '/payment/result'
-      fullPath: '/payment/result'
-      preLoaderRoute: typeof PaymentResultRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/creators_/$id': {
-      id: '/creators_/$id'
-      path: '/creators/$id'
-      fullPath: '/creators/$id'
-      preLoaderRoute: typeof CreatorsIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_studio/theme-preview': {
-      id: '/_studio/theme-preview'
-      path: '/theme-preview'
-      fullPath: '/theme-preview'
-      preLoaderRoute: typeof StudioThemePreviewRouteImport
-      parentRoute: typeof StudioRoute
-    }
-    '/_studio/tasks': {
-      id: '/_studio/tasks'
-      path: '/tasks'
-      fullPath: '/tasks'
-      preLoaderRoute: typeof StudioTasksRouteImport
-      parentRoute: typeof StudioRoute
-    }
-    '/_studio/settings': {
-      id: '/_studio/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof StudioSettingsRouteImport
-      parentRoute: typeof StudioRoute
-    }
-    '/_studio/projects': {
-      id: '/_studio/projects'
-      path: '/projects'
-      fullPath: '/projects'
-      preLoaderRoute: typeof StudioProjectsRouteImport
-      parentRoute: typeof StudioRoute
-    }
-    '/_studio/assets': {
-      id: '/_studio/assets'
-      path: '/assets'
-      fullPath: '/assets'
-      preLoaderRoute: typeof StudioAssetsRouteImport
-      parentRoute: typeof StudioRoute
-    }
-    '/_auth/register': {
-      id: '/_auth/register'
-      path: '/register'
-      fullPath: '/register'
-      preLoaderRoute: typeof AuthRegisterRouteImport
-      parentRoute: typeof AuthRoute
-    }
-    '/_auth/login': {
-      id: '/_auth/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof AuthLoginRouteImport
-      parentRoute: typeof AuthRoute
-    }
-    '/_auth/forgot-password': {
-      id: '/_auth/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof AuthForgotPasswordRouteImport
-      parentRoute: typeof AuthRoute
-    }
+    "/profile": {
+      id: "/profile";
+      path: "/profile";
+      fullPath: "/profile";
+      preLoaderRoute: typeof ProfileRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/_studio": {
+      id: "/_studio";
+      path: "";
+      fullPath: "/";
+      preLoaderRoute: typeof StudioRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/_auth": {
+      id: "/_auth";
+      path: "";
+      fullPath: "/";
+      preLoaderRoute: typeof AuthRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/creators/": {
+      id: "/creators/";
+      path: "/creators";
+      fullPath: "/creators/";
+      preLoaderRoute: typeof CreatorsIndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/projects_/$id": {
+      id: "/projects_/$id";
+      path: "/projects/$id";
+      fullPath: "/projects/$id";
+      preLoaderRoute: typeof ProjectsIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/payment/result": {
+      id: "/payment/result";
+      path: "/payment/result";
+      fullPath: "/payment/result";
+      preLoaderRoute: typeof PaymentResultRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/creators_/$id": {
+      id: "/creators_/$id";
+      path: "/creators/$id";
+      fullPath: "/creators/$id";
+      preLoaderRoute: typeof CreatorsIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/_studio/theme-preview": {
+      id: "/_studio/theme-preview";
+      path: "/theme-preview";
+      fullPath: "/theme-preview";
+      preLoaderRoute: typeof StudioThemePreviewRouteImport;
+      parentRoute: typeof StudioRoute;
+    };
+    "/_studio/tasks": {
+      id: "/_studio/tasks";
+      path: "/tasks";
+      fullPath: "/tasks";
+      preLoaderRoute: typeof StudioTasksRouteImport;
+      parentRoute: typeof StudioRoute;
+    };
+    "/_studio/settings": {
+      id: "/_studio/settings";
+      path: "/settings";
+      fullPath: "/settings";
+      preLoaderRoute: typeof StudioSettingsRouteImport;
+      parentRoute: typeof StudioRoute;
+    };
+    "/_studio/projects": {
+      id: "/_studio/projects";
+      path: "/projects";
+      fullPath: "/projects";
+      preLoaderRoute: typeof StudioProjectsRouteImport;
+      parentRoute: typeof StudioRoute;
+    };
+    "/_studio/assets": {
+      id: "/_studio/assets";
+      path: "/assets";
+      fullPath: "/assets";
+      preLoaderRoute: typeof StudioAssetsRouteImport;
+      parentRoute: typeof StudioRoute;
+    };
+    "/_auth/register": {
+      id: "/_auth/register";
+      path: "/register";
+      fullPath: "/register";
+      preLoaderRoute: typeof AuthRegisterRouteImport;
+      parentRoute: typeof AuthRoute;
+    };
+    "/_auth/login": {
+      id: "/_auth/login";
+      path: "/login";
+      fullPath: "/login";
+      preLoaderRoute: typeof AuthLoginRouteImport;
+      parentRoute: typeof AuthRoute;
+    };
+    "/_auth/forgot-password": {
+      id: "/_auth/forgot-password";
+      path: "/forgot-password";
+      fullPath: "/forgot-password";
+      preLoaderRoute: typeof AuthForgotPasswordRouteImport;
+      parentRoute: typeof AuthRoute;
+    };
   }
 }
 
 interface AuthRouteChildren {
-  AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
-  AuthLoginRoute: typeof AuthLoginRoute
-  AuthRegisterRoute: typeof AuthRegisterRoute
+  AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute;
+  AuthLoginRoute: typeof AuthLoginRoute;
+  AuthRegisterRoute: typeof AuthRegisterRoute;
 }
 
 const AuthRouteChildren: AuthRouteChildren = {
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthRegisterRoute: AuthRegisterRoute,
-}
+};
 
-const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren);
 
 interface StudioRouteChildren {
-  StudioAssetsRoute: typeof StudioAssetsRoute
-  StudioProjectsRoute: typeof StudioProjectsRoute
-  StudioSettingsRoute: typeof StudioSettingsRoute
-  StudioTasksRoute: typeof StudioTasksRoute
-  StudioThemePreviewRoute: typeof StudioThemePreviewRoute
+  StudioAssetsRoute: typeof StudioAssetsRoute;
+  StudioProjectsRoute: typeof StudioProjectsRoute;
+  StudioSettingsRoute: typeof StudioSettingsRoute;
+  StudioTasksRoute: typeof StudioTasksRoute;
+  StudioThemePreviewRoute: typeof StudioThemePreviewRoute;
 }
 
 const StudioRouteChildren: StudioRouteChildren = {
@@ -345,29 +365,29 @@ const StudioRouteChildren: StudioRouteChildren = {
   StudioSettingsRoute: StudioSettingsRoute,
   StudioTasksRoute: StudioTasksRoute,
   StudioThemePreviewRoute: StudioThemePreviewRoute,
-}
+};
 
-const StudioRouteWithChildren =
-  StudioRoute._addFileChildren(StudioRouteChildren)
+const StudioRouteWithChildren = StudioRoute._addFileChildren(StudioRouteChildren);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
   StudioRoute: StudioRouteWithChildren,
+  ProfileRoute: ProfileRoute,
   CreatorsIdRoute: CreatorsIdRoute,
   PaymentResultRoute: PaymentResultRoute,
   ProjectsIdRoute: ProjectsIdRoute,
   CreatorsIndexRoute: CreatorsIndexRoute,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();
 
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
+import type { getRouter } from "./router.tsx";
+import type { createStart } from "@tanstack/react-start";
+declare module "@tanstack/react-start" {
   interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
+    ssr: true;
+    router: Awaited<ReturnType<typeof getRouter>>;
   }
 }

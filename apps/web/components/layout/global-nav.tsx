@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/layout/user-menu";
 
-const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment"];
+const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment", "/profile"];
 
 export function GlobalNav() {
   const { pathname } = useLocation();

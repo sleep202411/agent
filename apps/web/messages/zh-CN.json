@@ -1363,5 +1363,28 @@
         "description": "拖拽镜头卡片排序，拖拽右边缘调整时长"
       }
     }
+  },
+  "profile": {
+    "unnamed": "未命名用户",
+    "editProfile": "编辑资料",
+    "nickname": "昵称",
+    "contact": "联系方式",
+    "bio": "个人简介",
+    "portfolio": "其他作品",
+    "enterNickname": "输入昵称",
+    "enterContact": "输入联系方式",
+    "enterBio": "介绍一下你自己",
+    "enterPortfolio": "你的其他作品链接或介绍",
+    "nicknameRequired": "请输入昵称",
+    "updateSuccess": "资料更新成功",
+    "updateFailed": "资料更新失败",
+    "pleaseUploadImage": "请上传图片文件",
+    "avatarSizeLimit": "头像文件不能超过 5MB",
+    "avatarUpdated": "头像更新成功",
+    "avatarUploadFailed": "头像上传失败",
+    "generateReferralLink": "生成引荐链接",
+    "referralLinkCopied": "引荐链接已复制到剪贴板",
+    "referralLinkManualCopy": "请手动复制引荐链接：",
+    "referralLinkFailed": "生成引荐链接失败"
   }
 }

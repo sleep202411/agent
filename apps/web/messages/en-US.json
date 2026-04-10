@@ -1363,5 +1363,28 @@
         "description": "Drag shot cards to reorder, drag the right edge to adjust duration"
       }
     }
+  },
+  "profile": {
+    "unnamed": "Unnamed User",
+    "editProfile": "Edit Profile",
+    "nickname": "Nickname",
+    "contact": "Contact",
+    "bio": "Bio",
+    "portfolio": "Portfolio",
+    "enterNickname": "Enter nickname",
+    "enterContact": "Enter contact info",
+    "enterBio": "Tell us about yourself",
+    "enterPortfolio": "Your other works or links",
+    "nicknameRequired": "Please enter a nickname",
+    "updateSuccess": "Profile updated",
+    "updateFailed": "Failed to update profile",
+    "pleaseUploadImage": "Please upload an image file",
+    "avatarSizeLimit": "Avatar file cannot exceed 5MB",
+    "avatarUpdated": "Avatar updated",
+    "avatarUploadFailed": "Failed to upload avatar",
+    "generateReferralLink": "Referral Link",
+    "referralLinkCopied": "Referral link copied to clipboard",
+    "referralLinkManualCopy": "Please copy the referral link manually:",
+    "referralLinkFailed": "Failed to generate referral link"
   }
 }

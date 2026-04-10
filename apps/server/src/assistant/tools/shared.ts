@@ -16,7 +16,12 @@ export const roleProposalSchema = z.object({
   description: z.string().optional().describe('角色简介'),
   appearance: z.string().optional().describe('角色外貌'),
   personality: z.string().optional().describe('角色性格'),
-  prompt: z.string().optional().describe('角色 AI 提示词'),
+  prompt: z
+    .string()
+    .optional()
+    .describe(
+      'AI image generation prompt (English). Describe the character visual appearance for AI image generation: facial features, hairstyle, clothing, expression, body type, etc. Example: "A young Chinese man with short black hair, wearing a dark blue Tang suit, determined expression, athletic build"',
+    ),
 });
 
 export const sceneProposalSchema = z.object({

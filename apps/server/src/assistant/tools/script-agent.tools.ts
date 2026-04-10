@@ -290,8 +290,12 @@ export function createScriptAgentTools(
           if (characters.length > 0) {
             try {
               const roleDatas: string[][] = [
-                ['name', 'description'],
-                ...characters.map((c) => [c.name, c.description ?? '']),
+                ['name', 'description', 'prompt'],
+                ...characters.map((c) => [
+                  c.name,
+                  c.description ?? '',
+                  c.description ?? '',
+                ]),
               ];
               await ctx.ws.batchCreateRoles(ctx.headers, worldId, roleDatas);
               results.push(`${characters.length} characters`);

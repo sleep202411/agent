@@ -684,10 +684,25 @@ export class WorkspaceService {
     );
     for (const row of rows) {
       try {
+        const name = row[0];
+        const description = row[1] ?? '';
+        const prompt = row[2] ?? description;
         await this.request<WorkspaceRecord>(
           headers,
           '/api/user/world/create/worldrole',
-          { data: { worldId, name: row[0], description: row[1] ?? '' } },
+          {
+            data: {
+              worldId,
+              name,
+              description,
+              prompt,
+              roleImgPath: [],
+              referenceImgPath: [],
+              referenceImgDescription: [],
+              model: '',
+              voiceId: '',
+            },
+          },
         );
       } catch (error) {
         this.logger.error(`[batchCreateRoles] Failed "${row[0]}": ${error}`);

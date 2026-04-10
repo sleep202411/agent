@@ -1363,5 +1363,28 @@
         "description": "拖拽鏡頭卡片排序，拖拽右邊緣調整時長"
       }
     }
+  },
+  "profile": {
+    "unnamed": "未命名用戶",
+    "editProfile": "編輯資料",
+    "nickname": "暱稱",
+    "contact": "聯絡方式",
+    "bio": "個人簡介",
+    "portfolio": "其他作品",
+    "enterNickname": "輸入暱稱",
+    "enterContact": "輸入聯絡方式",
+    "enterBio": "介紹一下你自己",
+    "enterPortfolio": "你的其他作品連結或介紹",
+    "nicknameRequired": "請輸入暱稱",
+    "updateSuccess": "資料更新成功",
+    "updateFailed": "資料更新失敗",
+    "pleaseUploadImage": "請上傳圖片檔案",
+    "avatarSizeLimit": "頭像檔案不能超過 5MB",
+    "avatarUpdated": "頭像更新成功",
+    "avatarUploadFailed": "頭像上傳失敗",
+    "generateReferralLink": "生成引薦連結",
+    "referralLinkCopied": "引薦連結已複製到剪貼簿",
+    "referralLinkManualCopy": "請手動複製引薦連結：",
+    "referralLinkFailed": "生成引薦連結失敗"
   }
 }
