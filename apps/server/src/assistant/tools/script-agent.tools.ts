@@ -53,6 +53,7 @@ async function resolveText(ctx: AssistantToolContext): Promise<string> {
 
 const analyzeOutputSchema = z.object({
   sessionId: z.string(),
+  taskId: z.string().optional().describe('Background task ID (async mode)'),
   characters: z.number().describe('Number of characters found'),
   locations: z.number().describe('Number of locations found'),
   outlineSections: z.number().describe('Number of outline sections'),
@@ -96,6 +97,7 @@ export function createScriptAgentTools(
       description:
         'Analyze an uploaded script/novel to extract characters, locations, and outline. ' +
         'Must be called AFTER configure_params. Text is read from the uploaded attachment automatically. ' +
+        'Returns a taskId for async processing — tell the user analysis has started and progress will be shown. ' +
         'Do NOT restate the text content.',
       inputSchema: z.object({
         title: z.string().optional().describe('Script/novel title'),
@@ -110,15 +112,61 @@ export function createScriptAgentTools(
       }),
       outputSchema: analyzeOutputSchema,
       execute: async ({ title, config }) => {
+        const taskService = ctx.taskService;
+        const taskQueue = ctx.taskQueue;
+
+        // Resolve text and attachment info
         const text = await resolveText(ctx);
         const sessionId = randomId();
+        const attachments = ctx.getAttachments();
+        const firstAttachment = attachments[0];
 
         logger.log(`analyze_text: ${text.length} chars, session=${sessionId}`);
 
-        await store.saveText(sessionId, text);
+        // Save session for later steps
         await store.saveState(sessionId, { title, config: config ?? {} });
 
-        // Run synchronously — SSE stream stays alive during execution
+        // If task infrastructure is available, run async
+        if (taskService && taskQueue) {
+          const task = await taskService.create({
+            type: 'analyze',
+            projectId: ctx.context.projectId,
+            sessionId,
+            input: {
+              title,
+              text,
+              config: config ?? {},
+              attachmentUrl: firstAttachment?.url,
+              attachmentMimeType: firstAttachment?.mimeType,
+            },
+          });
+
+          // Save text to Redis for worker to access
+          await taskService.saveText(task.id, text);
+
+          // Enqueue via BullMQ for background processing
+          await taskQueue.enqueue(task.id);
+
+          logger.log(
+            `analyze_text: task ${task.id} enqueued for async processing`,
+          );
+
+          return {
+            sessionId,
+            taskId: task.id,
+            characters: 0,
+            locations: 0,
+            outlineSections: 0,
+            language: '',
+            style: '',
+            summary: `Analysis task started (${text.length} characters). Task ID: ${task.id}. Progress will be shown in the task card.`,
+          };
+        }
+
+        // Fallback: synchronous processing (no Redis)
+        logger.log(`analyze_text: no task service, running synchronously`);
+        await store.saveText(sessionId, text);
+
         const context = {
           input: { text, config: config ?? {} },
           global: {} as Record<string, unknown>,
@@ -134,10 +182,6 @@ export function createScriptAgentTools(
           language: result.language,
           style: result.style,
         });
-
-        logger.log(
-          `analyze_text done: ${result.characters.length} chars, ${result.locations.length} locs, lang=${result.language}`,
-        );
 
         return {
           sessionId,
@@ -250,24 +294,19 @@ export function createScriptAgentTools(
         const results: string[] = [];
 
         // 1. Create episodes sequentially, collecting IDs directly
-        const language = (state.language as string) ?? 'English';
-        const isChinese = /chinese|中文/i.test(language);
-        const titlesWithPrefix = episodeMap.map((ep) =>
-          isChinese
-            ? `第${ep.episodeNumber}集:${ep.title}`
-            : `Ep.${ep.episodeNumber} ${ep.title}`,
-        );
+        // Use plain titles without episode number prefix — frontend shows index
+        const titles = episodeMap.map((ep) => ep.title);
 
         let orderedEpisodeIds: string[];
         try {
           orderedEpisodeIds = await ctx.ws.batchAddEpisodes(
             ctx.headers,
             projectId,
-            titlesWithPrefix,
+            titles,
           );
           const created = orderedEpisodeIds.filter(Boolean).length;
           results.push(`${created} episodes`);
-          logger.log(`Created ${created}/${titlesWithPrefix.length} episodes`);
+          logger.log(`Created ${created}/${titles.length} episodes`);
         } catch (error) {
           logger.error(`batchAddEpisodes failed: ${error}`);
           throw new Error(
@@ -280,7 +319,7 @@ export function createScriptAgentTools(
           ...state,
           episodesCreated: true,
           orderedEpisodeIds,
-          titlesWithPrefix,
+          episodeTitles: titles,
         });
 
         // 2. Batch create characters + scenes (requires worldId)
@@ -388,10 +427,8 @@ export function createScriptAgentTools(
         let episodeIds = orderedEpisodeIds;
         if (episodeIds.length === 0) {
           const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
-          const titlesWithPrefix = episodeMap.map(
-            (ep) => `Ep.${ep.episodeNumber} ${ep.title}`,
-          );
-          episodeIds = titlesWithPrefix.map((title) => {
+          const titles = episodeMap.map((ep) => ep.title);
+          episodeIds = titles.map((title) => {
             const match = allEpisodes.find((e) => e.title === title);
             return match?.id ?? '';
           });
@@ -559,22 +596,11 @@ Rules:
         );
         if (episodeIds.length === 0) {
           const allEpisodes = await ctx.ws.listEpisodes(ctx.headers, projectId);
-          const titlesWithPrefix = episodeMap.map(
-            (ep) => `Ep.${ep.episodeNumber} ${ep.title}`,
-          );
+          const titles = episodeMap.map((ep) => ep.title);
           logger.log(
-            `Trying to match ${titlesWithPrefix.length} titles against ${allEpisodes.length} episodes`,
+            `Trying to match ${titles.length} titles against ${allEpisodes.length} episodes`,
           );
-          logger.log(
-            `Expected titles: ${titlesWithPrefix.slice(0, 3).join(' | ')}`,
-          );
-          logger.log(
-            `Actual titles: ${allEpisodes
-              .slice(0, 3)
-              .map((e) => e.title)
-              .join(' | ')}`,
-          );
-          episodeIds = titlesWithPrefix.map((title) => {
+          episodeIds = titles.map((title) => {
             const match = allEpisodes.find((e) => e.title === title);
             return match?.id ?? '';
           });
@@ -591,20 +617,145 @@ Rules:
           `generate_storyboard: batch ${batchFrom}-${batchTo} (${batch.length} episodes), ${shotsPerMinute} shots/min`,
         );
 
+        // ── Build mention lookup from world assets ──
+        const worldId = ctx.context.worldId;
+        type MentionEntry = {
+          id: string;
+          type: 'character' | 'scene';
+          name: string;
+          imgUrl: string;
+        };
+        const mentionMap = new Map<string, MentionEntry>();
+
+        if (worldId) {
+          try {
+            const [charPage, scenePage] = await Promise.all([
+              ctx.ws.getWorldAssetPage(ctx.headers, worldId, 'character', {
+                pageSize: 100,
+              }),
+              ctx.ws.getWorldAssetPage(ctx.headers, worldId, 'scene', {
+                pageSize: 100,
+              }),
+            ]);
+            for (const c of (
+              charPage as { list?: Array<Record<string, unknown>> }
+            )?.list ?? []) {
+              const name = String(c.name ?? '').trim();
+              if (!name) continue;
+              const imgPaths = Array.isArray(c.roleImgPath)
+                ? c.roleImgPath
+                : [];
+              mentionMap.set(name.toLowerCase(), {
+                id: String(c.id ?? ''),
+                type: 'character',
+                name,
+                imgUrl: imgPaths[0] ? String(imgPaths[0]) : '',
+              });
+            }
+            for (const s of (
+              scenePage as { list?: Array<Record<string, unknown>> }
+            )?.list ?? []) {
+              const name = String(s.name ?? '').trim();
+              if (!name) continue;
+              const imgPaths = Array.isArray(s.sceneImgPath)
+                ? s.sceneImgPath
+                : [];
+              mentionMap.set(name.toLowerCase(), {
+                id: String(s.id ?? ''),
+                type: 'scene',
+                name,
+                imgUrl: imgPaths[0] ? String(imgPaths[0]) : '',
+              });
+            }
+            logger.log(
+              `Built mention map: ${mentionMap.size} entries (characters + scenes)`,
+            );
+          } catch (error) {
+            logger.warn(`Failed to load world assets for mentions: ${error}`);
+          }
+        }
+
+        function buildMention(entry: MentionEntry): string {
+          const attrs = [`id="${entry.id}"`, `type="${entry.type}"`];
+          if (entry.imgUrl) attrs.push(`imgUrl="${entry.imgUrl}"`);
+          return `<mention ${attrs.join(' ')}>${entry.name}</mention>`;
+        }
+
+        function injectMentions(text: string): string {
+          let result = text;
+          for (const entry of mentionMap.values()) {
+            // Replace exact name occurrences with mention tags (case insensitive)
+            const escaped = entry.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(escaped, 'gi');
+            result = result.replace(regex, buildMention(entry));
+          }
+          return result;
+        }
+
+        function buildSceneMention(sceneName: string): string {
+          const entry = mentionMap.get(sceneName.toLowerCase().trim());
+          if (entry && entry.type === 'scene') return buildMention(entry);
+          return sceneName;
+        }
+
+        // ── Shot generation schema (expanded) ──
         const characterList = analyze.characters
           .slice(0, 20)
           .map((c) => `${c.name}: ${c.description}`)
           .join('\n');
 
+        const sceneList = analyze.locations
+          .slice(0, 20)
+          .map((l) => l.name)
+          .join(', ');
+
+        const shotSizeOptions =
+          '超特写, 特写, 中景, 全景, 大全景, 双人镜头, 过肩, 主观, 插镜';
+        const perspectiveOptions = '平视, 俯视, 仰视, 鸟瞰, 倾斜, 航拍, 背面';
+        const movementOptions =
+          '固定镜头, 推镜头, 拉镜头, 左移镜头, 右移镜头, 左摇镜头, 右摇镜头, 升镜头, 降镜头, 上摇镜头, 下摇镜头, 左旋镜头, 右旋镜头, 晃动镜头, 变焦推进, 变焦拉远, 场景镜头';
+
         const shotSchema = z.object({
           shots: z.array(
             z.object({
-              description: z.string(),
-              dialogue: z.string().optional(),
-              shotSize: z.string(),
-              cameraMovement: z.string(),
-              duration: z.number(),
-              videoPrompt: z.string().describe('ALWAYS in English'),
+              scene: z
+                .string()
+                .describe(
+                  `Scene/location name. Must be one of the known scenes: ${sceneList}. If none match, use a short descriptive name.`,
+                ),
+              description: z
+                .string()
+                .describe(
+                  'Visual description for human readers: what happens in the shot, mood, details. Use character names.',
+                ),
+              imagePrompt: z
+                .string()
+                .describe(
+                  'AI image generation prompt — pure visual ONLY. Describe composition, lighting, colors, character appearance. Use character names.',
+                ),
+              videoPrompt: z
+                .string()
+                .describe(
+                  'AI video generation prompt — visual + motion. Use the output language specified by user.',
+                ),
+              dialogue: z
+                .string()
+                .optional()
+                .describe(
+                  'Dialogue and/or narration. Format: "角色名：台词" for dialogue, "旁白：内容" for narration. Empty if none.',
+                ),
+              shotSize: z
+                .string()
+                .describe(`Shot size. Choose from: ${shotSizeOptions}`),
+              perspective: z
+                .string()
+                .describe(
+                  `Camera perspective. Choose from: ${perspectiveOptions}`,
+                ),
+              movement: z
+                .string()
+                .describe(`Camera movement. Choose from: ${movementOptions}`),
+              duration: z.number().describe('Duration in seconds, 2-8s'),
             }),
           ),
         });
@@ -632,7 +783,18 @@ Rules:
               generateObject({
                 model,
                 schema: shotSchema,
-                system: `You are a professional storyboard artist. Generate shots for this episode. Shot density: ~${shotsPerMinute} shots/minute. Visual style: ${style}. description, dialogue must be in ${language}. videoPrompt must ALWAYS be in English.`,
+                system: `You are a professional storyboard artist. Generate detailed shots for this episode.
+
+Shot density: ~${shotsPerMinute} shots/minute. Visual style: ${style}.
+All text output (description, dialogue, imagePrompt, videoPrompt) must be in ${language}.
+
+For shotSize, perspective, and movement: you MUST pick from the provided options list exactly.
+Use character names in description, imagePrompt, and videoPrompt so they can be linked to character assets.
+
+Available scenes: ${sceneList}
+Available shot sizes: ${shotSizeOptions}
+Available perspectives: ${perspectiveOptions}
+Available movements: ${movementOptions}`,
                 prompt: `Episode ${ep.episodeNumber}: "${ep.title}"\n${ep.summary}\n\nOutline:\n${outlineSlice}\n\nCharacters:\n${characterList}\n\nSource:\n${sourceSegment.slice(0, 8000)}`,
                 temperature: 0.4,
               }),
@@ -644,21 +806,32 @@ Rules:
           // Write to correct episode by index
           const epId = episodeIds[ep.episodeNumber - 1];
           if (epId && object.shots.length > 0) {
+            // Match front-end STORYBOARD_SAVE_FIELD_ORDER
             const headers = [
+              'shot_no',
+              'scene',
               'description',
+              'image_prompt',
+              'video_prompt',
+              'style_planting',
+              'movement',
               'dialogue',
               'shot_size',
-              'movement',
+              'perspective',
               'duration',
-              'video_prompt',
             ];
-            const rows = object.shots.map((shot) => [
-              shot.description,
+            const rows = object.shots.map((shot, shotIndex) => [
+              String(shotIndex + 1), // shot_no
+              buildSceneMention(shot.scene), // scene with mention
+              injectMentions(shot.description), // description with mentions
+              injectMentions(shot.imagePrompt), // image_prompt with mentions
+              injectMentions(shot.videoPrompt), // video_prompt with mentions
+              style, // style_planting (project-level style)
+              shot.movement,
               shot.dialogue ?? '',
               shot.shotSize,
-              shot.cameraMovement,
+              shot.perspective,
               String(shot.duration),
-              shot.videoPrompt,
             ]);
 
             try {
@@ -669,7 +842,7 @@ Rules:
               });
               saved++;
               logger.log(
-                `Storyboard saved: ep ${ep.episodeNumber} → ${epId} (${object.shots.length} shots)`,
+                `Storyboard saved: ep ${ep.episodeNumber} → ${epId} (${object.shots.length} shots, ${headers.length} columns)`,
               );
             } catch (error) {
               logger.error(

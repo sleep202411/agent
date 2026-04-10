@@ -111,9 +111,13 @@ export function createExecuteTools({
 
     batch_create_episodes: tool({
       description:
-        'Batch create multiple episodes at once. Must use this instead of calling create_episode in a loop. Returns episodeMap (title→ID mapping).',
+        'Batch create multiple episodes at once. Must use this instead of calling create_episode in a loop. Returns episodeMap (title→ID mapping). ' +
+        'Do NOT add episode number prefixes like "第1集:" or "Ep.1" — the UI shows index numbers automatically.',
       inputSchema: z.object({
-        titles: z.array(z.string().min(1)).min(1).describe('Episode titles'),
+        titles: z
+          .array(z.string().min(1))
+          .min(1)
+          .describe('Episode titles without number prefix'),
       }),
       execute: async ({ titles }) => {
         const createdIds = await ws.batchAddEpisodes(
@@ -179,7 +183,8 @@ export function createExecuteTools({
 
     update_episode: tool({
       description:
-        'Update an episode title or description. Not for saving script content. For updating multiple episodes, use batch_update_episodes instead.',
+        'Update an episode title or description. Not for saving script content. For updating multiple episodes, use batch_update_episodes instead. ' +
+        'Do NOT add episode number prefixes like "第1集:" or "Ep.1" in titles — the UI shows index numbers automatically.',
       inputSchema: z.object({
         id: z.string(),
         title: z.string().optional(),

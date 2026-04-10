@@ -78,8 +78,18 @@ export function EpisodeEditDialog({
     if (!episodeId) return;
     try {
       const projectId = store.getState().project.currentProjectId;
+      // Full payload: merge original episode fields with edited values
       await backendApi.post("/api/user/world/update/episode", {
-        data: { id: episodeId, projectId, ...values },
+        data: {
+          id: episodeId,
+          projectId,
+          title: values.title,
+          introduction: values.introduction,
+          frontPrompt: values.frontPrompt,
+          behindPrompt: values.behindPrompt,
+          sort: episode.sort ?? 0,
+          videoLength: episode.videoLength ?? 0,
+        },
       });
       store.dispatch(updateEpisodeInStore({ id: episodeId, data: values }));
       toast.success(t("episodeUpdated"));
