@@ -87,6 +87,10 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
   const userLevel = typeof userInfo?.userLevel === "string" ? userInfo.userLevel : "";
 
   const switchLocale = (nextLocale: string) => {
+    // current langage
+    console.log("[UserMenu] Current locale:", locale);
+    if (nextLocale === locale) return;
+    console.log("[UserMenu] Switching locale to", nextLocale);
     setCurrentLocale(nextLocale);
     setLanguage(nextLocale);
     // Navigate to same internal path — rewrite output applies the new locale
@@ -256,7 +260,7 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
         <DropdownMenuSeparator />
 
         {/* Footer */}
-        <div className="flex items-center justify-center gap-3 px-3 py-2 text-[11px] text-muted-foreground">
+        {/* <div className="flex items-center justify-center gap-3 px-3 py-2 text-[11px] text-muted-foreground">
           <Link to="/terms" className="hover:text-foreground">
             Terms
           </Link>
@@ -268,7 +272,7 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
           <Link to="/blog" className="hover:text-foreground">
             Blog
           </Link>
-        </div>
+        </div> */}
       </DropdownMenuContent>
     </DropdownMenu>
   );

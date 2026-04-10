@@ -14,6 +14,7 @@
   - 每集时长（number，默认 3，范围 1-10，后缀"分钟"/"minutes"）
   - 每分钟镜头数（number，默认 15，范围 8-25，后缀"个"/"shots"）
   - 画面风格（select，选项：Realistic/2D Animation/3D Animation/Ink Wash/Cyberpunk/Hand-drawn，默认 Realistic）
+  - 输出语言（select，选项：跟随原文/中文/English）— **仅当剧本/小说语言与用户聊天语言不一致时才显示此选项**。例如用户用中文对话但上传了英文剧本，则需要让用户选择输出语言。如果语言一致则跳过此选项，默认跟随原文。
 
 **Step 2: 分析全文**
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { IconCopy, IconLoader2, IconMail, IconUserPlus } from "@tabler/icons-react";
+import { IconCopy, IconLoader2, IconMail, IconRefresh, IconUserPlus } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { env } from "@/src/env";
 import { toast } from "sonner";
@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/src/store";
+import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import { backendApi } from "@/src/lib/api";
 import type { ProjectOptionItem, V1ProjectMember } from "@/src/types/workspace";
 
@@ -171,6 +172,23 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
   const t = useTranslations("project");
   const tc = useTranslations("common");
   const currentUser = useAppSelector((s) => s.auth.user);
+  const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      setCurrentUserId(String(currentUser.id));
+      return;
+    }
+    // auth slice may not have user — fetch from API
+    fetch("/user/query/user/info", { credentials: "include" })
+      .then((res) => res.json())
+      .then((body) => {
+        const info = body?.info ?? body?.data?.info ?? body?.data;
+        if (info?.id) setCurrentUserId(String(info.id));
+      })
+      .catch(() => {});
+  }, [currentUser?.id]);
 
   const [activeTab, setActiveTab] = useState<"members" | "invite">("members");
   const [loading, setLoading] = useState(false);
@@ -183,8 +201,8 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
   const [deleteMember, setDeleteMember] = useState<V1ProjectMember | null>(null);
 
   const selfMember = useMemo(
-    () => members.find((m) => String(m.userId ?? m.id) === String(currentUser?.id ?? "")),
-    [currentUser?.id, members]
+    () => (currentUserId ? members.find((m) => String(m.userId ?? m.id) === currentUserId) : null),
+    [currentUserId, members]
   );
   const myRole = selfMember?.role ?? 0;
   const isAdmin = myRole >= ROLE.ADMIN;
@@ -204,9 +222,9 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
       setMembers(memberList ?? []);
       if (code) {
         const origin = env.PARENT_ORIGIN || window.location.origin;
-        const worldId = String(project.worldId ?? "");
+        const wid = worldId ?? "";
         setInviteLink(
-          `${origin}/pages/invite/invite?code=${String(code)}&projectId=${String(project.id)}${worldId ? `&worldId=${worldId}` : ""}`
+          `${origin}/pages/invite/invite?code=${String(code)}&projectId=${String(project.id)}${wid ? `&worldId=${wid}` : ""}`
         );
       }
     } catch (error) {
@@ -215,7 +233,7 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
     } finally {
       setLoading(false);
     }
-  }, [project?.id, project?.worldId, t]);
+  }, [project?.id, worldId, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -271,16 +289,57 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
     }
   };
 
-  const handleCopyLink = () => {
+  const handleCopyLink = async () => {
     if (!inviteLink) return;
     const text = `${t("inviteText")} [${project?.name ?? ""}] ${inviteLink}`;
-    navigator.clipboard.writeText(text).then(
-      () => toast.success(tc("copySuccess")),
-      () => toast.error(tc("copyFailed"))
-    );
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(tc("copySuccess"));
+    } catch {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        toast.success(tc("copySuccess"));
+      } catch {
+        toast.info(tc("manualCopyHint"));
+      }
+    }
   };
 
-  const isSelf = (m: V1ProjectMember) => String(m.userId ?? m.id) === String(currentUser?.id ?? "");
+  const [refreshingLink, setRefreshingLink] = useState(false);
+  const handleRefreshLink = async () => {
+    if (!project?.id) return;
+    setRefreshingLink(true);
+    try {
+      const code = await backendApi.post(
+        `/api/user/projectMember/inviteCode/${String(project.id)}`,
+        {
+          data: { shareType: "PROJECT" },
+        }
+      );
+      if (code) {
+        const origin = env.PARENT_ORIGIN || window.location.origin;
+        const wid = worldId ?? "";
+        setInviteLink(
+          `${origin}/pages/invite/invite?code=${String(code)}&projectId=${String(project.id)}${wid ? `&worldId=${wid}` : ""}`
+        );
+        toast.success(t("inviteLinkRefreshed"));
+      }
+    } catch {
+      toast.error(t("operationFailed"));
+    } finally {
+      setRefreshingLink(false);
+    }
+  };
+
+  const isSelf = (m: V1ProjectMember) =>
+    currentUserId ? String(m.userId ?? m.id) === currentUserId : false;
 
   const canEditMember = (m: V1ProjectMember) =>
     isAdmin && !isSelf(m) && m.status === STATUS.JOINED && (m.role ?? 0) < ROLE.OWNER;
@@ -298,9 +357,9 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
               <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="flex min-h-[380px] gap-5">
+            <div className="flex min-h-[380px] gap-4 p-4">
               {/* Sidebar */}
-              <div className="w-32 shrink-0 space-y-1 border-r border-border pr-4">
+              <div className="w-32 shrink-0 space-y-1">
                 <button
                   type="button"
                   onClick={() => setActiveTab("members")}
@@ -438,7 +497,7 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-6">
+                  <div className="space-y-4">
                     {/* Invite by account */}
                     {isAdmin ? (
                       <div className="space-y-2">
@@ -487,16 +546,30 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
                           ? `${t("inviteText")} [${project?.name ?? ""}] ${inviteLink}`
                           : t("generatingInviteLink")}
                       </div>
-                      <Button
-                        variant="outline"
-                        color="muted"
-                        size="sm"
-                        onClick={handleCopyLink}
-                        disabled={!inviteLink}
-                      >
-                        <IconCopy className="size-3.5" />
-                        {t("copyLink")}
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          color="muted"
+                          size="sm"
+                          onClick={handleCopyLink}
+                          disabled={!inviteLink}
+                        >
+                          <IconCopy className="size-3.5" />
+                          {t("copyLink")}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          color="muted"
+                          size="sm"
+                          onClick={() => void handleRefreshLink()}
+                          disabled={refreshingLink}
+                        >
+                          <IconRefresh
+                            className={cn("size-3.5", refreshingLink && "animate-spin")}
+                          />
+                          {t("refreshLink")}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}

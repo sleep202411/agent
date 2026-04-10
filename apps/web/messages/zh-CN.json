@@ -182,6 +182,8 @@
     "deleteMemberTitle": "删除成员",
     "deleteMemberContent": "确定要删除该成员吗？删除后将无法访问项目。",
     "generatingInviteLink": "正在生成邀请链接",
+    "refreshLink": "刷新链接",
+    "inviteLinkRefreshed": "邀请链接已刷新",
     "loadingProject": "加载项目中...",
     "loadProjectFailed": "项目加载失败",
     "leaveWhileBatchGenerating": "当前有正在进行的批量生成任务，离开后任务将丢失，确定要离开吗？",

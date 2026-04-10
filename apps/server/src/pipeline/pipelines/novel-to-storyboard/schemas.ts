@@ -88,8 +88,16 @@ export const shotInfoSchema = z.object({
     .string()
     .describe('Camera movement: static/push/pull/pan/track/crane/handheld'),
   duration: z.number().describe('Duration in seconds, 2-5s'),
-  imagePrompt: z.string().describe('AI image generation prompt in English'),
-  videoPrompt: z.string().describe('AI video generation prompt in English'),
+  imagePrompt: z
+    .string()
+    .describe(
+      'AI image generation prompt — use the output language specified by user',
+    ),
+  videoPrompt: z
+    .string()
+    .describe(
+      'AI video generation prompt — use the output language specified by user',
+    ),
 });
 
 export const refineResultSchema = z.object({

@@ -182,6 +182,8 @@
     "deleteMemberTitle": "刪除成員",
     "deleteMemberContent": "確定要刪除該成員嗎？刪除後將無法存取專案。",
     "generatingInviteLink": "正在生成邀請連結",
+    "refreshLink": "刷新連結",
+    "inviteLinkRefreshed": "邀請連結已刷新",
     "loadingProject": "載入專案中...",
     "loadProjectFailed": "專案載入失敗",
     "leaveWhileBatchGenerating": "目前有正在進行的批量生成任務，離開後任務將遺失，確定要離開嗎？",

@@ -182,6 +182,8 @@
     "deleteMemberTitle": "Remove Member",
     "deleteMemberContent": "Are you sure you want to remove this member? They will lose access to the project.",
     "generatingInviteLink": "Generating invite link",
+    "refreshLink": "Refresh Link",
+    "inviteLinkRefreshed": "Invite link refreshed",
     "loadingProject": "Loading project...",
     "loadProjectFailed": "Failed to load project",
     "leaveWhileBatchGenerating": "Batch generation is in progress. Leaving will cancel the tasks. Are you sure you want to leave?",
