@@ -6,7 +6,10 @@ export function CreatorsTalentCard({ creator }: { creator: Creator }) {
   const avail = AVAILABILITY_CONFIG[creator.availability];
 
   return (
-    <div className="group relative mt-8 rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-white/[0.06] hover:shadow-lg hover:shadow-primary/5">
+    <a
+      href={`/creators/${creator.id}`}
+      className="group relative mt-8 block rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-white/[0.06] hover:shadow-lg hover:shadow-primary/5"
+    >
       {/* Avatar - protruding above card */}
       <div className="absolute -top-8 left-1/2 -translate-x-1/2">
         <div className="relative">
@@ -82,6 +85,6 @@ export function CreatorsTalentCard({ creator }: { creator: Creator }) {
           </span>
         </div>
       </div>
-    </div>
+    </a>
   );
 }
