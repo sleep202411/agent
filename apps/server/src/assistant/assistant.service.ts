@@ -199,11 +199,31 @@ export class AssistantService {
     );
     this.logger.log('Project context ready');
 
+    // Clean messages: remove internal part types (step-start etc.) that
+    // AI SDK's validateUIMessages doesn't recognize
+    const INTERNAL_PART_TYPES = new Set([
+      'step-start',
+      'step-finish',
+      'source',
+    ]);
+    const cleanedMessages = (payload.messages as AssistantMessage[]).map(
+      (msg) => ({
+        ...msg,
+        parts: msg.parts.filter((part) => {
+          const type =
+            typeof part === 'object' && part !== null && 'type' in part
+              ? String((part as Record<string, unknown>).type)
+              : '';
+          return !INTERNAL_PART_TYPES.has(type);
+        }),
+      }),
+    );
+
     const validationTools = tools as unknown as ToolSet;
     let validatedMessages: AssistantMessage[];
     try {
       validatedMessages = await validateUIMessages({
-        messages: payload.messages,
+        messages: cleanedMessages,
         tools: validationTools,
       } as never);
     } catch (err) {
