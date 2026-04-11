@@ -30,7 +30,7 @@ import { Route as StudioAssetsRouteImport } from "./routes/_studio.assets";
 import { Route as AuthRegisterRouteImport } from "./routes/_auth.register";
 import { Route as AuthLoginRouteImport } from "./routes/_auth.login";
 import { Route as AuthForgotPasswordRouteImport } from "./routes/_auth.forgot-password";
-import { Route as CrewsIdWorkspaceRouteImport } from "./routes/crews_.$id.workspace";
+import { Route as CrewsIdWorkspaceRouteImport } from "./routes/crews_.$id_.workspace";
 
 const ProfileRoute = ProfileRouteImport.update({
   id: "/profile",
@@ -136,9 +136,9 @@ const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   getParentRoute: () => AuthRoute,
 } as any);
 const CrewsIdWorkspaceRoute = CrewsIdWorkspaceRouteImport.update({
-  id: "/workspace",
-  path: "/workspace",
-  getParentRoute: () => CrewsIdRoute,
+  id: "/crews_/$id_/workspace",
+  path: "/crews/$id/workspace",
+  getParentRoute: () => rootRouteImport,
 } as any);
 
 export interface FileRoutesByFullPath {
@@ -153,7 +153,7 @@ export interface FileRoutesByFullPath {
   "/tasks": typeof StudioTasksRoute;
   "/theme-preview": typeof StudioThemePreviewRoute;
   "/creators/$id": typeof CreatorsIdRoute;
-  "/crews/$id": typeof CrewsIdRouteWithChildren;
+  "/crews/$id": typeof CrewsIdRoute;
   "/ips/create": typeof IpsCreateRoute;
   "/ips/$id": typeof IpsIdRoute;
   "/payment/result": typeof PaymentResultRoute;
@@ -175,7 +175,7 @@ export interface FileRoutesByTo {
   "/tasks": typeof StudioTasksRoute;
   "/theme-preview": typeof StudioThemePreviewRoute;
   "/creators/$id": typeof CreatorsIdRoute;
-  "/crews/$id": typeof CrewsIdRouteWithChildren;
+  "/crews/$id": typeof CrewsIdRoute;
   "/ips/create": typeof IpsCreateRoute;
   "/ips/$id": typeof IpsIdRoute;
   "/payment/result": typeof PaymentResultRoute;
@@ -200,7 +200,7 @@ export interface FileRoutesById {
   "/_studio/tasks": typeof StudioTasksRoute;
   "/_studio/theme-preview": typeof StudioThemePreviewRoute;
   "/creators_/$id": typeof CreatorsIdRoute;
-  "/crews_/$id": typeof CrewsIdRouteWithChildren;
+  "/crews_/$id": typeof CrewsIdRoute;
   "/ips/create": typeof IpsCreateRoute;
   "/ips_/$id": typeof IpsIdRoute;
   "/payment/result": typeof PaymentResultRoute;
@@ -208,7 +208,7 @@ export interface FileRoutesById {
   "/creators/": typeof CreatorsIndexRoute;
   "/crews/": typeof CrewsIndexRoute;
   "/ips/": typeof IpsIndexRoute;
-  "/crews_/$id/workspace": typeof CrewsIdWorkspaceRoute;
+  "/crews_/$id_/workspace": typeof CrewsIdWorkspaceRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -278,7 +278,7 @@ export interface FileRouteTypes {
     | "/creators/"
     | "/crews/"
     | "/ips/"
-    | "/crews_/$id/workspace";
+    | "/crews_/$id_/workspace";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -287,7 +287,7 @@ export interface RootRouteChildren {
   StudioRoute: typeof StudioRouteWithChildren;
   ProfileRoute: typeof ProfileRoute;
   CreatorsIdRoute: typeof CreatorsIdRoute;
-  CrewsIdRoute: typeof CrewsIdRouteWithChildren;
+  CrewsIdRoute: typeof CrewsIdRoute;
   IpsCreateRoute: typeof IpsCreateRoute;
   IpsIdRoute: typeof IpsIdRoute;
   PaymentResultRoute: typeof PaymentResultRoute;
@@ -295,6 +295,7 @@ export interface RootRouteChildren {
   CreatorsIndexRoute: typeof CreatorsIndexRoute;
   CrewsIndexRoute: typeof CrewsIndexRoute;
   IpsIndexRoute: typeof IpsIndexRoute;
+  CrewsIdWorkspaceRoute: typeof CrewsIdWorkspaceRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -446,12 +447,12 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthForgotPasswordRouteImport;
       parentRoute: typeof AuthRoute;
     };
-    "/crews_/$id/workspace": {
-      id: "/crews_/$id/workspace";
-      path: "/workspace";
+    "/crews_/$id_/workspace": {
+      id: "/crews_/$id_/workspace";
+      path: "/crews/$id/workspace";
       fullPath: "/crews/$id/workspace";
       preLoaderRoute: typeof CrewsIdWorkspaceRouteImport;
-      parentRoute: typeof CrewsIdRoute;
+      parentRoute: typeof rootRouteImport;
     };
   }
 }
@@ -488,23 +489,13 @@ const StudioRouteChildren: StudioRouteChildren = {
 
 const StudioRouteWithChildren = StudioRoute._addFileChildren(StudioRouteChildren);
 
-interface CrewsIdRouteChildren {
-  CrewsIdWorkspaceRoute: typeof CrewsIdWorkspaceRoute;
-}
-
-const CrewsIdRouteChildren: CrewsIdRouteChildren = {
-  CrewsIdWorkspaceRoute: CrewsIdWorkspaceRoute,
-};
-
-const CrewsIdRouteWithChildren = CrewsIdRoute._addFileChildren(CrewsIdRouteChildren);
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
   StudioRoute: StudioRouteWithChildren,
   ProfileRoute: ProfileRoute,
   CreatorsIdRoute: CreatorsIdRoute,
-  CrewsIdRoute: CrewsIdRouteWithChildren,
+  CrewsIdRoute: CrewsIdRoute,
   IpsCreateRoute: IpsCreateRoute,
   IpsIdRoute: IpsIdRoute,
   PaymentResultRoute: PaymentResultRoute,
@@ -512,6 +503,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreatorsIndexRoute: CreatorsIndexRoute,
   CrewsIndexRoute: CrewsIndexRoute,
   IpsIndexRoute: IpsIndexRoute,
+  CrewsIdWorkspaceRoute: CrewsIdWorkspaceRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

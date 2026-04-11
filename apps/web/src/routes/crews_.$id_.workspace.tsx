@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import CrewWorkspacePage from "@/app/[locale]/(crews)/crews/[id]/workspace/page";
 
-export const Route = createFileRoute("/crews_/$id/workspace")({
+export const Route = createFileRoute("/crews_/$id_/workspace")({
   component: CrewWorkspaceRoute,
 });
 
