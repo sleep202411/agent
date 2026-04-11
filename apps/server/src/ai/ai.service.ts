@@ -99,7 +99,13 @@ export class AiService implements OnModuleInit {
   }
 
   private loadSkills() {
-    const skillsDir = path.join(__dirname, 'skills');
+    const skillsDir = path.join(
+      __dirname,
+      '..',
+      'assistant',
+      'prompts',
+      'skills',
+    );
     if (!fs.existsSync(skillsDir)) {
       this.logger.warn(`Skills directory not found: ${skillsDir}`);
       return;
