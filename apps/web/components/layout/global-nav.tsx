@@ -7,6 +7,7 @@ import {
   IconSparkles,
   IconLayoutDashboard,
   IconBell,
+  IconDiamond,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -23,6 +24,7 @@ export function GlobalNav() {
 
   const navItems = [
     { href: "/projects", label: t("studio"), icon: IconLayoutDashboard },
+    { href: "/ips", label: t("ipPlaza"), icon: IconDiamond },
     { href: "/creators", label: t("creators"), icon: IconUsers },
   ];
 
