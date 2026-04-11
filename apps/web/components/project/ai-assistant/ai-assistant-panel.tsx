@@ -111,12 +111,25 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const [continuedTaskIds, setContinuedTaskIds] = useState<Set<string>>(new Set());
 
   // Find the latest pipeline tool output that has a taskId (for composer task card)
-  // Skip tasks from history (index <= historyMessageCount) — they are already completed
+  // Only show if it's the LAST assistant message with no user message after it
+  // (if user already sent a message after the task, they've moved past it)
   const activeTask = useMemo(() => {
-    const historyEnd = historyMessageCount + 1; // +1 for welcome message
-    for (let i = messages.length - 1; i >= historyEnd; i--) {
+    // Find the last message index that is a user message
+    let lastUserMsgIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserMsgIndex = i;
+        break;
+      }
+    }
+
+    for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       if (msg.role !== "assistant") continue;
+
+      // If there's a user message AFTER this assistant message, task was already continued
+      if (lastUserMsgIndex > i) continue;
+
       for (let j = msg.parts.length - 1; j >= 0; j--) {
         const part = msg.parts[j];
         if (!isAssistantToolPart(part)) continue;
@@ -130,9 +143,10 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
           return { taskId, toolName };
         }
       }
+      break; // Only check the very last assistant message
     }
     return null;
-  }, [messages, continuedTaskIds, historyMessageCount]);
+  }, [messages, continuedTaskIds]);
 
   const hasMeaningfulMessages = messages.length > 1;
   const hasUploadingAttachments = attachments.some((a) => a.status === "uploading");
