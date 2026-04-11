@@ -41,6 +41,24 @@ import {
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024;
 
+// AbortController per project — used to cancel in-flight streams when a tool result takes over
+const streamAbortControllers = new Map<string, AbortController>();
+
+function abortProjectStream(projectId: string) {
+  const existing = streamAbortControllers.get(projectId);
+  if (existing) {
+    existing.abort();
+    streamAbortControllers.delete(projectId);
+  }
+}
+
+function createProjectAbortController(projectId: string) {
+  abortProjectStream(projectId);
+  const controller = new AbortController();
+  streamAbortControllers.set(projectId, controller);
+  return controller;
+}
+
 function createWelcomeMessage(): AssistantMessage {
   return {
     id: crypto.randomUUID(),
@@ -566,6 +584,8 @@ export const sendUserMessage = createAsyncThunk<
 
     dispatch(commitUserMessage({ projectId, userMessage }));
 
+    const abortController = createProjectAbortController(projectId);
+
     try {
       const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
       const workspaceContext = buildWorkspaceContext(getState(), projectId);
@@ -576,10 +596,14 @@ export const sendUserMessage = createAsyncThunk<
         messages: nextMessages,
         workspaceContext,
         agentType,
+        signal: abortController.signal,
         onMessage: (message) => {
           dispatch(appendStreamChunk({ projectId, message }));
         },
       });
+
+      // If aborted (tool result took over), skip finalization
+      if (abortController.signal.aborted) return;
 
       dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
       await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
@@ -588,6 +612,7 @@ export const sendUserMessage = createAsyncThunk<
       const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
       void saveConversation(projectId, finalMessages);
     } catch (error) {
+      if (abortController.signal.aborted) return;
       const errMsg = error instanceof Error ? error.message : "AI 请求失败";
       if (errMsg.startsWith("MESSAGE_LIMIT_REACHED:")) {
         const [, cur, max] = errMsg.split(":");
@@ -610,61 +635,59 @@ export const applyToolResult = createAsyncThunk<
   void,
   { projectId: string; result: AssistantToolResult },
   { state: RootState; dispatch: AppDispatch }
->(
-  "assistant/applyToolResult",
-  async ({ projectId, result }, { dispatch, getState }) => {
-    dispatch(ensureProject(projectId));
-    const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
+>("assistant/applyToolResult", async ({ projectId, result }, { dispatch, getState }) => {
+  // Cancel any in-flight stream from the previous sendUserMessage/applyToolResult
+  abortProjectStream(projectId);
 
-    const nextMessages = current.messages.map((message) =>
-      message.parts.some(
-        (part) => isAssistantToolPart(part) && part.toolCallId === result.toolCallId
-      )
-        ? cloneMessageWithToolResult(message, result)
-        : message
-    );
+  dispatch(ensureProject(projectId));
+  const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
 
-    dispatch(
-      commitToolResult({
-        projectId,
-        messages: nextMessages,
-        toolCallId: result.toolCallId,
-      })
-    );
+  const nextMessages = current.messages.map((message) =>
+    message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === result.toolCallId)
+      ? cloneMessageWithToolResult(message, result)
+      : message
+  );
 
-    try {
-      const workspaceContext = buildWorkspaceContext(getState(), projectId);
-      const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
+  dispatch(
+    commitToolResult({
+      projectId,
+      messages: nextMessages,
+      toolCallId: result.toolCallId,
+    })
+  );
 
-      const finalMessage = await sendAssistantChat({
-        projectId,
-        messages: nextMessages,
-        workspaceContext,
-        agentType,
-        onMessage: (message) => {
-          dispatch(appendStreamChunk({ projectId, message }));
-        },
-      });
+  const abortController = createProjectAbortController(projectId);
 
-      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
+  try {
+    const workspaceContext = buildWorkspaceContext(getState(), projectId);
+    const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
-      // Save to Redis (fire-and-forget)
-      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
-      void saveConversation(projectId, finalMessages);
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : "AI 请求失败";
-      dispatch(streamError({ projectId, error: errMsg }));
-      toast.error(errMsg);
-    }
-  },
-  {
-    condition: ({ projectId }, { getState }) => {
-      const current = getState().assistant.projects[projectId];
-      return !current?.sending;
-    },
+    const finalMessage = await sendAssistantChat({
+      projectId,
+      messages: nextMessages,
+      workspaceContext,
+      agentType,
+      signal: abortController.signal,
+      onMessage: (message) => {
+        dispatch(appendStreamChunk({ projectId, message }));
+      },
+    });
+
+    if (abortController.signal.aborted) return;
+
+    dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
+    await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
+
+    // Save to Redis (fire-and-forget)
+    const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
+    void saveConversation(projectId, finalMessages);
+  } catch (error) {
+    if (abortController.signal.aborted) return;
+    const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+    dispatch(streamError({ projectId, error: errMsg }));
+    toast.error(errMsg);
   }
-);
+});
 
 // ─── Slice ──────────────────────────────────────────────
 
@@ -803,10 +826,15 @@ export const assistantSlice = createSlice({
         index >= 0
           ? current.messages.map((item, i) => (i === index ? message : item))
           : [...current.messages, message];
+      const pendingToolUi = buildPendingToolUi(messages);
+      // When an interactive tool is detected, stop showing "sending" state
+      // so the tool card buttons become actionable immediately.
+      const hasNewPendingTool = pendingToolUi.length > 0 && current.pendingToolUi.length === 0;
       state.projects[projectId] = {
         ...current,
         messages,
-        pendingToolUi: buildPendingToolUi(messages),
+        pendingToolUi,
+        ...(hasNewPendingTool ? { sending: false, streaming: false } : {}),
       };
     },
 
