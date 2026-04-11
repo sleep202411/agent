@@ -230,27 +230,37 @@ export class AssistantService {
 
     // 5. Rebuild messages for LLM: history (text-only) + new user message
     // History messages are simplified (no tool invocations) to ensure
-    // clean context. Tool calls are ephemeral — only the current turn uses them.
-    const historyMessages: AssistantMessage[] = history
+    // clean context. Consecutive messages of the same role are merged
+    // to maintain the strict user/assistant alternation LLMs expect.
+    const rawHistoryMessages = history
       .map((m) => {
-        // Extract only text parts from stored messages
         const textParts = (m.parts as Array<Record<string, unknown>>)
           .filter(
             (p) => p.type === 'text' && typeof p.text === 'string' && p.text,
           )
-          .map((p) => ({
-            type: 'text' as const,
-            text: p.text as string,
-            state: 'done' as const,
-          }));
-        if (textParts.length === 0) return null;
-        return {
-          id: m.id,
-          role: m.role,
-          parts: textParts,
-        } as AssistantMessage;
+          .map((p) => p.text as string);
+        const text = textParts.join('\n').trim();
+        if (!text) return null;
+        return { role: m.role, text };
       })
-      .filter(Boolean) as AssistantMessage[];
+      .filter(Boolean) as Array<{ role: string; text: string }>;
+
+    // Merge consecutive same-role messages
+    const merged: Array<{ role: string; text: string }> = [];
+    for (const msg of rawHistoryMessages) {
+      const last = merged[merged.length - 1];
+      if (last && last.role === msg.role) {
+        last.text += '\n\n' + msg.text;
+      } else {
+        merged.push({ ...msg });
+      }
+    }
+
+    const historyMessages: AssistantMessage[] = merged.map((m, i) => ({
+      id: `history-${i}`,
+      role: m.role as 'user' | 'assistant',
+      parts: [{ type: 'text' as const, text: m.text, state: 'done' as const }],
+    }));
 
     const attachmentFullText = this.collectAttachmentTexts([
       payload.userMessage,

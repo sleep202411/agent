@@ -1364,7 +1364,11 @@
       "creditDiscount": "積分購買享 9 折",
       "limitedAgent": "限量使用 StoryOS",
       "unlimitedAgent": "無限制使用 StoryOS",
-      "freeCourses": "課程專屬優惠"
+      "freeCourses": "課程專屬優惠",
+      "storyosMessages": "每輪對話 {count} 條訊息",
+      "storyosRetention": "對話歷史保留 {days} 天",
+      "storyosUnlimited": "無限制使用 AI 助手",
+      "storyosPriority": "優先處理任務隊列"
     }
   },
   "guide": {

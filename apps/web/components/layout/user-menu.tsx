@@ -9,6 +9,7 @@ import {
   IconMoon,
   IconSettings,
   IconSun,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useLocale, useTranslations, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale } from "@/src/i18n/locale-url";
@@ -43,11 +44,12 @@ export interface UserMenuProps {
   credits?: number;
   onUpgrade?: () => void;
   onRecharge?: () => void;
+  onTeam?: () => void;
 }
 
 // ── Component ───────────────────────────────────────────
 
-export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
+export function UserMenu({ credits, onUpgrade, onRecharge, onTeam }: UserMenuProps) {
   const tc = useTranslations("common");
   const dispatch = useAppDispatch();
   const locale = useLocale();
@@ -166,6 +168,17 @@ export function UserMenu({ credits, onUpgrade, onRecharge }: UserMenuProps) {
             ) : null}
           </div>
         </div>
+
+        {/* Team — visible on small screens where header button is hidden */}
+        {onTeam && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onTeam}>
+              <IconUsers className="size-4" />
+              {tc("team")}
+            </DropdownMenuItem>
+          </>
+        )}
 
         <DropdownMenuSeparator />
 

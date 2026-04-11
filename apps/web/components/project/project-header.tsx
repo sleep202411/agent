@@ -298,6 +298,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             credits={displayCredits}
             onUpgrade={() => setUpgradeOpen(true)}
             onRecharge={() => setRechargeOpen(true)}
+            onTeam={() => setTeamOpen(true)}
           />
         </div>
       </header>

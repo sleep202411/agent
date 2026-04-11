@@ -1364,7 +1364,11 @@
       "creditDiscount": "10% off credit purchases",
       "limitedAgent": "Limited AI Agent access",
       "unlimitedAgent": "Unlimited AI Agent access",
-      "freeCourses": "Exclusive course benefits"
+      "freeCourses": "Exclusive course benefits",
+      "storyosMessages": "{count} messages per conversation",
+      "storyosRetention": "{days}-day conversation history",
+      "storyosUnlimited": "Unlimited AI assistant access",
+      "storyosPriority": "Priority task queue"
     }
   },
   "guide": {

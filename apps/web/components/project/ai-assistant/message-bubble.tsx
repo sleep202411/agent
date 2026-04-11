@@ -97,9 +97,23 @@ const AGENT_TOOL_LABELS: Record<string, { label: string; steps: string[] }> = {
 
 // ─── Compact tool indicator ───────────────────────────
 
+const PROPOSAL_TOOLS = new Set([
+  "propose_script",
+  "propose_characters",
+  "propose_scenes",
+  "propose_props",
+  "propose_storyboard_patch",
+]);
+
 function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantToolInvocation }) {
   const displayName = getAssistantToolDisplayName(toolName);
-  const isDone = part.state === "output-available";
+  const isProposal = PROPOSAL_TOOLS.has(toolName);
+  const isDone =
+    part.state === "output-available" ||
+    part.state === "approval-requested" ||
+    part.state === "approval-responded" ||
+    // Proposal tools with input-available are waiting for user — treat as done
+    (isProposal && part.state === "input-available");
   const isError = part.state === "output-error" || part.state === "output-denied";
   const isLoading = !isDone && !isError;
 
