@@ -57,30 +57,55 @@ export class AuthService {
         ? `satoken=${satokenMatch[1]}`
         : cookie;
 
-      const response = await fetch(`${baseUrl}/user/query/user/info`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          cookie: satokenCookie,
-        },
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => '');
-        this.logger.warn(
-          `Auth validation failed: HTTP ${response.status} url=${baseUrl}/user/query/user/info sentCookie=${satokenCookie?.slice(0, 80)} body=${errorBody.slice(0, 200)}`,
-        );
-        return null;
-      }
-
-      const body = (await response.json()) as {
+      // Use https module instead of fetch — Node.js undici fetch
+      // does not reliably forward cookie headers in all environments.
+      const url = `${baseUrl}/user/query/user/info`;
+      const body = await new Promise<{
         success?: boolean;
         code?: number | string;
         data?: Record<string, unknown>;
         info?: Record<string, unknown>;
         msg?: string;
         message?: string;
-      };
+      } | null>((resolve) => {
+        const https = require('https');
+        const http = require('http');
+        const mod = url.startsWith('https') ? https : http;
+        const req = mod.get(
+          url,
+          {
+            headers: { Cookie: satokenCookie },
+          },
+          (res: { statusCode: number; on: Function }) => {
+            if (res.statusCode !== 200) {
+              let errData = '';
+              res.on('data', (c: string) => (errData += c));
+              res.on('end', () => {
+                this.logger.warn(
+                  `Auth validation failed: HTTP ${res.statusCode} url=${url} body=${errData.slice(0, 200)}`,
+                );
+                resolve(null);
+              });
+              return;
+            }
+            let data = '';
+            res.on('data', (chunk: string) => (data += chunk));
+            res.on('end', () => {
+              try {
+                resolve(JSON.parse(data));
+              } catch {
+                resolve(null);
+              }
+            });
+          },
+        );
+        req.on('error', (err: Error) => {
+          this.logger.error(`Auth request error: ${err.message}`);
+          resolve(null);
+        });
+      });
+
+      if (!body) return null;
 
       const isSuccess =
         body.success === true || body.code === 200 || body.code === 'SUCCESS';
