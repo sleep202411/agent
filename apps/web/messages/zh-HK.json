@@ -203,6 +203,7 @@
     "studio": "工作台",
     "ipPlaza": "IP 廣場",
     "studioHall": "劇組大廳",
+    "workbench": "工作台",
     "creators": "創作者廣場"
   },
   "ip": {
@@ -1473,6 +1474,26 @@
     "totalEpisodes": "共 {count} 集",
     "storyboardCreditNote": "分鏡腳本生成100字元消耗2積分，以實際生成為準",
     "shots": "分鏡"
+  },
+  "workbench": {
+    "title": "我的工作台",
+    "subtitle": "管理你的任務、專案和協作",
+    "statusInProgress": "進行中",
+    "statusPendingReview": "待審核",
+    "statusToPickUp": "待領取",
+    "totalTasks": "全部任務",
+    "filterAll": "全部",
+    "urgentTasks": "緊急任務",
+    "allTasks": "全部任務",
+    "due": "截止",
+    "urgent": "緊急",
+    "noTasks": "該狀態下暫無任務",
+    "myCrews": "我的劇組",
+    "progress": "進度",
+    "certStatus": "認證狀態",
+    "certInProgress": "FD3 認證進行中",
+    "certHint": "完成剩餘任務以提升認證等級",
+    "deadlineReminders": "截止日期提醒"
   },
   "crewCreate": {
     "csTitle": "建立新劇組",

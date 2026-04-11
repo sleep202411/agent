@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from "./routes/__root";
+import { Route as WorkbenchRouteImport } from "./routes/workbench";
 import { Route as ProfileRouteImport } from "./routes/profile";
 import { Route as StudioRouteImport } from "./routes/_studio";
 import { Route as AuthRouteImport } from "./routes/_auth";
@@ -35,6 +36,11 @@ import { Route as IpsIdEditRouteImport } from "./routes/ips_.$id_.edit";
 import { Route as CrewsIdWorkspaceRouteImport } from "./routes/crews_.$id_.workspace";
 import { Route as IpsIdEpisodesEpIdEditorRouteImport } from "./routes/ips_.$id_.episodes.$epId.editor";
 
+const WorkbenchRoute = WorkbenchRouteImport.update({
+  id: "/workbench",
+  path: "/workbench",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const ProfileRoute = ProfileRouteImport.update({
   id: "/profile",
   path: "/profile",
@@ -162,6 +168,7 @@ const IpsIdEpisodesEpIdEditorRoute = IpsIdEpisodesEpIdEditorRouteImport.update({
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/profile": typeof ProfileRoute;
+  "/workbench": typeof WorkbenchRoute;
   "/forgot-password": typeof AuthForgotPasswordRoute;
   "/login": typeof AuthLoginRoute;
   "/register": typeof AuthRegisterRoute;
@@ -187,6 +194,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/profile": typeof ProfileRoute;
+  "/workbench": typeof WorkbenchRoute;
   "/forgot-password": typeof AuthForgotPasswordRoute;
   "/login": typeof AuthLoginRoute;
   "/register": typeof AuthRegisterRoute;
@@ -215,6 +223,7 @@ export interface FileRoutesById {
   "/_auth": typeof AuthRouteWithChildren;
   "/_studio": typeof StudioRouteWithChildren;
   "/profile": typeof ProfileRoute;
+  "/workbench": typeof WorkbenchRoute;
   "/_auth/forgot-password": typeof AuthForgotPasswordRoute;
   "/_auth/login": typeof AuthLoginRoute;
   "/_auth/register": typeof AuthRegisterRoute;
@@ -242,6 +251,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/profile"
+    | "/workbench"
     | "/forgot-password"
     | "/login"
     | "/register"
@@ -267,6 +277,7 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/profile"
+    | "/workbench"
     | "/forgot-password"
     | "/login"
     | "/register"
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | "/_auth"
     | "/_studio"
     | "/profile"
+    | "/workbench"
     | "/_auth/forgot-password"
     | "/_auth/login"
     | "/_auth/register"
@@ -322,6 +334,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren;
   StudioRoute: typeof StudioRouteWithChildren;
   ProfileRoute: typeof ProfileRoute;
+  WorkbenchRoute: typeof WorkbenchRoute;
   CreatorsIdRoute: typeof CreatorsIdRoute;
   CrewsCreateRoute: typeof CrewsCreateRoute;
   CrewsIdRoute: typeof CrewsIdRoute;
@@ -339,6 +352,13 @@ export interface RootRouteChildren {
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
+    "/workbench": {
+      id: "/workbench";
+      path: "/workbench";
+      fullPath: "/workbench";
+      preLoaderRoute: typeof WorkbenchRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/profile": {
       id: "/profile";
       path: "/profile";
@@ -554,6 +574,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   StudioRoute: StudioRouteWithChildren,
   ProfileRoute: ProfileRoute,
+  WorkbenchRoute: WorkbenchRoute,
   CreatorsIdRoute: CreatorsIdRoute,
   CrewsCreateRoute: CrewsCreateRoute,
   CrewsIdRoute: CrewsIdRoute,

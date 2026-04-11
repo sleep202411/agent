@@ -203,6 +203,7 @@
     "studio": "Studio",
     "ipPlaza": "IP Plaza",
     "studioHall": "Studios",
+    "workbench": "Workbench",
     "creators": "Creators"
   },
   "ip": {
@@ -1473,6 +1474,26 @@
     "totalEpisodes": "{count} episodes total",
     "storyboardCreditNote": "Storyboard generation costs 2 credits per 100 characters, based on actual generation",
     "shots": "Shots"
+  },
+  "workbench": {
+    "title": "My Workbench",
+    "subtitle": "Manage your tasks, projects and collaborations",
+    "statusInProgress": "In Progress",
+    "statusPendingReview": "Pending Review",
+    "statusToPickUp": "To Pick Up",
+    "totalTasks": "Total Tasks",
+    "filterAll": "All",
+    "urgentTasks": "Urgent Tasks",
+    "allTasks": "All Tasks",
+    "due": "Due",
+    "urgent": "Urgent",
+    "noTasks": "No tasks with this status",
+    "myCrews": "My Crews",
+    "progress": "Progress",
+    "certStatus": "Certification Status",
+    "certInProgress": "FD3 Certification In Progress",
+    "certHint": "Complete remaining tasks to upgrade certification level",
+    "deadlineReminders": "Deadline Reminders"
   },
   "crewCreate": {
     "csTitle": "Create New Crew",
