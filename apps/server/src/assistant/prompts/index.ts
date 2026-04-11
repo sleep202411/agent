@@ -69,3 +69,12 @@ export function loadAssistantSystemPrompt(
   const template = loadPromptFile('assistant-system.md');
   return interpolate(template, vars);
 }
+
+/**
+ * Load a skill file from the skills/ subdirectory.
+ * Skill files are professional prompt templates that can be
+ * composed into pipeline prompts for higher quality output.
+ */
+export function loadSkill(name: string): string {
+  return loadPromptFile(`skills/${name}.skill.md`);
+}
