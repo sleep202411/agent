@@ -1,82 +1,102 @@
-import { Link } from "@tanstack/react-router";
 import { IconSearch, IconSparkles } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 
-// Scattered cover images around the hero
+// Scattered cover images — large, edge-hugging, partially offscreen
 const COVERS = [
   // Left side
   {
-    src: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=200&q=80",
-    x: "2%",
-    y: "8%",
-    rotate: -12,
-    size: "w-28",
+    src: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=400&q=80",
+    x: "-3%",
+    y: "3%",
+    rotate: -8,
+    w: 180,
+    h: 250,
   },
   {
-    src: "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?w=200&q=80",
-    x: "1%",
-    y: "45%",
-    rotate: 8,
-    size: "w-24",
+    src: "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?w=400&q=80",
+    x: "-2%",
+    y: "52%",
+    rotate: 10,
+    w: 160,
+    h: 220,
   },
   {
-    src: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&q=80",
-    x: "8%",
-    y: "72%",
-    rotate: -6,
-    size: "w-26",
+    src: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80",
+    x: "5%",
+    y: "78%",
+    rotate: -5,
+    w: 150,
+    h: 200,
   },
   {
-    src: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=200&q=80",
+    src: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&q=80",
+    x: "11%",
+    y: "12%",
+    rotate: 14,
+    w: 140,
+    h: 190,
+  },
+  {
+    src: "https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=400&q=80",
     x: "14%",
-    y: "20%",
-    rotate: 15,
-    size: "w-20",
-  },
-  {
-    src: "https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=200&q=80",
-    x: "12%",
-    y: "58%",
-    rotate: -18,
-    size: "w-22",
+    y: "42%",
+    rotate: -16,
+    w: 120,
+    h: 170,
   },
   // Right side
   {
-    src: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&q=80",
-    x: "78%",
-    y: "10%",
-    rotate: 10,
-    size: "w-26",
-  },
-  {
-    src: "https://images.unsplash.com/photo-1545665277-5937489579f2?w=200&q=80",
-    x: "82%",
-    y: "48%",
-    rotate: -8,
-    size: "w-24",
-  },
-  {
-    src: "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=200&q=80",
+    src: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=80",
     x: "76%",
-    y: "75%",
-    rotate: 14,
-    size: "w-28",
+    y: "2%",
+    rotate: 7,
+    w: 175,
+    h: 240,
   },
   {
-    src: "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=200&q=80",
+    src: "https://images.unsplash.com/photo-1545665277-5937489579f2?w=400&q=80",
+    x: "79%",
+    y: "48%",
+    rotate: -10,
+    w: 160,
+    h: 220,
+  },
+  {
+    src: "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=400&q=80",
+    x: "73%",
+    y: "74%",
+    rotate: 12,
+    w: 155,
+    h: 210,
+  },
+  {
+    src: "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=400&q=80",
+    x: "86%",
+    y: "18%",
+    rotate: -13,
+    w: 135,
+    h: 185,
+  },
+  {
+    src: "https://images.unsplash.com/photo-1626544827763-d516dce335e2?w=400&q=80",
     x: "88%",
-    y: "25%",
-    rotate: -15,
-    size: "w-20",
-  },
-  {
-    src: "https://images.unsplash.com/photo-1626544827763-d516dce335e2?w=200&q=80",
-    x: "85%",
-    y: "65%",
-    rotate: 6,
-    size: "w-22",
+    y: "62%",
+    rotate: 5,
+    w: 125,
+    h: 175,
   },
 ];
+
+// Bounce-in keyframes injected once
+const BOUNCE_KEYFRAMES = `
+@keyframes bounceCardIn {
+  0% { opacity: 0; transform: scale(0) rotate(var(--card-rotate)); }
+  50% { opacity: 1; transform: scale(1.15) rotate(var(--card-rotate)); }
+  70% { transform: scale(0.92) rotate(var(--card-rotate)); }
+  85% { transform: scale(1.05) rotate(var(--card-rotate)); }
+  100% { opacity: 1; transform: scale(1) rotate(var(--card-rotate)); }
+}
+`;
 
 interface IPHeroProps {
   search: string;
@@ -90,28 +110,43 @@ export function IPHero({ search, onSearchChange, investmentCount, presaleCount }
 
   return (
     <div className="relative overflow-hidden border-b border-border bg-background">
-      {/* Scattered cover images */}
+      {/* Inject keyframes */}
+      <style dangerouslySetInnerHTML={{ __html: BOUNCE_KEYFRAMES }} />
+
+      {/* Scattered cover images with bounce-in */}
       <div className="pointer-events-none absolute inset-0 hidden lg:block">
         {COVERS.map((cover, i) => (
           <div
             key={i}
-            className={`absolute ${cover.size} overflow-hidden rounded-xl shadow-2xl shadow-black/20 transition-transform duration-700`}
-            style={{
-              left: cover.x,
-              top: cover.y,
-              transform: `rotate(${cover.rotate}deg)`,
-            }}
+            className="absolute overflow-hidden rounded-2xl shadow-2xl shadow-black/30"
+            style={
+              {
+                left: cover.x,
+                top: cover.y,
+                width: cover.w,
+                height: cover.h,
+                "--card-rotate": `${cover.rotate}deg`,
+                opacity: 0,
+                animation: `bounceCardIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards`,
+                animationDelay: `${0.3 + i * 0.08}s`,
+              } as React.CSSProperties
+            }
           >
             <img src={cover.src} alt="" className="size-full object-cover" loading="lazy" />
           </div>
         ))}
-        {/* Fade edges so covers don't compete with center content */}
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-background/80 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background/60" />
+        {/* Radial fade from center */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 50% 60% at 50% 50%, var(--color-background) 30%, transparent 80%)",
+          }}
+        />
       </div>
 
       {/* Center content */}
-      <div className="relative z-10 mx-auto max-w-screen-2xl px-6 py-20 md:py-28">
+      <div className="relative z-10 mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-screen-2xl items-center px-6">
         <div className="mx-auto max-w-2xl text-center">
           <h1 className="mb-4 text-4xl font-black leading-tight text-foreground md:text-5xl lg:text-6xl">
             {t("heroTitle1")}
