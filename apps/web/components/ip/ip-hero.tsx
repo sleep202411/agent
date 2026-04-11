@@ -1,6 +1,82 @@
 import { Link } from "@tanstack/react-router";
-import { IconSparkles, IconBolt, IconMovie, IconTrendingUp, IconSearch } from "@tabler/icons-react";
+import { IconSearch, IconSparkles } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+
+// Scattered cover images around the hero
+const COVERS = [
+  // Left side
+  {
+    src: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=200&q=80",
+    x: "2%",
+    y: "8%",
+    rotate: -12,
+    size: "w-28",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?w=200&q=80",
+    x: "1%",
+    y: "45%",
+    rotate: 8,
+    size: "w-24",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=200&q=80",
+    x: "8%",
+    y: "72%",
+    rotate: -6,
+    size: "w-26",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=200&q=80",
+    x: "14%",
+    y: "20%",
+    rotate: 15,
+    size: "w-20",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=200&q=80",
+    x: "12%",
+    y: "58%",
+    rotate: -18,
+    size: "w-22",
+  },
+  // Right side
+  {
+    src: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&q=80",
+    x: "78%",
+    y: "10%",
+    rotate: 10,
+    size: "w-26",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1545665277-5937489579f2?w=200&q=80",
+    x: "82%",
+    y: "48%",
+    rotate: -8,
+    size: "w-24",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=200&q=80",
+    x: "76%",
+    y: "75%",
+    rotate: 14,
+    size: "w-28",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=200&q=80",
+    x: "88%",
+    y: "25%",
+    rotate: -15,
+    size: "w-20",
+  },
+  {
+    src: "https://images.unsplash.com/photo-1626544827763-d516dce335e2?w=200&q=80",
+    x: "85%",
+    y: "65%",
+    rotate: 6,
+    size: "w-22",
+  },
+];
 
 interface IPHeroProps {
   search: string;
@@ -13,83 +89,79 @@ export function IPHero({ search, onSearchChange, investmentCount, presaleCount }
   const t = useTranslations("ip");
 
   return (
-    <div className="relative overflow-hidden border-b border-border">
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 15% 50%, hsl(42 95% 55% / 0.08) 0%, transparent 55%), radial-gradient(circle at 85% 20%, hsl(0 85% 52% / 0.06) 0%, transparent 50%)",
-        }}
-      />
-      <div className="relative mx-auto max-w-screen-2xl px-6 pb-8 pt-10">
-        <div className="mb-8 flex flex-col justify-between gap-6 md:flex-row md:items-start">
-          <div className="max-w-xl">
-            <div className="mb-3 flex items-center gap-2">
-              <IconSparkles className="size-4 text-accent" />
-              <span className="text-xs font-semibold uppercase tracking-widest text-accent">
-                {t("plaza")}
-              </span>
-              <span className="text-xs text-muted-foreground">·</span>
-              <span className="text-xs text-muted-foreground">{t("subtitle")}</span>
-            </div>
-            <h1 className="mb-3 text-3xl font-black leading-tight text-foreground md:text-4xl">
-              {t("heroTitle1")}
-              <br />
+    <div className="relative overflow-hidden border-b border-border bg-background">
+      {/* Scattered cover images */}
+      <div className="pointer-events-none absolute inset-0 hidden lg:block">
+        {COVERS.map((cover, i) => (
+          <div
+            key={i}
+            className={`absolute ${cover.size} overflow-hidden rounded-xl shadow-2xl shadow-black/20 transition-transform duration-700`}
+            style={{
+              left: cover.x,
+              top: cover.y,
+              transform: `rotate(${cover.rotate}deg)`,
+            }}
+          >
+            <img src={cover.src} alt="" className="size-full object-cover" loading="lazy" />
+          </div>
+        ))}
+        {/* Fade edges so covers don't compete with center content */}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-background/80 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background/60" />
+      </div>
+
+      {/* Center content */}
+      <div className="relative z-10 mx-auto max-w-screen-2xl px-6 py-20 md:py-28">
+        <div className="mx-auto max-w-2xl text-center">
+          <h1 className="mb-4 text-4xl font-black leading-tight text-foreground md:text-5xl lg:text-6xl">
+            {t("heroTitle1")}
+            <br />
+            <span className="relative">
               <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
                 {t("heroTitle2")}
               </span>
-            </h1>
-            <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
-              {t("heroDesc")}
-            </p>
-            <div className="mt-4 flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <div className="size-1.5 animate-pulse rounded-full bg-amber-400" />
-                <span>
-                  <strong className="text-foreground">{investmentCount}</strong>{" "}
-                  {t("ipsFundraising")}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <div className="size-1.5 animate-pulse rounded-full bg-blue-400" />
-                <span>
-                  <strong className="text-foreground">{presaleCount}</strong> {t("ipsPresale")}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <IconTrendingUp className="size-3 text-primary" />
-                <span>
-                  {t("newThisWeek")} <strong className="text-foreground">5</strong>
-                </span>
-              </div>
-            </div>
-          </div>
+              <span className="absolute -bottom-1 left-0 h-1 w-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 opacity-30" />
+            </span>
+          </h1>
+          <p className="mx-auto mb-8 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
+            {t("heroDesc")}
+          </p>
 
-          <div className="flex flex-wrap items-center gap-3">
+          {/* CTA buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <a
               href="/ips/create"
-              className="flex items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/20 transition-colors hover:bg-accent/90"
+              className="inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
             >
-              <IconBolt className="size-4" /> {t("createIP")}
+              <IconSparkles className="size-4" />
+              {t("createIP")}
             </a>
-            <Link
-              to="/projects"
-              className="flex items-center gap-2 rounded-xl border border-border bg-secondary px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary/80"
+            <button
+              type="button"
+              onClick={() => {
+                document.getElementById("ip-grid")?.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-6 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
             >
-              <IconMovie className="size-4" /> {t("enterStudio")}
-            </Link>
+              <IconSearch className="size-4" />
+              {t("browseIPs")}
+            </button>
           </div>
-        </div>
 
-        <div className="relative max-w-2xl">
-          <IconSearch className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder={t("searchPlaceholder")}
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full rounded-xl border border-border bg-secondary py-3 pl-11 pr-4 text-sm text-foreground placeholder:text-muted-foreground transition-all focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-          />
+          {/* Stats */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
+            <span>
+              <strong className="text-foreground">{investmentCount}</strong> {t("ipsFundraising")}
+            </span>
+            <span className="text-border">·</span>
+            <span>
+              <strong className="text-foreground">{presaleCount}</strong> {t("ipsPresale")}
+            </span>
+            <span className="text-border">·</span>
+            <span>
+              {t("newThisWeek")} <strong className="text-foreground">5</strong>
+            </span>
+          </div>
         </div>
       </div>
     </div>

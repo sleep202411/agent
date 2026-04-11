@@ -36,7 +36,7 @@ export default function IPPlazaPage() {
         presaleCount={presaleCount}
       />
 
-      <div className="mx-auto max-w-screen-2xl px-6 py-6">
+      <div id="ip-grid" className="mx-auto max-w-screen-2xl px-6 py-6">
         <div className="flex gap-6">
           {/* Main content */}
           <div className="min-w-0 flex-1">
