@@ -1,24 +1,35 @@
+import { useSyncExternalStore } from "react";
 import { Link } from "@tanstack/react-router";
-import { useLocation } from "@tanstack/react-router";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
+import { setCurrentLocale } from "@/src/i18n/locale-url";
+import { useTheme } from "next-themes";
 import {
   IconFlame,
   IconUsers,
-  IconSparkles,
   IconLayoutDashboard,
-  IconBell,
   IconDiamond,
   IconMovie,
   IconTarget,
+  IconMoon,
+  IconSun,
+  IconLanguage,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { UserMenu } from "@/components/layout/user-menu";
 
 const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment", "/profile"];
 
 export function GlobalNav() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const t = useTranslations("nav");
+  const locale = useLocale();
+  const { theme, setTheme } = useTheme();
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
   // Hide on studio, project editor, and auth pages
   const shouldHide = HIDDEN_PATTERNS.some((pattern) => pathname.includes(pattern));
@@ -33,6 +44,21 @@ export function GlobalNav() {
   ];
 
   const isActive = (href: string) => pathname.startsWith(href);
+
+  const isDark = mounted && theme === "dark";
+
+  const toggleTheme = () => {
+    setTheme(isDark ? "light" : "dark");
+  };
+
+  const cycleLocale = () => {
+    const locales = ["zh-CN", "en-US", "zh-HK"];
+    const currentIndex = locales.indexOf(locale);
+    const nextLocale = locales[(currentIndex + 1) % locales.length];
+    setCurrentLocale(nextLocale);
+    setLanguage(nextLocale);
+    void navigate({ to: pathname, replace: true });
+  };
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
@@ -68,16 +94,36 @@ export function GlobalNav() {
           </nav>
         </div>
 
-        {/* Right side */}
-        <div className="flex items-center gap-3">
+        {/* Right side: theme + language + CTA */}
+        <div className="flex items-center gap-2">
+          {/* Theme toggle */}
+          {mounted && (
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex size-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {isDark ? <IconMoon className="size-4" /> : <IconSun className="size-4" />}
+            </button>
+          )}
+
+          {/* Language toggle */}
           <button
             type="button"
-            className="relative flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            onClick={cycleLocale}
+            className="flex size-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground transition-colors hover:text-foreground"
+            title={locale}
           >
-            <IconBell className="size-4" />
+            <IconLanguage className="size-4" />
           </button>
 
-          <UserMenu />
+          {/* CTA */}
+          <Link
+            to="/projects"
+            className="ml-1 rounded-full bg-foreground px-4 py-1.5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+          >
+            {t("getStarted")}
+          </Link>
         </div>
       </div>
     </header>
