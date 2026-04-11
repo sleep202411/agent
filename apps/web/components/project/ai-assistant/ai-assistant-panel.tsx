@@ -135,7 +135,8 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
         if (!isAssistantToolPart(part)) continue;
         const toolName = getAssistantToolName(part);
         if (!PIPELINE_TOOL_NAMES.has(toolName)) continue;
-        if (part.state !== "output-available" && part.state !== "output-error") continue;
+        // Only show TaskCard for successful output, not errors
+        if (part.state !== "output-available") continue;
         const rawOutput = part.output ?? (part as unknown as Record<string, unknown>).result;
         const output = rawOutput as Record<string, unknown> | undefined;
         const taskId = output?.taskId ? String(output.taskId) : null;
