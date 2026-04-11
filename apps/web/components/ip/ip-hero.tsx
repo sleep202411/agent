@@ -1,10 +1,9 @@
 import { IconSearch, IconSparkles } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import Particles from "@/components/Particles";
 
-// Scattered cover images — interleaved left/right for simultaneous appearance
+// Scattered cover images — large, edge-hugging, partially offscreen
 const COVERS = [
-  // Alternating left ↔ right so stagger animates both sides together
+  // Left side
   {
     src: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=400&q=80",
     x: "-3%",
@@ -14,26 +13,10 @@ const COVERS = [
     h: 250,
   },
   {
-    src: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=80",
-    x: "76%",
-    y: "2%",
-    rotate: 7,
-    w: 175,
-    h: 240,
-  },
-  {
     src: "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?w=400&q=80",
     x: "-2%",
     y: "52%",
     rotate: 10,
-    w: 160,
-    h: 220,
-  },
-  {
-    src: "https://images.unsplash.com/photo-1545665277-5937489579f2?w=400&q=80",
-    x: "79%",
-    y: "48%",
-    rotate: -10,
     w: 160,
     h: 220,
   },
@@ -46,14 +29,6 @@ const COVERS = [
     h: 200,
   },
   {
-    src: "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=400&q=80",
-    x: "73%",
-    y: "74%",
-    rotate: 12,
-    w: 155,
-    h: 210,
-  },
-  {
     src: "https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=400&q=80",
     x: "11%",
     y: "12%",
@@ -62,20 +37,45 @@ const COVERS = [
     h: 190,
   },
   {
-    src: "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=400&q=80",
-    x: "86%",
-    y: "18%",
-    rotate: -13,
-    w: 135,
-    h: 185,
-  },
-  {
     src: "https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=400&q=80",
     x: "14%",
     y: "42%",
     rotate: -16,
     w: 120,
     h: 170,
+  },
+  // Right side
+  {
+    src: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=80",
+    x: "76%",
+    y: "2%",
+    rotate: 7,
+    w: 175,
+    h: 240,
+  },
+  {
+    src: "https://images.unsplash.com/photo-1545665277-5937489579f2?w=400&q=80",
+    x: "79%",
+    y: "48%",
+    rotate: -10,
+    w: 160,
+    h: 220,
+  },
+  {
+    src: "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=400&q=80",
+    x: "73%",
+    y: "74%",
+    rotate: 12,
+    w: 155,
+    h: 210,
+  },
+  {
+    src: "https://images.unsplash.com/photo-1535016120720-40c646be5580?w=400&q=80",
+    x: "86%",
+    y: "18%",
+    rotate: -13,
+    w: 135,
+    h: 185,
   },
   {
     src: "https://images.unsplash.com/photo-1626544827763-d516dce335e2?w=400&q=80",
@@ -110,21 +110,6 @@ export function IPHero({ search, onSearchChange, investmentCount, presaleCount }
 
   return (
     <div className="relative overflow-hidden border-b border-border bg-background">
-      {/* Particle background */}
-      <Particles
-        className="pointer-events-none absolute inset-0 z-0"
-        particleCount={150}
-        particleSpread={12}
-        speed={0.05}
-        particleColors={["#f59e0b", "#f97316", "#8b5cf6", "#6366f1", "#ffffff"]}
-        particleBaseSize={80}
-        sizeRandomness={1}
-        cameraDistance={25}
-        alphaParticles
-        moveParticlesOnHover
-        particleHoverFactor={0.5}
-      />
-
       {/* Inject keyframes */}
       <style dangerouslySetInnerHTML={{ __html: BOUNCE_KEYFRAMES }} />
 
