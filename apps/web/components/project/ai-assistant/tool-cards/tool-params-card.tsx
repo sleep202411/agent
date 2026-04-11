@@ -134,6 +134,7 @@ export function ToolParamsCard({
           />
         ) : (
           <InputStep
+            key={currentField.key}
             field={currentField}
             value={values[currentField?.key] ?? ""}
             disabled={disabled}

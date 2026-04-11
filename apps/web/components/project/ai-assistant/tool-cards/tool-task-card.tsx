@@ -338,10 +338,17 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
         <div className="mt-2 text-[11px] text-muted-foreground/50">{t("taskContinued")}</div>
       )}
 
-      {/* Error */}
-      {(progress.status === "failed" || progress.status === "cancelled") && progress.error && (
-        <div className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
-          {progress.error}
+      {/* Error + dismiss */}
+      {(progress.status === "failed" || progress.status === "cancelled") && (
+        <div className="mt-3 space-y-2">
+          {progress.error && (
+            <div className="rounded-lg bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+              {progress.error}
+            </div>
+          )}
+          <Button variant="outline" color="muted" className="w-full" onClick={handleContinue}>
+            {t("taskContinue")}
+          </Button>
         </div>
       )}
     </div>
