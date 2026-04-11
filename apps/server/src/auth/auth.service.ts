@@ -51,7 +51,7 @@ export class AuthService {
         return null;
       }
 
-      const response = await fetch(`${baseUrl}/content/user/query/user/info`, {
+      const response = await fetch(`${baseUrl}/user/query/user/info`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
