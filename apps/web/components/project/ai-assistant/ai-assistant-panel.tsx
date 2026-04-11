@@ -111,8 +111,10 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const [continuedTaskIds, setContinuedTaskIds] = useState<Set<string>>(new Set());
 
   // Find the latest pipeline tool output that has a taskId (for composer task card)
+  // Skip tasks from history (index <= historyMessageCount) — they are already completed
   const activeTask = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
+    const historyEnd = historyMessageCount + 1; // +1 for welcome message
+    for (let i = messages.length - 1; i >= historyEnd; i--) {
       const msg = messages[i];
       if (msg.role !== "assistant") continue;
       for (let j = msg.parts.length - 1; j >= 0; j--) {
@@ -130,7 +132,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
       }
     }
     return null;
-  }, [messages, continuedTaskIds]);
+  }, [messages, continuedTaskIds, historyMessageCount]);
 
   const hasMeaningfulMessages = messages.length > 1;
   const hasUploadingAttachments = attachments.some((a) => a.status === "uploading");
@@ -165,9 +167,8 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
       const text = `Analysis complete. sessionId=${sid}. Characters: ${r?.characters ?? 0}, Locations: ${r?.locations ?? 0}, Outline sections: ${r?.outlineSections ?? 0}. Please continue to the next step.`;
       if (editorRef.current) editorRef.current.innerText = text;
       dispatch(setDraft({ projectId, draft: text }));
-      setTimeout(() => {
-        if (projectId) void dispatch(sendUserMessage(projectId));
-      }, 300);
+      // Draft is already in Redux — dispatch immediately, no timeout needed
+      if (projectId) void dispatch(sendUserMessage(projectId));
     },
     [projectId, dispatch]
   );
@@ -281,7 +282,12 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
                     <div className="flex-1 border-t border-border/40" />
                   </div>
                 )}
-                <MessageBubble message={message} />
+                <MessageBubble
+                  message={message}
+                  onApplyToolResult={(result) => {
+                    if (projectId) void dispatch(applyToolResult({ projectId, result }));
+                  }}
+                />
               </div>
             ))}
 

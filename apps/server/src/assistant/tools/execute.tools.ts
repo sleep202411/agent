@@ -258,6 +258,9 @@ export function createExecuteTools({
       }),
       outputSchema: mutationResultSchema,
       execute: async ({ episodeId, content }) => {
+        if (!episodeId) {
+          throw new Error('episodeId is required.');
+        }
         await ws.saveEpisodeScript(headers, episodeId, content);
         return buildMutationResult(
           'episode.updated',

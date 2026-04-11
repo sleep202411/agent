@@ -24,16 +24,14 @@ export class AssistantController {
 
   /**
    * POST /assistant/chat
-   * Client sends a single new user message. Server loads history, appends,
-   * calls LLM, persists the assistant reply, and streams back.
+   * Client sends full messages array. Server validates, calls LLM, streams back.
    */
   @Post('chat')
   async chat(
     @Body()
     body: {
       projectId?: string;
-      /** Single new user message */
-      userMessage?: unknown;
+      messages?: unknown[];
       workspaceContext?: Record<string, unknown>;
       agentType?: string;
     },
@@ -42,13 +40,35 @@ export class AssistantController {
     @Res() res: Response,
   ) {
     this.logger.log(
-      `POST /assistant/chat userId=${user.userId} projectId=${body.projectId} agentType=${body.agentType ?? 'general'}`,
+      `POST /assistant/chat userId=${user.userId} projectId=${body.projectId} messages=${body.messages?.length ?? 0}`,
     );
 
-    if (!body.projectId || !body.userMessage) {
+    if (
+      !body.projectId ||
+      !Array.isArray(body.messages) ||
+      body.messages.length === 0
+    ) {
       throw new HttpException(
-        'projectId and userMessage are required',
+        'projectId and messages are required',
         HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Check message limit from server-side count (authoritative, not client-supplied)
+    const serverCount = await this.assistant.getServerMessageCount(
+      user.userId,
+      body.projectId,
+    );
+    const limits = getLimitsForTier(user.userLevel ?? undefined);
+    if (serverCount >= limits.maxMessages) {
+      throw new HttpException(
+        {
+          code: 'MESSAGE_LIMIT_REACHED',
+          message: `Message limit reached (${serverCount}/${limits.maxMessages})`,
+          current: serverCount,
+          max: limits.maxMessages,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
@@ -56,7 +76,7 @@ export class AssistantController {
       const result = await this.assistant.chat(
         {
           projectId: body.projectId,
-          userMessage: body.userMessage as never,
+          messages: body.messages,
           workspaceContext: body.workspaceContext,
           agentType: body.agentType,
           userId: user.userId,
@@ -87,18 +107,43 @@ export class AssistantController {
   }
 
   /**
+   * POST /assistant/save
+   * Frontend saves messages to Redis after stream completes.
+   */
+  @Post('save')
+  async save(
+    @Body()
+    body: {
+      projectId?: string;
+      messages?: unknown[];
+    },
+    @CurrentUser() user: AuthUser,
+  ) {
+    if (!body.projectId || !Array.isArray(body.messages)) {
+      throw new HttpException(
+        'projectId and messages are required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    await this.assistant.saveConversation(
+      user.userId,
+      body.projectId,
+      body.messages,
+      user.userLevel ?? undefined,
+    );
+
+    return { success: true };
+  }
+
+  /**
    * GET /assistant/history/:projectId
-   * Load conversation history for the current user + project.
    */
   @Get('history/:projectId')
   async history(
     @Param('projectId') projectId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    this.logger.log(
-      `GET /assistant/history userId=${user.userId} projectId=${projectId}`,
-    );
-
     const result = await this.assistant.getHistory(
       user.userId,
       projectId,
@@ -111,8 +156,8 @@ export class AssistantController {
         conversationId: result.conversationId,
         messages: result.messages,
         messageCount: result.messageCount,
-        retentionDays: result.retentionDays,
         messageLimit: result.messageLimit,
+        retentionDays: result.retentionDays,
         tier: user.userLevel ?? 'free',
       },
     };
@@ -120,19 +165,13 @@ export class AssistantController {
 
   /**
    * POST /assistant/clear/:projectId
-   * Clear conversation history (start new conversation).
    */
   @Post('clear/:projectId')
   async clear(
     @Param('projectId') projectId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    this.logger.log(
-      `POST /assistant/clear userId=${user.userId} projectId=${projectId}`,
-    );
-
     await this.assistant.clearHistory(user.userId, projectId);
-
     const limits = getLimitsForTier(user.userLevel ?? undefined);
     return {
       success: true,

@@ -35,7 +35,7 @@ function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): s
       return null;
   }
 }
-// Old AssistantToolCard removed — replaced by inline ToolIndicator
+import { ToolProposalCard } from "./tool-cards/tool-proposal-card";
 import { AssistantFilePreview, PipelineThinkingIndicator } from "./sub-components";
 import { markdownComponents } from "./markdown-components";
 import {
@@ -44,6 +44,7 @@ import {
   isAssistantToolPart,
   type AssistantMessage,
   type AssistantToolInvocation,
+  type AssistantToolResult,
 } from "@/src/lib/assistant/assistant-types";
 
 // ─── Pipeline tool config ──────────────────────────────
@@ -97,23 +98,9 @@ const AGENT_TOOL_LABELS: Record<string, { label: string; steps: string[] }> = {
 
 // ─── Compact tool indicator ───────────────────────────
 
-const PROPOSAL_TOOLS = new Set([
-  "propose_script",
-  "propose_characters",
-  "propose_scenes",
-  "propose_props",
-  "propose_storyboard_patch",
-]);
-
 function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantToolInvocation }) {
   const displayName = getAssistantToolDisplayName(toolName);
-  const isProposal = PROPOSAL_TOOLS.has(toolName);
-  const isDone =
-    part.state === "output-available" ||
-    part.state === "approval-requested" ||
-    part.state === "approval-responded" ||
-    // Proposal tools with input-available are waiting for user — treat as done
-    (isProposal && part.state === "input-available");
+  const isDone = part.state === "output-available";
   const isError = part.state === "output-error" || part.state === "output-denied";
   const isLoading = !isDone && !isError;
 
@@ -149,13 +136,22 @@ function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantTo
 
 // ─── Props ─────────────────────────────────────────────
 
+const PROPOSAL_TOOLS = new Set([
+  "propose_script",
+  "propose_characters",
+  "propose_scenes",
+  "propose_props",
+  "propose_storyboard_patch",
+]);
+
 interface MessageBubbleProps {
   message: AssistantMessage;
+  onApplyToolResult?: (result: AssistantToolResult) => void;
 }
 
 // ─── Component ─────────────────────────────────────────
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onApplyToolResult }: MessageBubbleProps) {
   const t = useTranslations("ai");
 
   // Collect tool result summaries to render as separate "user-like" bubbles
@@ -288,7 +284,21 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                       : null;
                   const taskId = output?.taskId ? String(output.taskId) : null;
 
-                  // Task card is rendered in the composer, not here
+                  // Completed pipeline task — show as ToolIndicator, not TaskCard
+                  if (
+                    taskId &&
+                    (part.state === "output-available" || part.state === "output-error")
+                  ) {
+                    return (
+                      <ToolIndicator
+                        key={`${message.id}-${part.toolCallId}-${toolName}-done`}
+                        toolName={toolName}
+                        part={part}
+                      />
+                    );
+                  }
+
+                  // In-progress pipeline task — TaskCard rendered in composer
                   if (taskId) {
                     return null;
                   }
@@ -317,6 +327,19 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   return null;
                 }
 
+                // Proposal tools — render interactive card with content preview
+                if (PROPOSAL_TOOLS.has(toolName)) {
+                  return (
+                    <ToolProposalCard
+                      key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
+                      toolName={toolName}
+                      part={part}
+                      onApplyResult={(result) => onApplyToolResult?.(result)}
+                    />
+                  );
+                }
+
+                // All other tools — compact inline indicator
                 return (
                   <ToolIndicator
                     key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}

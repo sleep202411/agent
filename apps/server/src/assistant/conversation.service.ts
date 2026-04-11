@@ -18,7 +18,10 @@ const TIER_LIMITS: Record<string, ConversationLimits> = {
 
 export function getLimitsForTier(tier?: string): ConversationLimits {
   if (!tier) return TIER_LIMITS.free;
-  return TIER_LIMITS[tier] ?? TIER_LIMITS.free;
+  // Normalize: try exact match first, then uppercase (handles "free" → "free", "vip1" → "VIP1")
+  return (
+    TIER_LIMITS[tier] ?? TIER_LIMITS[tier.toUpperCase()] ?? TIER_LIMITS.free
+  );
 }
 
 // ─── Message types ─────────────────────────────────────
@@ -114,25 +117,23 @@ export class ConversationService implements OnModuleDestroy {
   // ─── Write ─────────────────────────────────────────────
 
   /**
-   * Save the full conversation.
+   * Save the full conversation (atomic write, no read-before-write).
    * TTL refreshes on every save — represents "time since last activity".
-   * Active users never lose their history.
+   * conversationId is passed from the caller to avoid an extra Redis read.
    */
   async saveMessages(
     userId: string,
     projectId: string,
     messages: StoredMessage[],
     tier?: string,
+    conversationId?: string,
   ): Promise<void> {
     const limits = getLimitsForTier(tier);
     if (!limits.persist || !this.redis) return;
 
     const k = this.key(userId, projectId);
-
-    // Preserve existing conversation id, or generate new one
-    const existing = await this.getConversation(userId, projectId);
     const conv: StoredConversation = {
-      id: existing?.id ?? crypto.randomUUID().slice(0, 8),
+      id: conversationId || crypto.randomUUID().slice(0, 8),
       messages,
     };
 
@@ -141,7 +142,7 @@ export class ConversationService implements OnModuleDestroy {
       if (limits.ttlSeconds > 0) {
         await this.redis.set(k, json, 'EX', limits.ttlSeconds);
       } else {
-        await this.redis.set(k, JSON.stringify(messages));
+        await this.redis.set(k, json);
       }
 
       this.logger.log(
@@ -150,30 +151,6 @@ export class ConversationService implements OnModuleDestroy {
     } catch (error) {
       this.logger.error(`[saveMessages] Failed: ${error}`);
     }
-  }
-
-  /**
-   * Append new messages to the conversation and save.
-   * Returns the updated full message array.
-   */
-  async appendAndSave(
-    userId: string,
-    projectId: string,
-    newMessages: StoredMessage[],
-    tier?: string,
-  ): Promise<StoredMessage[]> {
-    const { messages: existing } = await this.getMessages(userId, projectId);
-    const combined = [...existing, ...newMessages];
-
-    // Enforce max — trim oldest if over limit
-    const limits = getLimitsForTier(tier);
-    const trimmed =
-      combined.length > limits.maxMessages
-        ? combined.slice(-limits.maxMessages)
-        : combined;
-
-    await this.saveMessages(userId, projectId, trimmed, tier);
-    return trimmed;
   }
 
   /**

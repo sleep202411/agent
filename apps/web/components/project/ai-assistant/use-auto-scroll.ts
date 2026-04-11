@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const NEAR_BOTTOM_THRESHOLD = 80; // px from bottom to consider "at bottom"
-const DEBUG = true;
+const DEBUG = false;
 
 function log(...args: unknown[]) {
   if (DEBUG) console.log("[auto-scroll]", ...args);

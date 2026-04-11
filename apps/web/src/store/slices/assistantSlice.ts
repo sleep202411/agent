@@ -5,6 +5,7 @@ import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/pr
 import { uploadWorkspaceFile, computeFileHash } from "@/src/lib/uploads/workspace-upload";
 import {
   sendAssistantChat,
+  saveConversation,
   fetchConversationHistory,
   clearConversation as clearConversationApi,
 } from "@/src/lib/assistant/assistant-client";
@@ -481,29 +482,36 @@ export const loadHistory = createAsyncThunk<
   void,
   string,
   { state: RootState; dispatch: AppDispatch }
->("assistant/loadHistory", async (projectId, { dispatch, getState }) => {
-  dispatch(ensureProject(projectId));
-  const current = getState().assistant.projects[projectId];
-  if (current?.historyLoaded) return;
+>(
+  "assistant/loadHistory",
+  async (projectId, { dispatch }) => {
+    dispatch(ensureProject(projectId));
 
-  try {
-    const data = await fetchConversationHistory(projectId);
-    dispatch(
-      setHistory({
-        projectId,
-        messages: data.messages as AssistantMessage[],
-        messageLimit: data.messageLimit,
-        tier: data.tier,
-        conversationId: data.conversationId,
-        retentionDays: data.retentionDays,
-      })
-    );
-  } catch (error) {
-    // History load failure is non-fatal — just use empty conversation
-    console.warn("[assistant] Failed to load history:", error);
-    dispatch(markHistoryLoaded({ projectId }));
+    try {
+      const data = await fetchConversationHistory(projectId);
+      dispatch(
+        setHistory({
+          projectId,
+          messages: data.messages as AssistantMessage[],
+          messageLimit: data.messageLimit,
+          tier: data.tier,
+          conversationId: data.conversationId,
+          retentionDays: data.retentionDays,
+        })
+      );
+    } catch (error) {
+      // History load failure is non-fatal — just use empty conversation
+      console.warn("[assistant] Failed to load history:", error);
+      dispatch(markHistoryLoaded({ projectId }));
+    }
+  },
+  {
+    condition: (projectId, { getState }) => {
+      const current = getState().assistant.projects[projectId];
+      return !current?.historyLoaded;
+    },
   }
-});
+);
 
 // ─── Clear conversation ───────────────────────────────
 
@@ -523,7 +531,7 @@ export const newConversation = createAsyncThunk<
     );
   } catch (error) {
     console.warn("[assistant] Failed to clear conversation:", error);
-    dispatch(resetProjectConversation(projectId));
+    toast.error("清空对话失败，请重试");
   }
 });
 
@@ -533,127 +541,129 @@ export const sendUserMessage = createAsyncThunk<
   void,
   string,
   { state: RootState; dispatch: AppDispatch }
->("assistant/sendUserMessage", async (projectId, { dispatch, getState }) => {
-  dispatch(ensureProject(projectId));
+>(
+  "assistant/sendUserMessage",
+  async (projectId, { dispatch, getState }) => {
+    dispatch(ensureProject(projectId));
 
-  const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
-  if (current.sending) return;
-
-  const hasUploading = current.attachments.some((attachment) => attachment.status === "uploading");
-  if (hasUploading) {
-    toast.warning("请等待附件上传完成后再发送");
-    return;
-  }
-
-  const uploadedAttachments = current.attachments.filter(
-    (attachment) => attachment.status === "uploaded" && attachment.url
-  );
-  const text =
-    current.draftInput.trim() || (uploadedAttachments.length > 0 ? "请结合附件继续分析。" : "");
-  if (!text && uploadedAttachments.length === 0) return;
-
-  const userMessage = buildUserMessage(text, uploadedAttachments);
-
-  dispatch(commitUserMessage({ projectId, userMessage }));
-
-  try {
-    const workspaceContext = buildWorkspaceContext(getState(), projectId);
-    const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
-
-    // Send only the single new user message — server loads history
-    const finalMessage = await sendAssistantChat({
-      projectId,
-      userMessage,
-      workspaceContext,
-      agentType,
-      onMessage: (message) => {
-        dispatch(appendStreamChunk({ projectId, message }));
-      },
-    });
-
-    dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-    await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : "AI 请求失败";
-    // Handle message limit error
-    if (errMsg.startsWith("MESSAGE_LIMIT_REACHED:")) {
-      const [, current, max] = errMsg.split(":");
-      dispatch(
-        streamError({
-          projectId,
-          error: `MESSAGE_LIMIT_REACHED:${current}:${max}`,
-        })
-      );
+    const hasUploading = current.attachments.some(
+      (attachment) => attachment.status === "uploading"
+    );
+    if (hasUploading) {
+      toast.warning("请等待附件上传完成后再发送");
       return;
     }
-    dispatch(streamError({ projectId, error: errMsg }));
-    toast.error(errMsg);
+
+    const uploadedAttachments = current.attachments.filter(
+      (attachment) => attachment.status === "uploaded" && attachment.url
+    );
+    const text =
+      current.draftInput.trim() || (uploadedAttachments.length > 0 ? "请结合附件继续分析。" : "");
+    if (!text && uploadedAttachments.length === 0) return;
+
+    const userMessage = buildUserMessage(text, uploadedAttachments);
+
+    dispatch(commitUserMessage({ projectId, userMessage }));
+
+    try {
+      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+      const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
+
+      const finalMessage = await sendAssistantChat({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        agentType,
+        onMessage: (message) => {
+          dispatch(appendStreamChunk({ projectId, message }));
+        },
+      });
+
+      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
+      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
+
+      // Save to Redis (fire-and-forget)
+      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      void saveConversation(projectId, finalMessages);
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+      if (errMsg.startsWith("MESSAGE_LIMIT_REACHED:")) {
+        const [, cur, max] = errMsg.split(":");
+        dispatch(streamError({ projectId, error: `MESSAGE_LIMIT_REACHED:${cur}:${max}` }));
+        return;
+      }
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
+    }
+  },
+  {
+    condition: (projectId, { getState }) => {
+      const current = getState().assistant.projects[projectId];
+      return !current?.sending;
+    },
   }
-});
+);
 
 export const applyToolResult = createAsyncThunk<
   void,
   { projectId: string; result: AssistantToolResult },
   { state: RootState; dispatch: AppDispatch }
->("assistant/applyToolResult", async ({ projectId, result }, { dispatch, getState }) => {
-  dispatch(ensureProject(projectId));
-  const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
-  if (current.sending) return;
+>(
+  "assistant/applyToolResult",
+  async ({ projectId, result }, { dispatch, getState }) => {
+    dispatch(ensureProject(projectId));
+    const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
 
-  // Update local messages with tool result
-  const nextMessages = current.messages.map((message) =>
-    message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === result.toolCallId)
-      ? cloneMessageWithToolResult(message, result)
-      : message
-  );
+    const nextMessages = current.messages.map((message) =>
+      message.parts.some(
+        (part) => isAssistantToolPart(part) && part.toolCallId === result.toolCallId
+      )
+        ? cloneMessageWithToolResult(message, result)
+        : message
+    );
 
-  dispatch(
-    commitToolResult({
-      projectId,
-      messages: nextMessages,
-      toolCallId: result.toolCallId,
-    })
-  );
+    dispatch(
+      commitToolResult({
+        projectId,
+        messages: nextMessages,
+        toolCallId: result.toolCallId,
+      })
+    );
 
-  try {
-    const workspaceContext = buildWorkspaceContext(getState(), projectId);
-    const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
+    try {
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+      const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
-    // Build a synthetic user message containing the tool result
-    // The server will match this with the pending tool invocation
-    const toolResultMessage: AssistantMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      parts: [
-        {
-          type: "text",
-          text: `[Tool Result: ${result.toolName}]`,
-          state: "done",
+      const finalMessage = await sendAssistantChat({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        agentType,
+        onMessage: (message) => {
+          dispatch(appendStreamChunk({ projectId, message }));
         },
-      ],
-      metadata: {
-        toolResult: result,
-      } as Record<string, unknown>,
-    };
+      });
 
-    const finalMessage = await sendAssistantChat({
-      projectId,
-      userMessage: toolResultMessage,
-      workspaceContext,
-      agentType,
-      onMessage: (message) => {
-        dispatch(appendStreamChunk({ projectId, message }));
-      },
-    });
+      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
+      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
 
-    dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-    await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : "AI 请求失败";
-    dispatch(streamError({ projectId, error: errMsg }));
-    toast.error(errMsg);
+      // Save to Redis (fire-and-forget)
+      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      void saveConversation(projectId, finalMessages);
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
+    }
+  },
+  {
+    condition: ({ projectId }, { getState }) => {
+      const current = getState().assistant.projects[projectId];
+      return !current?.sending;
+    },
   }
-});
+);
 
 // ─── Slice ──────────────────────────────────────────────
 

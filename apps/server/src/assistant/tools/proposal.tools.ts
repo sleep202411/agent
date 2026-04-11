@@ -47,7 +47,9 @@ export function createProposalTools() {
 
     propose_storyboard_patch: tool({
       description:
-        '提议一版分镜表草稿或局部 patch，由用户确认后再保存到当前剧集。',
+        '提议一版分镜表草稿或局部 patch，由用户确认后再保存到当前剧集。' +
+        'headers 必须使用系统上下文中 [分镜列定义] 列出的 presetColumnKey。' +
+        '对于 SINGLE_OPTION 类型的列，值必须从 options 中选择。',
       inputSchema: storyboardProposalSchema,
       outputSchema: storyboardProposalDecisionSchema,
     }),

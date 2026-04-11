@@ -19,15 +19,15 @@ function sanitizeAttachment(attachment: AssistantAttachment): AssistantAttachmen
   };
 }
 
-function sanitizeMessage(message: AssistantMessage): AssistantMessage {
-  return {
+function sanitizeMessages(messages: AssistantMessage[]): AssistantMessage[] {
+  return messages.map((message) => ({
     ...message,
     metadata: message.metadata?.attachments?.length
       ? {
           attachments: message.metadata.attachments.map(sanitizeAttachment),
         }
       : undefined,
-  };
+  }));
 }
 
 function toChunkStream(
@@ -41,17 +41,16 @@ function toChunkStream(
   return new ReadableStream<UIMessageChunk>({
     async start(controller) {
       const reader = parsedStream.getReader();
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
           controller.close();
           return;
         }
-
         if (value.success) {
           controller.enqueue(value.value);
         } else {
+          await reader.cancel();
           controller.error(value.error);
           return;
         }
@@ -67,7 +66,6 @@ async function parseError(response: Response) {
       current?: number;
       max?: number;
     };
-    // Handle message limit error
     if (data.code === "MESSAGE_LIMIT_REACHED") {
       return `MESSAGE_LIMIT_REACHED:${data.current ?? 0}:${data.max ?? 0}`;
     }
@@ -84,12 +82,11 @@ async function parseError(response: Response) {
   }
 }
 
-// ─── Chat API (single message) ─────────────────────────
+// ─── Chat API (full messages) ──────────────────────────
 
 export interface SendAssistantChatOptions {
   projectId: string;
-  /** Single new user message to send */
-  userMessage: AssistantMessage;
+  messages: AssistantMessage[];
   workspaceContext: AssistantWorkspaceSelection;
   agentType?: string;
   signal?: AbortSignal;
@@ -98,7 +95,7 @@ export interface SendAssistantChatOptions {
 
 export async function sendAssistantChat({
   projectId,
-  userMessage,
+  messages,
   workspaceContext,
   agentType,
   signal,
@@ -116,7 +113,7 @@ export async function sendAssistantChat({
     },
     body: JSON.stringify({
       projectId,
-      userMessage: sanitizeMessage(userMessage),
+      messages: sanitizeMessages(messages),
       workspaceContext,
       agentType,
     }),
@@ -147,6 +144,30 @@ export async function sendAssistantChat({
   return latest;
 }
 
+// ─── Save API ─────────────────────────────────────────
+
+export async function saveConversation(
+  projectId: string,
+  messages: AssistantMessage[]
+): Promise<void> {
+  try {
+    const response = await fetch("/aurora/assistant/save", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        messages: sanitizeMessages(messages),
+      }),
+    });
+    if (!response.ok) {
+      console.warn(`[assistant] Save failed: HTTP ${response.status}`);
+    }
+  } catch (err) {
+    console.warn("[assistant] Save failed:", err);
+  }
+}
+
 // ─── History API ───────────────────────────────────────
 
 export interface ConversationHistoryResponse {
@@ -154,7 +175,6 @@ export interface ConversationHistoryResponse {
   messages: AssistantMessage[];
   messageCount: number;
   messageLimit: number;
-  retentionDays: number;
   tier: string;
 }
 
@@ -164,16 +184,13 @@ export async function fetchConversationHistory(
   const response = await fetch(`/aurora/assistant/history/${projectId}`, {
     credentials: "include",
   });
-
   if (!response.ok) {
     throw new Error(`Failed to load history: HTTP ${response.status}`);
   }
-
   const body = (await response.json()) as {
     success: boolean;
     data: ConversationHistoryResponse;
   };
-
   return body.data;
 }
 
@@ -186,15 +203,12 @@ export async function clearConversation(
     method: "POST",
     credentials: "include",
   });
-
   if (!response.ok) {
     throw new Error(`Failed to clear conversation: HTTP ${response.status}`);
   }
-
   const body = (await response.json()) as {
     success: boolean;
     data: { messageCount: number; messageLimit: number };
   };
-
   return body.data;
 }

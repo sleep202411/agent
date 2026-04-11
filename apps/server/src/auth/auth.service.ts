@@ -19,6 +19,17 @@ export class AuthService {
   private cache = new Map<string, { user: AuthUser; expiresAt: number }>();
 
   private static readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  private static readonly CACHE_MAX_SIZE = 1000;
+  private pruneTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    // Prune expired entries every 60 seconds
+    this.pruneTimer = setInterval(() => this.pruneCache(), 60_000);
+  }
+
+  onModuleDestroy() {
+    if (this.pruneTimer) clearInterval(this.pruneTimer);
+  }
 
   /**
    * Validate a session cookie and return the authenticated user.
@@ -90,6 +101,11 @@ export class AuthService {
       }
 
       // Cache the result
+      // Evict oldest if cache is full
+      if (this.cache.size >= AuthService.CACHE_MAX_SIZE) {
+        const firstKey = this.cache.keys().next().value;
+        if (firstKey) this.cache.delete(firstKey);
+      }
       this.cache.set(cookie, {
         user,
         expiresAt: Date.now() + AuthService.CACHE_TTL_MS,
