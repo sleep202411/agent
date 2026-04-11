@@ -433,3 +433,123 @@ export const MOCK_IP_DETAIL: IPDetail = {
     },
   ],
 };
+
+// ─── Create form types ───────────────────────────────
+
+export interface IPRewardTier {
+  id: string;
+  title: string;
+  amount: number;
+  description: string;
+  perks: string[];
+}
+
+export interface IPCreateForm {
+  title: string;
+  projectType: string;
+  description: string;
+  tags: string[];
+  coverImage: string | null;
+  story: string;
+  whyThisIP: string;
+  targetEpisodes: number;
+  fundingMode: "investment" | "presale";
+  valuation: string;
+  sharesOffered: string;
+  totalShares: string;
+  deadline: string;
+  presalePrice: number;
+  fullPrice: number;
+  presaleTarget: number;
+  presaleDeadline: string;
+  rewards: IPRewardTier[];
+}
+
+export const PROJECT_TYPES = [
+  "ipDevelopment",
+  "series",
+  "brandShort",
+  "commercial",
+  "creativeExperiment",
+] as const;
+
+export const TARGET_EPISODES_OPTIONS = [3, 6, 8, 10, 12, 15] as const;
+
+export const SUGGESTED_TAGS = [
+  "AI动画",
+  "AI绘画",
+  "赛博朋克",
+  "奇幻",
+  "科幻",
+  "日常",
+  "动作",
+  "悬疑",
+  "治愈",
+  "国风",
+  "机甲",
+  "末日",
+  "校园",
+  "恋爱",
+] as const;
+
+export const PRESET_REWARDS: IPRewardTier[] = [
+  {
+    id: "preset-30",
+    title: "支持者",
+    amount: 30,
+    description: "感谢你的支持！",
+    perks: ["数字感谢卡", "支持者专属壁纸", "项目动态通知"],
+  },
+  {
+    id: "preset-100",
+    title: "早鸟",
+    amount: 100,
+    description: "抢先观看全部内容",
+    perks: ["全集抢先看", "幕后花絮", "创作者交流群", "数字感谢卡"],
+  },
+  {
+    id: "preset-300",
+    title: "超级粉丝",
+    amount: 300,
+    description: "深度参与创作过程",
+    perks: ["全集抢先看", "幕后花絮", "角色命名投票", "限量周边", "创作者交流群", "片尾鸣谢"],
+  },
+  {
+    id: "preset-1000",
+    title: "联合制片人",
+    amount: 1000,
+    description: "成为项目的一部分",
+    perks: [
+      "联合制片人署名",
+      "全套周边礼包",
+      "线下见面会",
+      "剧情建议权",
+      "全集抢先看",
+      "幕后花絮",
+      "创作者交流群",
+    ],
+  },
+];
+
+export function createEmptyIPForm(): IPCreateForm {
+  return {
+    title: "",
+    projectType: "",
+    description: "",
+    tags: [],
+    coverImage: null,
+    story: "",
+    whyThisIP: "",
+    targetEpisodes: 6,
+    fundingMode: "investment",
+    valuation: "",
+    sharesOffered: "",
+    totalShares: "",
+    deadline: "",
+    presalePrice: 30,
+    fullPrice: 100,
+    presaleTarget: 100,
+    presaleDeadline: "",
+    rewards: [],
+  };
+}
