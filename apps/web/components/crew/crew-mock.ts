@@ -239,3 +239,103 @@ export const MOCK_ACTIVITIES: ActivityItem[] = [
     time: "6小时前",
   },
 ];
+
+// ─── Detail types ────────────────────────────────────
+
+export interface CrewPhase {
+  name: string;
+  done: boolean;
+  active?: boolean;
+}
+
+export interface CrewRole {
+  name: string;
+  count: number;
+  budget: string;
+  period: string;
+  deadline: string;
+  skills: string[];
+  deliverable: string;
+}
+
+export interface CrewMember {
+  name: string;
+  role: string;
+  level: string;
+}
+
+export interface CrewDetail extends CrewItem {
+  fullDescription: string;
+  phases: CrewPhase[];
+  roles: CrewRole[];
+  members: CrewMember[];
+  activities: { text: string; time: string }[];
+}
+
+export const MOCK_CREW_DETAIL: CrewDetail = {
+  ...MOCK_CREWS[0],
+  fullDescription:
+    "赛博山海经是一部融合中国传统神话与赛博朋克美学的AI动画短剧。预告片组负责制作一段2分钟的宣传预告片，展示世界观和核心角色。目前角色设计已完成70%，分镜正在进行中，下一阶段将启动AI视频生成和配音录制。",
+  phases: [
+    { name: "世界观构建", done: true },
+    { name: "角色设计", done: true },
+    { name: "场景设计", done: true },
+    { name: "分镜制作", done: false, active: true },
+    { name: "视频生成", done: false },
+    { name: "配音配乐", done: false },
+    { name: "粗剪", done: false },
+    { name: "精剪与发行", done: false },
+  ],
+  roles: [
+    {
+      name: "分镜师",
+      count: 1,
+      budget: "¥1500-3000",
+      period: "2周",
+      deadline: "2026-04-01",
+      skills: ["分镜绘制", "镜头语言", "叙事节奏"],
+      deliverable: "60格分镜草稿 + 标注说明",
+    },
+    {
+      name: "AI画师",
+      count: 2,
+      budget: "¥2000-4000",
+      period: "3周",
+      deadline: "2026-04-05",
+      skills: ["Midjourney", "Stable Diffusion", "角色设计"],
+      deliverable: "精修角色图 ×10 套 + Prompt 包",
+    },
+    {
+      name: "配音演员",
+      count: 3,
+      budget: "¥500-1500/角色",
+      period: "1周",
+      deadline: "2026-04-08",
+      skills: ["专业配音", "录音设备"],
+      deliverable: "WAV 录音文件 + 备份版本",
+    },
+    {
+      name: "后期剪辑",
+      count: 1,
+      budget: "¥2000-3500",
+      period: "2周",
+      deadline: "2026-04-10",
+      skills: ["Premiere", "After Effects", "DaVinci"],
+      deliverable: "精剪母版 + 字幕版",
+    },
+  ],
+  members: [
+    { name: "影子制片", role: "制片人", level: "FD4" },
+    { name: "夜色导演", role: "导演", level: "FD3" },
+    { name: "银河编剧", role: "编剧", level: "FD3" },
+    { name: "像素画师", role: "AI绘画", level: "FD2" },
+    { name: "光影设计", role: "场景设计", level: "FD3" },
+    { name: "Ghost制片", role: "副制片", level: "FD2" },
+  ],
+  activities: [
+    { text: "Ghost制片 加入剧组担任副制片", time: "3小时前" },
+    { text: "场景设计阶段完成，进入分镜制作", time: "1天前" },
+    { text: "新增「AI画师」职位 ×2", time: "2天前" },
+    { text: "像素画师 提交了第一批角色参考图", time: "3天前" },
+  ],
+};
