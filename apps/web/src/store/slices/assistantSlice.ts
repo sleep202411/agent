@@ -545,6 +545,7 @@ export const sendUserMessage = createAsyncThunk<
   "assistant/sendUserMessage",
   async (projectId, { dispatch, getState }) => {
     dispatch(ensureProject(projectId));
+    const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
 
     const hasUploading = current.attachments.some(
       (attachment) => attachment.status === "uploading"
