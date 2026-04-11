@@ -767,6 +767,47 @@ Rules:
         let completed = 0;
         let saved = 0;
 
+        const STORYBOARD_CHUNK_SIZE = 8000;
+        const STORYBOARD_CHUNK_OVERLAP = 500;
+
+        const storyboardSystemPrompt = `You are a professional storyboard artist. Generate detailed shots for this episode.
+
+Shot density: ~${shotsPerMinute} shots/minute. Visual style: ${style}.
+All text output (description, dialogue, imagePrompt, videoPrompt) must be in ${language}.
+
+For shotSize, perspective, and movement: you MUST pick from the provided options list exactly.
+Use character names in description, imagePrompt, and videoPrompt so they can be linked to character assets.
+
+IMPORTANT: Each shot MUST have:
+- description: detailed narrative description for human readers
+- imagePrompt: professional AI image generation prompt with composition, lighting, colors, character appearance, mood, art style. NOT a translation of description.
+- videoPrompt: AI video generation prompt with motion, camera movement, character actions, temporal flow. NOT a copy of imagePrompt.
+These three fields serve different purposes and MUST have different content.
+
+Available scenes: ${sceneList}
+Available shot sizes: ${shotSizeOptions}
+Available perspectives: ${perspectiveOptions}
+Available movements: ${movementOptions}`;
+
+        function splitSourceIntoChunks(source: string): string[] {
+          if (source.length <= STORYBOARD_CHUNK_SIZE) return [source];
+          const paragraphs = source.split(/\n\s*\n/);
+          const chunks: string[] = [];
+          let buffer = '';
+          for (const para of paragraphs) {
+            if (
+              buffer.length + para.length > STORYBOARD_CHUNK_SIZE &&
+              buffer.length > 0
+            ) {
+              chunks.push(buffer);
+              buffer = buffer.slice(-STORYBOARD_CHUNK_OVERLAP);
+            }
+            buffer += (buffer ? '\n\n' : '') + para;
+          }
+          if (buffer.trim()) chunks.push(buffer);
+          return chunks;
+        }
+
         const tasks = batch.map((ep) => async () => {
           const outlineSlice = analyze.outline
             .filter((o) => o.index >= ep.outlineFrom && o.index <= ep.outlineTo)
@@ -781,35 +822,56 @@ Rules:
             Math.floor(text.length * endRatio),
           );
 
-          const { object } = await withRetry(
-            () =>
-              generateObject({
-                model,
-                schema: shotSchema,
-                system: `You are a professional storyboard artist. Generate detailed shots for this episode.
-
-Shot density: ~${shotsPerMinute} shots/minute. Visual style: ${style}.
-All text output (description, dialogue, imagePrompt, videoPrompt) must be in ${language}.
-
-For shotSize, perspective, and movement: you MUST pick from the provided options list exactly.
-Use character names in description, imagePrompt, and videoPrompt so they can be linked to character assets.
-
-Available scenes: ${sceneList}
-Available shot sizes: ${shotSizeOptions}
-Available perspectives: ${perspectiveOptions}
-Available movements: ${movementOptions}`,
-                prompt: `Episode ${ep.episodeNumber}: "${ep.title}"\n${ep.summary}\n\nOutline:\n${outlineSlice}\n\nCharacters:\n${characterList}\n\nSource:\n${sourceSegment.slice(0, 8000)}`,
-                temperature: 0.4,
-              }),
-            { maxRetries: 2, label: `storyboard-ep-${ep.episodeNumber}` },
+          const sourceChunks = splitSourceIntoChunks(sourceSegment);
+          logger.log(
+            `Storyboard ep ${ep.episodeNumber}: source ${sourceSegment.length} chars → ${sourceChunks.length} chunks`,
           );
 
-          totalShots += object.shots.length;
+          const allShots: Array<{
+            scene: string;
+            description: string;
+            imagePrompt: string;
+            videoPrompt: string;
+            dialogue?: string;
+            shotSize: string;
+            perspective: string;
+            movement: string;
+            duration: number;
+          }> = [];
+
+          for (let ci = 0; ci < sourceChunks.length; ci++) {
+            const chunk = sourceChunks[ci];
+            const chunkContext =
+              sourceChunks.length > 1
+                ? `\n\n[Chunk ${ci + 1}/${sourceChunks.length} — continue shot numbering from ${allShots.length + 1}]`
+                : '';
+
+            const { object } = await withRetry(
+              () =>
+                generateObject({
+                  model,
+                  schema: shotSchema,
+                  system: storyboardSystemPrompt,
+                  prompt: `Episode ${ep.episodeNumber}: "${ep.title}"\n${ep.summary}\n\nOutline:\n${outlineSlice}\n\nCharacters:\n${characterList}${chunkContext}\n\nSource text:\n${chunk}`,
+                  temperature: 0.4,
+                }),
+              {
+                maxRetries: 2,
+                label: `storyboard-ep-${ep.episodeNumber}-chunk-${ci}`,
+              },
+            );
+
+            allShots.push(...object.shots);
+            logger.log(
+              `Storyboard ep ${ep.episodeNumber} chunk ${ci + 1}/${sourceChunks.length}: ${object.shots.length} shots (total: ${allShots.length})`,
+            );
+          }
+
+          totalShots += allShots.length;
 
           // Write to correct episode by index
           const epId = episodeIds[ep.episodeNumber - 1];
-          if (epId && object.shots.length > 0) {
-            // Match front-end STORYBOARD_SAVE_FIELD_ORDER
+          if (epId && allShots.length > 0) {
             const headers = [
               'shot_no',
               'scene',
@@ -823,7 +885,7 @@ Available movements: ${movementOptions}`,
               'perspective',
               'duration',
             ];
-            const rows = object.shots.map((shot, shotIndex) => [
+            const rows = allShots.map((shot, shotIndex) => [
               String(shotIndex + 1), // shot_no
               buildSceneMention(shot.scene), // scene with mention
               injectMentions(shot.description), // description with mentions
@@ -845,7 +907,7 @@ Available movements: ${movementOptions}`,
               });
               saved++;
               logger.log(
-                `Storyboard saved: ep ${ep.episodeNumber} → ${epId} (${object.shots.length} shots, ${headers.length} columns)`,
+                `Storyboard saved: ep ${ep.episodeNumber} → ${epId} (${allShots.length} shots, ${headers.length} columns)`,
               );
             } catch (error) {
               logger.error(
