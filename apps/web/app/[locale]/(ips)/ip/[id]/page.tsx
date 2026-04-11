@@ -63,8 +63,8 @@ export default function IPDetailPage({ id }: { id: string }) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Back */}
-      <div className="mx-auto max-w-screen-2xl px-6 pt-4">
+      {/* Back + manage */}
+      <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-6 pt-4">
         <Link
           to="/ips"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -72,6 +72,12 @@ export default function IPDetailPage({ id }: { id: string }) {
           <IconArrowLeft className="size-4" />
           {t("detailBackToPlaza")}
         </Link>
+        <a
+          href={`/ips/${id}/edit`}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70"
+        >
+          {t("detailManage")}
+        </a>
       </div>
 
       {/* Hero */}

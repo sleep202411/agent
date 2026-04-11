@@ -31,6 +31,7 @@ import { Route as StudioAssetsRouteImport } from "./routes/_studio.assets";
 import { Route as AuthRegisterRouteImport } from "./routes/_auth.register";
 import { Route as AuthLoginRouteImport } from "./routes/_auth.login";
 import { Route as AuthForgotPasswordRouteImport } from "./routes/_auth.forgot-password";
+import { Route as IpsIdEditRouteImport } from "./routes/ips_.$id_.edit";
 import { Route as CrewsIdWorkspaceRouteImport } from "./routes/crews_.$id_.workspace";
 
 const ProfileRoute = ProfileRouteImport.update({
@@ -141,6 +142,11 @@ const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   path: "/forgot-password",
   getParentRoute: () => AuthRoute,
 } as any);
+const IpsIdEditRoute = IpsIdEditRouteImport.update({
+  id: "/ips_/$id_/edit",
+  path: "/ips/$id/edit",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const CrewsIdWorkspaceRoute = CrewsIdWorkspaceRouteImport.update({
   id: "/crews_/$id_/workspace",
   path: "/crews/$id/workspace",
@@ -169,6 +175,7 @@ export interface FileRoutesByFullPath {
   "/crews/": typeof CrewsIndexRoute;
   "/ips/": typeof IpsIndexRoute;
   "/crews/$id/workspace": typeof CrewsIdWorkspaceRoute;
+  "/ips/$id/edit": typeof IpsIdEditRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
@@ -192,6 +199,7 @@ export interface FileRoutesByTo {
   "/crews": typeof CrewsIndexRoute;
   "/ips": typeof IpsIndexRoute;
   "/crews/$id/workspace": typeof CrewsIdWorkspaceRoute;
+  "/ips/$id/edit": typeof IpsIdEditRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -218,6 +226,7 @@ export interface FileRoutesById {
   "/crews/": typeof CrewsIndexRoute;
   "/ips/": typeof IpsIndexRoute;
   "/crews_/$id_/workspace": typeof CrewsIdWorkspaceRoute;
+  "/ips_/$id_/edit": typeof IpsIdEditRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -242,7 +251,8 @@ export interface FileRouteTypes {
     | "/creators/"
     | "/crews/"
     | "/ips/"
-    | "/crews/$id/workspace";
+    | "/crews/$id/workspace"
+    | "/ips/$id/edit";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
@@ -265,7 +275,8 @@ export interface FileRouteTypes {
     | "/creators"
     | "/crews"
     | "/ips"
-    | "/crews/$id/workspace";
+    | "/crews/$id/workspace"
+    | "/ips/$id/edit";
   id:
     | "__root__"
     | "/"
@@ -290,7 +301,8 @@ export interface FileRouteTypes {
     | "/creators/"
     | "/crews/"
     | "/ips/"
-    | "/crews_/$id_/workspace";
+    | "/crews_/$id_/workspace"
+    | "/ips_/$id_/edit";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -309,6 +321,7 @@ export interface RootRouteChildren {
   CrewsIndexRoute: typeof CrewsIndexRoute;
   IpsIndexRoute: typeof IpsIndexRoute;
   CrewsIdWorkspaceRoute: typeof CrewsIdWorkspaceRoute;
+  IpsIdEditRoute: typeof IpsIdEditRoute;
 }
 
 declare module "@tanstack/react-router" {
@@ -467,6 +480,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthForgotPasswordRouteImport;
       parentRoute: typeof AuthRoute;
     };
+    "/ips_/$id_/edit": {
+      id: "/ips_/$id_/edit";
+      path: "/ips/$id/edit";
+      fullPath: "/ips/$id/edit";
+      preLoaderRoute: typeof IpsIdEditRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/crews_/$id_/workspace": {
       id: "/crews_/$id_/workspace";
       path: "/crews/$id/workspace";
@@ -525,6 +545,7 @@ const rootRouteChildren: RootRouteChildren = {
   CrewsIndexRoute: CrewsIndexRoute,
   IpsIndexRoute: IpsIndexRoute,
   CrewsIdWorkspaceRoute: CrewsIdWorkspaceRoute,
+  IpsIdEditRoute: IpsIdEditRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
