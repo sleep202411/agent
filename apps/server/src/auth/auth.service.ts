@@ -51,10 +51,16 @@ export class AuthService {
         return null;
       }
 
+      // Extract only the satoken cookie — Java chokes on unrelated cookies
+      const satokenMatch = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+      const satokenCookie = satokenMatch
+        ? `satoken=${satokenMatch[1]}`
+        : cookie;
+
       const response = await fetch(`${baseUrl}/user/query/user/info`, {
         method: 'GET',
         headers: {
-          cookie,
+          cookie: satokenCookie,
         },
       });
 
