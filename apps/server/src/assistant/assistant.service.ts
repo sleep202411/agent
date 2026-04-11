@@ -199,25 +199,30 @@ export class AssistantService {
     );
     this.logger.log('Project context ready');
 
-    // Clean messages: remove internal part types (step-start etc.) that
-    // AI SDK's validateUIMessages doesn't recognize
+    // Clean messages before validation:
+    // 1. Remove internal part types (step-start, step-finish, source)
+    // 2. Remove empty messages (no meaningful parts)
+    // 3. Filter out parts with no content
     const INTERNAL_PART_TYPES = new Set([
       'step-start',
       'step-finish',
       'source',
     ]);
-    const cleanedMessages = (payload.messages as AssistantMessage[]).map(
-      (msg) => ({
+    const cleanedMessages = (payload.messages as AssistantMessage[])
+      .map((msg) => ({
         ...msg,
         parts: msg.parts.filter((part) => {
-          const type =
-            typeof part === 'object' && part !== null && 'type' in part
-              ? String((part as Record<string, unknown>).type)
-              : '';
-          return !INTERNAL_PART_TYPES.has(type);
+          if (typeof part !== 'object' || part === null || !('type' in part))
+            return false;
+          const p = part as Record<string, unknown>;
+          const type = String(p.type ?? '');
+          if (INTERNAL_PART_TYPES.has(type)) return false;
+          // Keep text parts only if they have content
+          if (type === 'text' && !p.text) return false;
+          return true;
         }),
-      }),
-    );
+      }))
+      .filter((msg) => msg.parts.length > 0);
 
     const validationTools = tools as unknown as ToolSet;
     let validatedMessages: AssistantMessage[];
@@ -227,10 +232,11 @@ export class AssistantService {
         tools: validationTools,
       } as never);
     } catch (err) {
-      this.logger.error(
-        `Message validation failed: ${err instanceof Error ? err.message : String(err)}`,
+      this.logger.warn(
+        `Message validation failed, using cleaned messages: ${err instanceof Error ? err.message : String(err)}`,
       );
-      throw new Error('助手消息格式不合法');
+      // Fallback: use cleaned messages without validation
+      validatedMessages = cleanedMessages;
     }
     this.logger.log(`Validated ${validatedMessages.length} messages`);
 
