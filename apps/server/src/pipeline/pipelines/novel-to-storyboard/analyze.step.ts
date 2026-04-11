@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { generateObject } from 'ai';
 import type { LanguageModelV3 } from '@ai-sdk/provider';
 import { withRetry, runWithConcurrency } from '../../engine/retry';
+import { loadPipelinePrompt } from '../../../assistant/prompts';
 
 /** Minimal context type — replaces the old pipeline engine types */
 export type AnalyzeContext = {
@@ -26,48 +27,9 @@ const ANALYZE_CONCURRENCY = 8;
 
 // ── Prompts ──
 
-const FULL_TEXT_SYSTEM_PROMPT = `You are a professional novel/screenplay analyst. Analyze the full text and extract structured information.
-
-Requirements:
-1. **Characters**: Extract all named characters. Merge different names that refer to the same person (e.g. "Rose Waterford" and "Miss Waterford" are the same person).
-2. **Locations**: Extract all locations/settings that appear.
-3. **Outline**: Write a one-sentence summary for each chapter or major section.
-4. **Style**: Determine the genre (realistic/fantasy/sci-fi/romance/mystery/comedy etc.).
-5. **Language**: Detect the primary language of the source text (e.g. "English", "Chinese").
-
-Important:
-- The aliases field must list ALL name variants that appear in the text.
-- Do not miss any named character, even if they appear only once.
-- Outline index starts from 0.
-- If the text has no clear chapter divisions, create outline entries based on natural story segments.
-- ALL output text (names, descriptions, summaries) must be in the SAME LANGUAGE as the source text.`;
-
-const CHUNK_SYSTEM_PROMPT = `You are a professional novel/screenplay analyst. Analyze this text segment and extract information.
-
-Requirements:
-1. Extract all characters (with aliases) and locations from this segment.
-2. Write one outline entry (title + one-sentence summary) for this segment.
-3. Determine the genre/style.
-4. Detect the language of the source text.
-
-Important:
-- This is a segment of a longer text. Only extract information actually present in this segment.
-- If the same person has multiple names, merge them into one character's aliases.
-- Outline index starts from 0 within this segment.
-- ALL output text must be in the SAME LANGUAGE as the source text.`;
-
-const DEDUP_SYSTEM_PROMPT = `You are a text analysis expert. Below are character lists and location lists extracted from multiple segments of a long text. Due to segmented extraction, there are many duplicates and variants.
-
-Your tasks:
-1. **Merge characters**: Combine entries that refer to the same person. Keep the most complete description, merge all aliases. Determine importance (main/supporting/extra).
-   - e.g. "Rose Waterford" and "Miss Waterford" are the same person
-   - e.g. "Mrs. Strickland" and "Amy" and "Strickland's wife" are the same person
-   - Remove generic descriptors (e.g. "Unnamed Woman", "the narrator") and merge them as aliases into the actual character
-2. **Merge locations**: Combine entries that refer to the same place. Keep the most specific description.
-   - e.g. "Strickland's dining room" and "Strickland residence dining-room" are the same
-   - Delete overly vague entries (e.g. "indoor location", "conversation setting")
-3. Output the deduplicated character and location lists. Maintain the original schema format.
-4. ALL output text must remain in the SAME LANGUAGE as the input data.`;
+const FULL_TEXT_SYSTEM_PROMPT = loadPipelinePrompt('analyze-full');
+const CHUNK_SYSTEM_PROMPT = loadPipelinePrompt('analyze-chunk');
+const DEDUP_SYSTEM_PROMPT = loadPipelinePrompt('analyze-dedup');
 
 // ── Helpers ──
 

@@ -8,6 +8,7 @@ import type { AiService } from '../../ai/ai.service';
 import type { ScriptAgentService } from '../../pipeline/script-agent.service';
 import { extractTextFromUrl } from '../../pipeline/engine/file-extract';
 import { withRetry, runWithConcurrency } from '../../pipeline/engine/retry';
+import { loadPipelinePrompt } from '../prompts';
 import type { AnalyzeResult } from '../../pipeline/pipelines/novel-to-storyboard/schemas';
 import { analyzeStep } from '../../pipeline/pipelines/novel-to-storyboard/analyze.step';
 
@@ -240,7 +241,10 @@ export function createScriptAgentTools(
             generateObject({
               model,
               schema: mapResultSchema,
-              system: `You are a professional screenwriter. Map the following story outline into exactly ${targetEpisodes} episodes. Each episode should have a clear narrative arc. Output in ${language}.`,
+              system: loadPipelinePrompt('episode-mapping', {
+                targetEpisodes,
+                language,
+              }),
               prompt: `Story outline (${analyze.outline.length} sections):\n\n${outlineSummary}`,
               temperature: 0.3,
             }),
@@ -464,22 +468,11 @@ export function createScriptAgentTools(
             () =>
               generateText({
                 model,
-                system: `You are a professional screenwriter. Write a shootable-format script for this episode.
-Output in ${language}. Use this exact format:
-
-EPISODE ${ep.episodeNumber} — "${ep.title}"
-
-0:00-0:15
-[Visual] Scene heading and visual description.
-[SFX/Ambience] Sound effects.
-CHARACTER NAME (parenthetical) Dialogue.
-
-Rules:
-- Every segment starts with a timecode (0:00-0:15 format)
-- All visuals tagged with [Visual]
-- All sounds tagged with [SFX/Ambience]
-- Use line breaks between segments
-- Do NOT output JSON, arrays, or structured data — output plain text only`,
+                system: loadPipelinePrompt('script-generation', {
+                  language,
+                  episodeNumber: ep.episodeNumber,
+                  episodeTitle: ep.title,
+                }),
                 prompt: `Episode ${ep.episodeNumber}: "${ep.title}"\nSummary: ${ep.summary}\n\nOutline:\n${outlineSlice}\n\nCharacters:\n${characterList}\n\nSource text excerpt:\n${sourceSegment.slice(0, 8000)}`,
                 temperature: 0.4,
               }),
@@ -770,24 +763,18 @@ Rules:
         const STORYBOARD_CHUNK_SIZE = 8000;
         const STORYBOARD_CHUNK_OVERLAP = 500;
 
-        const storyboardSystemPrompt = `You are a professional storyboard artist. Generate detailed shots for this episode.
-
-Shot density: ~${shotsPerMinute} shots/minute. Visual style: ${style}.
-All text output (description, dialogue, imagePrompt, videoPrompt) must be in ${language}.
-
-For shotSize, perspective, and movement: you MUST pick from the provided options list exactly.
-Use character names in description, imagePrompt, and videoPrompt so they can be linked to character assets.
-
-IMPORTANT: Each shot MUST have:
-- description: detailed narrative description for human readers
-- imagePrompt: professional AI image generation prompt with composition, lighting, colors, character appearance, mood, art style. NOT a translation of description.
-- videoPrompt: AI video generation prompt with motion, camera movement, character actions, temporal flow. NOT a copy of imagePrompt.
-These three fields serve different purposes and MUST have different content.
-
-Available scenes: ${sceneList}
-Available shot sizes: ${shotSizeOptions}
-Available perspectives: ${perspectiveOptions}
-Available movements: ${movementOptions}`;
+        const storyboardSystemPrompt = loadPipelinePrompt(
+          'storyboard-generation',
+          {
+            shotsPerMinute,
+            style,
+            language,
+            sceneList,
+            shotSizeOptions,
+            perspectiveOptions,
+            movementOptions,
+          },
+        );
 
         function splitSourceIntoChunks(source: string): string[] {
           if (source.length <= STORYBOARD_CHUNK_SIZE) return [source];

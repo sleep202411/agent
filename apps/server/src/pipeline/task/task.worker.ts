@@ -40,39 +40,11 @@ function splitIntoChunks(text: string): string[] {
 
 // ─── LLM Prompts ────────────────────────────────────────
 
-const FULL_TEXT_SYSTEM_PROMPT = `You are a professional novel/screenplay analyst. Analyze the full text and extract structured information.
+import { loadPipelinePrompt } from '../../assistant/prompts';
 
-Requirements:
-1. **Characters**: Extract all named characters. Merge different names for the same person.
-2. **Locations**: Extract all locations/settings.
-3. **Outline**: One-sentence summary for each chapter or major section.
-4. **Style**: Genre (realistic/fantasy/sci-fi/romance/mystery etc.).
-5. **Language**: Primary language of the source text.
-
-Important:
-- The aliases field must list ALL name variants.
-- Outline index starts from 0.
-- ALL output text must be in the SAME LANGUAGE as the source text.`;
-
-const CHUNK_SYSTEM_PROMPT = `You are a professional novel/screenplay analyst. Analyze this text segment.
-
-Requirements:
-1. Extract all characters (with aliases) and locations from this segment.
-2. Write one outline entry (title + one-sentence summary).
-3. Determine the genre/style.
-4. Detect the language.
-
-Important:
-- Only extract info present in this segment.
-- Outline index starts from 0 within this segment.
-- ALL output must be in the SAME LANGUAGE as the source text.`;
-
-const DEDUP_SYSTEM_PROMPT = `You are a text analysis expert. Merge duplicate characters and locations from multiple segments.
-
-1. **Merge characters**: Combine entries for the same person. Keep the most complete description.
-2. **Merge locations**: Combine entries for the same place.
-3. Output deduplicated lists.
-4. ALL output must remain in the SAME LANGUAGE as the input.`;
+const FULL_TEXT_SYSTEM_PROMPT = loadPipelinePrompt('analyze-full');
+const CHUNK_SYSTEM_PROMPT = loadPipelinePrompt('analyze-chunk');
+const DEDUP_SYSTEM_PROMPT = loadPipelinePrompt('analyze-dedup');
 
 // ─── Merge helpers ──────────────────────────────────────
 
