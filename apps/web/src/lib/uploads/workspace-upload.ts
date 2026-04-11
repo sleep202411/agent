@@ -258,11 +258,8 @@ export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFi
     throw new Error(validationError);
   }
 
-  // MD5 dedup: skip re-uploading identical files
+  // Compute hash for cache tracking (no longer blocks duplicate uploads)
   const hash = await computeFileHash(file);
-  if (uploadedMd5Cache.has(hash)) {
-    throw new DuplicateFileError(file.name);
-  }
 
   const requestData = { ...(options.requestData ?? {}) };
   if (options.sourceType) {
