@@ -42,7 +42,7 @@ const TABS = [
 
 function loadMockForm(): IPCreateForm & {
   promoVideo: string | null;
-  episodes: { title: string; price: number }[];
+  episodes: { title: string; price: number; type: "linear" | "interactive" }[];
 } {
   const ip = MOCK_IP_DETAIL;
   return {
@@ -65,7 +65,11 @@ function loadMockForm(): IPCreateForm & {
     presaleDeadline: "",
     rewards: PRESET_REWARDS.slice(0, 2),
     promoVideo: null,
-    episodes: ip.episodeList.map((ep) => ({ title: ep.title, price: ep.price })),
+    episodes: ip.episodeList.map((ep, i) => ({
+      title: ep.title,
+      price: ep.price,
+      type: (i === 2 || i === 4 ? "interactive" : "linear") as "linear" | "interactive",
+    })),
   };
 }
 
@@ -99,7 +103,8 @@ export default function IPEditPage({ id }: { id: string }) {
   const removeTag = (tag: string) => update({ tags: form.tags.filter((t) => t !== tag) });
 
   // Episode helpers
-  const addEpisode = () => update({ episodes: [...form.episodes, { title: "", price: 0 }] });
+  const addEpisode = (type: "linear" | "interactive" = "linear") =>
+    update({ episodes: [...form.episodes, { title: "", price: 0, type }] });
   const removeEpisode = (i: number) =>
     update({ episodes: form.episodes.filter((_, j) => j !== i) });
   const updateEpisode = (i: number, patch: Partial<{ title: string; price: number }>) => {
@@ -403,13 +408,22 @@ export default function IPEditPage({ id }: { id: string }) {
               <SectionCard
                 title={t("editEpisodes")}
                 action={
-                  <button
-                    type="button"
-                    onClick={addEpisode}
-                    className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
-                  >
-                    <IconPlus className="size-3.5" /> {t("addEpisode")}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => addEpisode("linear")}
+                      className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/70"
+                    >
+                      <IconPlus className="size-3.5" /> {t("addLinear")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addEpisode("interactive")}
+                      className="flex items-center gap-1 rounded-lg border border-violet-400/30 bg-violet-400/10 px-3 py-1.5 text-xs font-medium text-violet-400 hover:bg-violet-400/20"
+                    >
+                      <IconPlus className="size-3.5" /> {t("addInteractive")}
+                    </button>
+                  </div>
                 }
               >
                 {form.episodes.length === 0 ? (
@@ -421,12 +435,27 @@ export default function IPEditPage({ id }: { id: string }) {
                     {form.episodes.map((ep, i) => (
                       <div
                         key={i}
-                        className="flex items-center gap-3 rounded-lg border border-border bg-secondary/30 p-3"
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg border p-3",
+                          ep.type === "interactive"
+                            ? "border-violet-400/20 bg-violet-400/5"
+                            : "border-border bg-secondary/30"
+                        )}
                       >
                         <IconGripVertical className="size-4 shrink-0 text-muted-foreground/30" />
                         <div className="flex size-8 shrink-0 items-center justify-center rounded bg-secondary text-xs font-bold text-muted-foreground">
                           {String(i + 1).padStart(2, "0")}
                         </div>
+                        <span
+                          className={cn(
+                            "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                            ep.type === "interactive"
+                              ? "bg-violet-400/10 text-violet-400"
+                              : "bg-blue-400/10 text-blue-400"
+                          )}
+                        >
+                          {ep.type === "interactive" ? t("typeInteractive") : t("typeLinear")}
+                        </span>
                         <input
                           type="text"
                           value={ep.title}
@@ -445,6 +474,14 @@ export default function IPEditPage({ id }: { id: string }) {
                             className="w-20 rounded-lg border border-border bg-background px-2 py-1.5 text-center text-sm focus:border-primary focus:outline-none"
                           />
                         </div>
+                        {ep.type === "interactive" && (
+                          <a
+                            href={`/ips/${id}/episodes/${i + 1}/editor`}
+                            className="shrink-0 rounded-lg border border-violet-400/30 bg-violet-400/10 px-2.5 py-1 text-[10px] font-semibold text-violet-400 hover:bg-violet-400/20"
+                          >
+                            {t("editFlow")}
+                          </a>
+                        )}
                         <button
                           type="button"
                           onClick={() => removeEpisode(i)}
