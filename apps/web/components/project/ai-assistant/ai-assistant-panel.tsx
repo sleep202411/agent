@@ -173,18 +173,15 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   });
 
   const handleTaskContinue = useCallback(
-    (taskId: string, result: unknown) => {
+    (taskId: string, _result: unknown) => {
       if (!projectId) return;
       setContinuedTaskIds((prev) => new Set(prev).add(taskId));
-      const r = result as Record<string, unknown> | undefined;
-      const sid = r?.sessionId ?? "";
-      const text = `Analysis complete. sessionId=${sid}. Characters: ${r?.characters ?? 0}, Locations: ${r?.locations ?? 0}, Outline sections: ${r?.outlineSections ?? 0}. Please continue to the next step.`;
+      const text = t("taskContinue");
       if (editorRef.current) editorRef.current.innerText = text;
       dispatch(setDraft({ projectId, draft: text }));
-      // Draft is already in Redux — dispatch immediately, no timeout needed
       if (projectId) void dispatch(sendUserMessage(projectId));
     },
-    [projectId, dispatch]
+    [projectId, dispatch, t]
   );
 
   return (
