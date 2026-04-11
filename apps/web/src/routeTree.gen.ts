@@ -21,6 +21,7 @@ import { Route as PaymentResultRouteImport } from "./routes/payment.result";
 import { Route as IpsIdRouteImport } from "./routes/ips_.$id";
 import { Route as IpsCreateRouteImport } from "./routes/ips.create";
 import { Route as CrewsIdRouteImport } from "./routes/crews_.$id";
+import { Route as CrewsCreateRouteImport } from "./routes/crews.create";
 import { Route as CreatorsIdRouteImport } from "./routes/creators_.$id";
 import { Route as StudioThemePreviewRouteImport } from "./routes/_studio.theme-preview";
 import { Route as StudioTasksRouteImport } from "./routes/_studio.tasks";
@@ -90,6 +91,11 @@ const CrewsIdRoute = CrewsIdRouteImport.update({
   path: "/crews/$id",
   getParentRoute: () => rootRouteImport,
 } as any);
+const CrewsCreateRoute = CrewsCreateRouteImport.update({
+  id: "/crews/create",
+  path: "/crews/create",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const CreatorsIdRoute = CreatorsIdRouteImport.update({
   id: "/creators_/$id",
   path: "/creators/$id",
@@ -153,6 +159,7 @@ export interface FileRoutesByFullPath {
   "/tasks": typeof StudioTasksRoute;
   "/theme-preview": typeof StudioThemePreviewRoute;
   "/creators/$id": typeof CreatorsIdRoute;
+  "/crews/create": typeof CrewsCreateRoute;
   "/crews/$id": typeof CrewsIdRoute;
   "/ips/create": typeof IpsCreateRoute;
   "/ips/$id": typeof IpsIdRoute;
@@ -175,6 +182,7 @@ export interface FileRoutesByTo {
   "/tasks": typeof StudioTasksRoute;
   "/theme-preview": typeof StudioThemePreviewRoute;
   "/creators/$id": typeof CreatorsIdRoute;
+  "/crews/create": typeof CrewsCreateRoute;
   "/crews/$id": typeof CrewsIdRoute;
   "/ips/create": typeof IpsCreateRoute;
   "/ips/$id": typeof IpsIdRoute;
@@ -200,6 +208,7 @@ export interface FileRoutesById {
   "/_studio/tasks": typeof StudioTasksRoute;
   "/_studio/theme-preview": typeof StudioThemePreviewRoute;
   "/creators_/$id": typeof CreatorsIdRoute;
+  "/crews/create": typeof CrewsCreateRoute;
   "/crews_/$id": typeof CrewsIdRoute;
   "/ips/create": typeof IpsCreateRoute;
   "/ips_/$id": typeof IpsIdRoute;
@@ -224,6 +233,7 @@ export interface FileRouteTypes {
     | "/tasks"
     | "/theme-preview"
     | "/creators/$id"
+    | "/crews/create"
     | "/crews/$id"
     | "/ips/create"
     | "/ips/$id"
@@ -246,6 +256,7 @@ export interface FileRouteTypes {
     | "/tasks"
     | "/theme-preview"
     | "/creators/$id"
+    | "/crews/create"
     | "/crews/$id"
     | "/ips/create"
     | "/ips/$id"
@@ -270,6 +281,7 @@ export interface FileRouteTypes {
     | "/_studio/tasks"
     | "/_studio/theme-preview"
     | "/creators_/$id"
+    | "/crews/create"
     | "/crews_/$id"
     | "/ips/create"
     | "/ips_/$id"
@@ -287,6 +299,7 @@ export interface RootRouteChildren {
   StudioRoute: typeof StudioRouteWithChildren;
   ProfileRoute: typeof ProfileRoute;
   CreatorsIdRoute: typeof CreatorsIdRoute;
+  CrewsCreateRoute: typeof CrewsCreateRoute;
   CrewsIdRoute: typeof CrewsIdRoute;
   IpsCreateRoute: typeof IpsCreateRoute;
   IpsIdRoute: typeof IpsIdRoute;
@@ -382,6 +395,13 @@ declare module "@tanstack/react-router" {
       path: "/crews/$id";
       fullPath: "/crews/$id";
       preLoaderRoute: typeof CrewsIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/crews/create": {
+      id: "/crews/create";
+      path: "/crews/create";
+      fullPath: "/crews/create";
+      preLoaderRoute: typeof CrewsCreateRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/creators_/$id": {
@@ -495,6 +515,7 @@ const rootRouteChildren: RootRouteChildren = {
   StudioRoute: StudioRouteWithChildren,
   ProfileRoute: ProfileRoute,
   CreatorsIdRoute: CreatorsIdRoute,
+  CrewsCreateRoute: CrewsCreateRoute,
   CrewsIdRoute: CrewsIdRoute,
   IpsCreateRoute: IpsCreateRoute,
   IpsIdRoute: IpsIdRoute,
