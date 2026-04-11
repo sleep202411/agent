@@ -346,8 +346,13 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
               {progress.error}
             </div>
           )}
-          <Button variant="outline" color="muted" className="w-full" onClick={handleContinue}>
-            {t("taskContinue")}
+          <Button
+            variant="outline"
+            color="muted"
+            className="w-full"
+            onClick={() => setContinued(true)}
+          >
+            {t("usageInfoClose")}
           </Button>
         </div>
       )}
