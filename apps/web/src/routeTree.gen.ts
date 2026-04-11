@@ -30,6 +30,7 @@ import { Route as StudioAssetsRouteImport } from "./routes/_studio.assets";
 import { Route as AuthRegisterRouteImport } from "./routes/_auth.register";
 import { Route as AuthLoginRouteImport } from "./routes/_auth.login";
 import { Route as AuthForgotPasswordRouteImport } from "./routes/_auth.forgot-password";
+import { Route as CrewsIdWorkspaceRouteImport } from "./routes/crews_.$id.workspace";
 
 const ProfileRoute = ProfileRouteImport.update({
   id: "/profile",
@@ -134,6 +135,11 @@ const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   path: "/forgot-password",
   getParentRoute: () => AuthRoute,
 } as any);
+const CrewsIdWorkspaceRoute = CrewsIdWorkspaceRouteImport.update({
+  id: "/workspace",
+  path: "/workspace",
+  getParentRoute: () => CrewsIdRoute,
+} as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
@@ -147,7 +153,7 @@ export interface FileRoutesByFullPath {
   "/tasks": typeof StudioTasksRoute;
   "/theme-preview": typeof StudioThemePreviewRoute;
   "/creators/$id": typeof CreatorsIdRoute;
-  "/crews/$id": typeof CrewsIdRoute;
+  "/crews/$id": typeof CrewsIdRouteWithChildren;
   "/ips/create": typeof IpsCreateRoute;
   "/ips/$id": typeof IpsIdRoute;
   "/payment/result": typeof PaymentResultRoute;
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   "/creators/": typeof CreatorsIndexRoute;
   "/crews/": typeof CrewsIndexRoute;
   "/ips/": typeof IpsIndexRoute;
+  "/crews/$id/workspace": typeof CrewsIdWorkspaceRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
@@ -168,7 +175,7 @@ export interface FileRoutesByTo {
   "/tasks": typeof StudioTasksRoute;
   "/theme-preview": typeof StudioThemePreviewRoute;
   "/creators/$id": typeof CreatorsIdRoute;
-  "/crews/$id": typeof CrewsIdRoute;
+  "/crews/$id": typeof CrewsIdRouteWithChildren;
   "/ips/create": typeof IpsCreateRoute;
   "/ips/$id": typeof IpsIdRoute;
   "/payment/result": typeof PaymentResultRoute;
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   "/creators": typeof CreatorsIndexRoute;
   "/crews": typeof CrewsIndexRoute;
   "/ips": typeof IpsIndexRoute;
+  "/crews/$id/workspace": typeof CrewsIdWorkspaceRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -192,7 +200,7 @@ export interface FileRoutesById {
   "/_studio/tasks": typeof StudioTasksRoute;
   "/_studio/theme-preview": typeof StudioThemePreviewRoute;
   "/creators_/$id": typeof CreatorsIdRoute;
-  "/crews_/$id": typeof CrewsIdRoute;
+  "/crews_/$id": typeof CrewsIdRouteWithChildren;
   "/ips/create": typeof IpsCreateRoute;
   "/ips_/$id": typeof IpsIdRoute;
   "/payment/result": typeof PaymentResultRoute;
@@ -200,6 +208,7 @@ export interface FileRoutesById {
   "/creators/": typeof CreatorsIndexRoute;
   "/crews/": typeof CrewsIndexRoute;
   "/ips/": typeof IpsIndexRoute;
+  "/crews_/$id/workspace": typeof CrewsIdWorkspaceRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
@@ -222,7 +231,8 @@ export interface FileRouteTypes {
     | "/projects/$id"
     | "/creators/"
     | "/crews/"
-    | "/ips/";
+    | "/ips/"
+    | "/crews/$id/workspace";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
@@ -243,7 +253,8 @@ export interface FileRouteTypes {
     | "/projects/$id"
     | "/creators"
     | "/crews"
-    | "/ips";
+    | "/ips"
+    | "/crews/$id/workspace";
   id:
     | "__root__"
     | "/"
@@ -266,7 +277,8 @@ export interface FileRouteTypes {
     | "/projects_/$id"
     | "/creators/"
     | "/crews/"
-    | "/ips/";
+    | "/ips/"
+    | "/crews_/$id/workspace";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -275,7 +287,7 @@ export interface RootRouteChildren {
   StudioRoute: typeof StudioRouteWithChildren;
   ProfileRoute: typeof ProfileRoute;
   CreatorsIdRoute: typeof CreatorsIdRoute;
-  CrewsIdRoute: typeof CrewsIdRoute;
+  CrewsIdRoute: typeof CrewsIdRouteWithChildren;
   IpsCreateRoute: typeof IpsCreateRoute;
   IpsIdRoute: typeof IpsIdRoute;
   PaymentResultRoute: typeof PaymentResultRoute;
@@ -434,6 +446,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthForgotPasswordRouteImport;
       parentRoute: typeof AuthRoute;
     };
+    "/crews_/$id/workspace": {
+      id: "/crews_/$id/workspace";
+      path: "/workspace";
+      fullPath: "/crews/$id/workspace";
+      preLoaderRoute: typeof CrewsIdWorkspaceRouteImport;
+      parentRoute: typeof CrewsIdRoute;
+    };
   }
 }
 
@@ -469,13 +488,23 @@ const StudioRouteChildren: StudioRouteChildren = {
 
 const StudioRouteWithChildren = StudioRoute._addFileChildren(StudioRouteChildren);
 
+interface CrewsIdRouteChildren {
+  CrewsIdWorkspaceRoute: typeof CrewsIdWorkspaceRoute;
+}
+
+const CrewsIdRouteChildren: CrewsIdRouteChildren = {
+  CrewsIdWorkspaceRoute: CrewsIdWorkspaceRoute,
+};
+
+const CrewsIdRouteWithChildren = CrewsIdRoute._addFileChildren(CrewsIdRouteChildren);
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
   StudioRoute: StudioRouteWithChildren,
   ProfileRoute: ProfileRoute,
   CreatorsIdRoute: CreatorsIdRoute,
-  CrewsIdRoute: CrewsIdRoute,
+  CrewsIdRoute: CrewsIdRouteWithChildren,
   IpsCreateRoute: IpsCreateRoute,
   IpsIdRoute: IpsIdRoute,
   PaymentResultRoute: PaymentResultRoute,
