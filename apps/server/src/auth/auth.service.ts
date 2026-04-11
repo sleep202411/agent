@@ -59,7 +59,10 @@ export class AuthService {
       });
 
       if (!response.ok) {
-        this.logger.warn(`Auth validation failed: HTTP ${response.status}`);
+        const errorBody = await response.text().catch(() => '');
+        this.logger.warn(
+          `Auth validation failed: HTTP ${response.status} url=${baseUrl}/user/query/user/info cookie=${cookie?.slice(0, 50)}... body=${errorBody.slice(0, 200)}`,
+        );
         return null;
       }
 
