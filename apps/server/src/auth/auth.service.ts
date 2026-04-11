@@ -58,8 +58,9 @@ export class AuthService {
         : cookie;
 
       const response = await fetch(`${baseUrl}/user/query/user/info`, {
-        method: 'GET',
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           cookie: satokenCookie,
         },
       });
