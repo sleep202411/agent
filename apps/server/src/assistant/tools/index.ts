@@ -11,15 +11,15 @@ export type UserTier = 'free' | 'pro' | 'enterprise';
 
 /**
  * Tools that require a paid plan to execute.
- * Free users see these tools (so LLM knows they exist),
- * but execution returns a friendly upgrade prompt.
+ * Currently disabled — all tools are available to all users.
+ * Re-enable when VIP gating is needed.
  */
-const PRO_ONLY_TOOLS = new Set([
-  'analyze_text',
-  'map_episodes',
-  'create_episodes_and_assets',
-  'generate_scripts',
-  'generate_storyboard',
+const PRO_ONLY_TOOLS = new Set<string>([
+  // 'analyze_text',
+  // 'map_episodes',
+  // 'create_episodes_and_assets',
+  // 'generate_scripts',
+  // 'generate_storyboard',
 ]);
 
 /**
