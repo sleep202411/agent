@@ -61,11 +61,7 @@ export function mergeScenes(worldScenes: ScenePanelItem[], assetScenes: ScenePan
   const sceneIndexMap = new Map<string, number>();
 
   const pushScene = (scene: ScenePanelItem) => {
-    const keys = [
-      normalizeSceneName(scene.aiId),
-      normalizeSceneName(scene.id),
-      normalizeSceneName(scene.name),
-    ].filter(Boolean);
+    const keys = [normalizeSceneName(scene.aiId), normalizeSceneName(scene.id)].filter(Boolean);
 
     const existingKey = keys.find((key) => sceneIndexMap.has(key));
     if (existingKey) {

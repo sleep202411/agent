@@ -79,7 +79,9 @@ export class AuthService {
         email: (data.email as string) ?? undefined,
         phone: (data.phone as string) ?? undefined,
         headImg: (data.headImg as string) ?? undefined,
-        userLevel: (data.userLevel as string) ?? undefined,
+        userLevel: data.userLevel
+          ? String(data.userLevel).toUpperCase()
+          : undefined,
       };
 
       if (!user.userId) {

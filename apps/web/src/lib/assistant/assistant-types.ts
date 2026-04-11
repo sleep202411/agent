@@ -230,6 +230,9 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   // Read tools
   get_project_snapshot: "Reading Project",
   get_world_assets: "Reading Assets",
+  list_characters: "Listing Characters",
+  list_scenes: "Listing Scenes",
+  list_props: "Listing Props",
   search_world_assets: "Searching Assets",
   aggregate_world_assets_for_analysis: "Analyzing Assets",
   get_storyboard_snapshot: "Reading Storyboard",

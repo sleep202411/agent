@@ -3,6 +3,7 @@ import {
   convertToModelMessages,
   stepCountIs,
   streamText,
+  validateUIMessages,
   type ToolSet,
   type UIMessage,
 } from 'ai';
@@ -134,16 +135,23 @@ export class AssistantService {
     projectId: string,
     tier?: string,
   ): Promise<{
+    conversationId: string;
     messages: StoredMessage[];
     messageCount: number;
     messageLimit: number;
+    retentionDays: number;
   }> {
-    const messages = await this.conversation.getMessages(userId, projectId);
+    const { conversationId, messages } = await this.conversation.getMessages(
+      userId,
+      projectId,
+    );
     const limits = getLimitsForTier(tier);
     return {
+      conversationId,
       messages,
       messageCount: messages.length,
       messageLimit: limits.maxMessages,
+      retentionDays: Math.round(limits.ttlSeconds / 86400),
     };
   }
 
@@ -164,17 +172,16 @@ export class AssistantService {
       userTier?: string;
     },
     incomingHeaders: HeadersLike,
-  ): Promise<{
-    toUIMessageStreamResponse: () => globalThis.Response;
-    /** Call after stream completes to persist the assistant reply */
-    onFinishSave: (assistantMessage: AssistantMessage) => Promise<void>;
-  }> {
+  ): Promise<{ toUIMessageStreamResponse: () => Response }> {
     const { userId, userTier } = payload;
 
     // 1. Load conversation history
-    const history = await this.conversation.getMessages(
+    const { messages: history } = await this.conversation.getMessages(
       userId,
       payload.projectId,
+    );
+    this.logger.log(
+      `Loaded ${history.length} history messages for userId=${userId} project=${payload.projectId}`,
     );
 
     // 2. Check message limit (based on CURRENT tier)
@@ -221,13 +228,30 @@ export class AssistantService {
           : undefined,
     };
 
-    // 5. Collect attachment data from the new user message
-    const allMessages = [
-      ...history.map(
-        (m) => ({ ...m, metadata: m.metadata }) as AssistantMessage,
-      ),
-      payload.userMessage,
-    ];
+    // 5. Rebuild messages for LLM: history (text-only) + new user message
+    // History messages are simplified (no tool invocations) to ensure
+    // clean context. Tool calls are ephemeral — only the current turn uses them.
+    const historyMessages: AssistantMessage[] = history
+      .map((m) => {
+        // Extract only text parts from stored messages
+        const textParts = (m.parts as Array<Record<string, unknown>>)
+          .filter(
+            (p) => p.type === 'text' && typeof p.text === 'string' && p.text,
+          )
+          .map((p) => ({
+            type: 'text' as const,
+            text: p.text as string,
+            state: 'done' as const,
+          }));
+        if (textParts.length === 0) return null;
+        return {
+          id: m.id,
+          role: m.role,
+          parts: textParts,
+        } as AssistantMessage;
+      })
+      .filter(Boolean) as AssistantMessage[];
+
     const attachmentFullText = this.collectAttachmentTexts([
       payload.userMessage,
     ]);
@@ -271,11 +295,56 @@ export class AssistantService {
     );
     this.logger.log('Project context ready');
 
-    // 8. Prepare messages for LLM
-    const augmented = this.augmentMessages(allMessages);
-    const modelMessages = await convertToModelMessages(augmented, {
-      tools: tools as unknown as ToolSet,
-    });
+    // 8. Build model messages
+    // History messages are pure text (user/assistant alternating).
+    // Only the new user message goes through full validation.
+    const historyModelMessages = historyMessages.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content:
+        m.parts
+          .filter(
+            (p): p is { type: 'text'; text: string } =>
+              typeof p === 'object' &&
+              p !== null &&
+              'type' in p &&
+              (p as Record<string, unknown>).type === 'text',
+          )
+          .map((p) => p.text)
+          .join('\n') || '',
+    }));
+
+    // Validate + convert only the current user message
+    const currentMessages = this.augmentMessages([payload.userMessage]);
+    let currentModelMessages;
+    try {
+      const validated = await validateUIMessages({
+        messages: currentMessages,
+        tools: tools as unknown as ToolSet,
+      } as never);
+      currentModelMessages = await convertToModelMessages(validated, {
+        tools: tools as unknown as ToolSet,
+      });
+    } catch (err) {
+      this.logger.warn(`Current message validation failed: ${err}`);
+      currentModelMessages = [
+        {
+          role: 'user' as const,
+          content: currentMessages
+            .map((m) =>
+              m.parts
+                .filter((p) => p.type === 'text')
+                .map((p) => (p as { text: string }).text)
+                .join('\n'),
+            )
+            .join('\n'),
+        },
+      ];
+    }
+
+    const modelMessages = [...historyModelMessages, ...currentModelMessages];
+    this.logger.log(
+      `Built ${modelMessages.length} model messages (${historyModelMessages.length} history + ${currentModelMessages.length} current}`,
+    );
 
     // Strip non-image file parts — alibaba provider only supports images
     for (const msg of modelMessages) {
@@ -327,23 +396,58 @@ export class AssistantService {
       onStepFinish: (event) => {
         this.logger.log(`Step finished: reason=${event.finishReason}`);
       },
+      onFinish: async ({ response }) => {
+        // Persist assistant replies after stream completes
+        try {
+          const assistantMsgs = response.messages.filter(
+            (m) => m.role === 'assistant',
+          );
+          if (assistantMsgs.length === 0) return;
+
+          const stored: StoredMessage[] = assistantMsgs.map((msg) => {
+            // Extract text parts from model message content
+            const parts: unknown[] = [];
+            if (typeof msg.content === 'string') {
+              if (msg.content) {
+                parts.push({ type: 'text', text: msg.content, state: 'done' });
+              }
+            } else if (Array.isArray(msg.content)) {
+              for (const part of msg.content) {
+                if (part.type === 'text' && part.text) {
+                  parts.push({ type: 'text', text: part.text, state: 'done' });
+                } else if (part.type === 'tool-call') {
+                  parts.push({
+                    type: `tool-${part.toolName}`,
+                    toolCallId: part.toolCallId,
+                    state: 'output-available',
+                  });
+                }
+              }
+            }
+            return {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              parts,
+              createdAt: Date.now(),
+            };
+          });
+
+          await this.conversation.appendAndSave(
+            userId,
+            payload.projectId,
+            stored,
+            userTier,
+          );
+          this.logger.log(
+            `Saved ${stored.length} assistant messages: userId=${userId} project=${payload.projectId}`,
+          );
+        } catch (err) {
+          this.logger.error(`Failed to save assistant reply: ${err}`);
+        }
+      },
     });
 
-    return {
-      ...result,
-      onFinishSave: async (assistantMessage: AssistantMessage) => {
-        const assistantStored = stripForStorage(assistantMessage);
-        await this.conversation.appendAndSave(
-          userId,
-          payload.projectId,
-          [assistantStored],
-          userTier,
-        );
-        this.logger.log(
-          `Saved assistant reply: userId=${userId} project=${payload.projectId}`,
-        );
-      },
-    };
+    return result;
   }
 
   // ─── System prompt ─────────────────────────────────────
@@ -397,9 +501,10 @@ export class AssistantService {
 - 角色/场景/道具数量: ${context.characterSummary?.total ?? 0}/${context.sceneSummary?.total ?? 0}/${context.propSummary?.total ?? 0}
 - 当前分镜列: ${columnNames || '暂无'}
 - 当前镜头数量: ${context.storyboardSummary?.shotCount ?? 0}
-- 已有角色: ${characterSample || '暂无'}
-- 已有场景: ${sceneSample || '暂无'}
-- 已有道具: ${propSample || '暂无'}
+- 部分角色: ${characterSample || '暂无'}
+- 部分场景: ${sceneSample || '暂无'}
+- 部分道具: ${propSample || '暂无'}
+注意：以上仅列出部分角色/场景/道具名称。当用户询问数量、列表或具体信息时，必须先调用 get_world_assets 或 get_project_snapshot 工具获取最新数据，不要依赖上方摘要或之前对话中的旧数据。回复时不要提及"样本"、"部分列出"等内部概念。
 
 [行为模式]
 按以下 4 种模式分流：

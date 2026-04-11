@@ -10,9 +10,9 @@ export interface ConversationLimits {
 }
 
 const TIER_LIMITS: Record<string, ConversationLimits> = {
-  free: { maxMessages: 50, ttlSeconds: 0, persist: false },
-  VIP1: { maxMessages: 100, ttlSeconds: 86400, persist: true }, // 1 day
-  VIP2: { maxMessages: 200, ttlSeconds: 86400 * 7, persist: true }, // 7 days
+  free: { maxMessages: 50, ttlSeconds: 3600, persist: true }, // 1 hour
+  VIP1: { maxMessages: 100, ttlSeconds: 86400 * 15, persist: true }, // 15 days
+  VIP2: { maxMessages: 200, ttlSeconds: 86400 * 15, persist: true }, // 15 days
   VIP3: { maxMessages: 500, ttlSeconds: 86400 * 15, persist: true }, // 15 days
 };
 
@@ -34,6 +34,12 @@ export interface StoredMessage {
   parts: unknown[];
   metadata?: Record<string, unknown>;
   createdAt?: number;
+}
+
+/** What's actually stored in Redis */
+interface StoredConversation {
+  id: string;
+  messages: StoredMessage[];
 }
 
 // ─── Service ───────────────────────────────────────────
@@ -60,43 +66,57 @@ export class ConversationService implements OnModuleDestroy {
   // ─── Read ──────────────────────────────────────────────
 
   /**
+   * Load conversation from Redis.
+   */
+  private async getConversation(
+    userId: string,
+    projectId: string,
+  ): Promise<StoredConversation | null> {
+    if (!this.redis) return null;
+    try {
+      const raw = await this.redis.get(this.key(userId, projectId));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      // Backwards compat: old format was a plain array
+      if (Array.isArray(parsed)) {
+        return { id: crypto.randomUUID().slice(0, 8), messages: parsed };
+      }
+      return parsed as StoredConversation;
+    } catch (error) {
+      this.logger.error(`[getConversation] Failed: ${error}`);
+      return null;
+    }
+  }
+
+  /**
    * Load conversation history for a user+project.
    */
   async getMessages(
     userId: string,
     projectId: string,
-  ): Promise<StoredMessage[]> {
-    if (!this.redis) return [];
-    try {
-      const raw = await this.redis.get(this.key(userId, projectId));
-      if (!raw) return [];
-      const messages = JSON.parse(raw) as StoredMessage[];
-      this.logger.log(
-        `[getMessages] userId=${userId} project=${projectId}: ${messages.length} messages`,
-      );
-      return messages;
-    } catch (error) {
-      this.logger.error(`[getMessages] Failed: ${error}`);
-      return [];
-    }
+  ): Promise<{ conversationId: string; messages: StoredMessage[] }> {
+    const conv = await this.getConversation(userId, projectId);
+    if (!conv) return { conversationId: '', messages: [] };
+    this.logger.log(
+      `[getMessages] userId=${userId} project=${projectId}: ${conv.messages.length} messages, id=${conv.id}`,
+    );
+    return { conversationId: conv.id, messages: conv.messages };
   }
 
   /**
    * Get current message count (without loading full messages).
    */
   async getMessageCount(userId: string, projectId: string): Promise<number> {
-    // Could optimize with a separate counter key if needed
-    const msgs = await this.getMessages(userId, projectId);
-    return msgs.length;
+    const { messages } = await this.getMessages(userId, projectId);
+    return messages.length;
   }
 
   // ─── Write ─────────────────────────────────────────────
 
   /**
-   * Save the full message array.
-   * TTL is only set when creating a new conversation (no existing key).
-   * On subsequent saves, TTL is preserved — it never resets.
-   * This means if a user downgrades, their existing TTL is honored.
+   * Save the full conversation.
+   * TTL refreshes on every save — represents "time since last activity".
+   * Active users never lose their history.
    */
   async saveMessages(
     userId: string,
@@ -109,19 +129,23 @@ export class ConversationService implements OnModuleDestroy {
 
     const k = this.key(userId, projectId);
 
+    // Preserve existing conversation id, or generate new one
+    const existing = await this.getConversation(userId, projectId);
+    const conv: StoredConversation = {
+      id: existing?.id ?? crypto.randomUUID().slice(0, 8),
+      messages,
+    };
+
     try {
-      // Check if this is a new conversation (no existing key)
-      const isNew = !(await this.redis.exists(k));
-
-      await this.redis.set(k, JSON.stringify(messages));
-
-      // Only set TTL on first creation — never reset on subsequent saves
-      if (isNew && limits.ttlSeconds > 0) {
-        await this.redis.expire(k, limits.ttlSeconds);
+      const json = JSON.stringify(conv);
+      if (limits.ttlSeconds > 0) {
+        await this.redis.set(k, json, 'EX', limits.ttlSeconds);
+      } else {
+        await this.redis.set(k, JSON.stringify(messages));
       }
 
       this.logger.log(
-        `[saveMessages] userId=${userId} project=${projectId}: saved ${messages.length} messages (tier=${tier ?? 'free'}${isNew ? `, ttl=${limits.ttlSeconds}s` : ''})`,
+        `[saveMessages] userId=${userId} project=${projectId}: saved ${messages.length} messages (tier=${tier ?? 'free'}, ttl=${limits.ttlSeconds}s)`,
       );
     } catch (error) {
       this.logger.error(`[saveMessages] Failed: ${error}`);
@@ -138,7 +162,7 @@ export class ConversationService implements OnModuleDestroy {
     newMessages: StoredMessage[],
     tier?: string,
   ): Promise<StoredMessage[]> {
-    const existing = await this.getMessages(userId, projectId);
+    const { messages: existing } = await this.getMessages(userId, projectId);
     const combined = [...existing, ...newMessages];
 
     // Enforce max — trim oldest if over limit

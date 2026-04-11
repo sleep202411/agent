@@ -150,9 +150,11 @@ export async function sendAssistantChat({
 // ─── History API ───────────────────────────────────────
 
 export interface ConversationHistoryResponse {
+  conversationId: string;
   messages: AssistantMessage[];
   messageCount: number;
   messageLimit: number;
+  retentionDays: number;
   tier: string;
 }
 

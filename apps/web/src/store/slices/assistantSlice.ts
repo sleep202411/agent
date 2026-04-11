@@ -75,6 +75,10 @@ function createEmptyConversation() {
     messageLimit: 50,
     /** Current tier name */
     tier: "free" as string,
+    /** Conversation ID from server */
+    conversationId: "" as string,
+    /** History retention in days */
+    retentionDays: 1,
   };
 }
 
@@ -490,6 +494,8 @@ export const loadHistory = createAsyncThunk<
         messages: data.messages as AssistantMessage[],
         messageLimit: data.messageLimit,
         tier: data.tier,
+        conversationId: data.conversationId,
+        retentionDays: data.retentionDays,
       })
     );
   } catch (error) {
@@ -840,9 +846,12 @@ export const assistantSlice = createSlice({
         messages: AssistantMessage[];
         messageLimit: number;
         tier: string;
+        conversationId: string;
+        retentionDays: number;
       }>
     ) => {
-      const { projectId, messages, messageLimit, tier } = action.payload;
+      const { projectId, messages, messageLimit, tier, conversationId, retentionDays } =
+        action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       const welcomeMsg = createWelcomeMessage();
       state.projects[projectId] = {
@@ -852,6 +861,8 @@ export const assistantSlice = createSlice({
         historyMessageCount: messages.length,
         messageLimit,
         tier,
+        conversationId,
+        retentionDays,
       };
     },
 

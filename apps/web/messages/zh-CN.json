@@ -1053,7 +1053,19 @@
     "executing": "执行中",
     "newConversation": "新对话",
     "historySeparator": "以上为历史消息",
-    "messageLimitReached": "对话已达上限（{current}/{max}条），请开始新对话或升级会员。"
+    "messageLimitReached": "对话已达上限（{current}/{max}条），请开始新对话或升级会员。",
+    "tierFree": "免费",
+    "usageInfoTitle": "对话用量",
+    "usageInfoTier": "当前等级",
+    "usageInfoMessages": "消息用量",
+    "usageInfoHint": "升级会员可获得更多消息额度和历史保留时长。",
+    "usageHintFresh": "每轮对话可发送 {max} 条消息",
+    "usageHintNormal": "已使用 {current}/{max} 条消息",
+    "usageHintAlmost": "剩余 {remaining} 条消息",
+    "usageHintFull": "已达上限，请开始新对话",
+    "usageRetentionFree": "免费用户的历史记录将在 1 小时无活跃后自动清空。升级会员可保留 15 天。",
+    "usageRetentionVip": "15 天内无活跃将自动清除历史记录。",
+    "usageInfoClose": "知道了"
   },
   "pipeline": {
     "storyOutline": "故事大纲",

@@ -7,7 +7,7 @@ export const PanelAnimateContext = createContext(false);
 interface PanelLayoutProps {
   title: string;
   icon?: React.ReactNode;
-  description?: string;
+  description?: React.ReactNode;
   onClose: () => void;
   actions?: React.ReactNode;
   headerExtra?: React.ReactNode;

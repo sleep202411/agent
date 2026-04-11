@@ -108,8 +108,10 @@ export class AssistantController {
     return {
       success: true,
       data: {
+        conversationId: result.conversationId,
         messages: result.messages,
         messageCount: result.messageCount,
+        retentionDays: result.retentionDays,
         messageLimit: result.messageLimit,
         tier: user.userLevel ?? 'free',
       },

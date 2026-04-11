@@ -377,7 +377,7 @@ export class WorkspaceService {
     const items = page.list ?? [];
     return {
       type,
-      total: Number(page.total ?? items.length ?? 0),
+      total: Number(page.totalCount ?? page.total ?? items.length ?? 0),
       sampleNames: this.dedupeStrings(
         items.map((item) => this.toDisplayName(item)),
       ),

@@ -59,11 +59,7 @@ export function mergeProps(worldProps: PropPanelItem[], assetProps: PropPanelIte
   const propIndexMap = new Map<string, number>();
 
   const pushProp = (prop: PropPanelItem) => {
-    const keys = [
-      normalizePropName(prop.aiId),
-      normalizePropName(prop.id),
-      normalizePropName(prop.name),
-    ].filter(Boolean);
+    const keys = [normalizePropName(prop.aiId), normalizePropName(prop.id)].filter(Boolean);
 
     const existingKey = keys.find((key) => propIndexMap.has(key));
     if (existingKey) {

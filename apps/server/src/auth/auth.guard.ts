@@ -13,7 +13,7 @@ const DEV_USER: AuthUser = {
   userId: 'dev',
   userName: 'dev',
   nickName: 'Developer',
-  userLevel: 'pro',
+  userLevel: 'VIP3',
 };
 
 /**

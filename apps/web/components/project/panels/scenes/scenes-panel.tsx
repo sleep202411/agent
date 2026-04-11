@@ -39,7 +39,6 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
   const [editScene, setEditScene] = useState<ScenePanelItem | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [assetScenes, setAssetScenes] = useState<ScenePanelItem[]>([]);
   const pageRef = useRef(1);
   const pendingFocusRef = useRef<AssetPanelFocusDetail | null>(null);
 
@@ -47,14 +46,10 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
     () =>
       mergeScenes(
         scenes.map((item, index) => normalizeSceneItem(item, index, "world")),
-        assetScenes
+        []
       ),
-    [assetScenes, scenes]
+    [scenes]
   );
-
-  const loadAssetScenes = useCallback(async () => {
-    setAssetScenes([]);
-  }, []);
 
   const loadScenes = useCallback(
     async (options?: { reset?: boolean; silent?: boolean }) => {
@@ -85,9 +80,6 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
         pageRef.current = targetPage;
         const totalCount = Number(data?.totalCount ?? 0);
         setHasMore(totalCount > 0 ? targetPage * 20 < totalCount : nextList.length === 20);
-        if (reset) {
-          await loadAssetScenes();
-        }
       } catch (err) {
         console.error("[ScenesPanel] 加载失败:", err);
       } finally {
@@ -97,7 +89,7 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
         }
       }
     },
-    [loadAssetScenes, worldId]
+    [worldId]
   );
 
   useEffect(() => {

@@ -1053,7 +1053,19 @@
     "executing": "Executing",
     "newConversation": "New Conversation",
     "historySeparator": "History above",
-    "messageLimitReached": "Conversation limit reached ({current}/{max}). Start a new conversation or upgrade your plan."
+    "messageLimitReached": "Conversation limit reached ({current}/{max}). Start a new conversation or upgrade your plan.",
+    "tierFree": "Free",
+    "usageInfoTitle": "Usage",
+    "usageInfoTier": "Tier",
+    "usageInfoMessages": "Messages",
+    "usageInfoHint": "Upgrade to get more messages and longer history retention.",
+    "usageHintFresh": "{max} messages per conversation",
+    "usageHintNormal": "{current}/{max} messages used",
+    "usageHintAlmost": "{remaining} messages remaining",
+    "usageHintFull": "Limit reached — start a new conversation",
+    "usageRetentionFree": "Free users' history is cleared after 1 hour of inactivity. Upgrade to retain for 15 days.",
+    "usageRetentionVip": "History will be cleared after 15 days of inactivity.",
+    "usageInfoClose": "Got it"
   },
   "pipeline": {
     "storyOutline": "Story Outline",
