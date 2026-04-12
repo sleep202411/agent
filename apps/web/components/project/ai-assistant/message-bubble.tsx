@@ -142,6 +142,7 @@ const PROPOSAL_TOOLS = new Set([
   "propose_scenes",
   "propose_props",
   "propose_storyboard_patch",
+  "generate_scripts",
 ]);
 
 interface MessageBubbleProps {

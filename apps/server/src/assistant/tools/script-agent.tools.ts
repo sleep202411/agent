@@ -408,10 +408,11 @@ export function createScriptAgentTools(
      */
     generate_scripts: tool({
       description:
-        'Generate shootable-format scripts for a batch of episodes and save them. ' +
+        'Generate shootable-format scripts for a batch of episodes. ' +
+        'Returns generated scripts for user to preview and approve before saving. ' +
         'Call after episodes and assets are created. ' +
         'Use batchFrom/batchTo to process a range (e.g. 1-10, 11-20). ' +
-        'For 30 episodes, call 3 times with batches of 10.',
+        'For 30+ episodes, call multiple times with batches of 10.',
       inputSchema: z.object({
         sessionId: z.string().describe('Session ID'),
         batchFrom: z
@@ -419,7 +420,6 @@ export function createScriptAgentTools(
           .describe('Start episode number (inclusive, 1-based)'),
         batchTo: z.number().describe('End episode number (inclusive, 1-based)'),
       }),
-      outputSchema: writeResultSchema,
       execute: async ({ sessionId, batchFrom, batchTo }) => {
         const state = await store.getState(sessionId);
         if (!state) throw new Error('Session not found.');
@@ -523,38 +523,83 @@ export function createScriptAgentTools(
           }
         }
 
-        if (batchEpIds.length > 0) {
-          try {
-            await ctx.ws.batchSaveScripts(
-              ctx.headers,
-              projectId,
-              batchEpIds,
-              batchContents,
-            );
-            logger.log(`Batch saved ${batchEpIds.length} scripts`);
-          } catch (error) {
-            logger.error(
-              `Batch save failed, falling back to individual saves: ${error}`,
-            );
-            for (let i = 0; i < batchEpIds.length; i++) {
-              try {
-                await ctx.ws.saveEpisodeScript(
-                  ctx.headers,
-                  batchEpIds[i],
-                  batchContents[i],
-                );
-              } catch (e) {
-                logger.error(
-                  `Individual save failed for ${batchEpIds[i]}: ${e}`,
-                );
-              }
+        // Store batch in session for later save on user approval
+        const batchKey = `scripts_${batchFrom}_${batchTo}`;
+        await store.saveState(`${sessionId}:${batchKey}`, {
+          projectId,
+          episodeIds: batchEpIds,
+          contents: batchContents,
+          titles: batch.map((ep) => ep.title),
+        });
+
+        logger.log(
+          `generate_scripts: ${batchEpIds.length} scripts generated, stored as ${batchKey}`,
+        );
+
+        // Return scripts as proposal for user to preview
+        return {
+          sessionId,
+          batchKey,
+          projectId,
+          scripts: batch.map((ep, i) => ({
+            episodeNumber: ep.episodeNumber,
+            title: ep.title,
+            episodeId: batchEpIds[i] ?? '',
+            content: batchContents[i] ?? '',
+          })),
+          summary: `Generated ${batchEpIds.length} scripts (episodes ${batchFrom}-${batchTo}). Please review and approve to save.`,
+        };
+      },
+    }),
+
+    /**
+     * Tool 4b: Save batch scripts after user approval.
+     * Called by frontend when user clicks "Accept All" on batch proposal card.
+     */
+    save_batch_scripts: tool({
+      description:
+        'Save previously generated batch scripts after user approval. ' +
+        'Called automatically when user accepts the batch script proposal.',
+      inputSchema: z.object({
+        sessionId: z.string(),
+        batchKey: z.string().describe('Batch key from generate_scripts result'),
+      }),
+      outputSchema: mutationResultSchema,
+      execute: async ({ sessionId, batchKey }) => {
+        const batchData = await store.getState(`${sessionId}:${batchKey}`);
+        if (!batchData)
+          throw new Error('Batch data not found. Please regenerate.');
+
+        const projectId = batchData.projectId as string;
+        const episodeIds = batchData.episodeIds as string[];
+        const contents = batchData.contents as string[];
+
+        try {
+          await ctx.ws.batchSaveScripts(
+            ctx.headers,
+            projectId,
+            episodeIds,
+            contents,
+          );
+          logger.log(`save_batch_scripts: saved ${episodeIds.length} scripts`);
+        } catch (error) {
+          logger.error(`Batch save failed, falling back: ${error}`);
+          for (let i = 0; i < episodeIds.length; i++) {
+            try {
+              await ctx.ws.saveEpisodeScript(
+                ctx.headers,
+                episodeIds[i],
+                contents[i],
+              );
+            } catch (e) {
+              logger.error(`Individual save failed for ${episodeIds[i]}: ${e}`);
             }
           }
         }
 
         return buildMutationResult(
           'storyboard.saved',
-          `Generated scripts for episodes ${batchFrom}-${batchTo} (${batchEpIds.length}/${completed} saved)`,
+          `Saved ${episodeIds.length} episode scripts`,
           'episode',
         );
       },

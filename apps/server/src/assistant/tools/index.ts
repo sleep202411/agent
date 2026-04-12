@@ -64,7 +64,7 @@ export function createGroupedAssistantTools(
   const allTools = {
     ...createReadTools(context),
     ...createUiTools(),
-    ...createProposalTools(),
+    ...createProposalTools(context),
     ...createExecuteTools(context),
     ...(ai && scriptAgent
       ? createScriptAgentTools(context, ai, scriptAgent)
