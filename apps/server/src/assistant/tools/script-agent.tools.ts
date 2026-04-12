@@ -140,8 +140,11 @@ export function createScriptAgentTools(
             },
           });
 
-          // Save text first, then session state — ensures text is available if crash occurs
+          // Save text to both task storage and session storage
+          // Task storage: used by the async worker
+          // Session storage: used by generate_scripts/generate_storyboard later
           await taskService.saveText(task.id, text);
+          await store.saveText(sessionId, text);
           await store.saveState(sessionId, { title, config: config ?? {} });
 
           // Enqueue via BullMQ for background processing
