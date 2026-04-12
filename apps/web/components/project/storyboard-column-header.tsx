@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { IconDotsVertical, IconDownload, IconLoader2, IconWand } from "@tabler/icons-react";
+import { IconDownload, IconLoader2, IconWand } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,12 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { backendApi } from "@/src/lib/api";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
@@ -711,33 +706,41 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
               {t("batchGenerate")}
             </Button>
 
-            {(isImageColumn || isVideoColumn) && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+            {isImageColumn && (
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     color="muted"
                     size="icon-xs"
-                    onClick={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleBatchExport("image");
+                    }}
                   >
-                    <IconDotsVertical className="size-3.5" />
+                    <IconDownload className="size-3.5" />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="center" className="w-48">
-                  {isImageColumn ? (
-                    <DropdownMenuItem onSelect={() => void handleBatchExport("image")}>
-                      <IconDownload className="size-4" />
-                      {t("batchExportFinalizedImages")}
-                    </DropdownMenuItem>
-                  ) : null}
-                  {isVideoColumn ? (
-                    <DropdownMenuItem onSelect={() => void handleBatchExport("video")}>
-                      <IconDownload className="size-4" />
-                      {t("batchExportFinalizedVideos")}
-                    </DropdownMenuItem>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </TooltipTrigger>
+                <TooltipContent>{t("batchExportFinalizedImages")}</TooltipContent>
+              </Tooltip>
+            )}
+            {isVideoColumn && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    color="muted"
+                    size="icon-xs"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleBatchExport("video");
+                    }}
+                  >
+                    <IconDownload className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("batchExportFinalizedVideos")}</TooltipContent>
+              </Tooltip>
             )}
           </>
         ) : (

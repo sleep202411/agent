@@ -337,21 +337,12 @@ export function createScriptAgentTools(
           const characters = analyze.characters ?? [];
           if (characters.length > 0) {
             try {
-              // Build professional character sheet prompts
-              const buildCharacterPrompt = (c: {
-                name: string;
-                description?: string;
-              }) => {
-                const desc = c.description ?? '';
-                return `Full body character reference sheet of ${c.name}. ${desc}. Standing pose, front view, plain white background, full body visible from head to toe, even studio lighting, no shadows, clean and detailed, character design sheet style, ${style ?? 'realistic'} style, ${language ?? 'English'}`;
-              };
-
               const roleDatas: string[][] = [
                 ['name', 'description', 'prompt'],
                 ...characters.map((c) => [
                   c.name,
                   c.description ?? '',
-                  buildCharacterPrompt(c),
+                  c.prompt ?? '',
                 ]),
               ];
               await ctx.ws.batchCreateRoles(ctx.headers, worldId, roleDatas);
@@ -365,20 +356,12 @@ export function createScriptAgentTools(
           const locations = analyze.locations ?? [];
           if (locations.length > 0) {
             try {
-              const buildScenePrompt = (l: {
-                name: string;
-                description?: string;
-              }) => {
-                const desc = l.description ?? '';
-                return `${l.name}. ${desc}. Wide establishing shot, detailed environment, atmospheric lighting, cinematic composition, no characters, ${style ?? 'realistic'} style, ${language ?? 'English'}`;
-              };
-
               const sceneDatas: string[][] = [
                 ['name', 'description', 'prompt'],
                 ...locations.map((l) => [
                   l.name,
                   l.description ?? '',
-                  buildScenePrompt(l),
+                  l.prompt ?? '',
                 ]),
               ];
               await ctx.ws.batchCreateScenes(ctx.headers, worldId, sceneDatas);

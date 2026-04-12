@@ -232,7 +232,10 @@ export function AiImageGeneratorDialog({
   }, [normalizedModels, formData.model]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleModelChange = (value: string) => {
-    handleUpdateForm({ model: value });
+    // Auto-select the new model's default size
+    const matchedNormalized = normalizedModels.find((m) => m.id === value);
+    const defaultSize = matchedNormalized?.inputSchema?.properties?.size?.default;
+    handleUpdateForm({ model: value, ...(defaultSize ? { size: String(defaultSize) } : {}) });
 
     const matched = displayedModels.find((item) => item.serviceCode === value);
     if (!matched) return;
