@@ -282,26 +282,33 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
             ) : null}
 
             {/* Message list with history separator */}
-            {renderedMessages.map((message, index) => (
-              <div key={message.id}>
-                {/* History separator: after welcome (index 0) + history messages */}
-                {historyMessageCount > 0 && index === historyMessageCount + 1 && (
-                  <div className="flex items-center gap-3 py-2">
-                    <div className="flex-1 border-t border-border/40" />
-                    <span className="text-[10px] text-muted-foreground/40">
-                      {t("historySeparator")}
-                    </span>
-                    <div className="flex-1 border-t border-border/40" />
-                  </div>
-                )}
-                <MessageBubble
-                  message={message}
-                  onApplyToolResult={(result) => {
-                    if (projectId) void dispatch(applyToolResult({ projectId, result }));
-                  }}
-                />
-              </div>
-            ))}
+            {renderedMessages.map((message, index) => {
+              // Check if this is the last assistant message
+              const isLastAssistant =
+                message.role === "assistant" &&
+                !renderedMessages.slice(index + 1).some((m) => m.role === "assistant");
+              return (
+                <div key={message.id}>
+                  {/* History separator: after welcome (index 0) + history messages */}
+                  {historyMessageCount > 0 && index === historyMessageCount + 1 && (
+                    <div className="flex items-center gap-3 py-2">
+                      <div className="flex-1 border-t border-border/40" />
+                      <span className="text-[10px] text-muted-foreground/40">
+                        {t("historySeparator")}
+                      </span>
+                      <div className="flex-1 border-t border-border/40" />
+                    </div>
+                  )}
+                  <MessageBubble
+                    message={message}
+                    isLastAssistant={isLastAssistant}
+                    onApplyToolResult={(result) => {
+                      if (projectId) void dispatch(applyToolResult({ projectId, result }));
+                    }}
+                  />
+                </div>
+              );
+            })}
 
             {/* Typing indicator — shows immediately after user sends */}
             {sending &&

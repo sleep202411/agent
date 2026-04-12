@@ -1,20 +1,19 @@
-import { useEffect, useSyncExternalStore, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
-  IconArrowBack,
+  IconUser,
   IconCredits,
   IconCrown,
-  IconDeviceDesktop,
-  IconLanguage,
-  IconLogout,
-  IconMoon,
-  IconSettings,
+  IconChartBar,
   IconSun,
-  IconUsers,
+  IconMoon,
+  IconDeviceDesktop,
+  IconReceipt,
+  IconSettings,
+  IconLogout,
 } from "@tabler/icons-react";
-import { useLocale, useTranslations, setLanguage } from "@/src/i18n/i18n";
-import { setCurrentLocale } from "@/src/i18n/locale-url";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useTheme } from "next-themes";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,79 +24,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useAppDispatch } from "@/src/store";
+import { useAppDispatch, useAppSelector } from "@/src/store";
 import { logout } from "@/src/store/slices/authSlice";
-import { backendApi } from "@/src/lib/api";
 
-// ── Types ───────────────────────────────────────────────
-
-interface UserInfo {
-  nickName?: string;
-  userName?: string;
-  email?: string;
-  headImg?: string;
-  phone?: string;
-  [key: string]: unknown;
-}
-
-export interface UserMenuProps {
-  credits?: number;
-  onUpgrade?: () => void;
-  onRecharge?: () => void;
-  onTeam?: () => void;
-}
-
-// ── Component ───────────────────────────────────────────
-
-export function UserMenu({ credits, onUpgrade, onRecharge, onTeam }: UserMenuProps) {
+export function UserMenu() {
   const tc = useTranslations("common");
   const dispatch = useAppDispatch();
-  const locale = useLocale();
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
+  const user = useAppSelector((state) => state.auth.user);
   const { theme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   );
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
-  useEffect(() => {
-    backendApi
-      .get<UserInfo>("/user/query/user/info")
-      .then((data) => {
-        if (data) {
-          setUserInfo(data);
-        } else {
-          // Fallback: this API returns { info: {...} } instead of { data: {...} }
-          fetch("/user/query/user/info", { credentials: "include" })
-            .then((res) => res.json())
-            .then((body) => {
-              if (body?.info) setUserInfo(body.info);
-            })
-            .catch(() => {});
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  const displayName = userInfo?.nickName || userInfo?.userName || "User";
-  const displayEmail = userInfo?.email || userInfo?.phone || "";
-  const avatarUrl = userInfo?.headImg ? String(userInfo.headImg) : undefined;
+  const displayName = user?.nickname || "User";
+  const displayEmail = user?.email || "";
+  const avatarUrl = user?.avatar || undefined;
   const initials = displayName.slice(0, 1).toUpperCase();
-  const userLevel = typeof userInfo?.userLevel === "string" ? userInfo.userLevel : "";
-
-  const switchLocale = (nextLocale: string) => {
-    // current langage
-    console.log("[UserMenu] Current locale:", locale);
-    if (nextLocale === locale) return;
-    console.log("[UserMenu] Switching locale to", nextLocale);
-    setCurrentLocale(nextLocale);
-    setLanguage(nextLocale);
-    // Navigate to same internal path — rewrite output applies the new locale
-    void navigate({ to: pathname, replace: true });
-  };
+  const userLevel = user?.userLevel || "";
 
   return (
     <DropdownMenu>
@@ -113,16 +58,16 @@ export function UserMenu({ credits, onUpgrade, onRecharge, onTeam }: UserMenuPro
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-72">
+      <DropdownMenuContent align="end" className="w-72 p-0">
         {/* User info */}
-        <div className="flex items-center gap-3 px-3 py-3">
-          <Avatar className="size-10">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <Avatar className="size-12">
             <AvatarImage src={avatarUrl} alt={displayName} />
-            <AvatarFallback>{initials}</AvatarFallback>
+            <AvatarFallback className="text-sm">{initials}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <p className="truncate text-sm font-medium">{displayName}</p>
+              <p className="truncate text-sm font-semibold">{displayName}</p>
               {userLevel && (
                 <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                   {userLevel}
@@ -133,59 +78,54 @@ export function UserMenu({ credits, onUpgrade, onRecharge, onTeam }: UserMenuPro
               <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
             )}
           </div>
-          <Button variant="ghost" color="muted" size="icon-sm">
+          <Link
+            to="/settings"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
             <IconSettings className="size-4" />
+          </Link>
+        </div>
+
+        {/* My Profile */}
+        <div className="px-4 pb-3">
+          <Button variant="outline" color="muted" className="w-full" asChild>
+            <Link to="/profile">
+              <IconUser className="size-4" />
+              {tc("myProfile")}
+            </Link>
           </Button>
         </div>
 
         <DropdownMenuSeparator />
 
         {/* Credits */}
-        <div className="px-3 py-2.5">
-          <div className="flex items-center gap-2">
+        <div className="px-4 py-3">
+          <div className="mb-3 flex items-center gap-2">
             <IconCredits className="size-4 text-primary" />
-            <span className="text-xl font-bold">{credits ?? 0}</span>
-            <span className="text-xs text-muted-foreground">{tc("credits")}</span>
+            <span className="text-xl font-bold">100</span>
+            <span className="text-xs text-muted-foreground">{tc("creditsLeft")}</span>
           </div>
-          <div className="mt-2 flex gap-2">
-            {onUpgrade ? (
-              <Button size="sm" className="flex-1" onClick={onUpgrade}>
-                <IconCrown className="size-3.5" />
-                {tc("upgrade")}
-              </Button>
-            ) : null}
-            {onRecharge ? (
-              <Button
-                variant="outline"
-                color="muted"
-                size="sm"
-                className="flex-1"
-                onClick={onRecharge}
-              >
-                <IconCredits className="size-3.5" />
-                {tc("credits")}
-              </Button>
-            ) : null}
+          <div className="flex gap-2">
+            <Button size="sm" className="flex-1">
+              <IconCrown className="size-3.5" />
+              {tc("upgrade")}
+            </Button>
+            <Button variant="outline" color="muted" size="sm" className="flex-1">
+              <IconChartBar className="size-3.5" />
+              {tc("usageAnalytics")}
+            </Button>
           </div>
         </div>
-
-        {/* Team — visible on small screens where header button is hidden */}
-        {onTeam && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onTeam}>
-              <IconUsers className="size-4" />
-              {tc("team")}
-            </DropdownMenuItem>
-          </>
-        )}
 
         <DropdownMenuSeparator />
 
         {/* Theme */}
         {mounted && (
-          <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-sm">{tc("theme")}</span>
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <IconMoon className="size-4 text-muted-foreground" />
+              <span className="text-sm">{tc("theme")}</span>
+            </div>
             <div className="flex rounded-lg border border-border">
               <button
                 type="button"
@@ -223,69 +163,42 @@ export function UserMenu({ credits, onUpgrade, onRecharge, onTeam }: UserMenuPro
 
         <DropdownMenuSeparator />
 
-        {/* Language */}
-        <div className="flex items-center justify-between px-3 py-2">
-          <div className="flex items-center gap-2">
-            <IconLanguage className="size-4 text-muted-foreground" />
-            <span className="text-sm">{tc("language")}</span>
-          </div>
-          <div className="flex rounded-lg border border-border">
-            {(
-              [
-                { key: "zh-CN", label: "简" },
-                { key: "zh-HK", label: "繁" },
-                { key: "en-US", label: "EN" },
-              ] as const
-            ).map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => switchLocale(item.key)}
-                className={cn(
-                  "flex size-8 items-center justify-center text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg",
-                  locale === item.key ? "bg-accent text-foreground" : "text-muted-foreground"
-                )}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+        {/* Menu items */}
+        <div className="py-1">
+          <DropdownMenuItem asChild>
+            <Link to="/settings" className="flex items-center gap-2 px-4">
+              <IconReceipt className="size-4" />
+              {tc("billing")}
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/settings" className="flex items-center gap-2 px-4">
+              <IconSettings className="size-4" />
+              {tc("settings")}
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem className="px-4" onClick={() => void dispatch(logout())}>
+            <IconLogout className="size-4" />
+            {tc("logout")}
+          </DropdownMenuItem>
         </div>
 
         <DropdownMenuSeparator />
 
-        {/* Back to old version (only in iframe) */}
-        {typeof window !== "undefined" && window.self !== window.top && (
-          <DropdownMenuItem
-            onClick={() => window.parent.postMessage({ type: "switchToOldVersion" }, "*")}
-          >
-            <IconArrowBack className="size-4" />
-            {tc("backToOldVersion")}
-          </DropdownMenuItem>
-        )}
-
-        {/* TODO: 暂时隐藏退出登录 */}
-        {/* <DropdownMenuItem variant="destructive" onClick={() => void dispatch(logout())}>
-          <IconLogout className="size-4" />
-          {tc("logout")}
-        </DropdownMenuItem> */}
-
-        <DropdownMenuSeparator />
-
         {/* Footer */}
-        {/* <div className="flex items-center justify-center gap-3 px-3 py-2 text-[11px] text-muted-foreground">
-          <Link to="/terms" className="hover:text-foreground">
+        <div className="flex items-center justify-center gap-3 px-4 py-2.5 text-[11px] text-muted-foreground">
+          <a href="/terms" className="hover:text-foreground">
             Terms
-          </Link>
+          </a>
           <span className="text-border">|</span>
-          <Link to="/privacy" className="hover:text-foreground">
+          <a href="/privacy" className="hover:text-foreground">
             Privacy
-          </Link>
+          </a>
           <span className="text-border">|</span>
-          <Link to="/blog" className="hover:text-foreground">
+          <a href="/blog" className="hover:text-foreground">
             Blog
-          </Link>
-        </div> */}
+          </a>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,4 +1,8 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore, useState } from "react";
+import { AuthDialog } from "@/components/layout/auth-dialog";
+import { UserMenu } from "@/components/layout/user-menu";
+import { useAppSelector, useAppDispatch } from "@/src/store";
+import { fetchUser } from "@/src/store/slices/authSlice";
 import { Link } from "@tanstack/react-router";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
@@ -30,6 +34,14 @@ export function GlobalNav() {
     () => true,
     () => false
   );
+
+  const [showAuth, setShowAuth] = useState(false);
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.auth.user);
+
+  useEffect(() => {
+    dispatch(fetchUser());
+  }, [dispatch]);
 
   // Hide on studio, project editor, and auth pages
   const shouldHide = HIDDEN_PATTERNS.some((pattern) => pathname.includes(pattern));
@@ -117,15 +129,22 @@ export function GlobalNav() {
             <IconLanguage className="size-4" />
           </button>
 
-          {/* CTA */}
-          <Link
-            to="/projects"
-            className="ml-1 rounded-full bg-foreground px-4 py-1.5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
-          >
-            {t("getStarted")}
-          </Link>
+          {/* User or CTA */}
+          {user ? (
+            <UserMenu />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAuth(true)}
+              className="ml-1 rounded-full bg-foreground px-4 py-1.5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+            >
+              {t("getStarted")}
+            </button>
+          )}
         </div>
       </div>
+
+      <AuthDialog open={showAuth} onOpenChange={setShowAuth} />
     </header>
   );
 }

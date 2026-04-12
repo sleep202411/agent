@@ -146,12 +146,13 @@ const PROPOSAL_TOOLS = new Set([
 
 interface MessageBubbleProps {
   message: AssistantMessage;
+  isLastAssistant?: boolean;
   onApplyToolResult?: (result: AssistantToolResult) => void;
 }
 
 // ─── Component ─────────────────────────────────────────
 
-export function MessageBubble({ message, onApplyToolResult }: MessageBubbleProps) {
+export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: MessageBubbleProps) {
   const t = useTranslations("ai");
 
   // Collect tool result summaries to render as separate "user-like" bubbles
@@ -328,12 +329,18 @@ export function MessageBubble({ message, onApplyToolResult }: MessageBubbleProps
                 }
 
                 // Proposal tools — render interactive card with content preview
+                // For stale messages (not the last assistant msg), treat unfinished proposals as done
                 if (PROPOSAL_TOOLS.has(toolName)) {
+                  const effectivePart =
+                    !isLastAssistant &&
+                    (part.state === "input-streaming" || part.state === "input-available")
+                      ? { ...part, state: "output-available" as const }
+                      : part;
                   return (
                     <ToolProposalCard
-                      key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
+                      key={`${message.id}-${part.toolCallId}-${toolName}-${effectivePart.state}`}
                       toolName={toolName}
-                      part={part}
+                      part={effectivePart}
                       onApplyResult={(result) => onApplyToolResult?.(result)}
                     />
                   );

@@ -227,8 +227,12 @@ function buildUserMessage(text: string, attachments: AssistantAttachment[]): Ass
 }
 
 function buildPendingToolUi(messages: AssistantMessage[]): PendingAssistantToolUi[] {
+  // Only check the LAST assistant message for pending interactive tools.
+  // Historical messages with unfinished tools (e.g. from a refreshed page)
+  // should not show as pending — they are stale.
   const pending: PendingAssistantToolUi[] = [];
-  for (const message of messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
     if (message.role !== "assistant") continue;
     for (const part of message.parts) {
       if (!isAssistantToolPart(part)) continue;
@@ -242,6 +246,7 @@ function buildPendingToolUi(messages: AssistantMessage[]): PendingAssistantToolU
         title: part.title,
       });
     }
+    break; // Only check the last assistant message
   }
   return pending;
 }
