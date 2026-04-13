@@ -3,6 +3,7 @@ import { HeadContent, Scripts, createRootRoute, Outlet, useLocation } from "@tan
 import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "@/components/providers";
 import { GlobalNav } from "@/components/layout/global-nav";
+import { SiteFooter } from "@/components/layout/site-footer";
 import { getCurrentLocale } from "@/src/i18n/locale-url";
 import { setLanguage, useLocale } from "@/src/i18n/i18n";
 
@@ -67,11 +68,19 @@ function RootLayout() {
     }
   }, [rewriteLocale, i18nLocale]);
 
+  const pathname = useLocation({ select: (loc) => loc.pathname });
+  // Hide footer on studio/project pages (editors, workbench, etc.)
+  const hideFooter =
+    pathname.startsWith("/projects/") ||
+    pathname.startsWith("/workbench") ||
+    pathname.includes("/editor");
+
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
       <Providers>
         <GlobalNav />
         <Outlet />
+        {!hideFooter && <SiteFooter />}
       </Providers>
     </ThemeProvider>
   );

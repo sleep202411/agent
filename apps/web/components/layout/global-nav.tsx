@@ -9,19 +9,18 @@ import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale } from "@/src/i18n/locale-url";
 import { useTheme } from "next-themes";
 import {
-  IconFlame,
   IconUsers,
   IconLayoutDashboard,
   IconDiamond,
   IconMovie,
-  IconTarget,
   IconMoon,
   IconSun,
   IconLanguage,
+  IconNews,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
-const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment", "/profile"];
+const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment"];
 
 export function GlobalNav() {
   const { pathname } = useLocation();
@@ -48,11 +47,11 @@ export function GlobalNav() {
   if (shouldHide) return null;
 
   const navItems = [
-    { href: "/projects", label: t("studio"), icon: IconLayoutDashboard },
-    { href: "/workbench", label: t("workbench"), icon: IconTarget },
-    { href: "/crews", label: t("studioHall"), icon: IconMovie },
     { href: "/ips", label: t("ipPlaza"), icon: IconDiamond },
+    { href: "/crews", label: t("studioHall"), icon: IconMovie },
     { href: "/creators", label: t("creators"), icon: IconUsers },
+    { href: "/projects", label: "Studio", icon: IconLayoutDashboard },
+    { href: "/news", label: t("news"), icon: IconNews },
   ];
 
   const isActive = (href: string) => pathname.startsWith(href);
@@ -74,17 +73,14 @@ export function GlobalNav() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-14 max-w-screen-2xl items-center justify-between px-6">
+      <div
+        className="mx-auto flex h-14 items-center justify-between px-6"
+        style={{ maxWidth: 1400 }}
+      >
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">
-          <Link to="/projects" className="flex items-center gap-2 shrink-0">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
-              <IconFlame className="size-5 text-primary-foreground" />
-            </div>
-            <span className="text-sm font-bold tracking-tight">
-              <span className="text-foreground">Fizz</span>
-              <span className="text-primary">Dragon</span>
-            </span>
+          <Link to="/ips" className="flex items-center gap-2 shrink-0">
+            <img src="/logo.png" alt="FizzDragon" className="h-7" />
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">

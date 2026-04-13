@@ -206,7 +206,7 @@
     "validateStyle": "請選擇畫風"
   },
   "nav": {
-    "studio": "工作台",
+    "studio": "Studio",
     "ipPlaza": "IP 廣場",
     "studioHall": "劇組大廳",
     "workbench": "工作台",
@@ -244,7 +244,8 @@
     "terms": "服務條款",
     "and": "和",
     "privacy": "私隱政策",
-    "creators": "創作者廣場"
+    "creators": "人才集市",
+    "news": "新聞"
   },
   "ip": {
     "plaza": "IP 廣場",
@@ -2078,5 +2079,20 @@
     "referralLinkDesc": "分享此連結邀請他人加入 FizzDragon。",
     "copy": "複製",
     "copied": "已複製"
+  },
+  "footer": {
+    "tagline": "AI 動畫與 IP 共創平台",
+    "ipPlaza": "IP 廣場",
+    "browseIPs": "瀏覽 IP",
+    "createIP": "建立 IP",
+    "studio": "工作室",
+    "myProjects": "我的專案",
+    "workbench": "工作台",
+    "account": "帳戶",
+    "profile": "個人主頁",
+    "settings": "設置",
+    "legal": "法律",
+    "terms": "服務條款",
+    "privacy": "隱私政策"
   }
 }

@@ -244,7 +244,8 @@
     "terms": "Terms of Service",
     "and": "and",
     "privacy": "Privacy Policy",
-    "creators": "Creators"
+    "creators": "Creators",
+    "news": "News"
   },
   "ip": {
     "plaza": "IP Plaza",
@@ -2078,5 +2079,20 @@
     "referralLinkDesc": "Share this link to invite others to join FizzDragon.",
     "copy": "Copy",
     "copied": "Copied"
+  },
+  "footer": {
+    "tagline": "AI Animation & IP Co-creation Platform",
+    "ipPlaza": "IP Plaza",
+    "browseIPs": "Browse IPs",
+    "createIP": "Create IP",
+    "studio": "Studio",
+    "myProjects": "My Projects",
+    "workbench": "Workbench",
+    "account": "Account",
+    "profile": "Profile",
+    "settings": "Settings",
+    "legal": "Legal",
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy"
   }
 }
