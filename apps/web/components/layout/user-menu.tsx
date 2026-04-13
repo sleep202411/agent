@@ -1,13 +1,11 @@
 import { useSyncExternalStore } from "react";
 import {
-  IconUser,
   IconCredits,
   IconCrown,
-  IconChartBar,
+  IconCoin,
   IconSun,
   IconMoon,
   IconDeviceDesktop,
-  IconReceipt,
   IconSettings,
   IconLogout,
 } from "@tabler/icons-react";
@@ -86,16 +84,6 @@ export function UserMenu() {
           </Link>
         </div>
 
-        {/* My Profile */}
-        <div className="px-4 pb-3">
-          <Button variant="outline" color="muted" className="w-full" asChild>
-            <Link to="/profile">
-              <IconUser className="size-4" />
-              {tc("myProfile")}
-            </Link>
-          </Button>
-        </div>
-
         <DropdownMenuSeparator />
 
         {/* Credits */}
@@ -111,8 +99,8 @@ export function UserMenu() {
               {tc("upgrade")}
             </Button>
             <Button variant="outline" color="muted" size="sm" className="flex-1">
-              <IconChartBar className="size-3.5" />
-              {tc("usageAnalytics")}
+              <IconCoin className="size-3.5" />
+              {tc("rechargeCredits")}
             </Button>
           </div>
         </div>
@@ -163,41 +151,12 @@ export function UserMenu() {
 
         <DropdownMenuSeparator />
 
-        {/* Menu items */}
+        {/* Logout */}
         <div className="py-1">
-          <DropdownMenuItem asChild>
-            <Link to="/settings" className="flex items-center gap-2 px-4">
-              <IconReceipt className="size-4" />
-              {tc("billing")}
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/settings" className="flex items-center gap-2 px-4">
-              <IconSettings className="size-4" />
-              {tc("settings")}
-            </Link>
-          </DropdownMenuItem>
           <DropdownMenuItem className="px-4" onClick={() => void dispatch(logout())}>
             <IconLogout className="size-4" />
             {tc("logout")}
           </DropdownMenuItem>
-        </div>
-
-        <DropdownMenuSeparator />
-
-        {/* Footer */}
-        <div className="flex items-center justify-center gap-3 px-4 py-2.5 text-[11px] text-muted-foreground">
-          <a href="/terms" className="hover:text-foreground">
-            Terms
-          </a>
-          <span className="text-border">|</span>
-          <a href="/privacy" className="hover:text-foreground">
-            Privacy
-          </a>
-          <span className="text-border">|</span>
-          <a href="/blog" className="hover:text-foreground">
-            Blog
-          </a>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

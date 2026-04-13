@@ -37,7 +37,6 @@ import {
   initVideoInstance,
   loadVideoModels,
   loadVideoHistory,
-  loadServerTasks,
   deleteVideoItem,
   updateVideoForm,
   setVideoUploadMode,
@@ -58,6 +57,8 @@ import {
   removeTask,
   makeSelectTasksByShot,
   createTaskId,
+  loadServerTasks,
+  pollServerTasks,
 } from "@/src/store/slices/taskSlice";
 
 import type {
@@ -415,7 +416,7 @@ export function AiVideoGeneratorDialog({
     if (initRef.current) {
       // Already initialized, just reload history + server tasks
       void dispatch(loadVideoHistory({ shotId, colId: shotColumnId }));
-      void dispatch(loadServerTasks({ shotId, colId: shotColumnId }));
+      void dispatch(loadServerTasks({ shotColumnId }));
       return;
     }
     initRef.current = true;
@@ -602,10 +603,21 @@ export function AiVideoGeneratorDialog({
 
         if (modeKey === "multimodal") {
           // Async task — API returns taskId string, not video result
-          // Remove local task and let server task polling track it
+          // Remove local task, add a server-tracked task with the returned ID
           dispatch(removeTask(nextTask.id));
-          // Refresh server tasks immediately so the new task appears
-          void dispatch(loadServerTasks({ shotId, colId: shotColumnId }));
+          const remoteId = String(result);
+          dispatch(
+            addTask({
+              id: remoteId,
+              source: "server",
+              type: "video",
+              shotId,
+              shotColumnId,
+              input: nextTask.input,
+            })
+          );
+          // Mark it as running immediately (addTask creates as "pending")
+          dispatch(startTask(remoteId));
         } else {
           const parsed = parseVideoGenerateResult(result as Record<string, unknown>);
           dispatch(
@@ -631,22 +643,28 @@ export function AiVideoGeneratorDialog({
 
   // ─── Poll server tasks while dialog is open & tasks are generating ──
 
-  const { serverTasks } = instance;
-  const hasServerGenerating = serverTasks.some(
-    (t) => t.status === "waiting" || t.status === "generating"
+  const hasServerGenerating = videoTasks.some(
+    (t) => t.source === "server" && (t.status === "pending" || t.status === "running")
   );
 
   useEffect(() => {
     if (!open || !hasServerGenerating) return;
 
     const interval = setInterval(() => {
-      void dispatch(loadServerTasks({ shotId, colId: shotColumnId }));
-      // Also refresh history in case a server task just completed
-      void dispatch(loadVideoHistory({ shotId, colId: shotColumnId }));
+      void dispatch(pollServerTasks());
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [open, hasServerGenerating, dispatch, shotId, shotColumnId]);
+  }, [open, hasServerGenerating, dispatch]);
+
+  // When server tasks finish generating, refresh history once
+  const prevServerGenerating = useRef(hasServerGenerating);
+  useEffect(() => {
+    if (prevServerGenerating.current && !hasServerGenerating && open) {
+      void dispatch(loadVideoHistory({ shotId, colId: shotColumnId }));
+    }
+    prevServerGenerating.current = hasServerGenerating;
+  }, [hasServerGenerating, open, dispatch, shotId, shotColumnId]);
 
   // ─── Sync size/videoLength with available options ─────
 

@@ -457,8 +457,6 @@ export interface VideoInstanceState {
   modeSettings: VideoModeSettingsState;
   history: VideoResultItem[];
   historyLoading: boolean;
-  /** Server-side running/failed tasks from integralrecord API */
-  serverTasks: VideoResultItem[];
   previewItem: VideoResultItem | null;
   savedModel: string;
 }
@@ -517,7 +515,6 @@ function createDefaultVideoInstance(): VideoInstanceState {
     references: createDefaultVideoReferences(),
     modeSettings: createDefaultVideoModeSettings(),
     history: [],
-    serverTasks: [],
     historyLoading: false,
     previewItem: null,
     savedModel: "",
@@ -565,48 +562,6 @@ function taskToVideoResultItem(task: Task): VideoResultItem {
     id: task.id,
     status: taskStatusToVideoStatus(task.status),
     fromQueue: true,
-  };
-}
-
-/** Convert a server-side running/failed record to VideoResultItem */
-function serverTaskToVideoResultItem(record: AssetRecord): VideoResultItem {
-  const id = String(record.id ?? record.taskId ?? record.requestId ?? "");
-  const serverStatus = String(record.status ?? record.currentStatus ?? "");
-  // Server statuses: "running" / "waiting" / "failed" / "success" etc.
-  let status: VideoResultStatus;
-  if (serverStatus === "failed" || serverStatus === "error") {
-    status = "failed";
-  } else if (serverStatus === "success" || serverStatus === "completed") {
-    status = "success";
-  } else {
-    // running, waiting, pending, etc.
-    status = "generating";
-  }
-
-  // If completed, extract result from responseData
-  let url: string | undefined;
-  let storagePath: string | undefined;
-  if (status === "success" && record.responseData) {
-    try {
-      const resp =
-        typeof record.responseData === "string"
-          ? (JSON.parse(record.responseData) as Record<string, unknown>)
-          : (record.responseData as Record<string, unknown>);
-      storagePath = String(resp.storagePath ?? resp.path ?? resp.filePath ?? "");
-      url = storagePath ? ossUrl(storagePath) : String(resp.url ?? "");
-    } catch {
-      // ignore parse errors
-    }
-  }
-
-  return {
-    id,
-    url,
-    storagePath,
-    status,
-    error: status === "failed" ? String(record.responseData ?? "") : undefined,
-    fromQueue: false,
-    fromHistory: false,
   };
 }
 
@@ -1059,27 +1014,6 @@ export const loadVideoHistory = createAsyncThunk<
   }
 });
 
-export const loadServerTasks = createAsyncThunk<
-  void,
-  { shotId: string; colId: string },
-  { state: RootState; dispatch: AppDispatch }
->("project/loadServerTasks", async ({ shotId, colId }, { dispatch }) => {
-  const key = videoInstanceKey(shotId, colId);
-  try {
-    const res = await backendApi.post<{ list?: AssetRecord[] }>(
-      "/api/ai/record/integralrecord/runningandfailed/list",
-      { data: { page: 1, pageSize: 20, shotColumnId: colId } }
-    );
-    const records = (res as { list?: AssetRecord[] })?.list ?? [];
-    const serverTasks: VideoResultItem[] = records
-      .filter((r) => String(r.recordType ?? r.type ?? "") === "video")
-      .map(serverTaskToVideoResultItem);
-    dispatch(setServerTasks({ key, tasks: serverTasks }));
-  } catch (err) {
-    console.error("[projectSlice] loadServerTasks failed:", err);
-  }
-});
-
 export const initVideoInstance = createAsyncThunk<
   void,
   {
@@ -1141,10 +1075,7 @@ export const initVideoInstance = createAsyncThunk<
     }
   }
 
-  await Promise.all([
-    dispatch(loadVideoHistory({ shotId, colId })).unwrap(),
-    dispatch(loadServerTasks({ shotId, colId })).unwrap(),
-  ]);
+  await dispatch(loadVideoHistory({ shotId, colId })).unwrap();
 });
 
 export const deleteVideoItem = createAsyncThunk<
@@ -1816,17 +1747,6 @@ export const projectSlice = createSlice({
       };
     },
 
-    setServerTasks: (state, action: PayloadAction<{ key: string; tasks: VideoResultItem[] }>) => {
-      const inst = getInstance(state);
-      if (!inst) return;
-      const vidInst =
-        inst.aiVideoForm.instances[action.payload.key] ?? createDefaultVideoInstance();
-      inst.aiVideoForm.instances[action.payload.key] = {
-        ...vidInst,
-        serverTasks: action.payload.tasks,
-      };
-    },
-
     setVideoHistoryLoading: (state, action: PayloadAction<{ key: string; loading: boolean }>) => {
       const inst = getInstance(state);
       if (!inst) return;
@@ -2031,7 +1951,6 @@ export const {
   setVideoPreview,
   setVideoHistory,
   setVideoHistoryLoading,
-  setServerTasks,
   removeVideoHistoryItem,
   setVideoModelsByMode,
   setVideoSavedModel,
@@ -2113,7 +2032,6 @@ export const selectAllImageResults = (
 const EMPTY_VIDEO_INSTANCE = createDefaultVideoInstance();
 const EMPTY_VIDEO_RESULTS: VideoResultItem[] = [];
 const EMPTY_VIDEO_HISTORY: VideoResultItem[] = [];
-const EMPTY_SERVER_TASKS: VideoResultItem[] = [];
 
 export const selectVideoInstance = (
   state: RootState,
@@ -2137,37 +2055,22 @@ export const makeSelectAllVideoResults = () => {
           selectCurrentInstance(state).aiVideoForm.instances[key]?.history ?? EMPTY_VIDEO_HISTORY
         );
       },
-      (state: RootState, shotId: string, colId: string) => {
-        const key = videoInstanceKey(shotId, colId);
-        return (
-          selectCurrentInstance(state).aiVideoForm.instances[key]?.serverTasks ?? EMPTY_SERVER_TASKS
-        );
-      },
       (state: RootState, shotId: string, colId: string) => selectShotTasks(state, shotId, colId),
     ],
-    (history, serverTasks, tasks): VideoResultItem[] => {
-      // 1. Local tasks take highest priority (most real-time)
-      const localItems = tasks.filter((t) => t.type === "video").map(taskToVideoResultItem);
-      const localIds = new Set(localItems.map((t) => t.id));
-      const localPaths = new Set(localItems.map((t) => t.storagePath).filter(Boolean));
+    (history, tasks): VideoResultItem[] => {
+      // Tasks from taskSlice (both local + server-synced)
+      const taskItems = tasks.filter((t) => t.type === "video").map(taskToVideoResultItem);
 
-      // 2. Server running/failed tasks — dedup against local tasks by id
-      const dedupedServerTasks = serverTasks.filter(
-        (st) => !localIds.has(st.id) && (!st.storagePath || !localPaths.has(st.storagePath))
-      );
+      if (taskItems.length === 0 && history.length === 0) return EMPTY_VIDEO_RESULTS;
 
-      // 3. History (completed) — dedup against local + server tasks
-      const allActivePaths = new Set([
-        ...localPaths,
-        ...dedupedServerTasks.map((t) => t.storagePath).filter(Boolean),
-      ]);
-      const allActiveIds = new Set([...localIds, ...dedupedServerTasks.map((t) => t.id)]);
+      // Dedup history against tasks by storagePath and id
+      const taskPaths = new Set(taskItems.map((t) => t.storagePath).filter(Boolean));
+      const taskIds = new Set(taskItems.map((t) => t.id));
       const dedupedHistory = history.filter(
-        (h) => (!h.storagePath || !allActivePaths.has(h.storagePath)) && !allActiveIds.has(h.id)
+        (h) => (!h.storagePath || !taskPaths.has(h.storagePath)) && !taskIds.has(h.id)
       );
 
-      const combined = [...localItems, ...dedupedServerTasks, ...dedupedHistory];
-      return combined.length > 0 ? combined : EMPTY_VIDEO_RESULTS;
+      return [...taskItems, ...dedupedHistory];
     }
   );
 };
