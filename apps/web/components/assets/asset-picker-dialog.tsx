@@ -52,7 +52,8 @@ function acceptHintKey(assetType: AssetRecordType) {
 interface AssetPickerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  assetType: AssetRecordType;
+  /** Single type or array of types (array shows type tabs) */
+  assetType: AssetRecordType | AssetRecordType[];
   uploadType?: string;
   accept?: string;
   maxSize?: number;
@@ -63,7 +64,7 @@ interface AssetPickerDialogProps {
 export function AssetPickerDialog({
   open,
   onOpenChange,
-  assetType,
+  assetType: assetTypeProp,
   uploadType,
   accept,
   maxSize = 25 * 1024 * 1024,
@@ -71,6 +72,9 @@ export function AssetPickerDialog({
   onSelect,
 }: AssetPickerDialogProps) {
   const t = useTranslations("asset");
+  const assetTypes = Array.isArray(assetTypeProp) ? assetTypeProp : [assetTypeProp];
+  const [activeAssetType, setActiveAssetType] = useState<AssetRecordType>(assetTypes[0]);
+  const assetType = activeAssetType;
   const [tab, setTab] = useState<PickerTab>("uploads");
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -110,6 +114,11 @@ export function AssetPickerDialog({
     setSelectedPaths(new Set());
     void loadAssets();
   }, [loadAssets, open]);
+
+  // Reset to first type when dialog opens
+  useEffect(() => {
+    if (open) setActiveAssetType(assetTypes[0]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Upload ──────────────────────────────────────────
 
@@ -244,7 +253,31 @@ export function AssetPickerDialog({
             />
           </div>
 
-          {/* Tabs */}
+          {/* Asset type tabs (only when multiple types) */}
+          {assetTypes.length > 1 && (
+            <div className="flex shrink-0 items-center gap-1 border-b border-border px-4 pt-3 pb-0">
+              {assetTypes.map((at) => (
+                <button
+                  key={at}
+                  type="button"
+                  onClick={() => {
+                    setActiveAssetType(at);
+                    setSelectedPaths(new Set());
+                  }}
+                  className={cn(
+                    "rounded-t-lg px-4 py-2 text-sm font-medium transition-colors",
+                    activeAssetType === at
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {t(assetTypeLabelKey(at))}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Source tabs */}
           <div className="flex shrink-0 items-center gap-2 px-4 pt-4">
             <TabButton active={tab === "uploads"} onClick={() => setTab("uploads")}>
               {t("recentUploads")}

@@ -82,6 +82,7 @@ import { ToolbarSelect, VideoModeSettings } from "./video-mode-settings";
 import {
   getModelRegistryEntry,
   getSchemaFields,
+  estimateCost as estimateRegistryCost,
   type ModelRegistryEntry,
 } from "@/src/lib/ai-model-schema";
 
@@ -351,6 +352,20 @@ export function AiVideoGeneratorDialog({
   }));
 
   const cost = useMemo(() => {
+    // Multimodal mode: use registry cost rules
+    const registryEntry = uploadMode === "multimodal" ? getModelRegistryEntry(model) : undefined;
+    if (registryEntry?.costRule) {
+      const base = registryEntry.costRule.baseDuration * 10; // placeholder base cost
+      return (
+        estimateRegistryCost(
+          registryEntry,
+          base,
+          formData.resolution as string,
+          Number(formData.duration || 4)
+        ) * Math.max(1, count)
+      );
+    }
+    // Legacy modes: existing calculation
     const baseCost = Math.abs(currentModel?.integralCost ?? 0);
     const sizeMultiplier =
       sizeOptions.length > 0 && size
@@ -363,7 +378,18 @@ export function AiVideoGeneratorDialog({
         ? Math.max(1, Math.ceil(currentDuration / baseDuration))
         : 1;
     return baseCost * sizeMultiplier * durationMultiplier * Math.max(1, count);
-  }, [count, currentModel?.integralCost, size, sizeOptions, videoLength, videoLengthOptions]);
+  }, [
+    count,
+    currentModel?.integralCost,
+    size,
+    sizeOptions,
+    videoLength,
+    videoLengthOptions,
+    uploadMode,
+    model,
+    formData.resolution,
+    formData.duration,
+  ]);
 
   const title = shotNumber ? t("aiVideoTitle", { number: shotNumber }) : t("aiVideoTitleDefault");
   const modeExitLabel = editMode
@@ -799,6 +825,27 @@ export function AiVideoGeneratorDialog({
             })
           );
           break;
+        case "multimodalImages":
+          dispatch(
+            setVideoReferences({
+              key,
+              field: "referenceImages",
+              value: [
+                ...referenceImages,
+                ...toReferenceAssets(paths.slice(0, 9 - referenceImages.length)),
+              ],
+            })
+          );
+          break;
+        case "multimodalVideos":
+          dispatch(
+            setVideoReferences({
+              key,
+              field: "firstFrames",
+              value: [...firstFrames, ...toReferenceAssets(paths.slice(0, 3 - firstFrames.length))],
+            })
+          );
+          break;
         case "multiRefSubject":
           dispatch(
             setVideoReferences({
@@ -939,6 +986,12 @@ export function AiVideoGeneratorDialog({
         return { assetType: "img" as const, multiple: true };
       case "multiRefSubject":
         return { assetType: "img" as const, multiple: false };
+      case "multimodalImages":
+        return { assetType: ["img", "video", "audio"] as const, multiple: true };
+      case "multimodalVideos":
+        return { assetType: "video" as const, multiple: true };
+      case "multimodalAudios":
+        return { assetType: "audio" as const, multiple: true };
       case "repaintVideo":
       case "localEditVideo":
       case "extendFirstClip":
@@ -1282,8 +1335,8 @@ export function AiVideoGeneratorDialog({
             />
           </div>
 
-          <div className="overflow-hidden rounded-xl bg-muted/50">
-            <div className="flex items-start justify-between gap-3 px-4 py-3">
+          <div className="overflow-visible rounded-xl bg-muted/50">
+            <div className="relative z-10 flex items-start justify-between gap-3 px-4 py-3 -mt-6">
               <div className="flex flex-wrap items-center gap-2">
                 <VideoReferencePanel
                   uploadMode={uploadMode}
