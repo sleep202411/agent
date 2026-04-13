@@ -1,25 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { IconArrowLeft, IconArrowRight, IconRocket } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { backendApi } from "@/src/lib/api";
+import { getCategories } from "@/src/lib/api/ip-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-
-interface ProjectCategory {
-  value: string;
-  label: string;
-}
-
-const PROJECT_CATEGORIES: ProjectCategory[] = [
-  { value: "1", label: "IP Development" },
-  { value: "2", label: "Series" },
-  { value: "3", label: "Brand Short" },
-  { value: "4", label: "Commercial" },
-  { value: "5", label: "Creative Experiment" },
-];
 
 const TOTAL_STEPS = 3;
 
@@ -31,6 +19,13 @@ export default function CreateIPPage() {
   const [typeId, setTypeId] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [categoryOptions, setCategoryOptions] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    void getCategories().then((cats) => {
+      setCategoryOptions(Object.entries(cats).map(([v, l]) => ({ value: v, label: l })));
+    });
+  }, []);
 
   const canProceed = () => {
     switch (step) {
@@ -119,7 +114,7 @@ export default function CreateIPPage() {
               <option value="" disabled>
                 {t("selectCategory")}
               </option>
-              {PROJECT_CATEGORIES.map((c) => (
+              {categoryOptions.map((c) => (
                 <option key={c.value} value={c.value}>
                   {c.label}
                 </option>

@@ -277,6 +277,7 @@
     "trailer": "Trailer",
     "total": "Total",
     "ips": "IPs",
+    "loading": "Loading...",
     "noResults": "No matching IPs found",
     "clearFilters": "Clear filters",
     "valuation": "Valuation",

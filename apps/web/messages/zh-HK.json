@@ -277,6 +277,7 @@
     "trailer": "預告片",
     "total": "共",
     "ips": "個 IP",
+    "loading": "載入中...",
     "noResults": "沒有找到匹配的 IP",
     "clearFilters": "清除篩選條件",
     "valuation": "估值",
