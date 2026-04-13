@@ -13,7 +13,28 @@
   - 集数（number，默认 1，范围 1-100，后缀"集"/"episodes"）
   - 每集时长（number，默认 3，范围 1-10，后缀"分钟"/"minutes"）
   - 每分钟镜头数（number，默认 15，范围 8-25，后缀"个"/"shots"）
-  - 画面风格（select，选项：Realistic/2D Animation/3D Animation/Ink Wash/Cyberpunk/Hand-drawn，默认 Realistic）
+  - 画面风格（select，选项如下，label 根据用户语言显示中文或英文，value 始终为英文）：
+    - Realistic Style（写实风格）
+    - Cartoon Style（卡通风格）
+    - Japanese Anime Style（日式动漫风格）
+    - Impressionist Style（印象派风格）
+    - Expressionist Style（表现主义风格）
+    - Surrealist Style（超现实主义风格）
+    - Pop Art Style（波普艺术风格）
+    - Abstract Art Style（抽象艺术风格）
+    - Cubist Style（立体主义风格）
+    - Chinese Ink Wash Painting Style（中国水墨画风格）
+    - Watercolor Painting Style（水彩画风格）
+    - Oil Painting Style（油画风格）
+    - Colored Pencil Hand-drawn Style（彩铅手绘风格）
+    - Vector Illustration Style（矢量插画风格）
+    - Pixel Art Style（像素艺术风格）
+    - Low Poly Style（低多边形风格）
+    - Steampunk Style（蒸汽朋克风格）
+    - Cyberpunk Style（赛博朋克风格）
+    - Vaporwave Style（蒸汽波风格）
+    - 3D Rendering Style（3D 渲染风格）
+    - 默认：Realistic Style
   - 输出语言（select，选项：跟随原文/中文/English）— **仅当剧本/小说语言与用户聊天语言不一致时才显示此选项**。例如用户用中文对话但上传了英文剧本，则需要让用户选择输出语言。如果语言一致则跳过此选项，默认跟随原文。
 
 **Step 2: 分析全文**

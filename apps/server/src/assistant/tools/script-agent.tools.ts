@@ -297,7 +297,7 @@ export function createScriptAgentTools(
           throw new Error('No episode mapping. Run map_episodes first.');
 
         const language = (state.language as string) ?? 'English';
-        const style = analyze.style ?? 'realistic';
+        const style = analyze.style ?? 'Realistic Style';
 
         const projectId = ctx.context.projectId;
         const results: string[] = [];

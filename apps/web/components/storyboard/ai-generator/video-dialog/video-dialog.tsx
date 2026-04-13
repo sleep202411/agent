@@ -37,6 +37,7 @@ import {
   initVideoInstance,
   loadVideoModels,
   loadVideoHistory,
+  loadServerTasks,
   deleteVideoItem,
   updateVideoForm,
   setVideoUploadMode,
@@ -54,6 +55,7 @@ import {
   startTask,
   completeTask,
   failTask,
+  removeTask,
   makeSelectTasksByShot,
   createTaskId,
 } from "@/src/store/slices/taskSlice";
@@ -81,6 +83,7 @@ import { VideoReferencePanel } from "./video-reference-group";
 import { ToolbarSelect, VideoModeSettings } from "./video-mode-settings";
 import {
   getModelRegistryEntry,
+  getRegistryModels,
   getSchemaFields,
   estimateCost as estimateRegistryCost,
   type ModelRegistryEntry,
@@ -89,7 +92,7 @@ import {
 // ─── Multimodal: schema-driven toolbar selects ──────
 
 /** Models available in multimodal mode (from frontend registry) */
-const MULTIMODAL_MODELS = [{ label: "Seedance 2.0", value: "seedance-2.0" }];
+const MULTIMODAL_MODELS = getRegistryModels("multimodal");
 
 function MultimodalToolbarSelects({
   formData,
@@ -410,8 +413,9 @@ export function AiVideoGeneratorDialog({
       return;
     }
     if (initRef.current) {
-      // Already initialized, just reload history
+      // Already initialized, just reload history + server tasks
       void dispatch(loadVideoHistory({ shotId, colId: shotColumnId }));
+      void dispatch(loadServerTasks({ shotId, colId: shotColumnId }));
       return;
     }
     initRef.current = true;
@@ -591,31 +595,58 @@ export function AiVideoGeneratorDialog({
           videoLength: params.videoLength,
         };
 
-        const result = await backendApi.post<Record<string, unknown>>(endpoint, {
+        const result = await backendApi.post<unknown>(endpoint, {
           data: payload,
           timeout: 360_000,
         });
 
-        const parsed = parseVideoGenerateResult(result);
-        dispatch(
-          completeTask({
-            taskId: nextTask.id,
-            output: { storagePath: parsed.storagePath, url: parsed.url },
-          })
-        );
-        // Set preview if none
-        dispatch(
-          setVideoPreview({
-            key,
-            item: previewItem ?? { id: nextTask.id, ...parsed, fromQueue: true },
-          })
-        );
+        if (modeKey === "multimodal") {
+          // Async task — API returns taskId string, not video result
+          // Remove local task and let server task polling track it
+          dispatch(removeTask(nextTask.id));
+          // Refresh server tasks immediately so the new task appears
+          void dispatch(loadServerTasks({ shotId, colId: shotColumnId }));
+        } else {
+          const parsed = parseVideoGenerateResult(result as Record<string, unknown>);
+          dispatch(
+            completeTask({
+              taskId: nextTask.id,
+              output: { storagePath: parsed.storagePath, url: parsed.url },
+            })
+          );
+          // Set preview if none
+          dispatch(
+            setVideoPreview({
+              key,
+              item: previewItem ?? { id: nextTask.id, ...parsed, fromQueue: true },
+            })
+          );
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "\u751F\u6210\u5931\u8D25";
         dispatch(failTask({ taskId: nextTask.id, error: message }));
       }
     })();
   }, [open, videoTasks, shotId, shotColumnId, dispatch, key, previewItem]);
+
+  // ─── Poll server tasks while dialog is open & tasks are generating ──
+
+  const { serverTasks } = instance;
+  const hasServerGenerating = serverTasks.some(
+    (t) => t.status === "waiting" || t.status === "generating"
+  );
+
+  useEffect(() => {
+    if (!open || !hasServerGenerating) return;
+
+    const interval = setInterval(() => {
+      void dispatch(loadServerTasks({ shotId, colId: shotColumnId }));
+      // Also refresh history in case a server task just completed
+      void dispatch(loadVideoHistory({ shotId, colId: shotColumnId }));
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [open, hasServerGenerating, dispatch, shotId, shotColumnId]);
 
   // ─── Sync size/videoLength with available options ─────
 
@@ -1109,14 +1140,12 @@ export function AiVideoGeneratorDialog({
     } else if (activeMode === "multimodal") {
       // Collect multimodal media from references
       const mmImages = referenceImages.filter((r) => r.path).map((r) => ossUrl(r.path));
-      // TODO: collect videos and audios from multimodal upload panel
       inputBase.images = mmImages.length > 0 ? mmImages : undefined;
-      inputBase.videos = undefined;
-      inputBase.audios = undefined;
-      inputBase.ratio = size || undefined; // multimodal uses ratio instead of size
-      inputBase.resolution = undefined; // TODO: add resolution selector for multimodal
-      inputBase.duration = videoLength ? Number(videoLength) : undefined;
-      inputBase.note = undefined;
+      // Read schema-driven fields directly from formData (ratio, resolution, duration)
+      const fd = formData as Record<string, unknown>;
+      inputBase.ratio = fd.ratio ? String(fd.ratio) : undefined;
+      inputBase.resolution = fd.resolution ? String(fd.resolution) : undefined;
+      inputBase.duration = fd.duration ? Number(fd.duration) : undefined;
     }
 
     for (let i = 0; i < Math.max(1, count); i++) {

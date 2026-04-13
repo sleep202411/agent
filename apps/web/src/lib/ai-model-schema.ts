@@ -230,6 +230,10 @@ export interface ModelCostRule {
 }
 
 export interface ModelRegistryEntry {
+  /** Canonical model ID sent to backend */
+  id: string;
+  /** Display label */
+  label: string;
   inputSchema: AiModelInputSchema;
   media?: ModelMediaConstraints;
   costRule?: ModelCostRule;
@@ -240,6 +244,8 @@ export interface ModelRegistryEntry {
 // ─── Seedance 2.0 ─────────────────────────────────────
 
 const SEEDANCE_2_0: ModelRegistryEntry = {
+  id: "doubao-seedance-2-0-260128",
+  label: "Seedance 2.0",
   endpoint: "multimodal",
   supportsPromptRef: true,
   inputSchema: {
@@ -309,21 +315,23 @@ const SEEDANCE_2_0: ModelRegistryEntry = {
 
 // ─── Registry Map ─────────────────────────────────────
 
-const MODEL_REGISTRY: Record<string, ModelRegistryEntry> = {
-  "seedance-2.0": SEEDANCE_2_0,
-  "seedance2.0": SEEDANCE_2_0,
-  seedance: SEEDANCE_2_0,
-};
+const MODEL_REGISTRY: ModelRegistryEntry[] = [SEEDANCE_2_0];
 
-/** Look up model registry entry by serviceCode */
+/** Look up model registry entry by serviceCode / model ID */
 export function getModelRegistryEntry(serviceCode?: string): ModelRegistryEntry | undefined {
   if (!serviceCode) return undefined;
   const code = serviceCode.toLowerCase();
-  if (MODEL_REGISTRY[code]) return MODEL_REGISTRY[code];
-  for (const [key, entry] of Object.entries(MODEL_REGISTRY)) {
-    if (code.includes(key)) return entry;
-  }
-  return undefined;
+  return MODEL_REGISTRY.find((e) => e.id === code || code.includes(e.id));
+}
+
+/** Get all models for a given endpoint type */
+export function getRegistryModels(
+  endpoint: ModelRegistryEntry["endpoint"]
+): Array<{ label: string; value: string }> {
+  return MODEL_REGISTRY.filter((e) => e.endpoint === endpoint).map((e) => ({
+    label: e.label,
+    value: e.id,
+  }));
 }
 
 /** Calculate estimated cost based on registry cost rules */
