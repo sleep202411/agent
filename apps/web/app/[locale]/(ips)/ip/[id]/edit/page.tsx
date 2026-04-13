@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { Link } from "@tanstack/react-router";
 import {
   IconArrowLeft,
   IconFileText,
@@ -120,23 +119,29 @@ export default function IPEditPage({ id }: { id: string }) {
   const removeReward = (id: string) => update({ rewards: form.rewards.filter((r) => r.id !== id) });
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col bg-background">
+      {/* Top tab nav */}
       <div className="border-b border-border bg-card/50">
-        <div className="mx-auto flex max-w-screen-xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <a
-              href={`/ips/${id}`}
-              className="text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <IconArrowLeft className="size-4" />
-            </a>
-            <h1 className="text-lg font-bold text-foreground">{t("pageTitle")}</h1>
-            <span className="rounded bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
-              {form.title}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="mx-auto flex max-w-screen-xl items-center justify-between px-6">
+          <nav className="flex items-center gap-1 overflow-x-auto">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-3 text-sm transition-colors",
+                  activeTab === tab.id
+                    ? "border-primary font-semibold text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <tab.icon className="size-4" />
+                {t(tab.labelKey)}
+              </button>
+            ))}
+          </nav>
+          <div className="flex shrink-0 items-center gap-2 py-2">
             {saved && <span className="text-xs text-green-400">{t("saved")}</span>}
             <button
               type="button"
@@ -149,32 +154,9 @@ export default function IPEditPage({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* Body */}
-      <div className="mx-auto flex max-w-screen-xl gap-6 px-6 py-6">
-        {/* Sidebar */}
-        <div className="w-44 shrink-0">
-          <nav className="sticky top-6 space-y-0.5">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
-                  activeTab === tab.id
-                    ? "bg-primary/10 font-semibold text-primary"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                )}
-              >
-                <tab.icon className="size-4 shrink-0" />
-                {t(tab.labelKey)}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Content */}
-        <div className="min-w-0 flex-1">
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-screen-md px-6 py-8">
           {/* ── Basic Info ── */}
           {activeTab === "basic" && (
             <div className="space-y-6">
