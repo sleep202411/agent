@@ -31,6 +31,8 @@ export interface ReferenceAsset {
   url: string;
   path: string;
   typeTag?: MultiRefType;
+  /** Display label — e.g. character name when auto-added from @mention */
+  label?: string;
 }
 
 export interface VideoQueueTask {

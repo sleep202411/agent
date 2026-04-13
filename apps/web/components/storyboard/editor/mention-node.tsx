@@ -1,3 +1,4 @@
+import { createContext, useContext } from "react";
 import { mergeAttributes, Node } from "@tiptap/core";
 import { NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
@@ -6,7 +7,22 @@ import type { NodeViewProps } from "@tiptap/react";
 // Types
 // ---------------------------------------------------------------------------
 
-export type MentionType = "character" | "scene" | "prop";
+export type MentionType = "character" | "scene" | "prop" | "reference";
+
+// ---------------------------------------------------------------------------
+// Context — lets chips display dynamic reference index
+// ---------------------------------------------------------------------------
+
+export interface MentionRefImage {
+  url: string;
+  label?: string;
+}
+
+/** Provide current reference images so chips can show "(参考图 N)" suffix */
+export const MentionRefContext = createContext<{
+  refImages: MentionRefImage[];
+  refLabel: (index: number) => string;
+}>({ refImages: [], refLabel: (i) => `Ref ${i + 1}` });
 
 export interface MentionItem {
   id: string;
@@ -77,6 +93,17 @@ function MentionChipView({ node }: NodeViewProps) {
     model: string;
   };
 
+  const { refImages, refLabel } = useContext(MentionRefContext);
+
+  // If this chip's image is in the reference group, append the index
+  let displayLabel = label;
+  if (imgUrl) {
+    const refIndex = refImages.findIndex((r) => r.url === imgUrl);
+    if (refIndex >= 0) {
+      displayLabel = `${label}（${refLabel(refIndex)}）`;
+    }
+  }
+
   const hasAvatar = Boolean(imgUrl);
 
   return (
@@ -97,7 +124,7 @@ function MentionChipView({ node }: NodeViewProps) {
         }}
       >
         {hasAvatar ? <img src={imgUrl} alt="" style={avatarStyle} /> : null}
-        <span style={nameStyle}>{label}</span>
+        <span style={nameStyle}>{displayLabel}</span>
         <span style={chevronStyle}>
           <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
             <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />

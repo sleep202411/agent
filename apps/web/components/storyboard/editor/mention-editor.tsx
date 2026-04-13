@@ -5,7 +5,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/src/store";
 import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
-import { MentionNode } from "./mention-node";
+import { MentionNode, MentionRefContext } from "./mention-node";
 import type { MentionItem, MentionType } from "./mention-node";
 import {
   fetchAssetList,
@@ -20,7 +20,7 @@ import {
   type MentionFlatItem,
 } from "./mention-editor-utils";
 import { serializeEditorHtml, deserializeToEditorHtml } from "./mention-editor-serializer";
-import { MentionPopover } from "./mention-popover";
+import { MentionPopover, type ReferenceMediaItem } from "./mention-popover";
 
 export interface MentionEditorProps {
   value: string;
@@ -33,6 +33,10 @@ export interface MentionEditorProps {
   allowedMentionTypes?: MentionType[];
   showAvatar?: boolean;
   extraFields?: Array<"voiceId" | "model">;
+  referenceMedia?: ReferenceMediaItem[];
+  onSelectReferenceMedia?: (item: ReferenceMediaItem) => void;
+  /** Fires immediately when a mention chip is inserted (not on blur) */
+  onMentionInserted?: (item: MentionFlatItem) => void;
 }
 
 export function MentionEditor({
@@ -46,7 +50,11 @@ export function MentionEditor({
   allowedMentionTypes,
   showAvatar = true,
   extraFields = [],
+  referenceMedia,
+  onSelectReferenceMedia,
+  onMentionInserted,
 }: MentionEditorProps) {
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const tScene = useTranslations("scene");
   const tProp = useTranslations("prop");
@@ -158,6 +166,17 @@ export function MentionEditor({
   const flattenedItems = useMemo<MentionFlatItem[]>(() => {
     const items: MentionFlatItem[] = [];
 
+    // Reference media at the top
+    referenceMedia?.forEach((ref, i) => {
+      items.push({
+        key: `ref-${ref.path}-${i}`,
+        id: ref.path,
+        name: ref.label ?? `Reference ${i + 1}`,
+        mentionType: "reference",
+        imgUrl: ref.url,
+      });
+    });
+
     characterDisplayGroups.forEach((group) => {
       group.items.forEach((item, index) => {
         items.push({
@@ -193,7 +212,7 @@ export function MentionEditor({
     });
 
     return items;
-  }, [characterDisplayGroups, propsList, scenes]);
+  }, [referenceMedia, characterDisplayGroups, propsList, scenes]);
 
   const isSearching = loadingCharacters || loadingScenes || loadingProps;
 
@@ -732,8 +751,9 @@ export function MentionEditor({
       closeMentionPopover();
       editor.commands.focus();
       setIsEmpty(!editor.getText().trim());
+      onMentionInserted?.(item);
     },
-    [closeMentionPopover, editor, isCharacterDisabled]
+    [closeMentionPopover, editor, isCharacterDisabled, onMentionInserted]
   );
 
   // -----------------------------------------------------------------------
@@ -1015,18 +1035,28 @@ export function MentionEditor({
   // Render
   // -----------------------------------------------------------------------
 
+  const refContextValue = useMemo(
+    () => ({
+      refImages: (referenceMedia ?? []).map((r) => ({ url: r.url })),
+      refLabel: (i: number) => `${t("referenceImage")} ${i + 1}`,
+    }),
+    [referenceMedia, t]
+  );
+
   return (
     <>
-      <div onDoubleClick={onStartEdit} ref={editorContainerRef}>
-        <div className="relative min-h-[2rem]">
-          {isEmpty && placeholder ? (
-            <div className="pointer-events-none absolute left-0 top-0 text-xs leading-relaxed text-muted-foreground/30">
-              {placeholder}
-            </div>
-          ) : null}
-          <EditorContent editor={editor} />
+      <MentionRefContext.Provider value={refContextValue}>
+        <div onDoubleClick={onStartEdit} ref={editorContainerRef}>
+          <div className="relative min-h-[2rem]">
+            {isEmpty && placeholder ? (
+              <div className="pointer-events-none absolute left-0 top-0 text-xs leading-relaxed text-muted-foreground/30">
+                {placeholder}
+              </div>
+            ) : null}
+            <EditorContent editor={editor} />
+          </div>
         </div>
-      </div>
+      </MentionRefContext.Provider>
 
       {mounted && showMentionPopover ? (
         <MentionPopover
@@ -1054,6 +1084,8 @@ export function MentionEditor({
           onLoadMoreCharacters={loadMoreCharacters}
           onLoadMoreScenes={loadMoreScenes}
           onLoadMoreProps={loadMoreProps}
+          referenceMedia={referenceMedia}
+          onSelectReferenceMedia={onSelectReferenceMedia}
           tc={tc}
           tScene={tScene}
           tProp={tProp}

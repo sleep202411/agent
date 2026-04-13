@@ -1154,6 +1154,7 @@
     "maskImage": "Mask",
     "search": "Search",
     "mentionHelp": "Arrow keys to select, Enter/Tab to confirm, Esc to close",
+    "referenceMedia": "Reference Media",
     "voiceNotConfigured": "Voice not configured",
     "noVoicesAvailable": "No voices available",
     "characterLabel": "Character",

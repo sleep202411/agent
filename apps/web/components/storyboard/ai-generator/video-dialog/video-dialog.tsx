@@ -1204,6 +1204,27 @@ export function AiVideoGeneratorDialog({
     [dispatch, key]
   );
 
+  // ─── Auto-add @mentioned character images to referenceImages ──
+  const refMaxCount = uploadMode === "multimodal" ? 12 : 1;
+  const handleMentionInserted = useCallback(
+    (item: { imgUrl?: string; name: string; mentionType: string }) => {
+      if (!item.imgUrl) return;
+      // Skip if already in referenceImages
+      const exists = referenceImages.some((r) => (r.url || ossUrl(r.path)) === item.imgUrl);
+      if (exists) return;
+      // Respect max count for current mode
+      if (referenceImages.length >= refMaxCount) return;
+      dispatch(
+        setVideoReferences({
+          key,
+          field: "referenceImages",
+          value: [...referenceImages, { url: item.imgUrl, path: item.imgUrl, label: item.name }],
+        })
+      );
+    },
+    [dispatch, key, referenceImages, refMaxCount]
+  );
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1422,6 +1443,15 @@ export function AiVideoGeneratorDialog({
                 minHeight={96}
                 maxHeight={240}
                 className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
+                referenceMedia={referenceImages.map((r, i) => {
+                  const idx = `${t("referenceImage")} ${i + 1}`;
+                  return {
+                    url: r.url || ossUrl(r.path),
+                    path: r.path,
+                    label: r.label ? `${r.label}（${idx}）` : idx,
+                  };
+                })}
+                onMentionInserted={handleMentionInserted}
               />
             </div>
 

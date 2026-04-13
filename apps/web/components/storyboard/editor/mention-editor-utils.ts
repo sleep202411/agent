@@ -28,7 +28,7 @@ export interface MentionFlatItem {
 
 export const OSS_BASE = env.OSS_BASE_URL;
 export const PAGE_SIZE = 50;
-export const DEFAULT_POPOVER_WIDTH = 520;
+export const DEFAULT_POPOVER_WIDTH = 340;
 export const POPOVER_MARGIN = 12;
 
 export function fetchAssetList(

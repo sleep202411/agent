@@ -34,7 +34,7 @@ interface PromptInputProps {
   onSizeChange: (v: string) => void;
   count: number;
   onCountChange: (v: number) => void;
-  referenceImages: { url: string; path: string }[];
+  referenceImages: { url: string; path: string; label?: string }[];
   onAddReference: () => void;
   onRemoveReference: (idx: number) => void;
   referenceFields?: string[];
@@ -169,6 +169,14 @@ export function PromptInput({
           className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
           onSubmitShortcut={onSubmit}
           submitMode="enter"
+          referenceMedia={referenceImages.map((r, i) => {
+            const idx = `${t("referenceImage")} ${i + 1}`;
+            return {
+              url: r.url || ossUrl(r.path) || "",
+              path: r.path,
+              label: r.label ? `${r.label}（${idx}）` : idx,
+            };
+          })}
         />
       </div>
 
