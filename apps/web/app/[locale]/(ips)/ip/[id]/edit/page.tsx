@@ -12,10 +12,12 @@ import {
   IconPlus,
   IconGripVertical,
   IconTrash,
-  IconInfoCircle,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   PROJECT_TYPES,
   SUGGESTED_TAGS,
@@ -100,7 +102,7 @@ function Section({
           <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
         )}
       </div>
-      <div className="space-y-5">{children}</div>
+      <div className="space-y-4">{children}</div>
     </div>
   );
 }
@@ -189,13 +191,9 @@ export default function IPEditPage({ id }: { id: string }) {
           </nav>
           <div className="absolute right-6 flex shrink-0 items-center gap-2 py-2">
             {saved && <span className="text-xs text-green-400">{t("saved")}</span>}
-            <button
-              type="button"
-              onClick={handleSave}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
+            <Button size="sm" onClick={handleSave}>
               {t("save")}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -210,13 +208,14 @@ export default function IPEditPage({ id }: { id: string }) {
                 {form.coverImage ? (
                   <div className="relative aspect-video w-full max-w-md overflow-hidden rounded-xl border border-border">
                     <img src={form.coverImage} alt="" className="size-full object-cover" />
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className="absolute right-2 top-2 bg-black/60 text-white hover:bg-black/80"
                       onClick={() => update({ coverImage: null })}
-                      className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
                     >
                       <IconX className="size-4" />
-                    </button>
+                    </Button>
                   </div>
                 ) : (
                   <div className="flex aspect-video w-full max-w-md flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-secondary/50">
@@ -227,40 +226,35 @@ export default function IPEditPage({ id }: { id: string }) {
               </Section>
 
               <Section title={t("sectionName")} description={t("sectionNameDesc")}>
-                <input
-                  type="text"
+                <Input
                   value={form.title}
                   onChange={(e) => update({ title: e.target.value.slice(0, 50) })}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                  className="h-10"
                 />
               </Section>
 
               <Section title={t("sectionType")} description={t("sectionTypeDesc")}>
                 <div className="flex flex-wrap gap-2">
                   {PROJECT_TYPES.map((type) => (
-                    <button
+                    <Button
                       key={type}
-                      type="button"
+                      variant={form.projectType === type ? "soft" : "outline"}
+                      color={form.projectType === type ? "primary" : "muted"}
+                      size="sm"
                       onClick={() => update({ projectType: type })}
-                      className={cn(
-                        "rounded-lg border px-3 py-1.5 text-xs font-medium transition-all",
-                        form.projectType === type
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border bg-secondary text-muted-foreground hover:text-foreground"
-                      )}
                     >
                       {t(`type_${type}`)}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </Section>
 
               <Section title={t("sectionDesc")} description={t("sectionDescDesc")}>
-                <textarea
+                <Textarea
                   value={form.description}
                   onChange={(e) => update({ description: e.target.value.slice(0, 500) })}
                   rows={4}
-                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                  className="min-h-24"
                 />
                 <span className="block text-right text-xs text-muted-foreground">
                   {form.description.length}/500
@@ -268,11 +262,11 @@ export default function IPEditPage({ id }: { id: string }) {
               </Section>
 
               <Section title={t("sectionBackground")} description={t("sectionBackgroundDesc")}>
-                <textarea
+                <Textarea
                   value={form.background}
                   onChange={(e) => update({ background: e.target.value.slice(0, 2000) })}
                   rows={5}
-                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                  className="min-h-32"
                 />
                 <span className="block text-right text-xs text-muted-foreground">
                   {form.background.length}/2000
@@ -280,9 +274,9 @@ export default function IPEditPage({ id }: { id: string }) {
               </Section>
 
               <Section title={t("sectionTags")} description={t("sectionTagsDesc")}>
-                <input
-                  type="text"
+                <Input
                   placeholder={t("tagPlaceholder")}
+                  className="h-10"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -290,20 +284,21 @@ export default function IPEditPage({ id }: { id: string }) {
                       (e.target as HTMLInputElement).value = "";
                     }
                   }}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
                 />
                 <div className="flex flex-wrap gap-1">
                   {SUGGESTED_TAGS.filter((t) => !form.tags.includes(t))
                     .slice(0, 8)
                     .map((tag) => (
-                      <button
+                      <Button
                         key={tag}
-                        type="button"
+                        variant="outline"
+                        color="muted"
+                        size="xs"
+                        className="rounded-full"
                         onClick={() => addTag(tag)}
-                        className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground"
                       >
                         + {tag}
-                      </button>
+                      </Button>
                     ))}
                 </div>
                 <div className="flex flex-wrap gap-1">
@@ -322,12 +317,11 @@ export default function IPEditPage({ id }: { id: string }) {
               </Section>
 
               <Section title={t("sectionContact")} description={t("sectionContactDesc")}>
-                <input
-                  type="text"
+                <Input
                   value={form.contact}
                   onChange={(e) => update({ contact: e.target.value })}
                   placeholder={t("contactPlaceholder")}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                  className="h-10"
                 />
               </Section>
             </>
@@ -337,11 +331,11 @@ export default function IPEditPage({ id }: { id: string }) {
           {activeTab === "story" && (
             <>
               <Section title={t("sectionStory")} description={t("sectionStoryDesc")}>
-                <textarea
+                <Textarea
                   value={form.story}
                   onChange={(e) => update({ story: e.target.value.slice(0, 2000) })}
                   rows={10}
-                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                  className="min-h-48"
                 />
                 <span className="block text-right text-xs text-muted-foreground">
                   {form.story.length}/2000
@@ -349,11 +343,11 @@ export default function IPEditPage({ id }: { id: string }) {
               </Section>
 
               <Section title={t("sectionWhyThisIP")} description={t("sectionWhyThisIPDesc")}>
-                <textarea
+                <Textarea
                   value={form.whyThisIP}
                   onChange={(e) => update({ whyThisIP: e.target.value.slice(0, 1000) })}
                   rows={5}
-                  className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                  className="min-h-28"
                 />
                 <span className="block text-right text-xs text-muted-foreground">
                   {form.whyThisIP.length}/1000
@@ -366,19 +360,15 @@ export default function IPEditPage({ id }: { id: string }) {
               >
                 <div className="flex flex-wrap gap-2">
                   {TARGET_EPISODES_OPTIONS.map((n) => (
-                    <button
+                    <Button
                       key={n}
-                      type="button"
+                      variant={form.targetEpisodes === n ? "soft" : "outline"}
+                      color={form.targetEpisodes === n ? "primary" : "muted"}
+                      size="sm"
                       onClick={() => update({ targetEpisodes: n })}
-                      className={cn(
-                        "rounded-lg border px-4 py-2 text-sm font-medium transition-all",
-                        form.targetEpisodes === n
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border bg-secondary text-muted-foreground"
-                      )}
                     >
                       {n} {t("eps")}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </Section>
@@ -393,26 +383,23 @@ export default function IPEditPage({ id }: { id: string }) {
                   <div className="flex size-full items-center justify-center text-sm text-white/50">
                     {t("videoUploaded")}
                   </div>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="absolute right-2 top-2 bg-black/60 text-white hover:bg-black/80"
                     onClick={() => update({ promoVideo: null })}
-                    className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
                   >
                     <IconX className="size-4" />
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <div className="flex aspect-video w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-secondary/50">
                   <IconVideo className="mb-2 size-10 text-muted-foreground/30" />
                   <p className="text-sm text-muted-foreground">{t("uploadPromo")}</p>
                   <p className="mt-1 text-xs text-muted-foreground/60">{t("promoSpec")}</p>
-                  <button
-                    type="button"
-                    onClick={() => update({ promoVideo: "mock" })}
-                    className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground"
-                  >
-                    <IconUpload className="mr-1 inline size-3.5" /> {t("selectVideo")}
-                  </button>
+                  <Button size="sm" className="mt-4" onClick={() => update({ promoVideo: "mock" })}>
+                    <IconUpload className="size-3.5" /> {t("selectVideo")}
+                  </Button>
                 </div>
               )}
             </Section>
@@ -422,20 +409,22 @@ export default function IPEditPage({ id }: { id: string }) {
           {activeTab === "episodes" && (
             <Section title={t("sectionEpisodes")} description={t("sectionEpisodesDesc")}>
               <div className="flex gap-2">
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  color="muted"
+                  size="sm"
                   onClick={() => addEpisode("linear")}
-                  className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/70"
                 >
                   <IconPlus className="size-3.5" /> {t("addLinear")}
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="soft"
+                  size="sm"
+                  className="border border-violet-400/30 bg-violet-400/10 text-violet-400 hover:bg-violet-400/20"
                   onClick={() => addEpisode("interactive")}
-                  className="flex items-center gap-1 rounded-lg border border-violet-400/30 bg-violet-400/10 px-3 py-1.5 text-xs font-medium text-violet-400 hover:bg-violet-400/20"
                 >
                   <IconPlus className="size-3.5" /> {t("addInteractive")}
-                </button>
+                </Button>
               </div>
               {form.episodes.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
@@ -467,37 +456,40 @@ export default function IPEditPage({ id }: { id: string }) {
                       >
                         {ep.type === "interactive" ? t("typeInteractive") : t("typeLinear")}
                       </span>
-                      <input
-                        type="text"
+                      <Input
                         value={ep.title}
                         onChange={(e) => updateEpisode(i, { title: e.target.value })}
                         placeholder={t("epTitlePlaceholder")}
-                        className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
+                        className="min-w-0 flex-1"
                       />
                       <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">{"\u00A5"}</span>
-                        <input
+                        <span className="text-xs text-muted-foreground">¥</span>
+                        <Input
                           type="number"
                           value={ep.price}
                           onChange={(e) => updateEpisode(i, { price: Number(e.target.value) || 0 })}
-                          className="w-20 rounded-lg border border-border bg-background px-2 py-1.5 text-center text-sm outline-none focus:border-primary"
+                          className="w-20 text-center"
                         />
                       </div>
                       {ep.type === "interactive" && (
-                        <a
-                          href={`/ips/${id}/episodes/${i + 1}/editor`}
-                          className="shrink-0 rounded-lg border border-violet-400/30 bg-violet-400/10 px-2.5 py-1 text-[10px] font-semibold text-violet-400 hover:bg-violet-400/20"
+                        <Button
+                          variant="soft"
+                          size="xs"
+                          className="border border-violet-400/30 bg-violet-400/10 text-violet-400 hover:bg-violet-400/20"
+                          asChild
                         >
-                          {t("editFlow")}
-                        </a>
+                          <a href={`/ips/${id}/episodes/${i + 1}/editor`}>{t("editFlow")}</a>
+                        </Button>
                       )}
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        color="muted"
+                        size="icon-xs"
                         onClick={() => removeEpisode(i)}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="hover:text-destructive"
                       >
                         <IconTrash className="size-4" />
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -508,13 +500,9 @@ export default function IPEditPage({ id }: { id: string }) {
           {/* ── Team ── */}
           {activeTab === "team" && (
             <Section title={t("sectionTeam")} description={t("sectionTeamDesc")}>
-              <button
-                type="button"
-                onClick={addJob}
-                className="flex items-center gap-1 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary/70"
-              >
+              <Button variant="outline" color="muted" size="sm" onClick={addJob}>
                 <IconPlus className="size-3.5" /> {t("addPosition")}
-              </button>
+              </Button>
               {form.jobs.length === 0 ? (
                 <div className="py-10 text-center text-sm text-muted-foreground">
                   {t("noPositions")}
@@ -530,27 +518,28 @@ export default function IPEditPage({ id }: { id: string }) {
                         <span className="text-xs font-semibold text-foreground">
                           {t("position")} {i + 1}
                         </span>
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          color="muted"
+                          size="icon-xs"
                           onClick={() => removeJob(i)}
-                          className="text-muted-foreground hover:text-destructive"
+                          className="hover:text-destructive"
                         >
                           <IconTrash className="size-4" />
-                        </button>
+                        </Button>
                       </div>
-                      <input
-                        type="text"
+                      <Input
                         value={job.role}
                         onChange={(e) => updateJob(i, { role: e.target.value })}
                         placeholder={t("rolePlaceholder")}
-                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                        className="h-9"
                       />
-                      <textarea
+                      <Textarea
                         value={job.description}
                         onChange={(e) => updateJob(i, { description: e.target.value })}
                         placeholder={t("jobDescPlaceholder")}
                         rows={2}
-                        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                        className="min-h-16"
                       />
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -558,11 +547,11 @@ export default function IPEditPage({ id }: { id: string }) {
                             {t("profitRatio")}
                           </label>
                           <div className="relative">
-                            <input
+                            <Input
                               type="number"
                               value={job.profitRatio}
                               onChange={(e) => updateJob(i, { profitRatio: e.target.value })}
-                              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                              className="h-9 pr-8"
                             />
                             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                               %
@@ -573,11 +562,11 @@ export default function IPEditPage({ id }: { id: string }) {
                           <label className="mb-1 block text-xs text-muted-foreground">
                             {t("estimatedEarnings")}
                           </label>
-                          <input
+                          <Input
                             type="number"
                             value={job.earnings}
                             onChange={(e) => updateJob(i, { earnings: e.target.value })}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                            className="h-9"
                           />
                         </div>
                       </div>
@@ -594,19 +583,15 @@ export default function IPEditPage({ id }: { id: string }) {
               <Section title={t("sectionFundingMode")} description={t("sectionFundingModeDesc")}>
                 <div className="flex gap-3">
                   {(["investment", "presale"] as const).map((mode) => (
-                    <button
+                    <Button
                       key={mode}
-                      type="button"
+                      variant={form.fundingMode === mode ? "soft" : "outline"}
+                      color={form.fundingMode === mode ? "primary" : "muted"}
+                      className="flex-1 py-3"
                       onClick={() => update({ fundingMode: mode })}
-                      className={cn(
-                        "flex-1 rounded-lg border px-4 py-3 text-sm font-medium transition-all",
-                        form.fundingMode === mode
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border bg-secondary text-muted-foreground"
-                      )}
                     >
                       {t(`mode_${mode}`)}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </Section>
@@ -614,12 +599,12 @@ export default function IPEditPage({ id }: { id: string }) {
               {form.fundingMode === "investment" ? (
                 <>
                   <Section title={t("sectionValuation")} description={t("sectionValuationDesc")}>
-                    <input
+                    <Input
                       type="number"
                       value={form.valuation}
                       onChange={(e) => update({ valuation: e.target.value })}
                       placeholder="0"
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                      className="h-10"
                     />
                   </Section>
                   <Section title={t("sectionShares")} description={t("sectionSharesDesc")}>
@@ -629,11 +614,11 @@ export default function IPEditPage({ id }: { id: string }) {
                           {t("sharesOffered")}
                         </label>
                         <div className="relative">
-                          <input
+                          <Input
                             type="number"
                             value={form.sharesOffered}
                             onChange={(e) => update({ sharesOffered: e.target.value })}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                            className="h-9 pr-8"
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
                             %
@@ -644,21 +629,21 @@ export default function IPEditPage({ id }: { id: string }) {
                         <label className="mb-1 block text-xs text-muted-foreground">
                           {t("totalShares")}
                         </label>
-                        <input
+                        <Input
                           type="number"
                           value={form.totalShares}
                           onChange={(e) => update({ totalShares: e.target.value })}
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                          className="h-9"
                         />
                       </div>
                     </div>
                   </Section>
                   <Section title={t("sectionDeadline")} description={t("sectionDeadlineDesc")}>
-                    <input
+                    <Input
                       type="date"
                       value={form.deadline}
                       onChange={(e) => update({ deadline: e.target.value })}
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                      className="h-10"
                     />
                   </Section>
                 </>
@@ -673,22 +658,22 @@ export default function IPEditPage({ id }: { id: string }) {
                         <label className="mb-1 block text-xs text-muted-foreground">
                           {t("presalePrice")}
                         </label>
-                        <input
+                        <Input
                           type="number"
                           value={form.presalePrice}
                           onChange={(e) => update({ presalePrice: Number(e.target.value) || 0 })}
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                          className="h-9"
                         />
                       </div>
                       <div>
                         <label className="mb-1 block text-xs text-muted-foreground">
                           {t("fullPrice")}
                         </label>
-                        <input
+                        <Input
                           type="number"
                           value={form.fullPrice}
                           onChange={(e) => update({ fullPrice: Number(e.target.value) || 0 })}
-                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                          className="h-9"
                         />
                       </div>
                     </div>
@@ -697,22 +682,22 @@ export default function IPEditPage({ id }: { id: string }) {
                     title={t("sectionPresaleTarget")}
                     description={t("sectionPresaleTargetDesc")}
                   >
-                    <input
+                    <Input
                       type="number"
                       value={form.presaleTarget}
                       onChange={(e) => update({ presaleTarget: Number(e.target.value) || 0 })}
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                      className="h-10"
                     />
                   </Section>
                   <Section
                     title={t("sectionDeadline")}
                     description={t("sectionPresaleDeadlineDesc")}
                   >
-                    <input
+                    <Input
                       type="date"
                       value={form.presaleDeadline}
                       onChange={(e) => update({ presaleDeadline: e.target.value })}
-                      className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+                      className="h-10"
                     />
                   </Section>
                 </>
@@ -772,13 +757,15 @@ export default function IPEditPage({ id }: { id: string }) {
                         <span className="text-sm font-medium text-foreground">
                           ¥{r.amount} {r.title}
                         </span>
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          color="muted"
+                          size="icon-xs"
                           onClick={() => removeReward(r.id)}
-                          className="text-muted-foreground hover:text-destructive"
+                          className="hover:text-destructive"
                         >
                           <IconX className="size-4" />
-                        </button>
+                        </Button>
                       </div>
                     ))}
                   </div>

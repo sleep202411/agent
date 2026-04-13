@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { IconArrowLeft, IconArrowRight, IconRocket } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { backendApi } from "@/src/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 interface ProjectCategory {
   value: string;
@@ -36,7 +39,7 @@ export default function CreateIPPage() {
       case 1:
         return typeId !== "";
       case 2:
-        return true; // description is optional
+        return true;
       default:
         return false;
     }
@@ -92,14 +95,13 @@ export default function CreateIPPage() {
           <div className="w-full max-w-xl text-center">
             <h2 className="text-2xl font-bold text-foreground">{t("step1Heading")}</h2>
             <p className="mt-2 text-sm text-muted-foreground">{t("step1Subheading")}</p>
-            <input
-              type="text"
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t("titlePlaceholder")}
               maxLength={50}
               autoFocus
-              className="mt-10 w-full rounded-lg border border-border bg-secondary/50 px-4 py-3 text-center text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-primary"
+              className="mt-10 h-12 text-center"
             />
           </div>
         )}
@@ -112,7 +114,7 @@ export default function CreateIPPage() {
               value={typeId}
               onChange={(e) => setTypeId(e.target.value)}
               autoFocus
-              className="mt-10 w-full appearance-none rounded-lg border border-border bg-secondary/50 px-4 py-3 text-center text-sm text-foreground outline-none transition-colors focus:border-primary"
+              className="mt-10 h-12 w-full appearance-none rounded-md border border-input bg-input/20 px-4 text-center text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-input/30"
             >
               <option value="" disabled>
                 {t("selectCategory")}
@@ -130,14 +132,14 @@ export default function CreateIPPage() {
           <div className="w-full max-w-xl text-center">
             <h2 className="text-2xl font-bold text-foreground">{t("step3Heading")}</h2>
             <p className="mt-2 text-sm text-muted-foreground">{t("step3Subheading")}</p>
-            <textarea
+            <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t("descPlaceholder")}
               maxLength={500}
               rows={4}
               autoFocus
-              className="mt-10 w-full resize-none rounded-lg border border-border bg-secondary/50 px-4 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-primary"
+              className="mt-10 min-h-28"
             />
           </div>
         )}
@@ -147,24 +149,15 @@ export default function CreateIPPage() {
       <div className="border-t border-border">
         <div className="flex items-center justify-between px-8 py-4">
           {step > 0 ? (
-            <button
-              type="button"
-              onClick={() => setStep((s) => s - 1)}
-              className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
+            <Button variant="ghost" color="muted" onClick={() => setStep((s) => s - 1)}>
               <IconArrowLeft className="size-4" />
               {t("prev")}
-            </button>
+            </Button>
           ) : (
             <div />
           )}
 
-          <button
-            type="button"
-            onClick={handleNext}
-            disabled={!canProceed() || submitting}
-            className="flex items-center gap-1.5 rounded-xl bg-foreground px-6 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-40"
-          >
+          <Button onClick={handleNext} disabled={!canProceed() || submitting}>
             {step < TOTAL_STEPS - 1 ? (
               <>
                 {t("next")}
@@ -176,7 +169,7 @@ export default function CreateIPPage() {
                 {submitting ? t("creating") : t("createAndContinue")}
               </>
             )}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
