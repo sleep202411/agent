@@ -28,6 +28,8 @@ export default defineConfig({
         "/project/**": { proxy: `${JAVA_CONTENT_URL}/project/**` },
         "/vedio/**": { proxy: `${JAVA_CONTENT_URL}/vedio/**` },
         "/content/**": { proxy: `${JAVA_CONTENT_URL}/content/**` },
+        // News API — proxy to production
+        "/newsapi/**": { proxy: "https://fizzdragon.com/content/**" },
       },
     }),
   ],

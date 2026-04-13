@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from "./routes/__root";
 import { Route as WorkbenchRouteImport } from "./routes/workbench";
 import { Route as ProfileRouteImport } from "./routes/profile";
+import { Route as NewsRouteImport } from "./routes/news";
 import { Route as StudioRouteImport } from "./routes/_studio";
 import { Route as AuthRouteImport } from "./routes/_auth";
 import { Route as IndexRouteImport } from "./routes/index";
@@ -44,6 +45,11 @@ const WorkbenchRoute = WorkbenchRouteImport.update({
 const ProfileRoute = ProfileRouteImport.update({
   id: "/profile",
   path: "/profile",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const NewsRoute = NewsRouteImport.update({
+  id: "/news",
+  path: "/news",
   getParentRoute: () => rootRouteImport,
 } as any);
 const StudioRoute = StudioRouteImport.update({
@@ -167,6 +173,7 @@ const IpsIdEpisodesEpIdEditorRoute = IpsIdEpisodesEpIdEditorRouteImport.update({
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
+  "/news": typeof NewsRoute;
   "/profile": typeof ProfileRoute;
   "/workbench": typeof WorkbenchRoute;
   "/forgot-password": typeof AuthForgotPasswordRoute;
@@ -193,6 +200,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/news": typeof NewsRoute;
   "/profile": typeof ProfileRoute;
   "/workbench": typeof WorkbenchRoute;
   "/forgot-password": typeof AuthForgotPasswordRoute;
@@ -222,6 +230,7 @@ export interface FileRoutesById {
   "/": typeof IndexRoute;
   "/_auth": typeof AuthRouteWithChildren;
   "/_studio": typeof StudioRouteWithChildren;
+  "/news": typeof NewsRoute;
   "/profile": typeof ProfileRoute;
   "/workbench": typeof WorkbenchRoute;
   "/_auth/forgot-password": typeof AuthForgotPasswordRoute;
@@ -250,6 +259,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
+    | "/news"
     | "/profile"
     | "/workbench"
     | "/forgot-password"
@@ -276,6 +286,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/news"
     | "/profile"
     | "/workbench"
     | "/forgot-password"
@@ -304,6 +315,7 @@ export interface FileRouteTypes {
     | "/"
     | "/_auth"
     | "/_studio"
+    | "/news"
     | "/profile"
     | "/workbench"
     | "/_auth/forgot-password"
@@ -333,6 +345,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
   AuthRoute: typeof AuthRouteWithChildren;
   StudioRoute: typeof StudioRouteWithChildren;
+  NewsRoute: typeof NewsRoute;
   ProfileRoute: typeof ProfileRoute;
   WorkbenchRoute: typeof WorkbenchRoute;
   CreatorsIdRoute: typeof CreatorsIdRoute;
@@ -364,6 +377,13 @@ declare module "@tanstack/react-router" {
       path: "/profile";
       fullPath: "/profile";
       preLoaderRoute: typeof ProfileRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/news": {
+      id: "/news";
+      path: "/news";
+      fullPath: "/news";
+      preLoaderRoute: typeof NewsRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/_studio": {
@@ -573,6 +593,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
   StudioRoute: StudioRouteWithChildren,
+  NewsRoute: NewsRoute,
   ProfileRoute: ProfileRoute,
   WorkbenchRoute: WorkbenchRoute,
   CreatorsIdRoute: CreatorsIdRoute,
