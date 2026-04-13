@@ -1319,67 +1319,50 @@ export function AiVideoGeneratorDialog({
               }}
             />
 
-            <div className="flex flex-col gap-3 border-t border-white/[0.06] px-3 py-3">
-              {!editMode ? (
-                <div className="flex gap-2">
-                  {[
-                    { label: t("referenceImageUpload"), value: "reference" as const },
-                    { label: t("framesTab"), value: "frames" as const },
-                    { label: t("multiReferenceTab"), value: "multiReference" as const },
-                  ].map((item) => (
-                    <button
-                      key={item.value}
-                      type="button"
-                      onClick={() => void handleUploadModeChange(item.value)}
-                      className={cn(
-                        "rounded-full px-3 py-1.5 text-xs transition-colors",
-                        uploadMode === item.value
-                          ? "bg-primary text-white"
-                          : "bg-white/[0.05] text-muted-foreground hover:bg-white/[0.08]"
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-3 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {!editMode && (
                   <ToolbarSelect
-                    value={model}
-                    options={modelOptions}
-                    onChange={(v) => dispatch(updateVideoForm({ key, updates: { model: v } }))}
-                  />
-                  <ToolbarSelect
-                    value={size}
-                    options={sizeOptions}
-                    onChange={(v) => dispatch(updateVideoForm({ key, updates: { size: v } }))}
-                  />
-                  <ToolbarSelect
-                    value={videoLength}
-                    options={videoLengthOptions}
-                    onChange={(v) =>
-                      dispatch(updateVideoForm({ key, updates: { videoLength: v } }))
-                    }
-                  />
-                </div>
-
-                <div className="flex items-center gap-2.5">
-                  <ToolbarSelect
-                    value={String(count)}
+                    value={uploadMode}
                     options={[
-                      { label: "1x", value: "1" },
-                      { label: "2x", value: "2" },
-                      { label: "4x", value: "4" },
+                      { label: t("referenceImageUpload"), value: "reference" },
+                      { label: t("framesTab"), value: "frames" },
+                      { label: t("multiReferenceTab"), value: "multiReference" },
                     ]}
-                    onChange={(value) =>
-                      dispatch(updateVideoForm({ key, updates: { count: Number(value) } }))
-                    }
+                    onChange={(v) => void handleUploadModeChange(v as SimpleMode)}
                   />
+                )}
+                <ToolbarSelect
+                  value={model}
+                  options={modelOptions}
+                  onChange={(v) => dispatch(updateVideoForm({ key, updates: { model: v } }))}
+                />
+                <ToolbarSelect
+                  value={size}
+                  options={sizeOptions}
+                  onChange={(v) => dispatch(updateVideoForm({ key, updates: { size: v } }))}
+                />
+                <ToolbarSelect
+                  value={videoLength}
+                  options={videoLengthOptions}
+                  onChange={(v) => dispatch(updateVideoForm({ key, updates: { videoLength: v } }))}
+                />
+              </div>
 
-                  <GenerateButton onClick={handleGenerate} cost={cost > 0 ? cost : undefined} />
-                </div>
+              <div className="flex items-center gap-2.5">
+                <ToolbarSelect
+                  value={String(count)}
+                  options={[
+                    { label: "1x", value: "1" },
+                    { label: "2x", value: "2" },
+                    { label: "4x", value: "4" },
+                  ]}
+                  onChange={(value) =>
+                    dispatch(updateVideoForm({ key, updates: { count: Number(value) } }))
+                  }
+                />
+
+                <GenerateButton onClick={handleGenerate} cost={cost > 0 ? cost : undefined} />
               </div>
             </div>
           </div>
