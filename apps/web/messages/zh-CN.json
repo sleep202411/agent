@@ -1999,6 +1999,10 @@
     "generateReferralLink": "生成引荐链接",
     "referralLinkCopied": "引荐链接已复制到剪贴板",
     "referralLinkManualCopy": "请手动复制引荐链接：",
-    "referralLinkFailed": "生成引荐链接失败"
+    "referralLinkFailed": "生成引荐链接失败",
+    "referralLinkTitle": "你的引荐链接",
+    "referralLinkDesc": "分享此链接邀请他人加入 FizzDragon。",
+    "copy": "复制",
+    "copied": "已复制"
   }
 }

@@ -1999,6 +1999,10 @@
     "generateReferralLink": "Referral Link",
     "referralLinkCopied": "Referral link copied to clipboard",
     "referralLinkManualCopy": "Please copy the referral link manually:",
-    "referralLinkFailed": "Failed to generate referral link"
+    "referralLinkFailed": "Failed to generate referral link",
+    "referralLinkTitle": "Your Referral Link",
+    "referralLinkDesc": "Share this link to invite others to join FizzDragon.",
+    "copy": "Copy",
+    "copied": "Copied"
   }
 }

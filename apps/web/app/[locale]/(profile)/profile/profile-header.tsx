@@ -1,7 +1,14 @@
 import { useRef, useState } from "react";
-import { IconCamera, IconLoader2, IconLink } from "@tabler/icons-react";
+import { IconCamera, IconLoader2, IconLink, IconCopy, IconCheck } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import { Button } from "@/components/ui/button";
@@ -33,6 +40,9 @@ export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: Pro
   const t = useTranslations("profile");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
+  const [referralLink, setReferralLink] = useState("");
+  const [referralDialogOpen, setReferralDialogOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const info = userInfo;
@@ -86,12 +96,9 @@ export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: Pro
       if ((body?.code === 200 || body?.code === "SUCCESS") && body?.info) {
         const code = String(body.info);
         const link = `${window.location.origin}/register?recommendationCode=${code}`;
-        try {
-          await navigator.clipboard.writeText(link);
-          toast.success(t("referralLinkCopied"));
-        } catch {
-          window.prompt(t("referralLinkManualCopy"), link);
-        }
+        setReferralLink(link);
+        setCopied(false);
+        setReferralDialogOpen(true);
       } else {
         toast.error(t("referralLinkFailed"));
       }
@@ -195,6 +202,40 @@ export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: Pro
           </div>
         </div>
       </div>
+
+      {/* Referral Link Dialog */}
+      <Dialog open={referralDialogOpen} onOpenChange={setReferralDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("referralLinkTitle")}</DialogTitle>
+            <DialogDescription>{t("referralLinkDesc")}</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 p-4">
+            <input
+              readOnly
+              value={referralLink}
+              className="h-10 flex-1 rounded-lg border border-border bg-muted px-3 text-sm text-foreground"
+              onFocus={(e) => e.target.select()}
+            />
+            <Button
+              size="sm"
+              variant={copied ? "outline" : "solid"}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(referralLink);
+                  setCopied(true);
+                  toast.success(t("referralLinkCopied"));
+                } catch {
+                  toast.error(t("referralLinkManualCopy"));
+                }
+              }}
+            >
+              {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+              {copied ? t("copied") : t("copy")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
