@@ -79,6 +79,91 @@ import {
 } from "./video-types";
 import { VideoReferencePanel } from "./video-reference-group";
 import { ToolbarSelect, VideoModeSettings } from "./video-mode-settings";
+import {
+  getModelRegistryEntry,
+  getSchemaFields,
+  type ModelRegistryEntry,
+} from "@/src/lib/ai-model-schema";
+
+// ─── Multimodal: schema-driven toolbar selects ──────
+
+/** Models available in multimodal mode (from frontend registry) */
+const MULTIMODAL_MODELS = [{ label: "Seedance 2.0", value: "seedance-2.0" }];
+
+function MultimodalToolbarSelects({
+  formData,
+  onUpdate,
+}: {
+  formData: { model: string; size: string; videoLength: string; [k: string]: unknown };
+  onUpdate: (updates: Record<string, unknown>) => void;
+}) {
+  const selectedModel = formData.model;
+  const entry = useMemo(() => getModelRegistryEntry(selectedModel), [selectedModel]);
+
+  // Auto-select first multimodal model if current model isn't in registry
+  useEffect(() => {
+    if (!entry && MULTIMODAL_MODELS.length > 0) {
+      const defaultModel = MULTIMODAL_MODELS[0].value;
+      const defaultEntry = getModelRegistryEntry(defaultModel);
+      const defaults: Record<string, unknown> = { model: defaultModel };
+      if (defaultEntry) {
+        for (const [fieldKey, field] of Object.entries(defaultEntry.inputSchema.properties)) {
+          if (field.default !== undefined) defaults[fieldKey] = String(field.default);
+        }
+      }
+      onUpdate(defaults);
+    }
+  }, [entry, onUpdate]);
+
+  // When model changes, reset params to defaults from schema
+  const handleModelChange = useCallback(
+    (newModel: string) => {
+      const newEntry = getModelRegistryEntry(newModel);
+      const defaults: Record<string, unknown> = { model: newModel };
+      if (newEntry) {
+        for (const [fieldKey, field] of Object.entries(newEntry.inputSchema.properties)) {
+          if (field.default !== undefined) defaults[fieldKey] = String(field.default);
+        }
+      }
+      onUpdate(defaults);
+    },
+    [onUpdate]
+  );
+
+  // Schema-driven fields
+  const schemaFields = useMemo(() => {
+    if (!entry) return [];
+    return getSchemaFields(entry.inputSchema);
+  }, [entry]);
+
+  return (
+    <>
+      <ToolbarSelect
+        value={selectedModel}
+        options={MULTIMODAL_MODELS}
+        onChange={handleModelChange}
+      />
+      {schemaFields.map(([fieldKey, field]) => {
+        const enumValues = field.enum ?? [];
+        if (enumValues.length === 0) return null;
+        const labels = field["x-enum-labels"] ?? {};
+        const options = enumValues.map((v) => ({
+          label: labels[String(v)] ?? String(v),
+          value: String(v),
+        }));
+        const currentValue = String(formData[fieldKey] ?? field.default ?? "");
+        return (
+          <ToolbarSelect
+            key={fieldKey}
+            value={currentValue}
+            options={options}
+            onChange={(v) => onUpdate({ [fieldKey]: v })}
+          />
+        );
+      })}
+    </>
+  );
+}
 
 function ActionChip({
   active,
@@ -369,6 +454,7 @@ export function AiVideoGeneratorDialog({
         const videoEndpoints: Record<string, string> = {
           frames: "/api/ai/video/generate/start-end-frame",
           multiReference: "/api/ai/video/generate/multiplereference",
+          multimodal: "/api/ai/task/video/generate/multimodalvideo",
           repaint: "/api/ai/video/generate/videorepainting",
           localEdit: "/api/ai/video/generate/videoedit",
           extend: "/api/ai/video/generate/videoextension",
@@ -452,6 +538,19 @@ export function AiVideoGeneratorDialog({
             size: params.size,
             videoLength: params.videoLength,
             promptExtend: true,
+          },
+          multimodal: {
+            shotId,
+            shotColumnId,
+            prompt: params.prompt,
+            model: params.model,
+            images: params.images,
+            videos: params.videos,
+            audios: params.audios,
+            ratio: params.ratio,
+            resolution: params.resolution,
+            duration: params.duration,
+            note: params.note,
           },
         };
 
@@ -954,6 +1053,17 @@ export function AiVideoGeneratorDialog({
       inputBase.bottomScale = outpaintingBottom;
       inputBase.leftScale = outpaintingLeft;
       inputBase.rightScale = outpaintingRight;
+    } else if (activeMode === "multimodal") {
+      // Collect multimodal media from references
+      const mmImages = referenceImages.filter((r) => r.path).map((r) => ossUrl(r.path));
+      // TODO: collect videos and audios from multimodal upload panel
+      inputBase.images = mmImages.length > 0 ? mmImages : undefined;
+      inputBase.videos = undefined;
+      inputBase.audios = undefined;
+      inputBase.ratio = size || undefined; // multimodal uses ratio instead of size
+      inputBase.resolution = undefined; // TODO: add resolution selector for multimodal
+      inputBase.duration = videoLength ? Number(videoLength) : undefined;
+      inputBase.note = undefined;
     }
 
     for (let i = 0; i < Math.max(1, count); i++) {
@@ -1173,7 +1283,7 @@ export function AiVideoGeneratorDialog({
           </div>
 
           <div className="overflow-hidden rounded-xl bg-muted/50">
-            <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+            <div className="flex items-start justify-between gap-3 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <VideoReferencePanel
                   uploadMode={uploadMode}
@@ -1319,7 +1429,7 @@ export function AiVideoGeneratorDialog({
               }}
             />
 
-            <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-3 py-3">
+            <div className="flex items-center justify-between gap-3 px-3 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 {!editMode && (
                   <ToolbarSelect
@@ -1328,25 +1438,37 @@ export function AiVideoGeneratorDialog({
                       { label: t("referenceImageUpload"), value: "reference" },
                       { label: t("framesTab"), value: "frames" },
                       { label: t("multiReferenceTab"), value: "multiReference" },
+                      { label: t("multimodalTab"), value: "multimodal" },
                     ]}
                     onChange={(v) => void handleUploadModeChange(v as SimpleMode)}
                   />
                 )}
-                <ToolbarSelect
-                  value={model}
-                  options={modelOptions}
-                  onChange={(v) => dispatch(updateVideoForm({ key, updates: { model: v } }))}
-                />
-                <ToolbarSelect
-                  value={size}
-                  options={sizeOptions}
-                  onChange={(v) => dispatch(updateVideoForm({ key, updates: { size: v } }))}
-                />
-                <ToolbarSelect
-                  value={videoLength}
-                  options={videoLengthOptions}
-                  onChange={(v) => dispatch(updateVideoForm({ key, updates: { videoLength: v } }))}
-                />
+                {uploadMode === "multimodal" && !editMode ? (
+                  <MultimodalToolbarSelects
+                    formData={formData}
+                    onUpdate={(updates) => dispatch(updateVideoForm({ key, updates }))}
+                  />
+                ) : (
+                  <>
+                    <ToolbarSelect
+                      value={model}
+                      options={modelOptions}
+                      onChange={(v) => dispatch(updateVideoForm({ key, updates: { model: v } }))}
+                    />
+                    <ToolbarSelect
+                      value={size}
+                      options={sizeOptions}
+                      onChange={(v) => dispatch(updateVideoForm({ key, updates: { size: v } }))}
+                    />
+                    <ToolbarSelect
+                      value={videoLength}
+                      options={videoLengthOptions}
+                      onChange={(v) =>
+                        dispatch(updateVideoForm({ key, updates: { videoLength: v } }))
+                      }
+                    />
+                  </>
+                )}
               </div>
 
               <div className="flex items-center gap-2.5">

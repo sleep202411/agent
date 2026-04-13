@@ -10,7 +10,7 @@ export const MAX_CONCURRENT = 4;
 
 // ── Type definitions ───────────────────────────────────────────────────
 
-export type SimpleMode = "reference" | "frames" | "multiReference";
+export type SimpleMode = "reference" | "frames" | "multiReference" | "multimodal";
 export type EditMode = "repaint" | "localEdit" | "extend" | "outpainting";
 export type VideoMode = SimpleMode | EditMode;
 export type PickerAssetType = "img" | "video";
@@ -63,6 +63,14 @@ export interface VideoQueueTask {
     bottomScale?: number;
     leftScale?: number;
     rightScale?: number;
+    // multimodal
+    images?: string[];
+    videos?: string[];
+    audios?: string[];
+    ratio?: string;
+    resolution?: string;
+    duration?: number;
+    note?: string;
   };
   result: { url: string; storagePath: string } | null;
   error: string | null;
@@ -74,6 +82,9 @@ export type PickerTarget =
   | "lastFrames"
   | "multiRefSubject"
   | "multiRefBg"
+  | "multimodalImages"
+  | "multimodalVideos"
+  | "multimodalAudios"
   | "repaintVideo"
   | "repaintImage"
   | "localEditVideo"
@@ -231,12 +242,16 @@ export function ensureVideoReference(item?: VideoResultItem | null): ReferenceAs
   ];
 }
 
+export const API_PATH_MULTIMODAL_VIDEO = "/api/ai/task/video/generate/multimodalvideo";
+
 export function getModePath(mode: VideoMode) {
   switch (mode) {
     case "frames":
       return "/api/ai/video/generate/start-end-frame";
     case "multiReference":
       return "/api/ai/video/generate/multiplereference";
+    case "multimodal":
+      return API_PATH_MULTIMODAL_VIDEO;
     case "repaint":
       return "/api/ai/video/generate/videorepainting";
     case "localEdit":

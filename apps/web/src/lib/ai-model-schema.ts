@@ -206,3 +206,158 @@ export function getSchemaDefaults(schema: AiModelInputSchema): Record<string, un
   }
   return defaults;
 }
+
+// ─── Model Registry ───────────────────────────────────
+// Frontend-maintained model capability specs.
+// Extends AiModelInputSchema with media constraints, cost rules,
+// and endpoint type. Backend returns raw model lists; registry
+// enriches them for UI rendering and validation.
+
+export interface ModelMediaConstraints {
+  maxImages: number;
+  maxVideos: number;
+  maxAudios: number;
+  maxTotal: number;
+  imageFormats: string[];
+  videoFormats: string[];
+  audioFormats: string[];
+  maxAudioDuration?: number;
+}
+
+export interface ModelCostRule {
+  baseDuration: number;
+  resolutionMultipliers: Record<string, number>;
+}
+
+export interface ModelRegistryEntry {
+  inputSchema: AiModelInputSchema;
+  media?: ModelMediaConstraints;
+  costRule?: ModelCostRule;
+  endpoint: "multimodal" | "legacy";
+  supportsPromptRef: boolean;
+}
+
+// ─── Seedance 2.0 ─────────────────────────────────────
+
+const SEEDANCE_2_0: ModelRegistryEntry = {
+  endpoint: "multimodal",
+  supportsPromptRef: true,
+  inputSchema: {
+    type: "object",
+    properties: {
+      ratio: {
+        type: "string",
+        title: "Ratio",
+        "x-i18n-key": "model.ratio",
+        enum: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"],
+        "x-enum-labels": {
+          "16:9": "16:9",
+          "9:16": "9:16",
+          "1:1": "1:1",
+          "4:3": "4:3",
+          "3:4": "3:4",
+          "21:9": "21:9",
+          "9:21": "9:21",
+        },
+        default: "16:9",
+        "x-order": 0,
+      },
+      resolution: {
+        type: "string",
+        title: "Resolution",
+        "x-i18n-key": "model.resolution",
+        enum: ["480p", "720p", "1080p"],
+        "x-enum-labels": { "480p": "480P", "720p": "720P", "1080p": "1080P" },
+        default: "720p",
+        "x-order": 1,
+      },
+      duration: {
+        type: "integer",
+        title: "Duration",
+        "x-i18n-key": "model.duration",
+        description: "seconds",
+        enum: [4, 5, 6, 8, 10, 15],
+        "x-enum-labels": {
+          "4": "4s",
+          "5": "5s",
+          "6": "6s",
+          "8": "8s",
+          "10": "10s",
+          "15": "15s",
+        },
+        default: 4,
+        "x-order": 2,
+      },
+    },
+    required: ["ratio", "resolution", "duration"],
+  },
+  media: {
+    maxImages: 9,
+    maxVideos: 3,
+    maxAudios: 3,
+    maxTotal: 12,
+    imageFormats: ["image/jpeg", "image/png", "image/webp"],
+    videoFormats: ["video/mp4", "video/webm"],
+    audioFormats: ["audio/mpeg", "audio/wav"],
+    maxAudioDuration: 15,
+  },
+  costRule: {
+    baseDuration: 4,
+    resolutionMultipliers: { "480p": 0.5, "720p": 1, "1080p": 2 },
+  },
+};
+
+// ─── Registry Map ─────────────────────────────────────
+
+const MODEL_REGISTRY: Record<string, ModelRegistryEntry> = {
+  "seedance-2.0": SEEDANCE_2_0,
+  "seedance2.0": SEEDANCE_2_0,
+  seedance: SEEDANCE_2_0,
+};
+
+/** Look up model registry entry by serviceCode */
+export function getModelRegistryEntry(serviceCode?: string): ModelRegistryEntry | undefined {
+  if (!serviceCode) return undefined;
+  const code = serviceCode.toLowerCase();
+  if (MODEL_REGISTRY[code]) return MODEL_REGISTRY[code];
+  for (const [key, entry] of Object.entries(MODEL_REGISTRY)) {
+    if (code.includes(key)) return entry;
+  }
+  return undefined;
+}
+
+/** Calculate estimated cost based on registry cost rules */
+export function estimateCost(
+  entry: ModelRegistryEntry,
+  baseCost: number,
+  resolution?: string,
+  duration?: number
+): number {
+  if (!entry.costRule) return baseCost;
+  const { baseDuration, resolutionMultipliers } = entry.costRule;
+  let cost = baseCost;
+  if (resolution && resolutionMultipliers[resolution] !== undefined) {
+    cost = baseCost * resolutionMultipliers[resolution];
+  }
+  if (duration && duration !== baseDuration) {
+    cost = (cost * duration) / baseDuration;
+  }
+  return Math.round(cost);
+}
+
+/** Validate media counts against model constraints */
+export function validateMedia(
+  entry: ModelRegistryEntry,
+  imageCount: number,
+  videoCount: number,
+  audioCount: number
+): string | null {
+  if (!entry.media) return null;
+  const { maxImages, maxVideos, maxAudios, maxTotal } = entry.media;
+  const total = imageCount + videoCount + audioCount;
+  if (total > maxTotal) return `Total files cannot exceed ${maxTotal} (current: ${total})`;
+  if (imageCount > maxImages) return `Images cannot exceed ${maxImages}`;
+  if (videoCount > maxVideos) return `Videos cannot exceed ${maxVideos}`;
+  if (audioCount > maxAudios) return `Audios cannot exceed ${maxAudios}`;
+  return null;
+}

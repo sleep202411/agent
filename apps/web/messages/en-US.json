@@ -1157,6 +1157,7 @@
     "creditsAmount": "{cost} credits",
     "framesTab": "Start/End Frames",
     "multiReferenceTab": "Multi-Reference",
+    "multimodalTab": "Multimodal",
     "firstClipLabel": "First Clip",
     "lastClipLabel": "Last Clip",
     "firstFrameImage": "First Frame",
