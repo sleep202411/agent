@@ -113,7 +113,11 @@ export function MentionPopover({
           <span className="text-[12px] text-[#666666]">{t("mentionHelp")}</span>
         </div>
 
-        <div className="max-h-[360px] overflow-auto">
+        <div
+          className="max-h-[360px] overflow-auto overscroll-contain"
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
           {activeMentionTypes.includes("character") &&
           (loadingCharacters || characterDisplayGroups.length > 0) ? (
             <div className="mt-3 first:mt-0">

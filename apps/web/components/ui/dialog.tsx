@@ -5,8 +5,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { IconX } from "@tabler/icons-react";
 
-function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+function Dialog({ modal = true, ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  return <DialogPrimitive.Root data-slot="dialog" modal={modal} {...props} />;
 }
 
 function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
@@ -45,6 +45,21 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
+  // Radix modal dialog sets body { pointer-events: none } via react-remove-scroll,
+  // which blocks clicks on floating popups (tippy, mention lists) mounted on body.
+  // Remove it on mount, restore on unmount. Scroll lock still works via overflow: hidden.
+  React.useEffect(() => {
+    const body = document.body;
+    body.style.removeProperty("pointer-events");
+    const observer = new MutationObserver(() => {
+      if (body.style.pointerEvents === "none") {
+        body.style.removeProperty("pointer-events");
+      }
+    });
+    observer.observe(body, { attributes: true, attributeFilter: ["style"] });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <DialogPortal>
       <DialogOverlay />
