@@ -86,6 +86,7 @@ import {
   getVideoModeConfig,
   buildVideoPayload,
   calculateVideoCost,
+  resolveVideoInputs,
   type ModelRegistryEntry,
 } from "@/src/lib/ai-model-schema";
 
@@ -929,6 +930,23 @@ export function AiVideoGeneratorDialog({
       return;
     }
 
+    const modeConfig = getVideoModeConfig(activeMode);
+    if (!modeConfig) return;
+
+    // Resolve mode-specific inputs from state via schema config
+    const { params: modeParams, error } = resolveVideoInputs(
+      modeConfig,
+      references as Record<string, { path: string; url?: string; typeTag?: string }[]>,
+      formData as Record<string, unknown>,
+      modeSettings as Record<string, unknown>,
+      ossUrl
+    );
+
+    if (error) {
+      toast.warning(t(error.errorKey));
+      return;
+    }
+
     onGeneratePrompt?.(prompt.trim());
 
     const inputBase: Record<string, unknown> = {
@@ -937,110 +955,8 @@ export function AiVideoGeneratorDialog({
       model: model || undefined,
       size: size || undefined,
       videoLength: videoLength ? Number(videoLength) : undefined,
+      ...modeParams,
     };
-
-    if (activeMode === "reference") {
-      const reference = referenceImages[0];
-      if (!reference?.path) {
-        toast.warning(t("selectReferenceImage"));
-        return;
-      }
-      inputBase.referenceImageUrl = ossUrl(reference.path);
-    } else if (activeMode === "frames") {
-      const firstFrame = firstFrames[0];
-      const lastFrame = lastFrames[0];
-      if (!firstFrame?.path) {
-        toast.warning(t("uploadFirstFrame"));
-        return;
-      }
-      if (!lastFrame?.path) {
-        toast.warning(t("uploadLastFrame"));
-        return;
-      }
-      inputBase.startFrameImageUrl = ossUrl(firstFrame.path);
-      inputBase.endFrameImageUrl = ossUrl(lastFrame.path);
-    } else if (activeMode === "multiReference") {
-      if (multiRefImages.length === 0) {
-        toast.warning(t("uploadReferenceImage"));
-        return;
-      }
-      inputBase.refImageUrls = multiRefImages.map((item) => ossUrl(item.path));
-      inputBase.objOrBg = multiRefImages.map((item) => item.typeTag || "obj");
-    } else if (activeMode === "repaint") {
-      const videoRef = repaintRefVideos[0];
-      if (!videoRef?.path) {
-        toast.warning(t("selectVideoFirst"));
-        return;
-      }
-      inputBase.videoUrl = ossUrl(videoRef.path);
-      inputBase.controlCondition = controlCondition;
-      inputBase.strength = undefined;
-      inputBase.refImageUrl = repaintRefImage[0]?.path
-        ? ossUrl(repaintRefImage[0].path)
-        : undefined;
-    } else if (activeMode === "localEdit") {
-      const videoRef = localEditRefVideo[0];
-      const maskImage = localEditMaskImage[0];
-      if (!videoRef?.path) {
-        toast.warning(t("selectVideoFirst"));
-        return;
-      }
-      if (!maskImage?.path) {
-        toast.warning(t("uploadMaskImage"));
-        return;
-      }
-      inputBase.videoUrl = ossUrl(videoRef.path);
-      inputBase.maskImageUrl = ossUrl(maskImage.path);
-      inputBase.maskType = maskType;
-      inputBase.expandRatio = maskType === "tracking" ? expandRatio : undefined;
-      inputBase.maskFrameId = maskFrameId ? Number(maskFrameId) : undefined;
-      inputBase.refImageUrl = localEditRefImage[0]?.path
-        ? ossUrl(localEditRefImage[0].path)
-        : undefined;
-    } else if (activeMode === "extend") {
-      const firstClip = extendFirstClip[0];
-      const lastClip = extendLastClip[0];
-      if (!firstClip?.path && !lastClip?.path) {
-        toast.warning(t("uploadFirstOrLastClip"));
-        return;
-      }
-      inputBase.firstClipUrl = firstClip?.path ? ossUrl(firstClip.path) : undefined;
-      inputBase.lastClipUrl = lastClip?.path ? ossUrl(lastClip.path) : undefined;
-      inputBase.firstFrameUrl = extendFirstFrame[0]?.path
-        ? ossUrl(extendFirstFrame[0].path)
-        : undefined;
-      inputBase.lastFrameUrl = extendLastFrame[0]?.path
-        ? ossUrl(extendLastFrame[0].path)
-        : undefined;
-    } else if (activeMode === "outpainting") {
-      const videoRef = outpaintingRefVideo[0];
-      if (!videoRef?.path) {
-        toast.warning(t("selectVideoFirst"));
-        return;
-      }
-      inputBase.videoUrl = ossUrl(videoRef.path);
-      inputBase.topScale = outpaintingTop;
-      inputBase.bottomScale = outpaintingBottom;
-      inputBase.leftScale = outpaintingLeft;
-      inputBase.rightScale = outpaintingRight;
-    } else if (activeMode === "multimodal") {
-      // Collect multimodal media from references
-      const mmImages = referenceImages.filter((r) => r.path).map((r) => ossUrl(r.path));
-      inputBase.images = mmImages.length > 0 ? mmImages : undefined;
-      // Read schema-driven fields from formData + fallback to registry defaults
-      const fd = formData as Record<string, unknown>;
-      const entry = getModelRegistryEntry(model);
-      const defaults = entry?.inputSchema
-        ? Object.fromEntries(
-            Object.entries(entry.inputSchema.properties)
-              .filter(([, f]) => f.default !== undefined)
-              .map(([k, f]) => [k, f.default])
-          )
-        : {};
-      inputBase.ratio = String(fd.ratio || defaults.ratio || "16:9");
-      inputBase.resolution = String(fd.resolution || defaults.resolution || "720p");
-      inputBase.duration = Number(fd.duration || defaults.duration || 4);
-    }
 
     for (let i = 0; i < Math.max(1, count); i++) {
       dispatch(

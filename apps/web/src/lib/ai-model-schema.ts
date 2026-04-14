@@ -648,6 +648,29 @@ export interface CostConfig {
   multipliers?: CostMultiplier[];
 }
 
+// ── Input source types ──────────────────────────────
+
+/**
+ * Describes how to extract a parameter from the current state.
+ *
+ * Source types:
+ * - "ref:fieldName"      → references[fieldName][0].path → ossUrl (single asset)
+ * - "refArray:fieldName" → references[fieldName][*].path → ossUrl[] (all assets)
+ * - "refTags:fieldName"  → references[fieldName][*].typeTag → string[] (with default "obj")
+ * - "formData:fieldName" → formData[fieldName] (dynamic form field)
+ * - "setting:fieldName"  → modeSettings[fieldName]
+ */
+export interface VideoModeInputField {
+  /** Key to set in task input */
+  key: string;
+  /** Source descriptor string (see above) */
+  source: string;
+  /** Whether this field must be non-empty to submit */
+  required?: boolean;
+  /** i18n key for the validation error toast */
+  errorKey?: string;
+}
+
 // ── Mode config ─────────────────────────────────────
 
 export interface VideoModeConfig {
@@ -655,15 +678,85 @@ export interface VideoModeConfig {
   id: string;
   /** API endpoint path */
   endpoint: string;
-  /** Payload field mappings */
+  /** How to extract params from state → task.input (validation + extraction) */
+  inputs: VideoModeInputField[];
+  /** How to map task.input → API request body */
   payload: VideoModePayloadField[];
-  /** Required internal param keys for submission validation */
-  required: string[];
   /** Cost calculation rules */
   cost: CostConfig;
 }
 
 // ── Functions ───────────────────────────────────────
+
+/**
+ * Resolve input fields from the current video instance state.
+ * Returns the built inputBase and any validation error (first failed required field).
+ *
+ * @param config - The video mode config
+ * @param references - VideoInstanceState.references
+ * @param formData - VideoInstanceState.formData (as Record for dynamic fields)
+ * @param modeSettings - VideoInstanceState.modeSettings (as Record)
+ * @param ossUrlFn - Function to convert storage path to full URL
+ */
+export function resolveVideoInputs(
+  config: VideoModeConfig,
+  references: Record<string, { path: string; url?: string; typeTag?: string }[]>,
+  formData: Record<string, unknown>,
+  modeSettings: Record<string, unknown>,
+  ossUrlFn: (path: string) => string
+): { params: Record<string, unknown>; error?: { key: string; errorKey: string } } {
+  const params: Record<string, unknown> = {};
+
+  for (const field of config.inputs) {
+    const [sourceType, sourceField] = field.source.split(":") as [string, string];
+    let value: unknown;
+
+    switch (sourceType) {
+      case "ref": {
+        // Single reference asset → ossUrl(first item's path)
+        const assets = references[sourceField];
+        const path = assets?.[0]?.path;
+        value = path ? ossUrlFn(path) : undefined;
+        break;
+      }
+      case "refArray": {
+        // All reference assets → ossUrl[] of non-empty paths
+        const assets = references[sourceField];
+        const urls = (assets ?? []).filter((a) => a.path).map((a) => ossUrlFn(a.path));
+        value = urls.length > 0 ? urls : undefined;
+        break;
+      }
+      case "refTags": {
+        // All reference assets → typeTag[] with default "obj"
+        const assets = references[sourceField];
+        value = (assets ?? []).map((a) => a.typeTag || "obj");
+        break;
+      }
+      case "formData": {
+        value = formData[sourceField];
+        break;
+      }
+      case "setting": {
+        value = modeSettings[sourceField];
+        break;
+      }
+    }
+
+    // Validate required
+    if (field.required) {
+      const isEmpty = value == null || value === "" || (Array.isArray(value) && value.length === 0);
+      if (isEmpty) {
+        return { params, error: { key: field.key, errorKey: field.errorKey ?? "requiredField" } };
+      }
+    }
+
+    if (value != null && value !== "") {
+      params[field.key] = value;
+    }
+  }
+
+  return { params };
+}
 
 /** Build API request payload from internal params using mode config. */
 export function buildVideoPayload(
@@ -768,6 +861,14 @@ export function calculateVideoCost(
 const VIDEO_MODE_BASIC: VideoModeConfig = {
   id: "reference",
   endpoint: "/api/ai/task/video/generate/basic",
+  inputs: [
+    {
+      key: "referenceImageUrl",
+      source: "ref:referenceImages",
+      required: true,
+      errorKey: "selectReferenceImage",
+    },
+  ],
   payload: [
     { apiKey: "prompt", from: "prompt" },
     { apiKey: "modelId", from: "model", transform: "string" },
@@ -775,7 +876,6 @@ const VIDEO_MODE_BASIC: VideoModeConfig = {
     { apiKey: "size", from: "size" },
     { apiKey: "videoLength", from: "videoLength", transform: "number" },
   ],
-  required: ["prompt", "referenceImageUrl"],
   cost: {
     base: "model",
     multipliers: [
@@ -786,30 +886,79 @@ const VIDEO_MODE_BASIC: VideoModeConfig = {
   },
 };
 
-/**
- * Multimodal (Seedance 2.0) mode
- *
- * POST /api/ai/task/video/generate/multimodalvideo
- * Request: { shotColumnId, shotId, prompt, model, images, ratio, resolution, duration }
- *
- * Cost: 40 (base per 4s) * resolutionMultiplier * duration/4 * count
- * Backend: 1080p=2x, 720p=1x, 480p=0.5x, duration scales linearly from 4s base
- */
+const VIDEO_MODE_FRAMES: VideoModeConfig = {
+  id: "frames",
+  endpoint: "/api/ai/task/video/generate/start-end-frame",
+  inputs: [
+    // { key: "startFrameImageUrl", source: "ref:firstFrames", required: false, errorKey: "uploadFirstFrame" },
+    { key: "startFrameImageUrl", source: "ref:firstFrames", required: false },
+    { key: "endFrameImageUrl", source: "ref:lastFrames" },
+  ],
+  payload: [
+    { apiKey: "prompt", from: "prompt" },
+    { apiKey: "model", from: "model", transform: "string" },
+    { apiKey: "startFrameImageUrl", from: "startFrameImageUrl" },
+    { apiKey: "endFrameImageUrl", from: "endFrameImageUrl" },
+    { apiKey: "size", from: "size" },
+    { apiKey: "videoLength", from: "videoLength", transform: "number" },
+  ],
+  cost: {
+    base: "model",
+    multipliers: [
+      { param: "size", type: "index" },
+      { param: "videoLength", type: "ratioFirst" },
+      { param: "count", type: "count" },
+    ],
+  },
+};
+
+const VIDEO_MODE_MULTI_REFERENCE: VideoModeConfig = {
+  id: "multiReference",
+  endpoint: "/api/ai/task/video/generate/multiplereference",
+  inputs: [
+    {
+      key: "refImageUrls",
+      source: "refArray:multiRefImages",
+      required: true,
+      errorKey: "uploadReferenceImage",
+    },
+    { key: "objOrBg", source: "refTags:multiRefImages" },
+  ],
+  payload: [
+    { apiKey: "prompt", from: "prompt" },
+    { apiKey: "model", from: "model", transform: "string" },
+    { apiKey: "refImageUrls", from: "refImageUrls" },
+    { apiKey: "objOrBg", from: "objOrBg" },
+    { apiKey: "size", from: "size" },
+    { apiKey: "videoLength", from: "videoLength", transform: "number" },
+  ],
+  cost: {
+    base: "model",
+    multipliers: [
+      { param: "size", type: "index" },
+      { param: "videoLength", type: "ratioFirst" },
+      { param: "count", type: "count" },
+    ],
+  },
+};
+
 const VIDEO_MODE_MULTIMODAL: VideoModeConfig = {
   id: "multimodal",
   endpoint: "/api/ai/task/video/generate/multimodalvideo",
+  inputs: [
+    { key: "images", source: "refArray:referenceImages" },
+    { key: "ratio", source: "formData:ratio" },
+    { key: "resolution", source: "formData:resolution" },
+    { key: "duration", source: "formData:duration" },
+  ],
   payload: [
     { apiKey: "prompt", from: "prompt" },
     { apiKey: "model", from: "model", transform: "string" },
     { apiKey: "images", from: "images" },
-    { apiKey: "videos", from: "videos" },
-    { apiKey: "audios", from: "audios" },
     { apiKey: "ratio", from: "ratio" },
     { apiKey: "resolution", from: "resolution" },
     { apiKey: "duration", from: "duration", transform: "number" },
-    { apiKey: "note", from: "note" },
   ],
-  required: ["prompt"],
   cost: {
     base: 40,
     multipliers: [
@@ -820,75 +969,19 @@ const VIDEO_MODE_MULTIMODAL: VideoModeConfig = {
   },
 };
 
-// ─── Registry ───────────────────────────────────────
-
-/**
- * Frames (start/end frame) mode
- *
- * POST /api/ai/task/video/generate/start-end-frame
- * Request: { shotColumnId, shotId, prompt, startFrameImageUrl, endFrameImageUrl, model, size, videoLength }
- *
- * Cost: same as basic — model.integralCost * sizeIndex * ceil(videoLength/base) * count
- */
-const VIDEO_MODE_FRAMES: VideoModeConfig = {
-  id: "frames",
-  endpoint: "/api/ai/task/video/generate/start-end-frame",
-  payload: [
-    { apiKey: "prompt", from: "prompt" },
-    { apiKey: "model", from: "model", transform: "string" },
-    { apiKey: "startFrameImageUrl", from: "startFrameImageUrl" },
-    { apiKey: "endFrameImageUrl", from: "endFrameImageUrl" },
-    { apiKey: "size", from: "size" },
-    { apiKey: "videoLength", from: "videoLength", transform: "number" },
-  ],
-  required: ["prompt"],
-  cost: {
-    base: "model",
-    multipliers: [
-      { param: "size", type: "index" },
-      { param: "videoLength", type: "ratioFirst" },
-      { param: "count", type: "count" },
-    ],
-  },
-};
-
-/**
- * Multi-reference mode
- *
- * POST /api/ai/task/video/generate/multiplereference
- * Request: { shotColumnId, shotId, prompt, model, refImageUrls, objOrBg, size, videoLength }
- *
- * Cost: same formula as basic (but model typically has no size/videoLength options → just baseCost * count)
- */
-const VIDEO_MODE_MULTI_REFERENCE: VideoModeConfig = {
-  id: "multiReference",
-  endpoint: "/api/ai/task/video/generate/multiplereference",
-  payload: [
-    { apiKey: "prompt", from: "prompt" },
-    { apiKey: "model", from: "model", transform: "string" },
-    { apiKey: "refImageUrls", from: "refImageUrls" },
-    { apiKey: "objOrBg", from: "objOrBg" },
-    { apiKey: "size", from: "size" },
-    { apiKey: "videoLength", from: "videoLength", transform: "number" },
-  ],
-  required: ["prompt", "refImageUrls"],
-  cost: {
-    base: "model",
-    multipliers: [
-      { param: "size", type: "index" },
-      { param: "videoLength", type: "ratioFirst" },
-      { param: "count", type: "count" },
-    ],
-  },
-};
-
-/**
- * Repaint mode
- * POST /api/ai/task/video/generate/videorepainting
- */
 const VIDEO_MODE_REPAINT: VideoModeConfig = {
   id: "repaint",
   endpoint: "/api/ai/task/video/generate/videorepainting",
+  inputs: [
+    {
+      key: "videoUrl",
+      source: "ref:repaintRefVideos",
+      required: true,
+      errorKey: "selectVideoFirst",
+    },
+    { key: "controlCondition", source: "setting:controlCondition" },
+    { key: "refImageUrl", source: "ref:repaintRefImage" },
+  ],
   payload: [
     { apiKey: "prompt", from: "prompt" },
     { apiKey: "model", from: "model", transform: "string" },
@@ -898,17 +991,30 @@ const VIDEO_MODE_REPAINT: VideoModeConfig = {
     { apiKey: "size", from: "size" },
     { apiKey: "videoLength", from: "videoLength", transform: "number" },
   ],
-  required: ["prompt", "videoUrl"],
   cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
 };
 
-/**
- * Local edit mode
- * POST /api/ai/task/video/generate/videoedit
- */
 const VIDEO_MODE_LOCAL_EDIT: VideoModeConfig = {
   id: "localEdit",
   endpoint: "/api/ai/task/video/generate/videoedit",
+  inputs: [
+    {
+      key: "videoUrl",
+      source: "ref:localEditRefVideo",
+      required: true,
+      errorKey: "selectVideoFirst",
+    },
+    {
+      key: "maskImageUrl",
+      source: "ref:localEditMaskImage",
+      required: true,
+      errorKey: "uploadMaskImage",
+    },
+    { key: "maskType", source: "setting:maskType" },
+    { key: "expandRatio", source: "setting:expandRatio" },
+    { key: "maskFrameId", source: "setting:maskFrameId" },
+    { key: "refImageUrl", source: "ref:localEditRefImage" },
+  ],
   payload: [
     { apiKey: "prompt", from: "prompt" },
     { apiKey: "model", from: "model", transform: "string" },
@@ -916,20 +1022,23 @@ const VIDEO_MODE_LOCAL_EDIT: VideoModeConfig = {
     { apiKey: "maskImageUrl", from: "maskImageUrl" },
     { apiKey: "maskType", from: "maskType" },
     { apiKey: "expandRatio", from: "expandRatio" },
+    { apiKey: "maskFrameId", from: "maskFrameId" },
+    { apiKey: "refImageUrl", from: "refImageUrl" },
     { apiKey: "size", from: "size" },
     { apiKey: "videoLength", from: "videoLength", transform: "number" },
   ],
-  required: ["prompt", "videoUrl", "maskImageUrl"],
   cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
 };
 
-/**
- * Extend mode
- * POST /api/ai/task/video/generate/videoextension
- */
 const VIDEO_MODE_EXTEND: VideoModeConfig = {
   id: "extend",
   endpoint: "/api/ai/task/video/generate/videoextension",
+  inputs: [
+    { key: "firstClipUrl", source: "ref:extendFirstClip" },
+    { key: "lastClipUrl", source: "ref:extendLastClip" },
+    { key: "firstFrameUrl", source: "ref:extendFirstFrame" },
+    { key: "lastFrameUrl", source: "ref:extendLastFrame" },
+  ],
   payload: [
     { apiKey: "prompt", from: "prompt" },
     { apiKey: "model", from: "model", transform: "string" },
@@ -940,17 +1049,24 @@ const VIDEO_MODE_EXTEND: VideoModeConfig = {
     { apiKey: "size", from: "size" },
     { apiKey: "videoLength", from: "videoLength", transform: "number" },
   ],
-  required: ["prompt"],
   cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
 };
 
-/**
- * Outpainting mode
- * POST /api/ai/task/video/generate/videooutpainting
- */
 const VIDEO_MODE_OUTPAINTING: VideoModeConfig = {
   id: "outpainting",
   endpoint: "/api/ai/task/video/generate/videooutpainting",
+  inputs: [
+    {
+      key: "videoUrl",
+      source: "ref:outpaintingRefVideo",
+      required: true,
+      errorKey: "selectVideoFirst",
+    },
+    { key: "topScale", source: "setting:outpaintingTop" },
+    { key: "bottomScale", source: "setting:outpaintingBottom" },
+    { key: "leftScale", source: "setting:outpaintingLeft" },
+    { key: "rightScale", source: "setting:outpaintingRight" },
+  ],
   payload: [
     { apiKey: "prompt", from: "prompt" },
     { apiKey: "model", from: "model", transform: "string" },
@@ -962,7 +1078,6 @@ const VIDEO_MODE_OUTPAINTING: VideoModeConfig = {
     { apiKey: "size", from: "size" },
     { apiKey: "videoLength", from: "videoLength", transform: "number" },
   ],
-  required: ["prompt", "videoUrl"],
   cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
 };
 
