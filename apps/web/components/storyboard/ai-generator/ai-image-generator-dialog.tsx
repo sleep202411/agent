@@ -216,27 +216,6 @@ export function AiImageGeneratorDialog({
           if (prompt) syncMentionRefs(prompt);
         });
     } else {
-      // Sync defaultRefImage on re-open (e.g. user selected a new image in asset picker)
-      if (defaultRefImage) {
-        const currentRefs =
-          selectCurrentInstance(store.getState()).aiImageForm.instances[key]?.formData
-            ?.referenceImages ?? [];
-        const alreadyHas = currentRefs.some((r: { path: string }) => r.path === defaultRefImage);
-        if (!alreadyHas) {
-          store.dispatch(
-            updateImageForm({
-              shotId,
-              colId: shotColumnId,
-              updates: {
-                referenceImages: [
-                  { url: buildOssUrl(defaultRefImage), path: defaultRefImage },
-                  ...currentRefs,
-                ].slice(0, maxRefImages),
-              },
-            })
-          );
-        }
-      }
       store.dispatch(loadImageHistory({ shotId, colId: shotColumnId })).catch((error) => {
         console.error("[AiImageGeneratorDialog] 刷新生图历史失败:", error);
       });
