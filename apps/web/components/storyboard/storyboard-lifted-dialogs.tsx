@@ -310,10 +310,8 @@ function LiftedVideoDialog({
     [row, column, columns, detail]
   );
 
-  const defaultReferenceImagePath = useMemo(() => {
-    const imageCell = row?.shotValues?.find((v) => v.presetColumnKey === "image_path");
-    return getPreferredFilePath(imageCell) ?? "";
-  }, [row]);
+  const imageCell = row?.shotValues?.find((v) => v.presetColumnKey === "image_path");
+  const defaultReferenceImagePath = getPreferredFilePath(imageCell) ?? "";
 
   const handleGeneratePrompt = useCallback(
     (prompt: string) => {
