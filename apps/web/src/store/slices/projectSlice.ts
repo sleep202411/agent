@@ -1060,21 +1060,7 @@ export const initVideoInstance = createAsyncThunk<
 
   dispatch(setVideoInstance({ key, instance: inst }));
 
-  // Load models for the active mode + load history
-  const activeMode = inst.editMode ?? inst.uploadMode;
-  await dispatch(loadVideoModels({ mode: activeMode })).unwrap();
-
-  // Set default model if needed
-  const updatedState = getState();
-  const updatedInst = selectCurrentInstance(updatedState);
-  const models = updatedInst.aiVideoForm.modelsByMode[activeMode] ?? [];
-  if (models.length > 0 && !inst.formData.model) {
-    const defaultModel = models.find((m) => m.isDefault) ?? models[0];
-    if (defaultModel?.serviceCode) {
-      dispatch(updateVideoForm({ key, updates: { model: String(defaultModel.serviceCode) } }));
-    }
-  }
-
+  // Load history (models are managed by frontend registry, no API call needed)
   await dispatch(loadVideoHistory({ shotId, colId })).unwrap();
 });
 

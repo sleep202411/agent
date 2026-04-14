@@ -15,6 +15,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { CreateIPDialog } from "@/components/ip/create-ip-dialog";
 import {
   searchIPProjects,
   getCategories,
@@ -24,6 +25,18 @@ import {
 } from "@/src/lib/api/ip-api";
 
 // ─── Stage config ───────────────────────────────────
+
+const MOCK_CATEGORIES = [
+  { value: "1", label: "AIGC影视" },
+  { value: "2", label: "热血动漫" },
+  { value: "3", label: "AI纪录片" },
+  { value: "4", label: "文化传统" },
+  { value: "5", label: "经典动画" },
+  { value: "6", label: "AI经典改编" },
+  { value: "7", label: "末日来临" },
+  { value: "8", label: "爱情故事" },
+  { value: "9", label: "AI科幻" },
+];
 
 const STAGE_FILTERS = [
   { value: "all", labelKey: "stageAll" },
@@ -113,6 +126,7 @@ export default function IPPlazaPage() {
   const [projects, setProjects] = useState<IPProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<CategoryMap>({});
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     void getCategories()
@@ -184,10 +198,8 @@ export default function IPPlazaPage() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Button asChild>
-                <Link to="/ips/create">
-                  <IconBolt className="size-4" /> {t("createIP")}
-                </Link>
+              <Button onClick={() => setCreateOpen(true)}>
+                <IconBolt className="size-4" /> {t("createIP")}
               </Button>
             </div>
           </div>
@@ -333,13 +345,20 @@ export default function IPPlazaPage() {
               <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
                 {t("iHaveAnIPDesc")}
               </p>
-              <Button variant="soft" size="sm" className="w-full" asChild>
-                <Link to="/ips/create">{t("publishNow")}</Link>
+              <Button
+                variant="soft"
+                size="sm"
+                className="w-full"
+                onClick={() => setCreateOpen(true)}
+              >
+                {t("publishNow")}
               </Button>
             </div>
           </div>
         </div>
       </div>
+
+      <CreateIPDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }

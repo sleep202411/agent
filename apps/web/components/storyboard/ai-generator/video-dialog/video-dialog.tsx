@@ -35,7 +35,6 @@ import { useAppDispatch, useAppSelector } from "@/src/store";
 import {
   selectCurrentInstance,
   initVideoInstance,
-  loadVideoModels,
   loadVideoHistory,
   deleteVideoItem,
   updateVideoForm,
@@ -75,8 +74,6 @@ import {
   ensureVideoReference,
   MAX_CONCURRENT,
   ossUrl,
-  parseModelSizes,
-  parseModelVideoLengths,
   parseVideoGenerateResult,
   toReferenceAssets,
 } from "./video-types";
@@ -86,7 +83,9 @@ import {
   getModelRegistryEntry,
   getRegistryModels,
   getSchemaFields,
-  estimateCost as estimateRegistryCost,
+  getVideoModeConfig,
+  buildVideoPayload,
+  calculateVideoCost,
   type ModelRegistryEntry,
 } from "@/src/lib/ai-model-schema";
 
@@ -105,13 +104,13 @@ function MultimodalToolbarSelects({
   const selectedModel = formData.model;
   const entry = useMemo(() => getModelRegistryEntry(selectedModel), [selectedModel]);
 
-  // Auto-select first multimodal model if current model isn't in registry
+  // Auto-select first multimodal model + set schema defaults if not in registry
   useEffect(() => {
     if (!entry && MULTIMODAL_MODELS.length > 0) {
-      const defaultModel = MULTIMODAL_MODELS[0].value;
-      const defaultEntry = getModelRegistryEntry(defaultModel);
-      const defaults: Record<string, unknown> = { model: defaultModel };
-      if (defaultEntry) {
+      const defaultModel = MULTIMODAL_MODELS[0];
+      const defaultEntry = getModelRegistryEntry(defaultModel.id);
+      const defaults: Record<string, unknown> = { model: defaultModel.id };
+      if (defaultEntry?.inputSchema) {
         for (const [fieldKey, field] of Object.entries(defaultEntry.inputSchema.properties)) {
           if (field.default !== undefined) defaults[fieldKey] = String(field.default);
         }
@@ -137,7 +136,7 @@ function MultimodalToolbarSelects({
 
   // Schema-driven fields
   const schemaFields = useMemo(() => {
-    if (!entry) return [];
+    if (!entry?.inputSchema) return [];
     return getSchemaFields(entry.inputSchema);
   }, [entry]);
 
@@ -145,7 +144,7 @@ function MultimodalToolbarSelects({
     <>
       <ToolbarSelect
         value={selectedModel}
-        options={MULTIMODAL_MODELS}
+        options={MULTIMODAL_MODELS.map((m) => ({ label: m.label, value: m.id }))}
         onChange={handleModelChange}
       />
       {schemaFields.map(([fieldKey, field]) => {
@@ -236,7 +235,6 @@ export function AiVideoGeneratorDialog({
   const instance = useAppSelector((s) => selectVideoInstance(s, shotId, shotColumnId));
   const selectResults = useMemo(() => makeSelectAllVideoResults(), []);
   const allResults = useAppSelector((s) => selectResults(s, shotId, shotColumnId));
-  const modelsByMode = useAppSelector((s) => selectCurrentInstance(s).aiVideoForm.modelsByMode);
 
   // Destructure instance state
   const {
@@ -296,13 +294,29 @@ export function AiVideoGeneratorDialog({
   const successCount = videoTasks.filter((t) => t.status === "completed").length;
 
   const activeMode = editMode ?? uploadMode;
-  const activeModels = useMemo(() => modelsByMode[activeMode] ?? [], [activeMode, modelsByMode]);
-  const currentModel = useMemo(
-    () => activeModels.find((item) => item.serviceCode === model),
-    [activeModels, model]
+
+  // Models from frontend registry
+  const registryModels = useMemo(() => getRegistryModels(activeMode), [activeMode]);
+  const currentRegistryModel = useMemo(
+    () => registryModels.find((m) => m.id === model),
+    [registryModels, model]
   );
-  const sizeOptions = useMemo(() => parseModelSizes(currentModel), [currentModel]);
-  const videoLengthOptions = useMemo(() => parseModelVideoLengths(currentModel), [currentModel]);
+
+  const currentModel = currentRegistryModel;
+
+  const sizeOptions = useMemo(() => {
+    const sizeField = currentModel?.inputSchema?.properties?.size;
+    if (!sizeField?.enum) return [];
+    const labels = sizeField["x-enum-labels"] ?? {};
+    return sizeField.enum.map((v) => ({ label: labels[String(v)] ?? String(v), value: String(v) }));
+  }, [currentModel]);
+
+  const videoLengthOptions = useMemo(() => {
+    const vlField = currentModel?.inputSchema?.properties?.videoLength;
+    if (!vlField?.enum) return [];
+    const labels = vlField["x-enum-labels"] ?? {};
+    return vlField.enum.map((v) => ({ label: labels[String(v)] ?? `${v}s`, value: String(v) }));
+  }, [currentModel]);
   const previewUrl = previewItem?.url ?? "";
   const isPreviewApplied = previewItem?.storagePath
     ? appliedPaths.includes(previewItem.storagePath)
@@ -350,49 +364,30 @@ export function AiVideoGeneratorDialog({
       metaContent: previewItem.other,
     },
   ].filter(Boolean) as ToolbarAction[];
-  const modelOptions = activeModels.map((item) => ({
-    label: item.serviceName ?? item.serviceCode ?? "",
-    value: item.serviceCode ?? "",
-  }));
+  const modelOptions = useMemo(
+    () => registryModels.map((m) => ({ label: m.label, value: m.id })),
+    [registryModels]
+  );
 
   const cost = useMemo(() => {
-    // Multimodal mode: use registry cost rules
-    const registryEntry = uploadMode === "multimodal" ? getModelRegistryEntry(model) : undefined;
-    if (registryEntry?.costRule) {
-      const base = registryEntry.costRule.baseDuration * 10; // placeholder base cost
-      return (
-        estimateRegistryCost(
-          registryEntry,
-          base,
-          formData.resolution as string,
-          Number(formData.duration || 4)
-        ) * Math.max(1, count)
-      );
-    }
-    // Legacy modes: existing calculation
-    const baseCost = Math.abs(currentModel?.integralCost ?? 0);
-    const sizeMultiplier =
-      sizeOptions.length > 0 && size
-        ? Math.max(1, sizeOptions.findIndex((item: { value: string }) => item.value === size) + 1)
-        : 1;
-    const baseDuration = Number(videoLengthOptions[0]?.value ?? 0);
-    const currentDuration = Number(videoLength || baseDuration || 0);
-    const durationMultiplier =
-      baseDuration > 0 && currentDuration > 0
-        ? Math.max(1, Math.ceil(currentDuration / baseDuration))
-        : 1;
-    return baseCost * sizeMultiplier * durationMultiplier * Math.max(1, count);
+    const modeConfig = getVideoModeConfig(activeMode);
+    if (!modeConfig) return 0;
+    const fd = formData as Record<string, unknown>;
+    return calculateVideoCost(
+      modeConfig.cost,
+      { ...fd, size, videoLength, count },
+      { integralCost: currentModel?.cost ?? 0 },
+      { size: sizeOptions, videoLength: videoLengthOptions }
+    );
   }, [
+    activeMode,
     count,
-    currentModel?.integralCost,
+    currentModel,
     size,
     sizeOptions,
     videoLength,
     videoLengthOptions,
-    uploadMode,
-    model,
-    formData.resolution,
-    formData.duration,
+    formData,
   ]);
 
   const title = shotNumber ? t("aiVideoTitle", { number: shotNumber }) : t("aiVideoTitleDefault");
@@ -444,26 +439,23 @@ export function AiVideoGeneratorDialog({
     activeEpisode?.behindPrompt,
   ]);
 
-  // ─── Load models when activeMode changes ──────────────
+  // ─── Load/select models when activeMode changes ────────
 
   useEffect(() => {
     if (!open) return;
-    void dispatch(loadVideoModels({ mode: activeMode })).then(() => {
-      // After models load, set default model if current is not in the list
-      // We read from the store directly via a follow-up dispatch
-    });
-  }, [activeMode, dispatch, open]);
-
-  // If models just loaded but current model is not in the list, pick default
-  useEffect(() => {
-    if (!open) return;
-    const matched = activeModels.find((item) => item.serviceCode === model);
-    if (matched) return;
-    const defaultModel = activeModels.find((item) => item.isDefault) ?? activeModels[0];
-    if (defaultModel?.serviceCode) {
-      dispatch(updateVideoForm({ key, updates: { model: String(defaultModel.serviceCode) } }));
+    // Auto-select default model + schema defaults when mode changes
+    const matched = registryModels.find((m) => m.id === model);
+    if (!matched) {
+      const defaultModel = registryModels.find((m) => m.isDefault) ?? registryModels[0];
+      if (defaultModel) {
+        const updates: Record<string, unknown> = { model: defaultModel.id };
+        for (const [fieldKey, field] of Object.entries(defaultModel.inputSchema.properties)) {
+          if (field.default !== undefined) updates[fieldKey] = String(field.default);
+        }
+        dispatch(updateVideoForm({ key, updates }));
+      }
     }
-  }, [activeModels, dispatch, key, model, open]);
+  }, [activeMode, dispatch, key, model, open, registryModels]);
 
   // ─── Queue processing: pick up pending tasks and run them ──
 
@@ -481,159 +473,37 @@ export function AiVideoGeneratorDialog({
     void (async () => {
       try {
         const params = nextTask.input as Record<string, unknown>;
-
-        const videoEndpoints: Record<string, string> = {
-          frames: "/api/ai/video/generate/start-end-frame",
-          multiReference: "/api/ai/video/generate/multiplereference",
-          multimodal: "/api/ai/task/video/generate/multimodalvideo",
-          repaint: "/api/ai/video/generate/videorepainting",
-          localEdit: "/api/ai/video/generate/videoedit",
-          extend: "/api/ai/video/generate/videoextension",
-          outpainting: "/api/ai/video/generate/videooutpainting",
-        };
-
         const modeKey = String(params.mode ?? "reference");
+        const modeConfig = getVideoModeConfig(modeKey);
+        if (!modeConfig) {
+          console.error(`[VideoDialog] Unknown video mode: ${modeKey}`);
+          dispatch(failTask({ taskId: nextTask.id, error: `Unknown mode: ${modeKey}` }));
+          return;
+        }
 
-        const videoPayloads: Record<string, Record<string, unknown>> = {
-          frames: {
-            shotId,
-            shotColumnId,
-            prompt: params.prompt,
-            startFrameImageUrl: params.startFrameImageUrl,
-            endFrameImageUrl: params.endFrameImageUrl,
-            model: params.model,
-            size: params.size,
-            videoLength: params.videoLength,
-          },
-          multiReference: {
-            shotId,
-            shotColumnId,
-            prompt: params.prompt,
-            model: params.model,
-            refImageUrls: params.refImageUrls,
-            objOrBg: params.objOrBg,
-            size: params.size,
-            videoLength: params.videoLength,
-          },
-          repaint: {
-            shotId,
-            shotColumnId,
-            prompt: params.prompt,
-            model: params.model,
-            videoUrl: params.videoUrl,
-            controlCondition: params.controlCondition,
-            strength: params.strength,
-            refImageUrl: params.refImageUrl,
-            size: params.size,
-            videoLength: params.videoLength,
-            promptExtend: true,
-          },
-          localEdit: {
-            shotId,
-            shotColumnId,
-            prompt: params.prompt,
-            model: params.model,
-            videoUrl: params.videoUrl,
-            maskImageUrl: params.maskImageUrl,
-            maskType: params.maskType,
-            expandRatio: params.expandRatio,
-            maskFrameId: params.maskFrameId,
-            refImageUrl: params.refImageUrl,
-            size: params.size,
-            videoLength: params.videoLength,
-            promptExtend: true,
-          },
-          extend: {
-            shotId,
-            shotColumnId,
-            prompt: params.prompt,
-            model: params.model,
-            firstClipUrl: params.firstClipUrl,
-            lastClipUrl: params.lastClipUrl,
-            firstFrameUrl: params.firstFrameUrl,
-            lastFrameUrl: params.lastFrameUrl,
-            size: params.size,
-            videoLength: params.videoLength,
-            promptExtend: true,
-          },
-          outpainting: {
-            shotId,
-            shotColumnId,
-            prompt: params.prompt,
-            model: params.model,
-            videoUrl: params.videoUrl,
-            topScale: params.topScale,
-            bottomScale: params.bottomScale,
-            leftScale: params.leftScale,
-            rightScale: params.rightScale,
-            size: params.size,
-            videoLength: params.videoLength,
-            promptExtend: true,
-          },
-          multimodal: {
-            shotId,
-            shotColumnId,
-            prompt: params.prompt,
-            model: params.model,
-            images: params.images,
-            videos: params.videos,
-            audios: params.audios,
-            ratio: params.ratio,
-            resolution: params.resolution,
-            duration: params.duration,
-            note: params.note,
-          },
-        };
+        const endpoint = modeConfig.endpoint;
+        const payload = buildVideoPayload(modeConfig, params, shotId, shotColumnId);
 
-        const endpoint = videoEndpoints[modeKey] ?? "/api/ai/video/generate/basic";
-        const payload = videoPayloads[modeKey] ?? {
-          shotId,
-          shotColumnId,
-          prompt: params.prompt,
-          startImageUrl: params.referenceImageUrl,
-          modelId: params.model,
-          size: params.size,
-          videoLength: params.videoLength,
-        };
-
+        // All modes are async: POST returns taskId
         const result = await backendApi.post<unknown>(endpoint, {
           data: payload,
-          timeout: 360_000,
+          timeout: 60_000,
         });
+        const remoteId = String(result);
 
-        if (modeKey === "multimodal") {
-          // Async task — API returns taskId string, not video result
-          // Remove local task, add a server-tracked task with the returned ID
-          dispatch(removeTask(nextTask.id));
-          const remoteId = String(result);
-          dispatch(
-            addTask({
-              id: remoteId,
-              source: "server",
-              type: "video",
-              shotId,
-              shotColumnId,
-              input: nextTask.input,
-            })
-          );
-          // Mark it as running immediately (addTask creates as "pending")
-          dispatch(startTask(remoteId));
-        } else {
-          const parsed = parseVideoGenerateResult(result as Record<string, unknown>);
-          dispatch(
-            completeTask({
-              taskId: nextTask.id,
-              output: { storagePath: parsed.storagePath, url: parsed.url },
-            })
-          );
-          // Set preview if none
-          dispatch(
-            setVideoPreview({
-              key,
-              item: previewItem ?? { id: nextTask.id, ...parsed, fromQueue: true },
-            })
-          );
-        }
+        // Replace local task with server-tracked task
+        dispatch(removeTask(nextTask.id));
+        dispatch(
+          addTask({
+            id: remoteId,
+            source: "server",
+            type: "video",
+            shotId,
+            shotColumnId,
+            input: nextTask.input,
+          })
+        );
+        dispatch(startTask(remoteId));
       } catch (error) {
         const message = error instanceof Error ? error.message : "\u751F\u6210\u5931\u8D25";
         dispatch(failTask({ taskId: nextTask.id, error: message }));
@@ -787,8 +657,7 @@ export function AiVideoGeneratorDialog({
       return;
     }
 
-    // Load models for the base uploadMode and set default
-    await dispatch(loadVideoModels({ mode: uploadMode })).unwrap();
+    // Model selection handled by the mode-change effect
   }, [dispatch, key, resetEditModeRefs, savedModel, uploadMode]);
 
   const enterEditMode = useCallback(
@@ -824,8 +693,7 @@ export function AiVideoGeneratorDialog({
         dispatch(setVideoReferences({ key, field: "outpaintingRefVideo", value: previewRef }));
       }
 
-      // Load models for the new edit mode
-      await dispatch(loadVideoModels({ mode: nextMode })).unwrap();
+      // Model selection handled by the mode-change effect
     },
     [dispatch, editMode, exitEditMode, key, model, previewItem, resetEditModeRefs, t]
   );
@@ -1159,11 +1027,19 @@ export function AiVideoGeneratorDialog({
       // Collect multimodal media from references
       const mmImages = referenceImages.filter((r) => r.path).map((r) => ossUrl(r.path));
       inputBase.images = mmImages.length > 0 ? mmImages : undefined;
-      // Read schema-driven fields directly from formData (ratio, resolution, duration)
+      // Read schema-driven fields from formData + fallback to registry defaults
       const fd = formData as Record<string, unknown>;
-      inputBase.ratio = fd.ratio ? String(fd.ratio) : undefined;
-      inputBase.resolution = fd.resolution ? String(fd.resolution) : undefined;
-      inputBase.duration = fd.duration ? Number(fd.duration) : undefined;
+      const entry = getModelRegistryEntry(model);
+      const defaults = entry?.inputSchema
+        ? Object.fromEntries(
+            Object.entries(entry.inputSchema.properties)
+              .filter(([, f]) => f.default !== undefined)
+              .map(([k, f]) => [k, f.default])
+          )
+        : {};
+      inputBase.ratio = String(fd.ratio || defaults.ratio || "16:9");
+      inputBase.resolution = String(fd.resolution || defaults.resolution || "720p");
+      inputBase.duration = Number(fd.duration || defaults.duration || 4);
     }
 
     for (let i = 0; i < Math.max(1, count); i++) {
@@ -1281,21 +1157,6 @@ export function AiVideoGeneratorDialog({
         >
           <DialogHeader>
             <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {editMode
-                ? editMode === "repaint"
-                  ? t("repaintMode")
-                  : editMode === "localEdit"
-                    ? t("localEditMode")
-                    : editMode === "extend"
-                      ? t("extendMode")
-                      : t("outpaintingMode")
-                : uploadMode === "frames"
-                  ? t("framesMode")
-                  : uploadMode === "multiReference"
-                    ? t("multiReferenceMode")
-                    : t("referenceMode")}
-            </p>
           </DialogHeader>
 
           <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">

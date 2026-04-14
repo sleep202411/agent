@@ -237,12 +237,16 @@ export const {
 // ─── Server Sync Thunk ─────────────────────────────────
 
 /**
- * Server task record shape (from list and single-item APIs).
+ * Server task record from integralrecord APIs.
+ *
+ * Status: 0 = failed, 1 = success, 2 = running
+ * Remark: on success = video URL/path, on failure = error reason
  */
 interface ServerTaskRecord {
   id?: string | number;
   requestId?: string;
-  status?: string | number;
+  status?: number;
+  remark?: string | null;
   responseData?: string | null;
   createTime?: string;
   shotId?: string | number;
@@ -256,30 +260,25 @@ function serverRecordToTask(record: ServerTaskRecord): Task {
   const id = String(record.id ?? "");
   const now = Date.now();
 
-  // Determine status from responseData presence (for list API)
-  // or from status field (for single-item API)
   let status: TaskStatus = "running";
   let output: TaskOutput | undefined;
   let error: string | undefined;
 
-  const rawStatus = record.status != null ? String(record.status) : undefined;
-  // status "3" or "success"/"completed" = done
-  if (rawStatus === "3" || rawStatus === "success" || rawStatus === "completed") {
+  const rawStatus = record.status;
+
+  if (rawStatus === 1) {
+    // Success — remark contains the video URL/path
     status = "completed";
-    if (record.responseData) {
-      try {
-        const resp = JSON.parse(record.responseData) as Record<string, unknown>;
-        const storagePath = String(resp.storagePath ?? resp.path ?? resp.filePath ?? "");
-        output = { storagePath, url: String(resp.url ?? "") };
-      } catch {
-        output = { storagePath: record.responseData };
-      }
+    const remark = record.remark ?? "";
+    if (remark) {
+      output = { storagePath: remark, url: remark };
     }
-  } else if (rawStatus === "4" || rawStatus === "failed" || rawStatus === "error") {
+  } else if (rawStatus === 0) {
+    // Failed — remark contains the error reason
     status = "failed";
-    error = record.responseData ?? "生成失败";
+    error = record.remark || "生成失败";
   }
-  // Otherwise: running (status 1/2 or null responseData from list API)
+  // rawStatus === 2 or undefined → running
 
   return {
     id,

@@ -36,8 +36,6 @@ const TABS = [
   { id: "promo", labelKey: "editPromo", icon: IconVideo },
   { id: "episodes", labelKey: "editEpisodes", icon: IconPlaylist },
   { id: "team", labelKey: "editTeam", icon: IconUsers },
-  { id: "funding", labelKey: "editFunding", icon: IconCurrencyDollar },
-  { id: "rewards", labelKey: "editRewards", icon: IconGift },
 ] as const;
 
 // ─── Mock initial data ──────────────────────────────
