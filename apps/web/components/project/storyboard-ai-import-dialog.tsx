@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import type { StoryboardImportResult } from "@/src/types/workspace";
-import { saveStoryboardTableWithBackfill } from "@/src/lib/storyboard-save";
+import { backendApi } from "@/src/lib/api";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import {
@@ -169,21 +169,14 @@ export function StoryboardAiImportDialog({
 
     setApplying(true);
     try {
-      const result = await saveStoryboardTableWithBackfill({
-        episodeId: storyBoardId,
-        table: preview,
-        worldId,
-        stylePaintingName:
-          typeof detail?.stylePaintingName === "string" ? detail.stylePaintingName : "",
-        autoload,
-        replaceExisting: true,
+      // Match fizzdragon-web: pass [headers, ...rows] directly to save API
+      const datas = [preview.headers, ...preview.rows];
+      await backendApi.post("/api/ai/chat/save/storyboard", {
+        data: { episodeId: storyBoardId, datas, autoload },
+        timeout: 300_000,
       });
       dispatch(touchStoryboard());
-      if (result.warning) {
-        toast.warning(result.warning);
-      } else {
-        toast.success(ts("storyboardUpdated"));
-      }
+      toast.success(ts("storyboardUpdated"));
       closePreviewDialog();
     } catch (error) {
       console.error("[StoryboardAiImportDialog] 应用分镜表失败:", error);
@@ -264,14 +257,14 @@ export function StoryboardAiImportDialog({
         open={Boolean(preview)}
         onOpenChange={(nextOpen) => (!nextOpen ? closePreviewDialog() : undefined)}
       >
-        <DialogContent className="max-w-[min(95vw,1200px)]">
+        <DialogContent className="sm:max-w-[95vw]">
           <DialogHeader className="border-b border-border/70 pb-4">
             <DialogTitle>{ts("aiImportPreviewTitle")}</DialogTitle>
             <DialogDescription>{ts("aiImportPreviewDesc")}</DialogDescription>
           </DialogHeader>
 
           {preview ? (
-            <div className="space-y-4">
+            <div className="w-full space-y-4 overflow-hidden">
               <div className="max-h-[68vh] overflow-auto rounded-2xl border border-border">
                 <div
                   className="grid"

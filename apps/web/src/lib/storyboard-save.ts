@@ -1406,17 +1406,6 @@ export async function saveStoryboardTableWithBackfill(params: {
     throw new Error("分镜保存数据构建失败");
   }
 
-  const importedRows = buildImportedRows(datas);
-  const invalidRows = validateImportedRows(importedRows);
-  if (invalidRows.length > 0) {
-    throw new Error(
-      `分镜生成结果不完整，已阻止保存：${invalidRows
-        .slice(0, 5)
-        .map((item) => `第 ${item.rowIndex + 1} 行缺少${item.missingFields.join("、")}`)
-        .join("；")}`
-    );
-  }
-
   if (params.replaceExisting) {
     await deleteExistingShots(params.episodeId);
   }
