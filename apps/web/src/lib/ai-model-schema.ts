@@ -229,7 +229,7 @@ export interface ModelRegistryEntry {
   id: string;
   /** Display label (serviceName) */
   label: string;
-  /** Links to VideoModeConfig.id — determines which endpoint + payload + cost rules to use */
+  /** Links to AiModeConfig.id — determines endpoint, payload, cost, and ref config */
   mode: string;
   /** Base credit cost (absolute value of integralCost) */
   cost: number;
@@ -788,10 +788,66 @@ const LIP_SYNC_MODELS: ModelRegistryEntry[] = [
 
 // ─── Registry Map ─────────────────────────────────────
 
+// ─── Character fusion models ─────────────────────────
+
+const CHARACTER_FUSION_MODELS: ModelRegistryEntry[] = [
+  {
+    id: "wan2.5-i2i-preview",
+    label: "Wan2.5",
+    mode: "characterFusion",
+    cost: 10,
+    isDefault: true,
+    inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "wan2.5-i2i-preview")!.inputSchema,
+    media: IMAGE_MEDIA,
+  },
+  {
+    id: "ep-20260118112356-p7n89",
+    label: "Seed-1.6",
+    mode: "characterFusion",
+    cost: 25,
+    inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "ep-20260118112356-p7n89")!.inputSchema,
+    media: IMAGE_MEDIA,
+  },
+  {
+    id: "google/nano-banana",
+    label: "nano-banana 2.5",
+    mode: "characterFusion",
+    cost: 10,
+    inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "google/nano-banana")!.inputSchema,
+    media: IMAGE_MEDIA,
+  },
+  {
+    id: "google/nano-banana-pro",
+    label: "nano-banana-pro",
+    mode: "characterFusion",
+    cost: 20,
+    inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "google/nano-banana-pro")!.inputSchema,
+    media: IMAGE_MEDIA,
+  },
+  {
+    id: "bytedance/seedream-4.5",
+    label: "seedream-4.5",
+    mode: "characterFusion",
+    cost: 20,
+    inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "bytedance/seedream-4.5")!.inputSchema,
+    media: IMAGE_MEDIA,
+  },
+  {
+    id: "qwen-image-max",
+    label: "Qwen",
+    mode: "characterFusion",
+    cost: 10,
+    isDefault: true,
+    inputSchema: EMPTY_SCHEMA,
+    media: IMAGE_MEDIA,
+  },
+];
+
 const MODEL_REGISTRY: ModelRegistryEntry[] = [
   // Image
   ...IMAGE_GENERATE_MODELS,
   ...IMAGE_EDIT_MODELS,
+  ...CHARACTER_FUSION_MODELS,
   // Video
   ...BASIC_MODELS,
   ...FRAMES_MODELS,
@@ -844,7 +900,7 @@ export function validateMedia(
 
 // ── Payload types ───────────────────────────────────
 
-export interface VideoModePayloadField {
+export interface AiModePayloadField {
   /** Key in the API request body */
   apiKey: string;
   /** Key in internal params (from task.input) */
@@ -871,7 +927,7 @@ export interface CostMultiplier {
   map?: Record<string, number>;
   /**
    * For "ratioFirst" and "index": which options array to reference.
-   * Passed via the `options` param in calculateVideoCost().
+   * Passed via the `options` param in calculateModeCost().
    */
   optionsKey?: string;
 }
@@ -895,7 +951,7 @@ export interface CostConfig {
  * - "formData:fieldName" → formData[fieldName] (dynamic form field)
  * - "setting:fieldName"  → modeSettings[fieldName]
  */
-export interface VideoModeInputField {
+export interface AiModeInputField {
   /** Key to set in task input */
   key: string;
   /** Source descriptor string (see above) */
@@ -909,7 +965,7 @@ export interface VideoModeInputField {
 // ── Mode config ─────────────────────────────────────
 
 /** Describes how this mode uses reference images for backfill/truncation */
-export interface VideoModeRefConfig {
+export interface AiModeRefConfig {
   /** Which references field to backfill into (e.g. "referenceImages", "firstFrames") */
   field: string;
   /** Maximum number of items allowed */
@@ -918,19 +974,25 @@ export interface VideoModeRefConfig {
   backfillFromPrompt?: boolean;
 }
 
-export interface VideoModeConfig {
-  /** Mode identifier (matches VideoMode type) */
+export interface AiModeConfig {
+  /** Mode identifier */
   id: string;
+  /** Generation type */
+  type: "image" | "video";
+  /** Display label (for UI) */
+  label?: string;
   /** API endpoint path */
   endpoint: string;
   /** How to extract params from state → task.input (validation + extraction) */
-  inputs: VideoModeInputField[];
+  inputs: AiModeInputField[];
   /** How to map task.input → API request body */
-  payload: VideoModePayloadField[];
+  payload: AiModePayloadField[];
   /** Cost calculation rules */
   cost: CostConfig;
   /** Reference group configuration (backfill + maxCount) */
-  refConfig?: VideoModeRefConfig;
+  refConfig?: AiModeRefConfig;
+  /** Mode not yet supported — show in UI as disabled */
+  disabled?: boolean;
 }
 
 // ── Functions ───────────────────────────────────────
@@ -945,8 +1007,8 @@ export interface VideoModeConfig {
  * @param modeSettings - VideoInstanceState.modeSettings (as Record)
  * @param ossUrlFn - Function to convert storage path to full URL
  */
-export function resolveVideoInputs(
-  config: VideoModeConfig,
+export function resolveModeInputs(
+  config: AiModeConfig,
   references: Record<string, { path: string; url?: string; typeTag?: string }[]>,
   formData: Record<string, unknown>,
   modeSettings: Record<string, unknown>,
@@ -1006,8 +1068,8 @@ export function resolveVideoInputs(
 }
 
 /** Build API request payload from internal params using mode config. */
-export function buildVideoPayload(
-  config: VideoModeConfig,
+export function buildModePayload(
+  config: AiModeConfig,
   params: Record<string, unknown>,
   shotId: string,
   shotColumnId: string
@@ -1024,8 +1086,13 @@ export function buildVideoPayload(
 }
 
 /** Get mode config by mode id. */
-export function getVideoModeConfig(modeId: string): VideoModeConfig | undefined {
-  return VIDEO_MODES.find((m) => m.id === modeId);
+export function getModeConfig(modeId: string): AiModeConfig | undefined {
+  return AI_MODES.find((m) => m.id === modeId);
+}
+
+/** Get all modes for a given type (image/video), optionally including disabled */
+export function getModesByType(type: "image" | "video", includeDisabled = false): AiModeConfig[] {
+  return AI_MODES.filter((m) => m.type === type && (includeDisabled || !m.disabled));
 }
 
 /**
@@ -1037,7 +1104,7 @@ export function getVideoModeConfig(modeId: string): VideoModeConfig | undefined 
  * @param options - Named option arrays for "index" and "ratioFirst" multipliers
  *                  e.g. { size: [{value:"720P"}, ...], videoLength: [{value:"5"}, ...] }
  */
-export function calculateVideoCost(
+export function calculateModeCost(
   config: CostConfig,
   params: Record<string, unknown>,
   model?: { integralCost?: number },
@@ -1105,7 +1172,8 @@ export function calculateVideoCost(
  *
  * Cost: model.integralCost * sizeMultiplier * durationMultiplier * count
  */
-const VIDEO_MODE_BASIC: VideoModeConfig = {
+const MODE_VIDEO_BASIC: AiModeConfig = {
+  type: "video",
   id: "reference",
   endpoint: "/api/ai/task/video/generate/basic",
   inputs: [
@@ -1133,7 +1201,8 @@ const VIDEO_MODE_BASIC: VideoModeConfig = {
   },
 };
 
-const VIDEO_MODE_FRAMES: VideoModeConfig = {
+const MODE_VIDEO_FRAMES: AiModeConfig = {
+  type: "video",
   id: "frames",
   endpoint: "/api/ai/task/video/generate/start-end-frame",
   inputs: [
@@ -1159,7 +1228,8 @@ const VIDEO_MODE_FRAMES: VideoModeConfig = {
   },
 };
 
-const VIDEO_MODE_MULTI_REFERENCE: VideoModeConfig = {
+const MODE_VIDEO_MULTI_REFERENCE: AiModeConfig = {
+  type: "video",
   id: "multiReference",
   endpoint: "/api/ai/task/video/generate/multiplereference",
   inputs: [
@@ -1189,7 +1259,8 @@ const VIDEO_MODE_MULTI_REFERENCE: VideoModeConfig = {
   },
 };
 
-const VIDEO_MODE_MULTIMODAL: VideoModeConfig = {
+const MODE_VIDEO_MULTIMODAL: AiModeConfig = {
+  type: "video",
   id: "multimodal",
   endpoint: "/api/ai/task/video/generate/multimodalvideo",
   inputs: [
@@ -1216,7 +1287,8 @@ const VIDEO_MODE_MULTIMODAL: VideoModeConfig = {
   },
 };
 
-const VIDEO_MODE_REPAINT: VideoModeConfig = {
+const MODE_VIDEO_REPAINT: AiModeConfig = {
+  type: "video",
   id: "repaint",
   endpoint: "/api/ai/task/video/generate/videorepainting",
   inputs: [
@@ -1241,7 +1313,8 @@ const VIDEO_MODE_REPAINT: VideoModeConfig = {
   cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
 };
 
-const VIDEO_MODE_LOCAL_EDIT: VideoModeConfig = {
+const MODE_VIDEO_LOCAL_EDIT: AiModeConfig = {
+  type: "video",
   id: "localEdit",
   endpoint: "/api/ai/task/video/generate/videoedit",
   inputs: [
@@ -1277,7 +1350,8 @@ const VIDEO_MODE_LOCAL_EDIT: VideoModeConfig = {
   cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
 };
 
-const VIDEO_MODE_EXTEND: VideoModeConfig = {
+const MODE_VIDEO_EXTEND: AiModeConfig = {
+  type: "video",
   id: "extend",
   endpoint: "/api/ai/task/video/generate/videoextension",
   inputs: [
@@ -1299,7 +1373,8 @@ const VIDEO_MODE_EXTEND: VideoModeConfig = {
   cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
 };
 
-const VIDEO_MODE_OUTPAINTING: VideoModeConfig = {
+const MODE_VIDEO_OUTPAINTING: AiModeConfig = {
+  type: "video",
   id: "outpainting",
   endpoint: "/api/ai/task/video/generate/videooutpainting",
   inputs: [
@@ -1328,13 +1403,144 @@ const VIDEO_MODE_OUTPAINTING: VideoModeConfig = {
   cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
 };
 
-export const VIDEO_MODES: VideoModeConfig[] = [
-  VIDEO_MODE_BASIC,
-  VIDEO_MODE_FRAMES,
-  VIDEO_MODE_MULTI_REFERENCE,
-  VIDEO_MODE_MULTIMODAL,
-  VIDEO_MODE_REPAINT,
-  VIDEO_MODE_LOCAL_EDIT,
-  VIDEO_MODE_EXTEND,
-  VIDEO_MODE_OUTPAINTING,
+// ─── Image Mode Definitions ─────────────────────────
+
+const MODE_IMAGE_GENERATE: AiModeConfig = {
+  type: "image",
+  id: "imageGenerate",
+  label: "Generate",
+  endpoint: "/api/ai/image/generate/basic",
+  inputs: [{ key: "referenceImageUrl", source: "ref:referenceImages" }],
+  payload: [
+    { apiKey: "prompt", from: "prompt" },
+    { apiKey: "model", from: "model", transform: "string" },
+    { apiKey: "size", from: "size" },
+    { apiKey: "referenceImageUrl", from: "referenceImageUrl" },
+  ],
+  cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
+  refConfig: { field: "referenceImages", maxCount: 5, backfillFromPrompt: true },
+};
+
+const MODE_IMAGE_EDIT: AiModeConfig = {
+  type: "image",
+  id: "imageEdit",
+  label: "Edit",
+  endpoint: "/api/ai/image/edit/wan",
+  inputs: [
+    {
+      key: "referenceImageUrl",
+      source: "ref:referenceImages",
+      required: true,
+      errorKey: "selectReferenceImage",
+    },
+  ],
+  payload: [
+    { apiKey: "prompt", from: "prompt" },
+    { apiKey: "model", from: "model", transform: "string" },
+    { apiKey: "size", from: "size" },
+    { apiKey: "referenceImageUrl", from: "referenceImageUrl" },
+  ],
+  cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
+  refConfig: { field: "referenceImages", maxCount: 1, backfillFromPrompt: false },
+};
+
+const MODE_IMAGE_CHARACTER_FUSION: AiModeConfig = {
+  type: "image",
+  id: "characterFusion",
+  label: "Character Fusion",
+  endpoint: "/api/ai/image/compose/character",
+  inputs: [
+    {
+      key: "referenceImageUrl",
+      source: "ref:referenceImages",
+      required: true,
+      errorKey: "selectReferenceImage",
+    },
+  ],
+  payload: [
+    { apiKey: "prompt", from: "prompt" },
+    { apiKey: "model", from: "model", transform: "string" },
+    { apiKey: "size", from: "size" },
+    { apiKey: "referenceImageUrl", from: "referenceImageUrl" },
+  ],
+  cost: { base: "model", multipliers: [{ param: "count", type: "count" }] },
+  refConfig: { field: "referenceImages", maxCount: 2, backfillFromPrompt: false },
+};
+
+const MODE_IMAGE_REPAINT: AiModeConfig = {
+  type: "image",
+  id: "imageRepaint",
+  label: "Repaint",
+  endpoint: "",
+  inputs: [],
+  payload: [],
+  cost: { base: 0 },
+  disabled: true,
+};
+
+const MODE_IMAGE_ERASE: AiModeConfig = {
+  type: "image",
+  id: "imageErase",
+  label: "Erase",
+  endpoint: "",
+  inputs: [],
+  payload: [],
+  cost: { base: 0 },
+  disabled: true,
+};
+
+const MODE_IMAGE_ENHANCE: AiModeConfig = {
+  type: "image",
+  id: "imageEnhance",
+  label: "Enhance",
+  endpoint: "",
+  inputs: [],
+  payload: [],
+  cost: { base: 0 },
+  disabled: true,
+};
+
+const MODE_IMAGE_CUTOUT: AiModeConfig = {
+  type: "image",
+  id: "imageCutout",
+  label: "Cutout",
+  endpoint: "",
+  inputs: [],
+  payload: [],
+  cost: { base: 0 },
+  disabled: true,
+};
+
+const MODE_IMAGE_MULTI_VIEW: AiModeConfig = {
+  type: "image",
+  id: "imageMultiView",
+  label: "Multi-View",
+  endpoint: "",
+  inputs: [],
+  payload: [],
+  cost: { base: 0 },
+  disabled: true,
+};
+
+// ─── Mode Registry ──────────────────────────────────
+
+export const AI_MODES: AiModeConfig[] = [
+  // Image
+  MODE_IMAGE_GENERATE,
+  MODE_IMAGE_EDIT,
+  MODE_IMAGE_CHARACTER_FUSION,
+  MODE_IMAGE_REPAINT,
+  MODE_IMAGE_ERASE,
+  MODE_IMAGE_ENHANCE,
+  MODE_IMAGE_CUTOUT,
+  MODE_IMAGE_MULTI_VIEW,
+  // Video
+  MODE_VIDEO_BASIC,
+  MODE_VIDEO_FRAMES,
+  MODE_VIDEO_MULTI_REFERENCE,
+  MODE_VIDEO_MULTIMODAL,
+  MODE_VIDEO_REPAINT,
+  MODE_VIDEO_LOCAL_EDIT,
+  MODE_VIDEO_EXTEND,
+  MODE_VIDEO_OUTPAINTING,
 ];

@@ -83,10 +83,10 @@ import {
   getModelRegistryEntry,
   getRegistryModels,
   getSchemaFields,
-  getVideoModeConfig,
-  buildVideoPayload,
-  calculateVideoCost,
-  resolveVideoInputs,
+  getModeConfig,
+  buildModePayload,
+  calculateModeCost,
+  resolveModeInputs,
   type ModelRegistryEntry,
 } from "@/src/lib/ai-model-schema";
 
@@ -371,10 +371,10 @@ export function AiVideoGeneratorDialog({
   );
 
   const cost = useMemo(() => {
-    const modeConfig = getVideoModeConfig(activeMode);
+    const modeConfig = getModeConfig(activeMode);
     if (!modeConfig) return 0;
     const fd = formData as Record<string, unknown>;
-    return calculateVideoCost(
+    return calculateModeCost(
       modeConfig.cost,
       { ...fd, size, videoLength, count },
       { integralCost: currentModel?.cost ?? 0 },
@@ -476,7 +476,7 @@ export function AiVideoGeneratorDialog({
       try {
         const params = nextTask.input as Record<string, unknown>;
         const modeKey = String(params.mode ?? "reference");
-        const modeConfig = getVideoModeConfig(modeKey);
+        const modeConfig = getModeConfig(modeKey);
         if (!modeConfig) {
           console.error(`[VideoDialog] Unknown video mode: ${modeKey}`);
           dispatch(failTask({ taskId: nextTask.id, error: `Unknown mode: ${modeKey}` }));
@@ -484,7 +484,7 @@ export function AiVideoGeneratorDialog({
         }
 
         const endpoint = modeConfig.endpoint;
-        const payload = buildVideoPayload(modeConfig, params, shotId, shotColumnId);
+        const payload = buildModePayload(modeConfig, params, shotId, shotColumnId);
 
         // All modes are async: POST returns taskId
         const result = await backendApi.post<unknown>(endpoint, {
@@ -931,11 +931,11 @@ export function AiVideoGeneratorDialog({
       return;
     }
 
-    const modeConfig = getVideoModeConfig(activeMode);
+    const modeConfig = getModeConfig(activeMode);
     if (!modeConfig) return;
 
     // Resolve mode-specific inputs from state via schema config
-    const { params: modeParams, error } = resolveVideoInputs(
+    const { params: modeParams, error } = resolveModeInputs(
       modeConfig,
       references as Record<string, { path: string; url?: string; typeTag?: string }[]>,
       formData as Record<string, unknown>,
