@@ -15,7 +15,7 @@ async function v1FormData<T>(path: string, formData: FormData, timeout = 600_000
 
   let response: Response;
   try {
-    response = await fetch(`/aurora${path}`, {
+    response = await fetch(path, {
       method: "POST",
       credentials: "include",
       body: formData,

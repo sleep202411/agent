@@ -31,7 +31,7 @@ async function formatStoryboardExcel(file: File): Promise<string[][]> {
   const timer = setTimeout(() => controller.abort(), 600_000);
   let response: Response;
   try {
-    response = await fetch("/aurora/api/ai/chat/format/storyboard/excel", {
+    response = await fetch("/api/ai/chat/format/storyboard/excel", {
       method: "POST",
       credentials: "include",
       body: formData,
