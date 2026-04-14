@@ -285,6 +285,8 @@ export interface ImageGenerateInput {
   referenceImageUrl?: string;
   images?: string[];
   mode?: "generate" | "edit";
+  /** Override API endpoint (from AiModeConfig.endpoint) */
+  endpoint?: string;
   promptExtend?: boolean;
   watermark?: boolean;
 }

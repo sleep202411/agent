@@ -37,12 +37,8 @@ import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import {
   deleteImageItem,
   initImageInstance,
-  loadImageEditModels,
   loadImageHistory,
   selectAllImageResults,
-  selectImageInstance,
-  setImageCurrentEditModel,
-  setImageCurrentModel,
   setImagePreview,
   updateImageForm,
   type ResultItem,
@@ -94,9 +90,7 @@ export function AiImageGeneratorDialog({
   const [suffixPrompt, setSuffixPrompt] = useState("");
   const activeEpisode = useAppSelector((s) => selectActiveProjectEpisode(s));
   const [fullPreviewUrl, setFullPreviewUrl] = useState<string | null>(null);
-  const [isEditMode, setIsEditMode] = useState(false);
   const [imageMode, setImageMode] = useState("imageGenerate");
-  const [savedModel, setSavedModel] = useState("");
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
 
   const promptSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,14 +154,6 @@ export function AiImageGeneratorDialog({
   };
   const previewItem = inst?.previewItem ?? null;
   const historyLoading = inst?.historyLoading ?? false;
-  const models = useAppSelector((s) => selectCurrentInstance(s).aiImageForm.models);
-  const editModels = useAppSelector((s) => selectCurrentInstance(s).aiImageForm.editModels);
-  const currentModelGlobal = useAppSelector(
-    (s) => selectCurrentInstance(s).aiImageForm.currentModel
-  );
-  const currentEditModelGlobal = useAppSelector(
-    (s) => selectCurrentInstance(s).aiImageForm.currentEditModel
-  );
 
   const allResults = useAppSelector((s) => selectAllImageResults(s, shotId, shotColumnId));
 
@@ -309,122 +295,45 @@ export function AiImageGeneratorDialog({
     });
   };
 
-  const enterEditMode = async () => {
-    await store.dispatch(loadImageEditModels());
-
-    if (!isEditMode) {
-      setSavedModel(formData.model);
-    }
-
-    const latestAiForm = selectCurrentInstance(store.getState()).aiImageForm;
-    const editModel =
-      latestAiForm.currentEditModel ??
-      latestAiForm.editModels.find((item) => item.isDefault) ??
-      latestAiForm.editModels[0];
-
-    if (editModel?.serviceCode) {
-      store.dispatch(setImageCurrentEditModel(editModel));
-      handleUpdateForm({ model: editModel.serviceCode });
-    }
-
-    if (previewItem?.url) {
-      handleUpdateForm({
-        referenceImages: [
-          {
-            url: previewItem.url,
-            path: previewItem.storagePath || previewItem.url,
-          },
-        ],
-      });
-    }
-
-    setIsEditMode(true);
-  };
-
-  const exitEditMode = () => {
-    setIsEditMode(false);
-
-    if (savedModel) {
-      handleUpdateForm({ model: savedModel });
-      setSavedModel("");
-    }
-
-    if (formData.referenceImages.length > maxRefImages) {
-      handleUpdateForm({ referenceImages: formData.referenceImages.slice(0, maxRefImages) });
-    }
-  };
-
-  const handleToggleEditMode = () => {
-    if (isEditMode) {
-      exitEditMode();
-      return;
-    }
-    void enterEditMode();
-  };
-
   const handleClose = () => {
-    if (isEditMode && savedModel) {
-      store.dispatch(
-        updateImageForm({ shotId, colId: shotColumnId, updates: { model: savedModel } })
-      );
-    }
-    setIsEditMode(false);
-    setSavedModel("");
     setFullPreviewUrl(null);
     setImagePickerOpen(false);
     onOpenChange(false);
   };
 
+  const isEditLikeMode = imageMode === "imageEdit" || imageMode === "characterFusion";
+
   const handleGenerate = () => {
-    if (isEditMode) {
-      const prompt = formData.prompt.trim();
-      if (!prompt) {
-        toast.warning(t("enterPrompt"));
-        return;
-      }
+    if (!modeConfig) return;
 
-      const images = formData.referenceImages.map((item) => item.path).filter(Boolean);
-      if (images.length === 0) {
-        toast.warning(t("uploadReferenceFirst"));
-        return;
-      }
+    const isEdit = isEditLikeMode;
+    const fullPrompt = isEdit
+      ? formData.prompt.trim()
+      : [prefixPrompt.trim(), formData.prompt.trim(), suffixPrompt.trim()]
+          .filter(Boolean)
+          .join("\n");
 
-      onGeneratePrompt?.(prompt);
-
-      const count = formData.count || 1;
-      for (let index = 0; index < count; index += 1) {
-        submitImageTask({
-          shotId,
-          shotColumnId,
-          prompt,
-          model: formData.model,
-          size: formData.size,
-          images,
-          mode: "edit",
-          promptExtend: true,
-          watermark: false,
-        });
-      }
-      toast.success(t("addedEditTasks", { count }));
-      return;
-    }
-
-    const fullPrompt = [prefixPrompt.trim(), formData.prompt.trim(), suffixPrompt.trim()]
-      .filter(Boolean)
-      .join("\n");
     if (!fullPrompt) {
       toast.warning(t("enterPrompt"));
       return;
     }
 
+    const refImages = formData.referenceImages.map((item) => item.path).filter(Boolean);
+
+    // Edit-like modes require at least one reference image
+    if (isEdit && refImages.length === 0) {
+      toast.warning(t("uploadReferenceFirst"));
+      return;
+    }
+
     onGeneratePrompt?.(formData.prompt.trim());
 
-    const refUrl = formData.referenceImages
-      .map((img) => (img.path ? buildOssUrl(img.path) : ""))
+    const count = formData.count || 1;
+    const refUrl = refImages
+      .map((p) => buildOssUrl(p))
       .filter(Boolean)
       .join(";");
 
-    const count = formData.count || 1;
     for (let index = 0; index < count; index += 1) {
       submitImageTask({
         shotId,
@@ -432,7 +341,10 @@ export function AiImageGeneratorDialog({
         prompt: fullPrompt,
         model: formData.model,
         size: formData.size,
-        referenceImageUrl: refUrl || undefined,
+        endpoint: modeConfig.endpoint,
+        ...(isEdit
+          ? { images: refImages, mode: "edit" as const, promptExtend: true }
+          : { referenceImageUrl: refUrl || undefined }),
         watermark: false,
       });
     }
@@ -442,9 +354,6 @@ export function AiImageGeneratorDialog({
 
   const handlePreview = (item: ResultItem) => {
     store.dispatch(setImagePreview({ shotId: shotId, colId: shotColumnId, item: item }));
-    if (isEditMode) {
-      exitEditMode();
-    }
   };
 
   const handleDelete = async (item: ResultItem) => {
@@ -527,8 +436,8 @@ export function AiImageGeneratorDialog({
       key: "edit",
       label: t("editAction"),
       icon: <IconPencil className="size-3.5" />,
-      active: isEditMode,
-      onClick: handleToggleEditMode,
+      active: imageMode === "imageEdit",
+      onClick: () => setImageMode((m) => (m === "imageEdit" ? "imageGenerate" : "imageEdit")),
     },
     {
       key: "repaint",
@@ -629,7 +538,7 @@ export function AiImageGeneratorDialog({
           }
           referenceFields={referenceFields}
           cost={cost}
-          hideExtraPrompts={isEditMode}
+          hideExtraPrompts={isEditLikeMode}
           onSubmit={handleGenerate}
         />
         {onPrevShot ? (
