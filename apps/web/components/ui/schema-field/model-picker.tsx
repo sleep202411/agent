@@ -35,11 +35,6 @@ function ModelCard({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{model.name}</span>
-          {model.isDefault && (
-            <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-              {t("recommended")}
-            </span>
-          )}
         </div>
         {description && <p className="mt-0.5 text-[10px] text-muted-foreground">{description}</p>}
         <p className="mt-0.5 text-[10px] text-muted-foreground/70">
