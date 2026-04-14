@@ -173,14 +173,19 @@ export function CharacterAiRecordDialog({
   }, [characterId, prompt, referenceImageUrl, t]);
 
   // ─── Open/close effects ──────────────────────────────
+  const prevCharIdRef = useRef(characterId);
   useEffect(() => {
     if (!open) return;
     setPreviewPath("");
     setSelectedIndex(null);
-    setLoadingItems([]);
-    setLocalCompleted([]);
+    // Only reset items when switching to a different character
+    if (prevCharIdRef.current !== characterId) {
+      prevCharIdRef.current = characterId;
+      setLoadingItems([]);
+      setLocalCompleted([]);
+    }
     void loadHistory();
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, characterId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync selectedIndex when preview changes
   useEffect(() => {
