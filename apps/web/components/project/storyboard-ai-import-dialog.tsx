@@ -380,6 +380,11 @@ export function StoryboardAiImportDialog({
   );
 }
 
+/** Strip HTML tags for display, keeping mention labels */
+function stripTags(html: string): string {
+  return html.replace(/<mention[^>]*>([^<]*)<\/mention>/gi, "@$1").replace(/<[^>]+>/g, "");
+}
+
 function PreviewRow({
   headers,
   row,
@@ -423,7 +428,9 @@ function PreviewRow({
                 onClick={() => onStartEdit(cellIndex)}
                 className="flex min-h-16 w-full items-start rounded-lg px-1 py-1 text-left text-sm text-foreground hover:bg-white/5"
               >
-                <span className="whitespace-pre-wrap break-words">{row[cellIndex] || "-"}</span>
+                <span className="whitespace-pre-wrap break-words">
+                  {stripTags(row[cellIndex] || "") || "-"}
+                </span>
               </button>
             )}
           </div>
