@@ -14,7 +14,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { useTranslations } from "@/src/i18n/i18n";
 import type { RawAiModel } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import { Field, FieldLabel, FieldDescription, FieldGroup } from "@/components/ui/field";
 
 export interface BatchGenerateConfig {

@@ -30,7 +30,7 @@ import {
 import type { RawAiModel } from "@/src/types/workspace";
 import type { Asset } from "@/src/store/slices/projectSlice";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import { useFusionQueue, type FusionQueueItem } from "./use-fusion-queue";
 import { PropPickerDialog, type PropOption } from "./prop-picker-dialog";
 import { FusionPreviewPanel } from "./fusion-preview-panel";

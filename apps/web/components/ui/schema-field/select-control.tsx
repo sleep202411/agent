@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/select";
 
 interface SelectControlProps {
-  options: { value: string | number; label: string }[];
+  options: { value: string | number; label: string; disabled?: boolean }[];
   value: unknown;
   onChange: (v: string | number) => void;
   disabled?: boolean;
@@ -44,7 +44,7 @@ export function SelectControl({
         <SelectGroup>
           {groupLabel && <SelectLabel>{groupLabel}</SelectLabel>}
           {options.map((opt) => (
-            <SelectItem key={String(opt.value)} value={String(opt.value)}>
+            <SelectItem key={String(opt.value)} value={String(opt.value)} disabled={opt.disabled}>
               {opt.label}
             </SelectItem>
           ))}

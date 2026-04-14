@@ -12,7 +12,7 @@
 // ─── Schema Types ───────────────────────────────────────
 
 export interface ModelParameterSchema {
-  type: "string" | "integer" | "number" | "boolean";
+  type: "string" | "integer" | "number" | "boolean" | "array";
   /** English fallback title */
   title: string;
   /** i18n key for translation lookup (e.g. "model.resolution") */
@@ -26,9 +26,18 @@ export interface ModelParameterSchema {
   default?: string | number | boolean;
   minimum?: number;
   maximum?: number;
-  format?: "uri" | "uri-image" | "uri-video";
+  format?: "uri" | "uri-image" | "uri-video" | "uri-audio";
   /** Render order (lower = first) */
   "x-order"?: number;
+  // ── Array fields (type: "array") ──
+  /** Schema for array items */
+  items?: { type: string; format?: string };
+  /** Maximum number of items */
+  maxItems?: number;
+  /** Accepted MIME types (e.g. ["image/jpeg", "image/png"]) */
+  "x-accept"?: string[];
+  /** Maximum duration in seconds (for audio/video references) */
+  "x-max-duration"?: number;
 }
 
 export interface AiModelInputSchema {
@@ -106,7 +115,7 @@ function buildSizeLabels(sizes: unknown[]): Record<string, string> {
   return labels;
 }
 
-import { getModelDescription } from "./ai-model-descriptions";
+import { getModelDescription } from "./descriptions";
 
 // ─── Normalize ──────────────────────────────────────────
 
@@ -209,20 +218,9 @@ export function getSchemaDefaults(schema: AiModelInputSchema): Record<string, un
 
 // ─── Model Registry ───────────────────────────────────
 // Frontend-maintained model capability specs.
-// Extends AiModelInputSchema with media constraints, cost rules,
-// and endpoint type. Backend returns raw model lists; registry
-// enriches them for UI rendering and validation.
-
-export interface ModelMediaConstraints {
-  maxImages: number;
-  maxVideos: number;
-  maxAudios: number;
-  maxTotal: number;
-  imageFormats: string[];
-  videoFormats: string[];
-  audioFormats: string[];
-  maxAudioDuration?: number;
-}
+// Each model's inputSchema contains ALL constraints: size, duration,
+// reference limits (referenceImages/Videos/Audios with maxItems, x-accept).
+// No separate media config — everything in one schema per OpenAPI conventions.
 
 export interface ModelRegistryEntry {
   /** Canonical model ID (serviceCode) sent to backend */
@@ -235,10 +233,9 @@ export interface ModelRegistryEntry {
   cost: number;
   /** Whether this is the default model for its mode */
   isDefault?: boolean;
-  /** Standardized parameter schema — ALL models use this for UI rendering */
+  /** Standardized parameter schema — ALL models use this for UI rendering.
+   *  Media constraints live here too (e.g. referenceImages with maxItems, x-accept). */
   inputSchema: AiModelInputSchema;
-  /** Media upload constraints */
-  media?: ModelMediaConstraints;
   /** Whether the model supports @-mention prompt references */
   supportsPromptRef?: boolean;
 }
@@ -279,10 +276,10 @@ function videoSchema(sizes: string[], videoLengths: number[]): AiModelInputSchem
   };
 }
 
-/** Empty schema for models with no configurable params */
 /** Build a standard inputSchema for image models with ratio/dimension size options */
 function imageSchema(
-  sizes: { ratio: string; dimension: string; resolution?: string }[]
+  sizes: { ratio: string; dimension: string; resolution?: string }[],
+  ref?: { maxImages?: number; accept?: string[] }
 ): AiModelInputSchema {
   if (sizes.length === 0) return EMPTY_SCHEMA;
   const enumValues = sizes.map((s) => s.dimension);
@@ -294,6 +291,8 @@ function imageSchema(
         ? `${s.ratio} (${s.dimension})`
         : s.ratio;
   }
+  const maxImages = ref?.maxImages ?? 5;
+  const accept = ref?.accept ?? ["image/jpeg", "image/png", "image/webp"];
   return {
     type: "object",
     properties: {
@@ -304,6 +303,14 @@ function imageSchema(
         "x-enum-labels": labels,
         default: enumValues[0],
         "x-order": 0,
+      },
+      referenceImages: {
+        type: "array",
+        title: "Reference Images",
+        maxItems: maxImages,
+        items: { type: "string", format: "uri-image" },
+        "x-accept": accept,
+        "x-order": 99,
       },
     },
     required: [],
@@ -316,27 +323,25 @@ const EMPTY_SCHEMA: AiModelInputSchema = {
   required: [],
 };
 
+/** Schema for image models with no size options but with reference support */
+function imageRefOnly(maxImages = 5): AiModelInputSchema {
+  return {
+    type: "object",
+    properties: {
+      referenceImages: {
+        type: "array",
+        title: "Reference Images",
+        maxItems: maxImages,
+        items: { type: "string", format: "uri-image" },
+        "x-accept": ["image/jpeg", "image/png", "image/webp"],
+        "x-order": 99,
+      },
+    },
+    required: [],
+  };
+}
+
 // ─── Image generate models ──────────────────────────
-
-const IMAGE_MEDIA: ModelMediaConstraints = {
-  maxImages: 5,
-  maxVideos: 0,
-  maxAudios: 0,
-  maxTotal: 5,
-  imageFormats: ["image/jpeg", "image/png", "image/webp"],
-  videoFormats: [],
-  audioFormats: [],
-};
-
-const IMAGE_EDIT_MEDIA: ModelMediaConstraints = {
-  maxImages: 1,
-  maxVideos: 0,
-  maxAudios: 0,
-  maxTotal: 1,
-  imageFormats: ["image/jpeg", "image/png", "image/webp"],
-  videoFormats: [],
-  audioFormats: [],
-};
 
 const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
   {
@@ -345,152 +350,167 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
     mode: "imageGenerate",
     cost: 10,
     isDefault: true,
-    media: IMAGE_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "1280*768" },
-      { ratio: "1:1", dimension: "1280*1280" },
-      { ratio: "9:16", dimension: "768*1280" },
-      { ratio: "1:1", dimension: "1024*1024" },
-      { ratio: "3:2", dimension: "1152*768" },
-      { ratio: "2:3", dimension: "768*1152" },
-      { ratio: "4:3", dimension: "1280*960" },
-      { ratio: "3:4", dimension: "960*1280" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "1280*768" },
+        { ratio: "1:1", dimension: "1280*1280" },
+        { ratio: "9:16", dimension: "768*1280" },
+        { ratio: "1:1", dimension: "1024*1024" },
+        { ratio: "3:2", dimension: "1152*768" },
+        { ratio: "2:3", dimension: "768*1152" },
+        { ratio: "4:3", dimension: "1280*960" },
+        { ratio: "3:4", dimension: "960*1280" },
+      ],
+      { maxImages: 3 }
+    ),
   },
   {
     id: "ep-20260118112356-p7n89",
     label: "Seed-1.6",
     mode: "imageGenerate",
     cost: 25,
-    media: IMAGE_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "2560x1440" },
-      { ratio: "1:1", dimension: "2048x2048" },
-      { ratio: "4:3", dimension: "2304x1728" },
-      { ratio: "3:2", dimension: "2496x1664" },
-      { ratio: "21:9", dimension: "3024x1296" },
-      { ratio: "1:1", dimension: "4096x4096" },
-      { ratio: "4:3", dimension: "4694x3520" },
-      { ratio: "3:2", dimension: "4992x3328" },
-      { ratio: "16:9", dimension: "5404x3040" },
-      { ratio: "21:9", dimension: "6198x2656" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "2560x1440" },
+        { ratio: "1:1", dimension: "2048x2048" },
+        { ratio: "4:3", dimension: "2304x1728" },
+        { ratio: "3:2", dimension: "2496x1664" },
+        { ratio: "21:9", dimension: "3024x1296" },
+        { ratio: "1:1", dimension: "4096x4096" },
+        { ratio: "4:3", dimension: "4694x3520" },
+        { ratio: "3:2", dimension: "4992x3328" },
+        { ratio: "16:9", dimension: "5404x3040" },
+        { ratio: "21:9", dimension: "6198x2656" },
+      ],
+      { maxImages: 5 }
+    ),
   },
   {
     id: "google/nano-banana",
     label: "nano-banana 2.5",
     mode: "imageGenerate",
     cost: 10,
-    media: IMAGE_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "16:9" },
-      { ratio: "1:1", dimension: "1:1" },
-      { ratio: "9:16", dimension: "9:16" },
-      { ratio: "2:3", dimension: "2:3" },
-      { ratio: "3:2", dimension: "3:2" },
-      { ratio: "4:3", dimension: "4:3" },
-      { ratio: "3:4", dimension: "3:4" },
-      { ratio: "21:9", dimension: "21:9" },
-      { ratio: "9:21", dimension: "9:21" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "16:9" },
+        { ratio: "1:1", dimension: "1:1" },
+        { ratio: "9:16", dimension: "9:16" },
+        { ratio: "2:3", dimension: "2:3" },
+        { ratio: "3:2", dimension: "3:2" },
+        { ratio: "4:3", dimension: "4:3" },
+        { ratio: "3:4", dimension: "3:4" },
+        { ratio: "21:9", dimension: "21:9" },
+        { ratio: "9:21", dimension: "9:21" },
+      ],
+      { maxImages: 5 }
+    ),
   },
   {
     id: "google/nano-banana-pro",
     label: "nano-banana-pro",
     mode: "imageGenerate",
     cost: 20,
-    media: IMAGE_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
-      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
-      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
-      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
-      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
-      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
-      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
-      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
-      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+        { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+        { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+        { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+        { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+        { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+        { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+        { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+        { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+      ],
+      { maxImages: 5 }
+    ),
   },
   {
     id: "bytedance/seedream-4.5",
     label: "seedream-4.5",
     mode: "imageGenerate",
     cost: 20,
-    media: IMAGE_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
-      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
-      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
-      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
-      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
-      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
-      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
-      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
-      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+        { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+        { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+        { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+        { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+        { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+        { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+        { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+        { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+      ],
+      { maxImages: 5 }
+    ),
   },
   {
     id: "GEM:3.1-2K",
     label: "GEM:3.1-2K",
     mode: "imageGenerate",
     cost: 25,
-    media: IMAGE_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
-      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
-      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
-      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
-      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
-      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
-      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
-      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
-      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+        { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+        { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+        { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+        { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+        { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+        { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+        { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+        { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+      ],
+      { maxImages: 5 }
+    ),
   },
   {
     id: "GEM:3.1-1K",
     label: "GEM:3.1-1K",
     mode: "imageGenerate",
     cost: 15,
-    media: IMAGE_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
-      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
-      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
-      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
-      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
-      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
-      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
-      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
-      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+        { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+        { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+        { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+        { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+        { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+        { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+        { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+        { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+      ],
+      { maxImages: 5 }
+    ),
   },
   {
     id: "mj_imagine",
     label: "MJ (2x2 grid)",
     mode: "imageGenerate",
     cost: 25,
-    media: IMAGE_MEDIA,
-    inputSchema: EMPTY_SCHEMA,
+    inputSchema: imageRefOnly(5),
   },
   {
     id: "MJ:v7",
     label: "MJ:v7",
     mode: "imageGenerate",
     cost: 25,
-    media: IMAGE_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
-      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
-      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
-      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
-      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
-      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
-      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
-      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
-      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+        { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+        { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+        { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+        { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+        { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+        { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+        { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+        { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+      ],
+      { maxImages: 5 }
+    ),
   },
 ];
 
@@ -503,17 +523,19 @@ const IMAGE_EDIT_MODELS: ModelRegistryEntry[] = [
     mode: "imageEdit",
     cost: 35,
     isDefault: true,
-    media: IMAGE_EDIT_MEDIA,
-    inputSchema: imageSchema([
-      { ratio: "16:9", dimension: "1280*768" },
-      { ratio: "1:1", dimension: "1280*1280" },
-      { ratio: "9:16", dimension: "768*1280" },
-      { ratio: "1:1", dimension: "1024*1024" },
-      { ratio: "3:2", dimension: "1152*768" },
-      { ratio: "2:3", dimension: "768*1152" },
-      { ratio: "4:3", dimension: "1280*960" },
-      { ratio: "3:4", dimension: "960*1280" },
-    ]),
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "1280*768" },
+        { ratio: "1:1", dimension: "1280*1280" },
+        { ratio: "9:16", dimension: "768*1280" },
+        { ratio: "1:1", dimension: "1024*1024" },
+        { ratio: "3:2", dimension: "1152*768" },
+        { ratio: "2:3", dimension: "768*1152" },
+        { ratio: "4:3", dimension: "1280*960" },
+        { ratio: "3:4", dimension: "960*1280" },
+      ],
+      { maxImages: 3 }
+    ),
   },
 ];
 
@@ -573,18 +595,33 @@ const MULTIMODAL_MODELS: ModelRegistryEntry[] = [
           default: 4,
           "x-order": 2,
         },
+        referenceImages: {
+          type: "array",
+          title: "Reference Images",
+          maxItems: 9,
+          items: { type: "string", format: "uri-image" },
+          "x-accept": ["image/jpeg", "image/png", "image/webp"],
+          "x-order": 90,
+        },
+        referenceVideos: {
+          type: "array",
+          title: "Reference Videos",
+          maxItems: 3,
+          items: { type: "string", format: "uri-video" },
+          "x-accept": ["video/mp4", "video/webm"],
+          "x-order": 91,
+        },
+        referenceAudios: {
+          type: "array",
+          title: "Reference Audio",
+          maxItems: 3,
+          items: { type: "string", format: "uri-audio" },
+          "x-accept": ["audio/mpeg", "audio/wav"],
+          "x-max-duration": 15,
+          "x-order": 92,
+        },
       },
       required: ["ratio", "resolution", "duration"],
-    },
-    media: {
-      maxImages: 9,
-      maxVideos: 3,
-      maxAudios: 3,
-      maxTotal: 12,
-      imageFormats: ["image/jpeg", "image/png", "image/webp"],
-      videoFormats: ["video/mp4", "video/webm"],
-      audioFormats: ["audio/mpeg", "audio/wav"],
-      maxAudioDuration: 15,
     },
   },
 ];
@@ -798,7 +835,6 @@ const CHARACTER_FUSION_MODELS: ModelRegistryEntry[] = [
     cost: 10,
     isDefault: true,
     inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "wan2.5-i2i-preview")!.inputSchema,
-    media: IMAGE_MEDIA,
   },
   {
     id: "ep-20260118112356-p7n89",
@@ -806,7 +842,6 @@ const CHARACTER_FUSION_MODELS: ModelRegistryEntry[] = [
     mode: "characterFusion",
     cost: 25,
     inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "ep-20260118112356-p7n89")!.inputSchema,
-    media: IMAGE_MEDIA,
   },
   {
     id: "google/nano-banana",
@@ -814,7 +849,6 @@ const CHARACTER_FUSION_MODELS: ModelRegistryEntry[] = [
     mode: "characterFusion",
     cost: 10,
     inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "google/nano-banana")!.inputSchema,
-    media: IMAGE_MEDIA,
   },
   {
     id: "google/nano-banana-pro",
@@ -822,7 +856,6 @@ const CHARACTER_FUSION_MODELS: ModelRegistryEntry[] = [
     mode: "characterFusion",
     cost: 20,
     inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "google/nano-banana-pro")!.inputSchema,
-    media: IMAGE_MEDIA,
   },
   {
     id: "bytedance/seedream-4.5",
@@ -830,7 +863,6 @@ const CHARACTER_FUSION_MODELS: ModelRegistryEntry[] = [
     mode: "characterFusion",
     cost: 20,
     inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "bytedance/seedream-4.5")!.inputSchema,
-    media: IMAGE_MEDIA,
   },
   {
     id: "qwen-image-max",
@@ -838,8 +870,7 @@ const CHARACTER_FUSION_MODELS: ModelRegistryEntry[] = [
     mode: "characterFusion",
     cost: 10,
     isDefault: true,
-    inputSchema: EMPTY_SCHEMA,
-    media: IMAGE_MEDIA,
+    inputSchema: imageRefOnly(5),
   },
 ];
 
@@ -872,21 +903,31 @@ export function getRegistryModels(mode: string): ModelRegistryEntry[] {
   return MODEL_REGISTRY.filter((e) => e.mode === mode);
 }
 
-/** Validate media counts against model constraints */
+/** Validate media counts against model constraints (reads from inputSchema) */
 export function validateMedia(
   entry: ModelRegistryEntry,
   imageCount: number,
   videoCount: number,
   audioCount: number
 ): string | null {
-  if (!entry.media) return null;
-  const { maxImages, maxVideos, maxAudios, maxTotal } = entry.media;
-  const total = imageCount + videoCount + audioCount;
-  if (total > maxTotal) return `Total files cannot exceed ${maxTotal} (current: ${total})`;
+  const props = entry.inputSchema?.properties;
+  if (!props) return null;
+  const maxImages = props.referenceImages?.maxItems ?? Infinity;
+  const maxVideos = props.referenceVideos?.maxItems ?? 0;
+  const maxAudios = props.referenceAudios?.maxItems ?? 0;
   if (imageCount > maxImages) return `Images cannot exceed ${maxImages}`;
   if (videoCount > maxVideos) return `Videos cannot exceed ${maxVideos}`;
   if (audioCount > maxAudios) return `Audios cannot exceed ${maxAudios}`;
   return null;
+}
+
+/** Get max reference count for a media type from inputSchema */
+export function getModelMaxRef(
+  entry: ModelRegistryEntry,
+  type: "images" | "videos" | "audios" = "images"
+): number {
+  const key = `reference${type.charAt(0).toUpperCase()}${type.slice(1)}`;
+  return entry.inputSchema?.properties?.[key]?.maxItems ?? 0;
 }
 
 // ─── Video Mode Configurations ──────────────────────

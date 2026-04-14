@@ -1,12 +1,11 @@
 import { useTranslations } from "@/src/i18n/i18n";
-import { IconPencil } from "@tabler/icons-react";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
 import { ReferenceGroup } from "./reference-group";
-import { cn } from "@/lib/utils";
+import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
 import { GenerateButton } from "@/components/ui/generate-button";
-import { SelectControl } from "@/components/ui/schema-field/select-control";
 import { ModelPicker } from "@/components/ui/schema-field/model-picker";
-import type { AiModel } from "@/src/lib/ai-model-schema";
+import { getModesByType } from "@/components/ui/schema-field/schema";
+import type { AiModel } from "@/components/ui/schema-field/schema";
 import type { AiSizeOption } from "@/src/store/slices/projectSlice";
 import { env } from "@/src/env";
 
@@ -19,6 +18,10 @@ function ossUrl(path?: string): string | null {
 }
 
 interface PromptInputProps {
+  /** Current image mode id */
+  imageMode?: string;
+  /** Called when user changes image mode */
+  onImageModeChange?: (mode: string) => void;
   prompt: string;
   onPromptChange: (v: string) => void;
   prefixPrompt: string;
@@ -42,14 +45,20 @@ interface PromptInputProps {
   referenceFields?: string[];
   cost?: number;
   loading?: boolean;
-  editMode?: boolean;
-  showEditToggle?: boolean;
   hideExtraPrompts?: boolean;
-  onToggleEditMode?: () => void;
   onSubmit: () => void;
 }
 
+// Image mode options from schema (computed once)
+const IMAGE_MODE_OPTIONS = getModesByType("image", true).map((m) => ({
+  label: m.label ?? m.id,
+  value: m.id,
+  disabled: m.disabled,
+}));
+
 export function PromptInput({
+  imageMode,
+  onImageModeChange,
   prompt,
   onPromptChange,
   prefixPrompt,
@@ -72,10 +81,7 @@ export function PromptInput({
   referenceFields,
   cost,
   loading,
-  editMode = false,
-  showEditToggle = false,
   hideExtraPrompts = false,
-  onToggleEditMode,
   onSubmit,
 }: PromptInputProps) {
   const t = useTranslations("storyboard");
@@ -96,22 +102,6 @@ export function PromptInput({
             resolveUrl={(p) => ossUrl(p) || ""}
           />
         </div>
-
-        {showEditToggle ? (
-          <button
-            type="button"
-            onClick={onToggleEditMode}
-            className={cn(
-              "flex items-center gap-1 text-xs transition-colors",
-              editMode
-                ? "text-primary hover:text-primary/90"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <IconPencil className="size-3" />
-            <span>{editMode ? t("exitEditMode") : t("enterEditModeLabel")}</span>
-          </button>
-        ) : null}
       </div>
 
       {/* Prefix prompt */}
@@ -154,7 +144,7 @@ export function PromptInput({
           minHeight={48}
           className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
           onSubmitShortcut={onSubmit}
-          submitMode="enter"
+          submitMode="mod"
           referenceMedia={referenceImages.map((r) => ({
             url: r.url || ossUrl(r.path) || "",
             path: r.path,
@@ -181,35 +171,37 @@ export function PromptInput({
 
       {/* Toolbar */}
       <div className="flex items-center justify-between">
-        {/* Left: model + size */}
+        {/* Left: mode + model + size */}
         <div className="flex items-center gap-2">
+          {imageMode && onImageModeChange && (
+            <ToolbarSelect
+              options={IMAGE_MODE_OPTIONS}
+              value={imageMode}
+              onChange={onImageModeChange}
+            />
+          )}
           {normalizedModels ? (
             <ModelPicker models={normalizedModels} value={model} onChange={onModelChange} compact />
           ) : (
-            <SelectControl
-              options={modelOptions}
-              value={model}
-              onChange={(v) => onModelChange(String(v))}
-            />
+            <ToolbarSelect options={modelOptions} value={model} onChange={onModelChange} />
           )}
-          <SelectControl
+          <ToolbarSelect
             options={sizeOptions.map((s) => ({ label: s.label, value: s.value }))}
             value={size}
-            onChange={(v) => onSizeChange(String(v))}
+            onChange={onSizeChange}
           />
         </div>
 
         {/* Right: count + cost + submit */}
         <div className="flex items-center gap-2.5">
-          <SelectControl
+          <ToolbarSelect
             options={[
-              { label: "1x", value: 1 },
-              { label: "2x", value: 2 },
-              { label: "4x", value: 4 },
+              { label: "1x", value: "1" },
+              { label: "2x", value: "2" },
+              { label: "4x", value: "4" },
             ]}
-            value={count}
+            value={String(count)}
             onChange={(v) => onCountChange(Number(v))}
-            groupLabel={t("generateCountLabel")}
           />
 
           <GenerateButton onClick={onSubmit} loading={loading} cost={cost} />

@@ -4,8 +4,8 @@ import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { AiModel } from "@/src/lib/ai-model-schema";
-import { getModelDescription } from "@/src/lib/ai-model-descriptions";
+import type { AiModel } from "./schema";
+import { getModelDescription } from "./descriptions";
 
 // ─── Model Card ─────────────────────────────────────────
 

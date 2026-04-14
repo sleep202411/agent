@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconArrowsMaximize,
   IconBrush,
@@ -16,7 +16,11 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { getModelRegistryEntry } from "@/src/lib/ai-model-schema";
+import {
+  getModelRegistryEntry,
+  getRegistryModels,
+  getModeConfig,
+} from "@/components/ui/schema-field/schema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
@@ -47,7 +51,6 @@ import {
   setEpisodes,
 } from "@/src/store/slices/projectSlice";
 
-const EDIT_MODE_MAX_REFERENCES = 3;
 const EMPTY_AI_MODELS: never[] = [];
 
 interface AiImageGeneratorDialogProps {
@@ -92,6 +95,7 @@ export function AiImageGeneratorDialog({
   const activeEpisode = useAppSelector((s) => selectActiveProjectEpisode(s));
   const [fullPreviewUrl, setFullPreviewUrl] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [imageMode, setImageMode] = useState("imageGenerate");
   const [savedModel, setSavedModel] = useState("");
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
 
@@ -167,33 +171,43 @@ export function AiImageGeneratorDialog({
 
   const allResults = useAppSelector((s) => selectAllImageResults(s, shotId, shotColumnId));
 
-  // Use preloaded normalized models from cache (stable empty ref to avoid re-renders)
+  // Models from frontend registry, driven by imageMode
+  const registryModels = useMemo(() => getRegistryModels(imageMode), [imageMode]);
+  const currentRegistryModel = useMemo(
+    () => registryModels.find((m) => m.id === formData.model),
+    [registryModels, formData.model]
+  );
+
+  // Fallback to cached normalized models (for ModelPicker card UI)
   const cachedModels =
     useAppSelector((s) => s.aiModelCache.aiModelCache["/api/ai/image/generate/basic"]) ??
     EMPTY_AI_MODELS;
   const cachedEditModels =
     useAppSelector((s) => s.aiModelCache.aiModelCache["/api/ai/image/edit/wan"]) ?? EMPTY_AI_MODELS;
+  const normalizedModels = imageMode === "imageEdit" ? cachedEditModels : cachedModels;
 
-  const displayedModels = isEditMode ? editModels : models;
-  const currentModel = isEditMode ? currentEditModelGlobal : currentModelGlobal;
+  const modeConfig = getModeConfig(imageMode);
+  const maxRefImages =
+    currentRegistryModel?.inputSchema?.properties?.referenceImages?.maxItems ??
+    modeConfig?.refConfig?.maxCount ??
+    5;
 
-  const normalizedModels = isEditMode ? cachedEditModels : cachedModels;
-  const modelOptions = normalizedModels.map((m) => ({
-    label: m.description ? `${m.name} · ${m.description}` : m.name,
-    value: m.id,
-  }));
+  const sizeField = currentRegistryModel?.inputSchema?.properties?.size;
+  const sizeOptions = useMemo(() => {
+    if (!sizeField?.enum) return [];
+    const labels = sizeField["x-enum-labels"] ?? {};
+    return sizeField.enum.map((v) => ({
+      label: labels[String(v)] ?? String(v),
+      value: String(v),
+    }));
+  }, [sizeField]);
 
-  const selectedNormalized = normalizedModels.find((m) => m.id === formData.model);
-  const selectedRegistry = getModelRegistryEntry(formData.model);
-  const sizeEnum = selectedNormalized?.inputSchema?.properties?.size?.enum ?? [];
-  const sizeLabels = selectedNormalized?.inputSchema?.properties?.size?.["x-enum-labels"] ?? {};
-  const sizeOptions = sizeEnum.map((v) => ({
-    label: sizeLabels[String(v)] ?? String(v),
-    value: String(v),
-  }));
-  const maxRefImages = selectedRegistry?.media?.maxImages ?? 5;
+  const modelOptions = useMemo(
+    () => registryModels.map((m) => ({ label: m.label, value: m.id })),
+    [registryModels]
+  );
 
-  const cost = (selectedNormalized?.cost ?? 0) * (formData.count || 1);
+  const cost = (currentRegistryModel?.cost ?? 0) * (formData.count || 1);
   const title = shotNumber ? t("aiImageTitle", { number: shotNumber }) : t("aiImageTitleDefault");
 
   useEffect(() => {
@@ -202,9 +216,19 @@ export function AiImageGeneratorDialog({
     const hasInstance = !!selectCurrentInstance(store.getState()).aiImageForm.instances[key];
 
     if (!hasInstance) {
-      store.dispatch(
-        initImageInstance({ shotId, colId: shotColumnId, opts: { defaultPrompt, defaultRefImage } })
-      );
+      store
+        .dispatch(
+          initImageInstance({
+            shotId,
+            colId: shotColumnId,
+            opts: { defaultPrompt, defaultRefImage },
+          })
+        )
+        .then(() => {
+          const prompt = selectCurrentInstance(store.getState()).aiImageForm.instances[key]
+            ?.formData?.prompt;
+          if (prompt) syncMentionRefs(prompt);
+        });
     } else {
       store.dispatch(loadImageHistory({ shotId, colId: shotColumnId })).catch((error) => {
         console.error("[AiImageGeneratorDialog] 刷新生图历史失败:", error);
@@ -222,32 +246,67 @@ export function AiImageGeneratorDialog({
   const handleUpdateForm = (updates: Partial<typeof formData>) =>
     store.dispatch(updateImageForm({ shotId, colId: shotColumnId, updates }));
 
-  // Auto-select default model when no model is selected
+  // Auto-select default model + size when mode changes or no model selected
+  // Also truncate referenceImages when new model has smaller maxItems
   useEffect(() => {
-    if (formData.model || normalizedModels.length === 0) return;
-    const defaultModel = normalizedModels.find((m) => m.isDefault) ?? normalizedModels[0];
-    if (defaultModel) {
-      handleUpdateForm({ model: defaultModel.id });
-      // Also set default size
-      const defaultSize = defaultModel.inputSchema.properties.size?.default;
-      if (defaultSize) handleUpdateForm({ model: defaultModel.id, size: String(defaultSize) });
+    if (registryModels.length === 0) return;
+    const matched = registryModels.find((m) => m.id === formData.model);
+    if (!matched) {
+      const defaultModel = registryModels.find((m) => m.isDefault) ?? registryModels[0];
+      if (defaultModel) {
+        const defaultSize = defaultModel.inputSchema?.properties?.size?.default;
+        const newMax = defaultModel.inputSchema?.properties?.referenceImages?.maxItems ?? 5;
+        handleUpdateForm({
+          model: defaultModel.id,
+          ...(defaultSize ? { size: String(defaultSize) } : {}),
+          ...(formData.referenceImages.length > newMax
+            ? { referenceImages: formData.referenceImages.slice(0, newMax) }
+            : {}),
+        });
+      }
     }
-  }, [normalizedModels, formData.model]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [imageMode, registryModels, formData.model]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Sync @mention images → reference group ──
+  // Called on every prompt change: extracts <mention imgUrl> tags and adds new ones to refs.
+  const syncMentionRefs = (promptHtml: string) => {
+    if (!promptHtml.includes("<mention")) return;
+    const mentionRegex = /<mention\s+[^>]*imgUrl="([^"]+)"[^>]*>([^<]*)<\/mention>/gi;
+    const currentRefs =
+      selectCurrentInstance(store.getState()).aiImageForm.instances[key]?.formData
+        ?.referenceImages ?? [];
+    const existing = new Set(
+      currentRefs.map((r: { url?: string; path: string }) => r.url || r.path)
+    );
+    const newItems: { url: string; path: string; label: string }[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = mentionRegex.exec(promptHtml)) !== null) {
+      const url = match[1];
+      if (!url || url === "null" || existing.has(url)) continue;
+      existing.add(url);
+      const label = match[2] || url.split("/").pop() || "media";
+      newItems.push({ url, path: url, label });
+    }
+    if (newItems.length > 0) {
+      handleUpdateForm({
+        referenceImages: [...currentRefs, ...newItems].slice(0, maxRefImages),
+      });
+    }
+  };
 
   const handleModelChange = (value: string) => {
-    // Auto-select the new model's default size
-    const matchedNormalized = normalizedModels.find((m) => m.id === value);
-    const defaultSize = matchedNormalized?.inputSchema?.properties?.size?.default;
-    handleUpdateForm({ model: value, ...(defaultSize ? { size: String(defaultSize) } : {}) });
-
-    const matched = displayedModels.find((item) => item.serviceCode === value);
-    if (!matched) return;
-
-    if (isEditMode) {
-      store.dispatch(setImageCurrentEditModel(matched));
-    } else {
-      store.dispatch(setImageCurrentModel(matched));
-    }
+    const matchedRegistry = registryModels.find((m) => m.id === value);
+    const defaultSize = matchedRegistry?.inputSchema?.properties?.size?.default;
+    const newMax = matchedRegistry?.inputSchema?.properties?.referenceImages?.maxItems ?? 5;
+    const trimmedRefs =
+      formData.referenceImages.length > newMax
+        ? formData.referenceImages.slice(0, newMax)
+        : undefined;
+    handleUpdateForm({
+      model: value,
+      ...(defaultSize ? { size: String(defaultSize) } : {}),
+      ...(trimmedRefs ? { referenceImages: trimmedRefs } : {}),
+    });
   };
 
   const enterEditMode = async () => {
@@ -290,8 +349,8 @@ export function AiImageGeneratorDialog({
       setSavedModel("");
     }
 
-    if (formData.referenceImages.length > 5) {
-      handleUpdateForm({ referenceImages: formData.referenceImages.slice(0, 5) });
+    if (formData.referenceImages.length > maxRefImages) {
+      handleUpdateForm({ referenceImages: formData.referenceImages.slice(0, maxRefImages) });
     }
   };
 
@@ -409,11 +468,10 @@ export function AiImageGeneratorDialog({
   };
 
   const handleAddReference = (paths: string[]) => {
-    const limit = isEditMode ? EDIT_MODE_MAX_REFERENCES : 5;
     const newRefs = [
       ...formData.referenceImages,
       ...paths.map((path) => ({ url: buildOssUrl(path), path })),
-    ].slice(0, limit);
+    ].slice(0, maxRefImages);
     handleUpdateForm({ referenceImages: newRefs });
   };
 
@@ -539,8 +597,13 @@ export function AiImageGeneratorDialog({
         </div>
 
         <PromptInput
+          imageMode={imageMode}
+          onImageModeChange={setImageMode}
           prompt={formData.prompt}
-          onPromptChange={(value) => handleUpdateForm({ prompt: value })}
+          onPromptChange={(value) => {
+            handleUpdateForm({ prompt: value });
+            syncMentionRefs(value);
+          }}
           prefixPrompt={prefixPrompt}
           onPrefixChange={handlePrefixChange}
           suffixPrompt={suffixPrompt}
@@ -566,10 +629,7 @@ export function AiImageGeneratorDialog({
           }
           referenceFields={referenceFields}
           cost={cost}
-          editMode={isEditMode}
-          showEditToggle
           hideExtraPrompts={isEditMode}
-          onToggleEditMode={handleToggleEditMode}
           onSubmit={handleGenerate}
         />
         {onPrevShot ? (

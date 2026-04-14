@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { RawAiModel, AssetRecord } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import { env } from "@/src/env";
 
 const OSS_BASE = env.OSS_BASE_URL;

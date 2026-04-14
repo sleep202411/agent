@@ -198,7 +198,6 @@ export function VideoReferencePanel({
       <ReferenceGroup
         label={t("video")}
         items={outpaintingRefVideo}
-        mediaType="video"
         maxCount={1}
         onAdd={() => onOpenPicker("outpaintingVideo")}
         onRemove={() => onSetOutpaintingRefVideo([])}
@@ -271,7 +270,6 @@ export function VideoReferencePanel({
       <ReferenceGroup
         label={t("addMedia")}
         items={referenceImages}
-        mediaType="img"
         maxCount={12}
         onAdd={() => onOpenPicker("multimodalImages")}
         onRemove={(index) => {
@@ -285,7 +283,6 @@ export function VideoReferencePanel({
     <ReferenceGroup
       label={t("referenceImage")}
       items={referenceImages}
-      mediaType="img"
       maxCount={1}
       onAdd={() => onOpenPicker("referenceImages")}
       onRemove={() => onSetReferenceImages([])}

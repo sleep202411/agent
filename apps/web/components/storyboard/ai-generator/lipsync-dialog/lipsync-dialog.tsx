@@ -14,7 +14,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import {
   getDialogueTextFromShotValues,
   resolveDialogueVoicePreset,

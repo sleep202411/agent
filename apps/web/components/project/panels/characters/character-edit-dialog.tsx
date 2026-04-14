@@ -35,7 +35,7 @@ import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
 import { uploadProjectImage, buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import type { Asset } from "@/src/store/slices/projectSlice";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import {
   normalizeStoragePath,
   parseObjectSafely,

@@ -17,7 +17,7 @@ import {
 } from "@/src/store/slices/projectSlice";
 import { submitAudioTask, retryAudioTask } from "@/src/lib/ai-audio-queue";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import {
   getDialogueTextFromShotValues,
   resolveDialogueVoicePreset,

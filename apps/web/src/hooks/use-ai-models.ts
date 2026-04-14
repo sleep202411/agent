@@ -7,8 +7,8 @@ import {
   setAiModelCacheLoading,
 } from "@/src/store/slices/aiModelCacheSlice";
 import { backendApi } from "@/src/lib/api";
-import { normalizeAiModel, type RawAiModel } from "@/src/lib/ai-model-schema";
-import { ALL_AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { normalizeAiModel, type RawAiModel } from "@/components/ui/schema-field/schema";
+import { ALL_AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 
 const idle =
   typeof requestIdleCallback === "function"

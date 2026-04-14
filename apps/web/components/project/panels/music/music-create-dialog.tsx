@@ -23,7 +23,7 @@ import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
 import { backendApi } from "@/src/lib/api";
 import type { RawAiModel } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 
 const MUSIC_SHOT_ID = -100;
 const MUSIC_COLUMN_ID = -100;

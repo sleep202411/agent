@@ -42,7 +42,7 @@ import { backendApi } from "@/src/lib/api";
 import { pipelineStream } from "@/src/lib/pipeline-stream";
 import { saveStoryboardTableWithBackfill } from "@/src/lib/storyboard-save";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { touchStoryboard, selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import { Field, FieldLabel } from "@/components/ui/field";

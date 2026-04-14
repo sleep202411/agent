@@ -88,7 +88,7 @@ import {
   calculateModeCost,
   resolveModeInputs,
   type ModelRegistryEntry,
-} from "@/src/lib/ai-model-schema";
+} from "@/components/ui/schema-field/schema";
 
 // ─── Multimodal: schema-driven toolbar selects ──────
 
