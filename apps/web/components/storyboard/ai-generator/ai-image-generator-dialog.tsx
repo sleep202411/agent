@@ -16,6 +16,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { getModelRegistryEntry } from "@/src/lib/ai-model-schema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
@@ -183,12 +184,14 @@ export function AiImageGeneratorDialog({
   }));
 
   const selectedNormalized = normalizedModels.find((m) => m.id === formData.model);
+  const selectedRegistry = getModelRegistryEntry(formData.model);
   const sizeEnum = selectedNormalized?.inputSchema?.properties?.size?.enum ?? [];
   const sizeLabels = selectedNormalized?.inputSchema?.properties?.size?.["x-enum-labels"] ?? {};
   const sizeOptions = sizeEnum.map((v) => ({
     label: sizeLabels[String(v)] ?? String(v),
     value: String(v),
   }));
+  const maxRefImages = selectedRegistry?.media?.maxImages ?? 5;
 
   const cost = (selectedNormalized?.cost ?? 0) * (formData.count || 1);
   const title = shotNumber ? t("aiImageTitle", { number: shotNumber }) : t("aiImageTitleDefault");
@@ -552,6 +555,7 @@ export function AiImageGeneratorDialog({
           count={formData.count}
           onCountChange={(value) => handleUpdateForm({ count: value })}
           referenceImages={formData.referenceImages}
+          maxReferenceImages={maxRefImages}
           onAddReference={() => setImagePickerOpen(true)}
           onRemoveReference={(index) =>
             handleUpdateForm({

@@ -280,11 +280,242 @@ function videoSchema(sizes: string[], videoLengths: number[]): AiModelInputSchem
 }
 
 /** Empty schema for models with no configurable params */
+/** Build a standard inputSchema for image models with ratio/dimension size options */
+function imageSchema(
+  sizes: { ratio: string; dimension: string; resolution?: string }[]
+): AiModelInputSchema {
+  if (sizes.length === 0) return EMPTY_SCHEMA;
+  const enumValues = sizes.map((s) => s.dimension);
+  const labels: Record<string, string> = {};
+  for (const s of sizes) {
+    labels[s.dimension] = s.resolution
+      ? `${s.ratio} (${s.dimension}) ${s.resolution}`
+      : s.ratio !== s.dimension
+        ? `${s.ratio} (${s.dimension})`
+        : s.ratio;
+  }
+  return {
+    type: "object",
+    properties: {
+      size: {
+        type: "string",
+        title: "Size",
+        enum: enumValues,
+        "x-enum-labels": labels,
+        default: enumValues[0],
+        "x-order": 0,
+      },
+    },
+    required: [],
+  };
+}
+
 const EMPTY_SCHEMA: AiModelInputSchema = {
   type: "object",
   properties: {},
   required: [],
 };
+
+// ─── Image generate models ──────────────────────────
+
+const IMAGE_MEDIA: ModelMediaConstraints = {
+  maxImages: 5,
+  maxVideos: 0,
+  maxAudios: 0,
+  maxTotal: 5,
+  imageFormats: ["image/jpeg", "image/png", "image/webp"],
+  videoFormats: [],
+  audioFormats: [],
+};
+
+const IMAGE_EDIT_MEDIA: ModelMediaConstraints = {
+  maxImages: 1,
+  maxVideos: 0,
+  maxAudios: 0,
+  maxTotal: 1,
+  imageFormats: ["image/jpeg", "image/png", "image/webp"],
+  videoFormats: [],
+  audioFormats: [],
+};
+
+const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
+  {
+    id: "wan2.5-i2i-preview",
+    label: "Wan2.5",
+    mode: "imageGenerate",
+    cost: 10,
+    isDefault: true,
+    media: IMAGE_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "1280*768" },
+      { ratio: "1:1", dimension: "1280*1280" },
+      { ratio: "9:16", dimension: "768*1280" },
+      { ratio: "1:1", dimension: "1024*1024" },
+      { ratio: "3:2", dimension: "1152*768" },
+      { ratio: "2:3", dimension: "768*1152" },
+      { ratio: "4:3", dimension: "1280*960" },
+      { ratio: "3:4", dimension: "960*1280" },
+    ]),
+  },
+  {
+    id: "ep-20260118112356-p7n89",
+    label: "Seed-1.6",
+    mode: "imageGenerate",
+    cost: 25,
+    media: IMAGE_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "2560x1440" },
+      { ratio: "1:1", dimension: "2048x2048" },
+      { ratio: "4:3", dimension: "2304x1728" },
+      { ratio: "3:2", dimension: "2496x1664" },
+      { ratio: "21:9", dimension: "3024x1296" },
+      { ratio: "1:1", dimension: "4096x4096" },
+      { ratio: "4:3", dimension: "4694x3520" },
+      { ratio: "3:2", dimension: "4992x3328" },
+      { ratio: "16:9", dimension: "5404x3040" },
+      { ratio: "21:9", dimension: "6198x2656" },
+    ]),
+  },
+  {
+    id: "google/nano-banana",
+    label: "nano-banana 2.5",
+    mode: "imageGenerate",
+    cost: 10,
+    media: IMAGE_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "16:9" },
+      { ratio: "1:1", dimension: "1:1" },
+      { ratio: "9:16", dimension: "9:16" },
+      { ratio: "2:3", dimension: "2:3" },
+      { ratio: "3:2", dimension: "3:2" },
+      { ratio: "4:3", dimension: "4:3" },
+      { ratio: "3:4", dimension: "3:4" },
+      { ratio: "21:9", dimension: "21:9" },
+      { ratio: "9:21", dimension: "9:21" },
+    ]),
+  },
+  {
+    id: "google/nano-banana-pro",
+    label: "nano-banana-pro",
+    mode: "imageGenerate",
+    cost: 20,
+    media: IMAGE_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+    ]),
+  },
+  {
+    id: "bytedance/seedream-4.5",
+    label: "seedream-4.5",
+    mode: "imageGenerate",
+    cost: 20,
+    media: IMAGE_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+    ]),
+  },
+  {
+    id: "GEM:3.1-2K",
+    label: "GEM:3.1-2K",
+    mode: "imageGenerate",
+    cost: 25,
+    media: IMAGE_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+    ]),
+  },
+  {
+    id: "GEM:3.1-1K",
+    label: "GEM:3.1-1K",
+    mode: "imageGenerate",
+    cost: 15,
+    media: IMAGE_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+    ]),
+  },
+  {
+    id: "mj_imagine",
+    label: "MJ (2x2 grid)",
+    mode: "imageGenerate",
+    cost: 25,
+    media: IMAGE_MEDIA,
+    inputSchema: EMPTY_SCHEMA,
+  },
+  {
+    id: "MJ:v7",
+    label: "MJ:v7",
+    mode: "imageGenerate",
+    cost: 25,
+    media: IMAGE_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "16:9", resolution: "2K" },
+      { ratio: "1:1", dimension: "1:1", resolution: "2K" },
+      { ratio: "9:16", dimension: "9:16", resolution: "2K" },
+      { ratio: "2:3", dimension: "2:3", resolution: "2K" },
+      { ratio: "3:2", dimension: "3:2", resolution: "2K" },
+      { ratio: "4:3", dimension: "4:3", resolution: "2K" },
+      { ratio: "3:4", dimension: "3:4", resolution: "2K" },
+      { ratio: "21:9", dimension: "21:9", resolution: "2K" },
+      { ratio: "9:21", dimension: "9:21", resolution: "2K" },
+    ]),
+  },
+];
+
+// ─── Image edit models ──────────────────────────────
+
+const IMAGE_EDIT_MODELS: ModelRegistryEntry[] = [
+  {
+    id: "wan2.5-i2i-preview",
+    label: "Wan2.5",
+    mode: "imageEdit",
+    cost: 35,
+    isDefault: true,
+    media: IMAGE_EDIT_MEDIA,
+    inputSchema: imageSchema([
+      { ratio: "16:9", dimension: "1280*768" },
+      { ratio: "1:1", dimension: "1280*1280" },
+      { ratio: "9:16", dimension: "768*1280" },
+      { ratio: "1:1", dimension: "1024*1024" },
+      { ratio: "3:2", dimension: "1152*768" },
+      { ratio: "2:3", dimension: "768*1152" },
+      { ratio: "4:3", dimension: "1280*960" },
+      { ratio: "3:4", dimension: "960*1280" },
+    ]),
+  },
+];
 
 // ─── Multimodal mode models ──────────────────────────
 
@@ -558,6 +789,10 @@ const LIP_SYNC_MODELS: ModelRegistryEntry[] = [
 // ─── Registry Map ─────────────────────────────────────
 
 const MODEL_REGISTRY: ModelRegistryEntry[] = [
+  // Image
+  ...IMAGE_GENERATE_MODELS,
+  ...IMAGE_EDIT_MODELS,
+  // Video
   ...BASIC_MODELS,
   ...FRAMES_MODELS,
   ...MULTI_REF_MODELS,

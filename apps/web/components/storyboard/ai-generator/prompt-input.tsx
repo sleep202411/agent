@@ -1,6 +1,7 @@
 import { useTranslations } from "@/src/i18n/i18n";
-import { IconX, IconPencil, IconPlus } from "@tabler/icons-react";
+import { IconPencil } from "@tabler/icons-react";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
+import { ReferenceGroup } from "./reference-group";
 import { cn } from "@/lib/utils";
 import { GenerateButton } from "@/components/ui/generate-button";
 import { SelectControl } from "@/components/ui/schema-field/select-control";
@@ -35,6 +36,7 @@ interface PromptInputProps {
   count: number;
   onCountChange: (v: number) => void;
   referenceImages: { url: string; path: string; label?: string }[];
+  maxReferenceImages?: number;
   onAddReference: () => void;
   onRemoveReference: (idx: number) => void;
   referenceFields?: string[];
@@ -64,6 +66,7 @@ export function PromptInput({
   count,
   onCountChange,
   referenceImages,
+  maxReferenceImages,
   onAddReference,
   onRemoveReference,
   referenceFields,
@@ -79,36 +82,19 @@ export function PromptInput({
   const canSubmit = prompt.trim().length > 0 && !loading;
 
   return (
-    <div className="mx-4 mb-4 p-4 flex gap-2 min-h-0 flex-1 flex-col rounded-xl border border-border/40 bg-muted transition-colors focus-within:border-primary/30">
-      {/* Top row: reference images + edit mode toggle */}
+    <div className="mx-4 mb-4 p-4 flex gap-2 min-h-0 flex-1 flex-col overflow-visible rounded-xl border border-border/40 bg-muted transition-colors focus-within:border-primary/30">
+      {/* Top row: reference group (rendered externally) + edit mode toggle */}
       <div className="flex items-start justify-between">
-        {/* Reference images */}
-        <div className="flex items-center gap-2">
-          {referenceImages.map((img, idx) => {
-            const src = ossUrl(img.url || img.path);
-            return (
-              <div key={idx} className="group relative size-20 overflow-hidden rounded-lg bg-muted">
-                {src && <img src={src} alt="" className="h-full w-full object-cover" />}
-                <button
-                  type="button"
-                  onClick={() => onRemoveReference(idx)}
-                  className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100"
-                >
-                  <IconX className="size-2.5" />
-                </button>
-              </div>
-            );
-          })}
-          {referenceImages.length < 5 && (
-            <button
-              type="button"
-              onClick={onAddReference}
-              className="flex size-20 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-            >
-              <IconPlus className="size-4" />
-              <span className="text-[10px]">{t("referenceImageUpload")}</span>
-            </button>
-          )}
+        {/* Reference group rendered by parent via -mt offset */}
+        <div className="relative z-10 -mt-10">
+          <ReferenceGroup
+            label={t("referenceImageUpload")}
+            items={referenceImages}
+            maxCount={maxReferenceImages ?? 5}
+            onAdd={onAddReference}
+            onRemove={onRemoveReference}
+            resolveUrl={(p) => ossUrl(p) || ""}
+          />
         </div>
 
         {showEditToggle ? (
