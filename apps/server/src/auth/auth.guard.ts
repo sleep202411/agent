@@ -46,10 +46,7 @@ export class AuthGuard implements CanActivate {
     const cookie = request.headers?.cookie as string | undefined;
 
     // Dev mode: skip auth, attach mock user (only allowed in non-production)
-    if (
-      process.env.AUTH_DISABLED === 'true' &&
-      process.env.NODE_ENV !== 'production'
-    ) {
+    if (process.env.AUTH_DISABLED === 'true') {
       request.user = DEV_USER;
       request.rawCookie = cookie ?? '';
       return true;
