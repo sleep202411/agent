@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
+import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
@@ -1176,7 +1177,7 @@ export function AiVideoGeneratorDialog({
               previewUrl={previewUrl}
               badge={previewBadge}
               emptyText={t("videoClickPreview")}
-              className="flex-[6]"
+              className="min-h-0 flex-[6]"
               toolbarActions={videoToolbarActions}
               bottomActions={[
                 {
@@ -1500,23 +1501,14 @@ export function AiVideoGeneratorDialog({
         />
       ) : null}
 
-      <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>{"\u89C6\u9891\u9884\u89C8"}</DialogTitle>
-          </DialogHeader>
-          {previewUrl ? (
-            <video
-              key={`${previewUrl}-fullscreen`}
-              src={previewUrl}
-              controls
-              autoPlay
-              playsInline
-              className="max-h-[80vh] w-full rounded-lg bg-black object-contain"
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <MediaPreviewModal
+        open={fullscreenOpen}
+        onOpenChange={setFullscreenOpen}
+        type="video"
+        src={previewUrl}
+        name={previewItem?.storagePath?.split("/").pop()}
+        link={previewUrl}
+      />
     </>
   );
 }

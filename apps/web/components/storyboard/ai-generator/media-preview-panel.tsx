@@ -46,13 +46,13 @@ export function MediaPreviewPanel({
             ) : null}
 
             {type === "video" ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center bg-black p-2">
+              <div className="absolute inset-0 flex items-center justify-center bg-black p-2">
                 <video
                   key={previewUrl}
                   src={previewUrl}
                   controls
                   playsInline
-                  className="max-h-full max-w-full object-contain"
+                  className="h-full w-full object-contain"
                 />
               </div>
             ) : (
