@@ -17,6 +17,7 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
+import { IconLoader2 } from "@tabler/icons-react";
 import {
   STAGE_CONFIG,
   PLAN_STATUS_CLASS,
@@ -24,6 +25,13 @@ import {
   type IPDetail,
 } from "@/components/ip/ip-mock";
 import { FundingSidebar } from "@/components/ip/ip-detail-panels";
+import { env } from "@/src/env";
+import {
+  useProjectDetail,
+  useProjectVideoLink,
+  useProjectMembers,
+  useProjectJobs,
+} from "@/src/hooks/use-my-projects";
 
 // ─── Section config ──────────────────────────────────
 
@@ -51,10 +59,55 @@ export default function IPDetailPage({ id }: { id: string }) {
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // TODO: fetch by id — using mock for now
-  const ip: IPDetail = MOCK_IP_DETAIL;
+  // Real API data
+  const { data: project, isLoading } = useProjectDetail(id);
+  const { data: videoLink } = useProjectVideoLink(id);
+  const { data: members } = useProjectMembers(id);
+  const { data: jobs } = useProjectJobs(id);
+
+  // Bridge API data to existing IPDetail mock structure (gradual migration)
+  const ip: IPDetail = project
+    ? ({
+        ...MOCK_IP_DETAIL,
+        title: project.name ?? "",
+        desc: project.description ?? "",
+        cover: project.bannerLink
+          ? project.bannerLink.startsWith("http")
+            ? project.bannerLink
+            : `${env.BANNER_BASE_URL}/${project.bannerLink}`
+          : MOCK_IP_DETAIL.cover,
+        story: project.story ?? project.background ?? "",
+        whyThisIP: project.whyThisIP ?? "",
+        tags: (() => {
+          try {
+            const t = JSON.parse(project.tag ?? "[]");
+            return Array.isArray(t) ? t.map(String) : [];
+          } catch {
+            return [];
+          }
+        })(),
+        targetEpisodes: project.targetEpisodes ?? 0,
+        team: (members ?? []).map((m) => ({
+          name: m.nickName || m.userName || "Member",
+          role: m.roleName || "Team",
+          avatar: m.avatar ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar}` : "",
+          level: "",
+          projects: 0,
+          rating: 0,
+        })),
+      } as IPDetail)
+    : MOCK_IP_DETAIL;
+
   const stage = STAGE_CONFIG[ip.stage];
   const StageIcon = STAGE_ICON[ip.stage];
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   const scrollToSection = (key: string) => {
     setActiveSection(key);

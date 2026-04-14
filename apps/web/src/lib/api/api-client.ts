@@ -145,14 +145,83 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     throw new ApiRequestError(`HTTP_${response.status}`, message, response.status);
   }
 
-  const body: ApiResponse<T> = await response.json();
+  const body = await response.json();
 
   const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
   if (!isSuccess) {
     throw new ApiRequestError(body.code ?? "UNKNOWN", body.msg || body.message || "请求失败", 200);
   }
 
-  return body.data;
+  // Different endpoints return data in different fields
+  return (body.data ?? body.info ?? body.path ?? body) as T;
+}
+
+/** POST with application/x-www-form-urlencoded (for Java auth endpoints) */
+async function postForm<T>(
+  path: string,
+  data: Record<string, string>,
+  config: ApiRequestConfig = {}
+): Promise<T> {
+  return request<T>("POST", path, {
+    ...config,
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      ...(config.headers as Record<string, string>),
+    },
+    data: undefined,
+    body: new URLSearchParams(data).toString(),
+  } as unknown as ApiRequestConfig);
+}
+
+/** POST with multipart/form-data (for file uploads) */
+async function upload<T>(
+  path: string,
+  file: File,
+  fieldName = "file",
+  config: ApiRequestConfig = {}
+): Promise<T> {
+  const { timeout = 120_000, headers: customHeaders, ...rest } = config;
+  const formData = new FormData();
+  formData.append(fieldName, file);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path), {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "accept-language": getAcceptLanguage(),
+        ...(customHeaders as Record<string, string>),
+      },
+      body: formData,
+      signal: controller.signal,
+      ...rest,
+    });
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && error.name === "AbortError";
+    throw new ApiRequestError("NETWORK_ERROR", isTimeout ? "请求超时" : "网络连接失败", 0);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.ok) {
+    throw new ApiRequestError(
+      `HTTP_${response.status}`,
+      `HTTP ${response.status}`,
+      response.status
+    );
+  }
+
+  const body = await response.json();
+  const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
+  if (!isSuccess) {
+    throw new ApiRequestError(body.code ?? "UNKNOWN", body.msg || body.message || "上传失败", 200);
+  }
+
+  return (body.data ?? body.info ?? body.path ?? body) as T;
 }
 
 // ============ Public API ============
@@ -163,4 +232,8 @@ export const api = {
   put: <T = unknown>(path: string, config?: ApiRequestConfig) => request<T>("PUT", path, config),
   delete: <T = unknown>(path: string, config?: ApiRequestConfig) =>
     request<T>("DELETE", path, config),
+  postForm: <T = unknown>(path: string, data: Record<string, string>, config?: ApiRequestConfig) =>
+    postForm<T>(path, data, config),
+  upload: <T = unknown>(path: string, file: File, fieldName?: string, config?: ApiRequestConfig) =>
+    upload<T>(path, file, fieldName, config),
 };

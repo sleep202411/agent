@@ -198,7 +198,7 @@ export function StoryboardAiImportDialog({
             <DialogDescription>{ts("aiImportDesc")}</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 p-4">
             <button
               type="button"
               onClick={() => fileRef.current?.click()}

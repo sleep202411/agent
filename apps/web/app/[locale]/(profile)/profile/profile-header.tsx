@@ -1,5 +1,12 @@
 import { useRef, useState } from "react";
-import { IconCamera, IconLoader2, IconLink, IconCopy, IconCheck } from "@tabler/icons-react";
+import {
+  IconCamera,
+  IconLoader2,
+  IconLink,
+  IconCopy,
+  IconCheck,
+  IconPhoto,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -10,40 +17,50 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useTranslations } from "@/src/i18n/i18n";
-import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import { Button } from "@/components/ui/button";
-
-interface UserInfo {
-  nickName?: string;
-  userName?: string;
-  name?: string;
-  headImg?: string;
-  avatar?: string;
-  description?: string;
-  userLevel?: string;
-  [key: string]: unknown;
-}
+import { env } from "@/src/env";
+import { useUploadAvatar, useUploadCover, useReferralCode } from "@/src/hooks/use-user";
+import { useMyCertifications, useCertificationRoles } from "@/src/hooks/use-certification";
+import { AUTH_STATUS } from "@/src/services/certification";
+import { CertificationDialog } from "./certification-dialog";
+import type { UserInfo } from "@/src/services/user";
 
 function resolveAvatarUrl(info: UserInfo | null) {
   const raw = info?.headImg || info?.avatar;
   if (!raw) return "";
-  return buildOssUrl(String(raw));
+  if (raw.startsWith("http")) return raw;
+  const base = env.USER_BASE_URL || env.OSS_BASE_URL;
+  return `${base}/${raw}`;
 }
 
 interface ProfileHeaderProps {
   userInfo: UserInfo | null;
-  onAvatarUploaded: (path: string) => void;
   onEditProfile: () => void;
 }
 
-export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: ProfileHeaderProps) {
+export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const t = useTranslations("profile");
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [generatingLink, setGeneratingLink] = useState(false);
   const [referralLink, setReferralLink] = useState("");
   const [referralDialogOpen, setReferralDialogOpen] = useState(false);
+  const [certDialogOpen, setCertDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const { mutate: doUploadAvatar, isPending: uploadingAvatar } = useUploadAvatar();
+  const { mutate: doUploadCover, isPending: uploadingCover } = useUploadCover();
+  const { mutate: doGetReferralCode, isPending: generatingLink } = useReferralCode();
+  const { data: certifications } = useMyCertifications();
+  const { data: certRoles } = useCertificationRoles();
+
+  // Approved certifications → badges
+  const approvedCerts = (certifications ?? []).filter((c) => c.authStatus === AUTH_STATUS.APPROVED);
+  const certBadges = approvedCerts
+    .map((c) => {
+      const roleName = certRoles?.[String(c.authRoleId)] ?? "";
+      return { id: c.id, name: roleName };
+    })
+    .filter((b) => b.name);
 
   const info = userInfo;
   const displayName = info?.nickName || info?.userName || info?.name || "User";
@@ -51,7 +68,7 @@ export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: Pro
 
   const handleAvatarClick = () => fileInputRef.current?.click();
 
-  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
@@ -65,66 +82,88 @@ export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: Pro
       return;
     }
 
-    setUploadingAvatar(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/content/user/uploadAratar", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-      const body = await res.json();
-      if (body?.code === 200 && body?.path) {
-        onAvatarUploaded(body.path);
-        toast.success(t("avatarUpdated"));
-      } else {
-        toast.error(t("avatarUploadFailed"));
-      }
-    } catch {
-      toast.error(t("avatarUploadFailed"));
-    } finally {
-      setUploadingAvatar(false);
-    }
+    doUploadAvatar(file, {
+      onSuccess: () => toast.success(t("avatarUpdated")),
+      onError: () => toast.error(t("avatarUploadFailed")),
+    });
   };
 
-  const handleGenerateReferralLink = async () => {
-    setGeneratingLink(true);
-    try {
-      const res = await fetch("/user/recommendationcode", { credentials: "include" });
-      const body = await res.json();
-      if ((body?.code === 200 || body?.code === "SUCCESS") && body?.info) {
-        const code = String(body.info);
+  const handleGenerateReferralLink = () => {
+    doGetReferralCode(undefined, {
+      onSuccess: (code) => {
         const link = `${window.location.origin}/register?recommendationCode=${code}`;
         setReferralLink(link);
         setCopied(false);
         setReferralDialogOpen(true);
-      } else {
-        toast.error(t("referralLinkFailed"));
-      }
-    } catch {
-      toast.error(t("referralLinkFailed"));
-    } finally {
-      setGeneratingLink(false);
+      },
+      onError: () => toast.error(t("referralLinkFailed")),
+    });
+  };
+
+  const coverUrl = info?.coverImage
+    ? info.coverImage.startsWith("http")
+      ? info.coverImage
+      : `${env.USER_BASE_URL || env.OSS_BASE_URL}/${info.coverImage}`
+    : "";
+
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    if (!file.type.startsWith("image/")) {
+      toast.error(t("pleaseUploadImage"));
+      return;
     }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(t("coverSizeLimit"));
+      return;
+    }
+    doUploadCover(file, {
+      onSuccess: () => toast.success(t("coverUpdated")),
+      onError: () => toast.error(t("coverUploadFailed")),
+    });
   };
 
   return (
     <>
-      {/* Banner container: background + user info at bottom */}
-      <div className="relative flex h-75 w-full items-end overflow-hidden">
-        {/* Background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(229,34,39,0.2),transparent_50%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(80,120,255,0.15),transparent_50%)]" />
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGRlZnM+PHBhdHRlcm4gaWQ9ImEiIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjAzKSIvPjwvcGF0dGVybj48L2RlZnM+PHJlY3QgZmlsbD0idXJsKCNhKSIgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIvPjwvc3ZnPg==')] opacity-50" />
+      <div className="group/banner relative flex h-75 w-full items-end overflow-hidden">
+        {/* Cover image or default gradient */}
+        {coverUrl ? (
+          <img src={coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+        ) : (
+          <>
+            <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(229,34,39,0.2),transparent_50%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(80,120,255,0.15),transparent_50%)]" />
+          </>
+        )}
         <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/40 to-transparent" />
 
+        {/* Cover upload button */}
+        <button
+          type="button"
+          onClick={() => coverInputRef.current?.click()}
+          disabled={uploadingCover}
+          className="absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-lg bg-black/40 px-3 py-1.5 text-xs text-white/80 opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/60 hover:text-white group-hover/banner:opacity-100"
+        >
+          {uploadingCover ? (
+            <IconLoader2 className="size-3.5 animate-spin" />
+          ) : (
+            <IconPhoto className="size-3.5" />
+          )}
+          {t("changeCover")}
+        </button>
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleCoverChange}
+        />
+
         <div className="relative mx-auto flex w-full max-w-5xl items-end justify-between px-8 pb-6">
-          {/* Left: Avatar + Info */}
           <div className="flex max-w-3xl flex-col gap-3">
             <div className="flex items-center space-x-4">
-              {/* Avatar */}
               <div className="group relative shrink-0">
                 <Avatar className="size-24 border-3 border-white/20 text-3xl shadow-2xl">
                   <AvatarImage src={resolveAvatarUrl(info)} alt={displayName} />
@@ -149,39 +188,48 @@ export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: Pro
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => void handleAvatarChange(e)}
+                  onChange={handleAvatarChange}
                 />
               </div>
 
               <div>
                 <h1 className="text-2xl font-bold text-white">{displayName}</h1>
                 <div className="mt-1 flex items-center gap-1.5">
-                  <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-px text-[10px] font-medium text-green-400">
-                    Free
-                  </span>
-                  <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-px text-[10px] font-medium text-primary">
-                    Creator
-                  </span>
-                  <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-px text-[10px] font-medium text-blue-400">
-                    29,000 Available
-                  </span>
+                  {info?.userLevel && (
+                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-px text-[10px] font-medium text-primary">
+                      {info.userLevel}
+                    </span>
+                  )}
+                  {certBadges.map((badge) => (
+                    <span
+                      key={badge.id}
+                      className="rounded-full border border-green-500/30 bg-green-500/10 px-2 py-px text-[10px] font-medium text-green-400"
+                    >
+                      {badge.name}
+                    </span>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setCertDialogOpen(true)}
+                    className="rounded-full border border-white/20 bg-white/5 px-2 py-px text-[10px] text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                  >
+                    {certBadges.length > 0 ? t("manageCert") : t("addCertification")}
+                  </button>
                 </div>
               </div>
             </div>
 
-            <p className="text-[13px] leading-relaxed text-white/60">
-              {info?.description ||
-                "Subscribe to learn about new product features, the latest in technology, solutions, and updates."}
-            </p>
+            {info?.description && (
+              <p className="text-[13px] leading-relaxed text-white/60">{info.description}</p>
+            )}
           </div>
 
-          {/* Right: Actions */}
           <div className="flex shrink-0 items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               className="border-white/20 bg-white/5 text-white hover:bg-white/10"
-              onClick={() => void handleGenerateReferralLink()}
+              onClick={handleGenerateReferralLink}
               disabled={generatingLink}
             >
               {generatingLink ? (
@@ -203,7 +251,6 @@ export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: Pro
         </div>
       </div>
 
-      {/* Referral Link Dialog */}
       <Dialog open={referralDialogOpen} onOpenChange={setReferralDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -236,6 +283,8 @@ export function ProfileHeader({ userInfo, onAvatarUploaded, onEditProfile }: Pro
           </div>
         </DialogContent>
       </Dialog>
+
+      <CertificationDialog open={certDialogOpen} onOpenChange={setCertDialogOpen} />
     </>
   );
 }

@@ -8,7 +8,6 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
-import { nitro } from "nitro/vite";
 
 const SERVER_URL = process.env.SERVER_URL;
 const JAVA_STUDIO_URL = process.env.JAVA_STUDIO_URL;
@@ -25,27 +24,40 @@ export default defineConfig({
   plugins: [
     tsconfigPaths({ projects: ["./tsconfig.json"] }),
     tailwindcss(),
-    tanstackStart(),
-    viteReact(),
-    nitro({
-      routeRules: {
-        // NestJS server (strip /aurora prefix)
-        "/aurora/**": { proxy: `${SERVER_URL}/**` },
-        // Java Studio service
-        "/api/**": { proxy: `${JAVA_STUDIO_URL}/api/**` },
-        "/anon/**": { proxy: `${JAVA_STUDIO_URL}/anon/**` },
-        "/studio/**": { proxy: `${JAVA_STUDIO_URL}/studio/**` },
-        // Java Content service
-        "/user/**": { proxy: `${JAVA_CONTENT_URL}/user/**` },
-        "/project/**": { proxy: `${JAVA_CONTENT_URL}/project/**` },
-        "/vedio/**": { proxy: `${JAVA_CONTENT_URL}/vedio/**` },
-        "/content/**": { proxy: `${JAVA_CONTENT_URL}/content/**` },
-        // News API — proxy to production
-        "/newsapi/**": { proxy: "https://fizzdragon.com/content/**" },
+    tanstackStart({
+      server: {
+        routeRules: {
+          // NestJS server (strip /aurora prefix)
+          "/aurora/**": { proxy: `${SERVER_URL}/**` },
+          // Java Studio service
+          "/api/**": { proxy: `${JAVA_STUDIO_URL}/api/**` },
+          "/anon/**": { proxy: `${JAVA_STUDIO_URL}/anon/**` },
+          "/studio/**": { proxy: `${JAVA_STUDIO_URL}/studio/**` },
+          // Java Content service
+          "/user/**": { proxy: `${JAVA_CONTENT_URL}/user/**` },
+          "/project/**": { proxy: `${JAVA_CONTENT_URL}/project/**` },
+          "/vedio/**": { proxy: `${JAVA_CONTENT_URL}/vedio/**` },
+          // News API — proxy to production
+          "/newsapi/**": { proxy: "https://fizzdragon.com/content/**" },
+        },
       },
     }),
+    viteReact(),
   ],
   server: {
     port: 3000,
+    proxy: {
+      "/aurora": {
+        target: SERVER_URL,
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/aurora/, ""),
+      },
+      "/api": { target: JAVA_STUDIO_URL, changeOrigin: true },
+      "/anon": { target: JAVA_STUDIO_URL, changeOrigin: true },
+      "/studio": { target: JAVA_STUDIO_URL, changeOrigin: true },
+      "/user": { target: JAVA_CONTENT_URL, changeOrigin: true },
+      "/project": { target: JAVA_CONTENT_URL, changeOrigin: true },
+      "/vedio": { target: JAVA_CONTENT_URL, changeOrigin: true },
+    },
   },
 });
