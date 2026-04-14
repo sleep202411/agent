@@ -310,7 +310,13 @@ function LiftedVideoDialog({
     [row, column, columns, detail]
   );
 
-  const imageCell = row?.shotValues?.find((v) => v.presetColumnKey === "image_path");
+  const imageColumn = columns.find(
+    (c) =>
+      c.presetColumnKey === "image_path" || String(c.columnType ?? "").toUpperCase() === "IMAGE"
+  );
+  const imageCell = imageColumn
+    ? row?.shotValues?.find((v) => String(v.shotColumnId) === String(imageColumn.id))
+    : undefined;
   const defaultReferenceImagePath = getPreferredFilePath(imageCell) ?? "";
 
   const handleGeneratePrompt = useCallback(
