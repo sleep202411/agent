@@ -162,6 +162,7 @@ export function StoryboardFieldSettingsPanel({
 }) {
   const t = useTranslations("storyboard");
   const tc = useTranslations("common");
+  const dispatch = useAppDispatch();
   const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
 
   const [open, setOpen] = useState(false);
@@ -233,7 +234,7 @@ export function StoryboardFieldSettingsPanel({
     const data = await backendApi.post<ShotColumn[]>("/api/user/shotColumn/list", {
       data: { storyBoardId },
     });
-    setColumns(Array.isArray(data) ? data : []);
+    dispatch(setColumns(Array.isArray(data) ? data : []));
   };
 
   const handleToggleVisibility = async (fieldId: string) => {
@@ -241,7 +242,7 @@ export function StoryboardFieldSettingsPanel({
       String(field.id) === fieldId ? { ...field, hide: !field.hide } : field
     );
     setLocalColumns(nextColumns);
-    setColumns(nextColumns);
+    dispatch(setColumns(nextColumns));
 
     try {
       await persistColumnsList(nextColumns);
@@ -308,7 +309,7 @@ export function StoryboardFieldSettingsPanel({
           : field
       );
       setLocalColumns(nextColumns);
-      setColumns(nextColumns);
+      dispatch(setColumns(nextColumns));
       toast.success(t("fieldUpdateSuccess"));
       resetEdit();
     } catch (error) {
@@ -376,7 +377,7 @@ export function StoryboardFieldSettingsPanel({
     const nextColumns = reorderFields(localColumns, draggingFieldId, targetId);
     setDraggingFieldId(null);
     setLocalColumns(nextColumns);
-    setColumns(nextColumns);
+    dispatch(setColumns(nextColumns));
 
     try {
       await persistColumnsList(nextColumns);
