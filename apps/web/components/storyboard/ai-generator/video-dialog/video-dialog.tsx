@@ -417,6 +417,7 @@ export function AiVideoGeneratorDialog({
     }
     initRef.current = true;
 
+    void dispatch(loadServerTasks({ shotColumnId }));
     void dispatch(
       initVideoInstance({
         shotId,
