@@ -1,4 +1,3 @@
-import { createContext, useContext } from "react";
 import { mergeAttributes, Node } from "@tiptap/core";
 import { NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
@@ -8,21 +7,6 @@ import type { NodeViewProps } from "@tiptap/react";
 // ---------------------------------------------------------------------------
 
 export type MentionType = "character" | "scene" | "prop" | "reference";
-
-// ---------------------------------------------------------------------------
-// Context — lets chips display dynamic reference index
-// ---------------------------------------------------------------------------
-
-export interface MentionRefImage {
-  url: string;
-  label?: string;
-}
-
-/** Provide current reference images so chips can show "(参考图 N)" suffix */
-export const MentionRefContext = createContext<{
-  refImages: MentionRefImage[];
-  refLabel: (index: number) => string;
-}>({ refImages: [], refLabel: (i) => `Ref ${i + 1}` });
 
 export interface MentionItem {
   id: string;
@@ -83,8 +67,10 @@ const chevronStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+const audioIconSvg = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+
 function MentionChipView({ node }: NodeViewProps) {
-  const { label, imgUrl } = node.attrs as {
+  const { label, imgUrl, mentionType } = node.attrs as {
     id: string;
     label: string;
     mentionType: MentionType;
@@ -93,17 +79,8 @@ function MentionChipView({ node }: NodeViewProps) {
     model: string;
   };
 
-  const { refImages, refLabel } = useContext(MentionRefContext);
-
-  // If this chip's image is in the reference group, append the index
-  let displayLabel = label;
-  if (imgUrl) {
-    const refIndex = refImages.findIndex((r) => r.url === imgUrl);
-    if (refIndex >= 0) {
-      displayLabel = `${label}（${refLabel(refIndex)}）`;
-    }
-  }
-
+  const displayLabel = label;
+  const isAudio = mentionType === "reference" && !imgUrl;
   const hasAvatar = Boolean(imgUrl);
 
   return (
@@ -123,7 +100,21 @@ function MentionChipView({ node }: NodeViewProps) {
           el.style.boxShadow = "inset 0 0 0 1px rgba(255,255,255,0.15)";
         }}
       >
-        {hasAvatar ? <img src={imgUrl} alt="" style={avatarStyle} /> : null}
+        {hasAvatar ? (
+          <img src={imgUrl} alt="" style={avatarStyle} />
+        ) : isAudio ? (
+          <span
+            style={{
+              ...avatarStyle,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#444",
+              borderRadius: "9999px",
+            }}
+            dangerouslySetInnerHTML={{ __html: audioIconSvg }}
+          />
+        ) : null}
         <span style={nameStyle}>{displayLabel}</span>
         <span style={chevronStyle}>
           <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">

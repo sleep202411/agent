@@ -242,81 +242,85 @@ export function MentionPopover({
                   <span className="text-[12px] text-[#666666]">{tc("loading")}</span>
                 </div>
               ) : (
-                characterDisplayGroups.map((group) => {
-                  const disabled = isCharacterDisabled(group);
-                  const hasVariants = group.items.length > 1;
-                  const isExpanded = expandedCharId === group.id;
-                  const firstItem = group.items[0];
-                  const firstIndex = flattenedItems.findIndex(
-                    (entry) =>
-                      entry.mentionType === "character" &&
-                      entry.id === group.id &&
-                      entry.imgUrl === firstItem.imgUrl
-                  );
-
-                  // Collapsed: show first image only
-                  if (!isExpanded) {
-                    return (
-                      <CompactItem
-                        key={firstItem.key}
-                        imgUrl={firstItem.imgUrl}
-                        label={group.name}
-                        selected={firstIndex === selectedIndex}
-                        disabled={disabled}
-                        disabledHint={disabled ? t("voiceNotConfigured") : undefined}
-                        suffix={
-                          hasVariants ? (
-                            <IconChevronRight className="ml-auto size-3.5 shrink-0 text-[#666666]" />
-                          ) : undefined
-                        }
-                        onClick={() => {
-                          const sel = flattenedItems[firstIndex];
-                          if (sel) onSelectMention(sel);
-                        }}
-                        onContextMenu={
-                          hasVariants
-                            ? (e) => {
-                                e.preventDefault();
-                                setExpandedCharId(group.id);
-                              }
-                            : undefined
-                        }
-                      />
+                characterDisplayGroups
+                  .filter((group) => group.items.some((item) => item.imgUrl))
+                  .map((group) => {
+                    const disabled = isCharacterDisabled(group);
+                    const hasVariants = group.items.length > 1;
+                    const isExpanded = expandedCharId === group.id;
+                    const firstItem = group.items.find((item) => item.imgUrl) ?? group.items[0];
+                    const firstIndex = flattenedItems.findIndex(
+                      (entry) =>
+                        entry.mentionType === "character" &&
+                        entry.id === group.id &&
+                        entry.imgUrl === firstItem.imgUrl
                     );
-                  }
 
-                  // Expanded: show all variants
-                  return (
-                    <div key={group.id} className="rounded-lg bg-[#333333]/60">
-                      {group.items.map((item) => {
-                        const index = flattenedItems.findIndex(
-                          (entry) =>
-                            entry.mentionType === "character" &&
-                            entry.id === group.id &&
-                            entry.imgUrl === item.imgUrl
-                        );
-                        return (
-                          <CompactItem
-                            key={item.key}
-                            imgUrl={item.imgUrl}
-                            label={group.name}
-                            selected={index === selectedIndex}
-                            disabled={disabled}
-                            disabledHint={disabled ? t("voiceNotConfigured") : undefined}
-                            onClick={() => {
-                              const sel = flattenedItems[index];
-                              if (sel) onSelectMention(sel);
-                            }}
-                            onContextMenu={(e) => {
-                              e.preventDefault();
-                              setExpandedCharId(null);
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  );
-                })
+                    // Collapsed: show first image only
+                    if (!isExpanded) {
+                      return (
+                        <CompactItem
+                          key={firstItem.key}
+                          imgUrl={firstItem.imgUrl}
+                          label={group.name}
+                          selected={firstIndex === selectedIndex}
+                          disabled={disabled}
+                          disabledHint={disabled ? t("voiceNotConfigured") : undefined}
+                          suffix={
+                            hasVariants ? (
+                              <IconChevronRight className="ml-auto size-3.5 shrink-0 text-[#666666]" />
+                            ) : undefined
+                          }
+                          onClick={() => {
+                            const sel = flattenedItems[firstIndex];
+                            if (sel) onSelectMention(sel);
+                          }}
+                          onContextMenu={
+                            hasVariants
+                              ? (e) => {
+                                  e.preventDefault();
+                                  setExpandedCharId(group.id);
+                                }
+                              : undefined
+                          }
+                        />
+                      );
+                    }
+
+                    // Expanded: show all variants
+                    return (
+                      <div key={group.id} className="rounded-lg bg-[#333333]/60">
+                        {group.items
+                          .filter((item) => item.imgUrl)
+                          .map((item) => {
+                            const index = flattenedItems.findIndex(
+                              (entry) =>
+                                entry.mentionType === "character" &&
+                                entry.id === group.id &&
+                                entry.imgUrl === item.imgUrl
+                            );
+                            return (
+                              <CompactItem
+                                key={item.key}
+                                imgUrl={item.imgUrl}
+                                label={group.name}
+                                selected={index === selectedIndex}
+                                disabled={disabled}
+                                disabledHint={disabled ? t("voiceNotConfigured") : undefined}
+                                onClick={() => {
+                                  const sel = flattenedItems[index];
+                                  if (sel) onSelectMention(sel);
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  setExpandedCharId(null);
+                                }}
+                              />
+                            );
+                          })}
+                      </div>
+                    );
+                  })
               )}
               {!loadingCharacters && hasMoreCharacters ? (
                 <div className="py-1 text-center">
@@ -350,24 +354,26 @@ export function MentionPopover({
                 </div>
               ) : (
                 <>
-                  {scenes.map((scene) => {
-                    const index = flattenedItems.findIndex(
-                      (entry) => entry.mentionType === "scene" && entry.id === scene.id
-                    );
-                    return (
-                      <CompactItem
-                        key={scene.id}
-                        imgUrl={scene.imgUrl}
-                        icon={<IconPhoto className="size-3.5" />}
-                        label={scene.name}
-                        selected={index === selectedIndex}
-                        onClick={() => {
-                          const selected = flattenedItems[index];
-                          if (selected) onSelectMention(selected);
-                        }}
-                      />
-                    );
-                  })}
+                  {scenes
+                    .filter((scene) => scene.imgUrl)
+                    .map((scene) => {
+                      const index = flattenedItems.findIndex(
+                        (entry) => entry.mentionType === "scene" && entry.id === scene.id
+                      );
+                      return (
+                        <CompactItem
+                          key={scene.id}
+                          imgUrl={scene.imgUrl}
+                          icon={<IconPhoto className="size-3.5" />}
+                          label={scene.name}
+                          selected={index === selectedIndex}
+                          onClick={() => {
+                            const selected = flattenedItems[index];
+                            if (selected) onSelectMention(selected);
+                          }}
+                        />
+                      );
+                    })}
                   {hasMoreScenes ? (
                     <div className="py-1 text-center">
                       <Button
@@ -402,24 +408,26 @@ export function MentionPopover({
                 </div>
               ) : (
                 <>
-                  {propsList.map((prop) => {
-                    const index = flattenedItems.findIndex(
-                      (entry) => entry.mentionType === "prop" && entry.id === prop.id
-                    );
-                    return (
-                      <CompactItem
-                        key={prop.id}
-                        imgUrl={prop.imgUrl}
-                        icon={<IconBox className="size-3.5" />}
-                        label={prop.name}
-                        selected={index === selectedIndex}
-                        onClick={() => {
-                          const selected = flattenedItems[index];
-                          if (selected) onSelectMention(selected);
-                        }}
-                      />
-                    );
-                  })}
+                  {propsList
+                    .filter((prop) => prop.imgUrl)
+                    .map((prop) => {
+                      const index = flattenedItems.findIndex(
+                        (entry) => entry.mentionType === "prop" && entry.id === prop.id
+                      );
+                      return (
+                        <CompactItem
+                          key={prop.id}
+                          imgUrl={prop.imgUrl}
+                          icon={<IconBox className="size-3.5" />}
+                          label={prop.name}
+                          selected={index === selectedIndex}
+                          onClick={() => {
+                            const selected = flattenedItems[index];
+                            if (selected) onSelectMention(selected);
+                          }}
+                        />
+                      );
+                    })}
                   {hasMoreProps ? (
                     <div className="py-1 text-center">
                       <Button

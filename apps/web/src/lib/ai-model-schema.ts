@@ -673,6 +673,16 @@ export interface VideoModeInputField {
 
 // ── Mode config ─────────────────────────────────────
 
+/** Describes how this mode uses reference images for backfill/truncation */
+export interface VideoModeRefConfig {
+  /** Which references field to backfill into (e.g. "referenceImages", "firstFrames") */
+  field: string;
+  /** Maximum number of items allowed */
+  maxCount: number;
+  /** Whether to backfill from prompt mentions on open/mode switch */
+  backfillFromPrompt?: boolean;
+}
+
 export interface VideoModeConfig {
   /** Mode identifier (matches VideoMode type) */
   id: string;
@@ -684,6 +694,8 @@ export interface VideoModeConfig {
   payload: VideoModePayloadField[];
   /** Cost calculation rules */
   cost: CostConfig;
+  /** Reference group configuration (backfill + maxCount) */
+  refConfig?: VideoModeRefConfig;
 }
 
 // ── Functions ───────────────────────────────────────

@@ -169,14 +169,11 @@ export function PromptInput({
           className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
           onSubmitShortcut={onSubmit}
           submitMode="enter"
-          referenceMedia={referenceImages.map((r, i) => {
-            const idx = `${t("referenceImage")} ${i + 1}`;
-            return {
-              url: r.url || ossUrl(r.path) || "",
-              path: r.path,
-              label: r.label ? `${r.label}（${idx}）` : idx,
-            };
-          })}
+          referenceMedia={referenceImages.map((r) => ({
+            url: r.url || ossUrl(r.path) || "",
+            path: r.path,
+            label: r.label || r.path.split("/").pop() || "media",
+          }))}
         />
       </div>
 

@@ -322,6 +322,7 @@ export function getShotPromptContent(
 
   if (
     presetKey === "image_prompt" ||
+    presetKey === "video_prompt" ||
     presetKey === "description" ||
     columnType === "RICH_TEXT" ||
     columnType === "RICHTEXT" ||

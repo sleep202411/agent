@@ -1048,10 +1048,8 @@ export function AiVideoGeneratorDialog({
   const handleMentionInserted = useCallback(
     (item: { imgUrl?: string; name: string; mentionType: string }) => {
       if (!item.imgUrl) return;
-      // Skip if already in referenceImages
       const exists = referenceImages.some((r) => (r.url || ossUrl(r.path)) === item.imgUrl);
       if (exists) return;
-      // Respect max count for current mode
       if (referenceImages.length >= refMaxCount) return;
       dispatch(
         setVideoReferences({
@@ -1063,6 +1061,80 @@ export function AiVideoGeneratorDialog({
     },
     [dispatch, key, referenceImages, refMaxCount]
   );
+
+  // ─── Backfill: prompt → reference group (on open + mode switch) ──
+  const backfillRefsFromPrompt = useCallback(() => {
+    const mentionRegex = /<mention\s+[^>]*imgUrl="([^"]+)"[^>]*>([^<]*)<\/mention>/gi;
+    let match: RegExpExecArray | null;
+    const existing = new Set(referenceImages.map((r) => r.url || ossUrl(r.path)));
+    const newItems: { url: string; path: string; label: string }[] = [];
+    const maxCount = uploadMode === "multimodal" ? 12 : 1;
+    const available = maxCount - referenceImages.length;
+
+    while ((match = mentionRegex.exec(prompt)) !== null && newItems.length < available) {
+      const url = match[1];
+      const label = match[2] || url.split("/").pop() || "media";
+      if (url && !existing.has(url)) {
+        existing.add(url);
+        newItems.push({ url, path: url, label });
+      }
+    }
+
+    if (newItems.length > 0) {
+      dispatch(
+        setVideoReferences({
+          key,
+          field: "referenceImages",
+          value: [...referenceImages, ...newItems],
+        })
+      );
+    }
+  }, [dispatch, key, prompt, referenceImages, uploadMode]);
+
+  // ─── Backfill reference group from prompt mentions on open + mode switch ──
+  // Also truncate reference group when maxCount decreases on mode switch
+  const backfillKeyRef = useRef("");
+  useEffect(() => {
+    if (!open) {
+      backfillKeyRef.current = "";
+      return;
+    }
+    const backfillKey = `${activeMode}`;
+    if (backfillKeyRef.current === backfillKey) return;
+    backfillKeyRef.current = backfillKey;
+
+    // Only backfill referenceImages for modes that use it
+    const modesWithRefImages = ["reference", "multimodal"];
+    if (!modesWithRefImages.includes(activeMode)) return;
+
+    const maxCount = activeMode === "multimodal" ? 12 : 1;
+
+    // Truncate if over limit
+    if (referenceImages.length > maxCount) {
+      dispatch(
+        setVideoReferences({
+          key,
+          field: "referenceImages",
+          value: referenceImages.slice(0, maxCount),
+        })
+      );
+      return;
+    }
+
+    // Backfill from prompt mentions
+    if (prompt && prompt.includes("<mention")) {
+      backfillRefsFromPrompt();
+    }
+  }, [
+    open,
+    prompt,
+    activeMode,
+    uploadMode,
+    referenceImages,
+    backfillRefsFromPrompt,
+    dispatch,
+    key,
+  ]);
 
   return (
     <>
@@ -1267,14 +1339,11 @@ export function AiVideoGeneratorDialog({
                 minHeight={96}
                 maxHeight={240}
                 className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
-                referenceMedia={referenceImages.map((r, i) => {
-                  const idx = `${t("referenceImage")} ${i + 1}`;
-                  return {
-                    url: r.url || ossUrl(r.path),
-                    path: r.path,
-                    label: r.label ? `${r.label}（${idx}）` : idx,
-                  };
-                })}
+                referenceMedia={referenceImages.map((r) => ({
+                  url: r.url || ossUrl(r.path),
+                  path: r.path,
+                  label: r.label || r.path.split("/").pop() || "media",
+                }))}
                 onMentionInserted={handleMentionInserted}
               />
             </div>

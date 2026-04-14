@@ -5,7 +5,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/src/store";
 import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
-import { MentionNode, MentionRefContext } from "./mention-node";
+import { MentionNode } from "./mention-node";
 import type { MentionItem, MentionType } from "./mention-node";
 import {
   fetchAssetList,
@@ -178,38 +178,44 @@ export function MentionEditor({
     });
 
     characterDisplayGroups.forEach((group) => {
-      group.items.forEach((item, index) => {
+      group.items
+        .filter((item) => item.imgUrl)
+        .forEach((item, index) => {
+          items.push({
+            key: `${group.id}-${index}`,
+            id: group.id,
+            name: group.name,
+            mentionType: "character",
+            imgUrl: item.imgUrl,
+            voiceId: group.voiceId,
+            model: group.model,
+          });
+        });
+    });
+
+    scenes
+      .filter((s) => s.imgUrl)
+      .forEach((scene) => {
         items.push({
-          key: `${group.id}-${index}`,
-          id: group.id,
-          name: group.name,
-          mentionType: "character",
-          imgUrl: item.imgUrl,
-          voiceId: group.voiceId,
-          model: group.model,
+          key: `scene-${scene.id}`,
+          id: scene.id,
+          name: scene.name,
+          mentionType: "scene",
+          imgUrl: scene.imgUrl,
         });
       });
-    });
 
-    scenes.forEach((scene) => {
-      items.push({
-        key: `scene-${scene.id}`,
-        id: scene.id,
-        name: scene.name,
-        mentionType: "scene",
-        imgUrl: scene.imgUrl,
+    propsList
+      .filter((p) => p.imgUrl)
+      .forEach((prop) => {
+        items.push({
+          key: `prop-${prop.id}`,
+          id: prop.id,
+          name: prop.name,
+          mentionType: "prop",
+          imgUrl: prop.imgUrl,
+        });
       });
-    });
-
-    propsList.forEach((prop) => {
-      items.push({
-        key: `prop-${prop.id}`,
-        id: prop.id,
-        name: prop.name,
-        mentionType: "prop",
-        imgUrl: prop.imgUrl,
-      });
-    });
 
     return items;
   }, [referenceMedia, characterDisplayGroups, propsList, scenes]);
@@ -1035,28 +1041,18 @@ export function MentionEditor({
   // Render
   // -----------------------------------------------------------------------
 
-  const refContextValue = useMemo(
-    () => ({
-      refImages: (referenceMedia ?? []).map((r) => ({ url: r.url })),
-      refLabel: (i: number) => `${t("referenceImage")} ${i + 1}`,
-    }),
-    [referenceMedia, t]
-  );
-
   return (
     <>
-      <MentionRefContext.Provider value={refContextValue}>
-        <div onDoubleClick={onStartEdit} ref={editorContainerRef}>
-          <div className="relative min-h-[2rem]">
-            {isEmpty && placeholder ? (
-              <div className="pointer-events-none absolute left-0 top-0 text-xs leading-relaxed text-muted-foreground/30">
-                {placeholder}
-              </div>
-            ) : null}
-            <EditorContent editor={editor} />
-          </div>
+      <div onDoubleClick={onStartEdit} ref={editorContainerRef}>
+        <div className="relative min-h-[2rem]">
+          {isEmpty && placeholder ? (
+            <div className="pointer-events-none absolute left-0 top-0 text-xs leading-relaxed text-muted-foreground/30">
+              {placeholder}
+            </div>
+          ) : null}
+          <EditorContent editor={editor} />
         </div>
-      </MentionRefContext.Provider>
+      </div>
 
       {mounted && showMentionPopover ? (
         <MentionPopover
