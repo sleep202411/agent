@@ -202,6 +202,17 @@ export function TimelineView() {
     [actionShotId, shots]
   );
 
+  const actionShotIndex = useMemo(
+    () => shots.findIndex((shot) => shot.id === actionShotId),
+    [actionShotId, shots]
+  );
+  const handlePrevShot =
+    actionShotIndex > 0 ? () => setActionShotId(shots[actionShotIndex - 1].id) : undefined;
+  const handleNextShot =
+    actionShotIndex >= 0 && actionShotIndex < shots.length - 1
+      ? () => setActionShotId(shots[actionShotIndex + 1].id)
+      : undefined;
+
   const imagePromptContext = useMemo(() => {
     if (!actionShot) return { prompt: "", referenceFields: [], imagePromptColumnId: "" };
     return buildImagePromptContext(actionShot.row, columnMap.imageColumn, columns, detail);
@@ -979,6 +990,8 @@ export function TimelineView() {
           referenceFields={imagePromptContext.referenceFields}
           appliedPaths={getAllFilePaths(actionShot.imageCell)}
           preferredPath={getPreferredFile(actionShot.imageCell)?.path ?? ""}
+          onPrevShot={handlePrevShot}
+          onNextShot={handleNextShot}
           onGeneratePrompt={(prompt) => {
             if (imagePromptContext.imagePromptColumnId) {
               void persistTextCell(actionShot.id, imagePromptContext.imagePromptColumnId, prompt);
@@ -1008,6 +1021,8 @@ export function TimelineView() {
           referenceFields={videoPromptContext.referenceFields}
           appliedPaths={getAllFilePaths(actionShot.videoCell)}
           preferredPath={getPreferredFile(actionShot.videoCell)?.path ?? ""}
+          onPrevShot={handlePrevShot}
+          onNextShot={handleNextShot}
           onGeneratePrompt={(prompt) => {
             if (videoPromptContext.videoPromptColumnId) {
               void persistTextCell(actionShot.id, videoPromptContext.videoPromptColumnId, prompt);
