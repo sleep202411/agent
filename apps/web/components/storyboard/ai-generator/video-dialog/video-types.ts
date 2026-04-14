@@ -5,7 +5,8 @@ export type { RawAiModel, AssetRecord };
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-export const API_PATH_VIDEO = "/api/ai/video/generate/basic";
+/** @deprecated Use VideoModeConfig from ai-model-schema.ts instead */
+export const API_PATH_VIDEO = "/api/ai/task/video/generate/basic";
 export const MAX_CONCURRENT = 4;
 
 // ── Type definitions ───────────────────────────────────────────────────

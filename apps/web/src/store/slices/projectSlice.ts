@@ -24,12 +24,10 @@ import type {
   VideoResultItem,
 } from "@/components/storyboard/ai-generator/video-dialog/video-types";
 import {
-  getModePath,
   ossUrl,
   toHistoryItem,
 } from "@/components/storyboard/ai-generator/video-dialog/video-types";
 import type { RawAiModel, AssetRecord } from "@/src/types/workspace";
-import { getRawAiModelsFromCache } from "@/src/hooks/use-ai-models";
 
 // ─── Re-export video types used by consumers ──────────
 export type { VideoResultItem, ReferenceAsset, MultiRefType, SimpleMode, EditMode, VideoMode };
@@ -645,15 +643,11 @@ function createDefaultAiAudioForm(): AiAudioFormNestedState {
 // ─── AI Video Form State (nested) ────────────────────
 
 interface AiVideoFormNestedState {
-  modelsByMode: Partial<Record<VideoMode, RawAiModel[]>>;
-  modelsLoadedForMode: Partial<Record<VideoMode, boolean>>;
   instances: Record<string, VideoInstanceState>;
 }
 
 function createDefaultAiVideoForm(): AiVideoFormNestedState {
   return {
-    modelsByMode: {},
-    modelsLoadedForMode: {},
     instances: {},
   };
 }
@@ -948,33 +942,6 @@ export const deleteImageItem = createAsyncThunk<
 });
 
 // ─── AI Video Form Thunks ─────────────────────────────
-
-export const loadVideoModels = createAsyncThunk<
-  void,
-  { mode: VideoMode },
-  { state: RootState; dispatch: AppDispatch }
->("project/loadVideoModels", async ({ mode }, { getState, dispatch }) => {
-  const inst = selectCurrentInstance(getState());
-  if (inst.aiVideoForm.modelsLoadedForMode[mode]) return;
-
-  // Try preloaded cache first
-  const modePath = getModePath(mode);
-  const cached = getRawAiModelsFromCache(modePath) as RawAiModel[];
-  if (cached.length > 0) {
-    dispatch(setVideoModelsByMode({ mode, models: cached }));
-    return;
-  }
-
-  try {
-    const res = await backendApi.post<RawAiModel[]>(
-      `/api/ai/record/model/list?path=${encodeURIComponent(modePath)}`
-    );
-    const list = Array.isArray(res) ? res : [];
-    dispatch(setVideoModelsByMode({ mode, models: list }));
-  } catch (err) {
-    console.error("[projectSlice] loadVideoModels failed:", err);
-  }
-});
 
 export const loadVideoHistory = createAsyncThunk<
   void,
@@ -1755,16 +1722,6 @@ export const projectSlice = createSlice({
       };
     },
 
-    setVideoModelsByMode: (
-      state,
-      action: PayloadAction<{ mode: VideoMode; models: RawAiModel[] }>
-    ) => {
-      const inst = getInstance(state);
-      if (!inst) return;
-      inst.aiVideoForm.modelsByMode[action.payload.mode] = action.payload.models;
-      inst.aiVideoForm.modelsLoadedForMode[action.payload.mode] = true;
-    },
-
     setVideoSavedModel: (state, action: PayloadAction<{ key: string; model: string }>) => {
       const inst = getInstance(state);
       if (!inst) return;
@@ -1938,7 +1895,6 @@ export const {
   setVideoHistory,
   setVideoHistoryLoading,
   removeVideoHistoryItem,
-  setVideoModelsByMode,
   setVideoSavedModel,
   // AI Audio Form actions
   setAudioModelsLoaded,
