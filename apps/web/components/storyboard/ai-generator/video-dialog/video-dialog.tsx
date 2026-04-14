@@ -414,6 +414,23 @@ export function AiVideoGeneratorDialog({
       // Already initialized, just reload history + server tasks
       void dispatch(loadVideoHistory({ shotId, colId: shotColumnId }));
       void dispatch(loadServerTasks({ shotColumnId }));
+      // Sync defaultReferenceImage if cell image changed since last open
+      if (defaultReferenceImage) {
+        const refs = instance?.references?.referenceImages ?? [];
+        const alreadyHas = refs.some((r) => r.path === defaultReferenceImage);
+        if (!alreadyHas) {
+          dispatch(
+            setVideoReferences({
+              key,
+              field: "referenceImages",
+              value: [
+                { url: ossUrl(defaultReferenceImage) ?? "", path: defaultReferenceImage },
+                ...refs,
+              ],
+            })
+          );
+        }
+      }
       return;
     }
     initRef.current = true;
