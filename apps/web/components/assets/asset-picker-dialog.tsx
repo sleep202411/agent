@@ -75,7 +75,7 @@ export function AssetPickerDialog({
   const assetTypes = Array.isArray(assetTypeProp) ? assetTypeProp : [assetTypeProp];
   const [activeAssetType, setActiveAssetType] = useState<AssetRecordType>(assetTypes[0]);
   const assetType = activeAssetType;
-  const [tab, setTab] = useState<PickerTab>("uploads");
+  const [tab, setTab] = useState<PickerTab>("ai");
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -279,11 +279,11 @@ export function AssetPickerDialog({
 
           {/* Source tabs */}
           <div className="flex shrink-0 items-center gap-2 px-4 pt-4">
-            <TabButton active={tab === "uploads"} onClick={() => setTab("uploads")}>
-              {t("recentUploads")}
-            </TabButton>
             <TabButton active={tab === "ai"} onClick={() => setTab("ai")}>
               {t("aiGenerated")}
+            </TabButton>
+            <TabButton active={tab === "uploads"} onClick={() => setTab("uploads")}>
+              {t("recentUploads")}
             </TabButton>
           </div>
 
