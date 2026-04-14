@@ -264,7 +264,7 @@ export function StoryboardAiImportDialog({
         open={Boolean(preview)}
         onOpenChange={(nextOpen) => (!nextOpen ? closePreviewDialog() : undefined)}
       >
-        <DialogContent className="max-w-[95vw]">
+        <DialogContent className="max-w-[min(95vw,1200px)]">
           <DialogHeader className="border-b border-border/70 pb-4">
             <DialogTitle>{ts("aiImportPreviewTitle")}</DialogTitle>
             <DialogDescription>{ts("aiImportPreviewDesc")}</DialogDescription>
@@ -274,9 +274,9 @@ export function StoryboardAiImportDialog({
             <div className="space-y-4">
               <div className="max-h-[68vh] overflow-auto rounded-2xl border border-border">
                 <div
-                  className="grid min-w-full"
+                  className="grid"
                   style={{
-                    gridTemplateColumns: `repeat(${preview.headers.length}, minmax(180px, 1fr)) 72px`,
+                    gridTemplateColumns: `repeat(${preview.headers.length}, minmax(100px, 1fr)) 52px`,
                   }}
                 >
                   {preview.headers.map((header, index) => (
@@ -426,9 +426,9 @@ function PreviewRow({
               <button
                 type="button"
                 onClick={() => onStartEdit(cellIndex)}
-                className="flex min-h-16 w-full items-start rounded-lg px-1 py-1 text-left text-sm text-foreground hover:bg-white/5"
+                className="flex max-h-40 w-full items-start overflow-hidden rounded-lg px-1 py-1 text-left text-sm text-foreground hover:bg-white/5"
               >
-                <span className="whitespace-pre-wrap break-words">
+                <span className="line-clamp-6 whitespace-pre-wrap break-words">
                   {stripTags(row[cellIndex] || "") || "-"}
                 </span>
               </button>
