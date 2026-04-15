@@ -26,6 +26,7 @@ import { useAppDispatch, useAppSelector } from "@/src/store";
 import { logout } from "@/src/store/slices/authSlice";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
+import { useCredits } from "@/src/hooks/use-user";
 
 export function UserMenu() {
   const tc = useTranslations("common");
@@ -40,6 +41,7 @@ export function UserMenu() {
 
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const { data: credits } = useCredits();
 
   const displayName = user?.nickname || "User";
   const displayEmail = user?.email || "";
@@ -96,7 +98,7 @@ export function UserMenu() {
           <div className="px-4 py-3">
             <div className="mb-3 flex items-center gap-2">
               <IconCredits className="size-4 text-primary" />
-              <span className="text-xl font-bold">100</span>
+              <span className="text-xl font-bold">{credits?.toLocaleString() ?? "—"}</span>
               <span className="text-xs text-muted-foreground">{tc("creditsLeft")}</span>
             </div>
             <div className="flex gap-2">
