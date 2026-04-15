@@ -34,6 +34,7 @@ import {
   extractMentionsFromHtml,
   autoSelectReferences,
 } from "@/components/storyboard/editor/build-reference-map";
+import { getModeRefConfig, countAllRefs, findAvailableSlot } from "./mode-ref-config";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import type { ToolbarAction } from "@/components/ui/floating-toolbar";
@@ -1083,26 +1084,52 @@ export function AiVideoGeneratorDialog({
     [dispatch, key]
   );
 
-  // ─── Auto-add @mentioned character images to referenceImages ──
-  const refMaxCount = uploadMode === "multimodal" ? 12 : 1;
+  // ─── Mode-aware reference config ──
+  const modeRefConfig = useMemo(() => getModeRefConfig(activeMode), [activeMode]);
+  const refTotalCount = useMemo(
+    () => countAllRefs(references as unknown as Record<string, unknown[]>, modeRefConfig),
+    [references, modeRefConfig]
+  );
+  const refIsFull = refTotalCount >= modeRefConfig.totalMax;
+
+  // ─── Auto-add @mentioned character images to available slot ──
   const handleMentionInserted = useCallback(
     (item: { imgUrl?: string; name: string; mentionType: string }) => {
       if (!item.imgUrl) return;
-      const exists = referenceImages.some((r) => (r.url || ossUrl(r.path)) === item.imgUrl);
-      if (exists) return;
-      if (referenceImages.length >= refMaxCount) {
+
+      // Check duplicates across all slots
+      const allRefs = modeRefConfig.slots.flatMap((slot) => {
+        const arr = (references as Record<string, ReferenceAsset[]>)[slot.field];
+        return Array.isArray(arr) ? arr : [];
+      });
+      if (allRefs.some((r) => (r.url || ossUrl(r.path)) === item.imgUrl)) return;
+
+      // Find available slot for this media type
+      const mediaType = /\.(mp4|webm|mov)(\?|$)/i.test(item.imgUrl)
+        ? ("video" as const)
+        : /\.(mp3|wav|ogg|aac)(\?|$)/i.test(item.imgUrl)
+          ? ("audio" as const)
+          : ("image" as const);
+      const slot = findAvailableSlot(
+        references as unknown as Record<string, unknown[]>,
+        modeRefConfig,
+        mediaType
+      );
+      if (!slot) {
         toast.warning(t("referenceGroupFull"));
         return;
       }
+
+      const existing = (references as Record<string, ReferenceAsset[]>)[slot.field] ?? [];
       dispatch(
         setVideoReferences({
           key,
-          field: "referenceImages",
-          value: [...referenceImages, { url: item.imgUrl, path: item.imgUrl, label: item.name }],
+          field: slot.field,
+          value: [...existing, { url: item.imgUrl, path: item.imgUrl, label: item.name }],
         })
       );
     },
-    [dispatch, key, referenceImages, refMaxCount]
+    [dispatch, key, references, modeRefConfig, t]
   );
 
   // ─── Backfill: prompt → reference group (on open + mode switch) ──
@@ -1111,8 +1138,7 @@ export function AiVideoGeneratorDialog({
     let match: RegExpExecArray | null;
     const existing = new Set(referenceImages.map((r) => r.url || ossUrl(r.path)));
     const newItems: { url: string; path: string; label: string }[] = [];
-    const maxCount = uploadMode === "multimodal" ? 12 : 1;
-    const available = maxCount - referenceImages.length;
+    const available = modeRefConfig.totalMax - refTotalCount;
 
     while ((match = mentionRegex.exec(prompt)) !== null && newItems.length < available) {
       const url = match[1];
@@ -1146,19 +1172,17 @@ export function AiVideoGeneratorDialog({
     if (backfillKeyRef.current === backfillKey) return;
     backfillKeyRef.current = backfillKey;
 
-    // Only backfill referenceImages for modes that use it
-    const modesWithRefImages = ["reference", "multimodal"];
-    if (!modesWithRefImages.includes(activeMode)) return;
-
-    const maxCount = activeMode === "multimodal" ? 12 : 1;
+    // Only backfill for modes that have referenceImages slot
+    const refSlot = modeRefConfig.slots.find((s) => s.field === "referenceImages");
+    if (!refSlot) return;
 
     // Truncate if over limit
-    if (referenceImages.length > maxCount) {
+    if (referenceImages.length > refSlot.maxCount) {
       dispatch(
         setVideoReferences({
           key,
           field: "referenceImages",
-          value: referenceImages.slice(0, maxCount),
+          value: referenceImages.slice(0, refSlot.maxCount),
         })
       );
       return;
@@ -1181,11 +1205,16 @@ export function AiVideoGeneratorDialog({
 
   // ─── Reference map: sync prompt chips ↔ reference group ──
   const promptMentions = useMemo(() => extractMentionsFromHtml(prompt), [prompt]);
+  const allActiveRefs = useMemo(() => {
+    return modeRefConfig.slots.flatMap((slot) => {
+      const arr = (references as Record<string, ReferenceAsset[]>)[slot.field];
+      return Array.isArray(arr) ? arr : [];
+    });
+  }, [references, modeRefConfig]);
   const referenceMap: ReferenceMap = useMemo(
-    () => buildReferenceMap(referenceImages, promptMentions),
-    [referenceImages, promptMentions]
+    () => buildReferenceMap(allActiveRefs, promptMentions),
+    [allActiveRefs, promptMentions]
   );
-  const refIsFull = referenceImages.length >= refMaxCount;
   const referenceMapCtx = useMemo(
     () => ({ map: referenceMap, isFull: refIsFull }),
     [referenceMap, refIsFull]
