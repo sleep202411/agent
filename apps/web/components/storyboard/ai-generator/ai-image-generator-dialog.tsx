@@ -518,9 +518,10 @@ export function AiImageGeneratorDialog({
 
   // ─── Reference map: sync prompt chips ↔ reference group ──
   const promptMentions = useMemo(() => extractMentionsFromHtml(formData.prompt), [formData.prompt]);
+  const refPrefix = t("referenceImage");
   const referenceMap: ReferenceMap = useMemo(
-    () => buildReferenceMap(formData.referenceImages, promptMentions),
-    [formData.referenceImages, promptMentions]
+    () => buildReferenceMap(formData.referenceImages, promptMentions, refPrefix),
+    [formData.referenceImages, promptMentions, refPrefix]
   );
   const refIsFull = formData.referenceImages.length >= maxRefImages;
   const referenceMapCtx = useMemo(

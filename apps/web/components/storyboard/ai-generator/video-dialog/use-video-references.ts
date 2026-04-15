@@ -290,7 +290,7 @@ export function useVideoReferences({
       if (!prompt && defaultPrompt) return; // wait for init to write prompt
 
       refInitDoneRef.current = true;
-      const refs: Array<{ url: string; path: string }> = [];
+      const refs: Array<{ url: string; path: string; label?: string }> = [];
 
       if (prompt) {
         const mentionRegex = /<mention\s+([^>]*)>([^<]*)<\/mention>/gi;
@@ -384,9 +384,10 @@ export function useVideoReferences({
 
   // ─── Reference map ──
   const promptMentions = useMemo(() => extractMentionsFromHtml(prompt), [prompt]);
+  const refPrefix = t("referenceImage");
   const referenceMap: ReferenceMap = useMemo(
-    () => buildReferenceMap(referenceImages, promptMentions),
-    [referenceImages, promptMentions]
+    () => buildReferenceMap(referenceImages, promptMentions, refPrefix),
+    [referenceImages, promptMentions, refPrefix]
   );
   const referenceMapCtx = useMemo(
     () => ({ map: referenceMap, isFull: refIsFull }),

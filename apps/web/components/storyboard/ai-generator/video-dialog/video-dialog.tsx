@@ -1005,7 +1005,7 @@ export function AiVideoGeneratorDialog({
                   referenceMedia={referenceImages.map((r, i) => ({
                     url: r.url || ossUrl(r.path),
                     path: r.path,
-                    label: r.label || `参考图 ${i + 1}`,
+                    label: r.label || `${t("referenceImage")} ${i + 1}`,
                   }))}
                   onMentionInserted={videoRefs.handleMentionInserted}
                   mentionDisabled={videoRefs.refIsFull}

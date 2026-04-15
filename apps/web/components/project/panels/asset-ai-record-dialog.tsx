@@ -270,7 +270,7 @@ export function AssetAiRecordDialog({
 
         <div className="flex h-[520px] gap-5 p-5">
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="grid flex-1 auto-rows-[1fr] grid-cols-4 content-start gap-3 overflow-y-auto rounded-lg border border-dashed border-border bg-muted/10 p-3">
+            <div className="grid flex-1 grid-cols-4 content-start gap-3 overflow-y-auto rounded-lg border border-dashed border-border bg-muted/10 p-3">
               <button
                 type="button"
                 onClick={() => void handleGenerate()}

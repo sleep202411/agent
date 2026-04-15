@@ -172,7 +172,7 @@ export function MentionEditor({
       items.push({
         key: `ref-${ref.path}-${i}`,
         id: ref.path,
-        name: ref.label || `参考图 ${i + 1}`,
+        name: ref.label || `${t("referenceImage")} ${i + 1}`,
         mentionType: "reference",
         imgUrl: ref.url,
       });
