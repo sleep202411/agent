@@ -170,12 +170,7 @@ export function renderMentionPreviewHtml(text: string) {
     const key = `__MENTION_PLACEHOLDER_${index}__`;
     const typeMatch = String(attrStr).match(/type="([^"]*)"/);
     const type = (typeMatch?.[1] || "character") as MentionType;
-    const styles =
-      type === "scene"
-        ? "bg-green-500/10 text-green-600 dark:text-green-400"
-        : type === "prop"
-          ? "bg-orange-500/10 text-orange-600 dark:text-orange-400"
-          : "bg-primary/10 text-primary";
+    const styles = "bg-primary/10 text-primary";
     placeholders.push({
       key,
       html: `<span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${styles}">@${escapeHtml(String(name))}</span>`,
