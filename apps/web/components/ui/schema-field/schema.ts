@@ -145,9 +145,24 @@ export function normalizeAiModel(raw: RawAiModel, locale = "zh-CN"): AiModel {
       type: "object",
       properties,
     },
-    maxImages: typeof desc.maxImages === "number" ? desc.maxImages : 3,
-    maxVideos: typeof desc.maxVideos === "number" ? desc.maxVideos : 0,
-    maxAudios: typeof desc.maxAudios === "number" ? desc.maxAudios : 0,
+    maxImages:
+      typeof desc.maxImages === "number"
+        ? desc.maxImages
+        : raw.path?.includes("multimodalvideo")
+          ? 9
+          : 3,
+    maxVideos:
+      typeof desc.maxVideos === "number"
+        ? desc.maxVideos
+        : raw.path?.includes("multimodalvideo")
+          ? 3
+          : 0,
+    maxAudios:
+      typeof desc.maxAudios === "number"
+        ? desc.maxAudios
+        : raw.path?.includes("multimodalvideo")
+          ? 3
+          : 0,
   };
 }
 

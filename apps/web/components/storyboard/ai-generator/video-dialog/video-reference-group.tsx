@@ -277,6 +277,7 @@ export function VideoReferencePanel({
       <ReferenceGroup
         label={t("addMedia")}
         items={referenceImages}
+        {...videoResolveProps}
         maxCount={maxImages}
         onAdd={() => onOpenPicker("multimodalImages")}
         onRemove={(index) => {
@@ -290,6 +291,7 @@ export function VideoReferencePanel({
     <ReferenceGroup
       label={t("referenceImage")}
       items={referenceImages}
+      {...videoResolveProps}
       maxCount={maxImages}
       onAdd={() => onOpenPicker("referenceImages")}
       onRemove={(index) => onSetReferenceImages(referenceImages.filter((_, i) => i !== index))}
