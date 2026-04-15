@@ -16,11 +16,8 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import {
-  getModelRegistryEntry,
-  getRegistryModels,
-  getModeConfig,
-} from "@/components/ui/schema-field/schema";
+import { getModeConfig } from "@/components/ui/schema-field/schema";
+import { useAiModels } from "@/src/hooks/use-ai-models";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
@@ -54,8 +51,6 @@ import {
   selectCurrentInstance,
   setEpisodes,
 } from "@/src/store/slices/projectSlice";
-
-const EMPTY_AI_MODELS: never[] = [];
 
 interface AiImageGeneratorDialogProps {
   open: boolean;
@@ -165,28 +160,20 @@ export function AiImageGeneratorDialog({
 
   const allResults = useAppSelector((s) => selectAllImageResults(s, shotId, shotColumnId));
 
-  // Models from frontend registry, driven by imageMode
-  const registryModels = useMemo(() => getRegistryModels(imageMode), [imageMode]);
-  const currentRegistryModel = useMemo(
-    () => registryModels.find((m) => m.id === formData.model),
-    [registryModels, formData.model]
+  // Models from backend cache, driven by imageMode
+  const modeConfig = getModeConfig(imageMode);
+  const { models: modeModels } = useAiModels(modeConfig?.endpoint ?? "");
+  const currentModel = useMemo(
+    () => modeModels.find((m) => m.id === formData.model),
+    [modeModels, formData.model]
   );
 
-  // Fallback to cached normalized models (for ModelPicker card UI)
-  const cachedModels =
-    useAppSelector((s) => s.aiModelCache.aiModelCache["/api/ai/image/generate/basic"]) ??
-    EMPTY_AI_MODELS;
-  const cachedEditModels =
-    useAppSelector((s) => s.aiModelCache.aiModelCache["/api/ai/image/edit/wan"]) ?? EMPTY_AI_MODELS;
-  const normalizedModels = imageMode === "imageEdit" ? cachedEditModels : cachedModels;
+  // normalizedModels used by ModelPicker card UI — same source now
+  const normalizedModels = modeModels;
 
-  const modeConfig = getModeConfig(imageMode);
-  const maxRefImages =
-    currentRegistryModel?.inputSchema?.properties?.referenceImages?.maxItems ??
-    modeConfig?.refConfig?.maxCount ??
-    5;
+  const maxRefImages = modeConfig?.refConfig?.maxCount ?? 5;
 
-  const sizeField = currentRegistryModel?.inputSchema?.properties?.size;
+  const sizeField = currentModel?.inputSchema?.properties?.size;
   const sizeOptions = useMemo(() => {
     if (!sizeField?.enum) return [];
     const labels = sizeField["x-enum-labels"] ?? {};
@@ -197,11 +184,11 @@ export function AiImageGeneratorDialog({
   }, [sizeField]);
 
   const modelOptions = useMemo(
-    () => registryModels.map((m) => ({ label: m.label, value: m.id })),
-    [registryModels]
+    () => modeModels.map((m) => ({ label: m.name, value: m.id })),
+    [modeModels]
   );
 
-  const cost = (currentRegistryModel?.cost ?? 0) * (formData.count || 1);
+  const cost = (currentModel?.cost ?? 0) * (formData.count || 1);
   const title = shotNumber ? t("aiImageTitle", { number: shotNumber }) : t("aiImageTitleDefault");
 
   useEffect(() => {
@@ -243,13 +230,13 @@ export function AiImageGeneratorDialog({
   // Auto-select default model + size when mode changes or no model selected
   // Also truncate referenceImages when new model has smaller maxItems
   useEffect(() => {
-    if (registryModels.length === 0) return;
-    const matched = registryModels.find((m) => m.id === formData.model);
+    if (modeModels.length === 0) return;
+    const matched = modeModels.find((m) => m.id === formData.model);
     if (!matched) {
-      const defaultModel = registryModels.find((m) => m.isDefault) ?? registryModels[0];
+      const defaultModel = modeModels.find((m) => m.isDefault) ?? modeModels[0];
       if (defaultModel) {
         const defaultSize = defaultModel.inputSchema?.properties?.size?.default;
-        const newMax = defaultModel.inputSchema?.properties?.referenceImages?.maxItems ?? 5;
+        const newMax = maxRefImages;
         handleUpdateForm({
           model: defaultModel.id,
           ...(defaultSize ? { size: String(defaultSize) } : {}),
@@ -259,7 +246,7 @@ export function AiImageGeneratorDialog({
         });
       }
     }
-  }, [imageMode, registryModels, formData.model]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [imageMode, modeModels, formData.model]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Sync @mention images → reference group ──
   // Called on every prompt change: extracts <mention imgUrl> tags and adds new ones to refs.
@@ -289,9 +276,9 @@ export function AiImageGeneratorDialog({
   };
 
   const handleModelChange = (value: string) => {
-    const matchedRegistry = registryModels.find((m) => m.id === value);
-    const defaultSize = matchedRegistry?.inputSchema?.properties?.size?.default;
-    const newMax = matchedRegistry?.inputSchema?.properties?.referenceImages?.maxItems ?? 5;
+    const matchedModel = modeModels.find((m) => m.id === value);
+    const defaultSize = matchedModel?.inputSchema?.properties?.size?.default;
+    const newMax = maxRefImages;
     const trimmedRefs =
       formData.referenceImages.length > newMax
         ? formData.referenceImages.slice(0, newMax)
@@ -309,7 +296,7 @@ export function AiImageGeneratorDialog({
     onOpenChange(false);
   };
 
-  const isEditLikeMode = imageMode === "imageEdit" || imageMode === "characterFusion";
+  const isEditLikeMode = imageMode === "imageEdit";
 
   const handleGenerate = () => {
     if (!modeConfig) return;
@@ -445,7 +432,21 @@ export function AiImageGeneratorDialog({
       label: t("editAction"),
       icon: <IconPencil className="size-3.5" />,
       active: imageMode === "imageEdit",
-      onClick: () => setImageMode((m) => (m === "imageEdit" ? "imageGenerate" : "imageEdit")),
+      onClick: () => {
+        const nextMode = imageMode === "imageEdit" ? "imageGenerate" : "imageEdit";
+        setImageMode(nextMode);
+        // Auto-fill preview image as reference when entering edit mode
+        if (nextMode === "imageEdit" && previewItem?.storagePath) {
+          const already = formData.referenceImages.some(
+            (r) => r.path === previewItem.storagePath || r.url === previewItem.url
+          );
+          if (!already) {
+            handleUpdateForm({
+              referenceImages: [{ path: previewItem.storagePath, url: previewItem.url ?? "" }],
+            });
+          }
+        }
+      },
     },
     {
       key: "repaint",

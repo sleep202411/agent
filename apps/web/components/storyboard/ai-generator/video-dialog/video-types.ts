@@ -250,19 +250,19 @@ export const API_PATH_MULTIMODAL_VIDEO = "/api/ai/task/video/generate/multimodal
 export function getModePath(mode: VideoMode) {
   switch (mode) {
     case "frames":
-      return "/api/ai/video/generate/start-end-frame";
+      return "/api/ai/task/video/generate/start-end-frame";
     case "multiReference":
-      return "/api/ai/video/generate/multiplereference";
+      return "/api/ai/task/video/generate/multiplereference";
     case "multimodal":
       return API_PATH_MULTIMODAL_VIDEO;
     case "repaint":
-      return "/api/ai/video/generate/videorepainting";
+      return "/api/ai/task/video/generate/videorepainting";
     case "localEdit":
-      return "/api/ai/video/generate/videoedit";
+      return "/api/ai/task/video/generate/videoedit";
     case "extend":
-      return "/api/ai/video/generate/videoextension";
+      return "/api/ai/task/video/generate/videoextension";
     case "outpainting":
-      return "/api/ai/video/generate/videooutpainting";
+      return "/api/ai/task/video/generate/videooutpainting";
     case "reference":
     default:
       return API_PATH_VIDEO;

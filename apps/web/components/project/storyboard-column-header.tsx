@@ -543,7 +543,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
 
         try {
           if ("startImageUrl" in item) {
-            await backendApi.post("/api/ai/video/generate/basic", {
+            await backendApi.post("/api/ai/task/video/generate/basic", {
               data: {
                 shotId: item.shotId,
                 shotColumnId: item.columnId,

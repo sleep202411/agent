@@ -102,50 +102,46 @@ function dedupeRefs(existing: ReferenceAsset[], newItems: ReferenceAsset[]): Ref
 }
 
 import {
-  getModelRegistryEntry,
-  getRegistryModels,
   getSchemaFields,
   getModeConfig,
   buildModePayload,
-  calculateModeCost,
   resolveModeInputs,
-  type ModelRegistryEntry,
+  type AiModel,
 } from "@/components/ui/schema-field/schema";
+import { useAiModels } from "@/src/hooks/use-ai-models";
 
 // ─── Multimodal: schema-driven toolbar selects ──────
-
-/** Models available in multimodal mode (from frontend registry) */
-const MULTIMODAL_MODELS = getRegistryModels("multimodal");
 
 function MultimodalToolbarSelects({
   formData,
   onUpdate,
+  models,
 }: {
   formData: { model: string; size: string; videoLength: string; [k: string]: unknown };
   onUpdate: (updates: Record<string, unknown>) => void;
+  models: AiModel[];
 }) {
   const selectedModel = formData.model;
-  const entry = useMemo(() => getModelRegistryEntry(selectedModel), [selectedModel]);
+  const entry = useMemo(() => models.find((m) => m.id === selectedModel), [models, selectedModel]);
 
-  // Auto-select first multimodal model + set schema defaults if not in registry
+  // Auto-select first multimodal model + set schema defaults
   useEffect(() => {
-    if (!entry && MULTIMODAL_MODELS.length > 0) {
-      const defaultModel = MULTIMODAL_MODELS[0];
-      const defaultEntry = getModelRegistryEntry(defaultModel.id);
+    if (!entry && models.length > 0) {
+      const defaultModel = models.find((m) => m.isDefault) ?? models[0];
       const defaults: Record<string, unknown> = { model: defaultModel.id };
-      if (defaultEntry?.inputSchema) {
-        for (const [fieldKey, field] of Object.entries(defaultEntry.inputSchema.properties)) {
+      if (defaultModel.inputSchema) {
+        for (const [fieldKey, field] of Object.entries(defaultModel.inputSchema.properties)) {
           if (field.default !== undefined) defaults[fieldKey] = String(field.default);
         }
       }
       onUpdate(defaults);
     }
-  }, [entry, onUpdate]);
+  }, [entry, models, onUpdate]);
 
   // When model changes, reset params to defaults from schema
   const handleModelChange = useCallback(
     (newModel: string) => {
-      const newEntry = getModelRegistryEntry(newModel);
+      const newEntry = models.find((m) => m.id === newModel);
       const defaults: Record<string, unknown> = { model: newModel };
       if (newEntry) {
         for (const [fieldKey, field] of Object.entries(newEntry.inputSchema.properties)) {
@@ -154,7 +150,7 @@ function MultimodalToolbarSelects({
       }
       onUpdate(defaults);
     },
-    [onUpdate]
+    [models, onUpdate]
   );
 
   // Schema-driven fields
@@ -167,7 +163,7 @@ function MultimodalToolbarSelects({
     <>
       <ToolbarSelect
         value={selectedModel}
-        options={MULTIMODAL_MODELS.map((m) => ({ label: m.label, value: m.id }))}
+        options={models.map((m) => ({ label: m.name, value: m.id }))}
         onChange={handleModelChange}
       />
       {schemaFields.map(([fieldKey, field]) => {
@@ -318,14 +314,10 @@ export function AiVideoGeneratorDialog({
 
   const activeMode = editMode ?? uploadMode;
 
-  // Models from frontend registry
-  const registryModels = useMemo(() => getRegistryModels(activeMode), [activeMode]);
-  const currentRegistryModel = useMemo(
-    () => registryModels.find((m) => m.id === model),
-    [registryModels, model]
-  );
-
-  const currentModel = currentRegistryModel;
+  // Models from backend cache (keyed by mode's endpoint)
+  const modeConfig = useMemo(() => getModeConfig(activeMode), [activeMode]);
+  const { models: modeModels } = useAiModels(modeConfig?.endpoint ?? "");
+  const currentModel = useMemo(() => modeModels.find((m) => m.id === model), [modeModels, model]);
 
   const sizeOptions = useMemo(() => {
     const sizeField = currentModel?.inputSchema?.properties?.size;
@@ -388,30 +380,14 @@ export function AiVideoGeneratorDialog({
     },
   ].filter(Boolean) as ToolbarAction[];
   const modelOptions = useMemo(
-    () => registryModels.map((m) => ({ label: m.label, value: m.id })),
-    [registryModels]
+    () => modeModels.map((m) => ({ label: m.name, value: m.id })),
+    [modeModels]
   );
 
+  // Base cost from backend model data (full pricing TBD — backend will add pricing field)
   const cost = useMemo(() => {
-    const modeConfig = getModeConfig(activeMode);
-    if (!modeConfig) return 0;
-    const fd = formData as Record<string, unknown>;
-    return calculateModeCost(
-      modeConfig.cost,
-      { ...fd, size, videoLength, count },
-      { integralCost: currentModel?.cost ?? 0 },
-      { size: sizeOptions, videoLength: videoLengthOptions }
-    );
-  }, [
-    activeMode,
-    count,
-    currentModel,
-    size,
-    sizeOptions,
-    videoLength,
-    videoLengthOptions,
-    formData,
-  ]);
+    return (currentModel?.cost ?? 0) * (count || 1);
+  }, [currentModel, count]);
 
   const title = shotNumber ? t("aiVideoTitle", { number: shotNumber }) : t("aiVideoTitleDefault");
   const modeExitLabel = editMode
@@ -485,9 +461,9 @@ export function AiVideoGeneratorDialog({
   useEffect(() => {
     if (!open) return;
     // Auto-select default model + schema defaults when mode changes
-    const matched = registryModels.find((m) => m.id === model);
+    const matched = modeModels.find((m) => m.id === model);
     if (!matched) {
-      const defaultModel = registryModels.find((m) => m.isDefault) ?? registryModels[0];
+      const defaultModel = modeModels.find((m) => m.isDefault) ?? modeModels[0];
       if (defaultModel) {
         const updates: Record<string, unknown> = { model: defaultModel.id };
         for (const [fieldKey, field] of Object.entries(defaultModel.inputSchema.properties)) {
@@ -496,7 +472,7 @@ export function AiVideoGeneratorDialog({
         dispatch(updateVideoForm({ key, updates }));
       }
     }
-  }, [activeMode, dispatch, key, model, open, registryModels]);
+  }, [activeMode, dispatch, key, model, open, modeModels]);
 
   // ─── Queue processing: pick up pending tasks and run them ──
 
@@ -1510,6 +1486,7 @@ export function AiVideoGeneratorDialog({
                   <MultimodalToolbarSelects
                     formData={formData}
                     onUpdate={(updates) => dispatch(updateVideoForm({ key, updates }))}
+                    models={modeModels}
                   />
                 ) : (
                   <>

@@ -517,7 +517,7 @@ export function AiLipSyncGeneratorDialog({
     setVideoQueue((current) => [{ id: queueId, path: "", status: "generating" }, ...current]);
 
     try {
-      const result = await backendApi.post<Record<string, unknown>>("/api/ai/video/lip/sync", {
+      const result = await backendApi.post<Record<string, unknown>>("/api/ai/task/video/lip/sync", {
         data: {
           shotColumnId,
           shotId,
@@ -560,7 +560,7 @@ export function AiLipSyncGeneratorDialog({
       current.map((q) => (q.id === item.id ? { ...q, status: "generating" } : q))
     );
     try {
-      const result = await backendApi.post<Record<string, unknown>>("/api/ai/video/lip/sync", {
+      const result = await backendApi.post<Record<string, unknown>>("/api/ai/task/video/lip/sync", {
         data: {
           shotColumnId,
           shotId,

@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { getFieldLabel, getEnumLabel, type AiModelInputSchema } from "./schema";
 import { SegmentedControl } from "./segmented-control";
@@ -32,20 +31,19 @@ export function SchemaField({
   loading = false,
   className,
 }: SchemaFieldProps) {
-  const t = useTranslations("model");
   const fieldSchema = schema.properties[field];
 
   const options = useMemo(() => {
     if (!fieldSchema?.enum) return [];
     return fieldSchema.enum.map((v) => ({
       value: v,
-      label: getEnumLabel(fieldSchema, v, t),
+      label: getEnumLabel(fieldSchema, v),
     }));
-  }, [fieldSchema, t]);
+  }, [fieldSchema]);
 
   if (!fieldSchema) return null;
 
-  const label = getFieldLabel(fieldSchema, t);
+  const label = getFieldLabel(fieldSchema);
   const isDisabled = disabled || loading;
 
   let control: React.ReactNode;

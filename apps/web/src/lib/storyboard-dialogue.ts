@@ -103,13 +103,13 @@ export function stripDialogueRoleLines(value: unknown) {
   dialogueLines.forEach((line) => {
     const content = stripSpeakerPrefix(line);
     if (content) {
-      normalizedLines.push(`台词：${content}`);
+      normalizedLines.push(content);
     }
   });
 
   narrationLines.forEach((line) => {
     if (line) {
-      normalizedLines.push(`旁白：${line}`);
+      normalizedLines.push(line);
     }
   });
 

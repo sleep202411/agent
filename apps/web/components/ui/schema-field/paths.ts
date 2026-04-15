@@ -8,9 +8,9 @@ export const AI_MODEL_PATHS = {
   imageEdit: "/api/ai/image/edit/wan",
   characterFusion: "/api/ai/image/compose/character",
   // Video
-  video: "/api/ai/video/generate/basic",
-  videoFrames: "/api/ai/video/generate/start-end-frame",
-  videoMultiRef: "/api/ai/video/generate/multiplereference",
+  video: "/api/ai/task/video/generate/basic",
+  videoFrames: "/api/ai/task/video/generate/start-end-frame",
+  videoMultiRef: "/api/ai/task/video/generate/multiplereference",
   videoMultimodal: "/api/ai/task/video/generate/multimodalvideo",
   videoRepaint: "/api/ai/task/video/generate/videorepainting",
   videoLocalEdit: "/api/ai/task/video/generate/videoedit",
@@ -18,7 +18,7 @@ export const AI_MODEL_PATHS = {
   videoOutpaint: "/api/ai/task/video/generate/videooutpainting",
   // Audio
   voice: "/api/ai/voice/synthesize",
-  lipSync: "/api/ai/video/lip/sync",
+  lipSync: "/api/ai/task/video/lip/sync",
   audio: "/api/ai/audio/generate/basic",
   music: "/api/ai/voice/music",
   // Chat

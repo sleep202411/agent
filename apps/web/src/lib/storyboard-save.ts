@@ -412,9 +412,8 @@ function ensureDialogueRoleText(value: unknown) {
   const lines = [
     ...normalizedDialogueLines
       .map((line) => withSpeakerPrefix(line, parsed.roleNames))
-      .filter(Boolean)
-      .map((line) => `台词：${line}`),
-    ...parsed.narrationLines.map((line) => `旁白：${line}`),
+      .filter(Boolean),
+    ...parsed.narrationLines,
   ];
 
   return lines.join("\n");
@@ -899,12 +898,7 @@ async function buildStoryboardSaveDatas(
       if (field === "dialogue") {
         const dialogueText = getRowFieldValue(row, fieldResolvers.dialogue, "dialogue");
         const narrationText = getRowFieldValue(row, fieldResolvers.narration, "dialogue");
-        const combined = [
-          dialogueText ? `台词：${dialogueText}` : "",
-          narrationText ? `旁白：${narrationText}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n");
+        const combined = [dialogueText || "", narrationText || ""].filter(Boolean).join("\n");
         return ensureDialogueRoleText(combined || dialogueText || narrationText);
       }
 
