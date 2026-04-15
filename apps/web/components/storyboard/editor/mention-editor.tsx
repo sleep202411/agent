@@ -166,12 +166,12 @@ export function MentionEditor({
   const flattenedItems = useMemo<MentionFlatItem[]>(() => {
     const items: MentionFlatItem[] = [];
 
-    // Reference media at the top
+    // Reference media at the top — show as "参考图 N"
     referenceMedia?.forEach((ref, i) => {
       items.push({
         key: `ref-${ref.path}-${i}`,
         id: ref.path,
-        name: ref.label ?? `Reference ${i + 1}`,
+        name: `参考图 ${i + 1}`,
         mentionType: "reference",
         imgUrl: ref.url,
       });
