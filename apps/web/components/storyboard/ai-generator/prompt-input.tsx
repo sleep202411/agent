@@ -46,6 +46,7 @@ interface PromptInputProps {
   cost?: number;
   loading?: boolean;
   hideExtraPrompts?: boolean;
+  mentionDisabled?: boolean;
   onSubmit: () => void;
 }
 
@@ -82,6 +83,7 @@ export function PromptInput({
   cost,
   loading,
   hideExtraPrompts = false,
+  mentionDisabled = false,
   onSubmit,
 }: PromptInputProps) {
   const t = useTranslations("storyboard");
@@ -150,6 +152,7 @@ export function PromptInput({
             path: r.path,
             label: r.label || r.path.split("/").pop() || "media",
           }))}
+          mentionDisabled={mentionDisabled}
         />
       </div>
 

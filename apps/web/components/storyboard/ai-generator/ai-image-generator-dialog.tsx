@@ -27,6 +27,14 @@ import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import type { ToolbarAction } from "@/components/ui/floating-toolbar";
 import { MediaPreviewPanel } from "./media-preview-panel";
 import { PromptInput } from "./prompt-input";
+import {
+  ReferenceMapProvider,
+  type ReferenceMap,
+} from "@/components/storyboard/editor/reference-map-context";
+import {
+  buildReferenceMap,
+  extractMentionsFromHtml,
+} from "@/components/storyboard/editor/build-reference-map";
 import { ResultGallery } from "./result-gallery";
 import { backendApi } from "@/src/lib/api";
 import { submitImageTask, retryImageTask } from "@/src/lib/ai-image-queue";
@@ -466,6 +474,18 @@ export function AiImageGeneratorDialog({
     },
   ];
 
+  // ─── Reference map: sync prompt chips ↔ reference group ──
+  const promptMentions = useMemo(() => extractMentionsFromHtml(formData.prompt), [formData.prompt]);
+  const referenceMap: ReferenceMap = useMemo(
+    () => buildReferenceMap(formData.referenceImages, promptMentions),
+    [formData.referenceImages, promptMentions]
+  );
+  const refIsFull = formData.referenceImages.length >= maxRefImages;
+  const referenceMapCtx = useMemo(
+    () => ({ map: referenceMap, isFull: refIsFull }),
+    [referenceMap, refIsFull]
+  );
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
       <DialogContent
@@ -505,42 +525,45 @@ export function AiImageGeneratorDialog({
           />
         </div>
 
-        <PromptInput
-          imageMode={imageMode}
-          onImageModeChange={setImageMode}
-          prompt={formData.prompt}
-          onPromptChange={(value) => {
-            handleUpdateForm({ prompt: value });
-            syncMentionRefs(value);
-          }}
-          prefixPrompt={prefixPrompt}
-          onPrefixChange={handlePrefixChange}
-          suffixPrompt={suffixPrompt}
-          onSuffixChange={handleSuffixChange}
-          model={formData.model}
-          modelOptions={modelOptions}
-          normalizedModels={normalizedModels}
-          onModelChange={handleModelChange}
-          size={formData.size}
-          sizeOptions={sizeOptions}
-          onSizeChange={(value) => handleUpdateForm({ size: value })}
-          count={formData.count}
-          onCountChange={(value) => handleUpdateForm({ count: value })}
-          referenceImages={formData.referenceImages}
-          maxReferenceImages={maxRefImages}
-          onAddReference={() => setImagePickerOpen(true)}
-          onRemoveReference={(index) =>
-            handleUpdateForm({
-              referenceImages: formData.referenceImages.filter(
-                (_, innerIndex) => innerIndex !== index
-              ),
-            })
-          }
-          referenceFields={referenceFields}
-          cost={cost}
-          hideExtraPrompts={isEditLikeMode}
-          onSubmit={handleGenerate}
-        />
+        <ReferenceMapProvider value={referenceMapCtx}>
+          <PromptInput
+            imageMode={imageMode}
+            onImageModeChange={setImageMode}
+            prompt={formData.prompt}
+            onPromptChange={(value) => {
+              handleUpdateForm({ prompt: value });
+              syncMentionRefs(value);
+            }}
+            prefixPrompt={prefixPrompt}
+            onPrefixChange={handlePrefixChange}
+            suffixPrompt={suffixPrompt}
+            onSuffixChange={handleSuffixChange}
+            model={formData.model}
+            modelOptions={modelOptions}
+            normalizedModels={normalizedModels}
+            onModelChange={handleModelChange}
+            size={formData.size}
+            sizeOptions={sizeOptions}
+            onSizeChange={(value) => handleUpdateForm({ size: value })}
+            count={formData.count}
+            onCountChange={(value) => handleUpdateForm({ count: value })}
+            referenceImages={formData.referenceImages}
+            maxReferenceImages={maxRefImages}
+            onAddReference={() => setImagePickerOpen(true)}
+            onRemoveReference={(index) =>
+              handleUpdateForm({
+                referenceImages: formData.referenceImages.filter(
+                  (_, innerIndex) => innerIndex !== index
+                ),
+              })
+            }
+            referenceFields={referenceFields}
+            cost={cost}
+            hideExtraPrompts={isEditLikeMode}
+            onSubmit={handleGenerate}
+            mentionDisabled={refIsFull}
+          />
+        </ReferenceMapProvider>
         {onPrevShot ? (
           <button
             type="button"
