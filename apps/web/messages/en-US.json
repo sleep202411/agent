@@ -1132,6 +1132,7 @@
     "videoSuperRes": "Super Resolution",
     "videoLipSync": "Lip Sync",
     "videoClickPreview": "Click left video to preview",
+    "referenceGroupFull": "Reference group is full",
     "videoPromptEditorPlaceholder": "Use @ to reference characters, scenes. Describe the video you want to generate...",
     "columnThumbnail": "Thumbnail",
     "columnDescription": "Description",

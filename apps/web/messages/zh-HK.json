@@ -1132,6 +1132,7 @@
     "videoSuperRes": "影片高清",
     "videoLipSync": "對口型",
     "videoClickPreview": "點擊左側影片預覽",
+    "referenceGroupFull": "參考圖已滿，無法繼續添加",
     "videoPromptEditorPlaceholder": "根據 @ 引用角色、場景，描述你想生成的影片內容...",
     "columnThumbnail": "縮圖",
     "columnDescription": "畫面描述",

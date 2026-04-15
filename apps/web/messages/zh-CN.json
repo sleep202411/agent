@@ -1132,6 +1132,7 @@
     "videoSuperRes": "视频高清",
     "videoLipSync": "对口型",
     "videoClickPreview": "点击左侧视频预览",
+    "referenceGroupFull": "参考图已满，无法继续添加",
     "videoPromptEditorPlaceholder": "根据 @ 引用角色、场景，描述你想生成的视频内容...",
     "columnThumbnail": "缩略图",
     "columnDescription": "画面描述",

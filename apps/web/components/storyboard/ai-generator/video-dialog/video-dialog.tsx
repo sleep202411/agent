@@ -25,6 +25,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
+import {
+  ReferenceMapProvider,
+  type ReferenceMap,
+} from "@/components/storyboard/editor/reference-map-context";
+import {
+  buildReferenceMap,
+  extractMentionsFromHtml,
+  autoSelectReferences,
+} from "@/components/storyboard/editor/build-reference-map";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import type { ToolbarAction } from "@/components/ui/floating-toolbar";
@@ -1069,7 +1078,10 @@ export function AiVideoGeneratorDialog({
       if (!item.imgUrl) return;
       const exists = referenceImages.some((r) => (r.url || ossUrl(r.path)) === item.imgUrl);
       if (exists) return;
-      if (referenceImages.length >= refMaxCount) return;
+      if (referenceImages.length >= refMaxCount) {
+        toast.warning(t("referenceGroupFull"));
+        return;
+      }
       dispatch(
         setVideoReferences({
           key,
@@ -1154,6 +1166,18 @@ export function AiVideoGeneratorDialog({
     dispatch,
     key,
   ]);
+
+  // ─── Reference map: sync prompt chips ↔ reference group ──
+  const promptMentions = useMemo(() => extractMentionsFromHtml(prompt), [prompt]);
+  const referenceMap: ReferenceMap = useMemo(
+    () => buildReferenceMap(referenceImages, promptMentions),
+    [referenceImages, promptMentions]
+  );
+  const refIsFull = referenceImages.length >= refMaxCount;
+  const referenceMapCtx = useMemo(
+    () => ({ map: referenceMap, isFull: refIsFull }),
+    [referenceMap, refIsFull]
+  );
 
   return (
     <>
@@ -1350,21 +1374,24 @@ export function AiVideoGeneratorDialog({
             </div>
 
             <div className="px-4 py-2">
-              <RichMentionEditor
-                value={prompt}
-                onChange={(v) => dispatch(updateVideoForm({ key, updates: { prompt: v } }))}
-                placeholder={t("videoPromptEditorPlaceholder")}
-                mentionTypes={["character", "scene", "prop"]}
-                minHeight={96}
-                maxHeight={240}
-                className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
-                referenceMedia={referenceImages.map((r) => ({
-                  url: r.url || ossUrl(r.path),
-                  path: r.path,
-                  label: r.label || r.path.split("/").pop() || "media",
-                }))}
-                onMentionInserted={handleMentionInserted}
-              />
+              <ReferenceMapProvider value={referenceMapCtx}>
+                <RichMentionEditor
+                  value={prompt}
+                  onChange={(v) => dispatch(updateVideoForm({ key, updates: { prompt: v } }))}
+                  placeholder={t("videoPromptEditorPlaceholder")}
+                  mentionTypes={["character", "scene", "prop"]}
+                  minHeight={96}
+                  maxHeight={240}
+                  className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
+                  referenceMedia={referenceImages.map((r) => ({
+                    url: r.url || ossUrl(r.path),
+                    path: r.path,
+                    label: r.label || r.path.split("/").pop() || "media",
+                  }))}
+                  onMentionInserted={handleMentionInserted}
+                  mentionDisabled={refIsFull}
+                />
+              </ReferenceMapProvider>
             </div>
 
             <div className="px-4 pb-2">
