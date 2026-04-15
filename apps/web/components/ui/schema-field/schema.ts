@@ -238,6 +238,9 @@ export interface ModelRegistryEntry {
   inputSchema: AiModelInputSchema;
   /** Whether the model supports @-mention prompt references */
   supportsPromptRef?: boolean;
+  /** Restrict to specific site regions. Omit = available everywhere.
+   *  Values: "global" (.com), "cn" (.cn). Matches VITE_SITE_REGION. */
+  regions?: string[];
 }
 
 // ─── Schema builders ─────────────────────────────────
@@ -402,7 +405,7 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
         { ratio: "21:9", dimension: "21:9" },
         { ratio: "9:21", dimension: "9:21" },
       ],
-      { maxImages: 5 }
+      { maxImages: 6 }
     ),
   },
   {
@@ -422,7 +425,7 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
         { ratio: "21:9", dimension: "21:9", resolution: "2K" },
         { ratio: "9:21", dimension: "9:21", resolution: "2K" },
       ],
-      { maxImages: 5 }
+      { maxImages: 11 }
     ),
   },
   {
@@ -462,7 +465,7 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
         { ratio: "21:9", dimension: "21:9", resolution: "2K" },
         { ratio: "9:21", dimension: "9:21", resolution: "2K" },
       ],
-      { maxImages: 5 }
+      { maxImages: 14 }
     ),
   },
   {
@@ -637,14 +640,14 @@ const BASIC_MODELS: ModelRegistryEntry[] = [
     isDefault: true,
     inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
   },
-  {
-    id: "wan2.7-i2v",
-    label: "Wan2.7",
-    mode: "reference",
-    cost: 100,
-    isDefault: true,
-    inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
-  },
+  // {
+  //   id: "wan2.7-i2v",
+  //   label: "Wan2.7",
+  //   mode: "reference",
+  //   cost: 100,
+  //   isDefault: true,
+  //   inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
+  // },
   {
     id: "wan2.6-i2v",
     label: "Wan2.6-voice",
@@ -714,14 +717,14 @@ const FRAMES_MODELS: ModelRegistryEntry[] = [
     isDefault: true,
     inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
   },
-  {
-    id: "wan2.7-i2v",
-    label: "Wan2.7",
-    mode: "frames",
-    cost: 140,
-    isDefault: true,
-    inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
-  },
+  // {
+  //   id: "wan2.7-i2v",
+  //   label: "Wan2.7",
+  //   mode: "frames",
+  //   cost: 140,
+  //   isDefault: true,
+  //   inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
+  // },
   {
     id: "minimax/hailuo-02",
     label: "hailuo-02",
@@ -899,8 +902,18 @@ export function getModelRegistryEntry(serviceCode?: string): ModelRegistryEntry 
 }
 
 /** Get all models for a given video mode */
+/** Current site region from env, cached at module load */
+const SITE_REGION =
+  typeof import.meta !== "undefined"
+    ? ((import.meta as unknown as { env?: Record<string, string> }).env?.VITE_SITE_REGION ??
+      "global")
+    : "global";
+
+/** Get all models for a given mode, filtered by current site region */
 export function getRegistryModels(mode: string): ModelRegistryEntry[] {
-  return MODEL_REGISTRY.filter((e) => e.mode === mode);
+  return MODEL_REGISTRY.filter(
+    (e) => e.mode === mode && (!e.regions || e.regions.includes(SITE_REGION))
+  );
 }
 
 /** Validate media counts against model constraints (reads from inputSchema) */

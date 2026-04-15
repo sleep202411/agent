@@ -87,7 +87,7 @@ export default function IPDetailPage({ id }: { id: string }) {
           }
         })(),
         targetEpisodes: project.targetEpisodes ?? 0,
-        team: (members ?? []).map((m) => ({
+        team: (Array.isArray(members) ? members : []).map((m) => ({
           name: m.nickName || m.userName || "Member",
           role: m.roleName || "Team",
           avatar: m.avatar ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar}` : "",

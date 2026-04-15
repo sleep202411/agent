@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   IconCredits,
   IconCrown,
@@ -24,6 +24,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useAppDispatch, useAppSelector } from "@/src/store";
 import { logout } from "@/src/store/slices/authSlice";
+import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
+import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 
 export function UserMenu() {
   const tc = useTranslations("common");
@@ -36,6 +38,9 @@ export function UserMenu() {
     () => false
   );
 
+  const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+
   const displayName = user?.nickname || "User";
   const displayEmail = user?.email || "";
   const avatarUrl = user?.avatar || undefined;
@@ -43,122 +48,133 @@ export function UserMenu() {
   const userLevel = user?.userLevel || "";
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Avatar className="size-8">
-            <AvatarImage src={avatarUrl} alt={displayName} />
-            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-          </Avatar>
-        </button>
-      </DropdownMenuTrigger>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Avatar className="size-8">
+              <AvatarImage src={avatarUrl} alt={displayName} />
+              <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+            </Avatar>
+          </button>
+        </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-72 p-0">
-        {/* User info */}
-        <div className="flex items-center gap-3 px-4 py-4">
-          <Avatar className="size-12">
-            <AvatarImage src={avatarUrl} alt={displayName} />
-            <AvatarFallback className="text-sm">{initials}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <p className="truncate text-sm font-semibold">{displayName}</p>
-              {userLevel && (
-                <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                  {userLevel}
-                </span>
+        <DropdownMenuContent align="end" className="w-72 p-0">
+          {/* User info */}
+          <div className="flex items-center gap-3 px-4 py-4">
+            <Avatar className="size-12">
+              <AvatarImage src={avatarUrl} alt={displayName} />
+              <AvatarFallback className="text-sm">{initials}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <p className="truncate text-sm font-semibold">{displayName}</p>
+                {userLevel && (
+                  <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                    {userLevel}
+                  </span>
+                )}
+              </div>
+              {displayEmail && (
+                <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
               )}
             </div>
-            {displayEmail && (
-              <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
-            )}
+            <Link
+              to="/settings"
+              className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <IconSettings className="size-4" />
+            </Link>
           </div>
-          <Link
-            to="/settings"
-            className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          >
-            <IconSettings className="size-4" />
-          </Link>
-        </div>
 
-        <DropdownMenuSeparator />
+          <DropdownMenuSeparator />
 
-        {/* Credits */}
-        <div className="px-4 py-3">
-          <div className="mb-3 flex items-center gap-2">
-            <IconCredits className="size-4 text-primary" />
-            <span className="text-xl font-bold">100</span>
-            <span className="text-xs text-muted-foreground">{tc("creditsLeft")}</span>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" className="flex-1">
-              <IconCrown className="size-3.5" />
-              {tc("upgrade")}
-            </Button>
-            <Button variant="outline" color="muted" size="sm" className="flex-1">
-              <IconCoin className="size-3.5" />
-              {tc("rechargeCredits")}
-            </Button>
-          </div>
-        </div>
-
-        <DropdownMenuSeparator />
-
-        {/* Theme */}
-        {mounted && (
-          <div className="flex items-center justify-between px-4 py-2.5">
-            <div className="flex items-center gap-2">
-              <IconMoon className="size-4 text-muted-foreground" />
-              <span className="text-sm">{tc("theme")}</span>
+          {/* Credits */}
+          <div className="px-4 py-3">
+            <div className="mb-3 flex items-center gap-2">
+              <IconCredits className="size-4 text-primary" />
+              <span className="text-xl font-bold">100</span>
+              <span className="text-xs text-muted-foreground">{tc("creditsLeft")}</span>
             </div>
-            <div className="flex rounded-lg border border-border">
-              <button
-                type="button"
-                onClick={() => setTheme("light")}
-                className={cn(
-                  "flex size-8 items-center justify-center rounded-l-lg transition-colors",
-                  theme === "light" ? "bg-accent text-foreground" : "text-muted-foreground"
-                )}
+            <div className="flex gap-2">
+              <Button size="sm" className="flex-1" onClick={() => setUpgradeOpen(true)}>
+                <IconCrown className="size-3.5" />
+                {tc("upgrade")}
+              </Button>
+              <Button
+                variant="outline"
+                color="muted"
+                size="sm"
+                className="flex-1"
+                onClick={() => setRechargeOpen(true)}
               >
-                <IconSun className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme("dark")}
-                className={cn(
-                  "flex size-8 items-center justify-center transition-colors",
-                  theme === "dark" ? "bg-accent text-foreground" : "text-muted-foreground"
-                )}
-              >
-                <IconMoon className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setTheme("system")}
-                className={cn(
-                  "flex size-8 items-center justify-center rounded-r-lg transition-colors",
-                  theme === "system" ? "bg-accent text-foreground" : "text-muted-foreground"
-                )}
-              >
-                <IconDeviceDesktop className="size-3.5" />
-              </button>
+                <IconCoin className="size-3.5" />
+                {tc("rechargeCredits")}
+              </Button>
             </div>
           </div>
-        )}
 
-        <DropdownMenuSeparator />
+          <DropdownMenuSeparator />
 
-        {/* Logout */}
-        <div className="py-1">
-          <DropdownMenuItem className="px-4" onClick={() => void dispatch(logout())}>
-            <IconLogout className="size-4" />
-            {tc("logout")}
-          </DropdownMenuItem>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          {/* Theme */}
+          {mounted && (
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <IconMoon className="size-4 text-muted-foreground" />
+                <span className="text-sm">{tc("theme")}</span>
+              </div>
+              <div className="flex rounded-lg border border-border">
+                <button
+                  type="button"
+                  onClick={() => setTheme("light")}
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-l-lg transition-colors",
+                    theme === "light" ? "bg-accent text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  <IconSun className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTheme("dark")}
+                  className={cn(
+                    "flex size-8 items-center justify-center transition-colors",
+                    theme === "dark" ? "bg-accent text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  <IconMoon className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTheme("system")}
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-r-lg transition-colors",
+                    theme === "system" ? "bg-accent text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  <IconDeviceDesktop className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          <DropdownMenuSeparator />
+
+          {/* Logout */}
+          <div className="py-1">
+            <DropdownMenuItem className="px-4" onClick={() => void dispatch(logout())}>
+              <IconLogout className="size-4" />
+              {tc("logout")}
+            </DropdownMenuItem>
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <CreditsRechargeDialog open={rechargeOpen} onOpenChange={setRechargeOpen} />
+      <UpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
+    </>
   );
 }

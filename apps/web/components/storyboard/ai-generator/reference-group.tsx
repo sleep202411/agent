@@ -47,7 +47,7 @@ export function ReferenceGroup({
   resolveVideoThumbnail,
 }: ReferenceGroupProps) {
   return (
-    <div className="relative flex items-end gap-3">
+    <div className="relative flex items-end gap-3 overflow-x-auto">
       {items.map((item, index) => {
         const rawPath = item.url || item.path;
         const mediaType = detectMediaType(rawPath);

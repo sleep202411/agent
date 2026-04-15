@@ -92,7 +92,7 @@ export function PromptInput({
       {/* Top row: reference group (rendered externally) + edit mode toggle */}
       <div className="flex items-start justify-between">
         {/* Reference group rendered by parent via -mt offset */}
-        <div className="relative z-10 -mt-10">
+        <div className="relative z-10 -mt-10 min-w-0 max-w-full overflow-hidden">
           <ReferenceGroup
             label={t("referenceImageUpload")}
             items={referenceImages}

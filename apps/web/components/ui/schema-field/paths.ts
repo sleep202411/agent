@@ -3,14 +3,25 @@
  */
 
 export const AI_MODEL_PATHS = {
+  // Image
   image: "/api/ai/image/generate/basic",
   imageEdit: "/api/ai/image/edit/wan",
+  characterFusion: "/api/ai/image/compose/character",
+  // Video — models now in frontend MODEL_REGISTRY, these are kept for reference only
   video: "/api/ai/video/generate/basic",
+  // videoFrames: "/api/ai/video/generate/start-end-frame",
+  // videoMultiRef: "/api/ai/video/generate/multiplereference",
+  // videoMultimodal: "/api/ai/task/video/generate/multimodalvideo",
+  // videoRepaint: "/api/ai/task/video/generate/videorepainting",
+  // videoLocalEdit: "/api/ai/task/video/generate/videoedit",
+  // videoExtend: "/api/ai/task/video/generate/videoextension",
+  // videoOutpaint: "/api/ai/task/video/generate/videooutpainting",
+  // Audio
   voice: "/api/ai/voice/synthesize",
   lipSync: "/api/ai/video/lip/sync",
   audio: "/api/ai/audio/generate/basic",
   music: "/api/ai/voice/music",
-  characterFusion: "/api/ai/image/compose/character",
+  // Chat
   storyboardChat: "/api/ai/chat/storyboard/chat",
 } as const;
 

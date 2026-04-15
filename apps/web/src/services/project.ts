@@ -115,12 +115,26 @@ export async function uploadProjectVideo(projectId: number | string, file: File)
 }
 
 /** 获取团队成员 */
-export const getProjectMembers = (projectId: number | string) =>
-  api.post<ProjectMember[]>("/project/member/query", { data: { projectId: String(projectId) } });
+export async function getProjectMembers(projectId: number | string): Promise<ProjectMember[]> {
+  const res = await api.post<unknown>("/project/member/query", {
+    data: { projectId: String(projectId) },
+  });
+  if (Array.isArray(res)) return res;
+  if (res && typeof res === "object" && "list" in res)
+    return (res as { list: ProjectMember[] }).list ?? [];
+  return [];
+}
 
 /** 获取招聘岗位 */
-export const getProjectJobs = (projectId: number | string) =>
-  api.postForm<ProjectJob[]>("/project/job/find/jobs", { projectId: String(projectId) });
+export async function getProjectJobs(projectId: number | string): Promise<ProjectJob[]> {
+  const res = await api.postForm<unknown>("/project/job/find/jobs", {
+    projectId: String(projectId),
+  });
+  if (Array.isArray(res)) return res;
+  if (res && typeof res === "object" && "list" in res)
+    return (res as { list: ProjectJob[] }).list ?? [];
+  return [];
+}
 
 /** 获取分润信息 */
 export const getProjectProfits = (projectId: number | string) =>
