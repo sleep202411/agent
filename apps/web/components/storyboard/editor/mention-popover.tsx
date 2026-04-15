@@ -1,9 +1,8 @@
-import { useState, type CSSProperties, type RefObject } from "react";
+import { type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconBox,
-  IconChevronRight,
   IconLoader2,
   IconPhoto,
   IconUser,
@@ -77,9 +76,7 @@ function CompactItem({
   selected,
   disabled,
   disabledHint,
-  suffix,
   onClick,
-  onContextMenu,
 }: {
   imgUrl?: string;
   icon?: React.ReactNode;
@@ -87,16 +84,13 @@ function CompactItem({
   selected?: boolean;
   disabled?: boolean;
   disabledHint?: string;
-  suffix?: React.ReactNode;
   onClick: () => void;
-  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      onContextMenu={onContextMenu}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors",
         selected ? "bg-primary/15 text-[#e0e0e0]" : "text-[#cccccc] hover:bg-[#3a3a3a]",
@@ -116,7 +110,6 @@ function CompactItem({
       {disabled && disabledHint ? (
         <span className="ml-auto shrink-0 text-[11px] text-[#666666]">{disabledHint}</span>
       ) : null}
-      {suffix}
     </button>
   );
 }
@@ -165,7 +158,6 @@ export function MentionPopover({
   tProp,
 }: MentionPopoverProps) {
   const t = useTranslations("storyboard");
-  const [expandedCharId, setExpandedCharId] = useState<string | null>(null);
 
   const isVideo = (path: string) => /\.(mp4|webm|mov)(\?|$)/i.test(path);
 
@@ -244,82 +236,32 @@ export function MentionPopover({
               ) : (
                 characterDisplayGroups
                   .filter((group) => group.items.some((item) => item.imgUrl))
-                  .map((group) => {
+                  .flatMap((group) => {
                     const disabled = isCharacterDisabled(group);
-                    const hasVariants = group.items.length > 1;
-                    const isExpanded = expandedCharId === group.id;
-                    const firstItem = group.items.find((item) => item.imgUrl) ?? group.items[0];
-                    const firstIndex = flattenedItems.findIndex(
-                      (entry) =>
-                        entry.mentionType === "character" &&
-                        entry.id === group.id &&
-                        entry.imgUrl === firstItem.imgUrl
-                    );
-
-                    // Collapsed: show first image only
-                    if (!isExpanded) {
-                      return (
-                        <CompactItem
-                          key={firstItem.key}
-                          imgUrl={firstItem.imgUrl}
-                          label={group.name}
-                          selected={firstIndex === selectedIndex}
-                          disabled={disabled}
-                          disabledHint={disabled ? t("voiceNotConfigured") : undefined}
-                          suffix={
-                            hasVariants ? (
-                              <IconChevronRight className="ml-auto size-3.5 shrink-0 text-[#666666]" />
-                            ) : undefined
-                          }
-                          onClick={() => {
-                            const sel = flattenedItems[firstIndex];
-                            if (sel) onSelectMention(sel);
-                          }}
-                          onContextMenu={
-                            hasVariants
-                              ? (e) => {
-                                  e.preventDefault();
-                                  setExpandedCharId(group.id);
-                                }
-                              : undefined
-                          }
-                        />
-                      );
-                    }
-
-                    // Expanded: show all variants
-                    return (
-                      <div key={group.id} className="rounded-lg bg-[#333333]/60">
-                        {group.items
-                          .filter((item) => item.imgUrl)
-                          .map((item) => {
-                            const index = flattenedItems.findIndex(
-                              (entry) =>
-                                entry.mentionType === "character" &&
-                                entry.id === group.id &&
-                                entry.imgUrl === item.imgUrl
-                            );
-                            return (
-                              <CompactItem
-                                key={item.key}
-                                imgUrl={item.imgUrl}
-                                label={group.name}
-                                selected={index === selectedIndex}
-                                disabled={disabled}
-                                disabledHint={disabled ? t("voiceNotConfigured") : undefined}
-                                onClick={() => {
-                                  const sel = flattenedItems[index];
-                                  if (sel) onSelectMention(sel);
-                                }}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  setExpandedCharId(null);
-                                }}
-                              />
-                            );
-                          })}
-                      </div>
-                    );
+                    return group.items
+                      .filter((item) => item.imgUrl)
+                      .map((item) => {
+                        const index = flattenedItems.findIndex(
+                          (entry) =>
+                            entry.mentionType === "character" &&
+                            entry.id === group.id &&
+                            entry.imgUrl === item.imgUrl
+                        );
+                        return (
+                          <CompactItem
+                            key={item.key}
+                            imgUrl={item.imgUrl}
+                            label={group.name}
+                            selected={index === selectedIndex}
+                            disabled={disabled}
+                            disabledHint={disabled ? t("voiceNotConfigured") : undefined}
+                            onClick={() => {
+                              const sel = flattenedItems[index];
+                              if (sel) onSelectMention(sel);
+                            }}
+                          />
+                        );
+                      });
                   })
               )}
               {!loadingCharacters && hasMoreCharacters ? (

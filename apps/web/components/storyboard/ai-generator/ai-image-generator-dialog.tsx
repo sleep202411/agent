@@ -39,6 +39,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
+
 import {
   deleteImageItem,
   initImageInstance,
@@ -228,7 +229,6 @@ export function AiImageGeneratorDialog({
     store.dispatch(updateImageForm({ shotId, colId: shotColumnId, updates }));
 
   // Auto-select default model + size when mode changes or no model selected
-  // Also truncate referenceImages when new model has smaller maxItems
   useEffect(() => {
     if (modeModels.length === 0) return;
     const matched = modeModels.find((m) => m.id === formData.model);
@@ -236,17 +236,22 @@ export function AiImageGeneratorDialog({
       const defaultModel = modeModels.find((m) => m.isDefault) ?? modeModels[0];
       if (defaultModel) {
         const defaultSize = defaultModel.inputSchema?.properties?.size?.default;
-        const newMax = maxRefImages;
         handleUpdateForm({
           model: defaultModel.id,
           ...(defaultSize ? { size: String(defaultSize) } : {}),
-          ...(formData.referenceImages.length > newMax
-            ? { referenceImages: formData.referenceImages.slice(0, newMax) }
-            : {}),
         });
       }
     }
   }, [imageMode, modeModels, formData.model]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Truncate referenceImages when mode maxCount changes
+  useEffect(() => {
+    if (formData.referenceImages.length > maxRefImages) {
+      handleUpdateForm({
+        referenceImages: formData.referenceImages.slice(0, maxRefImages),
+      });
+    }
+  }, [maxRefImages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Sync @mention images → reference group ──
   // Called on every prompt change: extracts <mention imgUrl> tags and adds new ones to refs.
@@ -313,7 +318,12 @@ export function AiImageGeneratorDialog({
       return;
     }
 
-    const refImages = formData.referenceImages.map((item) => item.path).filter(Boolean);
+    const refImages = formData.referenceImages
+      .map((item) => {
+        const p = item.path || item.url || "";
+        return p.startsWith("http") ? p : buildOssUrl(p);
+      })
+      .filter(Boolean);
 
     // Edit-like modes require at least one reference image
     if (isEdit && refImages.length === 0) {
@@ -435,16 +445,11 @@ export function AiImageGeneratorDialog({
       onClick: () => {
         const nextMode = imageMode === "imageEdit" ? "imageGenerate" : "imageEdit";
         setImageMode(nextMode);
-        // Auto-fill preview image as reference when entering edit mode
+        // Edit mode: replace references with only the preview image (maxCount=1)
         if (nextMode === "imageEdit" && previewItem?.storagePath) {
-          const already = formData.referenceImages.some(
-            (r) => r.path === previewItem.storagePath || r.url === previewItem.url
-          );
-          if (!already) {
-            handleUpdateForm({
-              referenceImages: [{ path: previewItem.storagePath, url: previewItem.url ?? "" }],
-            });
-          }
+          handleUpdateForm({
+            referenceImages: [{ path: previewItem.storagePath, url: previewItem.url ?? "" }],
+          });
         }
       },
     },

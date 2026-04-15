@@ -47,7 +47,11 @@ export function useFusionQueue({ characterId }: UseFusionQueueOptions) {
 
   const queueItems = useMemo(() => {
     return Object.values(tasks)
-      .filter((task) => task.type === "fusion")
+      .filter(
+        (task) =>
+          task.type === "fusion" &&
+          String((task.input as Record<string, unknown>)?.worldRoleId ?? "") === characterId
+      )
       .sort((a, b) => b.createdAt - a.createdAt)
       .map(
         (task): FusionQueueItem => ({
