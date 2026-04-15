@@ -17,7 +17,7 @@ import type { IntegralRecord } from "@/src/types/workspace";
 import { ProjectMessagesPopover } from "@/components/project/project-messages-popover";
 import { ProjectTeamDialog } from "@/components/project/project-team-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
-import { UserMenu } from "@/components/layout/user-menu";
+import { StudioUserMenu } from "@/components/project/studio-user-menu";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { setActiveTab, selectCurrentInstance } from "@/src/store/slices/projectSlice";
@@ -294,7 +294,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             onUnreadCountChange={refreshUnreadCount}
           />
 
-          <UserMenu
+          <StudioUserMenu
             credits={displayCredits}
             onUpgrade={() => setUpgradeOpen(true)}
             onRecharge={() => setRechargeOpen(true)}
