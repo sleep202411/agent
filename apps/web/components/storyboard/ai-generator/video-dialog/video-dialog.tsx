@@ -89,6 +89,17 @@ import {
 } from "./video-types";
 import { VideoReferencePanel } from "./video-reference-group";
 import { ToolbarSelect, VideoModeSettings } from "./video-mode-settings";
+/** Deduplicate reference assets by url/path */
+function dedupeRefs(existing: ReferenceAsset[], newItems: ReferenceAsset[]): ReferenceAsset[] {
+  const urls = new Set(existing.map((r) => r.url || r.path).filter(Boolean));
+  return newItems.filter((item) => {
+    const key = item.url || item.path;
+    if (!key || urls.has(key)) return false;
+    urls.add(key);
+    return true;
+  });
+}
+
 import {
   getModelRegistryEntry,
   getRegistryModels,
@@ -771,27 +782,28 @@ export function AiVideoGeneratorDialog({
             })
           );
           break;
-        case "multimodalImages":
+        case "multimodalImages": {
+          const newRefs = dedupeRefs(referenceImages, toReferenceAssets(paths));
           dispatch(
             setVideoReferences({
               key,
               field: "referenceImages",
-              value: [
-                ...referenceImages,
-                ...toReferenceAssets(paths.slice(0, 9 - referenceImages.length)),
-              ],
+              value: [...referenceImages, ...newRefs].slice(0, 9),
             })
           );
           break;
-        case "multimodalVideos":
+        }
+        case "multimodalVideos": {
+          const newVids = dedupeRefs(firstFrames, toReferenceAssets(paths));
           dispatch(
             setVideoReferences({
               key,
               field: "firstFrames",
-              value: [...firstFrames, ...toReferenceAssets(paths.slice(0, 3 - firstFrames.length))],
+              value: [...firstFrames, ...newVids].slice(0, 3),
             })
           );
           break;
+        }
         case "multiRefSubject":
           dispatch(
             setVideoReferences({
