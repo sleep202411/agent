@@ -25,16 +25,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
-import {
-  ReferenceMapProvider,
-  type ReferenceMap,
-} from "@/components/storyboard/editor/reference-map-context";
-import {
-  buildReferenceMap,
-  extractMentionsFromHtml,
-  autoSelectReferences,
-} from "@/components/storyboard/editor/build-reference-map";
-import { getModeRefConfig, countAllRefs, findAvailableSlot } from "./mode-ref-config";
+import { ReferenceMapProvider } from "@/components/storyboard/editor/reference-map-context";
+import { autoSelectReferences } from "@/components/storyboard/editor/build-reference-map";
+import { useVideoReferences } from "./use-video-references";
+
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import type { ToolbarAction } from "@/components/ui/floating-toolbar";
@@ -86,20 +80,9 @@ import {
   MAX_CONCURRENT,
   ossUrl,
   parseVideoGenerateResult,
-  toReferenceAssets,
 } from "./video-types";
 import { VideoReferencePanel } from "./video-reference-group";
 import { ToolbarSelect, VideoModeSettings } from "./video-mode-settings";
-/** Deduplicate reference assets by url/path */
-function dedupeRefs(existing: ReferenceAsset[], newItems: ReferenceAsset[]): ReferenceAsset[] {
-  const urls = new Set(existing.map((r) => r.url || r.path).filter(Boolean));
-  return newItems.filter((item) => {
-    const key = item.url || item.path;
-    if (!key || urls.has(key)) return false;
-    urls.add(key);
-    return true;
-  });
-}
 
 import {
   getSchemaFields,
@@ -319,6 +302,19 @@ export function AiVideoGeneratorDialog({
   const { models: modeModels } = useAiModels(modeConfig?.endpoint ?? "");
   const currentModel = useMemo(() => modeModels.find((m) => m.id === model), [modeModels, model]);
 
+  // ─── Reference group management ──
+  const videoRefs = useVideoReferences({
+    open,
+    key,
+    prompt,
+    defaultPrompt,
+    defaultReferenceImage,
+    references,
+    currentModel,
+    modeModels,
+    activeMode,
+  });
+
   const sizeOptions = useMemo(() => {
     const sizeField = currentModel?.inputSchema?.properties?.size;
     if (!sizeField?.enum) return [];
@@ -422,7 +418,6 @@ export function AiVideoGeneratorDialog({
         colId: shotColumnId,
         opts: {
           defaultPrompt,
-          defaultReferenceImage,
           prefixPrompt: String(activeEpisode?.frontPrompt ?? ""),
           suffixPrompt: String(activeEpisode?.behindPrompt ?? ""),
         },
@@ -712,181 +707,9 @@ export function AiVideoGeneratorDialog({
     (paths: string[]) => {
       const target = pickerTarget;
       setPickerTarget(null);
-      if (!target || paths.length === 0) return;
-
-      switch (target) {
-        case "referenceImages":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "referenceImages",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "firstFrames":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "firstFrames",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "lastFrames":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "lastFrames",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "multimodalImages": {
-          const newRefs = dedupeRefs(referenceImages, toReferenceAssets(paths));
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "referenceImages",
-              value: [...referenceImages, ...newRefs].slice(0, 9),
-            })
-          );
-          break;
-        }
-        case "multimodalVideos": {
-          const newVids = dedupeRefs(firstFrames, toReferenceAssets(paths));
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "firstFrames",
-              value: [...firstFrames, ...newVids].slice(0, 3),
-            })
-          );
-          break;
-        }
-        case "multiRefSubject":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "multiRefImages",
-              value: [
-                ...multiRefImages.filter((item) => item.typeTag === "bg"),
-                ...(toReferenceAssets(paths.slice(0, 1), "obj") as (ReferenceAsset & {
-                  typeTag: MultiRefType;
-                })[]),
-              ],
-            })
-          );
-          break;
-        case "multiRefBg":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "multiRefImages",
-              value: [
-                ...multiRefImages.filter((item) => item.typeTag !== "bg"),
-                ...(toReferenceAssets(paths.slice(0, 2), "bg") as (ReferenceAsset & {
-                  typeTag: MultiRefType;
-                })[]),
-              ],
-            })
-          );
-          break;
-        case "repaintVideo":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "repaintRefVideos",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "repaintImage":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "repaintRefImage",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "localEditVideo":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "localEditRefVideo",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "localEditMask":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "localEditMaskImage",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "localEditRefImage":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "localEditRefImage",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "extendFirstClip":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "extendFirstClip",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "extendLastClip":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "extendLastClip",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "extendFirstFrame":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "extendFirstFrame",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "extendLastFrame":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "extendLastFrame",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        case "outpaintingVideo":
-          dispatch(
-            setVideoReferences({
-              key,
-              field: "outpaintingRefVideo",
-              value: toReferenceAssets(paths.slice(0, 1)),
-            })
-          );
-          break;
-        default:
-          break;
-      }
+      videoRefs.handlePickerSelect(target, paths);
     },
-    [dispatch, key, multiRefImages, pickerTarget]
+    [pickerTarget, videoRefs]
   );
 
   const pickerConfig = useMemo(() => {
@@ -971,167 +794,6 @@ export function AiVideoGeneratorDialog({
 
     toast.success(t("addedVideoTasks", { count: Math.max(1, count) }));
   };
-
-  // ─── Reference setter callbacks for VideoReferencePanel ──
-
-  const onSetReferenceImages = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "referenceImages", value: v })),
-    [dispatch, key]
-  );
-  const onSetFirstFrames = useCallback(
-    (v: ReferenceAsset[]) => dispatch(setVideoReferences({ key, field: "firstFrames", value: v })),
-    [dispatch, key]
-  );
-  const onSetLastFrames = useCallback(
-    (v: ReferenceAsset[]) => dispatch(setVideoReferences({ key, field: "lastFrames", value: v })),
-    [dispatch, key]
-  );
-  const onSetMultiRefImages = useCallback(
-    (v: (ReferenceAsset & { typeTag: MultiRefType })[]) =>
-      dispatch(setVideoReferences({ key, field: "multiRefImages", value: v })),
-    [dispatch, key]
-  );
-  const onSetRepaintRefVideos = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "repaintRefVideos", value: v })),
-    [dispatch, key]
-  );
-  const onSetRepaintRefImage = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "repaintRefImage", value: v })),
-    [dispatch, key]
-  );
-  const onSetLocalEditRefVideo = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "localEditRefVideo", value: v })),
-    [dispatch, key]
-  );
-  const onSetLocalEditMaskImage = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "localEditMaskImage", value: v })),
-    [dispatch, key]
-  );
-  const onSetLocalEditRefImage = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "localEditRefImage", value: v })),
-    [dispatch, key]
-  );
-  const onSetExtendFirstClip = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "extendFirstClip", value: v })),
-    [dispatch, key]
-  );
-  const onSetExtendLastClip = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "extendLastClip", value: v })),
-    [dispatch, key]
-  );
-  const onSetExtendFirstFrame = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "extendFirstFrame", value: v })),
-    [dispatch, key]
-  );
-  const onSetExtendLastFrame = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "extendLastFrame", value: v })),
-    [dispatch, key]
-  );
-  const onSetOutpaintingRefVideo = useCallback(
-    (v: ReferenceAsset[]) =>
-      dispatch(setVideoReferences({ key, field: "outpaintingRefVideo", value: v })),
-    [dispatch, key]
-  );
-
-  // ─── Mode-aware reference config ──
-  const modeRefConfig = useMemo(() => getModeRefConfig(activeMode), [activeMode]);
-  const refTotalCount = useMemo(
-    () => countAllRefs(references as unknown as Record<string, unknown[]>, modeRefConfig),
-    [references, modeRefConfig]
-  );
-  const refIsFull = refTotalCount >= modeRefConfig.totalMax;
-
-  // ─── Auto-add @mentioned character images to available slot ──
-  const handleMentionInserted = useCallback(
-    (item: { imgUrl?: string; name: string; mentionType: string }) => {
-      if (!item.imgUrl) return;
-
-      // Check duplicates across all slots
-      const allRefs = modeRefConfig.slots.flatMap((slot) => {
-        const arr = (references as Record<string, ReferenceAsset[]>)[slot.field];
-        return Array.isArray(arr) ? arr : [];
-      });
-      if (allRefs.some((r) => (r.url || ossUrl(r.path)) === item.imgUrl)) return;
-
-      // Find available slot for this media type
-      const mediaType = /\.(mp4|webm|mov)(\?|$)/i.test(item.imgUrl)
-        ? ("video" as const)
-        : /\.(mp3|wav|ogg|aac)(\?|$)/i.test(item.imgUrl)
-          ? ("audio" as const)
-          : ("image" as const);
-      const slot = findAvailableSlot(
-        references as unknown as Record<string, unknown[]>,
-        modeRefConfig,
-        mediaType
-      );
-      if (!slot) {
-        toast.warning(t("referenceGroupFull"));
-        return;
-      }
-
-      const existing = (references as Record<string, ReferenceAsset[]>)[slot.field] ?? [];
-      dispatch(
-        setVideoReferences({
-          key,
-          field: slot.field,
-          value: [...existing, { url: item.imgUrl, path: item.imgUrl, label: item.name }],
-        })
-      );
-    },
-    [dispatch, key, references, modeRefConfig, t]
-  );
-
-  // ─── Truncate reference group when mode maxCount decreases ──
-  const truncateKeyRef = useRef("");
-  useEffect(() => {
-    if (!open) {
-      truncateKeyRef.current = "";
-      return;
-    }
-    const truncateKey = `${activeMode}`;
-    if (truncateKeyRef.current === truncateKey) return;
-    truncateKeyRef.current = truncateKey;
-
-    const refSlot = modeRefConfig.slots.find((s) => s.field === "referenceImages");
-    if (!refSlot) return;
-
-    if (referenceImages.length > refSlot.maxCount) {
-      dispatch(
-        setVideoReferences({
-          key,
-          field: "referenceImages",
-          value: referenceImages.slice(0, refSlot.maxCount),
-        })
-      );
-    }
-  }, [open, activeMode, referenceImages, dispatch, key, modeRefConfig]);
-
-  // ─── Reference map: sync prompt chips ↔ reference group ──
-  const promptMentions = useMemo(() => extractMentionsFromHtml(prompt), [prompt]);
-  const allActiveRefs = useMemo(() => {
-    return modeRefConfig.slots.flatMap((slot) => {
-      const arr = (references as Record<string, ReferenceAsset[]>)[slot.field];
-      return Array.isArray(arr) ? arr : [];
-    });
-  }, [references, modeRefConfig]);
-  const referenceMap: ReferenceMap = useMemo(
-    () => buildReferenceMap(allActiveRefs, promptMentions),
-    [allActiveRefs, promptMentions]
-  );
-  const referenceMapCtx = useMemo(
-    () => ({ map: referenceMap, isFull: refIsFull }),
-    [referenceMap, refIsFull]
-  );
 
   return (
     <>
@@ -1270,20 +932,23 @@ export function AiVideoGeneratorDialog({
                   extendLastFrame={extendLastFrame}
                   outpaintingRefVideo={outpaintingRefVideo}
                   onOpenPicker={setPickerTarget}
-                  onSetReferenceImages={onSetReferenceImages}
-                  onSetFirstFrames={onSetFirstFrames}
-                  onSetLastFrames={onSetLastFrames}
-                  onSetMultiRefImages={onSetMultiRefImages}
-                  onSetRepaintRefVideos={onSetRepaintRefVideos}
-                  onSetRepaintRefImage={onSetRepaintRefImage}
-                  onSetLocalEditRefVideo={onSetLocalEditRefVideo}
-                  onSetLocalEditMaskImage={onSetLocalEditMaskImage}
-                  onSetLocalEditRefImage={onSetLocalEditRefImage}
-                  onSetExtendFirstClip={onSetExtendFirstClip}
-                  onSetExtendLastClip={onSetExtendLastClip}
-                  onSetExtendFirstFrame={onSetExtendFirstFrame}
-                  onSetExtendLastFrame={onSetExtendLastFrame}
-                  onSetOutpaintingRefVideo={onSetOutpaintingRefVideo}
+                  onSetReferenceImages={videoRefs.onSetReferenceImages}
+                  onSetFirstFrames={videoRefs.onSetFirstFrames}
+                  onSetLastFrames={videoRefs.onSetLastFrames}
+                  onSetMultiRefImages={videoRefs.onSetMultiRefImages}
+                  onSetRepaintRefVideos={videoRefs.onSetRepaintRefVideos}
+                  onSetRepaintRefImage={videoRefs.onSetRepaintRefImage}
+                  onSetLocalEditRefVideo={videoRefs.onSetLocalEditRefVideo}
+                  onSetLocalEditMaskImage={videoRefs.onSetLocalEditMaskImage}
+                  onSetLocalEditRefImage={videoRefs.onSetLocalEditRefImage}
+                  onSetExtendFirstClip={videoRefs.onSetExtendFirstClip}
+                  onSetExtendLastClip={videoRefs.onSetExtendLastClip}
+                  onSetExtendFirstFrame={videoRefs.onSetExtendFirstFrame}
+                  onSetExtendLastFrame={videoRefs.onSetExtendLastFrame}
+                  onSetOutpaintingRefVideo={videoRefs.onSetOutpaintingRefVideo}
+                  maxImages={videoRefs.maxImages}
+                  maxVideos={videoRefs.maxVideos}
+                  maxAudios={videoRefs.maxAudios}
                 />
               </div>
               {editMode ? (
@@ -1328,7 +993,7 @@ export function AiVideoGeneratorDialog({
             </div>
 
             <div className="px-4 py-2">
-              <ReferenceMapProvider value={referenceMapCtx}>
+              <ReferenceMapProvider value={videoRefs.referenceMapCtx}>
                 <RichMentionEditor
                   value={prompt}
                   onChange={(v) => dispatch(updateVideoForm({ key, updates: { prompt: v } }))}
@@ -1337,13 +1002,13 @@ export function AiVideoGeneratorDialog({
                   minHeight={96}
                   maxHeight={240}
                   className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
-                  referenceMedia={referenceImages.map((r) => ({
+                  referenceMedia={referenceImages.map((r, i) => ({
                     url: r.url || ossUrl(r.path),
                     path: r.path,
-                    label: r.label || r.path.split("/").pop() || "media",
+                    label: r.label || `参考图 ${i + 1}`,
                   }))}
-                  onMentionInserted={handleMentionInserted}
-                  mentionDisabled={refIsFull}
+                  onMentionInserted={videoRefs.handleMentionInserted}
+                  mentionDisabled={videoRefs.refIsFull}
                 />
               </ReferenceMapProvider>
             </div>

@@ -63,15 +63,15 @@ export function FusionControlBar({
   }, [count, model, models]);
 
   return (
-    <div className="border-t border-border bg-[hsl(var(--card))] p-3">
+    <div className="">
       <div className="rounded-xl border border-border/40 bg-[hsl(var(--card))]">
         {/* Character + Props tags */}
         <div className="flex items-start justify-between gap-3 border-b border-border/10 px-4 py-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {characterImage ? (
-              <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-muted/10 px-2 py-2">
-                <img src={characterImage} alt="" className="size-12 rounded-md object-cover" />
-                <span className="max-w-[140px] truncate text-xs text-foreground/85">
+              <div className="relative flex items-center gap-2 rounded-lg">
+                <img src={characterImage} alt="" className="size-24 rounded-md object-cover" />
+                <span className="absolute bottom-0 inset-x-0 bg-accent/80 px-2 p-2 max-w-[140px] truncate text-xs text-foreground/85">
                   {characterName || t("baseImage")}
                 </span>
               </div>

@@ -52,6 +52,10 @@ export interface VideoReferencePanelProps {
   onSetExtendFirstFrame: (items: ReferenceAsset[]) => void;
   onSetExtendLastFrame: (items: ReferenceAsset[]) => void;
   onSetOutpaintingRefVideo: (items: ReferenceAsset[]) => void;
+  /** Model reference limits */
+  maxImages?: number;
+  maxVideos?: number;
+  maxAudios?: number;
 }
 
 export function VideoReferencePanel({
@@ -86,6 +90,9 @@ export function VideoReferencePanel({
   onSetExtendFirstFrame,
   onSetExtendLastFrame,
   onSetOutpaintingRefVideo,
+  maxImages = 3,
+  maxVideos = 0,
+  maxAudios = 0,
 }: VideoReferencePanelProps) {
   const t = useTranslations("storyboard");
   const multiRefSubjectImages = multiRefImages.filter((item) => item.typeTag !== "bg");
@@ -270,7 +277,7 @@ export function VideoReferencePanel({
       <ReferenceGroup
         label={t("addMedia")}
         items={referenceImages}
-        maxCount={12}
+        maxCount={maxImages}
         onAdd={() => onOpenPicker("multimodalImages")}
         onRemove={(index) => {
           onSetReferenceImages(referenceImages.filter((_, i) => i !== index));
@@ -283,9 +290,9 @@ export function VideoReferencePanel({
     <ReferenceGroup
       label={t("referenceImage")}
       items={referenceImages}
-      maxCount={1}
+      maxCount={maxImages}
       onAdd={() => onOpenPicker("referenceImages")}
-      onRemove={() => onSetReferenceImages([])}
+      onRemove={(index) => onSetReferenceImages(referenceImages.filter((_, i) => i !== index))}
     />
   );
 }

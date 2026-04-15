@@ -37,6 +37,12 @@ export interface AiModel {
   isDefault: boolean;
   cost: number;
   inputSchema: AiModelInputSchema;
+  /** Max reference images (from backend description, default 3) */
+  maxImages: number;
+  /** Max reference videos (from backend description, default 0) */
+  maxVideos: number;
+  /** Max reference audios (from backend description, default 0) */
+  maxAudios: number;
 }
 
 // ─── Raw Backend Type ───────────────────────────────────
@@ -139,6 +145,9 @@ export function normalizeAiModel(raw: RawAiModel, locale = "zh-CN"): AiModel {
       type: "object",
       properties,
     },
+    maxImages: typeof desc.maxImages === "number" ? desc.maxImages : 3,
+    maxVideos: typeof desc.maxVideos === "number" ? desc.maxVideos : 0,
+    maxAudios: typeof desc.maxAudios === "number" ? desc.maxAudios : 0,
   };
 }
 

@@ -911,19 +911,23 @@ export const initImageInstance = createAsyncThunk<
   // --- Reference group initialization ---
   // Priority: 1. prompt mentions → 2. defaultRefImage (preferred > first image)
   if (inst.formData.referenceImages.length === 0) {
-    const refs: Array<{ url: string; path: string }> = [];
+    const refs: Array<{ url: string; path: string; label?: string }> = [];
 
-    // 1. Extract images from prompt mentions
+    // 1. Extract images from prompt mentions (with names)
     const promptHtml = inst.formData.prompt;
     if (promptHtml) {
-      const mentionRegex = /<mention\s+[^>]*imgUrl="([^"]+)"[^>]*>/gi;
+      const mentionRegex = /<mention\s+([^>]*)>([^<]*)<\/mention>/gi;
       const seen = new Set<string>();
       let match: RegExpExecArray | null;
       while ((match = mentionRegex.exec(promptHtml)) !== null) {
-        const url = match[1];
+        const attrs = match[1];
+        const name = match[2];
+        const url = attrs.match(/imgUrl="([^"]*)"/i)?.[1] ?? "";
+        const type = attrs.match(/type="([^"]*)"/)?.[1] ?? "reference";
         if (url && url !== "null" && !seen.has(url)) {
           seen.add(url);
-          refs.push({ url, path: url });
+          const isNamed = ["character", "scene", "prop"].includes(type);
+          refs.push({ url, path: url, label: isNamed && name ? name : undefined });
         }
       }
     }
@@ -1038,48 +1042,8 @@ export const initVideoInstance = createAsyncThunk<
   if (opts?.suffixPrompt && !inst.formData.suffixPrompt) {
     inst.formData.suffixPrompt = opts.suffixPrompt;
   }
-  // --- Reference group initialization ---
-  // Priority: 1. prompt mentions → 2. defaultReferenceImage (preferred > first image)
-  // Only fill if referenceImages is empty (first open)
-  if (inst.references.referenceImages.length === 0) {
-    const refs: Array<{ url: string; path: string }> = [];
-
-    // 1. Extract images from prompt mentions
-    const promptHtml = inst.formData.prompt;
-    if (promptHtml) {
-      const mentionRegex = /<mention\s+[^>]*imgUrl="([^"]+)"[^>]*>/gi;
-      const seen = new Set<string>();
-      let match: RegExpExecArray | null;
-      while ((match = mentionRegex.exec(promptHtml)) !== null) {
-        const url = match[1];
-        if (url && url !== "null" && !seen.has(url)) {
-          seen.add(url);
-          refs.push({ url, path: url });
-        }
-      }
-    }
-
-    // 2. Fallback: defaultReferenceImage (preferred image or first image in column)
-    if (refs.length === 0 && opts?.defaultReferenceImage) {
-      refs.push({
-        url: ossUrl(opts.defaultReferenceImage),
-        path: opts.defaultReferenceImage,
-      });
-    }
-
-    if (refs.length > 0) {
-      inst.references.referenceImages = refs;
-    }
-  } else {
-    console.log("[initVideoInstance] SKIPPED — refs already exist");
-  }
-
-  // Also fill firstFrames for frames mode
-  if (inst.references.firstFrames.length === 0 && opts?.defaultReferenceImage) {
-    inst.references.firstFrames = [
-      { url: ossUrl(opts.defaultReferenceImage), path: opts.defaultReferenceImage },
-    ];
-  }
+  // Reference group initialization is handled by the dialog's useEffect,
+  // which has access to mode config and model state for proper filtering.
 
   dispatch(setVideoInstance({ key, instance: inst }));
 

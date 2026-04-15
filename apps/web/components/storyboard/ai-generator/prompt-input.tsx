@@ -147,10 +147,10 @@ export function PromptInput({
           className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
           onSubmitShortcut={onSubmit}
           submitMode="mod"
-          referenceMedia={referenceImages.map((r) => ({
+          referenceMedia={referenceImages.map((r, i) => ({
             url: r.url || ossUrl(r.path) || "",
             path: r.path,
-            label: r.label || r.path.split("/").pop() || "media",
+            label: r.label || `参考图 ${i + 1}`,
           }))}
           mentionDisabled={mentionDisabled}
         />

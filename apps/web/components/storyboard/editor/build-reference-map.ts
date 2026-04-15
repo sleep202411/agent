@@ -23,7 +23,9 @@ interface MentionInfo {
  */
 export function buildReferenceMap(
   referenceItems: ReferenceItem[],
-  promptMentions: MentionInfo[]
+  promptMentions: MentionInfo[],
+  /** Label prefix for unnamed references, e.g. "参考图" → "参考图 1" */
+  refPrefix = "参考图"
 ): ReferenceMap {
   const map: ReferenceMap = new Map();
 
@@ -47,13 +49,15 @@ export function buildReferenceMap(
       if (idx >= 0) index = idx + 1;
     }
 
-    // Determine display label
-    const isNamedEntity =
-      mention.type === "character" || mention.type === "scene" || mention.type === "prop";
-    const displayLabel = isNamedEntity
-      ? mention.label
+    // Determine display label:
+    // 1. If the matched reference item has a label (name), use it
+    // 2. Otherwise use position-based index
+    const matchedItem = index > 0 ? referenceItems[index - 1] : null;
+    const itemLabel = matchedItem?.label;
+    const displayLabel = itemLabel
+      ? itemLabel
       : index > 0
-        ? `参考图 ${index}`
+        ? `${refPrefix} ${index}`
         : mention.label;
 
     // Detect media type from URL
@@ -74,7 +78,7 @@ export function buildReferenceMap(
   return map;
 }
 
-function detectMediaType(url: string): "image" | "video" | "audio" {
+export function detectMediaType(url: string): "image" | "video" | "audio" {
   if (/\.(mp4|webm|mov)(\?|$)/i.test(url)) return "video";
   if (/\.(mp3|wav|ogg|aac|flac|m4a)(\?|$)/i.test(url)) return "audio";
   return "image";
@@ -131,4 +135,23 @@ export function autoSelectReferences(
   }
 
   return selected;
+}
+
+/**
+ * Remove <mention> tags from prompt HTML whose imgUrl matches any URL in the set.
+ * Returns the original string unchanged (same reference) if nothing was removed.
+ */
+export function removeMentionsByUrls(html: string, urlsToRemove: Set<string>): string {
+  if (urlsToRemove.size === 0 || !html.includes("<mention")) return html;
+
+  const result = html.replace(
+    /<mention\s+([^>]*)>[^<]*<\/mention>/gi,
+    (fullMatch, attrs: string) => {
+      const imgUrl = attrs.match(/imgUrl="([^"]*)"/i)?.[1] ?? "";
+      if (imgUrl && urlsToRemove.has(imgUrl)) return "";
+      return fullMatch;
+    }
+  );
+
+  return result === html ? html : result;
 }

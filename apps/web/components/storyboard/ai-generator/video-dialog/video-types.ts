@@ -227,6 +227,20 @@ export function toHistoryItem(record: AssetRecord): VideoResultItem {
   };
 }
 
+/** Deduplicate reference assets by url/path */
+export function dedupeRefs(
+  existing: ReferenceAsset[],
+  newItems: ReferenceAsset[]
+): ReferenceAsset[] {
+  const urls = new Set(existing.map((r) => r.url || r.path).filter(Boolean));
+  return newItems.filter((item) => {
+    const k = item.url || item.path;
+    if (!k || urls.has(k)) return false;
+    urls.add(k);
+    return true;
+  });
+}
+
 export function toReferenceAssets(paths: string[], typeTag?: MultiRefType) {
   return paths.map((path) => ({
     url: ossUrl(path),

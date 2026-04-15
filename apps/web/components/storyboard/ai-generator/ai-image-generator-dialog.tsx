@@ -31,6 +31,7 @@ import {
 import {
   buildReferenceMap,
   extractMentionsFromHtml,
+  removeMentionsByUrls,
 } from "@/components/storyboard/editor/build-reference-map";
 import { ResultGallery } from "./result-gallery";
 import { backendApi } from "@/src/lib/api";
@@ -172,7 +173,7 @@ export function AiImageGeneratorDialog({
   // normalizedModels used by ModelPicker card UI — same source now
   const normalizedModels = modeModels;
 
-  const maxRefImages = modeConfig?.refConfig?.maxCount ?? 5;
+  const maxRefImages = currentModel?.maxImages ?? 3;
 
   const sizeField = currentModel?.inputSchema?.properties?.size;
   const sizeOptions = useMemo(() => {
@@ -244,12 +245,22 @@ export function AiImageGeneratorDialog({
     }
   }, [imageMode, modeModels, formData.model]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Truncate referenceImages when mode maxCount changes
+  // Truncate referenceImages when mode maxCount changes + clean prompt for dropped items
   useEffect(() => {
     if (formData.referenceImages.length > maxRefImages) {
-      handleUpdateForm({
-        referenceImages: formData.referenceImages.slice(0, maxRefImages),
-      });
+      const kept = formData.referenceImages.slice(0, maxRefImages);
+      const dropped = formData.referenceImages.slice(maxRefImages);
+
+      const urlsToRemove = new Set<string>();
+      for (const item of dropped) {
+        if (item.url) urlsToRemove.add(item.url);
+        if (item.path) urlsToRemove.add(item.path);
+      }
+
+      const cleanedPrompt = removeMentionsByUrls(formData.prompt, urlsToRemove);
+      const updates: Partial<typeof formData> = { referenceImages: kept };
+      if (cleanedPrompt !== formData.prompt) updates.prompt = cleanedPrompt;
+      handleUpdateForm(updates);
     }
   }, [maxRefImages]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -257,7 +268,7 @@ export function AiImageGeneratorDialog({
   // Called on every prompt change: extracts <mention imgUrl> tags and adds new ones to refs.
   const syncMentionRefs = (promptHtml: string) => {
     if (!promptHtml.includes("<mention")) return;
-    const mentionRegex = /<mention\s+[^>]*imgUrl="([^"]+)"[^>]*>([^<]*)<\/mention>/gi;
+    const mentionRegex = /<mention\s+([^>]*)>([^<]*)<\/mention>/gi;
     const currentRefs =
       selectCurrentInstance(store.getState()).aiImageForm.instances[key]?.formData
         ?.referenceImages ?? [];
@@ -267,11 +278,15 @@ export function AiImageGeneratorDialog({
     const newItems: { url: string; path: string; label: string }[] = [];
     let match: RegExpExecArray | null;
     while ((match = mentionRegex.exec(promptHtml)) !== null) {
-      const url = match[1];
+      const attrs = match[1];
+      const name = match[2];
+      const url = attrs.match(/imgUrl="([^"]*)"/i)?.[1] ?? "";
+      const type = attrs.match(/type="([^"]*)"/)?.[1] ?? "reference";
       if (!url || url === "null" || existing.has(url)) continue;
       existing.add(url);
-      const label = match[2] || url.split("/").pop() || "media";
-      newItems.push({ url, path: url, label });
+      const isNamed = ["character", "scene", "prop"].includes(type);
+      const label = isNamed && name ? name : undefined;
+      newItems.push({ url, path: url, label: label ?? "" });
     }
     if (newItems.length > 0) {
       handleUpdateForm({
@@ -279,6 +294,27 @@ export function AiImageGeneratorDialog({
       });
     }
   };
+
+  // ─── Delete reference → also remove mention from prompt ──
+  const handleRemoveReference = useCallback(
+    (index: number) => {
+      const removed = formData.referenceImages[index];
+      const newRefs = formData.referenceImages.filter((_, i) => i !== index);
+
+      const urlsToRemove = new Set<string>();
+      if (removed?.url) urlsToRemove.add(removed.url);
+      if (removed?.path) urlsToRemove.add(removed.path);
+
+      const cleanedPrompt = removeMentionsByUrls(formData.prompt, urlsToRemove);
+
+      const updates: Partial<typeof formData> = { referenceImages: newRefs };
+      if (cleanedPrompt !== formData.prompt) {
+        updates.prompt = cleanedPrompt;
+      }
+      handleUpdateForm(updates);
+    },
+    [formData.referenceImages, formData.prompt, handleUpdateForm]
+  );
 
   const handleModelChange = (value: string) => {
     const matchedModel = modeModels.find((m) => m.id === value);
@@ -556,13 +592,7 @@ export function AiImageGeneratorDialog({
             referenceImages={formData.referenceImages}
             maxReferenceImages={maxRefImages}
             onAddReference={() => setImagePickerOpen(true)}
-            onRemoveReference={(index) =>
-              handleUpdateForm({
-                referenceImages: formData.referenceImages.filter(
-                  (_, innerIndex) => innerIndex !== index
-                ),
-              })
-            }
+            onRemoveReference={handleRemoveReference}
             referenceFields={referenceFields}
             cost={cost}
             hideExtraPrompts={isEditLikeMode}
