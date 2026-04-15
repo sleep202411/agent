@@ -24,6 +24,8 @@ interface RichMentionEditorProps {
   referenceMedia?: ReferenceMediaItem[];
   onSelectReferenceMedia?: (item: ReferenceMediaItem) => void;
   onMentionInserted?: (item: MentionFlatItem) => void;
+  /** When true, disable inserting new @ mentions (reference group full) */
+  mentionDisabled?: boolean;
 }
 
 export function RichMentionEditor({
