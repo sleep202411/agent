@@ -71,6 +71,14 @@ export function GlobalNav() {
     void navigate({ to: pathname, replace: true });
   };
 
+  if (!mounted) {
+    return (
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-14 items-center" style={{ maxWidth: 1400 }} />
+      </header>
+    );
+  }
+
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
       <div
