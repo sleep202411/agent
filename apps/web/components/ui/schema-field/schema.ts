@@ -352,7 +352,6 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
     label: "Wan2.5",
     mode: "imageGenerate",
     cost: 10,
-    isDefault: true,
     inputSchema: imageSchema(
       [
         { ratio: "16:9", dimension: "1280*768" },
@@ -390,9 +389,9 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
   },
   {
     id: "google/nano-banana",
-    label: "nano-banana 2.5",
+    label: "Nano-banana 2.5",
     mode: "imageGenerate",
-    cost: 10,
+    cost: 15,
     inputSchema: imageSchema(
       [
         { ratio: "16:9", dimension: "16:9" },
@@ -410,9 +409,10 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
   },
   {
     id: "google/nano-banana-pro",
-    label: "nano-banana-pro",
+    label: "Nano-banana-pro",
     mode: "imageGenerate",
-    cost: 20,
+    cost: 30,
+    isDefault: true,
     inputSchema: imageSchema(
       [
         { ratio: "16:9", dimension: "16:9", resolution: "2K" },
@@ -429,30 +429,10 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
     ),
   },
   {
-    id: "bytedance/seedream-4.5",
-    label: "seedream-4.5",
-    mode: "imageGenerate",
-    cost: 20,
-    inputSchema: imageSchema(
-      [
-        { ratio: "16:9", dimension: "16:9", resolution: "2K" },
-        { ratio: "1:1", dimension: "1:1", resolution: "2K" },
-        { ratio: "9:16", dimension: "9:16", resolution: "2K" },
-        { ratio: "2:3", dimension: "2:3", resolution: "2K" },
-        { ratio: "3:2", dimension: "3:2", resolution: "2K" },
-        { ratio: "4:3", dimension: "4:3", resolution: "2K" },
-        { ratio: "3:4", dimension: "3:4", resolution: "2K" },
-        { ratio: "21:9", dimension: "21:9", resolution: "2K" },
-        { ratio: "9:21", dimension: "9:21", resolution: "2K" },
-      ],
-      { maxImages: 5 }
-    ),
-  },
-  {
     id: "GEM:3.1-2K",
-    label: "GEM:3.1-2K",
+    label: "Gemini 3.1-2K",
     mode: "imageGenerate",
-    cost: 25,
+    cost: 30,
     inputSchema: imageSchema(
       [
         { ratio: "16:9", dimension: "16:9", resolution: "2K" },
@@ -470,9 +450,9 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
   },
   {
     id: "GEM:3.1-1K",
-    label: "GEM:3.1-1K",
+    label: "Gemini 3.1-1K",
     mode: "imageGenerate",
-    cost: 15,
+    cost: 16,
     inputSchema: imageSchema(
       [
         { ratio: "16:9", dimension: "16:9", resolution: "2K" },
@@ -492,14 +472,14 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
     id: "mj_imagine",
     label: "MJ (2x2 grid)",
     mode: "imageGenerate",
-    cost: 25,
+    cost: 12,
     inputSchema: imageRefOnly(5),
   },
   {
     id: "MJ:v7",
     label: "MJ:v7",
     mode: "imageGenerate",
-    cost: 25,
+    cost: 15,
     inputSchema: imageSchema(
       [
         { ratio: "16:9", dimension: "16:9", resolution: "2K" },
@@ -515,6 +495,27 @@ const IMAGE_GENERATE_MODELS: ModelRegistryEntry[] = [
       { maxImages: 5 }
     ),
   },
+  {
+    id: "wan2.5-i2i-preview-special",
+    label: "Wan2.5-special",
+    mode: "imageGenerate",
+    cost: 10,
+    isDefault: true,
+    regions: ["global"],
+    inputSchema: imageSchema(
+      [
+        { ratio: "16:9", dimension: "1280*768" },
+        { ratio: "1:1", dimension: "1280*1280" },
+        { ratio: "9:16", dimension: "768*1280" },
+        { ratio: "1:1", dimension: "1024*1024" },
+        { ratio: "3:2", dimension: "1152*768" },
+        { ratio: "2:3", dimension: "768*1152" },
+        { ratio: "4:3", dimension: "1280*960" },
+        { ratio: "3:4", dimension: "960*1280" },
+      ],
+      { maxImages: 3 }
+    ),
+  },
 ];
 
 // ─── Image edit models ──────────────────────────────
@@ -524,7 +525,7 @@ const IMAGE_EDIT_MODELS: ModelRegistryEntry[] = [
     id: "wan2.5-i2i-preview",
     label: "Wan2.5",
     mode: "imageEdit",
-    cost: 35,
+    cost: 10,
     isDefault: true,
     inputSchema: imageSchema(
       [
@@ -549,7 +550,7 @@ const MULTIMODAL_MODELS: ModelRegistryEntry[] = [
     id: "doubao-seedance-2-0-260128",
     label: "Seedance 2.0",
     mode: "multimodal",
-    cost: 40,
+    cost: 200,
     isDefault: true,
     supportsPromptRef: true,
     inputSchema: {
@@ -636,23 +637,8 @@ const BASIC_MODELS: ModelRegistryEntry[] = [
     id: "wan2.6-i2v-flash",
     label: "Wan2.6",
     mode: "reference",
-    cost: 100,
+    cost: 70,
     isDefault: true,
-    inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
-  },
-  // {
-  //   id: "wan2.7-i2v",
-  //   label: "Wan2.7",
-  //   mode: "reference",
-  //   cost: 100,
-  //   isDefault: true,
-  //   inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
-  // },
-  {
-    id: "wan2.6-i2v",
-    label: "Wan2.6-voice",
-    mode: "reference",
-    cost: 100,
     inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
   },
   {
@@ -663,15 +649,22 @@ const BASIC_MODELS: ModelRegistryEntry[] = [
     inputSchema: videoSchema(["16:9", "9:16", "1:1"], [5]),
   },
   {
+    id: "ep-20260116231000-9j7vw",
+    label: "Seedance-1.5-pro",
+    mode: "reference",
+    cost: 125,
+    inputSchema: videoSchema([], []),
+  },
+  {
     id: "minimax/hailuo-02",
-    label: "hailuo-02",
+    label: "Hailuo-02",
     mode: "reference",
     cost: 125,
     inputSchema: videoSchema(["1080p"], [6]),
   },
   {
     id: "minimax/hailuo-2.3",
-    label: "hailuo-2.3",
+    label: "Hailuo-2.3",
     mode: "reference",
     cost: 125,
     inputSchema: videoSchema(["1080p"], [6]),
@@ -680,15 +673,8 @@ const BASIC_MODELS: ModelRegistryEntry[] = [
     id: "Kling-3.0-720p",
     label: "Kling-3.0-720p",
     mode: "reference",
-    cost: 140,
+    cost: 160,
     inputSchema: videoSchema(["720p"], [5, 10]),
-  },
-  {
-    id: "Kling-3.0-1080p",
-    label: "Kling-3.0-1080p",
-    mode: "reference",
-    cost: 250,
-    inputSchema: videoSchema(["1080p"], [5, 10]),
   },
   {
     id: "Hailuo-2.3-768p",
@@ -698,11 +684,20 @@ const BASIC_MODELS: ModelRegistryEntry[] = [
     inputSchema: videoSchema(["768p"], [6, 10]),
   },
   {
-    id: "Hailuo-2.3-1080p",
-    label: "Hailuo-2.3-1080p",
+    id: "wan2.6-special",
+    label: "Wan2.6-special",
     mode: "reference",
-    cost: 90,
-    inputSchema: videoSchema(["1080p"], [6, 10]),
+    cost: 70,
+    regions: ["global"],
+    inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
+  },
+  {
+    id: "wan2.5-special",
+    label: "Wan2.5-special",
+    mode: "reference",
+    cost: 70,
+    regions: ["global"],
+    inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
   },
 ];
 
@@ -713,21 +708,20 @@ const FRAMES_MODELS: ModelRegistryEntry[] = [
     id: "wan2.6-i2v-flash",
     label: "Wan2.6",
     mode: "frames",
-    cost: 120,
+    cost: 130,
     isDefault: true,
     inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
   },
-  // {
-  //   id: "wan2.7-i2v",
-  //   label: "Wan2.7",
-  //   mode: "frames",
-  //   cost: 140,
-  //   isDefault: true,
-  //   inputSchema: videoSchema(["720P", "1080P"], [5, 10, 15]),
-  // },
+  {
+    id: "seedance-1-5-pro-251215",
+    label: "Seedance-1.5-pro",
+    mode: "frames",
+    cost: 120,
+    inputSchema: videoSchema([], []),
+  },
   {
     id: "minimax/hailuo-02",
-    label: "hailuo-02",
+    label: "Hailuo-02",
     mode: "frames",
     cost: 120,
     inputSchema: videoSchema(["1080p"], [6]),
@@ -736,15 +730,8 @@ const FRAMES_MODELS: ModelRegistryEntry[] = [
     id: "Kling-3.0-720p",
     label: "Kling-3.0-720p",
     mode: "frames",
-    cost: 140,
+    cost: 160,
     inputSchema: videoSchema(["720p"], [5, 10]),
-  },
-  {
-    id: "Kling-3.0-1080p",
-    label: "Kling-3.0-1080p",
-    mode: "frames",
-    cost: 250,
-    inputSchema: videoSchema(["1080p"], [5, 10]),
   },
 ];
 
@@ -848,32 +835,26 @@ const CHARACTER_FUSION_MODELS: ModelRegistryEntry[] = [
   },
   {
     id: "google/nano-banana",
-    label: "nano-banana 2.5",
+    label: "Nano-banana 2.5",
     mode: "characterFusion",
-    cost: 10,
+    cost: 15,
     inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "google/nano-banana")!.inputSchema,
   },
   {
     id: "google/nano-banana-pro",
-    label: "nano-banana-pro",
+    label: "Nano-banana-pro",
     mode: "characterFusion",
-    cost: 20,
+    cost: 30,
     inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "google/nano-banana-pro")!.inputSchema,
   },
   {
-    id: "bytedance/seedream-4.5",
-    label: "seedream-4.5",
-    mode: "characterFusion",
-    cost: 20,
-    inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "bytedance/seedream-4.5")!.inputSchema,
-  },
-  {
-    id: "qwen-image-max",
-    label: "Qwen",
+    id: "wan2.5-i2i-preview-special",
+    label: "Wan2.5-special",
     mode: "characterFusion",
     cost: 10,
     isDefault: true,
-    inputSchema: imageRefOnly(5),
+    regions: ["global"],
+    inputSchema: IMAGE_GENERATE_MODELS.find((m) => m.id === "wan2.5-i2i-preview")!.inputSchema,
   },
 ];
 
