@@ -19,7 +19,12 @@ import {
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
-import { useUploadAvatar, useUploadCover, useReferralCode } from "@/src/hooks/use-user";
+import {
+  useUploadAvatar,
+  useUploadCover,
+  useReferralCode,
+  useUpdateUserInfo,
+} from "@/src/hooks/use-user";
 import { useMyCertifications, useCertificationRoles } from "@/src/hooks/use-certification";
 import { AUTH_STATUS } from "@/src/services/certification";
 import { CertificationDialog } from "./certification-dialog";
@@ -47,6 +52,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
+  const { mutate: doUpdateUserInfo } = useUpdateUserInfo();
   const { mutate: doUploadAvatar, isPending: uploadingAvatar } = useUploadAvatar();
   const { mutate: doUploadCover, isPending: uploadingCover } = useUploadCover();
   const { mutate: doGetReferralCode, isPending: generatingLink } = useReferralCode();
@@ -193,7 +199,30 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
               </div>
 
               <div>
-                <h1 className="text-2xl font-bold text-white">{displayName}</h1>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-2xl font-bold text-white">{displayName}</h1>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !(info as Record<string, unknown>)?.availableForWork;
+                      doUpdateUserInfo({ availableForWork: next } as Record<string, unknown>, {
+                        onSuccess: () => toast.success(next ? t("availableOn") : t("availableOff")),
+                      });
+                    }}
+                    className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      (info as Record<string, unknown>)?.availableForWork
+                        ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
+                        : "bg-white/10 text-white/50 hover:bg-white/15 hover:text-white/70"
+                    }`}
+                  >
+                    <span
+                      className={`size-2 rounded-full ${(info as Record<string, unknown>)?.availableForWork ? "bg-green-400" : "bg-white/30"}`}
+                    />
+                    {(info as Record<string, unknown>)?.availableForWork
+                      ? t("available")
+                      : t("unavailable")}
+                  </button>
+                </div>
                 <div className="mt-1 flex items-center gap-1.5">
                   {info?.userLevel && (
                     <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-px text-[10px] font-medium text-primary">

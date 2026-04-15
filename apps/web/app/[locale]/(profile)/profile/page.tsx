@@ -3,7 +3,11 @@ import { IconEdit, IconArrowDown, IconLoader2 } from "@tabler/icons-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useUserInfo } from "@/src/hooks/use-user";
-import { useMyProjects, useMyJoinedProjects } from "@/src/hooks/use-my-projects";
+import {
+  useMyProjects,
+  useMyJoinedProjects,
+  useMyPersonalWorks,
+} from "@/src/hooks/use-my-projects";
 import { env } from "@/src/env";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
@@ -37,13 +41,14 @@ export default function ProfilePage() {
 
 // ─── Tabs ──────────────────────────────────────────────
 
-type ProfileTab = "ips" | "joined";
+type ProfileTab = "works" | "ips" | "joined";
 
 function ProfileTabs() {
   const t = useTranslations("profile");
-  const [activeTab, setActiveTab] = useState<ProfileTab>("ips");
+  const [activeTab, setActiveTab] = useState<ProfileTab>("works");
 
   const tabs: { key: ProfileTab; label: string }[] = [
+    { key: "works", label: t("personalWorks") },
     { key: "ips", label: t("myIPs") },
     { key: "joined", label: t("joinedCrews") },
   ];
@@ -68,6 +73,7 @@ function ProfileTabs() {
       </div>
 
       <div className="mt-6">
+        {activeTab === "works" && <PersonalWorksTab />}
         {activeTab === "ips" && <MyIPsTab />}
         {activeTab === "joined" && <JoinedTab />}
       </div>
@@ -102,6 +108,60 @@ function MyIPsTab() {
       {projects.map((project) => (
         <ProjectCard key={project.id} project={project} />
       ))}
+    </div>
+  );
+}
+
+// ─── Personal Works Tab ───────────────────────────────
+
+function PersonalWorksTab() {
+  const t = useTranslations("profile");
+  const { data: works, isLoading } = useMyPersonalWorks();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-48 items-center justify-center">
+        <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!works?.length) {
+    return (
+      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+        {t("noData")}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+      {works.map((work, i) => {
+        const w = work as Record<string, unknown>;
+        const title = String(w.title ?? w.name ?? "");
+        const cover = String(w.coverImg ?? w.bannerLink ?? w.thumbnail ?? "");
+        const coverUrl =
+          cover && !cover.startsWith("http") ? `${env.BANNER_BASE_URL}/${cover}` : cover;
+        return (
+          <div
+            key={String(w.id ?? i)}
+            className="group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
+          >
+            <div className="aspect-video overflow-hidden bg-muted">
+              {coverUrl ? (
+                <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-muted-foreground/30">
+                  {title.slice(0, 1) || "?"}
+                </div>
+              )}
+            </div>
+            <div className="p-3">
+              <div className="truncate text-sm font-medium">{title || t("noData")}</div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getMyProjects,
   getMyJoinedProjects,
+  getMyPersonalWorks,
   getProjectDetail,
   getProjectVideoLink,
   getProjectMembers,
@@ -16,10 +17,18 @@ import {
 } from "@/src/services/project";
 
 export const myProjectKeys = {
+  works: ["my", "works"] as const,
   projects: ["my", "projects"] as const,
   joined: ["my", "joined"] as const,
   detail: (id: string) => ["project", "detail", id] as const,
 };
+
+export function useMyPersonalWorks() {
+  return useQuery<unknown[]>({
+    queryKey: myProjectKeys.works,
+    queryFn: () => getMyPersonalWorks(1, 50),
+  });
+}
 
 export function useMyProjects() {
   return useQuery<Project[]>({

@@ -26,6 +26,7 @@ export interface UserInfo {
   expireTime?: string;
   createTime?: string;
   coverImage?: string;
+  availableForWork?: boolean;
 }
 
 export interface CreditInfo {
