@@ -48,7 +48,7 @@ export function PropPickerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-3xl"
+        className="w-full sm:max-w-2xl"
         onOpenAutoFocus={() => {
           setKeyword("");
           setSelectedIds(value.map((item) => item.id));
@@ -59,7 +59,7 @@ export function PropPickerDialog({
           <DialogDescription>{t("selectPropDescription")}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 p-4">
           <Input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}

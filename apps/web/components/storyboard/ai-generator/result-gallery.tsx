@@ -37,6 +37,8 @@ interface ResultGalleryProps {
   emptyText?: string;
   showActions?: boolean;
   actions?: Array<"collect" | "setPreferred" | "setReference" | "download" | "delete">;
+  /** Use original image instead of OSS thumbnail (default: true) */
+  useThumbnail?: boolean;
 }
 
 function getVideoThumbnail(url?: string) {
@@ -66,6 +68,7 @@ export function ResultGallery({
   emptyText,
   showActions = true,
   actions = ["collect", "setPreferred", "download", "delete"],
+  useThumbnail = true,
 }: ResultGalleryProps) {
   const t = useTranslations("storyboard");
   const resolvedEmptyText = emptyText ?? t("noGenerationRecords");
@@ -111,7 +114,9 @@ export function ResultGallery({
         const thumbnailUrl =
           mediaType === "video"
             ? getVideoThumbnail(mediaUrl)
-            : buildOssImageUrl(mediaUrl, { width: 300, height: 300, mode: "fill" });
+            : useThumbnail
+              ? buildOssImageUrl(mediaUrl, { width: 300, height: 300, mode: "fill" })
+              : mediaUrl;
 
         // Queue: waiting / generating
         if (item.status === "waiting" || item.status === "generating") {

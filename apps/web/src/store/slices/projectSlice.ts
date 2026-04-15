@@ -908,10 +908,34 @@ export const initImageInstance = createAsyncThunk<
   if (opts?.defaultPrompt && !inst.formData.prompt) {
     inst.formData.prompt = opts.defaultPrompt;
   }
-  if (opts?.defaultRefImage) {
-    inst.formData.referenceImages = [
-      { url: buildOssUrl(opts.defaultRefImage), path: opts.defaultRefImage },
-    ];
+  // --- Reference group initialization ---
+  // Priority: 1. prompt mentions → 2. defaultRefImage (preferred > first image)
+  if (inst.formData.referenceImages.length === 0) {
+    const refs: Array<{ url: string; path: string }> = [];
+
+    // 1. Extract images from prompt mentions
+    const promptHtml = inst.formData.prompt;
+    if (promptHtml) {
+      const mentionRegex = /<mention\s+[^>]*imgUrl="([^"]+)"[^>]*>/gi;
+      const seen = new Set<string>();
+      let match: RegExpExecArray | null;
+      while ((match = mentionRegex.exec(promptHtml)) !== null) {
+        const url = match[1];
+        if (url && url !== "null" && !seen.has(url)) {
+          seen.add(url);
+          refs.push({ url, path: url });
+        }
+      }
+    }
+
+    // 2. Fallback: defaultRefImage
+    if (refs.length === 0 && opts?.defaultRefImage) {
+      refs.push({ url: buildOssUrl(opts.defaultRefImage), path: opts.defaultRefImage });
+    }
+
+    if (refs.length > 0) {
+      inst.formData.referenceImages = refs;
+    }
   }
   if (instProj.aiImageForm.currentModel && !inst.formData.model) {
     inst.formData.model = instProj.aiImageForm.currentModel.serviceCode ?? "";
@@ -1014,17 +1038,47 @@ export const initVideoInstance = createAsyncThunk<
   if (opts?.suffixPrompt && !inst.formData.suffixPrompt) {
     inst.formData.suffixPrompt = opts.suffixPrompt;
   }
-  if (opts?.defaultReferenceImage) {
-    const defaultRef = {
-      url: ossUrl(opts.defaultReferenceImage),
-      path: opts.defaultReferenceImage,
-    };
-    if (inst.references.referenceImages.length === 0) {
-      inst.references.referenceImages = [defaultRef];
+  // --- Reference group initialization ---
+  // Priority: 1. prompt mentions → 2. defaultReferenceImage (preferred > first image)
+  // Only fill if referenceImages is empty (first open)
+  if (inst.references.referenceImages.length === 0) {
+    const refs: Array<{ url: string; path: string }> = [];
+
+    // 1. Extract images from prompt mentions
+    const promptHtml = inst.formData.prompt;
+    if (promptHtml) {
+      const mentionRegex = /<mention\s+[^>]*imgUrl="([^"]+)"[^>]*>/gi;
+      const seen = new Set<string>();
+      let match: RegExpExecArray | null;
+      while ((match = mentionRegex.exec(promptHtml)) !== null) {
+        const url = match[1];
+        if (url && url !== "null" && !seen.has(url)) {
+          seen.add(url);
+          refs.push({ url, path: url });
+        }
+      }
     }
-    if (inst.references.firstFrames.length === 0) {
-      inst.references.firstFrames = [defaultRef];
+
+    // 2. Fallback: defaultReferenceImage (preferred image or first image in column)
+    if (refs.length === 0 && opts?.defaultReferenceImage) {
+      refs.push({
+        url: ossUrl(opts.defaultReferenceImage),
+        path: opts.defaultReferenceImage,
+      });
     }
+
+    if (refs.length > 0) {
+      inst.references.referenceImages = refs;
+    }
+  } else {
+    console.log("[initVideoInstance] SKIPPED — refs already exist");
+  }
+
+  // Also fill firstFrames for frames mode
+  if (inst.references.firstFrames.length === 0 && opts?.defaultReferenceImage) {
+    inst.references.firstFrames = [
+      { url: ossUrl(opts.defaultReferenceImage), path: opts.defaultReferenceImage },
+    ];
   }
 
   dispatch(setVideoInstance({ key, instance: inst }));

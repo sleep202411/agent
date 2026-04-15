@@ -19,7 +19,7 @@ interface CharacterDisplayGroup {
   name: string;
   voiceId?: string;
   model?: string;
-  items: Array<{ key: string; imgUrl: string }>;
+  items: Array<{ key: string; imgUrl: string; name?: string }>;
 }
 
 interface MentionSearchItem {
@@ -118,7 +118,7 @@ function CompactItem({
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-1 mt-3 px-2 text-[11px] font-semibold uppercase tracking-wide text-[#777777] first:mt-0">
+    <div className="px-2 pt-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#777777] first:mt-0">
       {children}
     </div>
   );
@@ -251,7 +251,7 @@ export function MentionPopover({
                           <CompactItem
                             key={item.key}
                             imgUrl={item.imgUrl}
-                            label={group.name}
+                            label={item.name || group.name}
                             selected={index === selectedIndex}
                             disabled={disabled}
                             disabledHint={disabled ? t("voiceNotConfigured") : undefined}

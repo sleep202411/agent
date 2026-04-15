@@ -333,6 +333,7 @@ export function CharacterFusionDialog({
                     onRetry={(item) => retry(item as FusionQueueItem)}
                     columns={3}
                     actions={["setReference", "download", "delete"]}
+                    useThumbnail={false}
                   />
                 )}
               </div>
