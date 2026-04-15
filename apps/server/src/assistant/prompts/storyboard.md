@@ -19,5 +19,6 @@
 6. Video_Prompt 三段式：1) 镜头运动 2) 画面描述 3) 声音
 7. 使用 propose_storyboard_patch 工具时，headers 必须使用 Java API 固定字段名：description, video_prompt, shot_size, movement, dialogue, perspective, duration
 8. dialogue 字段支持 TTS 标记：停顿 `<break time="200ms"/>`、情感 `(sighs)` `(laughs)` 等（详见剧本大师 prompt 中的 TTS 规范）
+9. **语言一致性（严格遵守）**：同一行分镜的所有字段必须使用同一种语言。如果用户用中文对话，则 description、image_prompt、video_prompt、dialogue 全部用中文；如果用户用英文对话，则全部用英文。**禁止**同一行中混用中英文（例如 description 中文但 image_prompt 英文）。
 
 回答时优先从分镜与视觉叙事的专业角度给出建议。
