@@ -1,6 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AudioResultGallery } from "./audio-result-gallery";
@@ -9,7 +8,7 @@ import { AudioVoicePickerDialog } from "./audio-voice-picker-dialog";
 import { useAppDispatch, useAppSelector } from "@/src/store";
 import {
   selectCurrentInstance,
-  selectAllAudioResults,
+  makeSelectAllAudioResults,
   initAudioInstance,
   deleteAudioItem,
   updateAudioForm,
@@ -18,15 +17,16 @@ import {
 } from "@/src/store/slices/projectSlice";
 import { submitAudioTask, retryAudioTask } from "@/src/lib/ai-audio-queue";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import {
   getDialogueTextFromShotValues,
   resolveDialogueVoicePreset,
 } from "@/src/lib/storyboard-dialogue";
 import { backendApi } from "@/src/lib/api";
 import type { VoiceOptionItem } from "@/src/types/workspace";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string | null) {
   if (!path) return "";
@@ -61,6 +61,7 @@ export function AiAudioGeneratorDialog({
   onGeneratingChange,
   onGenerateSuccess,
 }: AiAudioGeneratorDialogProps) {
+  const t = useTranslations("storyboard");
   const dispatch = useAppDispatch();
 
   // ─── Redux state ──────────────────────────────────────
@@ -70,7 +71,8 @@ export function AiAudioGeneratorDialog({
     const key = `${shotId}_${shotColumnId}`;
     return selectCurrentInstance(s).aiAudioForm.instances[key] ?? null;
   });
-  const allResults = useAppSelector((s) => selectAllAudioResults(s, shotId, shotColumnId));
+  const selectAllResults = useMemo(makeSelectAllAudioResults, []);
+  const allResults = useAppSelector((s) => selectAllResults(s, shotId, shotColumnId));
   const { models: cachedVoiceModels } = useRawAiModels(AI_MODEL_PATHS.voice);
   const voiceModels = audioForm.models.length > 0 ? audioForm.models : (cachedVoiceModels ?? []);
 
@@ -230,7 +232,7 @@ export function AiAudioGeneratorDialog({
         }
         setActiveVoiceLang(Object.keys(groups)[0] ?? "");
       } catch {
-        toast.error("加载音色失败");
+        toast.error(t("loadVoicesFailed"));
       } finally {
         setLoadingVoices(false);
       }
@@ -345,7 +347,7 @@ export function AiAudioGeneratorDialog({
   const handleGenerate = () => {
     const prompt = formData.prompt.trim();
     if (!prompt) {
-      toast.warning("请先输入旁白或对白");
+      toast.warning(t("enterNarrationFirst"));
       return;
     }
     for (let i = 0; i < formData.count; i++) {
@@ -370,9 +372,9 @@ export function AiAudioGeneratorDialog({
     setSelectingPath(path);
     try {
       await onSelectPath(path);
-      toast.success("已更新当前镜头配音");
+      toast.success(t("voiceUpdated"));
     } catch {
-      toast.error("更新配音失败");
+      toast.error(t("voiceUpdateFailed"));
     } finally {
       setSelectingPath("");
     }
@@ -406,7 +408,7 @@ export function AiAudioGeneratorDialog({
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <DialogHeader className="px-6 pb-3 pt-5">
-            <DialogTitle>AI 配音</DialogTitle>
+            <DialogTitle>{t("aiVoice")}</DialogTitle>
           </DialogHeader>
 
           <div className="px-4 pb-4">

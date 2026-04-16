@@ -13,8 +13,7 @@
 # testing
 /coverage
 
-# next.js
-/.next/
+# build
 /out/
 
 # production
@@ -39,7 +38,6 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 
 # docker
 *.tar

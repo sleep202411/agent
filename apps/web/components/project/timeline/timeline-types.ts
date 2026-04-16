@@ -1,4 +1,5 @@
 import type { ShotRow, ShotColumn, ShotValue } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
 // ─── Constants ─────────────────────────────────────────
 
@@ -12,7 +13,7 @@ export const PLAYHEAD_OFFSET = 12;
 export const PLAYHEAD_SCREEN_POSITION = 0.25;
 export const MIN_DURATION = 0.5;
 export const MAX_DURATION = 300;
-export const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+export const OSS_BASE = env.OSS_BASE_URL;
 
 // ─── Types ─────────────────────────────────────────────
 
@@ -421,84 +422,75 @@ export function extractTimelineShots(rows: ShotRow[], columns: ShotColumn[]) {
   const audioColumn = columns.find((col) => col.presetColumnKey === "sound_path");
   const durationColumn = columns.find((col) => col.presetColumnKey === "duration");
 
-  return rows
-    .map((row, rowIndex) => {
-      const durationCell =
-        findCellByColumnId(row, String(durationColumn?.id ?? "")) ??
-        findCellByPreset(row, "duration");
-      let duration = Number(getCellText(durationCell)) || 3;
-      if (duration > 600) {
-        duration /= 1000;
-      }
-      duration = Math.max(0.1, Math.min(300, duration));
+  return rows.map((row, rowIndex) => {
+    const durationCell =
+      findCellByColumnId(row, String(durationColumn?.id ?? "")) ??
+      findCellByPreset(row, "duration");
+    let duration = Number(getCellText(durationCell)) || 3;
+    if (duration > 600) {
+      duration /= 1000;
+    }
+    duration = Math.max(0.1, Math.min(300, duration));
 
-      const imageCell =
-        findCellByColumnId(row, String(imageColumn?.id ?? "")) ??
-        findCellByPreset(row, "image_path");
-      const baseVideoCell =
-        findCellByColumnId(row, String(videoColumn?.id ?? "")) ??
-        findCellByPreset(row, "video_path");
-      const lipSyncCell =
-        findCellByColumnId(row, String(lipSyncColumn?.id ?? "")) ??
-        findCellByPreset(row, "video_path_lip_sync");
-      const audioCell =
-        findCellByColumnId(row, String(audioColumn?.id ?? "")) ??
-        findCellByPreset(row, "sound_path");
+    const imageCell =
+      findCellByColumnId(row, String(imageColumn?.id ?? "")) ?? findCellByPreset(row, "image_path");
+    const baseVideoCell =
+      findCellByColumnId(row, String(videoColumn?.id ?? "")) ?? findCellByPreset(row, "video_path");
+    const lipSyncCell =
+      findCellByColumnId(row, String(lipSyncColumn?.id ?? "")) ??
+      findCellByPreset(row, "video_path_lip_sync");
+    const audioCell =
+      findCellByColumnId(row, String(audioColumn?.id ?? "")) ?? findCellByPreset(row, "sound_path");
 
-      const preferredImage = getPreferredFile(imageCell);
-      const preferredBaseVideo = getPreferredFile(baseVideoCell);
-      const preferredLipSyncVideo = getPreferredFile(lipSyncCell);
+    const preferredImage = getPreferredFile(imageCell);
+    const preferredBaseVideo = getPreferredFile(baseVideoCell);
+    const preferredLipSyncVideo = getPreferredFile(lipSyncCell);
 
-      const imagePath = String(
-        preferredImage?.path ?? preferredImage?.url ?? imageCell?.value ?? ""
-      );
-      const baseVideoPath = String(
-        preferredBaseVideo?.path ?? preferredBaseVideo?.url ?? baseVideoCell?.value ?? ""
-      );
-      const lipSyncVideoPath = String(
-        preferredLipSyncVideo?.path ?? preferredLipSyncVideo?.url ?? lipSyncCell?.value ?? ""
-      );
-      const videoPath = lipSyncVideoPath || baseVideoPath;
-      const imageUrl = ossUrl(imagePath);
-      const baseVideoUrl = ossUrl(baseVideoPath);
-      const videoUrl = ossUrl(videoPath);
-      const parsedShotNo = Number(row.shotNo);
-      const shotNo =
-        Number.isFinite(parsedShotNo) && parsedShotNo > 0 ? parsedShotNo : rowIndex + 1;
+    const imagePath = String(preferredImage?.path ?? preferredImage?.url ?? imageCell?.value ?? "");
+    const baseVideoPath = String(
+      preferredBaseVideo?.path ?? preferredBaseVideo?.url ?? baseVideoCell?.value ?? ""
+    );
+    const lipSyncVideoPath = String(
+      preferredLipSyncVideo?.path ?? preferredLipSyncVideo?.url ?? lipSyncCell?.value ?? ""
+    );
+    const videoPath = lipSyncVideoPath || baseVideoPath;
+    const imageUrl = ossUrl(imagePath);
+    const baseVideoUrl = ossUrl(baseVideoPath);
+    const videoUrl = ossUrl(videoPath);
+    const parsedShotNo = Number(row.shotNo);
+    const shotNo = Number.isFinite(parsedShotNo) && parsedShotNo > 0 ? parsedShotNo : rowIndex + 1;
 
-      let thumbnailUrl = "";
-      if (preferredLipSyncVideo) {
-        thumbnailUrl =
-          ossUrl(preferredLipSyncVideo.coverUrl ?? "") || getVideoThumbnail(lipSyncVideoPath);
-      } else if (preferredBaseVideo) {
-        thumbnailUrl =
-          ossUrl(preferredBaseVideo.coverUrl ?? "") || getVideoThumbnail(baseVideoPath);
-      } else if (imagePath) {
-        thumbnailUrl = imageUrl;
-      }
+    let thumbnailUrl = "";
+    if (preferredLipSyncVideo) {
+      thumbnailUrl =
+        ossUrl(preferredLipSyncVideo.coverUrl ?? "") || getVideoThumbnail(lipSyncVideoPath);
+    } else if (preferredBaseVideo) {
+      thumbnailUrl = ossUrl(preferredBaseVideo.coverUrl ?? "") || getVideoThumbnail(baseVideoPath);
+    } else if (imagePath) {
+      thumbnailUrl = imageUrl;
+    }
 
-      return {
-        id: String(row.shotId ?? ""),
-        row,
-        shotNo,
-        rowIndex,
-        duration,
-        thumbnailUrl,
-        imageUrl,
-        videoUrl,
-        baseVideoUrl,
-        mediaType: (preferredLipSyncVideo || preferredBaseVideo ? "video" : "image") as
-          | "image"
-          | "video",
-        hasMedia: Boolean(thumbnailUrl || videoUrl),
-        description: getCellText(findCellByPreset(row, "description")),
-        dialogue: getCellText(findCellByPreset(row, "dialogue")),
-        narration: "",
-        imageCell,
-        videoCell: baseVideoCell,
-        lipSyncCell,
-        audioCell,
-      };
-    })
-    .filter((shot) => shot.hasMedia);
+    return {
+      id: String(row.shotId ?? ""),
+      row,
+      shotNo,
+      rowIndex,
+      duration,
+      thumbnailUrl,
+      imageUrl,
+      videoUrl,
+      baseVideoUrl,
+      mediaType: (preferredLipSyncVideo || preferredBaseVideo ? "video" : "image") as
+        | "image"
+        | "video",
+      hasMedia: Boolean(thumbnailUrl || videoUrl),
+      description: getCellText(findCellByPreset(row, "description")),
+      dialogue: getCellText(findCellByPreset(row, "dialogue")),
+      narration: "",
+      imageCell,
+      videoCell: baseVideoCell,
+      lipSyncCell,
+      audioCell,
+    };
+  });
 }

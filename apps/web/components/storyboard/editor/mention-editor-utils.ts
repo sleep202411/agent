@@ -1,10 +1,11 @@
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { Asset } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
 export interface MentionSearchCharacter {
   id: string;
   name: string;
-  images: string[];
+  images: CharacterImage[];
   voiceId?: string;
   model?: string;
 }
@@ -25,9 +26,9 @@ export interface MentionFlatItem {
   model?: string;
 }
 
-export const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+export const OSS_BASE = env.OSS_BASE_URL;
 export const PAGE_SIZE = 50;
-export const DEFAULT_POPOVER_WIDTH = 520;
+export const DEFAULT_POPOVER_WIDTH = 340;
 export const POPOVER_MARGIN = 12;
 
 export function fetchAssetList(
@@ -75,11 +76,44 @@ export function getStringField(asset: Asset, field: "voiceId" | "model") {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-export function getCharacterImages(asset: Asset) {
-  const images = [
-    ...(asset.roleImgPath?.map((path) => ossUrl(path)) ?? []),
-    ...parseOtherImgPath(asset.otherImgPath).map((path) => ossUrl(path)),
-  ].filter(Boolean);
+export interface CharacterImage {
+  name: string;
+  imgUrl: string;
+}
 
-  return images.length > 0 ? images : [""];
+export function getCharacterImages(asset: Asset): CharacterImage[] {
+  const name = String(asset.name ?? "");
+  const images: CharacterImage[] = [];
+
+  // Main role image(s)
+  for (const path of asset.roleImgPath ?? []) {
+    const url = ossUrl(path);
+    if (url) images.push({ name, imgUrl: url });
+  }
+
+  // Other appearance variants — use the otherImgPath key as label
+  const entries = parseOtherImgPathEntries(asset.otherImgPath);
+  for (const entry of entries) {
+    const url = ossUrl(entry.path);
+    if (url) images.push({ name: entry.name, imgUrl: url });
+  }
+
+  return images.length > 0 ? images : [{ name, imgUrl: "" }];
+}
+
+/** Parse otherImgPath and return entries with names preserved */
+export function parseOtherImgPathEntries(
+  value: Asset["otherImgPath"]
+): { name: string; path: string }[] {
+  if (!value) return [];
+  try {
+    const parsed =
+      typeof value === "string" ? (JSON.parse(value) as Record<string, string>) : value;
+    if (!parsed || typeof parsed !== "object") return [];
+    return Object.entries(parsed)
+      .filter(([, path]) => Boolean(path))
+      .map(([name, path]) => ({ name, path }));
+  } catch {
+    return [];
+  }
 }

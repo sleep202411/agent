@@ -1,7 +1,5 @@
-"use client";
-
 import { IconLoader2 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { AssetCard } from "./asset-card";

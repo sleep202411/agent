@@ -13,28 +13,76 @@ export const roleProposalSchema = z.object({
     .enum(['main', 'supporting', 'extra'])
     .default('supporting')
     .describe('角色类型'),
-  description: z.string().optional().describe('角色简介'),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      'Character biography for human readers: background, personality, story role, relationships. Can be literary and detailed.',
+    ),
   appearance: z.string().optional().describe('角色外貌'),
   personality: z.string().optional().describe('角色性格'),
-  prompt: z.string().optional().describe('角色 AI 提示词'),
+  prompt: z
+    .string()
+    .optional()
+    .describe(
+      'AI image generation prompt — pure visual description ONLY. Focus on: facial features, hairstyle, hair color, clothing, expression, body type, lighting, art style. Must NOT repeat the description/biography. Example: "A young Chinese man, short black hair, dark blue Tang suit, determined expression, athletic build, cinematic lighting"',
+    ),
 });
 
 export const sceneProposalSchema = z.object({
   name: z.string().describe('场景名称'),
-  description: z.string().optional().describe('场景描述'),
-  prompt: z.string().optional().describe('场景提示词'),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      'Scene description for human readers: narrative function, mood, story significance, what happens here.',
+    ),
+  prompt: z
+    .string()
+    .optional()
+    .describe(
+      'AI image generation prompt — pure visual description ONLY. Focus on: spatial layout, lighting, colors, objects, atmosphere, weather, time of day, art style. Must NOT repeat the description. Example: "A dimly lit ancient Chinese palace hall, red wooden pillars, golden dragon carvings, moonlight through lattice windows, cinematic wide shot"',
+    ),
 });
 
 export const propProposalSchema = z.object({
   name: z.string().describe('道具名称'),
-  description: z.string().optional().describe('道具描述'),
-  prompt: z.string().optional().describe('道具提示词'),
+  description: z
+    .string()
+    .optional()
+    .describe(
+      'Prop description for human readers: what it is, story significance, who uses it.',
+    ),
+  prompt: z
+    .string()
+    .optional()
+    .describe(
+      'AI image generation prompt — pure visual description ONLY. Focus on: shape, material, color, texture, size, details. Must NOT repeat the description. Example: "An ancient bronze dagger with jade handle, intricate engravings, dark patina, studio lighting on black background"',
+    ),
 });
+
+export const STORYBOARD_API_FIELDS = [
+  'description',
+  'video_prompt',
+  'style_planting',
+  'movement',
+  'dialogue',
+  'shot_size',
+  'perspective',
+  'duration',
+] as const;
 
 export const storyboardProposalSchema = z.object({
   summary: z.string().describe('这版分镜草稿的整体说明'),
-  headers: z.array(z.string()).min(1).describe('表头'),
-  rows: z.array(z.array(z.string())).describe('分镜表行'),
+  headers: z
+    .array(z.string())
+    .min(1)
+    .describe(
+      '表头，必须使用以下固定字段名（按需选用）：description（画面描述）、video_prompt（视频提示词）、style_planting（风格）、movement（运镜）、dialogue（台词）、shot_size（景别）、perspective（视角）、duration（时长）',
+    ),
+  rows: z
+    .array(z.array(z.string()))
+    .describe('分镜表数据行，每行的列顺序必须与 headers 一致'),
 });
 
 export const mutationResultSchema = z.object({
@@ -53,6 +101,11 @@ export const optionsResultSchema = z.object({
 export const confirmResultSchema = z.object({
   confirmed: z.boolean(),
   notes: z.string().optional(),
+});
+
+export const configureParamsResultSchema = z.object({
+  confirmed: z.boolean(),
+  values: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const roleProposalDecisionSchema = z.object({
@@ -76,6 +129,19 @@ export const propProposalDecisionSchema = z.object({
 export const storyboardProposalDecisionSchema = z.object({
   action: z.enum(['accept', 'accept_edited', 'reject']),
   draft: storyboardProposalSchema.optional(),
+  notes: z.string().optional(),
+});
+
+export const scriptProposalSchema = z.object({
+  episodeId: z.string().describe('要写入剧本的剧集 ID'),
+  episodeTitle: z.string().describe('剧集标题，用于展示'),
+  summary: z.string().describe('剧本概述'),
+  content: z.string().describe('剧本正文内容（HTML 格式）'),
+});
+
+export const scriptProposalDecisionSchema = z.object({
+  action: z.enum(['accept', 'accept_edited', 'reject']),
+  content: z.string().optional().describe('用户编辑后的内容'),
   notes: z.string().optional(),
 });
 

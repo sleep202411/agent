@@ -1,5 +1,18 @@
+export const assistantAgentTypes = [
+  "general",
+  "script",
+  "storyboard",
+  "character",
+  "scene",
+  "ad",
+  "novel",
+] as const;
+
+export type AssistantAgentType = (typeof assistantAgentTypes)[number];
+
 export const assistantEntityTypes = [
   "project",
+  "world",
   "episode",
   "character",
   "scene",
@@ -12,7 +25,9 @@ export type AssistantEntityType = (typeof assistantEntityTypes)[number];
 
 export const assistantMutationActions = [
   "project.updated",
+  "world.updated",
   "episode.created",
+  "episode.batch_created",
   "episode.updated",
   "episode.deleted",
   "character.created",
@@ -29,11 +44,12 @@ export const assistantMutationActions = [
   "prop.batch_created",
   "storyboard.cell_filled",
   "storyboard.saved",
+  "storyboard.pipeline_applied",
 ] as const;
 
 export type AssistantMutationAction = (typeof assistantMutationActions)[number];
 
-export const assistantUiToolNames = ["show_options", "confirm_action"] as const;
+export const assistantUiToolNames = ["show_options", "confirm_action", "configure_params"] as const;
 
 export type AssistantUiToolName = (typeof assistantUiToolNames)[number];
 
@@ -42,6 +58,7 @@ export const assistantProposalToolNames = [
   "propose_scenes",
   "propose_props",
   "propose_storyboard_patch",
+  "propose_script",
 ] as const;
 
 export type AssistantProposalToolName = (typeof assistantProposalToolNames)[number];
@@ -133,6 +150,28 @@ export interface AssistantConfirmActionResult {
   notes?: string;
 }
 
+export interface AssistantConfigureParamsField {
+  key: string;
+  label: string;
+  type: "number" | "text" | "select";
+  defaultValue: string | number;
+  options?: Array<{ label: string; value: string }>;
+  min?: number;
+  max?: number;
+  suffix?: string;
+}
+
+export interface AssistantConfigureParamsInput {
+  title: string;
+  description?: string;
+  fields: AssistantConfigureParamsField[];
+}
+
+export interface AssistantConfigureParamsResult {
+  confirmed: boolean;
+  values?: Record<string, unknown>;
+}
+
 export type AssistantProposalAction = "accept" | "accept_edited" | "reject";
 
 export interface AssistantRoleProposal {
@@ -173,6 +212,19 @@ export interface AssistantStoryboardProposal {
   rows: string[][];
 }
 
+export interface AssistantScriptProposalInput {
+  episodeId: string;
+  episodeTitle: string;
+  summary: string;
+  content: string;
+}
+
+export interface AssistantScriptProposalDecision {
+  action: AssistantProposalAction;
+  content?: string;
+  notes?: string;
+}
+
 export interface AssistantProposalDecision<T> {
   action: AssistantProposalAction;
   items?: T[];
@@ -189,6 +241,7 @@ export interface AssistantChatRequest<TMessage = AssistantTransportMessage> {
   projectId: string;
   messages: TMessage[];
   workspaceContext?: Partial<AssistantWorkspaceSelection>;
+  agentType?: AssistantAgentType;
 }
 
 export interface AssistantChatValidationIssue {

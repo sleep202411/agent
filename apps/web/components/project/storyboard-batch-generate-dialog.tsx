@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -13,10 +11,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import type { RawAiModel } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import { Field, FieldLabel, FieldDescription, FieldGroup } from "@/components/ui/field";
 
 export interface BatchGenerateConfig {
@@ -174,6 +172,7 @@ export function StoryboardBatchGenerateDialog({
   onOpenChange,
   onConfirm,
 }: StoryboardBatchGenerateDialogProps) {
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const isVideo = columnType === "video";
   const { models: cachedImageModels, loading: imageModelsLoading } = useRawAiModels(
@@ -208,8 +207,9 @@ export function StoryboardBatchGenerateDialog({
   const sizeOptions = useMemo(() => parseImageSizes(currentModel), [currentModel]);
   const videoDescription = useMemo(() => parseVideoDescription(currentModel), [currentModel]);
 
-  useEffect(() => {
-    if (models.length === 0) return;
+  const [prevModels, setPrevModels] = useState(models);
+  if (prevModels !== models && models.length > 0) {
+    setPrevModels(models);
     const defaultModelCode =
       models.find((item) => item.isDefault)?.serviceCode ?? models[0]?.serviceCode ?? "";
     const defaultModel = models.find(
@@ -223,7 +223,7 @@ export function StoryboardBatchGenerateDialog({
     } else {
       setSize(getPreferredImageSize(parseImageSizes(defaultModel), projectSize));
     }
-  }, [models, isVideo, projectSize]);
+  }
 
   const handleModelChange = (nextModelCode: string) => {
     setModel(nextModelCode);
@@ -255,17 +255,15 @@ export function StoryboardBatchGenerateDialog({
         className="gap-0 rounded-xl border border-border bg-[#262626] p-0 text-white sm:max-w-[540px]"
       >
         <DialogHeader className="border-b border-white/10 px-6 py-4">
-          <DialogTitle>{isVideo ? "批量生成视频" : "批量生成图片"}</DialogTitle>
+          <DialogTitle>{isVideo ? t("batchGenerateVideos") : t("batchGenerateImages")}</DialogTitle>
           <DialogDescription className="text-xs text-[#8F8F92]">
-            {isVideo
-              ? "设置模型、尺寸和时长后，按旧 workspace 队列逐个生成。"
-              : "设置模型和尺寸后，按旧 workspace 队列逐个生成。"}
+            {isVideo ? t("batchGenerateVideosDesc") : t("batchGenerateImagesDesc")}
           </DialogDescription>
         </DialogHeader>
 
         <FieldGroup className="px-6 py-5">
           <Field>
-            <FieldLabel>模型</FieldLabel>
+            <FieldLabel>{t("modelLabel")}</FieldLabel>
             <NativeSelect
               value={model}
               onChange={(event) => handleModelChange(event.target.value)}
@@ -273,7 +271,7 @@ export function StoryboardBatchGenerateDialog({
               className="w-full"
             >
               <NativeSelectOption value="" disabled>
-                {loadingModels ? "加载模型中..." : "请选择模型"}
+                {loadingModels ? t("loadingModels") : t("selectModel")}
               </NativeSelectOption>
               {modelOptions.map((option) => (
                 <NativeSelectOption key={option.value} value={option.value}>
@@ -284,8 +282,8 @@ export function StoryboardBatchGenerateDialog({
             {currentModelCost ? (
               <FieldDescription className="text-[#8F8F92]">
                 {isVideo
-                  ? `每个视频约消耗 ${currentModelCost} 积分`
-                  : `每张图片约消耗 ${currentModelCost} 积分`}
+                  ? t("costPerVideo", { cost: currentModelCost })
+                  : t("costPerImage", { cost: currentModelCost })}
               </FieldDescription>
             ) : null}
           </Field>
@@ -293,7 +291,7 @@ export function StoryboardBatchGenerateDialog({
           {!isVideo ? (
             <>
               <Field>
-                <FieldLabel>尺寸</FieldLabel>
+                <FieldLabel>{t("sizeLabel")}</FieldLabel>
                 <NativeSelect
                   value={size}
                   onChange={(event) => setSize(event.target.value)}
@@ -301,7 +299,7 @@ export function StoryboardBatchGenerateDialog({
                   className="w-full"
                 >
                   <NativeSelectOption value="" disabled>
-                    {sizeOptions.length ? "请选择尺寸" : "当前模型无可选尺寸"}
+                    {sizeOptions.length ? t("selectSize") : t("noSizeAvailable")}
                   </NativeSelectOption>
                   {sizeOptions.map((option) => (
                     <NativeSelectOption key={option.value} value={option.value}>
@@ -321,9 +319,11 @@ export function StoryboardBatchGenerateDialog({
                   disabled={loading}
                 />
                 <div className="space-y-1">
-                  <FieldLabel className="text-sm font-medium">跳过已定稿图片</FieldLabel>
+                  <FieldLabel className="text-sm font-medium">
+                    {t("skipFinalizedImages")}
+                  </FieldLabel>
                   <FieldDescription className="text-xs text-[#8F8F92]">
-                    关闭后会重新为已有定稿的镜头继续生成图片。
+                    {t("skipFinalizedImagesDesc")}
                   </FieldDescription>
                 </div>
               </Field>
@@ -331,7 +331,7 @@ export function StoryboardBatchGenerateDialog({
           ) : (
             <>
               <Field>
-                <FieldLabel>视频尺寸</FieldLabel>
+                <FieldLabel>{t("videoSizeLabel")}</FieldLabel>
                 <NativeSelect
                   value={videoSize}
                   onChange={(event) => setVideoSize(event.target.value)}
@@ -339,7 +339,9 @@ export function StoryboardBatchGenerateDialog({
                   className="w-full"
                 >
                   <NativeSelectOption value="" disabled>
-                    {videoDescription.sizes.length ? "请选择视频尺寸" : "当前模型无可选视频尺寸"}
+                    {videoDescription.sizes.length
+                      ? t("selectVideoSize")
+                      : t("noVideoSizeAvailable")}
                   </NativeSelectOption>
                   {videoDescription.sizes.map((option: string) => (
                     <NativeSelectOption key={option} value={option}>
@@ -350,7 +352,7 @@ export function StoryboardBatchGenerateDialog({
               </Field>
 
               <Field>
-                <FieldLabel>视频时长</FieldLabel>
+                <FieldLabel>{t("videoDurationLabel")}</FieldLabel>
                 <NativeSelect
                   value={videoLength}
                   onChange={(event) => setVideoLength(event.target.value)}
@@ -359,8 +361,8 @@ export function StoryboardBatchGenerateDialog({
                 >
                   <NativeSelectOption value="" disabled>
                     {videoDescription.videoLengths.length
-                      ? "请选择视频时长"
-                      : "当前模型无可选视频时长"}
+                      ? t("selectVideoDuration")
+                      : t("noVideoDurationAvailable")}
                   </NativeSelectOption>
                   {videoDescription.videoLengths.map((option: number) => (
                     <NativeSelectOption key={option} value={String(option)}>
@@ -380,9 +382,11 @@ export function StoryboardBatchGenerateDialog({
                   disabled={loading}
                 />
                 <div className="space-y-1">
-                  <FieldLabel className="text-sm font-medium">跳过已定稿视频</FieldLabel>
+                  <FieldLabel className="text-sm font-medium">
+                    {t("skipFinalizedVideos")}
+                  </FieldLabel>
                   <FieldDescription className="text-xs text-[#8F8F92]">
-                    批量生成视频依赖当前镜头的分镜图作为参考图。
+                    {t("skipFinalizedVideosDesc")}
                   </FieldDescription>
                 </div>
               </Field>

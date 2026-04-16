@@ -1,5 +1,4 @@
-"use client";
-
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconLoader2, IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +32,7 @@ export function AudioVoicePickerDialog({
   loading,
   noModel,
 }: AudioVoicePickerDialogProps) {
+  const t = useTranslations("storyboard");
   const langOptions = Object.keys(voiceGroups);
   const currentVoices = activeVoiceLang ? (voiceGroups[activeVoiceLang] ?? []) : [];
 
@@ -43,7 +43,7 @@ export function AudioVoicePickerDialog({
         className="gap-0 rounded-2xl border-white/10 bg-[#2F2F35] p-0 text-white ring-0 sm:max-w-[560px]"
       >
         <DialogHeader className="border-b border-white/10 px-5 py-4">
-          <DialogTitle className="text-lg font-medium text-white">选择语音</DialogTitle>
+          <DialogTitle className="text-lg font-medium text-white">{t("selectVoice")}</DialogTitle>
         </DialogHeader>
 
         <div className="px-4 pb-4 pt-3">
@@ -70,12 +70,12 @@ export function AudioVoicePickerDialog({
             {loading ? (
               <div className="flex items-center gap-2 px-2 py-10 text-sm text-[#8F8F92]">
                 <IconLoader2 className="size-4 animate-spin" />
-                加载语音中...
+                {t("loadingVoices")}
               </div>
             ) : noModel ? (
-              <div className="px-2 py-10 text-sm text-[#8F8F92]">请先选择模型</div>
+              <div className="px-2 py-10 text-sm text-[#8F8F92]">{t("selectModelFirst")}</div>
             ) : !currentVoices.length ? (
-              <div className="px-2 py-10 text-sm text-[#8F8F92]">当前分组下暂无语音</div>
+              <div className="px-2 py-10 text-sm text-[#8F8F92]">{t("noVoicesInGroup")}</div>
             ) : (
               currentVoices.map((voice, index) => {
                 const id = String(voice.voiceId ?? "");
@@ -98,7 +98,7 @@ export function AudioVoicePickerDialog({
                   >
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium text-white">
-                        {voice.voiceName || "未命名语音"}
+                        {voice.voiceName || t("unnamedVoice")}
                       </div>
                       {voice.voiceDescription ? (
                         <div className="mt-1 line-clamp-1 text-xs text-[#8F8F92]">

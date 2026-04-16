@@ -1,5 +1,3 @@
-"use client";
-
 import {
   useCallback,
   useEffect,
@@ -41,7 +39,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import { useAppSelector, useAppDispatch } from "@/src/store";
@@ -93,6 +91,7 @@ import {
 export function TimelineView() {
   const ts = useTranslations("storyboard");
   const tc = useTranslations("common");
+  const tt = useTranslations("timeline");
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((state) => state.project.currentProjectId);
   const detail = useAppSelector((state) => selectCurrentInstance(state).detail);
@@ -202,6 +201,17 @@ export function TimelineView() {
     () => shots.find((shot) => shot.id === actionShotId) ?? null,
     [actionShotId, shots]
   );
+
+  const actionShotIndex = useMemo(
+    () => shots.findIndex((shot) => shot.id === actionShotId),
+    [actionShotId, shots]
+  );
+  const handlePrevShot =
+    actionShotIndex > 0 ? () => setActionShotId(shots[actionShotIndex - 1].id) : undefined;
+  const handleNextShot =
+    actionShotIndex >= 0 && actionShotIndex < shots.length - 1
+      ? () => setActionShotId(shots[actionShotIndex + 1].id)
+      : undefined;
 
   const imagePromptContext = useMemo(() => {
     if (!actionShot) return { prompt: "", referenceFields: [], imagePromptColumnId: "" };
@@ -738,13 +748,10 @@ export function TimelineView() {
 
   return (
     <>
-      <div
-        className="flex h-full flex-col overflow-hidden rounded-[10px] border border-white/10"
-        onWheel={handleWheel}
-      >
+      <div className="flex h-full flex-col overflow-hidden" onWheel={handleWheel}>
         <div
           data-tour-step="timeline-preview"
-          className="flex min-h-[400px] flex-1 flex-col items-center justify-center overflow-auto p-4"
+          className="flex min-min-h-100 flex-1 flex-col items-center justify-center overflow-auto p-4"
         >
           {isLoading ? (
             <div className="flex h-[383px] w-[680px] flex-col items-center justify-center gap-4 rounded-lg border border-[#2A2A2A] bg-[#1A1A1A]">
@@ -767,8 +774,8 @@ export function TimelineView() {
                   <path d="M21 15l-5-5L5 21" />
                 </svg>
               </div>
-              <span className="text-base font-medium text-[#888]">暂无可预览分镜</span>
-              <span className="text-[13px] text-[#555]">当前剧集还没有带图片或视频的镜头</span>
+              <span className="text-base font-medium text-[#888]">{tt("noPreviewShots")}</span>
+              <span className="text-[13px] text-[#555]">{tt("noPreviewShotsHint")}</span>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
@@ -798,7 +805,10 @@ export function TimelineView() {
                 />
               </div>
               <div className="text-sm text-muted-foreground">
-                镜头 {Math.min(currentShotIndex + 1, Math.max(shots.length, 1))} / {shots.length}
+                {tt("shotProgress", {
+                  current: Math.min(currentShotIndex + 1, Math.max(shots.length, 1)),
+                  total: shots.length,
+                })}
               </div>
             </div>
           )}
@@ -852,11 +862,11 @@ export function TimelineView() {
               >
                 {isLoading ? (
                   <div className="flex h-full items-center justify-center px-3 text-sm text-[#666]">
-                    加载中...
+                    {tt("loadingShots")}
                   </div>
                 ) : shots.length === 0 ? (
                   <div className="flex h-full items-center justify-center px-3 text-sm text-[#666]">
-                    暂无镜头
+                    {tt("noShots")}
                   </div>
                 ) : (
                   <div
@@ -980,6 +990,8 @@ export function TimelineView() {
           referenceFields={imagePromptContext.referenceFields}
           appliedPaths={getAllFilePaths(actionShot.imageCell)}
           preferredPath={getPreferredFile(actionShot.imageCell)?.path ?? ""}
+          onPrevShot={handlePrevShot}
+          onNextShot={handleNextShot}
           onGeneratePrompt={(prompt) => {
             if (imagePromptContext.imagePromptColumnId) {
               void persistTextCell(actionShot.id, imagePromptContext.imagePromptColumnId, prompt);
@@ -1009,6 +1021,8 @@ export function TimelineView() {
           referenceFields={videoPromptContext.referenceFields}
           appliedPaths={getAllFilePaths(actionShot.videoCell)}
           preferredPath={getPreferredFile(actionShot.videoCell)?.path ?? ""}
+          onPrevShot={handlePrevShot}
+          onNextShot={handleNextShot}
           onGeneratePrompt={(prompt) => {
             if (videoPromptContext.videoPromptColumnId) {
               void persistTextCell(actionShot.id, videoPromptContext.videoPromptColumnId, prompt);
@@ -1080,15 +1094,13 @@ export function TimelineView() {
       ) : null}
 
       <Dialog open={durationDialogOpen} onOpenChange={setDurationDialogOpen}>
-        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{ts("shotDuration")}</DialogTitle>
-            <DialogDescription className="sr-only">
-              设置当前镜头在时间线中的播放时长
-            </DialogDescription>
+            <DialogDescription className="sr-only">{tt("setDurationDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <div className="text-sm text-muted-foreground">请输入秒数</div>
+            <div className="text-sm text-muted-foreground">{tt("enterSeconds")}</div>
             <Input
               type="number"
               min={MIN_DURATION}
@@ -1111,7 +1123,7 @@ export function TimelineView() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{tc("delete")}</AlertDialogTitle>
-            <AlertDialogDescription>确认删除这个镜头吗？删除后不可恢复。</AlertDialogDescription>
+            <AlertDialogDescription>{tt("confirmDeleteShot")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -25,12 +23,16 @@ import {
   SceneReferenceCell,
   SelectCell,
   ShotNoCell,
-} from "@/components/project/storyboard-custom-cells";
+  SoundPathCell,
+} from "@/components/storyboard/cells";
+import { MusicCell } from "@/components/storyboard/cells/music-cell";
+import { StoryboardDialogProvider } from "@/components/storyboard/storyboard-dialog-context";
+import { StoryboardLiftedDialogs } from "@/components/storyboard/storyboard-lifted-dialogs";
 import { LipSyncCell } from "@/components/project/storyboard-lipsync-cell";
 import { StoryboardColumnHeader } from "@/components/project/storyboard-column-header";
 import { StoryboardToolbar } from "@/components/project/storyboard-toolbar";
 import { TextCell } from "@/components/storyboard/cells/text-cell";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useGuide } from "@/src/lib/guide/use-guide";
 import { backendApi } from "@/src/lib/api";
 import { useAppSelector, useAppDispatch } from "@/src/store";
@@ -107,7 +109,9 @@ function getColumnIcon(type?: string): ReactNode {
       return <IconUserFilled className="size-3.5" />;
     case "scene":
       return <IconMapPin className="size-3.5" />;
+    case "sound_path":
     case "audio":
+    case "music":
       return <IconMusic className="size-3.5" />;
     default:
       return null;
@@ -145,6 +149,7 @@ const TYPE_COLUMN_WIDTH: Record<string, number> = {
   image: 246,
   video: 246,
   audio: 200,
+  music: 200,
   character: 136,
   scene: 136,
 };
@@ -170,6 +175,7 @@ function StoryboardCell({
   rowIndex: number;
   mentionItems: ReturnType<typeof buildMentionItems>;
 }) {
+  const t = useTranslations("storyboard");
   const cell = findCell(row, col);
   const textValue = getTextValue(cell);
   const shotId = String(row.shotId ?? "");
@@ -198,17 +204,10 @@ function StoryboardCell({
       return (
         <LipSyncCell cell={cell} shotId={shotId} shotColumnId={columnId} row={row} column={col} />
       );
-    case "audio":
-      return (
-        <MediaCell
-          cell={cell}
-          shotId={shotId}
-          shotColumnId={columnId}
-          type="audio"
-          row={row}
-          column={col}
-        />
-      );
+    case "sound_path":
+      return <SoundPathCell cell={cell} shotId={shotId} shotColumnId={columnId} row={row} />;
+    case "music":
+      return <MusicCell cell={cell} shotId={shotId} shotColumnId={columnId} column={col} />;
     case "richtext":
       return (
         <RichTextCell
@@ -216,7 +215,7 @@ function StoryboardCell({
           shotId={shotId}
           shotColumnId={columnId}
           mentionItems={mentionItems}
-          placeholder="输入内容，支持 @角色 / @场景 / @道具"
+          placeholder={t("richtextPlaceholder")}
         />
       );
     case "dialogue":
@@ -227,7 +226,7 @@ function StoryboardCell({
           shotColumnId={columnId}
           mentionItems={mentionItems}
           allowedMentionTypes={["character"]}
-          placeholder="输入对白，支持 @角色"
+          placeholder={t("dialoguePlaceholder")}
           showAvatar={false}
           extraFields={["voiceId", "model"]}
         />
@@ -263,6 +262,7 @@ function VirtualStoryboardTable({
   visibleColumns: ShotColumn[];
   mentionItems: ReturnType<typeof buildMentionItems>;
 }) {
+  const t = useTranslations("storyboard");
   const scrollRef = useRef<HTMLDivElement>(null);
   const tableWidth = visibleColumns.reduce((sum, col) => sum + getColumnWidth(col), 0);
 
@@ -281,7 +281,7 @@ function VirtualStoryboardTable({
     >
       <div style={{ width: tableWidth, minWidth: "100%" }} className="text-sm">
         {/* Header */}
-        <div className="sticky top-0 z-10 flex bg-neutral-800 border-b border-border">
+        <div className="sticky top-0 z-10 flex bg-muted border-b border-border">
           {visibleColumns.map((column) => (
             <div
               key={column.id ?? column.presetColumnKey}
@@ -333,9 +333,7 @@ function VirtualStoryboardTable({
         </div>
 
         {rows.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">
-            当前剧集暂无镜头数据
-          </div>
+          <div className="py-12 text-center text-sm text-muted-foreground">{t("noShotsData")}</div>
         ) : null}
       </div>
     </div>
@@ -388,28 +386,31 @@ export function StoryboardView() {
   }, []);
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <StoryboardToolbar />
+    <StoryboardDialogProvider>
+      <div className="flex h-full flex-col gap-4">
+        <StoryboardToolbar />
 
-      {!activeEpisodeId ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">{t("episodeNotSelected")}</p>
-        </div>
-      ) : isLoading ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">加载分镜表...</p>
-        </div>
-      ) : visibleColumns.length === 0 && rows.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-muted-foreground">暂无分镜数据</p>
-        </div>
-      ) : (
-        <VirtualStoryboardTable
-          rows={rows}
-          visibleColumns={visibleColumns}
-          mentionItems={mentionItems}
-        />
-      )}
-    </div>
+        {!activeEpisodeId ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-muted-foreground">{t("episodeNotSelected")}</p>
+          </div>
+        ) : isLoading ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-muted-foreground">{t("loadingStoryboard")}</p>
+          </div>
+        ) : visibleColumns.length === 0 && rows.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-muted-foreground">{t("noStoryboardData")}</p>
+          </div>
+        ) : (
+          <VirtualStoryboardTable
+            rows={rows}
+            visibleColumns={visibleColumns}
+            mentionItems={mentionItems}
+          />
+        )}
+      </div>
+      <StoryboardLiftedDialogs />
+    </StoryboardDialogProvider>
   );
 }

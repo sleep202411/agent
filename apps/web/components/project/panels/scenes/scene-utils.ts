@@ -1,6 +1,7 @@
 import type { Asset } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 export function ossUrl(path?: string): string | null {
   if (!path) return null;
@@ -60,11 +61,7 @@ export function mergeScenes(worldScenes: ScenePanelItem[], assetScenes: ScenePan
   const sceneIndexMap = new Map<string, number>();
 
   const pushScene = (scene: ScenePanelItem) => {
-    const keys = [
-      normalizeSceneName(scene.aiId),
-      normalizeSceneName(scene.id),
-      normalizeSceneName(scene.name),
-    ].filter(Boolean);
+    const keys = [normalizeSceneName(scene.aiId), normalizeSceneName(scene.id)].filter(Boolean);
 
     const existingKey = keys.find((key) => sceneIndexMap.has(key));
     if (existingKey) {

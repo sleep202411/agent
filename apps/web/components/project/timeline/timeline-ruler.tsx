@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useRef } from "react";
 import { PLAYHEAD_OFFSET } from "./timeline-types";
 

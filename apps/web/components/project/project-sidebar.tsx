@@ -1,5 +1,3 @@
-"use client";
-
 import {
   IconDeviceTv,
   IconUser,
@@ -11,8 +9,8 @@ import {
   IconFolders,
   IconMusic,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
-import { DragonIcon } from "@/components/project/assistant/dragon-icon";
+import { useTranslations } from "@/src/i18n/i18n";
+import { DragonIcon } from "@/components/project/ai-assistant/dragon-icon";
 import { cn } from "@/lib/utils";
 import type { WorkspacePanelKey } from "@/src/types/workspace";
 import { useAppSelector, useAppDispatch } from "@/src/store";

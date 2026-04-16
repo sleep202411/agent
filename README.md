@@ -6,15 +6,20 @@ Turborepo monorepo for FizzDragon Studio — AI-powered video content creation p
 
 ```
 apps/
-  web/            Next.js 前端（Studio + 主站）
+  web/            TanStack Start + Vite 前端（Studio + 主站）
   server/         NestJS 后端（AI Agent + Assistant）
 packages/
   ui/             共享 UI 组件
   eslint-config/  ESLint 配置
   typescript-config/  TypeScript 配置
 deploy/
-  nginx.conf      Nginx 配置模板
-  setup-ecs.sh    ECS 初始化脚本
+  docker-compose.yml       通用 Docker Compose
+  .env.production.com      生产 COM 环境变量
+  .env.production.cn       生产 CN 环境变量
+  .env.staging             测试环境变量
+  .env.local               本地环境变量
+  nginx/                   Nginx 配置
+  DEPLOY.md                部署指南
 ```
 
 ## Getting Started
@@ -33,35 +38,34 @@ npx turbo dev --filter=web
 npx turbo dev --filter=server
 ```
 
-| Service         | URL                   |
-| --------------- | --------------------- |
-| Web (Next.js)   | http://localhost:3000 |
-| Server (NestJS) | http://localhost:3001 |
+| Service              | URL                   |
+| -------------------- | --------------------- |
+| Web (TanStack Start) | http://localhost:3000 |
+| Server (NestJS)      | http://localhost:3001 |
 
 ## Environment Variables
 
 ### Web (`apps/web/.env.local`)
 
 ```bash
-# Java Backend
-JAVA_CONTENT_URL=http://120.26.152.164:8090
+JAVA_CONTENT_URL=http://120.26.152.164:8091
 JAVA_STUDIO_URL=http://120.26.152.164:8090
-
-# NestJS Server
 SERVER_URL=http://localhost:3001
-
-# OSS
-NEXT_PUBLIC_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com
+VITE_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com
 ```
 
 ### Server (`apps/server/.env`)
 
 ```bash
-WORKSPACE_API_URL=http://120.26.152.164:8090
-AI_GATEWAY_API_KEY=your-key
-# AI_GATEWAY_MODEL=anthropic/claude-sonnet-4
+JAVA_STUDIO_URL=http://120.26.152.164:8090
+JAVA_CONTENT_URL=http://120.26.152.164:8091
+ALIBABA_API_KEY=sk-xxx
+ALIBABA_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+AI_MODEL=qwen3-max
 PORT=3001
 ```
+
+参考 `apps/web/.env.example` 和 `apps/server/.env.example` 获取完整变量列表。
 
 ## Build
 
@@ -74,90 +78,65 @@ npx turbo build --filter=web
 npx turbo build --filter=server
 ```
 
-## Docker
+## Docker Deployment
 
-### Local Build
+详细部署指南见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md)。
 
-```bash
-# Web
-docker build -f apps/web/Dockerfile \
-  --build-arg NEXT_PUBLIC_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com \
-  --build-arg SERVER_URL=http://server:3001 \
-  --build-arg JAVA_STUDIO_URL=https://test.fizzdragon.com/test2 \
-  --build-arg JAVA_CONTENT_URL=https://test.fizzdragon.com/test1 \
-  -t fizzdragon/web .
-
-# Server
-docker build -f apps/server/Dockerfile -t fizzdragon/server .
-```
-
-### Docker Compose
+### 快速构建
 
 ```bash
-# 启动（需要先配置 .env.server）
-cp .env.server.example .env.server
-# 编辑 .env.server 填入实际值
+# 加载环境变量
+source apps/web/.env.production.com
 
-docker compose up -d
+# 构建镜像（Mac 需要 --platform linux/amd64）
+docker build --platform linux/amd64 -t fizzdragon-web-com \
+  --build-arg VITE_OSS_BASE_URL=$VITE_OSS_BASE_URL \
+  --build-arg SERVER_URL=$SERVER_URL \
+  --build-arg JAVA_STUDIO_URL=$JAVA_STUDIO_URL \
+  --build-arg JAVA_CONTENT_URL=$JAVA_CONTENT_URL \
+  -f apps/web/Dockerfile .
+
+docker build --platform linux/amd64 -t fizzdragon-server-com \
+  -f apps/server/Dockerfile .
+
+# 导出
+docker save fizzdragon-web-com fizzdragon-server-com | gzip > fizzdragon-com.tar.gz
 ```
 
-## Deployment
+### 服务器部署
 
-### Architecture
+```bash
+# 上传到服务器
+scp fizzdragon-com.tar.gz deploy/docker-compose.yml deploy/.env.production.com root@<IP>:/opt/fizzdragon/platform/
+
+# 服务器上启动
+cd /opt/fizzdragon/platform
+docker load < fizzdragon-com.tar.gz
+docker compose --env-file .env.production.com up -d
+```
+
+### 多环境
+
+使用同一个 `docker-compose.yml`，通过 `--env-file` 切换环境：
+
+```bash
+docker compose --env-file .env.production.com up -d   # COM 生产
+docker compose --env-file .env.production.cn up -d     # CN 生产
+docker compose --env-file .env.staging up -d           # 测试
+docker compose --env-file .env.local up -d             # 本地
+```
+
+## Architecture
 
 ```
 User → Nginx (443/HTTPS)
          ↓
        Web container (3000)
-         ↓ (internal)
+         ↓ (Docker internal: http://server:3001)
        Server container (3001)
          ↓
-       Java Backend (8090)
-```
-
-### CI/CD
-
-| Trigger           | Action                               |
-| ----------------- | ------------------------------------ |
-| PR → develop/main | CI 检查（lint + type check + build） |
-| Merge → develop   | 自动部署 → 测试环境                  |
-| Merge → main      | 自动部署 → 生产环境                  |
-
-Pipeline: Build web + server (parallel) → Push to ACR → SSH deploy to ECS
-
-### GitHub Secrets
-
-| Secret                     | Description                |
-| -------------------------- | -------------------------- |
-| `ACR_USERNAME`             | 阿里云 ACR 用户名          |
-| `ACR_PASSWORD`             | 阿里云 ACR 密码            |
-| `DEPLOY_SSH_KEY`           | ECS SSH 私钥               |
-| `STAGING_HOST`             | 测试环境 ECS IP            |
-| `STAGING_USER`             | 测试环境 ECS 用户          |
-| `STAGING_OSS_BASE_URL`     | 测试环境 OSS 地址          |
-| `STAGING_JAVA_STUDIO_URL`  | 测试环境 Java Studio 地址  |
-| `STAGING_JAVA_CONTENT_URL` | 测试环境 Java Content 地址 |
-| `PROD_HOST`                | 生产环境 ECS IP            |
-| `PROD_USER`                | 生产环境 ECS 用户          |
-| `PROD_OSS_BASE_URL`        | 生产环境 OSS 地址          |
-| `PROD_JAVA_STUDIO_URL`     | 生产环境 Java Studio 地址  |
-| `PROD_JAVA_CONTENT_URL`    | 生产环境 Java Content 地址 |
-
-### ECS First-Time Setup
-
-```bash
-# 上传并执行初始化脚本
-scp deploy/setup-ecs.sh user@your-ecs:~/
-ssh user@your-ecs bash ~/setup-ecs.sh
-
-# 放置部署文件
-scp docker-compose.yml user@your-ecs:~/apps/fizzdragon-platform/
-scp .env.server user@your-ecs:~/apps/fizzdragon-platform/
-
-# 配置 Nginx
-scp deploy/nginx.conf user@your-ecs:/etc/nginx/conf.d/fizzdragon.conf
-# 编辑域名和 SSL 证书路径
-sudo nginx -t && sudo systemctl reload nginx
+       Java Backend (external)
+       Alibaba AI API (external)
 ```
 
 ## Branch Strategy
@@ -170,3 +149,10 @@ develop           ← Staging, daily development
 feature/*         ← Feature branches, PR to develop
 hotfix/*          ← Hotfixes, PR to main + develop
 ```
+
+### 开发流程
+
+1. 从 develop 创建 feature 分支
+2. 开发完成后 PR to develop
+3. CI 通过后 merge 到 develop
+4. 验证没问题后，develop merge 到 main（部署 production）

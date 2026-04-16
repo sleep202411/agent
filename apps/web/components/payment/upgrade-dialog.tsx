@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconCheck,
   IconCircleCheckFilled,
@@ -15,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import LightRays from "@/components/ui/light-rays";
 import { backendApi } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
+import { siteConfig } from "@/src/config/site";
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -54,6 +53,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<Step>("select");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [currency, setCurrency] = useState(siteConfig.defaultCurrency);
   const [qrUrl, setQrUrl] = useState("");
   const [orderNo, setOrderNo] = useState("");
   const [paying, setPaying] = useState(false);
@@ -64,38 +64,73 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
     [selectedId, packages]
   );
 
-  const planConfig: Record<string, { name: string; benefits: string[] }> = {
+  type BenefitGroup = { title?: string; items: string[] };
+  const planConfig: Record<string, { name: string; benefits: BenefitGroup[] }> = {
     VIP1: {
       name: t("plans.basic"),
       benefits: [
-        t("benefits.bonusCredits", { value: 1000 }),
-        t("benefits.creditDiscount"),
-        t("benefits.limitedAgent"),
+        {
+          items: [t("benefits.bonusCredits", { value: 1000 }), t("benefits.creditDiscount")],
+        },
+        {
+          title: "StoryOS",
+          items: [
+            t("benefits.storyosMessages", { count: 100 }),
+            t("benefits.storyosRetention", { days: 15 }),
+          ],
+        },
       ],
     },
     VIP2: {
       name: t("plans.standard"),
       benefits: [
-        t("benefits.bonusCredits", { value: 2000 }),
-        t("benefits.creditDiscount"),
-        t("benefits.unlimitedAgent"),
-        t("benefits.freeCourses"),
+        {
+          items: [
+            t("benefits.bonusCredits", { value: 2000 }),
+            t("benefits.creditDiscount"),
+            t("benefits.freeCourses"),
+          ],
+        },
+        {
+          title: "StoryOS",
+          items: [
+            t("benefits.storyosUnlimited"),
+            t("benefits.storyosMessages", { count: 200 }),
+            t("benefits.storyosRetention", { days: 15 }),
+          ],
+        },
       ],
     },
     VIP3: {
       name: t("plans.pro"),
       benefits: [
-        t("benefits.bonusCredits", { value: 3000 }),
-        t("benefits.creditDiscount"),
-        t("benefits.unlimitedAgent"),
-        t("benefits.freeCourses"),
+        {
+          items: [
+            t("benefits.bonusCredits", { value: 3000 }),
+            t("benefits.creditDiscount"),
+            t("benefits.freeCourses"),
+          ],
+        },
+        {
+          title: "StoryOS",
+          items: [
+            t("benefits.storyosUnlimited"),
+            t("benefits.storyosMessages", { count: 500 }),
+            t("benefits.storyosRetention", { days: 15 }),
+            t("benefits.storyosPriority"),
+          ],
+        },
       ],
     },
   };
 
   const displayName = (name: string) => planConfig[name]?.name || name;
-  const displayPrice = (cents: number) => (cents / 100).toFixed(2);
+  const displayPrice = (amount: number | string) => {
+    const num = Number(amount);
+    return siteConfig.region === "cn" ? (num / 100).toFixed(2) : num.toFixed(2);
+  };
   const getBenefits = (name: string) => planConfig[name]?.benefits || [];
+  const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
 
   const bestValueId = useMemo(() => {
     if (packages.length < 2) return packages[0]?.id ?? null;
@@ -107,21 +142,21 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    setSelectedId(null);
     backendApi
-      .post<VipPackage[]>("/api/payment/query/vip/package", { data: { currency: "CNY" } })
+      .post<VipPackage[]>("/api/payment/query/vip/package", { data: { currency } })
       .then((res) => {
         const list = (res ?? [])
           .filter((p) => p.status === 1 || p.status === "ACTIVE")
           .sort((a, b) => a.sortOrder - b.sortOrder);
         setPackages(list);
-        if (list.length > 0 && selectedId === null) {
+        if (list.length > 0) {
           setSelectedId(list[Math.min(1, list.length - 1)].id);
         }
       })
       .catch(() => setPackages([]))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, currency]);
 
   useEffect(() => {
     if (!open) {
@@ -152,31 +187,54 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
     if (!selectedPackage) return;
     setPaying(true);
     try {
-      const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
-        data: { packageId: selectedPackage.id, type: 2 },
-      });
-      const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
-      setQrUrl(qrDataUrl);
-      setOrderNo(result.orderNo);
-      setStep("payment");
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(async () => {
-        try {
-          const s = await backendApi.get<OrderStatus>(
-            `/api/payment/order/status/${result.orderNo}`
-          );
-          if (s.status === 1) {
-            if (pollRef.current) {
-              clearInterval(pollRef.current);
-              pollRef.current = null;
+      if (siteConfig.region === "cn") {
+        // WeChat Pay: show QR code
+        const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
+          data: { packageId: selectedPackage.id, type: 2 },
+        });
+        const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
+        setQrUrl(qrDataUrl);
+        setOrderNo(result.orderNo);
+        setStep("payment");
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          try {
+            const s = await backendApi.get<OrderStatus>(
+              `/api/payment/order/status/${result.orderNo}`
+            );
+            if (s.status === 1) {
+              if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+              setStep("success");
+              onSuccess?.();
             }
-            setStep("success");
-            onSuccess?.();
+          } catch {
+            /* ignore */
           }
-        } catch {
-          /* ignore */
+        }, 3000);
+      } else {
+        // Airwallex: redirect to payment page
+        const result = await backendApi.post<{ checkoutUrl: string; orderNo: string }>(
+          "/api/payment/order/create",
+          {
+            data: {
+              productId: selectedPackage.id,
+              productType: 2, // "vip",
+              // successUrl: `${window.location.origin}${window.location.pathname}?payment=success`,
+              // cancelUrl: `${window.location.origin}${window.location.pathname}?payment=cancelled`,
+            },
+          }
+        );
+        if (result.checkoutUrl) {
+          if (window.self !== window.top) {
+            window.parent.postMessage({ type: "navigateToPayment", url: result.checkoutUrl }, "*");
+          } else {
+            window.location.href = result.checkoutUrl;
+          }
         }
-      }, 3000);
+      }
     } catch (e) {
       console.error("[UpgradeDialog]", e);
     } finally {
@@ -237,9 +295,28 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
           <IconCrown className="size-8 text-white" />
         </div>
         <h1 className="mb-2 text-3xl font-bold">{t("upgrade")}</h1>
-        <p className="mb-14 text-center text-muted-foreground">
-          解锁更多 AI 创作能力，提升你的制作效率
-        </p>
+        <p className="mb-6 text-center text-muted-foreground">{t("unlockMore")}</p>
+
+        {/* Currency switcher (only for global with multiple currencies) */}
+        {siteConfig.currencies.length > 1 && (
+          <div className="mb-10 flex items-center justify-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1">
+            {siteConfig.currencies.map((c) => (
+              <button
+                key={c.code}
+                type="button"
+                onClick={() => setCurrency(c.code)}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                  currency === c.code
+                    ? "bg-white/10 text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {c.symbol} {c.code}
+              </button>
+            ))}
+          </div>
+        )}
 
         {step === "select" && (
           <>
@@ -279,7 +356,9 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                       {/* Price */}
                       <div className="mt-4 mb-1">
                         <span className="text-3xl font-bold">
-                          <span className="text-lg font-normal text-muted-foreground">¥</span>
+                          <span className="text-lg font-normal text-muted-foreground">
+                            {currencySymbol}
+                          </span>
                           {displayPrice(pkg.price)}
                         </span>
                         {pkg.durationDays >= 30 && (
@@ -290,7 +369,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                       </div>
                       <div className="mb-5 text-xs text-muted-foreground/60">
                         {pkg.durationDays >= 30
-                          ? `按 ${pkg.durationDays} ${t("days")}计费`
+                          ? t("billingPeriod", { days: pkg.durationDays, unit: t("days") })
                           : `${pkg.durationDays} ${t("days")}`}
                       </div>
 
@@ -314,7 +393,11 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                           {isSelected && paying ? (
                             <IconLoader2 className="mx-auto size-4 animate-spin" />
                           ) : isSelected ? (
-                            t("wechatPay")
+                            siteConfig.region === "cn" ? (
+                              t("wechatPay")
+                            ) : (
+                              t("payNow")
+                            )
                           ) : (
                             t("selectPlan")
                           )}
@@ -322,17 +405,31 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                       </div>
 
                       {/* Benefits */}
-                      <ul className="mt-auto space-y-2.5">
-                        {benefits.map((b, i) => (
-                          <li
-                            key={i}
-                            className="flex items-start gap-2 text-sm text-muted-foreground"
-                          >
-                            <IconCheck className="mt-0.5 size-4 shrink-0 text-white" />
-                            <span>{b}</span>
-                          </li>
+                      <div className="mt-auto space-y-4">
+                        {benefits.map((group, gi) => (
+                          <div key={gi}>
+                            {group.title && (
+                              <div className="mb-2 flex items-center gap-1.5">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-primary/80">
+                                  {group.title}
+                                </span>
+                                <div className="flex-1 border-t border-white/8" />
+                              </div>
+                            )}
+                            <ul className="space-y-2">
+                              {group.items.map((b, i) => (
+                                <li
+                                  key={i}
+                                  className="flex items-start gap-2 text-sm text-muted-foreground"
+                                >
+                                  <IconCheck className="mt-0.5 size-4 shrink-0 text-white" />
+                                  <span>{b}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     </div>
                   );
                 })}
@@ -341,8 +438,7 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
 
             {/* Disclaimer */}
             <p className="mt-10 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground/40">
-              订阅即表示你同意我们的服务条款。套餐为一次性购买，有效期内不支持退款。积分权益将在支付成功后立即发放。本活动最终解释权归
-              FizzDragon 所有。
+              {t("disclaimer")}
             </p>
           </>
         )}
@@ -352,7 +448,6 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
             <h2 className="mb-2 text-xl font-semibold">{t("wechatPay")}</h2>
             <p className="mb-8 text-sm text-muted-foreground">{t("scanToPay")}</p>
             <div className="mb-8 rounded-2xl bg-white p-5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrUrl} alt="QR" className="size-56" />
             </div>
             <div className="flex gap-3">

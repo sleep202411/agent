@@ -75,34 +75,36 @@ async function executeTask(taskId: string) {
   const input = task.input as unknown as ImageGenerateInput;
 
   try {
-    const response =
-      input.mode === "edit"
-        ? await backendApi.post<string | string[]>(API_PATH_IMAGE_EDIT, {
-            data: {
-              shotId: input.shotId,
-              shotColumnId: input.shotColumnId,
-              prompt: input.prompt,
-              images: input.images ?? [],
-              model: input.model || undefined,
-              size: input.size || undefined,
-              n: 1,
-              promptExtend: input.promptExtend ?? true,
-              watermark: input.watermark ?? false,
-            },
-            timeout: 360_000,
-          })
-        : await backendApi.post<string>(API_PATH_IMAGE, {
-            data: {
-              shotId: input.shotId,
-              shotColumnId: input.shotColumnId,
-              prompt: input.prompt,
-              referenceImageUrl: input.referenceImageUrl || undefined,
-              model: input.model || undefined,
-              size: input.size || undefined,
-              watermark: input.watermark ?? false,
-            },
-            timeout: 360_000,
-          });
+    const isEdit = input.mode === "edit";
+    const endpoint = input.endpoint ?? (isEdit ? API_PATH_IMAGE_EDIT : API_PATH_IMAGE);
+
+    const response = isEdit
+      ? await backendApi.post<string | string[]>(endpoint, {
+          data: {
+            shotId: input.shotId,
+            shotColumnId: input.shotColumnId,
+            prompt: input.prompt,
+            images: input.images ?? [],
+            model: input.model || undefined,
+            size: input.size || undefined,
+            n: 1,
+            promptExtend: input.promptExtend ?? true,
+            watermark: input.watermark ?? false,
+          },
+          timeout: 360_000,
+        })
+      : await backendApi.post<string>(endpoint, {
+          data: {
+            shotId: input.shotId,
+            shotColumnId: input.shotColumnId,
+            prompt: input.prompt,
+            referenceImageUrl: input.referenceImageUrl || undefined,
+            model: input.model || undefined,
+            size: input.size || undefined,
+            watermark: input.watermark ?? false,
+          },
+          timeout: 360_000,
+        });
 
     const storagePath = Array.isArray(response)
       ? String(response[0] ?? "")

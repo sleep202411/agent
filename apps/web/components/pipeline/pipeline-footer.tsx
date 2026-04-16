@@ -1,6 +1,4 @@
-"use client";
-
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import {
   IconArrowLeft,
@@ -45,7 +43,7 @@ export function PipelineFooter({
         {currentStep > 1 && (
           <Button variant="outline" color="muted" onClick={onPrev} disabled={isGenerating}>
             <IconArrowLeft className="size-4" />
-            上一步
+            {t("prevStep")}
           </Button>
         )}
 
@@ -70,7 +68,7 @@ export function PipelineFooter({
 
         {currentStep < 3 && onNext && (
           <Button onClick={onNext} disabled={!isDone || isGenerating}>
-            下一步
+            {t("nextStep")}
             <IconArrowRight className="size-4" />
           </Button>
         )}
@@ -78,7 +76,7 @@ export function PipelineFooter({
         {currentStep === 3 && onApplyToProject && (
           <Button onClick={onApplyToProject} disabled={!isDone || isGenerating}>
             <IconSparkles className="size-4" />
-            应用到项目
+            {t("applyToProject")}
           </Button>
         )}
       </div>

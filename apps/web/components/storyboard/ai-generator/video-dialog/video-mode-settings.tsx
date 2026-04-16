@@ -1,6 +1,6 @@
-"use client";
-
+import { useTranslations } from "@/src/i18n/i18n";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
 import type { EditMode } from "./video-types";
 
 export interface VideoModeSettingsProps {
@@ -36,16 +36,17 @@ export function VideoModeSettings({
   outpaintingRight,
   onOutpaintingChange,
 }: VideoModeSettingsProps) {
+  const t = useTranslations("storyboard");
   if (editMode === "repaint") {
     return (
       <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] px-4 py-3">
         <ToolbarSelect
           value={controlCondition}
           options={[
-            { label: "姿态+肢体+面部", value: "posebodyface" },
-            { label: "姿态+肢体", value: "posebody" },
-            { label: "深度", value: "depth" },
-            { label: "涂鸦", value: "scribble" },
+            { label: t("posebodyface"), value: "posebodyface" },
+            { label: t("posebody"), value: "posebody" },
+            { label: t("depth"), value: "depth" },
+            { label: t("scribble"), value: "scribble" },
           ]}
           onChange={onControlConditionChange}
         />
@@ -57,19 +58,21 @@ export function VideoModeSettings({
     return (
       <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] px-4 py-3 text-xs text-muted-foreground">
         <Field orientation="horizontal" className="w-auto">
-          <FieldLabel className="text-xs text-muted-foreground">掩码类型</FieldLabel>
+          <FieldLabel className="text-xs text-muted-foreground">{t("maskTypeLabel")}</FieldLabel>
           <select
             value={maskType}
             onChange={(event) => onMaskTypeChange(event.target.value as "tracking" | "fixed")}
             className="rounded-lg bg-white/[0.06] px-3 py-2 text-white/85 outline-none"
           >
-            <option value="tracking">跟踪</option>
-            <option value="fixed">固定</option>
+            <option value="tracking">{t("tracking")}</option>
+            <option value="fixed">{t("fixed")}</option>
           </select>
         </Field>
         {maskType === "tracking" ? (
           <Field orientation="horizontal" className="w-auto">
-            <FieldLabel className="text-xs text-muted-foreground">扩展比例</FieldLabel>
+            <FieldLabel className="text-xs text-muted-foreground">
+              {t("expandRatioLabel")}
+            </FieldLabel>
             <input
               type="range"
               min="0"
@@ -82,13 +85,13 @@ export function VideoModeSettings({
           </Field>
         ) : null}
         <Field orientation="horizontal" className="w-auto">
-          <FieldLabel className="text-xs text-muted-foreground">掩码帧</FieldLabel>
+          <FieldLabel className="text-xs text-muted-foreground">{t("maskFrameLabel")}</FieldLabel>
           <input
             type="number"
             min="0"
             value={maskFrameId}
             onChange={(event) => onMaskFrameIdChange(event.target.value)}
-            placeholder="可选"
+            placeholder={t("optional")}
             className="w-24 rounded-lg bg-white/[0.06] px-3 py-2 text-white/85 outline-none"
           />
         </Field>
@@ -102,10 +105,10 @@ export function VideoModeSettings({
       value: number;
       direction: "top" | "bottom" | "left" | "right";
     }> = [
-      { label: "上", value: outpaintingTop, direction: "top" },
-      { label: "下", value: outpaintingBottom, direction: "bottom" },
-      { label: "左", value: outpaintingLeft, direction: "left" },
-      { label: "右", value: outpaintingRight, direction: "right" },
+      { label: t("top"), value: outpaintingTop, direction: "top" },
+      { label: t("bottom"), value: outpaintingBottom, direction: "bottom" },
+      { label: t("left"), value: outpaintingLeft, direction: "left" },
+      { label: t("right"), value: outpaintingRight, direction: "right" },
     ];
 
     return (
@@ -132,33 +135,4 @@ export function VideoModeSettings({
   return null;
 }
 
-export function ToolbarSelect({
-  value,
-  options,
-  onChange,
-}: {
-  value: string;
-  options: { label: string; value: string }[];
-  onChange: (value: string) => void;
-}) {
-  if (options.length === 0) return null;
-
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 appearance-none rounded-lg bg-white/[0.04] pl-3 pr-7 text-[13px] text-white/85 outline-none transition-colors hover:bg-white/[0.08] focus:bg-white/[0.08]"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-white/50">
-        ▼
-      </span>
-    </div>
-  );
-}
+export { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";

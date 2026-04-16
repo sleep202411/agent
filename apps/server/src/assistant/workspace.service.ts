@@ -12,9 +12,21 @@ type WorkspaceApiBody<T = unknown> = {
   message?: string;
 };
 
+interface EpisodeRecord {
+  id: string;
+  projectId: string;
+  title: string;
+  sort: number;
+  introduction: string;
+  videoLength: number;
+  frontPrompt: string;
+  behindPrompt: string;
+}
+
 type WorkspacePaginated<T = WorkspaceRecord> = {
   list?: T[];
   total?: number;
+  totalCount?: number;
   page?: number;
   pageSize?: number;
 };
@@ -35,9 +47,9 @@ export class WorkspaceService {
   // ─── Internal helpers ───────────────────────────────────
 
   private getBaseUrl(path: string) {
-    // /user, /project, /vedio, /personal → Java Content
+    // /user, /project, /vedio, /personal, /content → Java Content
     // /api, /anon, /studio → Java Studio
-    if (/^\/(user|project|vedio|personal)/.test(path)) {
+    if (/^\/(user|project|vedio|personal|content)/.test(path)) {
       const url = process.env.JAVA_CONTENT_URL;
       if (!url) throw new Error('JAVA_CONTENT_URL is not configured');
       return url.replace(/\/$/, '');
@@ -50,6 +62,11 @@ export class WorkspaceService {
   private buildHeaders(incoming: HeadersLike) {
     const acceptLanguage = (incoming['accept-language'] as string) || 'zh-CN';
     const cookie = incoming['cookie'] as string | undefined;
+    if (!cookie) {
+      this.logger.warn(
+        'No cookie in incoming headers — Java backend will reject as not logged in',
+      );
+    }
     return {
       'Content-Type': 'application/json',
       'accept-language': acceptLanguage,
@@ -60,45 +77,104 @@ export class WorkspaceService {
   private async request<T>(
     incoming: HeadersLike,
     path: string,
-    options?: { method?: 'GET' | 'POST'; data?: unknown; timeoutMs?: number },
+    options?: {
+      method?: 'GET' | 'POST';
+      data?: unknown;
+      timeoutMs?: number;
+      maxRetries?: number;
+    },
   ): Promise<T> {
-    const controller = new AbortController();
-    const timeoutMs = options?.timeoutMs ?? 60_000;
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const url = `${this.getBaseUrl(path)}${path}`;
     const method = options?.method ?? 'POST';
+    const maxRetries = options?.maxRetries ?? 0;
+    const timeoutMs = options?.timeoutMs ?? 60_000;
 
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: this.buildHeaders(incoming),
-        body:
-          options?.data === undefined
-            ? undefined
-            : JSON.stringify(options.data),
-        signal: controller.signal,
-      });
+    // Log request payload (truncate large bodies)
+    const payloadStr =
+      options?.data !== undefined ? JSON.stringify(options.data) : undefined;
+    const payloadPreview =
+      payloadStr && payloadStr.length > 500
+        ? `${payloadStr.slice(0, 500)}...(${payloadStr.length} chars)`
+        : payloadStr;
+    this.logger.log(
+      `[request] → ${method} ${path}${payloadPreview ? ` payload=${payloadPreview}` : ''}`,
+    );
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        this.logger.error(
-          `HTTP ${response.status}: ${errorText.slice(0, 200)}`,
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const startTime = Date.now();
+        const response = await fetch(url, {
+          method,
+          headers: this.buildHeaders(incoming),
+          body:
+            options?.data === undefined
+              ? undefined
+              : JSON.stringify(options.data),
+          signal: controller.signal,
+        });
+        const elapsed = Date.now() - startTime;
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '');
+          this.logger.error(
+            `[request] HTTP ${response.status} ${method} ${path} (${elapsed}ms): ${errorText.slice(0, 300)}`,
+          );
+          if (attempt < maxRetries && response.status >= 500) {
+            this.logger.warn(
+              `[request] Retrying ${method} ${path} (attempt ${attempt + 1}/${maxRetries})`,
+            );
+            await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+            continue;
+          }
+          throw new Error(
+            errorText.includes('Not logged')
+              ? 'Not logged in!'
+              : `HTTP ${response.status} on ${method} ${path}: ${errorText.slice(0, 500)}`,
+          );
+        }
+
+        const body = (await response.json()) as WorkspaceApiBody<T>;
+        const isSuccess =
+          body.success === true || body.code === 200 || body.code === 'SUCCESS';
+        if (!isSuccess) {
+          const msg = body.msg || body.message || 'workspace 请求失败';
+          this.logger.error(
+            `[request] FAIL ${method} ${path} (${elapsed}ms) → code=${body.code} msg="${msg}"`,
+          );
+          throw new Error(msg);
+        }
+
+        const dataStr = JSON.stringify(body.data);
+        const dataPreview =
+          dataStr && dataStr.length > 500
+            ? `${dataStr.slice(0, 500)}...(${dataStr.length} chars)`
+            : dataStr;
+        this.logger.log(
+          `[request] ← OK ${method} ${path} (${elapsed}ms) data=${dataPreview}`,
         );
-        throw new Error(`HTTP ${response.status}`);
+        return (body.data ?? null) as T;
+      } catch (error) {
+        if (
+          attempt < maxRetries &&
+          error instanceof Error &&
+          (error.name === 'AbortError' || error.message.includes('fetch'))
+        ) {
+          this.logger.warn(
+            `[request] ${error.message}, retrying ${method} ${path} (attempt ${attempt + 1}/${maxRetries})`,
+          );
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timer);
       }
-
-      const body = (await response.json()) as WorkspaceApiBody<T>;
-      const isSuccess =
-        body.success === true || body.code === 200 || body.code === 'SUCCESS';
-      if (!isSuccess) {
-        this.logger.error(`业务失败: ${body.code} ${body.msg || body.message}`);
-        throw new Error(body.msg || body.message || 'workspace 请求失败');
-      }
-
-      return (body.data ?? null) as T;
-    } finally {
-      clearTimeout(timer);
     }
+
+    throw new Error(`[request] Max retries exceeded for ${method} ${path}`);
   }
 
   // ─── Asset routes ───────────────────────────────────────
@@ -169,15 +245,25 @@ export class WorkspaceService {
         {
           data: { productId: context.projectId, page: 1, pageSize: 100 },
         },
-      ).catch(() => ({ list: [] })),
+      ).catch((err) => {
+        this.logger.warn(
+          `[context] /api/user/world/list/episode failed: ${err.message}`,
+        );
+        return { list: [] };
+      }),
       worldId
         ? this.getWorldAssetSummary(headers, worldId, 'character').catch(
-            () => ({
-              type: 'character' as const,
-              total: 0,
-              sampleNames: [],
-              items: [],
-            }),
+            (err) => {
+              this.logger.warn(
+                `[context] character summary failed: ${err.message}`,
+              );
+              return {
+                type: 'character' as const,
+                total: 0,
+                sampleNames: [],
+                items: [],
+              };
+            },
           )
         : Promise.resolve({
             type: 'character' as const,
@@ -186,12 +272,15 @@ export class WorkspaceService {
             items: [],
           }),
       worldId
-        ? this.getWorldAssetSummary(headers, worldId, 'scene').catch(() => ({
-            type: 'scene' as const,
-            total: 0,
-            sampleNames: [],
-            items: [],
-          }))
+        ? this.getWorldAssetSummary(headers, worldId, 'scene').catch((err) => {
+            this.logger.warn(`[context] scene summary failed: ${err.message}`);
+            return {
+              type: 'scene' as const,
+              total: 0,
+              sampleNames: [],
+              items: [],
+            };
+          })
         : Promise.resolve({
             type: 'scene' as const,
             total: 0,
@@ -199,12 +288,15 @@ export class WorkspaceService {
             items: [],
           }),
       worldId
-        ? this.getWorldAssetSummary(headers, worldId, 'prop').catch(() => ({
-            type: 'prop' as const,
-            total: 0,
-            sampleNames: [],
-            items: [],
-          }))
+        ? this.getWorldAssetSummary(headers, worldId, 'prop').catch((err) => {
+            this.logger.warn(`[context] prop summary failed: ${err.message}`);
+            return {
+              type: 'prop' as const,
+              total: 0,
+              sampleNames: [],
+              items: [],
+            };
+          })
         : Promise.resolve({
             type: 'prop' as const,
             total: 0,
@@ -212,13 +304,18 @@ export class WorkspaceService {
             items: [],
           }),
       episodeId
-        ? this.getStoryboardSummary(headers, episodeId).catch(() => ({
-            episodeId,
-            shotCount: 0,
-            sampleRows: [],
-            columns: [],
-            columnNames: [],
-          }))
+        ? this.getStoryboardSummary(headers, episodeId).catch((err) => {
+            this.logger.warn(
+              `[context] storyboard summary failed: ${err.message}`,
+            );
+            return {
+              episodeId,
+              shotCount: 0,
+              sampleRows: [],
+              columns: [],
+              columnNames: [],
+            };
+          })
         : Promise.resolve({
             episodeId: null,
             shotCount: 0,
@@ -280,7 +377,7 @@ export class WorkspaceService {
     const items = page.list ?? [];
     return {
       type,
-      total: Number(page.total ?? items.length ?? 0),
+      total: Number(page.totalCount ?? page.total ?? items.length ?? 0),
       sampleNames: this.dedupeStrings(
         items.map((item) => this.toDisplayName(item)),
       ),
@@ -307,7 +404,7 @@ export class WorkspaceService {
         name: params?.name,
       });
       const list = result.list ?? [];
-      total = Number(result.total ?? total ?? list.length);
+      total = Number(result.totalCount ?? result.total ?? total ?? list.length);
       aggregated.push(...list);
       if (list.length < pageSize || aggregated.length >= total) break;
       page += 1;
@@ -360,14 +457,17 @@ export class WorkspaceService {
         page: 1,
         pageSize: 5,
       }).catch(() => ({
-        list: [],
+        list: [] as WorkspaceRecord[],
+        totalCount: 0,
         total: 0,
       })),
     ]);
 
     return {
       episodeId,
-      shotCount: Number(rows.total ?? rows.list?.length ?? 0),
+      shotCount: Number(
+        rows.totalCount ?? rows.total ?? rows.list?.length ?? 0,
+      ),
       sampleRows: rows.list ?? [],
       columns,
       columnNames: this.dedupeStrings(
@@ -400,7 +500,7 @@ export class WorkspaceService {
         presetColumnKeys: params?.presetColumnKeys,
       });
       const list = result.list ?? [];
-      total = Number(result.total ?? total ?? list.length);
+      total = Number(result.totalCount ?? result.total ?? total ?? list.length);
       aggregated.push(...list);
       if (list.length < pageSize || aggregated.length >= total) break;
       page += 1;
@@ -416,11 +516,36 @@ export class WorkspaceService {
 
   // ─── Public: Mutations ──────────────────────────────────
 
+  async getProjectDetail(
+    headers: HeadersLike,
+    projectId: string,
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      headers,
+      `/api/user/project/detail/${projectId}`,
+    );
+  }
+
   async updateProject(headers: HeadersLike, data: Record<string, unknown>) {
     return this.request<WorkspaceRecord>(
       headers,
       '/api/user/world/update/worldproduct',
       { data },
+    );
+  }
+
+  async updateWorld(headers: HeadersLike, data: Record<string, unknown>) {
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/user/world/update/world',
+      { data },
+    );
+  }
+
+  async getWorldDetail(headers: HeadersLike, worldId: string) {
+    return this.request<Record<string, unknown>>(
+      headers,
+      `/api/user/world/query/world?id=${worldId}`,
     );
   }
 
@@ -434,11 +559,50 @@ export class WorkspaceService {
     );
   }
 
+  /**
+   * Update an episode. Fetches current data first, merges changes, sends full payload.
+   * The upstream API is a full replacement, not a partial patch.
+   */
   async updateEpisode(headers: HeadersLike, data: Record<string, unknown>) {
+    const projectId = data.projectId as string;
+    const episodeId = String(data.id);
+
+    // Fetch current episode to get all fields
+    const episodes = await this.listEpisodes(headers, projectId);
+    const current = episodes.find((ep) => ep.id === episodeId);
+
+    const merged: EpisodeRecord = {
+      id: episodeId,
+      projectId,
+      title: (data.title as string) ?? current?.title ?? '',
+      introduction:
+        (data.introduction as string) ?? current?.introduction ?? '',
+      sort: (data.sort as number) ?? current?.sort ?? 0,
+      videoLength: (data.videoLength as number) ?? current?.videoLength ?? 0,
+      frontPrompt: (data.frontPrompt as string) ?? current?.frontPrompt ?? '',
+      behindPrompt:
+        (data.behindPrompt as string) ?? current?.behindPrompt ?? '',
+    };
+
     return this.request<WorkspaceRecord>(
       headers,
       '/api/user/world/update/episode',
-      { data },
+      { data: merged },
+    );
+  }
+
+  async saveEpisodeScript(
+    headers: HeadersLike,
+    episodeId: string,
+    content: string,
+  ) {
+    this.logger.log(
+      `[saveEpisodeScript] episode=${episodeId} content=${content.length} chars`,
+    );
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/user/project/scripts/episode/createOrUpdate',
+      { data: { episodeId, content }, maxRetries: 2 },
     );
   }
 
@@ -537,6 +701,335 @@ export class WorkspaceService {
     });
   }
 
+  /**
+   * Batch create assets via the AI chat batch APIs.
+   *
+   * datas format: [["name", "description", "prompt"], ["角色A", "描述", "prompt"], ...]
+   * First row is header, rest are data rows. Header only supports: name, description, prompt.
+   */
+  /**
+   * List all episodes for a project. Returns array of { id, title, ... }.
+   */
+  async listEpisodes(
+    headers: HeadersLike,
+    projectId: string,
+  ): Promise<Array<EpisodeRecord>> {
+    const result = await this.request<{
+      list?: Array<Record<string, unknown>>;
+    }>(headers, '/api/user/world/list/episode', {
+      data: { productId: projectId, page: 1, pageSize: 999 },
+    });
+    return (result?.list ?? []).map((ep) => ({
+      id: String(ep.id),
+      projectId: String(ep.projectId ?? projectId),
+      title: String(ep.title ?? ''),
+      sort: Number(ep.sort ?? 0),
+      introduction: (ep.introduction as string) ?? '',
+      videoLength: Number(ep.videoLength ?? 0),
+      frontPrompt: (ep.frontPrompt as string) ?? '',
+      behindPrompt: (ep.behindPrompt as string) ?? '',
+    }));
+  }
+
+  async batchCreateRoles(
+    headers: HeadersLike,
+    worldId: string,
+    datas: string[][],
+  ) {
+    // datas[0] is header row ["name", "description"], rest are data rows
+    const rows = datas.slice(1);
+    this.logger.log(
+      `[batchCreateRoles] ${rows.length} roles for world ${worldId} (sequential)`,
+    );
+    for (const row of rows) {
+      try {
+        const name = row[0];
+        const description = row[1] ?? '';
+        const prompt = row[2] ?? description;
+        await this.request<WorkspaceRecord>(
+          headers,
+          '/api/user/world/create/worldrole',
+          {
+            data: {
+              worldId,
+              name,
+              description,
+              prompt,
+              roleImgPath: [],
+              referenceImgPath: [],
+              referenceImgDescription: [],
+              model: '',
+              voiceId: '',
+            },
+          },
+        );
+      } catch (error) {
+        this.logger.error(`[batchCreateRoles] Failed "${row[0]}": ${error}`);
+      }
+    }
+  }
+
+  async batchCreateScenes(
+    headers: HeadersLike,
+    worldId: string,
+    datas: string[][],
+  ) {
+    const rows = datas.slice(1);
+    this.logger.log(
+      `[batchCreateScenes] ${rows.length} scenes for world ${worldId} (sequential)`,
+    );
+    for (const row of rows) {
+      try {
+        const name = row[0];
+        const description = row[1] ?? '';
+        const prompt = row[2] ?? description;
+        await this.request<WorkspaceRecord>(
+          headers,
+          '/api/user/world/create/worldscene',
+          { data: { worldId, name, description, prompt } },
+        );
+      } catch (error) {
+        this.logger.error(`[batchCreateScenes] Failed "${row[0]}": ${error}`);
+      }
+    }
+  }
+
+  async batchCreateProps(
+    headers: HeadersLike,
+    worldId: string,
+    datas: string[][],
+  ) {
+    const rows = datas.slice(1);
+    this.logger.log(
+      `[batchCreateProps] ${rows.length} props for world ${worldId} (sequential)`,
+    );
+    for (const row of rows) {
+      try {
+        await this.request<WorkspaceRecord>(
+          headers,
+          '/api/user/world/create/worldprop',
+          { data: { worldId, name: row[0], description: row[1] ?? '' } },
+        );
+      } catch (error) {
+        this.logger.error(`[batchCreateProps] Failed "${row[0]}": ${error}`);
+      }
+    }
+  }
+
+  private static readonly SORT_GAP = 1024;
+  private static readonly MIN_SORT_GAP = 2;
+
+  /**
+   * Reorder all episodes with even spacing (SORT_GAP).
+   * Call this when sort gaps are too tight to insert new episodes.
+   */
+  async reorderEpisodes(
+    headers: HeadersLike,
+    projectId: string,
+  ): Promise<void> {
+    const episodes = await this.listEpisodes(headers, projectId);
+    episodes.sort((a, b) => a.sort - b.sort);
+
+    const datas = episodes.map((ep, index) => ({
+      id: ep.id,
+      title: ep.title,
+      sort: (index + 1) * WorkspaceService.SORT_GAP,
+      projectId,
+    }));
+
+    await this.batchUpdateEpisodes(headers, datas);
+    this.logger.log(
+      `[reorderEpisodes] Reordered ${episodes.length} episodes for project ${projectId}`,
+    );
+  }
+
+  /**
+   * Ensure sort gaps are large enough for inserting new items.
+   * If any adjacent gap is smaller than MIN_SORT_GAP, trigger a full reorder.
+   */
+  private async ensureSortGaps(
+    headers: HeadersLike,
+    projectId: string,
+    episodes: EpisodeRecord[],
+  ): Promise<EpisodeRecord[]> {
+    const sorted = [...episodes].sort((a, b) => a.sort - b.sort);
+    let needsReorder = false;
+
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].sort - sorted[i - 1].sort < WorkspaceService.MIN_SORT_GAP) {
+        needsReorder = true;
+        break;
+      }
+    }
+
+    if (!needsReorder) return sorted;
+
+    this.logger.log(`[ensureSortGaps] Sort gaps too tight, triggering reorder`);
+    await this.reorderEpisodes(headers, projectId);
+    const refreshed = await this.listEpisodes(headers, projectId);
+    return refreshed.sort((a, b) => a.sort - b.sort);
+  }
+
+  async batchAddEpisodes(
+    headers: HeadersLike,
+    projectId: string,
+    titles: string[],
+  ): Promise<string[]> {
+    this.logger.log(
+      `[batchAddEpisodes] ${titles.length} episodes for project ${projectId}`,
+    );
+
+    // 1. Get existing episodes, ensure sort gaps are healthy
+    let existing = await this.listEpisodes(headers, projectId);
+    existing = await this.ensureSortGaps(headers, projectId, existing);
+
+    let maxSort = 0;
+    for (const ep of existing) {
+      if (ep.sort > maxSort) maxSort = ep.sort;
+    }
+
+    // 2. Assign sort values: increment by SORT_GAP from max
+    const datas = titles.map((title, index) => ({
+      title,
+      projectId,
+      sort: maxSort + (index + 1) * WorkspaceService.SORT_GAP,
+    }));
+
+    // 3. Batch create via updateOrAdd API
+    try {
+      await this.request(headers, '/api/user/world/batch/updateOrAdd/episode', {
+        data: { datas },
+        maxRetries: 2,
+      });
+      this.logger.log(
+        `[batchAddEpisodes] Batch created ${titles.length} episodes`,
+      );
+    } catch (error) {
+      this.logger.error(`[batchAddEpisodes] Batch create failed: ${error}`);
+      throw error;
+    }
+
+    // 4. Re-fetch episode list and match by sort to get IDs in order
+    const updated = await this.listEpisodes(headers, projectId);
+    const sortToId = new Map<number, string>();
+    for (const ep of updated) {
+      sortToId.set(ep.sort, ep.id);
+    }
+
+    const ids = datas.map((item) => sortToId.get(item.sort) ?? '');
+    const matched = ids.filter(Boolean).length;
+    this.logger.log(
+      `[batchAddEpisodes] Matched ${matched}/${titles.length} episodes by sort`,
+    );
+
+    return ids;
+
+    /* ── Sequential fallback (use if batch API doesn't create storyboard associations) ──
+    const ids: string[] = [];
+    for (const title of titles) {
+      try {
+        const createdId = await this.request<string | number>(
+          headers,
+          '/api/user/storyBoard/create',
+          { data: { projectId, name: title }, maxRetries: 2 },
+        );
+        ids.push(String(createdId));
+      } catch (error) {
+        this.logger.error(`[batchAddEpisodes] Failed "${title}": ${error}`);
+        ids.push('');
+      }
+    }
+    return ids;
+    */
+  }
+
+  /**
+   * Batch update episodes. Fetches current data first, merges changes, sends full payload.
+   */
+  async batchUpdateEpisodes(
+    headers: HeadersLike,
+    datas: Array<{
+      id: string;
+      title?: string;
+      introduction?: string;
+      sort?: number;
+      frontPrompt?: string;
+      behindPrompt?: string;
+      projectId: string;
+    }>,
+  ) {
+    if (datas.length === 0) return;
+    const projectId = datas[0].projectId;
+
+    // Fetch current episodes to merge with
+    const currentEpisodes = await this.listEpisodes(headers, projectId);
+    const currentMap = new Map(currentEpisodes.map((ep) => [ep.id, ep]));
+
+    const merged: EpisodeRecord[] = datas.map((d) => {
+      const cur = currentMap.get(d.id);
+      return {
+        id: d.id,
+        projectId,
+        title: d.title ?? cur?.title ?? '',
+        introduction: d.introduction ?? cur?.introduction ?? '',
+        sort: d.sort ?? cur?.sort ?? 0,
+        videoLength: cur?.videoLength ?? 0,
+        frontPrompt: d.frontPrompt ?? cur?.frontPrompt ?? '',
+        behindPrompt: d.behindPrompt ?? cur?.behindPrompt ?? '',
+      };
+    });
+
+    this.logger.log(`[batchUpdateEpisodes] updating ${merged.length} episodes`);
+    return this.request(headers, '/api/user/world/batch/updateOrAdd/episode', {
+      data: { datas: merged },
+      maxRetries: 2,
+    });
+  }
+
+  /**
+   * Batch save scripts to multiple episodes at once.
+   * episodeIds and contents must be same length and correspond 1:1.
+   * Use empty string for episodes without a script.
+   */
+  async batchSaveScripts(
+    headers: HeadersLike,
+    projectId: string,
+    episodeIds: string[],
+    contents: string[],
+  ) {
+    this.logger.log(
+      `[batchSaveScripts] ${episodeIds.length} scripts for project ${projectId}`,
+    );
+    return this.request<WorkspaceRecord>(
+      headers,
+      '/api/user/project/scripts/episode/batch/createOrUpdate',
+      {
+        data: { projectId, episodeIds, contents },
+        maxRetries: 2,
+        timeoutMs: 120_000,
+      },
+    );
+  }
+
+  /**
+   * Move an episode before another episode for sorting.
+   * Pass beforeStoryBoardId=null to move to the end.
+   */
+  async sortEpisode(
+    headers: HeadersLike,
+    projectId: string,
+    storyBoardId: string,
+    beforeStoryBoardId: string | null,
+  ) {
+    this.logger.log(
+      `[sortEpisode] move ${storyBoardId} before ${beforeStoryBoardId ?? 'END'} in project ${projectId}`,
+    );
+    return this.request<WorkspaceRecord>(headers, '/api/user/storyBoard/sort', {
+      data: { projectId, storyBoardId, beforeStoryBoardId },
+      maxRetries: 1,
+    });
+  }
+
   async saveStoryboardDraft(
     headers: HeadersLike,
     data: {
@@ -546,6 +1039,9 @@ export class WorkspaceService {
       autoload?: boolean;
     },
   ) {
+    this.logger.log(
+      `[saveStoryboardDraft] episode=${data.episodeId} rows=${data.rows.length} cols=${data.headers.join(',')}`,
+    );
     return this.request<WorkspaceRecord>(
       headers,
       '/api/ai/chat/save/storyboard',

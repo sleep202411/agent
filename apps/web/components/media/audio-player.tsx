@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState, useCallback } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { IconPlayerPlay, IconPlayerPause } from "@tabler/icons-react";

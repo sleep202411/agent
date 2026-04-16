@@ -1,13 +1,11 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconCirclePlus, IconDownload, IconSearch } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { backendApi, type Paginated } from "@/src/lib/api";
-import { CharacterFusionDialog } from "../character-fusion-dialog";
+import { CharacterFusionDialog } from "../character-fusion/character-fusion-dialog";
 import { ImportEntityDialog } from "../import-entity-dialog";
 import {
   WORKSPACE_FOCUS_ASSET_PANEL_EVENT,
@@ -43,7 +41,6 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
   );
 
   const [worldCharacters, setWorldCharacters] = useState<CharacterPanelItem[]>([]);
-  const [assetCharacters, setAssetCharacters] = useState<CharacterPanelItem[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -59,11 +56,6 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
   const hasMoreRef = useRef(true);
   const loadingMoreRef = useRef(false);
   const pendingFocusRef = useRef<AssetPanelFocusDetail | null>(null);
-
-  const loadAssetCharacters = useCallback(async () => {
-    // asset-library 接口已移除，项目资产角色暂不加载
-    setAssetCharacters([]);
-  }, []);
 
   const loadWorldCharacters = useCallback(
     async (reset = true, keyword = "") => {
@@ -99,9 +91,6 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
         const nextHasMore = list.length >= PAGE_SIZE;
         setHasMore(nextHasMore);
         hasMoreRef.current = nextHasMore;
-        if (reset) {
-          await loadAssetCharacters();
-        }
       } catch (error) {
         console.error("[CharactersPanel] 加载角色失败:", error);
         toast.error("加载角色失败");
@@ -111,7 +100,7 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
         loadingMoreRef.current = false;
       }
     },
-    [loadAssetCharacters, worldId]
+    [worldId]
   );
 
   useEffect(() => {
@@ -123,8 +112,8 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
   }, [charactersVersion, loadWorldCharacters, search, worldId]);
 
   const visibleCharacters = useMemo(
-    () => mergeCharacters(worldCharacters, assetCharacters, search),
-    [assetCharacters, search, worldCharacters]
+    () => mergeCharacters(worldCharacters, [], search),
+    [search, worldCharacters]
   );
 
   useEffect(() => {

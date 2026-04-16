@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import mammoth from "mammoth";
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -26,7 +24,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -44,7 +42,7 @@ import { backendApi } from "@/src/lib/api";
 import { pipelineStream } from "@/src/lib/pipeline-stream";
 import { saveStoryboardTableWithBackfill } from "@/src/lib/storyboard-save";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { touchStoryboard, selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -132,7 +130,9 @@ export function ScriptView() {
   const t = useTranslations("script");
   const tc = useTranslations("common");
   const ts = useTranslations("storyboard");
+  const dispatch = useAppDispatch();
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
+  const episodesVersion = useAppSelector((s) => selectCurrentInstance(s).episodesVersion);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
@@ -193,9 +193,14 @@ export function ScriptView() {
   useEffect(() => {
     if (!activeEpisodeId || !editor) return;
 
-    setLoading(true);
     setChanged(false);
     abortRef.current?.();
+
+    // Silent reload if editor already has content; show loading only on first load
+    const hasExistingContent = editor.getText().trim().length > 0;
+    if (!hasExistingContent) {
+      setLoading(true);
+    }
 
     backendApi
       .post<{ content?: string }>(`/api/user/project/scripts/episode/detail/${activeEpisodeId}`)
@@ -205,11 +210,13 @@ export function ScriptView() {
         editor.commands.setContent(content || "<p></p>");
       })
       .catch((error) => {
-        console.error("[ScriptView] 加载剧本失败:", error);
-        toast.error(t("loadFailed"));
+        console.error("[ScriptView] load script failed:", error);
+        if (!hasExistingContent) {
+          toast.error(t("loadFailed"));
+        }
       })
       .finally(() => setLoading(false));
-  }, [activeEpisodeId, editor]);
+  }, [activeEpisodeId, episodesVersion, editor]);
 
   useEffect(() => {
     return () => {
@@ -410,7 +417,7 @@ export function ScriptView() {
         autoload,
         replaceExisting: true,
       });
-      touchStoryboard();
+      dispatch(touchStoryboard());
       setShowStoryboardResult(false);
       if (result.warning) {
         toast.warning(result.warning);
@@ -462,17 +469,6 @@ export function ScriptView() {
             event.target.value = "";
           }}
         />
-
-        <div className="flex items-center justify-end border-b border-border px-3 py-2.5">
-          <Button onClick={handleGenerateStoryboard} disabled={generating}>
-            {generating ? (
-              <IconLoader2 className="size-3.5 animate-spin" />
-            ) : (
-              <IconSparkles className="size-3.5" />
-            )}
-            {generating ? tc("generating") : t("generateStoryboard")}
-          </Button>
-        </div>
 
         <div className="flex items-center gap-0.5 border-b border-border px-3 py-1.5">
           <ToolbarButton
@@ -580,7 +576,7 @@ export function ScriptView() {
 
           <div className="space-y-4">
             <Field>
-              <FieldLabel>每分钟镜头数</FieldLabel>
+              <FieldLabel>{t("shotsPerMinute")}</FieldLabel>
               <Input
                 type="number"
                 min={1}
@@ -599,7 +595,7 @@ export function ScriptView() {
                 checked={generateWithAssets}
                 onCheckedChange={(checked) => setGenerateWithAssets(checked === true)}
               />
-              <FieldLabel>同时分析角色、场景和道具</FieldLabel>
+              <FieldLabel>{t("analyzeAssets")}</FieldLabel>
             </Field>
           </div>
 
@@ -619,9 +615,7 @@ export function ScriptView() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{tc("replace")}</DialogTitle>
-            <DialogDescription>
-              编辑器里已经有内容，导入文件会覆盖当前文本。确认继续吗？
-            </DialogDescription>
+            <DialogDescription>{t("replaceConfirmDesc")}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
@@ -652,8 +646,8 @@ export function ScriptView() {
       <Dialog open={showStoryboardResult} onOpenChange={setShowStoryboardResult}>
         <DialogContent className="max-w-[96vw]">
           <DialogHeader>
-            <DialogTitle>AI 分镜结果</DialogTitle>
-            <DialogDescription>可以先调整表格内容，再应用到当前剧集的分镜表。</DialogDescription>
+            <DialogTitle>{t("aiStoryboardResult")}</DialogTitle>
+            <DialogDescription>{t("aiStoryboardResultDesc")}</DialogDescription>
           </DialogHeader>
 
           {storyboardRows.length > 0 ? (
@@ -710,7 +704,7 @@ export function ScriptView() {
                     checked={autoload}
                     onCheckedChange={(checked) => setAutoload(checked === true)}
                   />
-                  <FieldLabel>自动关联人物 / 场景 / 道具</FieldLabel>
+                  <FieldLabel>{t("autoAssociate")}</FieldLabel>
                 </Field>
 
                 <div className="flex items-center gap-2">
@@ -722,7 +716,7 @@ export function ScriptView() {
                     }
                   >
                     <IconPlus className="size-3.5" />
-                    添加一行
+                    {t("addRow")}
                   </Button>
                   <Button
                     variant="outline"
@@ -740,14 +734,14 @@ export function ScriptView() {
                     ) : (
                       <IconSparkles className="size-3.5" />
                     )}
-                    应用到分镜表
+                    {t("applyToStoryboard")}
                   </Button>
                 </div>
               </div>
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-border px-6 py-16 text-center text-sm text-muted-foreground">
-              当前没有可展示的分镜内容
+              {t("noStoryboardPreview")}
             </div>
           )}
         </DialogContent>

@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconCheck,
@@ -14,14 +12,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { RawAiModel, AssetRecord } from "@/src/types/workspace";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 const MAX_CONCURRENT = 4;
 const REQUEST_INTERVAL = 1000;
 const MAX_QUEUE_SIZE = 8;
@@ -130,6 +129,7 @@ export function AiBasicAudioGeneratorDialog({
   onGeneratingChange,
   onGenerateSuccess,
 }: AiBasicAudioGeneratorDialogProps) {
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const { models: cachedModels, loading: loadingModelsFromCache } = useRawAiModels(
     AI_MODEL_PATHS.audio
@@ -166,7 +166,7 @@ export function AiBasicAudioGeneratorDialog({
   const modelOptions = useMemo<Array<{ label: string; value: string }>>(
     () =>
       models.map((item) => ({
-        label: String(item.serviceName ?? item.serviceCode ?? "模型"),
+        label: String(item.serviceName ?? item.serviceCode ?? t("modelLabel")),
         value: String(item.serviceCode ?? ""),
       })),
     [models]
@@ -290,7 +290,7 @@ export function AiBasicAudioGeneratorDialog({
           .then((result) => {
             const audio = parseGeneratedAudio(result);
             if (!audio) {
-              throw new Error("没有生成可用音频");
+              throw new Error(t("noValidAudio"));
             }
             generatedWhileOpenRef.current = true;
             setGeneratedAudios((current) => [audio, ...current]);
@@ -386,21 +386,21 @@ export function AiBasicAudioGeneratorDialog({
       URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error("[AiBasicAudioGeneratorDialog] 下载失败:", error);
-      toast.error("下载失败");
+      toast.error(t("downloadFailed2"));
     }
   }, [currentPreviewAudio]);
 
   const handleGenerate = useCallback(() => {
     if (!prompt.trim()) {
-      toast.warning("请输入提示词");
+      toast.warning(t("enterPrompt"));
       return;
     }
     if (!modelCode) {
-      toast.warning("请选择模型");
+      toast.warning(t("selectModelFirst"));
       return;
     }
     if (queue.length >= MAX_QUEUE_SIZE) {
-      toast.warning("生成队列已满");
+      toast.warning(t("queueFull"));
       return;
     }
 
@@ -443,7 +443,7 @@ export function AiBasicAudioGeneratorDialog({
       onOpenChange(false);
     } catch (error) {
       console.error("[AiBasicAudioGeneratorDialog] 选择音频失败:", error);
-      toast.error("选择音频失败");
+      toast.error(t("selectAudioFailed"));
     } finally {
       setSelecting(false);
     }
@@ -457,30 +457,30 @@ export function AiBasicAudioGeneratorDialog({
         onInteractOutside={(event) => event.preventDefault()}
       >
         <DialogHeader className="px-6 py-4">
-          <DialogTitle className="text-base font-medium">AI 音频生成</DialogTitle>
+          <DialogTitle className="text-base font-medium">{t("aiAudioTitle")}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex h-[600px] min-h-0 gap-5 px-6 pb-5">
-          <div className="flex w-[300px] shrink-0 flex-col gap-4 overflow-y-auto">
+        <div className="flex h-150 min-h-0 gap-5 px-4 pb-5">
+          <div className="flex w-75 shrink-0 flex-col gap-4 overflow-y-auto">
             <section className="space-y-2">
-              <div className="text-sm font-medium text-foreground">提示词</div>
+              <div className="text-sm font-medium text-foreground">{t("audioPromptLabel")}</div>
               <Textarea
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
-                placeholder="描述你希望生成的音频内容"
+                placeholder={t("audioPromptPlaceholder")}
                 rows={7}
               />
             </section>
 
             <section className="space-y-2">
-              <div className="text-sm font-medium text-foreground">模型</div>
+              <div className="text-sm font-medium text-foreground">{t("modelLabel")}</div>
               <NativeSelect
                 value={modelCode}
                 onChange={(event) => setModelCode(event.target.value)}
                 disabled={loadingModels}
               >
                 <option value="" disabled>
-                  请选择模型
+                  {t("selectModel")}
                 </option>
                 {modelOptions.map((option) => (
                   <option key={String(option.value)} value={String(option.value)}>
@@ -490,7 +490,7 @@ export function AiBasicAudioGeneratorDialog({
               </NativeSelect>
               {currentModelCost > 0 ? (
                 <div className="text-xs text-muted-foreground">
-                  单次消耗 {currentModelCost} 积分
+                  {t("costPerUnit", { cost: currentModelCost })}
                 </div>
               ) : null}
             </section>
@@ -528,7 +528,7 @@ export function AiBasicAudioGeneratorDialog({
                         <IconClock className="size-5" />
                       )}
                       <span className="text-xs">
-                        {item.status === "generating" ? "生成中..." : "排队中..."}
+                        {item.status === "generating" ? t("generatingStatus") : t("queueStatus")}
                       </span>
                     </div>
                   </div>
@@ -579,9 +579,9 @@ export function AiBasicAudioGeneratorDialog({
                   <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
                 ) : (
                   <div className="text-center">
-                    <div className="text-lg font-semibold text-foreground">AI 生成音频</div>
+                    <div className="text-lg font-semibold text-foreground">{t("aiAudioEmpty")}</div>
                     <div className="mt-2 text-sm text-muted-foreground">
-                      输入提示词后生成当前列的音频素材
+                      {t("aiAudioEmptyDesc")}
                     </div>
                   </div>
                 )}
@@ -620,7 +620,7 @@ export function AiBasicAudioGeneratorDialog({
                   </div>
                 </>
               ) : (
-                <div className="text-sm text-muted-foreground">选择一个音频预览</div>
+                <div className="text-sm text-muted-foreground">{t("selectAudioPreview")}</div>
               )}
             </div>
           </div>
@@ -637,7 +637,7 @@ export function AiBasicAudioGeneratorDialog({
               {tc("generate")}
             </Button>
             <div className="text-xs text-muted-foreground">
-              {totalCost > 0 ? `预计消耗 ${totalCost} 积分` : ""}
+              {totalCost > 0 ? t("estimatedCost", { cost: totalCost }) : ""}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -649,7 +649,7 @@ export function AiBasicAudioGeneratorDialog({
               disabled={selecting || (!currentPreviewAudio && selectedIndices.length === 0)}
             >
               {selecting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-              选择
+              {t("selectAction")}
             </Button>
           </div>
         </div>

@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Experimental
+apps/web-tanstack
+
 # Dependencies
 node_modules
 .pnp
@@ -21,7 +24,7 @@ coverage
 .vercel
 
 # Build Outputs
-.next/
+.output
 out/
 build
 dist
@@ -36,6 +39,9 @@ yarn-error.log*
 .DS_Store
 *.pem
 
+# Docker exports
+*.tar.gz
+
 # Claude Code
 .claude/
 .agents/
@@ -46,4 +52,3 @@ skills-lock.json
 
 # TypeScript
 *.tsbuildinfo
-next-env.d.ts

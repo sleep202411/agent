@@ -1,7 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  IconChevronDown,
   IconDeviceFloppy,
   IconLoader2,
   IconTrash,
@@ -29,12 +28,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslations } from "@/src/i18n/i18n";
+import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
 import { uploadProjectImage, buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import type { Asset } from "@/src/store/slices/projectSlice";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
-import { AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import {
   normalizeStoragePath,
   parseObjectSafely,
@@ -97,6 +98,8 @@ export function CharacterEditDialog({
   onSaved: () => void;
   onDeleted: () => void;
 }) {
+  const t = useTranslations("character");
+  const tc = useTranslations("common");
   const [formData, setFormData] = useState<CharacterFormState>(createEmptyForm());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -173,17 +176,17 @@ export function CharacterEditDialog({
   const handleRoleImageUpload = useCallback(async (file?: File) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      toast.warning("请选择图片文件");
+      toast.warning(tc("selectImageFile"));
       return;
     }
     try {
       setUploadingRoleImage(true);
       const uploadedPath = await uploadProjectImage(file);
       setFormData((current) => ({ ...current, roleImgPath: [uploadedPath] }));
-      toast.success("上传成功");
+      toast.success(tc("uploadSuccess"));
     } catch (error) {
       console.error("[CharacterEditDialog] 上传角色图失败:", error);
-      toast.error("上传失败");
+      toast.error(tc("uploadFailed"));
     } finally {
       setUploadingRoleImage(false);
       if (roleInputRef.current) {
@@ -194,11 +197,11 @@ export function CharacterEditDialog({
 
   const handleGenerateThreeView = useCallback(async () => {
     if (!formData.id) {
-      toast.warning("请先保存角色");
+      toast.warning(t("savePleaseFirst"));
       return;
     }
     if (!roleImagePath) {
-      toast.warning("请先上传角色图片");
+      toast.warning(t("uploadImageFirst"));
       return;
     }
     try {
@@ -214,13 +217,13 @@ export function CharacterEditDialog({
       });
       const nextPath = normalizeStoragePath(String(result ?? ""));
       if (!nextPath) {
-        throw new Error("未生成三视图");
+        throw new Error(tc("noValidThreeView"));
       }
       setFormData((current) => ({ ...current, threeViewsImagePath: nextPath }));
-      toast.success("三视图生成成功");
+      toast.success(tc("threeViewSuccess"));
     } catch (error) {
       console.error("[CharacterEditDialog] 生成三视图失败:", error);
-      toast.error("三视图生成失败");
+      toast.error(tc("threeViewFailed"));
     } finally {
       setThreeViewLoading(false);
     }
@@ -256,18 +259,18 @@ export function CharacterEditDialog({
         await backendApi.post("/api/user/world/update/worldrole", {
           data: { ...submitData, id: formData.id, aiId: formData.aiId || undefined },
         });
-        toast.success("角色更新成功");
+        toast.success(t("updateSuccess"));
       } else {
         await backendApi.post<Asset>("/api/user/world/create/worldrole", {
           data: { ...submitData, aiId: formData.aiId || undefined },
         });
-        toast.success("角色创建成功");
+        toast.success(t("createSuccess"));
       }
       onOpenChange(false);
       onSaved();
     } catch (error) {
       console.error("[CharacterEditDialog] 保存失败:", error);
-      toast.error(formData.id ? "角色更新失败" : "角色创建失败");
+      toast.error(formData.id ? t("updateFailed") : t("createFailed"));
     } finally {
       setSaving(false);
     }
@@ -278,12 +281,12 @@ export function CharacterEditDialog({
     try {
       setDeleting(true);
       await backendApi.post(`/api/user/world/delete/worldrole?id=${formData.id}`);
-      toast.success("角色删除成功");
+      toast.success(t("deleteSuccess"));
       onOpenChange(false);
       onDeleted();
     } catch (error) {
       console.error("[CharacterEditDialog] 删除失败:", error);
-      toast.error("角色删除失败");
+      toast.error(t("deleteFailed"));
     } finally {
       setDeleting(false);
     }
@@ -300,59 +303,62 @@ export function CharacterEditDialog({
       />
 
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent
-          showCloseButton={false}
-          className="max-h-[85vh] overflow-hidden p-0 sm:max-w-[600px]"
-        >
-          <DialogHeader className="border-b border-border px-6 py-5">
-            <DialogTitle>{formData.id ? "编辑角色" : "创建角色"}</DialogTitle>
+        <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden p-0 sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>{formData.id ? t("editCharacter") : t("createCharacter")}</DialogTitle>
           </DialogHeader>
 
-          <div className="max-h-[calc(85vh-140px)] overflow-y-auto px-6 py-5">
+          <div className="flex-1 overflow-y-auto p-4">
             <FieldGroup>
               <Field>
-                <FieldLabel>角色名称</FieldLabel>
+                <FieldLabel required>{t("characterName")}</FieldLabel>
                 <Input
                   value={formData.name}
                   onChange={(event) => updateForm({ name: event.target.value })}
-                  placeholder="请输入角色名称"
+                  placeholder={t("characterNamePlaceholder")}
                   maxLength={20}
                 />
               </Field>
 
               <Field>
-                <FieldLabel>人物小传</FieldLabel>
+                <FieldLabel required>{t("biography")}</FieldLabel>
                 <Textarea
                   value={formData.description}
                   onChange={(event) => updateForm({ description: event.target.value })}
-                  placeholder="描述角色的背景、性格、特征等"
+                  placeholder={t("characterDescriptionPlaceholder")}
                   maxLength={300}
                   rows={5}
                 />
               </Field>
 
               <Field>
-                <FieldLabel>提示词</FieldLabel>
+                <FieldLabel>{tc("prompt")}</FieldLabel>
                 <Textarea
                   value={formData.prompt}
                   onChange={(event) => updateForm({ prompt: event.target.value })}
-                  placeholder="AI 生成图片时使用的提示词"
+                  placeholder={tc("promptPlaceholder")}
                   maxLength={500}
                   rows={3}
                 />
               </Field>
 
-              <Field>
-                <FieldLabel>语音模型</FieldLabel>
-                <div className="flex items-center gap-2">
+              <div className="grid grid-cols-2 gap-3">
+                <Field>
+                  <FieldLabel>{t("voiceModel")}</FieldLabel>
                   <Select
-                    value={formData.voiceModelCode || undefined}
-                    onValueChange={(value) => updateForm({ voiceModelCode: value, voiceId: "" })}
+                    value={formData.voiceModelCode || "__none__"}
+                    onValueChange={(value) =>
+                      updateForm({
+                        voiceModelCode: value === "__none__" ? "" : value,
+                        voiceId: value === "__none__" ? "" : formData.voiceId,
+                      })
+                    }
                   >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="请选择语音模型" />
+                    <SelectTrigger className="w-full h-9">
+                      <SelectValue placeholder={t("voiceModelPlaceholder")} />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" className="max-h-60">
+                      <SelectItem value="__none__">{t("noVoiceModel")}</SelectItem>
                       {voiceModels.map((item) => {
                         const value = String(item.serviceCode ?? "");
                         if (!value) return null;
@@ -364,43 +370,38 @@ export function CharacterEditDialog({
                       })}
                     </SelectContent>
                   </Select>
-                  {formData.voiceModelCode ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      color="muted"
-                      size="sm"
-                      onClick={() => updateForm({ voiceModelCode: "", voiceId: "" })}
-                    >
-                      清空
-                    </Button>
-                  ) : null}
-                </div>
-              </Field>
+                </Field>
 
-              {formData.voiceModelCode ? (
                 <Field>
-                  <FieldLabel>角色语音</FieldLabel>
+                  <FieldLabel>{t("voice")}</FieldLabel>
                   <button
                     type="button"
+                    disabled={!formData.voiceModelCode}
                     onClick={() => setVoicePickerOpen(true)}
-                    className="flex h-10 w-full items-center justify-between rounded-md border border-input px-3 text-left text-sm transition-colors hover:border-white/20"
+                    className={cn(
+                      "flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors",
+                      "hover:bg-accent hover:text-accent-foreground",
+                      "disabled:cursor-not-allowed disabled:opacity-50",
+                      formData.voiceId ? "text-foreground" : "text-muted-foreground"
+                    )}
                   >
-                    <span
-                      className={selectedVoiceName ? "text-foreground" : "text-muted-foreground"}
-                    >
-                      {selectedVoiceName || "请选择角色语音"}
+                    <span className="truncate">
+                      {selectedVoiceName && formData.voiceModelCode
+                        ? selectedVoiceName
+                        : t("voicePlaceholder")}
                     </span>
-                    <IconVolume className="size-4 text-muted-foreground" />
+                    <IconChevronDown className="size-4 shrink-0 opacity-50" />
                   </button>
                 </Field>
-              ) : null}
+              </div>
 
               <Field>
-                <FieldLabel>角色图片</FieldLabel>
+                <FieldLabel>{t("characterImages")}</FieldLabel>
                 <div className="flex gap-4">
                   <div className="w-[150px] shrink-0 space-y-2">
-                    <div className="text-[11px] text-muted-foreground/80">角色形象</div>
+                    <div className="text-[11px] text-muted-foreground/80">
+                      {t("characterImageLabel")}
+                    </div>
                     <div className="group relative h-[200px] overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
                       {hasRoleImage ? (
                         <>
@@ -417,7 +418,7 @@ export function CharacterEditDialog({
                                 color="muted"
                                 onClick={() => setPreviewImage(roleImageUrl)}
                               >
-                                查看大图
+                                {tc("viewFullImage")}
                               </Button>
                               <Button
                                 size="sm"
@@ -426,7 +427,7 @@ export function CharacterEditDialog({
                                 onClick={() => roleInputRef.current?.click()}
                               >
                                 <IconUpload className="size-3" />
-                                上传图片
+                                {t("uploadImage")}
                               </Button>
                               <Button
                                 size="sm"
@@ -434,14 +435,14 @@ export function CharacterEditDialog({
                                 color="muted"
                                 onClick={() => {
                                   if (!formData.id) {
-                                    toast.warning("请先保存角色");
+                                    toast.warning(t("savePleaseFirst"));
                                     return;
                                   }
                                   setAiRecordOpen(true);
                                 }}
                               >
                                 <IconWand className="size-3" />
-                                AI 生图
+                                {t("aiGenerateImage")}
                               </Button>
                               <Button
                                 size="sm"
@@ -449,7 +450,7 @@ export function CharacterEditDialog({
                                 color="destructive"
                                 onClick={() => updateForm({ roleImgPath: [] })}
                               >
-                                删除
+                                {tc("delete")}
                               </Button>
                             </div>
                           )}
@@ -463,7 +464,7 @@ export function CharacterEditDialog({
                             onClick={() => roleInputRef.current?.click()}
                           >
                             <IconUpload className="size-3" />
-                            上传图片
+                            {t("uploadImage")}
                           </Button>
                           <Button
                             size="sm"
@@ -471,14 +472,14 @@ export function CharacterEditDialog({
                             color="muted"
                             onClick={() => {
                               if (!formData.id) {
-                                toast.warning("请先保存角色");
+                                toast.warning(t("savePleaseFirst"));
                                 return;
                               }
                               setAiRecordOpen(true);
                             }}
                           >
                             <IconWand className="size-3" />
-                            AI 生图
+                            {t("aiGenerateImage")}
                           </Button>
                         </div>
                       )}
@@ -486,7 +487,7 @@ export function CharacterEditDialog({
                   </div>
 
                   <div className="flex-1 space-y-2">
-                    <div className="text-[11px] text-muted-foreground/80">三视图</div>
+                    <div className="text-[11px] text-muted-foreground/80">{t("threeView")}</div>
                     <div className="group relative h-[200px] overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
                       {formData.threeViewsImagePath ? (
                         <>
@@ -510,7 +511,7 @@ export function CharacterEditDialog({
                                     setPreviewImage(buildOssUrl(formData.threeViewsImagePath))
                                   }
                                 >
-                                  查看大图
+                                  {tc("viewFullImage")}
                                 </Button>
                                 <Button
                                   size="sm"
@@ -519,7 +520,7 @@ export function CharacterEditDialog({
                                   onClick={() => void handleGenerateThreeView()}
                                 >
                                   <IconWand className="size-3" />
-                                  重新生成
+                                  {tc("regenerate")}
                                 </Button>
                                 <Button
                                   size="sm"
@@ -527,7 +528,7 @@ export function CharacterEditDialog({
                                   color="destructive"
                                   onClick={() => updateForm({ threeViewsImagePath: "" })}
                                 >
-                                  删除
+                                  {tc("delete")}
                                 </Button>
                               </div>
                             </div>
@@ -545,7 +546,7 @@ export function CharacterEditDialog({
                             {threeViewLoading ? (
                               <IconLoader2 className="size-3 animate-spin" />
                             ) : null}
-                            生成三视图
+                            {tc("generateThreeView")}
                           </Button>
                         </div>
                       )}
@@ -556,7 +557,7 @@ export function CharacterEditDialog({
 
               {otherImages.length > 0 ? (
                 <Field>
-                  <FieldLabel>其他形象图</FieldLabel>
+                  <FieldLabel>{t("otherImages")}</FieldLabel>
                   <div className="flex flex-wrap gap-3">
                     {otherImages.map((item) => (
                       <div key={item.name} className="group relative overflow-hidden rounded-lg">
@@ -587,7 +588,7 @@ export function CharacterEditDialog({
               ) : null}
 
               <Field>
-                <FieldLabel>参考图</FieldLabel>
+                <FieldLabel>{t("referenceImageDesc")}</FieldLabel>
                 <CharacterReferenceUploader
                   paths={formData.referenceImgPath}
                   descriptions={formData.referenceImgDescription}
@@ -616,11 +617,11 @@ export function CharacterEditDialog({
                 ) : (
                   <IconTrash className="size-4" />
                 )}
-                删除
+                {tc("delete")}
               </Button>
             ) : null}
             <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
-              取消
+              {tc("cancel")}
             </Button>
             <Button onClick={() => void handleSave()} disabled={!formData.name.trim() || saving}>
               {saving ? (
@@ -628,7 +629,7 @@ export function CharacterEditDialog({
               ) : (
                 <IconDeviceFloppy className="size-4" />
               )}
-              保存
+              {tc("save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -658,7 +659,7 @@ export function CharacterEditDialog({
         onOpenChange={(open) => !open && setPreviewImage("")}
         type="image"
         src={previewImage}
-        name="角色图片预览"
+        name={t("characterImagePreview")}
         link={previewImage}
       />
     </>

@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit";
 import type { User } from "@/src/lib/auth";
-import { logout as authLogout } from "@/src/lib/auth";
+import { emailLogin as authEmailLogin, getCurrentUser, logout as authLogout } from "@/src/lib/auth";
 
 // ─── State ──────────────────────────────────────────────
 
@@ -15,6 +15,17 @@ const initialState: AuthState = {
 };
 
 // ─── Thunks ─────────────────────────────────────────────
+
+export const fetchUser = createAsyncThunk("auth/fetchUser", async () => {
+  return getCurrentUser();
+});
+
+export const login = createAsyncThunk(
+  "auth/login",
+  async ({ email, pwd }: { email: string; pwd: string }) => {
+    return authEmailLogin(email, pwd);
+  }
+);
 
 export const logout = createAsyncThunk("auth/logout", async () => {
   await authLogout();
@@ -35,10 +46,26 @@ export const authSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    builder.addCase(logout.fulfilled, (state) => {
-      state.user = null;
-      state.isLoading = false;
-    });
+    builder
+      .addCase(fetchUser.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(fetchUser.fulfilled, (state, action) => {
+        state.user = action.payload;
+        state.isLoading = false;
+      })
+      .addCase(fetchUser.rejected, (state) => {
+        state.user = null;
+        state.isLoading = false;
+      })
+      .addCase(login.fulfilled, (state, action) => {
+        state.user = action.payload;
+        state.isLoading = false;
+      })
+      .addCase(logout.fulfilled, (state) => {
+        state.user = null;
+        state.isLoading = false;
+      });
   },
 });
 

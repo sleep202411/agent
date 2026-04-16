@@ -1,8 +1,6 @@
-"use client";
-
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { useTranslations } from "next-intl";
-import { IconPlus } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
+import { IconPlus, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import {
@@ -31,6 +29,7 @@ import {
 
 export function ScenesPanel({ onClose }: { onClose: () => void }) {
   const t = useTranslations("scene");
+  const tc = useTranslations("common");
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const scenes = useAppSelector((s) => selectCurrentInstance(s).scenes);
   const isLoading = useAppSelector((s) => selectCurrentInstance(s).isScenesLoading);
@@ -40,7 +39,6 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
   const [editScene, setEditScene] = useState<ScenePanelItem | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [assetScenes, setAssetScenes] = useState<ScenePanelItem[]>([]);
   const pageRef = useRef(1);
   const pendingFocusRef = useRef<AssetPanelFocusDetail | null>(null);
 
@@ -48,14 +46,10 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
     () =>
       mergeScenes(
         scenes.map((item, index) => normalizeSceneItem(item, index, "world")),
-        assetScenes
+        []
       ),
-    [assetScenes, scenes]
+    [scenes]
   );
-
-  const loadAssetScenes = useCallback(async () => {
-    setAssetScenes([]);
-  }, []);
 
   const loadScenes = useCallback(
     async (options?: { reset?: boolean; silent?: boolean }) => {
@@ -86,9 +80,6 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
         pageRef.current = targetPage;
         const totalCount = Number(data?.totalCount ?? 0);
         setHasMore(totalCount > 0 ? targetPage * 20 < totalCount : nextList.length === 20);
-        if (reset) {
-          await loadAssetScenes();
-        }
       } catch (err) {
         console.error("[ScenesPanel] 加载失败:", err);
       } finally {
@@ -98,7 +89,7 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
         }
       }
     },
-    [loadAssetScenes, worldId]
+    [worldId]
   );
 
   useEffect(() => {
@@ -161,21 +152,29 @@ export function ScenesPanel({ onClose }: { onClose: () => void }) {
         title={t("title")}
         onClose={onClose}
         loading={isLoading}
+        actions={
+          <button
+            type="button"
+            onClick={() => void loadScenes({ reset: true })}
+            className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title={tc("refresh")}
+          >
+            <IconRefresh className="size-3.5" />
+          </button>
+        }
         footer={
           <Button className="w-full" size="lg" variant="solid" onClick={() => setCreateOpen(true)}>
             <IconPlus className="size-3.5" /> {t("addScene")}
           </Button>
         }
       >
-        <div className="p-3">
-          <SceneList
-            scenes={visibleScenes}
-            onEdit={(s) => setEditScene(s)}
-            hasMore={hasMore}
-            loadingMore={loadingMore}
-            onLoadMore={() => void loadScenes({ reset: false })}
-          />
-        </div>
+        <SceneList
+          scenes={visibleScenes}
+          onEdit={(s) => setEditScene(s)}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={() => void loadScenes({ reset: false })}
+        />
       </PanelLayout>
 
       <SceneCreateDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={handleCreated} />

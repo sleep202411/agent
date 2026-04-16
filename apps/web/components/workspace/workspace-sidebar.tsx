@@ -1,5 +1,3 @@
-"use client";
-
 import {
   IconFoldersFilled,
   IconSubtask,
@@ -7,8 +5,7 @@ import {
   IconSettingsFilled,
   IconFlame,
 } from "@tabler/icons-react";
-import { usePathname } from "next/navigation";
-import { useLocale } from "next-intl";
+import { useLocation } from "@tanstack/react-router";
 import { WorkspaceSidebarItem } from "./workspace-sidebar-item";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -36,12 +33,10 @@ const workspaceItems = [
 ];
 
 export function WorkspaceSidebar() {
-  const pathname = usePathname();
-  const locale = useLocale();
+  const { pathname } = useLocation();
 
   const isItemActive = (path: string) => {
-    const fullPath = `/${locale}${path}`;
-    return pathname === fullPath || pathname.startsWith(`${fullPath}/`);
+    return pathname === path || pathname.startsWith(`${path}/`);
   };
 
   return (
@@ -54,7 +49,7 @@ export function WorkspaceSidebar() {
         {workspaceItems.map((item) => (
           <WorkspaceSidebarItem
             key={item.path}
-            href={`/${locale}${item.path}`}
+            href={item.path}
             label={item.label}
             icon={item.icon}
             isActive={isItemActive(item.path)}

@@ -1,11 +1,9 @@
-"use client";
-
 import { useEffect, useMemo } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { IconLoader2 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -17,14 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
+import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
 import { backendApi } from "@/src/lib/api";
 import { useAppSelector } from "@/src/store";
 
@@ -94,100 +85,102 @@ export function EpisodeCreateDialog({ open, onOpenChange, onCreated }: EpisodeCr
           <DialogTitle>{t("addEpisode")}</DialogTitle>
         </DialogHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+          <FieldGroup className="p-4">
+            <Controller
               name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("episodeName")} *</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      maxLength={50}
-                      placeholder={t("episodeNamePlaceholder")}
-                      autoFocus
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor={field.name} required>
+                    {t("episodeName")}
+                  </FieldLabel>
+                  <Input
+                    {...field}
+                    id={field.name}
+                    aria-invalid={fieldState.invalid}
+                    maxLength={50}
+                    placeholder={t("episodeNamePlaceholder")}
+                    autoFocus
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
               )}
             />
 
-            <FormField
-              control={form.control}
+            <Controller
               name="introduction"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("introduction")}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      maxLength={500}
-                      rows={2}
-                      placeholder={t("introductionPlaceholder")}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor={field.name}>{t("introduction")}</FieldLabel>
+                  <Textarea
+                    {...field}
+                    id={field.name}
+                    aria-invalid={fieldState.invalid}
+                    maxLength={500}
+                    rows={2}
+                    placeholder={t("introductionPlaceholder")}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
               )}
             />
 
-            <FormField
-              control={form.control}
+            <Controller
               name="frontPrompt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("frontPrompt")}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      maxLength={1000}
-                      rows={2}
-                      placeholder={t("frontPromptPlaceholder")}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
               control={form.control}
-              name="behindPrompt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("behindPrompt")}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      maxLength={1000}
-                      rows={2}
-                      placeholder={t("behindPromptPlaceholder")}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor={field.name}>{t("frontPrompt")}</FieldLabel>
+                  <Textarea
+                    {...field}
+                    id={field.name}
+                    aria-invalid={fieldState.invalid}
+                    maxLength={1000}
+                    rows={2}
+                    placeholder={t("frontPromptPlaceholder")}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
               )}
             />
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                color="muted"
-                onClick={() => onOpenChange(false)}
-              >
-                {tc("cancel")}
-              </Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting && <IconLoader2 className="size-3.5 animate-spin" />}
-                {tc("create")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+            <Controller
+              name="behindPrompt"
+              control={form.control}
+              render={({ field, fieldState }) => (
+                <Field data-invalid={fieldState.invalid}>
+                  <FieldLabel htmlFor={field.name}>{t("behindPrompt")}</FieldLabel>
+                  <Textarea
+                    {...field}
+                    id={field.name}
+                    aria-invalid={fieldState.invalid}
+                    maxLength={1000}
+                    rows={2}
+                    placeholder={t("behindPromptPlaceholder")}
+                  />
+                  {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+                </Field>
+              )}
+            />
+          </FieldGroup>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              color="muted"
+              onClick={() => onOpenChange(false)}
+            >
+              {tc("cancel")}
+            </Button>
+            <Button type="submit" disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting && <IconLoader2 className="size-3.5 animate-spin" />}
+              {tc("create")}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

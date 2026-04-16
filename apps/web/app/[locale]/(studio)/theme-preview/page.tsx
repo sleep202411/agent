@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,12 +37,19 @@ import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { useTranslations, useLocale } from "next-intl";
-import { Link } from "@/src/i18n/navigation";
+import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
+import { setCurrentLocale } from "@/src/i18n/locale-url";
+import { useNavigate } from "@tanstack/react-router";
 
 export default function Home() {
   const t = useTranslations("common");
   const locale = useLocale();
+  const navigate = useNavigate();
+  const switchLang = (lng: string) => {
+    setCurrentLocale(lng);
+    setLanguage(lng);
+    void navigate({ to: "/theme-preview", replace: true });
+  };
 
   return (
     <>
@@ -58,27 +63,16 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-3">
               <div className="flex gap-1 text-sm">
-                <Link
-                  href="/"
-                  locale="zh-CN"
-                  className={`px-2 py-1 rounded ${locale === "zh-CN" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  简
-                </Link>
-                <Link
-                  href="/"
-                  locale="zh-HK"
-                  className={`px-2 py-1 rounded ${locale === "zh-HK" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  繁
-                </Link>
-                <Link
-                  href="/"
-                  locale="en-US"
-                  className={`px-2 py-1 rounded ${locale === "en-US" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  EN
-                </Link>
+                {(["zh-CN", "zh-HK", "en-US"] as const).map((lng) => (
+                  <button
+                    key={lng}
+                    type="button"
+                    onClick={() => switchLang(lng)}
+                    className={`px-2 py-1 rounded ${locale === lng ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {lng === "zh-CN" ? "简" : lng === "zh-HK" ? "繁" : "EN"}
+                  </button>
+                ))}
               </div>
               <ThemeToggle />
             </div>

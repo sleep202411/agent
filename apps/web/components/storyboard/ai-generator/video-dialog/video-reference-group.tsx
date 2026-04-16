@@ -1,91 +1,22 @@
-"use client";
-
-import {
-  IconPlayerPlay,
-  IconPlus,
-  IconRepeat,
-  IconSparkles,
-  IconVideo,
-  IconX,
-} from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
+import { IconRepeat } from "@tabler/icons-react";
+import { ReferenceGroup } from "../reference-group";
 import type {
   EditMode,
   MultiRefType,
-  PickerAssetType,
   PickerTarget,
   ReferenceAsset,
   SimpleMode,
 } from "./video-types";
 import { getVideoThumbnail, ossUrl } from "./video-types";
 
-export function ReferenceGroup({
-  label,
-  items,
-  mediaType,
-  maxCount,
-  onAdd,
-  onRemove,
-}: {
-  label: string;
-  items: ReferenceAsset[];
-  mediaType: PickerAssetType;
-  maxCount: number;
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      {items.map((item, index) => {
-        const src =
-          mediaType === "video"
-            ? getVideoThumbnail(item.url || item.path)
-            : ossUrl(item.url || item.path);
-        return (
-          <div
-            key={`${label}-${item.path}-${index}`}
-            className="group relative size-16 overflow-hidden rounded-lg bg-muted"
-          >
-            {src ? (
-              <img src={src} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
-                {mediaType === "video" ? (
-                  <IconVideo className="size-5" />
-                ) : (
-                  <IconSparkles className="size-5" />
-                )}
-              </div>
-            )}
-            {mediaType === "video" ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                <div className="flex size-7 items-center justify-center rounded-full bg-black/55 text-white">
-                  <IconPlayerPlay className="ml-0.5 size-3.5" />
-                </div>
-              </div>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => onRemove(index)}
-              className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
-            >
-              <IconX className="size-2.5" />
-            </button>
-          </div>
-        );
-      })}
-      {items.length < maxCount ? (
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex size-16 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-        >
-          <IconPlus className="size-4" />
-          <span className="text-[10px]">{label}</span>
-        </button>
-      ) : null}
-    </div>
-  );
-}
+export { ReferenceGroup };
+
+/** Shared resolve props for video reference groups */
+const videoResolveProps = {
+  resolveUrl: ossUrl,
+  resolveVideoThumbnail: getVideoThumbnail,
+};
 
 export interface VideoReferencePanelProps {
   uploadMode: SimpleMode;
@@ -121,6 +52,10 @@ export interface VideoReferencePanelProps {
   onSetExtendFirstFrame: (items: ReferenceAsset[]) => void;
   onSetExtendLastFrame: (items: ReferenceAsset[]) => void;
   onSetOutpaintingRefVideo: (items: ReferenceAsset[]) => void;
+  /** Model reference limits */
+  maxImages?: number;
+  maxVideos?: number;
+  maxAudios?: number;
 }
 
 export function VideoReferencePanel({
@@ -155,7 +90,11 @@ export function VideoReferencePanel({
   onSetExtendFirstFrame,
   onSetExtendLastFrame,
   onSetOutpaintingRefVideo,
+  maxImages = 3,
+  maxVideos = 0,
+  maxAudios = 0,
 }: VideoReferencePanelProps) {
+  const t = useTranslations("storyboard");
   const multiRefSubjectImages = multiRefImages.filter((item) => item.typeTag !== "bg");
   const multiRefBgImages = multiRefImages.filter((item) => item.typeTag === "bg");
 
@@ -172,17 +111,17 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="视频"
+          label={t("video")}
           items={repaintRefVideos}
-          mediaType="video"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("repaintVideo")}
           onRemove={() => onSetRepaintRefVideos([])}
         />
         <ReferenceGroup
-          label="参考图"
+          label={t("referenceImage")}
           items={repaintRefImage}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("repaintImage")}
           onRemove={() => onSetRepaintRefImage([])}
@@ -195,25 +134,25 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="视频"
+          label={t("video")}
           items={localEditRefVideo}
-          mediaType="video"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("localEditVideo")}
           onRemove={() => onSetLocalEditRefVideo([])}
         />
         <ReferenceGroup
-          label="遮罩图"
+          label={t("maskImage")}
           items={localEditMaskImage}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("localEditMask")}
           onRemove={() => onSetLocalEditMaskImage([])}
         />
         <ReferenceGroup
-          label="参考图"
+          label={t("referenceImage")}
           items={localEditRefImage}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("localEditRefImage")}
           onRemove={() => onSetLocalEditRefImage([])}
@@ -226,33 +165,33 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="首片段"
+          label={t("firstClipLabel")}
           items={extendFirstClip}
-          mediaType="video"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("extendFirstClip")}
           onRemove={() => onSetExtendFirstClip([])}
         />
         <ReferenceGroup
-          label="尾片段"
+          label={t("lastClipLabel")}
           items={extendLastClip}
-          mediaType="video"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("extendLastClip")}
           onRemove={() => onSetExtendLastClip([])}
         />
         <ReferenceGroup
-          label="首帧图"
+          label={t("firstFrameImage")}
           items={extendFirstFrame}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("extendFirstFrame")}
           onRemove={() => onSetExtendFirstFrame([])}
         />
         <ReferenceGroup
-          label="尾帧图"
+          label={t("lastFrameImage")}
           items={extendLastFrame}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("extendLastFrame")}
           onRemove={() => onSetExtendLastFrame([])}
@@ -264,9 +203,8 @@ export function VideoReferencePanel({
   if (editMode === "outpainting") {
     return (
       <ReferenceGroup
-        label="视频"
+        label={t("video")}
         items={outpaintingRefVideo}
-        mediaType="video"
         maxCount={1}
         onAdd={() => onOpenPicker("outpaintingVideo")}
         onRemove={() => onSetOutpaintingRefVideo([])}
@@ -278,17 +216,17 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="首帧"
+          label={t("firstFrame")}
           items={firstFrames}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("firstFrames")}
           onRemove={() => onSetFirstFrames([])}
         />
         <ReferenceGroup
-          label="尾帧"
+          label={t("lastFrame")}
           items={lastFrames}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("lastFrames")}
           onRemove={() => onSetLastFrames([])}
@@ -301,9 +239,9 @@ export function VideoReferencePanel({
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ReferenceGroup
-          label="主体"
+          label={t("subjectLabel")}
           items={multiRefSubjectImages}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={1}
           onAdd={() => onOpenPicker("multiRefSubject")}
           onRemove={() =>
@@ -314,14 +252,14 @@ export function VideoReferencePanel({
           type="button"
           onClick={swapMultiRefTypes}
           className="flex size-8 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-          title="交换主体和背景"
+          title={t("swapSubjectBackground")}
         >
           <IconRepeat className="size-4" />
         </button>
         <ReferenceGroup
-          label="背景"
+          label={t("backgroundLabel")}
           items={multiRefBgImages}
-          mediaType="img"
+          {...videoResolveProps}
           maxCount={2}
           onAdd={() => onOpenPicker("multiRefBg")}
           onRemove={(index) => {
@@ -334,14 +272,29 @@ export function VideoReferencePanel({
     );
   }
 
+  if (uploadMode === "multimodal") {
+    return (
+      <ReferenceGroup
+        label={t("addMedia")}
+        items={referenceImages}
+        {...videoResolveProps}
+        maxCount={maxImages}
+        onAdd={() => onOpenPicker("multimodalImages")}
+        onRemove={(index) => {
+          onSetReferenceImages(referenceImages.filter((_, i) => i !== index));
+        }}
+      />
+    );
+  }
+
   return (
     <ReferenceGroup
-      label="参考图"
+      label={t("referenceImage")}
       items={referenceImages}
-      mediaType="img"
-      maxCount={1}
+      {...videoResolveProps}
+      maxCount={maxImages}
       onAdd={() => onOpenPicker("referenceImages")}
-      onRemove={() => onSetReferenceImages([])}
+      onRemove={(index) => onSetReferenceImages(referenceImages.filter((_, i) => i !== index))}
     />
   );
 }

@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { IconDotsVertical, IconDownload, IconLoader2, IconWand } from "@tabler/icons-react";
+import { IconDownload, IconLoader2, IconWand } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,14 +11,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { backendApi } from "@/src/lib/api";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   BatchGenerateConfig,
   StoryboardBatchGenerateDialog,
@@ -43,6 +36,7 @@ import {
   StoryboardBatchVoiceDialog,
 } from "@/components/project/storyboard-batch-voice-dialog";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
+import { env } from "@/src/env";
 
 const BATCH_INTERVAL = 10_000;
 const IMAGE_DEFAULT_PRESET_KEYS = ["description", "shot_size", "perspective", "style_planting"];
@@ -78,7 +72,7 @@ type VoiceBatchItem = {
   text: string;
 };
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string) {
   if (!path) return "";
@@ -416,7 +410,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       toast.success(t("autoAssociateSuccess"));
       setShowAutoloadDialog(false);
       setRecoverOldData(false);
-      touchStoryboard();
+      store.dispatch(touchStoryboard());
     } catch (error) {
       console.error("[StoryboardColumnHeader] 自动关联失败:", error);
       toast.error(t("autoAssociateFailed"));
@@ -436,7 +430,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       toast.success(t("associateVoiceSuccess"));
       setShowVoiceAutoloadDialog(false);
       setVoiceRecoverOldData(false);
-      touchStoryboard();
+      store.dispatch(touchStoryboard());
     } catch (error) {
       console.error("[StoryboardColumnHeader] 一键关联角色配音失败:", error);
       toast.error(t("associateVoiceFailed"));
@@ -467,8 +461,8 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
 
       toast.info(
         type === "image"
-          ? `开始导出 ${finalAssets.length} 张定稿图片`
-          : `开始导出 ${finalAssets.length} 个定稿视频`
+          ? t("startExportImages", { count: finalAssets.length })
+          : t("startExportVideos", { count: finalAssets.length })
       );
 
       for (const asset of finalAssets) {
@@ -530,13 +524,13 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       return;
     }
 
-    setBatchGeneratingActive(true);
+    store.dispatch(setBatchGeneratingActive(true));
     queue.forEach((item) =>
       store.dispatch(
         setBatchGenerating({ shotId: item.shotId, columnId: item.columnId, generating: true })
       )
     );
-    toast.info(`已开始批量生成 ${queue.length} 个镜头`);
+    toast.info(t("startBatchGenerate", { count: queue.length }));
 
     try {
       let interrupted = false;
@@ -549,7 +543,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
 
         try {
           if ("startImageUrl" in item) {
-            await backendApi.post("/api/ai/video/generate/basic", {
+            await backendApi.post("/api/ai/task/video/generate/basic", {
               data: {
                 shotId: item.shotId,
                 shotColumnId: item.columnId,
@@ -597,7 +591,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
         toast.success(t("batchGenerateComplete"));
       }
     } finally {
-      clearBatchGenerating();
+      store.dispatch(clearBatchGenerating());
     }
   };
 
@@ -627,13 +621,13 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       return;
     }
 
-    setBatchGeneratingActive(true);
+    store.dispatch(setBatchGeneratingActive(true));
     queue.forEach((item) =>
       store.dispatch(
         setBatchGenerating({ shotId: item.shotId, columnId: item.columnId, generating: true })
       )
     );
-    toast.info(`已开始批量生成 ${queue.length} 条配音`);
+    toast.info(t("startBatchVoice", { count: queue.length }));
 
     try {
       let interrupted = false;
@@ -678,7 +672,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
         toast.success(t("batchVoiceComplete"));
       }
     } finally {
-      clearBatchGenerating();
+      store.dispatch(clearBatchGenerating());
     }
   };
 
@@ -712,33 +706,41 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
               {t("batchGenerate")}
             </Button>
 
-            {(isImageColumn || isVideoColumn) && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+            {isImageColumn && (
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
                     color="muted"
                     size="icon-xs"
-                    onClick={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleBatchExport("image");
+                    }}
                   >
-                    <IconDotsVertical className="size-3.5" />
+                    <IconDownload className="size-3.5" />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="center" className="w-48">
-                  {isImageColumn ? (
-                    <DropdownMenuItem onSelect={() => void handleBatchExport("image")}>
-                      <IconDownload className="size-4" />
-                      批量导出定稿图
-                    </DropdownMenuItem>
-                  ) : null}
-                  {isVideoColumn ? (
-                    <DropdownMenuItem onSelect={() => void handleBatchExport("video")}>
-                      <IconDownload className="size-4" />
-                      批量导出定稿视频
-                    </DropdownMenuItem>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                </TooltipTrigger>
+                <TooltipContent>{t("batchExportFinalizedImages")}</TooltipContent>
+              </Tooltip>
+            )}
+            {isVideoColumn && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    color="muted"
+                    size="icon-xs"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleBatchExport("video");
+                    }}
+                  >
+                    <IconDownload className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("batchExportFinalizedVideos")}</TooltipContent>
+              </Tooltip>
             )}
           </>
         ) : (
@@ -781,30 +783,32 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       >
         <DialogContent
           showCloseButton={!autoloadLoading}
-          className="rounded-xl border border-border bg-[#262626] text-white sm:max-w-[420px]"
+          className="rounded-xl border border-border bg-card sm:max-w-[420px]"
         >
           <DialogHeader>
-            <DialogTitle>自动关联</DialogTitle>
+            <DialogTitle>{t("autoAssociateTitle")}</DialogTitle>
             <DialogDescription className="text-xs text-[#8F8F92]">
-              按旧 workspace 逻辑自动回填当前列关联内容。
+              {t("autoAssociateDesc")}
             </DialogDescription>
           </DialogHeader>
-          <Field
-            orientation="horizontal"
-            className="items-start rounded-lg border border-white/8 bg-white/[0.03] px-4 py-3"
-          >
-            <Checkbox
-              checked={recoverOldData}
-              onCheckedChange={(checked) => setRecoverOldData(Boolean(checked))}
-              disabled={autoloadLoading}
-            />
-            <div className="space-y-1">
-              <FieldLabel className="text-sm font-medium">覆盖已有内容</FieldLabel>
-              <FieldDescription className="text-xs text-[#8F8F92]">
-                打开后会重新覆盖旧数据，关闭则只补齐空白项。
-              </FieldDescription>
-            </div>
-          </Field>
+          <div className="p-4">
+            <Field
+              orientation="horizontal"
+              className="items-start rounded-lg border border-white/8 bg-white/[0.03] px-4 py-3"
+            >
+              <Checkbox
+                checked={recoverOldData}
+                onCheckedChange={(checked) => setRecoverOldData(Boolean(checked))}
+                disabled={autoloadLoading}
+              />
+              <div className="space-y-1">
+                <FieldLabel className="text-sm font-medium">{t("overwriteExisting")}</FieldLabel>
+                <FieldDescription className="text-xs text-[#8F8F92]">
+                  {t("overwriteExistingDesc")}
+                </FieldDescription>
+              </div>
+            </Field>
+          </div>
           <DialogFooter className="border-white/10 bg-transparent">
             <Button
               variant="outline"
@@ -834,12 +838,12 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       >
         <DialogContent
           showCloseButton={!voiceAutoloadLoading}
-          className="rounded-xl border border-border bg-[#262626] text-white sm:max-w-[420px]"
+          className="rounded-xl border border-border bg-card sm:max-w-[420px]"
         >
           <DialogHeader>
-            <DialogTitle>一键关联角色配音</DialogTitle>
+            <DialogTitle>{t("voiceAutoAssociateTitle")}</DialogTitle>
             <DialogDescription className="text-xs text-[#8F8F92]">
-              按旧 workspace 逻辑，用角色配置的一键配音信息回填当前列。
+              {t("voiceAutoAssociateDesc")}
             </DialogDescription>
           </DialogHeader>
           <Field
@@ -852,9 +856,9 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
               disabled={voiceAutoloadLoading}
             />
             <div className="space-y-1">
-              <FieldLabel className="text-sm font-medium">覆盖已有内容</FieldLabel>
+              <FieldLabel className="text-sm font-medium">{t("overwriteExisting")}</FieldLabel>
               <FieldDescription className="text-xs text-[#8F8F92]">
-                打开后会覆盖已有配音，关闭则只补齐空白项。
+                {t("voiceOverwriteDesc")}
               </FieldDescription>
             </div>
           </Field>

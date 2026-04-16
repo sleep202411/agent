@@ -1,8 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useState } from "react";
-import { IconCheck, IconHome, IconLoader2, IconMask, IconUser, IconX } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { IconCheck, IconHome, IconLoader2, IconMask, IconUser } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   Dialog,
   DialogContent,
@@ -72,13 +70,16 @@ export function WorldAssetSelectDialog({
   const t = useTranslations("storyboard");
   const [selected, setSelected] = useState<WorldAssetOption | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const prev = selectedId
-      ? (items.find((item) => String(item.id) === String(selectedId)) ?? null)
-      : null;
-    setSelected(prev);
-  }, [open, selectedId, items]);
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) {
+      const prev = selectedId
+        ? (items.find((item) => String(item.id) === String(selectedId)) ?? null)
+        : null;
+      setSelected(prev);
+    }
+  }
 
   const handleToggle = useCallback((item: WorldAssetOption) => {
     setSelected((prev) => (prev?.id === item.id ? null : item));
@@ -92,22 +93,14 @@ export function WorldAssetSelectDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        showCloseButton={false}
         className="flex flex-col overflow-hidden p-0"
         style={{ width: 700, maxWidth: "calc(100vw - 2rem)", height: "min(520px, 80vh)" }}
       >
-        <DialogHeader className="flex flex-row items-center justify-between px-5 pt-4 pb-3">
+        <DialogHeader className="px-5 pt-4 pb-3">
           <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="flex size-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <IconX className="size-4" />
-          </button>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-auto px-5">
+        <div className="min-h-0 flex-1 overflow-auto p-4">
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
               <EmptyIcon kind={kind} />
@@ -158,7 +151,7 @@ export function WorldAssetSelectDialog({
           )}
         </div>
 
-        <DialogFooter className="px-5 pb-4 pt-3">
+        <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}
           </Button>

@@ -1,13 +1,12 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCirclePlus, IconLoader2, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string): string {
   if (!path) return "";
@@ -18,7 +17,7 @@ function ossUrl(path?: string): string {
 export function ReferenceImageUploader({
   paths,
   onChange,
-  addLabel = "添加参考图",
+  addLabel,
   maxCount = 6,
 }: {
   paths: string[];
@@ -137,7 +136,7 @@ export function ReferenceImageUploader({
             className="flex h-[105px] w-[140px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
           >
             <IconCirclePlus className="size-5" />
-            <span className="text-xs">{addLabel}</span>
+            <span className="text-xs">{addLabel || tc("addReferenceImage")}</span>
           </button>
         ) : null}
       </div>

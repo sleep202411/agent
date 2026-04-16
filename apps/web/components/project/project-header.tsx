@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import {
   IconArrowLeft,
   IconChevronRight,
@@ -11,7 +9,7 @@ import {
   IconSparkles,
   IconUsers,
 } from "@tabler/icons-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { ProjectTabs, type ProjectTab } from "./project-tabs";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -19,7 +17,7 @@ import type { IntegralRecord } from "@/src/types/workspace";
 import { ProjectMessagesPopover } from "@/components/project/project-messages-popover";
 import { ProjectTeamDialog } from "@/components/project/project-team-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
-import { UserMenu } from "@/components/layout/user-menu";
+import { StudioUserMenu } from "@/components/project/studio-user-menu";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { setActiveTab, selectCurrentInstance } from "@/src/store/slices/projectSlice";
@@ -38,7 +36,6 @@ interface ProjectHeaderProps {
 export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
-  const locale = useLocale();
   const dispatch = useAppDispatch();
   const project = useAppSelector((s) => selectCurrentInstance(s).detail);
   const worldDetail = useAppSelector((s) => selectCurrentInstance(s).worldDetail);
@@ -120,12 +117,22 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
     <>
       <header className="relative flex h-16 shrink-0 items-center gap-4 px-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <Link
-            href={`/${locale}/projects`}
-            className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
-          >
-            <IconArrowLeft className="size-4" />
-          </Link>
+          {typeof window !== "undefined" && window.self !== window.top ? (
+            <button
+              type="button"
+              onClick={() => window.parent.postMessage({ type: "navigateBack" }, "*")}
+              className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+            >
+              <IconArrowLeft className="size-4" />
+            </button>
+          ) : (
+            <Link
+              to="/projects"
+              className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+            >
+              <IconArrowLeft className="size-4" />
+            </Link>
+          )}
 
           <div className="flex min-w-0 items-center gap-2 text-sm">
             {isLoading ? (
@@ -152,14 +159,14 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
           <Button
             data-tour-step="upgrade"
             size="sm"
-            className="bg-gradient-to-r from-purple-600 to-purple-500 text-white hover:from-purple-500 hover:to-purple-400"
+            className="hidden bg-gradient-to-r from-purple-600 to-purple-500 text-white hover:from-purple-500 hover:to-purple-400 xl:flex"
             onClick={() => setUpgradeOpen(true)}
           >
             <IconCrown className="size-3.5" />
             {tc("upgrade")}
           </Button>
 
-          <div className="relative">
+          <div className="relative hidden xl:block">
             <button
               type="button"
               data-tour-step="credits"
@@ -271,7 +278,13 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             ) : null}
           </div>
 
-          <Button variant="outline" color="muted" size="sm" onClick={() => setTeamOpen(true)}>
+          <Button
+            variant="outline"
+            color="muted"
+            size="sm"
+            className="hidden xl:flex"
+            onClick={() => setTeamOpen(true)}
+          >
             <IconUsers className="size-3.5" />
             {tc("team")}
           </Button>
@@ -281,10 +294,11 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             onUnreadCountChange={refreshUnreadCount}
           />
 
-          <UserMenu
+          <StudioUserMenu
             credits={displayCredits}
             onUpgrade={() => setUpgradeOpen(true)}
             onRecharge={() => setRechargeOpen(true)}
+            onTeam={() => setTeamOpen(true)}
           />
         </div>
       </header>

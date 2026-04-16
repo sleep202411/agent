@@ -1,9 +1,7 @@
-"use client";
-
 import { useState } from "react";
-import Link from "next/link";
-import { useLocale } from "next-intl";
+import { Link } from "@tanstack/react-router";
 import { IconPlus, IconDots, IconLoader2, IconLayoutGrid, IconFolder } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 import { CreationComposer } from "@/components/workspace/creation-composer";
 import {
   DropdownMenu,
@@ -19,7 +17,9 @@ import {
   type WorldGroup,
 } from "@/src/hooks/use-worlds";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+import { env } from "@/src/env";
+
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path: string | null | undefined): string | null {
   if (!path) return null;
@@ -30,7 +30,7 @@ function ossUrl(path: string | null | undefined): string | null {
 // ─── Page ───────────────────────────────────────────────────
 
 export default function ProjectsPage() {
-  const locale = useLocale();
+  const tw = useTranslations("workspace");
   const { groups, totalProducts, isLoading } = useWorldsWithProducts();
   const [creating, setCreating] = useState(false);
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("grouped");
@@ -46,19 +46,17 @@ export default function ProjectsPage() {
     <div className="flex flex-col gap-10 px-8 pb-24 pt-10">
       {/* Header */}
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
-        <p className="text-sm text-muted-foreground">
-          Create, edit and manage your AI animation projects.
-        </p>
+        <h1 className="text-2xl font-bold tracking-tight">{tw("projectsPageTitle")}</h1>
+        <p className="text-sm text-muted-foreground">{tw("projectsPageDesc")}</p>
       </header>
 
       {/* Project Grid */}
       <section className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold">My Projects</h2>
+            <h2 className="text-lg font-semibold">{tw("myProjects")}</h2>
             <p className="text-sm text-muted-foreground">
-              {totalProducts} project{totalProducts !== 1 ? "s" : ""}
+              {tw("projectCount", { count: totalProducts })}
             </p>
           </div>
           <ToggleGroup
@@ -66,10 +64,10 @@ export default function ProjectsPage() {
             value={viewMode}
             onValueChange={(v) => v && setViewMode(v as "flat" | "grouped")}
           >
-            <ToggleGroupItem value="flat" aria-label="平铺展示">
+            <ToggleGroupItem value="flat" aria-label={tw("flatView")}>
               <IconLayoutGrid className="size-4" />
             </ToggleGroupItem>
-            <ToggleGroupItem value="grouped" aria-label="按世界分组">
+            <ToggleGroupItem value="grouped" aria-label={tw("groupedView")}>
               <IconFolder className="size-4" />
             </ToggleGroupItem>
           </ToggleGroup>
@@ -80,7 +78,6 @@ export default function ProjectsPage() {
             groups={groups}
             loading={isLoading}
             creating={creating}
-            locale={locale}
             onCreateProject={handleCreateProject}
           />
         ) : (
@@ -88,7 +85,6 @@ export default function ProjectsPage() {
             groups={groups}
             loading={isLoading}
             creating={creating}
-            locale={locale}
             onCreateProject={handleCreateProject}
           />
         )}
@@ -105,13 +101,12 @@ type ViewProps = {
   groups: WorldGroup[];
   loading: boolean;
   creating: boolean;
-  locale: string;
   onCreateProject: () => void;
 };
 
 // ─── Flat View ──────────────────────────────────────────────
 
-function FlatView({ groups, loading, creating, locale, onCreateProject }: ViewProps) {
+function FlatView({ groups, loading, creating, onCreateProject }: ViewProps) {
   const allProducts = groups.flatMap((g) =>
     g.products.map((p) => ({ product: p, world: g.world }))
   );
@@ -122,7 +117,7 @@ function FlatView({ groups, loading, creating, locale, onCreateProject }: ViewPr
       {loading && Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
       {!loading &&
         allProducts.map(({ product, world }) => (
-          <ProductCard key={product.id} product={product} world={world} locale={locale} />
+          <ProductCard key={product.id} product={product} world={world} />
         ))}
       {!loading && allProducts.length === 0 && <EmptyState />}
     </div>
@@ -131,7 +126,8 @@ function FlatView({ groups, loading, creating, locale, onCreateProject }: ViewPr
 
 // ─── Grouped View ───────────────────────────────────────────
 
-function GroupedView({ groups, loading, creating, locale, onCreateProject }: ViewProps) {
+function GroupedView({ groups, loading, creating, onCreateProject }: ViewProps) {
+  const tw = useTranslations("workspace");
   return (
     <div className="space-y-10">
       {loading && (
@@ -156,13 +152,13 @@ function GroupedView({ groups, loading, creating, locale, onCreateProject }: Vie
               <div>
                 <h2 className="text-lg font-semibold">{world.name}</h2>
                 <p className="text-sm text-muted-foreground">
-                  {products.length} project{products.length !== 1 ? "s" : ""}
+                  {tw("projectCount", { count: products.length })}
                 </p>
               </div>
             </div>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {products.map((p) => (
-                <ProductCard key={p.id} product={p} world={world} locale={locale} />
+                <ProductCard key={p.id} product={p} world={world} />
               ))}
             </div>
           </div>
@@ -186,20 +182,12 @@ function GroupedView({ groups, loading, creating, locale, onCreateProject }: Vie
 
 // ─── Product Card ────────────────────────────────────────────
 
-function ProductCard({
-  product,
-  world,
-  locale,
-}: {
-  product: V1WorldProduct;
-  world: V1World;
-  locale: string;
-}) {
+function ProductCard({ product, world }: { product: V1WorldProduct; world: V1World }) {
   const cover = ossUrl(product.imagePath);
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-border">
-      <Link href={`/${locale}/projects/${product.id}?worldId=${product.worldId}`} target="_blank">
+      <Link to={`/projects/${product.id}?worldId=${product.worldId}`} target="_blank">
         <div className="relative h-40 w-full bg-muted">
           {cover ? (
             <img src={cover} alt="" className="size-full object-cover" />
@@ -217,7 +205,7 @@ function ProductCard({
       </Link>
       <div className="flex items-start justify-between gap-2 p-3">
         <Link
-          href={`/${locale}/projects/${product.id}?worldId=${product.worldId}`}
+          to={`/projects/${product.id}?worldId=${product.worldId}`}
           target="_blank"
           className="min-w-0 flex-1"
         >
@@ -247,6 +235,7 @@ function ProductCard({
 // ─── Create Button ──────────────────────────────────────────
 
 function CreateButton({ creating, onClick }: { creating: boolean; onClick: () => void }) {
+  const tw = useTranslations("workspace");
   return (
     <button
       type="button"
@@ -263,7 +252,7 @@ function CreateButton({ creating, onClick }: { creating: boolean; onClick: () =>
           <IconPlus className="size-5" />
         </div>
       )}
-      <span className="text-sm font-medium">{creating ? "Creating..." : "New Project"}</span>
+      <span className="text-sm font-medium">{creating ? tw("creating") : tw("createProject")}</span>
     </button>
   );
 }
@@ -271,11 +260,10 @@ function CreateButton({ creating, onClick }: { creating: boolean; onClick: () =>
 // ─── Empty State ────────────────────────────────────────────
 
 function EmptyState() {
+  const tw = useTranslations("workspace");
   return (
     <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
-      <p className="text-sm text-muted-foreground">
-        No projects yet. Create your first project to get started.
-      </p>
+      <p className="text-sm text-muted-foreground">{tw("noProjectsYetHint")}</p>
     </div>
   );
 }

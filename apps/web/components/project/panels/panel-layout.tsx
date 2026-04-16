@@ -1,5 +1,3 @@
-"use client";
-
 import { createContext, useContext, useState } from "react";
 import { IconArrowsMaximize, IconArrowsMinimize, IconX, IconLoader2 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -9,7 +7,7 @@ export const PanelAnimateContext = createContext(false);
 interface PanelLayoutProps {
   title: string;
   icon?: React.ReactNode;
-  description?: string;
+  description?: React.ReactNode;
   onClose: () => void;
   actions?: React.ReactNode;
   headerExtra?: React.ReactNode;
@@ -41,7 +39,7 @@ export function PanelLayout({
       style={{ width: expanded ? "min(50vw, 1080px)" : 420 }}
     >
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 pt-4">
+      <div className="flex items-center gap-3 p-4">
         {icon && <div className="shrink-0">{icon}</div>}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -81,7 +79,7 @@ export function PanelLayout({
           <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-4">{children}</div>
+        <div className="flex-1 overflow-auto px-4">{children}</div>
       )}
 
       {/* Footer */}

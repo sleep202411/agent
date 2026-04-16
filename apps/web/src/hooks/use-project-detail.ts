@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearch } from "@tanstack/react-router";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -33,11 +33,11 @@ import {
  * 应在项目详情页顶层调用一次，其他组件通过 useProjectStore 消费数据。
  */
 export function useProjectDetail() {
-  const params = useParams();
-  const searchParams = useSearchParams();
+  const params = useParams({ strict: false });
+  const search = useSearch({ strict: false }) as Record<string, string | undefined>;
   const id = params.id as string;
-  const urlWorldId = searchParams.get("worldId");
-  const urlEpisodeId = searchParams.get("episodeId");
+  const urlWorldId = search.worldId ?? null;
+  const urlEpisodeId = search.episodeId ?? null;
 
   const loadedProjectIdRef = useRef<string | null>(null);
   const loadedWorldIdRef = useRef<string | null>(null);

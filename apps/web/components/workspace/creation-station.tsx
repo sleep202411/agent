@@ -1,7 +1,6 @@
-"use client";
-
 import { useRef, useState } from "react";
 import { IconSparkles, IconDice5, IconUpload, IconFile, IconX } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -29,6 +28,7 @@ const promptTemplates = [
 
 export function CreationStation({ className }: { className?: string }) {
   const dispatch = useAppDispatch();
+  const t = useTranslations("workspace");
   const [prompt, setPrompt] = useState("");
   const [uploadedText, setUploadedText] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export function CreationStation({ className }: { className?: string }) {
       setUploadedText(text);
       setUploadedFileName(file.name);
       if (!prompt.trim()) {
-        setPrompt(`基于上传的小说《${file.name.replace(/\.[^.]+$/, "")}》生成影视大纲`);
+        setPrompt(t("novelOutlineTemplate", { name: file.name.replace(/\.[^.]+$/, "") }));
       }
     };
     reader.readAsText(file);

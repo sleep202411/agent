@@ -1,5 +1,3 @@
-"use client";
-
 import * as React from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
@@ -7,8 +5,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { IconX } from "@tabler/icons-react";
 
-function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+function Dialog({ modal = true, ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  return <DialogPrimitive.Root data-slot="dialog" modal={modal} {...props} />;
 }
 
 function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
@@ -47,34 +45,60 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
+  // Radix modal dialog sets body { pointer-events: none } via react-remove-scroll,
+  // which blocks clicks on floating popups (tippy, mention lists) mounted on body.
+  // Remove it on mount, restore on unmount. Scroll lock still works via overflow: hidden.
+  React.useEffect(() => {
+    const body = document.body;
+    body.style.removeProperty("pointer-events");
+    const observer = new MutationObserver(() => {
+      if (body.style.pointerEvents === "none") {
+        body.style.removeProperty("pointer-events");
+      }
+    });
+    observer.observe(body, { attributes: true, attributeFilter: ["style"] });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-show-close={showCloseButton}
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-xs/relaxed text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl bg-popover text-xs/relaxed text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
       >
         {children}
-        {showCloseButton && (
-          <DialogPrimitive.Close data-slot="dialog-close" asChild>
-            <Button variant="ghost" className="absolute top-2 right-2" size="icon-sm">
-              <IconX />
-              <span className="sr-only">Close</span>
-            </Button>
-          </DialogPrimitive.Close>
-        )}
       </DialogPrimitive.Content>
     </DialogPortal>
   );
 }
 
-function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+function DialogHeader({ className, children, ...props }: React.ComponentProps<"div">) {
   return (
-    <div data-slot="dialog-header" className={cn("flex flex-col gap-1", className)} {...props} />
+    <div
+      data-slot="dialog-header"
+      className={cn(
+        "flex items-center justify-between gap-2 border-b border-border p-4",
+        className
+      )}
+      {...props}
+    >
+      <div className="flex flex-col gap-1">{children}</div>
+      <DialogPrimitive.Close data-slot="dialog-close" asChild>
+        <Button variant="ghost" color="muted" size="icon-sm" className="shrink-0">
+          <IconX />
+          <span className="sr-only">Close</span>
+        </Button>
+      </DialogPrimitive.Close>
+    </div>
   );
 }
 
@@ -89,7 +113,10 @@ function DialogFooter({
   return (
     <div
       data-slot="dialog-footer"
-      className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
+      className={cn(
+        "flex flex-col-reverse gap-2 border-t border-border p-4 sm:flex-row sm:justify-end",
+        className
+      )}
       {...props}
     >
       {children}

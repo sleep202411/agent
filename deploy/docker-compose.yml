@@ -1,0 +1,53 @@
+services:
+  web:
+    image: ${WEB_IMAGE:-fizzdragon-web}
+    container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-web
+    restart: always
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      SERVER_URL: http://server:3001
+    depends_on:
+      - server
+    networks:
+      - app
+
+  server:
+    image: ${SERVER_IMAGE:-fizzdragon-server}
+    container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-server
+    restart: always
+    ports:
+      - "${SERVER_PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      JAVA_STUDIO_URL: ${JAVA_STUDIO_URL}
+      JAVA_CONTENT_URL: ${JAVA_CONTENT_URL}
+      ALIBABA_API_KEY: ${ALIBABA_API_KEY}
+      ALIBABA_BASE_URL: ${ALIBABA_BASE_URL}
+      AI_PROVIDER: ${AI_PROVIDER:-alibaba}
+      AI_MODEL: ${AI_MODEL:-qwen3-max}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      REDIS_URL: redis://redis:6379
+      DISABLE_CONTENT_MODERATION: ${DISABLE_CONTENT_MODERATION:-false}
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
+    depends_on:
+      - redis
+    networks:
+      - app
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-redis
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - app
+
+volumes:
+  redis_data:
+
+networks:
+  app:
+    name: ${COMPOSE_PROJECT_NAME:-fizzdragon}_network

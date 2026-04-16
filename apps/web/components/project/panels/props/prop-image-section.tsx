@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconDots,
   IconLoader2,
@@ -25,8 +23,9 @@ import { backendApi } from "@/src/lib/api";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { AssetAiRecordDialog } from "../asset-ai-record-dialog";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 const MAX_IMAGES = 6;
 
 function ossUrl(path?: string) {
@@ -163,7 +162,7 @@ export function PropImageSection({
             ? result.replace(`${OSS_BASE}/`, "")
             : String(result ?? "");
         if (!nextPath) {
-          throw new Error("未生成有效图片");
+          throw new Error(tc("noValidImage"));
         }
         const nextImages = [...images];
         nextImages[index] = nextPath;
@@ -200,7 +199,7 @@ export function PropImageSection({
           ? result.replace(`${OSS_BASE}/`, "")
           : String(result ?? "");
       if (!nextPath) {
-        throw new Error("未生成有效三视图");
+        throw new Error(tc("noValidThreeView"));
       }
       onThreeViewChange(nextPath);
       toast.success(tc("threeViewSuccess"));

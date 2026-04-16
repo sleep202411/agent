@@ -1,14 +1,19 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconCheck, IconLoader2, IconWand, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { backendApi } from "@/src/lib/api";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 type LoadingItem = {
   id: string;
@@ -252,28 +257,20 @@ export function AssetAiRecordDialog({
   }, [allImages, onOpenChange, onSelect, previewPath, selectedIndex]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        showCloseButton={false}
         className="w-[1000px] max-w-[calc(100vw-2rem)] overflow-hidden p-0 sm:max-w-[1000px]"
         onInteractOutside={(event) => event.preventDefault()}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle>{title}</DialogTitle>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <IconX className="size-4" />
-          </button>
-        </div>
+        </DialogHeader>
 
         <div className="flex h-[520px] gap-5 p-5">
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="grid flex-1 auto-rows-[1fr] grid-cols-4 content-start gap-3 overflow-y-auto rounded-lg border border-dashed border-border bg-muted/10 p-3">
+            <div className="grid flex-1 grid-cols-4 content-start gap-3 overflow-y-auto rounded-lg border border-dashed border-border bg-muted/10 p-3">
               <button
                 type="button"
                 onClick={() => void handleGenerate()}
@@ -310,13 +307,14 @@ export function AssetAiRecordDialog({
                     ) : isFailed(item) ? (
                       <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-black/30 text-[11px] text-muted-foreground">
                         <IconX className="size-5 text-destructive" />
-                        <span>生成失败</span>
+                        <span>Failed</span>
                       </div>
                     ) : (
                       <>
                         <img src={ossUrl(path)} alt="" className="h-full w-full object-cover" />
-                        <button
-                          type="button"
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={(event) => {
                             event.stopPropagation();
                             setSelectedIndex((current) => (current === index ? null : index));
@@ -331,7 +329,7 @@ export function AssetAiRecordDialog({
                           }`}
                         >
                           <IconCheck className="size-3" />
-                        </button>
+                        </div>
                       </>
                     )}
                   </button>

@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { cn } from "@/lib/utils";
@@ -22,7 +20,7 @@ import {
   type MentionFlatItem,
 } from "./mention-editor-utils";
 import { serializeEditorHtml, deserializeToEditorHtml } from "./mention-editor-serializer";
-import { MentionPopover } from "./mention-popover";
+import { MentionPopover, type ReferenceMediaItem } from "./mention-popover";
 
 export interface MentionEditorProps {
   value: string;
@@ -35,6 +33,10 @@ export interface MentionEditorProps {
   allowedMentionTypes?: MentionType[];
   showAvatar?: boolean;
   extraFields?: Array<"voiceId" | "model">;
+  referenceMedia?: ReferenceMediaItem[];
+  onSelectReferenceMedia?: (item: ReferenceMediaItem) => void;
+  /** Fires immediately when a mention chip is inserted (not on blur) */
+  onMentionInserted?: (item: MentionFlatItem) => void;
 }
 
 export function MentionEditor({
@@ -48,7 +50,11 @@ export function MentionEditor({
   allowedMentionTypes,
   showAvatar = true,
   extraFields = [],
+  referenceMedia,
+  onSelectReferenceMedia,
+  onMentionInserted,
 }: MentionEditorProps) {
+  const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const tScene = useTranslations("scene");
   const tProp = useTranslations("prop");
@@ -100,7 +106,7 @@ export function MentionEditor({
       .forEach((item) => {
         const current = grouped.get(item.id);
         if (current) {
-          if (item.imgUrl) current.images.push(item.imgUrl);
+          if (item.imgUrl) current.images.push({ name: item.label, imgUrl: item.imgUrl });
           if (!current.voiceId) current.voiceId = item.voiceId;
           if (!current.model) current.model = item.model;
           return;
@@ -109,7 +115,7 @@ export function MentionEditor({
         grouped.set(item.id, {
           id: item.id,
           name: item.label,
-          images: item.imgUrl ? [item.imgUrl] : [""],
+          images: item.imgUrl ? [{ name: item.label, imgUrl: item.imgUrl }] : [],
           voiceId: item.voiceId,
           model: item.model,
         });
@@ -149,9 +155,10 @@ export function MentionEditor({
         name: character.name,
         voiceId: character.voiceId,
         model: character.model,
-        items: character.images.map((imgUrl, index) => ({
+        items: character.images.map((img, index) => ({
           key: `character-${character.id}-${index}`,
-          imgUrl,
+          imgUrl: typeof img === "string" ? img : img.imgUrl,
+          name: typeof img === "string" ? character.name : img.name,
         })),
       })),
     [characters]
@@ -160,42 +167,59 @@ export function MentionEditor({
   const flattenedItems = useMemo<MentionFlatItem[]>(() => {
     const items: MentionFlatItem[] = [];
 
+    // Reference media at the top
+    referenceMedia?.forEach((ref, i) => {
+      items.push({
+        key: `ref-${ref.path}-${i}`,
+        id: ref.path,
+        name: ref.label || `${t("referenceImage")} ${i + 1}`,
+        mentionType: "reference",
+        imgUrl: ref.url,
+      });
+    });
+
     characterDisplayGroups.forEach((group) => {
-      group.items.forEach((item, index) => {
+      group.items
+        .filter((item) => item.imgUrl)
+        .forEach((item, index) => {
+          items.push({
+            key: `${group.id}-${index}`,
+            id: group.id,
+            name: item.name || group.name,
+            mentionType: "character",
+            imgUrl: item.imgUrl,
+            voiceId: group.voiceId,
+            model: group.model,
+          });
+        });
+    });
+
+    scenes
+      .filter((s) => s.imgUrl)
+      .forEach((scene) => {
         items.push({
-          key: `${group.id}-${index}`,
-          id: group.id,
-          name: group.name,
-          mentionType: "character",
-          imgUrl: item.imgUrl,
-          voiceId: group.voiceId,
-          model: group.model,
+          key: `scene-${scene.id}`,
+          id: scene.id,
+          name: scene.name,
+          mentionType: "scene",
+          imgUrl: scene.imgUrl,
         });
       });
-    });
 
-    scenes.forEach((scene) => {
-      items.push({
-        key: `scene-${scene.id}`,
-        id: scene.id,
-        name: scene.name,
-        mentionType: "scene",
-        imgUrl: scene.imgUrl,
+    propsList
+      .filter((p) => p.imgUrl)
+      .forEach((prop) => {
+        items.push({
+          key: `prop-${prop.id}`,
+          id: prop.id,
+          name: prop.name,
+          mentionType: "prop",
+          imgUrl: prop.imgUrl,
+        });
       });
-    });
-
-    propsList.forEach((prop) => {
-      items.push({
-        key: `prop-${prop.id}`,
-        id: prop.id,
-        name: prop.name,
-        mentionType: "prop",
-        imgUrl: prop.imgUrl,
-      });
-    });
 
     return items;
-  }, [characterDisplayGroups, propsList, scenes]);
+  }, [referenceMedia, characterDisplayGroups, propsList, scenes]);
 
   const isSearching = loadingCharacters || loadingScenes || loadingProps;
 
@@ -734,8 +758,17 @@ export function MentionEditor({
       closeMentionPopover();
       editor.commands.focus();
       setIsEmpty(!editor.getText().trim());
+      onMentionInserted?.(item);
+
+      // Immediately commit so reference group syncs without waiting for blur
+      const html = editor.getHTML();
+      const nextValue = serializeEditorHtml(html, showAvatar);
+      if (nextValue !== committedValueRef.current) {
+        committedValueRef.current = nextValue;
+        onSave(nextValue);
+      }
     },
-    [closeMentionPopover, editor, isCharacterDisabled]
+    [closeMentionPopover, editor, isCharacterDisabled, onMentionInserted, onSave, showAvatar]
   );
 
   // -----------------------------------------------------------------------
@@ -751,10 +784,23 @@ export function MentionEditor({
     }
 
     const { from } = editor.state.selection;
+
+    // Cursor moved before the @ trigger position — @ was deleted
+    if (from <= triggerFrom) {
+      closeMentionPopover();
+      return;
+    }
+
     // Get text between @ and cursor
     const textBetween = editor.state.doc.textBetween(triggerFrom, from, "");
-    // The first character should be @ -- skip it
-    const query = textBetween.startsWith("@") ? textBetween.slice(1) : textBetween;
+
+    // The @ itself was deleted (text no longer starts with @)
+    if (!textBetween.startsWith("@")) {
+      closeMentionPopover();
+      return;
+    }
+
+    const query = textBetween.slice(1);
 
     // If there's a space in the query, close the popover
     if (/\s/.test(query)) {
@@ -1056,6 +1102,8 @@ export function MentionEditor({
           onLoadMoreCharacters={loadMoreCharacters}
           onLoadMoreScenes={loadMoreScenes}
           onLoadMoreProps={loadMoreProps}
+          referenceMedia={referenceMedia}
+          onSelectReferenceMedia={onSelectReferenceMedia}
           tc={tc}
           tScene={tScene}
           tProp={tProp}

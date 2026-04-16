@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconLoader2 } from "@tabler/icons-react";
 import {
   Dialog,
@@ -43,7 +41,7 @@ export function SceneCreateDialog({
         data: { name: name.trim(), worldId },
       });
       onOpenChange(false);
-      onCreated(result);
+      onCreated({ ...result, name: name.trim() });
     } catch (err) {
       console.error("[CreateScene] 创建失败:", err);
     } finally {
@@ -57,14 +55,16 @@ export function SceneCreateDialog({
         <DialogHeader>
           <DialogTitle>{t("addScene")}</DialogTitle>
         </DialogHeader>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-          maxLength={20}
-          autoFocus
-          placeholder={t("sceneNamePlaceholder")}
-        />
+        <div className="p-4">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+            maxLength={20}
+            autoFocus
+            placeholder={t("sceneNamePlaceholder")}
+          />
+        </div>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}

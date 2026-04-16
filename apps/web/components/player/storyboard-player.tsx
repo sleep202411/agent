@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo } from "react";
 import { Player } from "@remotion/player";
 import { StoryboardComposition } from "./storyboard-composition";

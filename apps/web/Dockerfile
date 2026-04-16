@@ -19,18 +19,22 @@ WORKDIR /app
 COPY --from=deps /app/ ./
 COPY --from=pruner /app/out/full/ .
 
-ARG NEXT_PUBLIC_OSS_BASE_URL
-ENV NEXT_PUBLIC_OSS_BASE_URL=$NEXT_PUBLIC_OSS_BASE_URL
-
+# Build args
+ARG VITE_OSS_BASE_URL
+ARG VITE_BANNER_BASE_URL
+ARG VITE_SITE_REGION
+ARG VITE_PARENT_ORIGIN
 ARG SERVER_URL
-ENV SERVER_URL=$SERVER_URL
-
 ARG JAVA_STUDIO_URL
-ENV JAVA_STUDIO_URL=$JAVA_STUDIO_URL
-
 ARG JAVA_CONTENT_URL
-ENV JAVA_CONTENT_URL=$JAVA_CONTENT_URL
 
+# Write .env file for Vite to pick up VITE_* vars at build time
+RUN printf "VITE_OSS_BASE_URL=%s\nVITE_BANNER_BASE_URL=%s\nVITE_SITE_REGION=%s\nVITE_PARENT_ORIGIN=%s\nSERVER_URL=%s\nJAVA_STUDIO_URL=%s\nJAVA_CONTENT_URL=%s\n" \
+  "$VITE_OSS_BASE_URL" "$VITE_BANNER_BASE_URL" "$VITE_SITE_REGION" "$VITE_PARENT_ORIGIN" \
+  "$SERVER_URL" "$JAVA_STUDIO_URL" "$JAVA_CONTENT_URL" \
+  > apps/web/.env.production
+
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npx turbo run build --filter=web
 
 # ─── Stage 4: Runner ────────────────────────────────────
@@ -42,15 +46,13 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
 RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+    adduser --system --uid 1001 appuser
 
-# Next.js standalone output in monorepo preserves the apps/web/ path
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
+# Nitro build output (self-contained, no node_modules needed)
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/.output ./.output
 
-USER nextjs
+USER appuser
 
 EXPOSE 3000
 
-CMD ["node", "apps/web/server.js"]
+CMD ["node", ".output/server/index.mjs"]

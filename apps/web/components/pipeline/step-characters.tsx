@@ -1,8 +1,6 @@
-"use client";
-
 import { useState } from "react";
 import { IconPlus, IconTrash, IconEdit, IconPhoto } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -63,7 +61,7 @@ export function StepCharacters() {
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: "characters", label: t("allCharacters"), count: characters.length },
     { key: "scenes", label: t("allScenes"), count: scenes.length },
-    { key: "props", label: "道具", count: props.length },
+    { key: "props", label: t("props"), count: props.length },
   ];
 
   const handleAddCharacter = () => {
@@ -230,7 +228,7 @@ function CharacterCard({ character, onRemove }: { character: Character; onRemove
       {/* Role badge */}
       {character.role === "main" && (
         <span className="absolute left-2 top-2 z-10 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
-          主角
+          {t("mainCharacter")}
         </span>
       )}
 

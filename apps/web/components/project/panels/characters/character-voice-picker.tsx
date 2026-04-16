@@ -1,9 +1,8 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconLoader2, IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import type { VoiceOptionItem } from "@/src/types/workspace";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
@@ -23,6 +22,7 @@ export function VoicePickerDialog({
   selectedVoiceId: string;
   onSelect: (voice: VoiceOptionItem) => void;
 }) {
+  const t = useTranslations("character");
   const [activeLang, setActiveLang] = useState("");
   const [playingVoiceId, setPlayingVoiceId] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -72,14 +72,14 @@ export function VoicePickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[80vh] overflow-hidden p-0 sm:max-w-[560px]">
-        <DialogHeader className="px-6 pt-5">
-          <DialogTitle>角色语音</DialogTitle>
+      <DialogContent className="flex max-h-[80vh] flex-col overflow-hidden p-0 sm:max-w-[640px]">
+        <DialogHeader>
+          <DialogTitle>{t("voicePickerTitle")}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col px-6 pb-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
           {tabs.length > 1 ? (
-            <div className="mb-4 flex flex-wrap gap-2">
+            <div className="mb-4 shrink-0 flex flex-wrap gap-2">
               {tabs.map(([lang, items]) => (
                 <button
                   key={lang}
@@ -129,7 +129,7 @@ export function VoicePickerDialog({
                           {voice.voiceName || voiceId}
                         </div>
                         {voice.voiceDescription ? (
-                          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                             {voice.voiceDescription}
                           </div>
                         ) : null}

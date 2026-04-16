@@ -1,9 +1,10 @@
 import type { AssetRecord, VoiceOptionItem } from "@/src/types/workspace";
 import type { ShotRow, ShotValue } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
 // ─── Constants ─────────────────────────────────────────
 
-export const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+export const OSS_BASE = env.OSS_BASE_URL;
 
 // ─── Types ─────────────────────────────────────────────
 

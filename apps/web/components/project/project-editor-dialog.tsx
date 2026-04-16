@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { IconLoader2, IconUpload, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -24,7 +22,7 @@ import { backendApi } from "@/src/lib/api";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 import type { ProjectDictionaries, ProjectOptionItem } from "@/src/types/workspace";
 import { buildOssUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
 
@@ -64,16 +62,16 @@ const emptyForm: FormState = {
 
 type FormErrors = Partial<Record<keyof Omit<FormState, "imagePath">, string>>;
 
-function validateForm(form: FormState): FormErrors {
+function validateForm(form: FormState, t: (key: string) => string): FormErrors {
   const errors: FormErrors = {};
-  if (!form.type) errors.type = "请选择项目类型";
-  if (!form.name.trim()) errors.name = "请输入项目名称";
-  if (!form.description.trim()) errors.description = "请输入项目描述";
-  if (!form.episode || Number(form.episode) <= 0) errors.episode = "请输入剧集数";
+  if (!form.type) errors.type = t("validateType");
+  if (!form.name.trim()) errors.name = t("validateName");
+  if (!form.description.trim()) errors.description = t("validateDescription");
+  if (!form.episode || Number(form.episode) <= 0) errors.episode = t("validateEpisode");
   if (!form.chapterLength || Number(form.chapterLength) <= 0)
-    errors.chapterLength = "请输入单集时长";
-  if (!form.aspectRatioType) errors.aspectRatioType = "请选择视频尺寸";
-  if (!form.stylePainting) errors.stylePainting = "请选择画风";
+    errors.chapterLength = t("validateDuration");
+  if (!form.aspectRatioType) errors.aspectRatioType = t("validateSize");
+  if (!form.stylePainting) errors.stylePainting = t("validateStyle");
   return errors;
 }
 
@@ -177,7 +175,7 @@ export function ProjectEditorDialog({
   const handleSave = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     if (!worldId) return;
-    const nextErrors = validateForm(form);
+    const nextErrors = validateForm(form, t);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -217,9 +215,9 @@ export function ProjectEditorDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 p-0 sm:max-w-[600px]">
-        <DialogHeader className="px-6 py-5">
+        <DialogHeader>
           <DialogTitle>{project?.id ? t("editProject") : t("newProject")}</DialogTitle>
-          <p className="sr-only">编辑项目信息</p>
+          <p className="sr-only">{t("editProjectInfo")}</p>
         </DialogHeader>
 
         {loading ? (
@@ -228,7 +226,7 @@ export function ProjectEditorDialog({
           </div>
         ) : (
           <form id="project-editor-form" onSubmit={handleSave}>
-            <div className="max-h-[60vh] overflow-y-auto px-6 pb-4">
+            <div className="max-h-[60vh] overflow-y-auto p-4">
               <FieldGroup>
                 {/* Type + Name */}
                 <div className="flex gap-4">
@@ -285,7 +283,7 @@ export function ProjectEditorDialog({
 
                 {/* Cover */}
                 <Field>
-                  <FieldLabel>上传封面</FieldLabel>
+                  <FieldLabel>{t("uploadCover")}</FieldLabel>
                   <div className="relative inline-block">
                     <button
                       type="button"
@@ -415,7 +413,7 @@ export function ProjectEditorDialog({
                             )}
                           </div>
                           <span className="block px-1 py-1.5 text-center text-[11px] text-muted-foreground">
-                            {style.info ?? "未命名画风"}
+                            {style.info ?? t("unnamedStyle")}
                           </span>
                         </button>
                       );
@@ -426,7 +424,7 @@ export function ProjectEditorDialog({
               </FieldGroup>
             </div>
 
-            <DialogFooter className="border-t px-6 py-4">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"

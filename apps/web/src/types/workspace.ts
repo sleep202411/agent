@@ -38,7 +38,7 @@ export interface IntegralRecord {
   [key: string]: unknown;
 }
 
-export type { RawAiModel } from "@/src/lib/ai-model-schema";
+export type { RawAiModel } from "@/components/ui/schema-field/schema";
 
 export interface VoiceOptionItem {
   voiceId?: string;

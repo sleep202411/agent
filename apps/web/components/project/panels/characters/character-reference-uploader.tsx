@@ -1,7 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCirclePlus, IconLoader2, IconX } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
@@ -17,6 +16,8 @@ export function CharacterReferenceUploader({
   descriptions: string[];
   onChange: (nextPaths: string[], nextDescriptions: string[]) => void;
 }) {
+  const t = useTranslations("character");
+  const tc = useTranslations("common");
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -34,7 +35,7 @@ export function CharacterReferenceUploader({
     async (file?: File) => {
       if (!file) return;
       if (!file.type.startsWith("image/")) {
-        toast.warning("请选择图片文件");
+        toast.warning(tc("selectImageFile"));
         return;
       }
       const blobUrl = URL.createObjectURL(file);
@@ -43,10 +44,10 @@ export function CharacterReferenceUploader({
       try {
         const uploadedPath = await uploadProjectImage(file);
         onChange([...paths, uploadedPath], [...descriptions, ""]);
-        toast.success("上传成功");
+        toast.success(tc("uploadSuccess"));
       } catch (error) {
         console.error("[CharacterReferenceUploader] 上传失败:", error);
-        toast.error("上传失败");
+        toast.error(tc("uploadFailed"));
       } finally {
         setUploading(false);
         if (blobUrl.startsWith("blob:")) {
@@ -113,7 +114,7 @@ export function CharacterReferenceUploader({
               <Textarea
                 value={descriptions[index] ?? ""}
                 onChange={(event) => updateDescription(index, event.target.value)}
-                placeholder="参考图描述"
+                placeholder={t("referenceImageDescPlaceholder")}
                 rows={2}
                 className="mt-1 h-[52px] resize-none text-xs"
               />
@@ -146,7 +147,7 @@ export function CharacterReferenceUploader({
         onOpenChange={(open) => !open && setPreviewUrl("")}
         type="image"
         src={previewUrl}
-        name="角色参考图预览"
+        name={t("characterReferencePreview")}
         link={previewUrl}
       />
     </>

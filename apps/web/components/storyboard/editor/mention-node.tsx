@@ -1,14 +1,13 @@
-"use client";
-
 import { mergeAttributes, Node } from "@tiptap/core";
 import { NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
+import { useReferenceMap } from "./reference-map-context";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type MentionType = "character" | "scene" | "prop";
+export type MentionType = "character" | "scene" | "prop" | "reference";
 
 export interface MentionItem {
   id: string;
@@ -69,8 +68,10 @@ const chevronStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+const audioIconSvg = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+
 function MentionChipView({ node }: NodeViewProps) {
-  const { label, imgUrl } = node.attrs as {
+  const { id, label, imgUrl, mentionType } = node.attrs as {
     id: string;
     label: string;
     mentionType: MentionType;
@@ -79,27 +80,56 @@ function MentionChipView({ node }: NodeViewProps) {
     model: string;
   };
 
+  const refMap = useReferenceMap();
+  const refEntry = refMap.map.get(id) ?? refMap.map.get(imgUrl);
+  const isInvalid = refEntry ? !refEntry.valid : false;
+  const displayLabel = refEntry?.displayLabel || label;
+  const isAudio = mentionType === "reference" && !imgUrl;
   const hasAvatar = Boolean(imgUrl);
+
+  const invalidStyle: React.CSSProperties = isInvalid
+    ? { opacity: 0.45, textDecoration: "line-through", filter: "grayscale(1)" }
+    : {};
 
   return (
     <NodeViewWrapper as="span" data-mention-chip="" style={{ display: "inline", lineHeight: 1 }}>
       <span
         role="button"
         tabIndex={-1}
-        style={hasAvatar ? chipWithAvatarStyle : chipStyle}
+        style={{
+          ...(hasAvatar ? chipWithAvatarStyle : chipStyle),
+          ...(isInvalid ? { backgroundColor: "#2a2a2a" } : {}),
+        }}
         onMouseEnter={(e) => {
+          if (isInvalid) return;
           const el = e.currentTarget;
           el.style.backgroundColor = "#4a4a4a";
           el.style.boxShadow = "inset 0 0 0 1px rgba(255,255,255,0.25)";
         }}
         onMouseLeave={(e) => {
+          if (isInvalid) return;
           const el = e.currentTarget;
           el.style.backgroundColor = "#3a3a3a";
           el.style.boxShadow = "inset 0 0 0 1px rgba(255,255,255,0.15)";
         }}
       >
-        {hasAvatar ? <img src={imgUrl} alt="" style={avatarStyle} /> : null}
-        <span style={nameStyle}>{label}</span>
+        {hasAvatar ? (
+          <img src={imgUrl} alt="" style={{ ...avatarStyle, ...invalidStyle }} />
+        ) : isAudio ? (
+          <span
+            style={{
+              ...avatarStyle,
+              ...invalidStyle,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#444",
+              borderRadius: "9999px",
+            }}
+            dangerouslySetInnerHTML={{ __html: audioIconSvg }}
+          />
+        ) : null}
+        <span style={{ ...nameStyle, ...invalidStyle }}>{displayLabel}</span>
         <span style={chevronStyle}>
           <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
             <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />

@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   IconDots,
@@ -11,7 +9,7 @@ import {
   IconVideo,
   IconVideoPlus,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -62,6 +60,7 @@ export function TimelineShotCard({
 }: TimelineShotCardProps) {
   const ts = useTranslations("storyboard");
   const tc = useTranslations("common");
+  const tt = useTranslations("timeline");
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [currentWidth, setCurrentWidth] = useState(width);
@@ -215,7 +214,7 @@ export function TimelineShotCard({
 
       {/* Shot label — bottom-left */}
       <div className="absolute bottom-1 left-1 rounded bg-black/75 px-1.5 py-0.5 text-[10px] text-[#9A9A9A] backdrop-blur-sm">
-        分镜{shot.shotNo}
+        {tt("shotLabel", { no: shot.shotNo })}
       </div>
 
       {/* Resize handle — right edge, inside card bounds */}
@@ -301,7 +300,7 @@ function HoverActions({
     actions.push({
       key: "insert",
       icon: <IconPlus className="size-3.5" />,
-      label: "后插镜头",
+      label: ts("insertBelow"),
       action: "insertAfter",
     });
     return actions;

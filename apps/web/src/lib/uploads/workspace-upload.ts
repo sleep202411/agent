@@ -1,6 +1,7 @@
 import { backendApi } from "@/src/lib/api";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024;
 const VIDEO_MAX_SIZE = 100 * 1024 * 1024;
@@ -182,13 +183,12 @@ export function getDefaultUploadMaxSize(uploadType: string, file?: File) {
 export function validateWorkspaceUploadFile(file: File, options: UploadWorkspaceFileOptions) {
   const rules = normalizeAccept(options.accept);
   if (rules.length > 0 && !rules.some((rule) => matchesAcceptRule(file, rule))) {
-    return "文件类型不支持";
+    return "unsupportedFileType";
   }
 
   const maxSize = options.maxSize ?? getDefaultUploadMaxSize(options.uploadType, file);
   if (file.size > maxSize) {
-    const maxSizeMb = Math.round(maxSize / 1024 / 1024);
-    return `文件大小不能超过 ${maxSizeMb}MB`;
+    return "fileSizeExceedMb";
   }
 
   return null;
@@ -228,19 +228,19 @@ export async function uploadFileToSignedUrl(
   });
 
   if (!response.ok) {
-    throw new Error("上传失败");
+    throw new Error("Upload failed");
   }
 
   return extractStoragePathFromSignedUrl(signedUrl);
 }
 
-// ─── MD5 去重缓存 ──────────────────────────────────────
+// ─── MD5 dedup cache ──────────────────────────────────────
 
 const uploadedMd5Cache = new Map<string, UploadedWorkspaceFile>();
 
 export class DuplicateFileError extends Error {
   constructor(fileName: string) {
-    super(`文件「${fileName}」已上传过，请勿重复上传`);
+    super(`duplicateFile:${fileName}`);
     this.name = "DuplicateFileError";
   }
 }
@@ -258,11 +258,8 @@ export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFi
     throw new Error(validationError);
   }
 
-  // MD5 去重：相同文件不重复上传
+  // Compute hash for cache tracking (no longer blocks duplicate uploads)
   const hash = await computeFileHash(file);
-  if (uploadedMd5Cache.has(hash)) {
-    throw new DuplicateFileError(file.name);
-  }
 
   const requestData = { ...(options.requestData ?? {}) };
   if (options.sourceType) {
@@ -280,7 +277,7 @@ export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFi
   );
 
   if (!uploadInfo.url) {
-    throw new Error("未获取到上传地址");
+    throw new Error("Failed to get upload URL");
   }
 
   const path = await uploadFileToSignedUrl(uploadInfo.url, file, {

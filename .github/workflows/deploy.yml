@@ -3,6 +3,8 @@ name: Deploy
 on:
   push:
     branches: [main, develop]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       environment:
@@ -24,20 +26,56 @@ env:
 jobs:
   # ─── Resolve deployment targets ───────────────────────
   prepare:
+    # Skip if comment is not /deploy on a PR
+    if: >-
+      github.event_name != 'issue_comment' || (
+        github.event.issue.pull_request &&
+        startsWith(github.event.comment.body, '/deploy')
+      )
     runs-on: ubuntu-latest
     outputs:
       targets: ${{ steps.resolve.outputs.targets }}
       server_tag: ${{ steps.resolve.outputs.server_tag }}
+      ref: ${{ steps.resolve.outputs.ref }}
     steps:
+      - name: Get PR branch (comment trigger)
+        id: pr
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            core.setOutput('ref', pr.data.head.ref);
+            // React with 🚀 to acknowledge
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
       - name: Resolve environment
         id: resolve
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            ENV="staging"
+            echo "ref=${{ steps.pr.outputs.ref }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             ENV="${{ inputs.environment }}"
+            echo "ref=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           elif [ "${{ github.ref_name }}" = "main" ]; then
             ENV="production"
-          else
+            echo "ref=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_name }}" = "develop" ]; then
             ENV="staging"
+            echo "ref=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Unsupported branch: ${{ github.ref_name }}"
+            exit 1
           fi
 
           if [ "$ENV" = "production" ]; then
@@ -60,6 +98,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -74,13 +114,10 @@ jobs:
           context: .
           file: apps/server/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/studio-server:${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
+          no-cache: true
 
-  # ─── Build web image (per target, NEXT_PUBLIC vars may differ) ─
+  # ─── Build web image (per target, VITE_ vars may differ) ─
   build-web:
     needs: prepare
     runs-on: ubuntu-latest
@@ -90,6 +127,8 @@ jobs:
     environment: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -104,21 +143,21 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}-${{ github.sha }}
-            ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
+          tags: ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
           build-args: |
-            NEXT_PUBLIC_OSS_BASE_URL=${{ vars.OSS_BASE_URL }}
+            VITE_OSS_BASE_URL=${{ vars.OSS_BASE_URL }}
+            VITE_BANNER_BASE_URL=${{ vars.BANNER_BASE_URL }}
+            VITE_SITE_REGION=${{ vars.SITE_REGION }}
+            VITE_PARENT_ORIGIN=${{ vars.PARENT_ORIGIN }}
             SERVER_URL=http://server:3001
             JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
             JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
-          cache-from: type=gha,scope=${{ matrix.target }}-web
-          cache-to: type=gha,mode=max,scope=${{ matrix.target }}-web
+          no-cache: true
 
   # ─── Deploy to target servers ─────────────────────────
   deploy:
     needs: [prepare, build-server, build-web]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       matrix:
         target: ${{ fromJson(needs.prepare.outputs.targets) }}
@@ -127,31 +166,29 @@ jobs:
       group: deploy-${{ matrix.target }}
       cancel-in-progress: false
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
+      - uses: actions/checkout@v4
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          password: ${{ secrets.DEPLOY_PASSWORD }}
-          script: |
-            cd ~/apps/fizzdragon-studio
+          ref: ${{ needs.prepare.outputs.ref }}
 
-            # Persist tags so docker compose survives server reboot
-            cat > .env << EOF
-            IMAGE_PREFIX=${{ env.IMAGE_PREFIX }}
-            WEB_TAG=${{ matrix.target }}
-            SERVER_TAG=${{ needs.prepare.outputs.server_tag }}
-            EOF
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Server runtime config
-            cat > .env.server << EOF
-            JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
-            JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
-            ALIBABA_API_KEY=${{ secrets.ALIBABA_API_KEY }}
-            AI_MODEL=qwen-plus
-            PORT=3001
-            EOF
+      - name: Deploy
+        run: |
+          cat > .env << EOF
+          COMPOSE_PROJECT_NAME=${{ matrix.target }}
+          WEB_IMAGE=${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
+          SERVER_IMAGE=${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
+          WEB_PORT=${{ vars.WEB_PORT || '3000' }}
+          SERVER_PORT=${{ vars.SERVER_PORT || '3001' }}
+          JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
+          JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
+          ALIBABA_API_KEY=${{ secrets.ALIBABA_API_KEY }}
+          ALIBABA_BASE_URL=${{ secrets.ALIBABA_BASE_URL }}
+          AI_MODEL=${{ vars.AI_MODEL || 'qwen3-max' }}
+          REDIS_IMAGE=${{ vars.REDIS_IMAGE || 'redis:7-alpine' }}
+          EOF
 
-            docker compose pull
-            docker compose up -d --remove-orphans
-            docker image prune -f
+          docker compose pull
+          docker compose up -d --remove-orphans
+          docker image prune -f

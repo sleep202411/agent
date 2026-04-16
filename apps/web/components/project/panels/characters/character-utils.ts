@@ -1,9 +1,10 @@
 import type { AssetRecord } from "@/src/types/workspace";
 import type { Asset } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 export const PAGE_SIZE = 20;
-export const ROLE_RECORD_COLUMN_ID = "-1";
+export const ROLE_RECORD_COLUMN_ID = -1;
 export const ROLE_THREE_VIEW_COLUMN_ID = -11;
 
 export type CharacterPanelItem = Asset & {
@@ -137,9 +138,9 @@ export function pickPreferredCharacterText(
 }
 
 export function buildCharacterMatchKeys(character: Partial<CharacterPanelItem>) {
-  return [character.aiId, character.id, character.name, ...(character.aliases ?? [])]
-    .map((item) => normalizeCharacterKey(item))
-    .filter(Boolean);
+  // Only match by id/aiId — not by name. Same name ≠ same character.
+  // Dedup by name should happen at creation time, not at render time.
+  return [character.aiId, character.id].map((item) => normalizeCharacterKey(item)).filter(Boolean);
 }
 
 export function matchesKeyword(character: CharacterPanelItem, keyword: string) {
@@ -182,21 +183,6 @@ export function normalizeCharacter(
     __source: id ? "world" : "asset",
     __panelKey: id ? `world:${id}` : `asset:${aiId || normalizeCharacterKey(name) || index}`,
   } satisfies CharacterPanelItem;
-}
-
-export function readAssetLibraryCharacters(input: Record<string, unknown> | null | undefined) {
-  const candidates = [
-    input,
-    (input?.assetLibrary as Record<string, unknown> | undefined) ?? null,
-    (input?.data as Record<string, unknown> | undefined) ?? null,
-    (input?.data as { assetLibrary?: Record<string, unknown> } | undefined)?.assetLibrary ?? null,
-  ];
-  for (const candidate of candidates) {
-    if (candidate && Array.isArray(candidate.character_library)) {
-      return candidate.character_library as Asset[];
-    }
-  }
-  return [];
 }
 
 export function mergeCharacters(

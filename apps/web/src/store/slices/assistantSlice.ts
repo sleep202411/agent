@@ -3,7 +3,12 @@ import { toast } from "sonner";
 import { backendApi } from "@/src/lib/api";
 import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
 import { uploadWorkspaceFile, computeFileHash } from "@/src/lib/uploads/workspace-upload";
-import { sendAssistantChat } from "@/src/lib/assistant/assistant-client";
+import {
+  sendAssistantChat,
+  saveConversation,
+  fetchConversationHistory,
+  clearConversation as clearConversationApi,
+} from "@/src/lib/assistant/assistant-client";
 import type {
   AssistantAttachment,
   AssistantMessage,
@@ -13,6 +18,7 @@ import type {
   AssistantWorkspaceSelection,
   PendingAssistantToolUi,
 } from "@/src/lib/assistant/assistant-types";
+import type { AssistantAgentType } from "@/src/types/assistant-contracts";
 import {
   getAssistantToolName,
   isAssistantInteractiveToolName,
@@ -24,6 +30,7 @@ import {
   setActivePanel,
   setActiveTab,
   touchProjectList,
+  touchWorld,
   touchEpisodes,
   touchCharacters,
   touchScenes,
@@ -33,6 +40,24 @@ import {
 
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024;
+
+// AbortController per project — used to cancel in-flight streams when a tool result takes over
+const streamAbortControllers = new Map<string, AbortController>();
+
+function abortProjectStream(projectId: string) {
+  const existing = streamAbortControllers.get(projectId);
+  if (existing) {
+    existing.abort();
+    streamAbortControllers.delete(projectId);
+  }
+}
+
+function createProjectAbortController(projectId: string) {
+  abortProjectStream(projectId);
+  const controller = new AbortController();
+  streamAbortControllers.set(projectId, controller);
+  return controller;
+}
 
 function createWelcomeMessage(): AssistantMessage {
   return {
@@ -53,6 +78,7 @@ function createEmptyConversation() {
     messages: [createWelcomeMessage()] as AssistantMessage[],
     draftInput: "",
     attachments: [] as AssistantAttachment[],
+    agentType: "general" as AssistantAgentType,
     sending: false,
     streaming: false,
     error: null as string | null,
@@ -60,6 +86,18 @@ function createEmptyConversation() {
     panelExpanded: false,
     pendingToolUi: [] as PendingAssistantToolUi[],
     submittingToolCallId: null as string | null,
+    /** Whether history has been loaded from server */
+    historyLoaded: false,
+    /** Number of messages loaded from server history (for separator) */
+    historyMessageCount: 0,
+    /** Message limit for the current tier */
+    messageLimit: 50,
+    /** Current tier name */
+    tier: "free" as string,
+    /** Conversation ID from server */
+    conversationId: "" as string,
+    /** History retention in days */
+    retentionDays: 1,
   };
 }
 
@@ -90,38 +128,26 @@ function isDocxFile(file: File) {
   );
 }
 
+function isPdfFile(file: File) {
+  return file.type === "application/pdf" || getFileExtension(file.name) === "pdf";
+}
+
 function isSupportedAttachment(file: File) {
-  return isTextLikeFile(file) || isDocxFile(file);
+  return isTextLikeFile(file) || isDocxFile(file) || isPdfFile(file);
 }
 
-const MAX_EXCERPT_CHARS = 3000;
-const MAX_TEXT_FILE_SIZE = 500 * 1024;
-
-async function readDocxText(file: File): Promise<string> {
-  try {
-    const mammoth = await import("mammoth");
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return result.value.trim();
-  } catch {
-    return "";
-  }
-}
+const MAX_EXCERPT_CHARS = 80000;
+const MAX_TEXT_FILE_SIZE = 2 * 1024 * 1024;
 
 async function readAttachmentExcerpt(file: File): Promise<{ excerpt: string; truncated: boolean }> {
-  // Docx files
-  if (isDocxFile(file)) {
-    try {
-      const text = await readDocxText(file);
-      if (!text) return { excerpt: "", truncated: false };
-      const truncated = text.length > MAX_EXCERPT_CHARS;
-      return { excerpt: text.slice(0, MAX_EXCERPT_CHARS), truncated };
-    } catch {
-      return { excerpt: "", truncated: false };
-    }
+  // PDF and DOCX: text extraction happens server-side.
+  // Frontend only uploads the file; excerpt stays empty.
+  // Server downloads from OSS and extracts text when pipeline starts.
+  if (isPdfFile(file) || isDocxFile(file)) {
+    return { excerpt: "", truncated: false };
   }
 
-  // Plain text files
+  // Plain text files: can extract directly in browser (small files)
   if (!isTextLikeFile(file)) return { excerpt: "", truncated: false };
   if (file.size > MAX_TEXT_FILE_SIZE) {
     return { excerpt: "", truncated: true };
@@ -201,8 +227,12 @@ function buildUserMessage(text: string, attachments: AssistantAttachment[]): Ass
 }
 
 function buildPendingToolUi(messages: AssistantMessage[]): PendingAssistantToolUi[] {
+  // Only check the LAST assistant message for pending interactive tools.
+  // Historical messages with unfinished tools (e.g. from a refreshed page)
+  // should not show as pending — they are stale.
   const pending: PendingAssistantToolUi[] = [];
-  for (const message of messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
     if (message.role !== "assistant") continue;
     for (const part of message.parts) {
       if (!isAssistantToolPart(part)) continue;
@@ -216,6 +246,7 @@ function buildPendingToolUi(messages: AssistantMessage[]): PendingAssistantToolU
         title: part.title,
       });
     }
+    break; // Only check the last assistant message
   }
   return pending;
 }
@@ -327,7 +358,11 @@ async function applyWorkspaceMutationEffects(
         dispatch(touchProjectList());
         await refreshProjectDetail(dispatch, projectId);
         break;
+      case "world.updated":
+        dispatch(touchWorld());
+        break;
       case "episode.created":
+      case "episode.batch_created":
       case "episode.updated":
       case "episode.deleted":
         dispatch(touchEpisodes());
@@ -336,26 +371,22 @@ async function applyWorkspaceMutationEffects(
       case "character.updated":
       case "character.deleted":
       case "character.batch_created":
-        dispatch(setActivePanel("characters"));
         dispatch(touchCharacters());
         break;
       case "scene.created":
       case "scene.updated":
       case "scene.deleted":
       case "scene.batch_created":
-        dispatch(setActivePanel("scenes"));
         dispatch(touchScenes());
         break;
       case "prop.created":
       case "prop.updated":
       case "prop.deleted":
       case "prop.batch_created":
-        dispatch(setActivePanel("props"));
         dispatch(touchProps());
         break;
       case "storyboard.cell_filled":
       case "storyboard.saved":
-        dispatch(setActiveTab("storyboard"));
         dispatch(touchStoryboard());
         break;
       default:
@@ -364,8 +395,8 @@ async function applyWorkspaceMutationEffects(
   }
 }
 
-function buildWorkspaceContext(state: RootState): AssistantWorkspaceSelection {
-  const inst = selectCurrentInstance(state);
+function buildWorkspaceContext(state: RootState, projectId: string): AssistantWorkspaceSelection {
+  const inst = state.project.instances[projectId] ?? selectCurrentInstance(state);
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
@@ -379,51 +410,55 @@ function buildWorkspaceContext(state: RootState): AssistantWorkspaceSelection {
 
 export const addAttachments = createAsyncThunk<
   void,
-  { projectId: string; files: File[] },
+  {
+    projectId: string;
+    files: File[];
+    t: (key: string, params?: Record<string, string | number | Date>) => string;
+  },
   { state: RootState; dispatch: AppDispatch }
->("assistant/addAttachments", async ({ projectId, files }, { dispatch, getState }) => {
+>("assistant/addAttachments", async ({ projectId, files, t }, { dispatch, getState }) => {
   dispatch(ensureProject(projectId));
 
   const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
   const availableSlots = MAX_ATTACHMENTS - current.attachments.length;
 
   if (availableSlots <= 0) {
-    toast.warning(`最多上传 ${MAX_ATTACHMENTS} 个附件`);
+    toast.warning(t("maxAttachments", { max: MAX_ATTACHMENTS }));
     return;
   }
 
   const incoming = files.slice(0, availableSlots);
   if (incoming.length < files.length) {
-    toast.warning(`最多上传 ${MAX_ATTACHMENTS} 个附件，已忽略超出部分`);
+    toast.warning(t("maxAttachmentsExceeded", { max: MAX_ATTACHMENTS }));
   }
 
   for (const file of incoming) {
     if (!isSupportedAttachment(file)) {
-      toast.warning(`暂只支持文本和 Word 文件：${file.name}`);
+      toast.warning(t("unsupportedAttachmentType", { name: file.name }));
       continue;
     }
 
     if (file.size > MAX_ATTACHMENT_SIZE) {
-      toast.warning(`${file.name} 超过 50 MB，已跳过`);
+      toast.warning(
+        t("fileExceedsSizeLimit", {
+          name: file.name,
+          size: Math.round(MAX_ATTACHMENT_SIZE / 1024 / 1024),
+        })
+      );
       continue;
     }
 
     const hash = await computeFileHash(file);
-    const currentAttachments = (
-      getState().assistant.projects[projectId] ?? createEmptyConversation()
-    ).attachments;
-    if (currentAttachments.some((a) => a.hash === hash)) {
-      toast.warning(`「${file.name}」已添加过，请勿重复上传`);
-      continue;
-    }
 
     const previewUrl = isImageMime(file.type) ? URL.createObjectURL(file) : "";
     const { excerpt, truncated } = await readAttachmentExcerpt(file);
 
     if (truncated && !excerpt) {
-      toast.warning(`「${file.name}」内容过大（超过 500KB），AI 将无法读取内容`);
+      toast.warning(t("fileTooLargeForAi", { name: file.name, size: 2 }));
     } else if (truncated) {
-      toast.info(`「${file.name}」内容较长，已截取前 3000 字`);
+      toast.info(
+        t("fileContentTruncated", { name: file.name, size: Math.round(MAX_EXCERPT_CHARS / 10000) })
+      );
     }
 
     const attachmentId = crypto.randomUUID();
@@ -464,63 +499,153 @@ export const retryAttachment = createAsyncThunk<
   await uploadAttachmentFile(dispatch, getState, projectId, attachmentId);
 });
 
+// ─── Load history from server ─────────────────────────
+
+export const loadHistory = createAsyncThunk<
+  void,
+  string,
+  { state: RootState; dispatch: AppDispatch }
+>(
+  "assistant/loadHistory",
+  async (projectId, { dispatch }) => {
+    dispatch(ensureProject(projectId));
+
+    try {
+      const data = await fetchConversationHistory(projectId);
+      dispatch(
+        setHistory({
+          projectId,
+          messages: data.messages as AssistantMessage[],
+          messageLimit: data.messageLimit,
+          tier: data.tier,
+          conversationId: data.conversationId,
+          retentionDays: data.retentionDays,
+        })
+      );
+    } catch (error) {
+      // History load failure is non-fatal — just use empty conversation
+      console.warn("[assistant] Failed to load history:", error);
+      dispatch(markHistoryLoaded({ projectId }));
+    }
+  },
+  {
+    condition: (projectId, { getState }) => {
+      const current = getState().assistant.projects[projectId];
+      return !current?.historyLoaded;
+    },
+  }
+);
+
+// ─── Clear conversation ───────────────────────────────
+
+export const newConversation = createAsyncThunk<
+  void,
+  string,
+  { state: RootState; dispatch: AppDispatch }
+>("assistant/newConversation", async (projectId, { dispatch }) => {
+  try {
+    const data = await clearConversationApi(projectId);
+    dispatch(resetProjectConversation(projectId));
+    dispatch(
+      setMessageLimit({
+        projectId,
+        messageLimit: data.messageLimit,
+      })
+    );
+  } catch (error) {
+    console.warn("[assistant] Failed to clear conversation:", error);
+    toast.error("清空对话失败，请重试");
+  }
+});
+
+// ─── Send single user message ─────────────────────────
+
 export const sendUserMessage = createAsyncThunk<
   void,
   string,
   { state: RootState; dispatch: AppDispatch }
->("assistant/sendUserMessage", async (projectId, { dispatch, getState }) => {
-  dispatch(ensureProject(projectId));
+>(
+  "assistant/sendUserMessage",
+  async (projectId, { dispatch, getState }) => {
+    dispatch(ensureProject(projectId));
+    const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
 
-  const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
-  if (current.sending) return;
+    const hasUploading = current.attachments.some(
+      (attachment) => attachment.status === "uploading"
+    );
+    if (hasUploading) {
+      toast.warning("请等待附件上传完成后再发送");
+      return;
+    }
 
-  const hasUploading = current.attachments.some((attachment) => attachment.status === "uploading");
-  if (hasUploading) {
-    toast.warning("请等待附件上传完成后再发送");
-    return;
+    const uploadedAttachments = current.attachments.filter(
+      (attachment) => attachment.status === "uploaded" && attachment.url
+    );
+    const text =
+      current.draftInput.trim() || (uploadedAttachments.length > 0 ? "请结合附件继续分析。" : "");
+    if (!text && uploadedAttachments.length === 0) return;
+
+    const userMessage = buildUserMessage(text, uploadedAttachments);
+
+    dispatch(commitUserMessage({ projectId, userMessage }));
+
+    const abortController = createProjectAbortController(projectId);
+
+    try {
+      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+      const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
+
+      const finalMessage = await sendAssistantChat({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        agentType,
+        signal: abortController.signal,
+        onMessage: (message) => {
+          dispatch(appendStreamChunk({ projectId, message }));
+        },
+      });
+
+      // If aborted (tool result took over), skip finalization
+      if (abortController.signal.aborted) return;
+
+      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
+      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
+
+      // Save to Redis (fire-and-forget)
+      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      void saveConversation(projectId, finalMessages);
+    } catch (error) {
+      if (abortController.signal.aborted) return;
+      const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+      if (errMsg.startsWith("MESSAGE_LIMIT_REACHED:")) {
+        const [, cur, max] = errMsg.split(":");
+        dispatch(streamError({ projectId, error: `MESSAGE_LIMIT_REACHED:${cur}:${max}` }));
+        return;
+      }
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
+    }
+  },
+  {
+    condition: (projectId, { getState }) => {
+      const current = getState().assistant.projects[projectId];
+      return !current?.sending;
+    },
   }
-
-  const uploadedAttachments = current.attachments.filter(
-    (attachment) => attachment.status === "uploaded" && attachment.url
-  );
-  const text =
-    current.draftInput.trim() || (uploadedAttachments.length > 0 ? "请结合附件继续分析。" : "");
-  if (!text && uploadedAttachments.length === 0) return;
-
-  const userMessage = buildUserMessage(text, uploadedAttachments);
-
-  dispatch(commitUserMessage({ projectId, userMessage }));
-
-  try {
-    const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
-    const workspaceContext = buildWorkspaceContext(getState());
-
-    const finalMessage = await sendAssistantChat({
-      projectId,
-      messages: nextMessages,
-      workspaceContext,
-      onMessage: (message) => {
-        dispatch(appendStreamChunk({ projectId, message }));
-      },
-    });
-
-    dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-    await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "AI 请求失败";
-    dispatch(streamError({ projectId, error: message }));
-    toast.error(message);
-  }
-});
+);
 
 export const applyToolResult = createAsyncThunk<
   void,
   { projectId: string; result: AssistantToolResult },
   { state: RootState; dispatch: AppDispatch }
 >("assistant/applyToolResult", async ({ projectId, result }, { dispatch, getState }) => {
+  // Cancel any in-flight stream from the previous sendUserMessage/applyToolResult
+  abortProjectStream(projectId);
+
   dispatch(ensureProject(projectId));
   const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
-  if (current.sending) return;
 
   const nextMessages = current.messages.map((message) =>
     message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === result.toolCallId)
@@ -536,24 +661,36 @@ export const applyToolResult = createAsyncThunk<
     })
   );
 
+  const abortController = createProjectAbortController(projectId);
+
   try {
-    const workspaceContext = buildWorkspaceContext(getState());
+    const workspaceContext = buildWorkspaceContext(getState(), projectId);
+    const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
     const finalMessage = await sendAssistantChat({
       projectId,
       messages: nextMessages,
       workspaceContext,
+      agentType,
+      signal: abortController.signal,
       onMessage: (message) => {
         dispatch(appendStreamChunk({ projectId, message }));
       },
     });
 
+    if (abortController.signal.aborted) return;
+
     dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
     await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
+
+    // Save to Redis (fire-and-forget)
+    const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
+    void saveConversation(projectId, finalMessages);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "AI 请求失败";
-    dispatch(streamError({ projectId, error: message }));
-    toast.error(message);
+    if (abortController.signal.aborted) return;
+    const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+    dispatch(streamError({ projectId, error: errMsg }));
+    toast.error(errMsg);
   }
 });
 
@@ -583,6 +720,15 @@ export const assistantSlice = createSlice({
       const { projectId, expanded } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       state.projects[projectId] = { ...current, panelExpanded: expanded };
+    },
+
+    setAgentType: (
+      state,
+      action: PayloadAction<{ projectId: string; agentType: AssistantAgentType }>
+    ) => {
+      const { projectId, agentType } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = { ...current, agentType };
     },
 
     setDraft: (state, action: PayloadAction<{ projectId: string; draft: string }>) => {
@@ -685,10 +831,15 @@ export const assistantSlice = createSlice({
         index >= 0
           ? current.messages.map((item, i) => (i === index ? message : item))
           : [...current.messages, message];
+      const pendingToolUi = buildPendingToolUi(messages);
+      // When an interactive tool is detected, stop showing "sending" state
+      // so the tool card buttons become actionable immediately.
+      const hasNewPendingTool = pendingToolUi.length > 0 && current.pendingToolUi.length === 0;
       state.projects[projectId] = {
         ...current,
         messages,
-        pendingToolUi: buildPendingToolUi(messages),
+        pendingToolUi,
+        ...(hasNewPendingTool ? { sending: false, streaming: false } : {}),
       };
     },
 
@@ -732,6 +883,48 @@ export const assistantSlice = createSlice({
       };
     },
 
+    setHistory: (
+      state,
+      action: PayloadAction<{
+        projectId: string;
+        messages: AssistantMessage[];
+        messageLimit: number;
+        tier: string;
+        conversationId: string;
+        retentionDays: number;
+      }>
+    ) => {
+      const { projectId, messages, messageLimit, tier, conversationId, retentionDays } =
+        action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      const welcomeMsg = createWelcomeMessage();
+      state.projects[projectId] = {
+        ...current,
+        messages: messages.length > 0 ? [welcomeMsg, ...messages] : [welcomeMsg],
+        historyLoaded: true,
+        historyMessageCount: messages.length,
+        messageLimit,
+        tier,
+        conversationId,
+        retentionDays,
+      };
+    },
+
+    markHistoryLoaded: (state, action: PayloadAction<{ projectId: string }>) => {
+      const { projectId } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = { ...current, historyLoaded: true };
+    },
+
+    setMessageLimit: (
+      state,
+      action: PayloadAction<{ projectId: string; messageLimit: number }>
+    ) => {
+      const { projectId, messageLimit } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = { ...current, messageLimit };
+    },
+
     resetProjectConversation: (state, action: PayloadAction<string>) => {
       const projectId = action.payload;
       const current = state.projects[projectId];
@@ -740,6 +933,7 @@ export const assistantSlice = createSlice({
         ...createEmptyConversation(),
         panelOpen: current?.panelOpen ?? false,
         panelExpanded: current?.panelExpanded ?? false,
+        historyLoaded: true,
       };
     },
   },
@@ -749,6 +943,7 @@ export const {
   ensureProject,
   setPanelOpen,
   setPanelExpanded,
+  setAgentType,
   setDraft,
   pushAttachment,
   updateAttachment,
@@ -758,6 +953,9 @@ export const {
   appendStreamChunk,
   finalizeAssistantMessage,
   streamError,
+  setHistory,
+  markHistoryLoaded,
+  setMessageLimit,
   resetProjectConversation,
 } = assistantSlice.actions;
 

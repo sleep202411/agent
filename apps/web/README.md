@@ -1,6 +1,6 @@
 # FizzDragon Web
 
-Next.js frontend for FizzDragon Studio.
+TanStack Start + Vite frontend for FizzDragon Studio.
 
 ## Development
 

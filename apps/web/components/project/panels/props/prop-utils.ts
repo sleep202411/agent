@@ -1,6 +1,7 @@
 import type { Asset } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 export function ossUrl(path?: string): string | null {
   if (!path) return null;
@@ -58,11 +59,7 @@ export function mergeProps(worldProps: PropPanelItem[], assetProps: PropPanelIte
   const propIndexMap = new Map<string, number>();
 
   const pushProp = (prop: PropPanelItem) => {
-    const keys = [
-      normalizePropName(prop.aiId),
-      normalizePropName(prop.id),
-      normalizePropName(prop.name),
-    ].filter(Boolean);
+    const keys = [normalizePropName(prop.aiId), normalizePropName(prop.id)].filter(Boolean);
 
     const existingKey = keys.find((key) => propIndexMap.has(key));
     if (existingKey) {

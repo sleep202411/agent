@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconCheck, IconCircleCheckFilled, IconLoader2 } from "@tabler/icons-react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
@@ -14,11 +12,12 @@ import {
 } from "@/components/ui/dialog";
 import { backendApi } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
+import { siteConfig } from "@/src/config/site";
 
 // ── Types ───────────────────────────────────────────────────
 
 interface CreditsPackage {
-  id: string;
+  id: number;
   integralAmount: number;
   originalPrice: number;
   discountPrice: number;
@@ -54,33 +53,38 @@ export function CreditsRechargeDialog({
   const [packages, setPackages] = useState<CreditsPackage[]>([]);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<Step>("select");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [currency, setCurrency] = useState(siteConfig.defaultCurrency);
   const [qrUrl, setQrUrl] = useState("");
   const [orderNo, setOrderNo] = useState("");
   const [paying, setPaying] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const selectedPackage = packages.find((p) => p.id === selectedId) ?? null;
-  const displayPrice = (cents: number) => (cents / 100).toFixed(2);
+  const displayPrice = (amount: number | string) => {
+    const num = Number(amount);
+    return siteConfig.region === "cn" ? (num / 100).toFixed(2) : num.toFixed(2);
+  };
+  const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
 
   // ── Fetch ───────────────────────────────────────────────
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
+    setSelectedId(null);
     backendApi
-      .post<CreditsPackage[]>("/api/payment/query/package", { data: { currency: "CNY" } })
+      .post<CreditsPackage[]>("/api/payment/query/package", { data: { currency } })
       .then((res) => {
         const list = (res ?? [])
           .filter((p) => p.status === 1 || (p.status as unknown) === "ACTIVE")
           .sort((a, b) => a.sortOrder - b.sortOrder);
         setPackages(list);
-        if (list.length > 0 && selectedId === null) setSelectedId(list[0].id);
+        if (list.length > 0) setSelectedId(list[0].id);
       })
       .catch(() => setPackages([]))
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, currency]);
 
   useEffect(() => {
     if (!open) {
@@ -111,31 +115,54 @@ export function CreditsRechargeDialog({
     if (!selectedPackage) return;
     setPaying(true);
     try {
-      const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
-        data: { packageId: Number(selectedPackage.id), type: 1 },
-      });
-      const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
-      setQrUrl(qrDataUrl);
-      setOrderNo(result.orderNo);
-      setStep("payment");
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(async () => {
-        try {
-          const s = await backendApi.get<OrderStatus>(
-            `/api/payment/order/status/${result.orderNo}`
-          );
-          if (s.status === 1) {
-            if (pollRef.current) {
-              clearInterval(pollRef.current);
-              pollRef.current = null;
+      if (siteConfig.region === "cn") {
+        // WeChat Pay: show QR code
+        const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
+          data: { packageId: Number(selectedPackage.id), type: 1 },
+        });
+        const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
+        setQrUrl(qrDataUrl);
+        setOrderNo(result.orderNo);
+        setStep("payment");
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          try {
+            const s = await backendApi.get<OrderStatus>(
+              `/api/payment/order/status/${result.orderNo}`
+            );
+            if (s.status === 1) {
+              if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+              setStep("success");
+              onSuccess?.();
             }
-            setStep("success");
-            onSuccess?.();
+          } catch {
+            /* ignore */
           }
-        } catch {
-          /* ignore */
+        }, 3000);
+      } else {
+        // Airwallex: redirect to payment page
+        const result = await backendApi.post<{ checkoutUrl: string; orderNo: string }>(
+          "/api/payment/order/create",
+          {
+            data: {
+              productId: selectedPackage.id,
+              productType: 1, // "credits",
+              // successUrl: `${window.location.origin}${window.location.pathname}?payment=success`,
+              // cancelUrl: `${window.location.origin}${window.location.pathname}?payment=cancelled`,
+            },
+          }
+        );
+        if (result.checkoutUrl) {
+          if (window.self !== window.top) {
+            window.parent.postMessage({ type: "navigateToPayment", url: result.checkoutUrl }, "*");
+          } else {
+            window.location.href = result.checkoutUrl;
+          }
         }
-      }, 3000);
+      }
     } catch (e) {
       console.error("[CreditsRecharge]", e);
     } finally {
@@ -167,11 +194,32 @@ export function CreditsRechargeDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t("credits")}</DialogTitle>
-          <DialogDescription className="sr-only">选择积分套餐进行充值</DialogDescription>
+          <DialogDescription className="sr-only">{t("creditsRechargeDesc")}</DialogDescription>
         </DialogHeader>
 
         {step === "select" && (
-          <div className="space-y-4">
+          <div className="space-y-4 p-4">
+            {/* Currency switcher */}
+            {siteConfig.currencies.length > 1 && (
+              <div className="flex items-center justify-center gap-1 rounded-full border border-border bg-muted/30 p-1">
+                {siteConfig.currencies.map((c) => (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => setCurrency(c.code)}
+                    className={cn(
+                      "rounded-full px-4 py-1.5 text-xs font-medium transition-all",
+                      currency === c.code
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {c.symbol} {c.code}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {loading ? (
               <div className="flex h-32 items-center justify-center">
                 <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
@@ -197,12 +245,15 @@ export function CreditsRechargeDialog({
                       <div className="text-2xl font-bold">{pkg.integralAmount}</div>
                       <div className="mb-3 text-xs text-muted-foreground">{t("creditsUnit")}</div>
                       <div className="text-lg font-semibold">
-                        <span className="text-sm font-normal text-muted-foreground">¥</span>
+                        <span className="text-sm font-normal text-muted-foreground">
+                          {currencySymbol}
+                        </span>
                         {displayPrice(pkg.discountPrice)}
                       </div>
                       {hasDiscount && (
                         <div className="mt-0.5 text-xs text-muted-foreground/50 line-through">
-                          ¥{displayPrice(pkg.originalPrice)}
+                          {currencySymbol}
+                          {displayPrice(pkg.originalPrice)}
                         </div>
                       )}
                       {isSelected && <IconCheck className="mt-2 size-4 text-primary" />}
@@ -215,7 +266,8 @@ export function CreditsRechargeDialog({
             {selectedPackage && (
               <Button className="w-full" onClick={() => void handlePay()} disabled={paying}>
                 {paying && <IconLoader2 className="size-4 animate-spin" />}
-                {t("wechatPay")} ¥{displayPrice(selectedPackage.discountPrice)}
+                {siteConfig.region === "cn" ? t("wechatPay") : t("payNow")} {currencySymbol}
+                {displayPrice(selectedPackage.discountPrice)}
               </Button>
             )}
           </div>
@@ -225,7 +277,6 @@ export function CreditsRechargeDialog({
           <div className="flex flex-col items-center py-4">
             <p className="mb-4 text-sm text-muted-foreground">{t("scanToPay")}</p>
             <div className="mb-6 rounded-xl bg-white p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrUrl} alt="QR" className="size-48" />
             </div>
             <div className="flex gap-3">

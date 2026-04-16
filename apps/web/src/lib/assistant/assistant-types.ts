@@ -17,8 +17,12 @@ import type {
   AssistantSceneProposalInput as SharedAssistantSceneProposalInput,
   AssistantShowOptionsInput as SharedAssistantShowOptionsInput,
   AssistantShowOptionsResult as SharedAssistantShowOptionsResult,
+  AssistantConfigureParamsInput as SharedAssistantConfigureParamsInput,
+  AssistantConfigureParamsResult as SharedAssistantConfigureParamsResult,
   AssistantStoryboardProposal as SharedAssistantStoryboardProposal,
   AssistantStoryboardDecision as SharedAssistantStoryboardDecision,
+  AssistantScriptProposalInput as SharedAssistantScriptProposalInput,
+  AssistantScriptProposalDecision as SharedAssistantScriptProposalDecision,
   AssistantUiToolName as SharedAssistantUiToolName,
   AssistantWorkspaceSelection as SharedAssistantWorkspaceSelection,
   AssistantWorkspaceContext as SharedAssistantWorkspaceContext,
@@ -144,6 +148,10 @@ export type AssistantConfirmActionInput = SharedAssistantConfirmActionInput;
 
 export type AssistantConfirmActionResult = SharedAssistantConfirmActionResult;
 
+export type AssistantConfigureParamsInput = SharedAssistantConfigureParamsInput;
+
+export type AssistantConfigureParamsResult = SharedAssistantConfigureParamsResult;
+
 export type AssistantRoleProposal = SharedAssistantRoleProposal;
 
 export type AssistantRoleProposalInput = SharedAssistantRoleProposalInput;
@@ -162,6 +170,10 @@ export type AssistantProposalDecision<T> = SharedAssistantProposalDecision<T>;
 
 export type AssistantStoryboardDecision =
   SharedAssistantStoryboardDecision<AssistantStoryboardProposal>;
+
+export type AssistantScriptProposalInput = SharedAssistantScriptProposalInput;
+
+export type AssistantScriptProposalDecision = SharedAssistantScriptProposalDecision;
 
 export type AssistantMutationResult = SharedAssistantMutationResult;
 
@@ -204,23 +216,61 @@ export function getAssistantInteractiveToolName(part: AssistantToolInvocation) {
   return toolName;
 }
 
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  // UI tools
+  show_options: "Options",
+  confirm_action: "Confirm",
+  configure_params: "Settings",
+  // Proposal tools
+  propose_characters: "Character Proposal",
+  propose_scenes: "Scene Proposal",
+  propose_props: "Prop Proposal",
+  propose_storyboard_patch: "Storyboard Draft",
+  propose_script: "Script Proposal",
+  // Read tools
+  get_project_snapshot: "Reading Project",
+  get_world_assets: "Reading Assets",
+  list_characters: "Listing Characters",
+  list_scenes: "Listing Scenes",
+  list_props: "Listing Props",
+  search_world_assets: "Searching Assets",
+  aggregate_world_assets_for_analysis: "Analyzing Assets",
+  get_storyboard_snapshot: "Reading Storyboard",
+  query_storyboard_rows: "Querying Storyboard",
+  aggregate_storyboard_rows_for_analysis: "Analyzing Storyboard",
+  // Execute tools
+  update_project_settings: "Update Project",
+  create_episode: "Create Episode",
+  update_episode: "Update Episode",
+  delete_episode: "Delete Episode",
+  create_character: "Create Character",
+  batch_create_characters: "Create Characters",
+  update_character: "Update Character",
+  delete_character: "Delete Character",
+  create_scene: "Create Scene",
+  batch_create_scenes: "Create Scenes",
+  update_scene: "Update Scene",
+  delete_scene: "Delete Scene",
+  create_prop: "Create Prop",
+  batch_create_props: "Create Props",
+  update_prop: "Update Prop",
+  delete_prop: "Delete Prop",
+  fill_cell: "Fill Cell",
+  save_storyboard_draft: "Save Storyboard",
+  batch_create_episodes: "Create Episodes",
+  batch_update_episodes: "Update Episodes",
+  reorder_episodes: "Reorder Episodes",
+  save_episode_script: "Save Script",
+  // Script agent tools
+  analyze_text: "Analyzing Script",
+  map_episodes: "Mapping Episodes",
+  create_episodes_and_assets: "Creating Episodes & Assets",
+  generate_scripts: "Generating Scripts",
+  generate_storyboard: "Generating Storyboard",
+};
+
 export function getAssistantToolDisplayName(toolName: string) {
-  switch (toolName) {
-    case "show_options":
-      return "选项确认";
-    case "confirm_action":
-      return "操作确认";
-    case "propose_characters":
-      return "角色提案";
-    case "propose_scenes":
-      return "场景提案";
-    case "propose_props":
-      return "道具提案";
-    case "propose_storyboard_patch":
-      return "分镜草稿提案";
-    default:
-      return toolName;
-  }
+  return TOOL_DISPLAY_NAMES[toolName] ?? toolName;
 }
 
 export function getAssistantMessageText(message: AssistantMessage) {

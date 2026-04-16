@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconCheck,
@@ -11,10 +9,11 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { buildOssUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
+import { getVideoThumbnail } from "@/components/storyboard/cells/cell-utils";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { AssetRecordType, AssetRecord } from "@/src/types/workspace";
 
@@ -36,17 +35,16 @@ function defaultUploadType(assetType: AssetRecordType) {
   return "SHOT_VALUE_IMAGE";
 }
 
-function assetTypeLabel(assetType: AssetRecordType) {
-  if (assetType === "video") return "视频";
-  if (assetType === "audio") return "音频";
-  return "图片";
+function assetTypeLabelKey(assetType: AssetRecordType) {
+  if (assetType === "video") return "typeLabel_video" as const;
+  if (assetType === "audio") return "typeLabel_audio" as const;
+  return "typeLabel_image" as const;
 }
 
-function acceptHint(assetType: AssetRecordType, maxSize: number) {
-  const sizeMb = Math.round(maxSize / 1024 / 1024);
-  if (assetType === "video") return `MP4, MOV, AVI 文件，最大 ${sizeMb}MB`;
-  if (assetType === "audio") return `MP3, WAV, AAC 文件，最大 ${sizeMb}MB`;
-  return `JPG, PNG, WEBP 文件，最大 ${sizeMb}MB`;
+function acceptHintKey(assetType: AssetRecordType) {
+  if (assetType === "video") return "acceptHint_video" as const;
+  if (assetType === "audio") return "acceptHint_audio" as const;
+  return "acceptHint_image" as const;
 }
 
 // ─── Props ──────────────────────────────────────────────
@@ -54,7 +52,8 @@ function acceptHint(assetType: AssetRecordType, maxSize: number) {
 interface AssetPickerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  assetType: AssetRecordType;
+  /** Single type or array of types (array shows type tabs) */
+  assetType: AssetRecordType | AssetRecordType[];
   uploadType?: string;
   accept?: string;
   maxSize?: number;
@@ -65,7 +64,7 @@ interface AssetPickerDialogProps {
 export function AssetPickerDialog({
   open,
   onOpenChange,
-  assetType,
+  assetType: assetTypeProp,
   uploadType,
   accept,
   maxSize = 25 * 1024 * 1024,
@@ -73,7 +72,10 @@ export function AssetPickerDialog({
   onSelect,
 }: AssetPickerDialogProps) {
   const t = useTranslations("asset");
-  const [tab, setTab] = useState<PickerTab>("uploads");
+  const assetTypes = Array.isArray(assetTypeProp) ? assetTypeProp : [assetTypeProp];
+  const [activeAssetType, setActiveAssetType] = useState<AssetRecordType>(assetTypes[0]);
+  const assetType = activeAssetType;
+  const [tab, setTab] = useState<PickerTab>("ai");
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -113,6 +115,11 @@ export function AssetPickerDialog({
     void loadAssets();
   }, [loadAssets, open]);
 
+  // Reset to first type when dialog opens
+  useEffect(() => {
+    if (open) setActiveAssetType(assetTypes[0]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Upload ──────────────────────────────────────────
 
   const handleFiles = useCallback(
@@ -125,7 +132,7 @@ export function AssetPickerDialog({
 
       for (const file of fileArr) {
         if (file.size > maxSize) {
-          toast.error(`${file.name} 超过大小限制`);
+          toast.error(t("exceedSizeLimit", { name: file.name }));
           continue;
         }
         try {
@@ -139,14 +146,16 @@ export function AssetPickerDialog({
           if (!multiple) break;
         } catch (err) {
           console.error("[AssetPicker] 上传失败:", err);
-          toast.error(err instanceof Error ? err.message : "上传失败");
+          toast.error(err instanceof Error ? err.message : t("uploadFailed"));
         }
       }
 
       setUploading(false);
 
       if (paths.length > 0) {
-        toast.success(`上传成功 ${paths.length} 个${assetTypeLabel(assetType)}`);
+        toast.success(
+          t("uploadSuccessCount", { count: paths.length, type: t(assetTypeLabelKey(assetType)) })
+        );
         onSelect(paths);
         onOpenChange(false);
       }
@@ -201,32 +210,22 @@ export function AssetPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="w-[720px] max-w-[calc(100vw-2rem)] p-0 sm:max-w-[720px]"
-      >
-        <div className="flex h-[720px] flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl">
+      <DialogContent className="w-180 max-w-[calc(100vw-2rem)] p-0 sm:max-w-180">
+        <div className="flex h-180 flex-col overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl">
           {/* Header */}
-          <div className="flex shrink-0 items-center justify-between px-6 py-4">
-            <h2 className="text-base font-semibold">{t("materialPreview")}</h2>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              ✕
-            </button>
-          </div>
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">{t("materialPreview")}</DialogTitle>
+          </DialogHeader>
 
           {/* Upload area */}
-          <div className="shrink-0 px-6">
+          <div className="shrink-0 px-4 pt-4">
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={handleClickUpload}
               className={cn(
-                "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed py-10 transition-colors",
+                "flex h-42 cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed transition-colors",
                 isDragging ? "border-primary bg-primary/5" : "border-border/60 hover:border-border"
               )}
             >
@@ -236,9 +235,9 @@ export function AssetPickerDialog({
                 <>
                   <IconUpload className="size-7 text-muted-foreground/50" />
                   <div className="text-center">
-                    <p className="text-sm text-muted-foreground">点击上传 / 拖拽文件到这里</p>
+                    <p className="text-sm text-muted-foreground">{t("clickUploadOrDrag")}</p>
                     <p className="mt-1 text-xs text-muted-foreground/60">
-                      {acceptHint(assetType, maxSize)}
+                      {t(acceptHintKey(assetType), { size: Math.round(maxSize / 1024 / 1024) })}
                     </p>
                   </div>
                 </>
@@ -254,18 +253,42 @@ export function AssetPickerDialog({
             />
           </div>
 
-          {/* Tabs */}
-          <div className="flex shrink-0 items-center gap-2 px-6 pt-4">
-            <TabButton active={tab === "uploads"} onClick={() => setTab("uploads")}>
-              {t("recentUploads")}
-            </TabButton>
+          {/* Asset type tabs (only when multiple types) */}
+          {assetTypes.length > 1 && (
+            <div className="flex shrink-0 items-center gap-1 border-b border-border px-4 pt-3 pb-0">
+              {assetTypes.map((at) => (
+                <button
+                  key={at}
+                  type="button"
+                  onClick={() => {
+                    setActiveAssetType(at);
+                    setSelectedPaths(new Set());
+                  }}
+                  className={cn(
+                    "rounded-t-lg px-4 py-2 text-sm font-medium transition-colors",
+                    activeAssetType === at
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {t(assetTypeLabelKey(at))}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Source tabs */}
+          <div className="flex shrink-0 items-center gap-2 px-4 pt-4">
             <TabButton active={tab === "ai"} onClick={() => setTab("ai")}>
               {t("aiGenerated")}
+            </TabButton>
+            <TabButton active={tab === "uploads"} onClick={() => setTab("uploads")}>
+              {t("recentUploads")}
             </TabButton>
           </div>
 
           {/* List */}
-          <div className="flex-1 overflow-auto px-6 pt-3">
+          <div className="flex-1 overflow-auto px-4 my-4">
             {loading ? (
               <div className="flex h-32 items-center justify-center">
                 <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
@@ -300,7 +323,7 @@ export function AssetPickerDialog({
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium">
-                          {String(asset.name ?? "") || "音频素材"}
+                          {String(asset.name ?? "") || t("audioAsset")}
                         </div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {String(asset.createTime ?? "")}
@@ -331,14 +354,14 @@ export function AssetPickerDialog({
                     >
                       {assetType === "video" ? (
                         <div className="relative h-full w-full bg-muted">
-                          <video
-                            src={src}
+                          <img
+                            src={getVideoThumbnail(src)}
+                            alt=""
                             className="h-full w-full object-cover"
-                            muted
-                            preload="metadata"
+                            loading="lazy"
                           />
                           <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                            <IconPlayerPlay className="size-5 text-white" />
+                            <IconPlayerPlay className="size-5 text-white drop-shadow" />
                           </div>
                         </div>
                       ) : src ? (
@@ -367,7 +390,7 @@ export function AssetPickerDialog({
           </div>
 
           {/* Footer */}
-          <div className="flex shrink-0 items-center justify-end border-t border-border px-6 py-3">
+          <div className="flex shrink-0 items-center justify-end border-t border-border p-4">
             <button
               type="button"
               onClick={handleConfirm}

@@ -1,9 +1,9 @@
-"use client";
-
 import { useCallback, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { TiptapCell } from "./mention-editor";
+import type { MentionFlatItem } from "./mention-editor-utils";
 import type { MentionItem, MentionType } from "./mention-node";
+import type { ReferenceMediaItem } from "./mention-popover";
 
 interface RichMentionEditorProps {
   value: string;
@@ -21,6 +21,11 @@ interface RichMentionEditorProps {
   className?: string;
   onSubmitShortcut?: () => void;
   submitMode?: "none" | "mod" | "enter";
+  referenceMedia?: ReferenceMediaItem[];
+  onSelectReferenceMedia?: (item: ReferenceMediaItem) => void;
+  onMentionInserted?: (item: MentionFlatItem) => void;
+  /** When true, disable inserting new @ mentions (reference group full) */
+  mentionDisabled?: boolean;
 }
 
 export function RichMentionEditor({
@@ -39,6 +44,9 @@ export function RichMentionEditor({
   className,
   onSubmitShortcut,
   submitMode = "none",
+  referenceMedia,
+  onSelectReferenceMedia,
+  onMentionInserted,
 }: RichMentionEditorProps) {
   const handleStartEdit = useCallback(() => {
     onStartEdit?.();
@@ -94,6 +102,9 @@ export function RichMentionEditor({
         allowedMentionTypes={mentionTypes}
         showAvatar={showAvatar}
         extraFields={extraFields}
+        referenceMedia={referenceMedia}
+        onSelectReferenceMedia={onSelectReferenceMedia}
+        onMentionInserted={onMentionInserted}
       />
     </div>
   );

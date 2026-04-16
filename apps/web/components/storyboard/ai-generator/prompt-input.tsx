@@ -1,15 +1,15 @@
-"use client";
-
-import { IconX, IconPencil, IconPlus } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
-import { cn } from "@/lib/utils";
+import { ReferenceGroup } from "./reference-group";
+import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
 import { GenerateButton } from "@/components/ui/generate-button";
-import { SelectControl } from "@/components/ui/schema-field/select-control";
 import { ModelPicker } from "@/components/ui/schema-field/model-picker";
-import type { AiModel } from "@/src/lib/ai-model-schema";
+import { getModesByType } from "@/components/ui/schema-field/schema";
+import type { AiModel } from "@/components/ui/schema-field/schema";
 import type { AiSizeOption } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function ossUrl(path?: string): string | null {
   if (!path) return null;
@@ -18,6 +18,10 @@ function ossUrl(path?: string): string | null {
 }
 
 interface PromptInputProps {
+  /** Current image mode id */
+  imageMode?: string;
+  /** Called when user changes image mode */
+  onImageModeChange?: (mode: string) => void;
   prompt: string;
   onPromptChange: (v: string) => void;
   prefixPrompt: string;
@@ -34,20 +38,28 @@ interface PromptInputProps {
   onSizeChange: (v: string) => void;
   count: number;
   onCountChange: (v: number) => void;
-  referenceImages: { url: string; path: string }[];
+  referenceImages: { url: string; path: string; label?: string }[];
+  maxReferenceImages?: number;
   onAddReference: () => void;
   onRemoveReference: (idx: number) => void;
   referenceFields?: string[];
   cost?: number;
   loading?: boolean;
-  editMode?: boolean;
-  showEditToggle?: boolean;
   hideExtraPrompts?: boolean;
-  onToggleEditMode?: () => void;
+  mentionDisabled?: boolean;
   onSubmit: () => void;
 }
 
+// Image mode options from schema (computed once)
+const IMAGE_MODE_OPTIONS = getModesByType("image", true).map((m) => ({
+  label: m.label ?? m.id,
+  value: m.id,
+  disabled: m.disabled,
+}));
+
 export function PromptInput({
+  imageMode,
+  onImageModeChange,
   prompt,
   onPromptChange,
   prefixPrompt,
@@ -64,67 +76,34 @@ export function PromptInput({
   count,
   onCountChange,
   referenceImages,
+  maxReferenceImages,
   onAddReference,
   onRemoveReference,
   referenceFields,
   cost,
   loading,
-  editMode = false,
-  showEditToggle = false,
   hideExtraPrompts = false,
-  onToggleEditMode,
+  mentionDisabled = false,
   onSubmit,
 }: PromptInputProps) {
+  const t = useTranslations("storyboard");
   const canSubmit = prompt.trim().length > 0 && !loading;
 
   return (
-    <div className="mx-4 mb-4 p-4 flex gap-2 min-h-0 flex-1 flex-col rounded-xl border border-border/40 bg-muted transition-colors focus-within:border-primary/30">
-      {/* Top row: reference images + edit mode toggle */}
+    <div className="mx-4 mb-4 p-4 flex gap-2 min-h-0 flex-1 flex-col overflow-visible rounded-xl border border-border/40 bg-muted transition-colors focus-within:border-primary/30">
+      {/* Top row: reference group (rendered externally) + edit mode toggle */}
       <div className="flex items-start justify-between">
-        {/* Reference images */}
-        <div className="flex items-center gap-2">
-          {referenceImages.map((img, idx) => {
-            const src = ossUrl(img.url || img.path);
-            return (
-              <div key={idx} className="group relative size-20 overflow-hidden rounded-lg bg-muted">
-                {src && <img src={src} alt="" className="h-full w-full object-cover" />}
-                <button
-                  type="button"
-                  onClick={() => onRemoveReference(idx)}
-                  className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100"
-                >
-                  <IconX className="size-2.5" />
-                </button>
-              </div>
-            );
-          })}
-          {referenceImages.length < 5 && (
-            <button
-              type="button"
-              onClick={onAddReference}
-              className="flex size-20 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-            >
-              <IconPlus className="size-4" />
-              <span className="text-[10px]">参考图</span>
-            </button>
-          )}
+        {/* Reference group rendered by parent via -mt offset */}
+        <div className="relative z-10 -mt-10 min-w-0 max-w-full overflow-hidden">
+          <ReferenceGroup
+            label={t("referenceImageUpload")}
+            items={referenceImages}
+            maxCount={maxReferenceImages ?? 5}
+            onAdd={onAddReference}
+            onRemove={onRemoveReference}
+            resolveUrl={(p) => ossUrl(p) || ""}
+          />
         </div>
-
-        {showEditToggle ? (
-          <button
-            type="button"
-            onClick={onToggleEditMode}
-            className={cn(
-              "flex items-center gap-1 text-xs transition-colors",
-              editMode
-                ? "text-primary hover:text-primary/90"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <IconPencil className="size-3" />
-            <span>{editMode ? "退出编辑模式" : "进入编辑模式"}</span>
-          </button>
-        ) : null}
       </div>
 
       {/* Prefix prompt */}
@@ -136,7 +115,7 @@ export function PromptInput({
               type="text"
               value={prefixPrompt}
               onChange={(e) => onPrefixChange(e.target.value)}
-              placeholder="前置提示词..."
+              placeholder={t("prefixPromptPlaceholder")}
               className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
             />
           </div>
@@ -162,12 +141,18 @@ export function PromptInput({
         <RichMentionEditor
           value={prompt}
           onChange={onPromptChange}
-          placeholder="根据 @ 引用角色、场景，描述你想生成的画面..."
+          placeholder={t("promptEditorPlaceholder")}
           mentionTypes={["character", "scene", "prop"]}
           minHeight={48}
           className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
           onSubmitShortcut={onSubmit}
-          submitMode="enter"
+          submitMode="mod"
+          referenceMedia={referenceImages.map((r, i) => ({
+            url: r.url || ossUrl(r.path) || "",
+            path: r.path,
+            label: r.label || `${t("referenceImage")} ${i + 1}`,
+          }))}
+          mentionDisabled={mentionDisabled}
         />
       </div>
 
@@ -180,7 +165,7 @@ export function PromptInput({
               type="text"
               value={suffixPrompt}
               onChange={(e) => onSuffixChange(e.target.value)}
-              placeholder="后置提示词..."
+              placeholder={t("suffixPromptPlaceholder")}
               className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
             />
           </div>
@@ -189,35 +174,37 @@ export function PromptInput({
 
       {/* Toolbar */}
       <div className="flex items-center justify-between">
-        {/* Left: model + size */}
+        {/* Left: mode + model + size */}
         <div className="flex items-center gap-2">
+          {imageMode && onImageModeChange && (
+            <ToolbarSelect
+              options={IMAGE_MODE_OPTIONS}
+              value={imageMode}
+              onChange={onImageModeChange}
+            />
+          )}
           {normalizedModels ? (
             <ModelPicker models={normalizedModels} value={model} onChange={onModelChange} compact />
           ) : (
-            <SelectControl
-              options={modelOptions}
-              value={model}
-              onChange={(v) => onModelChange(String(v))}
-            />
+            <ToolbarSelect options={modelOptions} value={model} onChange={onModelChange} />
           )}
-          <SelectControl
+          <ToolbarSelect
             options={sizeOptions.map((s) => ({ label: s.label, value: s.value }))}
             value={size}
-            onChange={(v) => onSizeChange(String(v))}
+            onChange={onSizeChange}
           />
         </div>
 
         {/* Right: count + cost + submit */}
         <div className="flex items-center gap-2.5">
-          <SelectControl
+          <ToolbarSelect
             options={[
-              { label: "1x", value: 1 },
-              { label: "2x", value: 2 },
-              { label: "4x", value: 4 },
+              { label: "1x", value: "1" },
+              { label: "2x", value: "2" },
+              { label: "4x", value: "4" },
             ]}
-            value={count}
+            value={String(count)}
             onChange={(v) => onCountChange(Number(v))}
-            groupLabel="生成数量"
           />
 
           <GenerateButton onClick={onSubmit} loading={loading} cost={cost} />

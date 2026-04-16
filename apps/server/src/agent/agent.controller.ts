@@ -15,7 +15,7 @@ export class AgentController {
   constructor(private readonly agent: AgentService) {}
 
   @Post('outline')
-  async outline(
+  outline(
     @Body() body: { prompt?: string; text?: string },
     @Res() res: Response,
   ) {
@@ -25,7 +25,7 @@ export class AgentController {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const result = await this.agent.generateOutline(body);
+    const result = this.agent.generateOutline(body);
     return pipeWebResponseToExpress(
       result.toTextStreamResponse() as unknown as globalThis.Response,
       res,
@@ -33,14 +33,22 @@ export class AgentController {
   }
 
   @Post('characters')
-  async characters(
-    @Body() body: { outline?: Record<string, unknown> },
+  characters(
+    @Body()
+    body: {
+      outline: {
+        title: string;
+        background: string;
+        conflict: string;
+        episodes: { title: string; script: string }[];
+      };
+    },
     @Res() res: Response,
   ) {
     if (!body.outline) {
       throw new HttpException('outline is required', HttpStatus.BAD_REQUEST);
     }
-    const result = await this.agent.generateCharacters(body as any);
+    const result = this.agent.generateCharacters(body);
     return pipeWebResponseToExpress(
       result.toTextStreamResponse() as unknown as globalThis.Response,
       res,
@@ -48,12 +56,17 @@ export class AgentController {
   }
 
   @Post('storyboard')
-  async storyboard(
+  storyboard(
     @Body()
     body: {
-      outline?: Record<string, unknown>;
-      characters?: unknown[];
-      scenes?: unknown[];
+      outline: {
+        title: string;
+        videoStyle: string;
+        aspectRatio: string;
+        episodes: { title: string; script: string }[];
+      };
+      characters: { name: string; appearance: string }[];
+      scenes: { name: string; description: string }[];
     },
     @Res() res: Response,
   ) {
@@ -63,7 +76,7 @@ export class AgentController {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const result = await this.agent.generateStoryboard(body as any);
+    const result = this.agent.generateStoryboard(body);
     return pipeWebResponseToExpress(
       result.toTextStreamResponse() as unknown as globalThis.Response,
       res,

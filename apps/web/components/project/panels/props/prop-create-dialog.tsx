@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconLoader2 } from "@tabler/icons-react";
 import {
   Dialog,
@@ -39,11 +37,11 @@ export function PropCreateDialog({
     if (!name.trim() || !worldId) return;
     setCreating(true);
     try {
-      const result = await backendApi.post<Asset>("/api/user/world/create/worldprop", {
+      const id = await backendApi.post<string>("/api/user/world/create/worldprop", {
         data: { name: name.trim(), worldId },
       });
       onOpenChange(false);
-      onCreated(result);
+      onCreated({ id: String(id), name: name.trim() } as Asset);
     } catch (err) {
       console.error("[CreateProp] 创建失败:", err);
     } finally {
@@ -57,14 +55,16 @@ export function PropCreateDialog({
         <DialogHeader>
           <DialogTitle>{t("addProp")}</DialogTitle>
         </DialogHeader>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-          maxLength={20}
-          autoFocus
-          placeholder={t("propNamePlaceholder")}
-        />
+        <div className="p-4">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+            maxLength={20}
+            autoFocus
+            placeholder={t("propNamePlaceholder")}
+          />
+        </div>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}

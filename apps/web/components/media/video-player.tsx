@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef } from "react";
 import videojs from "video.js";
 import type Player from "video.js/dist/types/player";

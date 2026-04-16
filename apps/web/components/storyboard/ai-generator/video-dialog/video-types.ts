@@ -1,15 +1,17 @@
 import type { RawAiModel, AssetRecord } from "@/src/types/workspace";
+import { env } from "@/src/env";
 
 export type { RawAiModel, AssetRecord };
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-export const API_PATH_VIDEO = "/api/ai/video/generate/basic";
+/** @deprecated Use VideoModeConfig from ai-model-schema.ts instead */
+export const API_PATH_VIDEO = "/api/ai/task/video/generate/basic";
 export const MAX_CONCURRENT = 4;
 
 // ── Type definitions ───────────────────────────────────────────────────
 
-export type SimpleMode = "reference" | "frames" | "multiReference";
+export type SimpleMode = "reference" | "frames" | "multiReference" | "multimodal";
 export type EditMode = "repaint" | "localEdit" | "extend" | "outpainting";
 export type VideoMode = SimpleMode | EditMode;
 export type PickerAssetType = "img" | "video";
@@ -30,6 +32,8 @@ export interface ReferenceAsset {
   url: string;
   path: string;
   typeTag?: MultiRefType;
+  /** Display label — e.g. character name when auto-added from @mention */
+  label?: string;
 }
 
 export interface VideoQueueTask {
@@ -62,6 +66,14 @@ export interface VideoQueueTask {
     bottomScale?: number;
     leftScale?: number;
     rightScale?: number;
+    // multimodal
+    images?: string[];
+    videos?: string[];
+    audios?: string[];
+    ratio?: string;
+    resolution?: string;
+    duration?: number;
+    note?: string;
   };
   result: { url: string; storagePath: string } | null;
   error: string | null;
@@ -73,6 +85,9 @@ export type PickerTarget =
   | "lastFrames"
   | "multiRefSubject"
   | "multiRefBg"
+  | "multimodalImages"
+  | "multimodalVideos"
+  | "multimodalAudios"
   | "repaintVideo"
   | "repaintImage"
   | "localEditVideo"
@@ -100,6 +115,8 @@ export interface AiVideoGeneratorDialogProps {
   onGeneratePrompt?: (prompt: string) => void;
   onGeneratingChange?: (isGenerating: boolean) => void;
   onGenerateSuccess?: () => void;
+  onPrevShot?: () => void;
+  onNextShot?: () => void;
 }
 
 // ── Utility functions ──────────────────────────────────────────────────
@@ -109,7 +126,7 @@ export function ossUrl(path?: string) {
   if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("blob:")) {
     return path;
   }
-  return `${process.env.NEXT_PUBLIC_OSS_BASE_URL ?? ""}/${path}`;
+  return `${env.OSS_BASE_URL}/${path}`;
 }
 
 export function getVideoThumbnail(path?: string) {
@@ -210,6 +227,20 @@ export function toHistoryItem(record: AssetRecord): VideoResultItem {
   };
 }
 
+/** Deduplicate reference assets by url/path */
+export function dedupeRefs(
+  existing: ReferenceAsset[],
+  newItems: ReferenceAsset[]
+): ReferenceAsset[] {
+  const urls = new Set(existing.map((r) => r.url || r.path).filter(Boolean));
+  return newItems.filter((item) => {
+    const k = item.url || item.path;
+    if (!k || urls.has(k)) return false;
+    urls.add(k);
+    return true;
+  });
+}
+
 export function toReferenceAssets(paths: string[], typeTag?: MultiRefType) {
   return paths.map((path) => ({
     url: ossUrl(path),
@@ -228,20 +259,24 @@ export function ensureVideoReference(item?: VideoResultItem | null): ReferenceAs
   ];
 }
 
+export const API_PATH_MULTIMODAL_VIDEO = "/api/ai/task/video/generate/multimodalvideo";
+
 export function getModePath(mode: VideoMode) {
   switch (mode) {
     case "frames":
-      return "/api/ai/video/generate/start-end-frame";
+      return "/api/ai/task/video/generate/start-end-frame";
     case "multiReference":
-      return "/api/ai/video/generate/multiplereference";
+      return "/api/ai/task/video/generate/multiplereference";
+    case "multimodal":
+      return API_PATH_MULTIMODAL_VIDEO;
     case "repaint":
-      return "/api/ai/video/generate/videorepainting";
+      return "/api/ai/task/video/generate/videorepainting";
     case "localEdit":
-      return "/api/ai/video/generate/videoedit";
+      return "/api/ai/task/video/generate/videoedit";
     case "extend":
-      return "/api/ai/video/generate/videoextension";
+      return "/api/ai/task/video/generate/videoextension";
     case "outpainting":
-      return "/api/ai/video/generate/videooutpainting";
+      return "/api/ai/task/video/generate/videooutpainting";
     case "reference":
     default:
       return API_PATH_VIDEO;

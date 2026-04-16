@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { IconDownload, IconLoader2, IconPencil, IconPlus, IconUpload } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -11,7 +9,7 @@ import { backendApi } from "@/src/lib/api";
 import { exportStoryboard } from "@/src/lib/storyboard-export";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 import type { ProjectOptionItem } from "@/src/types/workspace";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import {
   setRows as setRowsAction,
@@ -191,7 +189,7 @@ export function StoryboardToolbar() {
             onClick={() => setShowAiImport(true)}
           >
             <IconDownload className="size-4" />
-            AI Import Storyboard
+            {t("aiImportStoryboard")}
           </Button>
 
           <Button
@@ -205,7 +203,7 @@ export function StoryboardToolbar() {
             ) : (
               <IconUpload className="size-4" />
             )}
-            Export Storyboard
+            {t("exportStoryboard")}
           </Button>
 
           {formattedProjectSize ? (
@@ -215,7 +213,7 @@ export function StoryboardToolbar() {
               color="muted"
               onClick={() => setShowProjectEditor(true)}
             >
-              <span>Project Size: {formattedProjectSize}</span>
+              <span>{`${t("projectSize")}: ${formattedProjectSize}`}</span>
               <IconPencil className="size-3.5" />
             </Button>
           ) : null}

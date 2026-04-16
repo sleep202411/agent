@@ -1,5 +1,4 @@
-"use client";
-
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconPhoto, IconVideo } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { FloatingToolbar, type ToolbarAction } from "@/components/ui/floating-toolbar";
@@ -27,6 +26,8 @@ export function MediaPreviewPanel({
   bottomActions,
   className,
 }: MediaPreviewPanelProps) {
+  const t = useTranslations("storyboard");
+
   return (
     <div
       className={cn(
@@ -45,13 +46,13 @@ export function MediaPreviewPanel({
             ) : null}
 
             {type === "video" ? (
-              <div className="flex min-h-0 flex-1 items-center justify-center bg-black p-2">
+              <div className="absolute inset-0 flex items-center justify-center bg-black p-2">
                 <video
                   key={previewUrl}
                   src={previewUrl}
                   controls
                   playsInline
-                  className="max-h-full max-w-full object-contain"
+                  className="h-full w-full object-contain"
                 />
               </div>
             ) : (
@@ -74,7 +75,7 @@ export function MediaPreviewPanel({
               ) : (
                 <IconPhoto className="size-10" />
               ))}
-            <p className="text-sm">{emptyText ?? "点击左侧预览"}</p>
+            <p className="text-sm">{emptyText ?? t("clickLeftPreview")}</p>
           </div>
         )}
       </div>

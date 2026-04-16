@@ -1,12 +1,10 @@
-"use client";
-
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PanelAnimateContext } from "@/components/project/panels/panel-layout";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useBlocker, useLocation, useNavigate } from "@tanstack/react-router";
+import { useTranslations } from "@/src/i18n/i18n";
 import { ProjectHeader } from "@/components/project/project-header";
 import { ProjectSidebar } from "@/components/project/project-sidebar";
-import { AiAssistantPanel } from "@/components/project/ai-assistant-panel";
+import { AiAssistantPanel } from "@/components/project/ai-assistant";
 import { ScriptView } from "@/components/project/script-view";
 import { StoryboardView } from "@/components/project/storyboard-view";
 import { TimelineView } from "@/components/project/timeline";
@@ -30,29 +28,53 @@ import { setActivePanel, selectCurrentInstance } from "@/src/store/slices/projec
 
 export default function ProjectDetailPage() {
   const t = useTranslations("project");
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
 
-  const { detail, isLoading, isEpisodesLoading, error } = useProjectDetail();
+  const { detail, episodes, isLoading, isEpisodesLoading, error } = useProjectDetail();
   useStoryboardData();
   useWorldAssets();
   useAiModelsPreload();
+
+  const batchGeneratingActive = useAppSelector(
+    (s) => selectCurrentInstance(s).batchGeneratingActive
+  );
+
+  // Block in-app navigation when batch generation is active
+  useBlocker({
+    shouldBlockFn: () => {
+      if (!batchGeneratingActive) return false;
+      return !window.confirm(t("leaveWhileBatchGenerating"));
+    },
+  });
+
+  // Block browser close / refresh
+  useEffect(() => {
+    if (!batchGeneratingActive) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [batchGeneratingActive]);
 
   const activeTab = useAppSelector((s) => selectCurrentInstance(s).activeTab);
   const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({
     storyboard: true,
   });
 
-  useEffect(() => {
+  const [prevActiveTab, setPrevActiveTab] = useState(activeTab);
+  if (prevActiveTab !== activeTab) {
+    setPrevActiveTab(activeTab);
     setMountedTabs((prev) => (prev[activeTab] ? prev : { ...prev, [activeTab]: true }));
-  }, [activeTab]);
+  }
 
   const activePanel = useAppSelector((s) => selectCurrentInstance(s).activePanel);
-  const prevPanelRef = useRef(activePanel);
-  const shouldAnimatePanel = prevPanelRef.current == null && activePanel != null;
-  // Update ref synchronously after reading, before next render reads it
-  prevPanelRef.current = activePanel;
+  const [prevPanel, setPrevPanel] = useState(activePanel);
+  if (prevPanel !== activePanel) {
+    setPrevPanel(activePanel);
+  }
+  const shouldAnimatePanel = prevPanel == null && activePanel != null;
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
@@ -80,8 +102,8 @@ export default function ProjectDetailPage() {
 
     if (!changed) return;
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [activeEpisodeId, pathname, router, worldId]);
+    void navigate({ to: query ? `${pathname}?${query}` : pathname, replace: true });
+  }, [activeEpisodeId, pathname, navigate, worldId]);
 
   const panelContent = useMemo(() => {
     switch (activePanel) {
@@ -110,8 +132,9 @@ export default function ProjectDetailPage() {
     }
   }, [activePanel]);
 
-  // 必要接口未完成前显示全屏 loading
-  const essentialLoading = isLoading || isEpisodesLoading || (!detail && !error);
+  // 必要接口未完成前显示全屏 loading（已有剧集数据时后台静默刷新，不阻塞页面）
+  const essentialLoading =
+    isLoading || (isEpisodesLoading && episodes.length === 0) || (!detail && !error);
 
   if (essentialLoading) {
     return (
@@ -169,26 +192,20 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      <style jsx global>{`
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @keyframes dragon-float {
-          0%,
-          100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-4px);
-          }
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4px); }
         }
-
         @keyframes dragon-orbit {
-          from {
-            transform: translate(-50%, -50%) rotate(0deg) translateX(22px) rotate(0deg);
-          }
-          to {
-            transform: translate(-50%, -50%) rotate(360deg) translateX(22px) rotate(-360deg);
-          }
+          from { transform: translate(-50%, -50%) rotate(0deg) translateX(22px) rotate(0deg); }
+          to { transform: translate(-50%, -50%) rotate(360deg) translateX(22px) rotate(-360deg); }
         }
-      `}</style>
+      `,
+        }}
+      />
     </div>
   );
 }

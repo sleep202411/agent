@@ -1,5 +1,3 @@
-"use client";
-
 import { IconBell } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/layout/user-menu";

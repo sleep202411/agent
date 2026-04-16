@@ -1,5 +1,3 @@
-"use client";
-
 import { forwardRef, useEffect, useImperativeHandle, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import type { MentionItem, MentionType } from "./mention-node";
@@ -8,12 +6,14 @@ const typeLabels: Record<MentionType, string> = {
   character: "角色",
   scene: "场景",
   prop: "道具",
+  reference: "参考",
 };
 
 const typeColors: Record<MentionType, string> = {
   character: "text-primary",
   scene: "text-green-600 dark:text-green-400",
   prop: "text-orange-600 dark:text-orange-400",
+  reference: "text-blue-600 dark:text-blue-400",
 };
 
 export interface MentionListProps {
@@ -51,7 +51,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
           setSelectedIndex((prev) => (prev >= items.length - 1 ? 0 : prev + 1));
           return true;
         }
-        if (event.key === "Enter") {
+        if (event.key === "Enter" || event.key === "Tab") {
           selectItem(selectedIndex);
           return true;
         }
@@ -78,7 +78,10 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
     let globalIndex = 0;
 
     return (
-      <div className="max-h-60 w-52 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-md">
+      <div className="max-h-60 w-56 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-md">
+        <p className="px-2 py-1 text-[10px] text-muted-foreground">
+          方向鍵選擇，Enter/Tab 確認，Esc 關閉
+        </p>
         {Object.entries(grouped).map(([type, groupItems]) => (
           <div key={type}>
             <div className="px-2 pb-1 pt-2">
@@ -95,7 +98,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
               const idx = globalIndex++;
               return (
                 <button
-                  key={item.id}
+                  key={`${item.id}-${item.label}`}
                   type="button"
                   onClick={() => selectItem(idx)}
                   className={cn(
@@ -105,7 +108,14 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
                       : "text-foreground hover:bg-accent/50"
                   )}
                 >
-                  <span className="text-xs">{item.label}</span>
+                  {item.imgUrl && (
+                    <img
+                      src={item.imgUrl}
+                      alt=""
+                      className="size-7 shrink-0 rounded-md object-cover"
+                    />
+                  )}
+                  <span className="truncate text-xs">{item.label}</span>
                 </button>
               );
             })}

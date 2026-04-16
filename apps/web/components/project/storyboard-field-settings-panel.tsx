@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAlignLeft,
@@ -36,7 +34,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import {
   setColumns,
@@ -164,6 +162,7 @@ export function StoryboardFieldSettingsPanel({
 }) {
   const t = useTranslations("storyboard");
   const tc = useTranslations("common");
+  const dispatch = useAppDispatch();
   const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
 
   const [open, setOpen] = useState(false);
@@ -235,7 +234,7 @@ export function StoryboardFieldSettingsPanel({
     const data = await backendApi.post<ShotColumn[]>("/api/user/shotColumn/list", {
       data: { storyBoardId },
     });
-    setColumns(Array.isArray(data) ? data : []);
+    dispatch(setColumns(Array.isArray(data) ? data : []));
   };
 
   const handleToggleVisibility = async (fieldId: string) => {
@@ -243,13 +242,13 @@ export function StoryboardFieldSettingsPanel({
       String(field.id) === fieldId ? { ...field, hide: !field.hide } : field
     );
     setLocalColumns(nextColumns);
-    setColumns(nextColumns);
+    dispatch(setColumns(nextColumns));
 
     try {
       await persistColumnsList(nextColumns);
     } catch (error) {
       console.error("[StoryboardFieldSettings] 更新字段可见性失败:", error);
-      toast.error("更新字段可见性失败");
+      toast.error(t("visibilityUpdateFailed"));
       void reloadColumns();
     }
   };
@@ -272,7 +271,7 @@ export function StoryboardFieldSettingsPanel({
   const handleSaveEdit = async () => {
     if (!editingFieldId) return;
     if (!editingField.name.trim()) {
-      toast.warning("请输入字段名称");
+      toast.warning(t("enterFieldName"));
       return;
     }
 
@@ -310,12 +309,12 @@ export function StoryboardFieldSettingsPanel({
           : field
       );
       setLocalColumns(nextColumns);
-      setColumns(nextColumns);
-      toast.success("字段更新成功");
+      dispatch(setColumns(nextColumns));
+      toast.success(t("fieldUpdateSuccess"));
       resetEdit();
     } catch (error) {
       console.error("[StoryboardFieldSettings] 更新字段失败:", error);
-      toast.error("字段更新失败");
+      toast.error(t("fieldUpdateFailed"));
     } finally {
       setSaving(false);
     }
@@ -337,13 +336,13 @@ export function StoryboardFieldSettingsPanel({
   const handleCreateField = async () => {
     if (!storyBoardId) return;
     if (!createField.name.trim()) {
-      toast.warning("请输入字段名称");
+      toast.warning(t("enterFieldName"));
       return;
     }
 
     const validOptions = createField.options.filter((option) => option.name.trim());
     if (createField.type === "SINGLE_OPTION" && validOptions.length === 0) {
-      toast.warning("请至少添加一个选项");
+      toast.warning(t("addAtLeastOneOption"));
       return;
     }
 
@@ -362,12 +361,12 @@ export function StoryboardFieldSettingsPanel({
         },
       });
       await reloadColumns();
-      toast.success("字段创建成功");
+      toast.success(t("fieldCreateSuccess"));
       setShowCreateField(false);
       setCreateField(emptyCreateField);
     } catch (error) {
       console.error("[StoryboardFieldSettings] 创建字段失败:", error);
-      toast.error("字段创建失败");
+      toast.error(t("fieldCreateFailed"));
     } finally {
       setCreating(false);
     }
@@ -378,14 +377,14 @@ export function StoryboardFieldSettingsPanel({
     const nextColumns = reorderFields(localColumns, draggingFieldId, targetId);
     setDraggingFieldId(null);
     setLocalColumns(nextColumns);
-    setColumns(nextColumns);
+    dispatch(setColumns(nextColumns));
 
     try {
       await persistColumnsList(nextColumns);
-      toast.success("字段顺序已更新");
+      toast.success(t("fieldOrderUpdated"));
     } catch (error) {
       console.error("[StoryboardFieldSettings] 更新字段顺序失败:", error);
-      toast.error("字段顺序更新失败");
+      toast.error(t("fieldOrderUpdateFailed"));
       void reloadColumns();
     }
   };
@@ -443,7 +442,7 @@ export function StoryboardFieldSettingsPanel({
                         <div className="flex items-center gap-3">
                           <Icon className="size-4 text-muted-foreground" />
                           <div className="text-sm font-medium text-white">
-                            {field.columnName ?? "未命名字段"}
+                            {field.columnName ?? t("unnamedField")}
                           </div>
                         </div>
                         <button
@@ -456,7 +455,7 @@ export function StoryboardFieldSettingsPanel({
                       </div>
 
                       <div className="space-y-2">
-                        <div className="text-xs text-muted-foreground">字段名称</div>
+                        <div className="text-xs text-muted-foreground">{t("fieldName")}</div>
                         <Input
                           value={editingField.name}
                           onChange={(event) =>
@@ -466,7 +465,7 @@ export function StoryboardFieldSettingsPanel({
                       </div>
 
                       <div className="space-y-2">
-                        <div className="text-xs text-muted-foreground">字段类型</div>
+                        <div className="text-xs text-muted-foreground">{t("fieldType")}</div>
                         <div className="flex h-9 items-center gap-2 rounded-lg bg-white/5 px-3 text-sm text-white">
                           <Icon className="size-4 text-muted-foreground" />
                           {getFieldTypeLabel(String(field.columnType ?? field.resolvedType ?? ""))}
@@ -477,7 +476,7 @@ export function StoryboardFieldSettingsPanel({
                         String(field.columnType ?? field.resolvedType ?? "").toUpperCase()
                       ) ? (
                         <div className="space-y-2">
-                          <div className="text-xs text-muted-foreground">选项内容</div>
+                          <div className="text-xs text-muted-foreground">{t("optionContent")}</div>
                           <div className="space-y-2">
                             {editingField.options.map((option, index) => (
                               <div key={`${fieldId}-option-${index}`} className="flex gap-2">
@@ -526,7 +525,7 @@ export function StoryboardFieldSettingsPanel({
                             }
                           >
                             <IconPlus className="size-3.5" />
-                            添加选项
+                            {t("addOption")}
                           </Button>
                         </div>
                       ) : null}
@@ -536,7 +535,7 @@ export function StoryboardFieldSettingsPanel({
                       ) ? (
                         <div className="space-y-2">
                           <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            镜头引用字段
+                            {t("shotReferenceField")}
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -544,9 +543,7 @@ export function StoryboardFieldSettingsPanel({
                                     <IconQuestionMark className="size-3.5" />
                                   </span>
                                 </TooltipTrigger>
-                                <TooltipContent>
-                                  图片/视频生成时会按这些字段拼接默认提示词。
-                                </TooltipContent>
+                                <TooltipContent>{t("shotReferenceFieldTooltip")}</TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
                           </div>
@@ -599,13 +596,15 @@ export function StoryboardFieldSettingsPanel({
                               );
                             }}
                           >
-                            <NativeSelectOption value="">添加引用字段</NativeSelectOption>
+                            <NativeSelectOption value="">
+                              {t("addReferenceField")}
+                            </NativeSelectOption>
                             {availableEditReferenceColumns.map((column) => (
                               <NativeSelectOption
                                 key={`edit-ref-${column.id}`}
                                 value={String(column.id ?? "")}
                               >
-                                {column.columnName ?? "未命名字段"}
+                                {column.columnName ?? t("unnamedField")}
                               </NativeSelectOption>
                             ))}
                           </NativeSelect>
@@ -644,7 +643,7 @@ export function StoryboardFieldSettingsPanel({
                       >
                         <Icon className="size-4 text-muted-foreground" />
                         <span className="text-sm text-white">
-                          {field.columnName ?? "未命名字段"}
+                          {field.columnName ?? t("unnamedField")}
                         </span>
                       </button>
 
@@ -679,18 +678,18 @@ export function StoryboardFieldSettingsPanel({
 
             {showCreateField ? (
               <div className="rounded-xl border border-border bg-[#1A1A1A] p-4">
-                <div className="mb-4 text-sm font-medium text-white">新增字段</div>
+                <div className="mb-4 text-sm font-medium text-white">{t("newField")}</div>
                 <div className="space-y-4">
                   <Input
                     value={createField.name}
                     onChange={(event) =>
                       setCreateField((current) => ({ ...current, name: event.target.value }))
                     }
-                    placeholder="字段名称"
+                    placeholder={t("fieldNamePlaceholder")}
                   />
 
                   <div className="space-y-2">
-                    <div className="text-xs text-muted-foreground">字段类型</div>
+                    <div className="text-xs text-muted-foreground">{t("fieldType")}</div>
                     <NativeSelect
                       value={createField.type}
                       onChange={(event) =>
@@ -713,7 +712,7 @@ export function StoryboardFieldSettingsPanel({
 
                   {createField.type === "SINGLE_OPTION" ? (
                     <div className="space-y-2">
-                      <div className="text-xs text-muted-foreground">选项内容</div>
+                      <div className="text-xs text-muted-foreground">{t("optionContent")}</div>
                       {createField.options.map((option, index) => (
                         <div key={`create-option-${index}`} className="flex gap-2">
                           <Input
@@ -757,7 +756,7 @@ export function StoryboardFieldSettingsPanel({
                         }
                       >
                         <IconPlus className="size-3.5" />
-                        添加选项
+                        {t("addOption")}
                       </Button>
                     </div>
                   ) : null}
@@ -765,7 +764,7 @@ export function StoryboardFieldSettingsPanel({
                   {["IMAGE", "VIDEO"].includes(createField.type) ? (
                     <div className="space-y-2">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        镜头引用字段
+                        {t("shotReferenceField")}
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -773,9 +772,7 @@ export function StoryboardFieldSettingsPanel({
                                 <IconQuestionMark className="size-3.5" />
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent>
-                              图片/视频生成时会按这些字段拼接默认提示词。
-                            </TooltipContent>
+                            <TooltipContent>{t("shotReferenceFieldTooltip")}</TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                       </div>
@@ -828,13 +825,13 @@ export function StoryboardFieldSettingsPanel({
                           );
                         }}
                       >
-                        <NativeSelectOption value="">添加引用字段</NativeSelectOption>
+                        <NativeSelectOption value="">{t("addReferenceField")}</NativeSelectOption>
                         {availableCreateReferenceColumns.map((column) => (
                           <NativeSelectOption
                             key={`create-ref-option-${column.id}`}
                             value={String(column.id ?? "")}
                           >
-                            {column.columnName ?? "未命名字段"}
+                            {column.columnName ?? t("unnamedField")}
                           </NativeSelectOption>
                         ))}
                       </NativeSelect>
@@ -853,7 +850,7 @@ export function StoryboardFieldSettingsPanel({
                       {tc("cancel")}
                     </Button>
                     <Button onClick={() => void handleCreateField()} disabled={creating}>
-                      {creating ? "创建中..." : tc("confirm")}
+                      {creating ? t("creatingField") : tc("confirm")}
                     </Button>
                   </div>
                 </div>
@@ -868,7 +865,7 @@ export function StoryboardFieldSettingsPanel({
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-transparent px-4 py-3 text-sm text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-primary"
               >
                 <IconPlus className="size-4" />
-                Add Field
+                {t("addField")}
               </button>
             )}
           </div>

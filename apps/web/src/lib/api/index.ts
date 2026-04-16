@@ -5,7 +5,7 @@
  * - Java backend: backendApi.post("/api/user/...", { data })
  * - Nest.js backend: backendApi.post("/aurora/api/...", { data })
  *
- * Both go through Next.js rewrites for same-origin proxy.
+ * Both go through Vite / TanStack Start proxy for same-origin requests.
  */
 
 export { api as backendApi, ApiRequestError } from "./api-client";

@@ -1,8 +1,6 @@
-"use client";
-
-import { useMemo, useState } from "react";
-import { IconLoader2, IconPlus, IconTrash } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { IconLoader2, IconPlus, IconRefresh, IconTrash } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +23,7 @@ import { store } from "@/src/store";
 import {
   addEpisodeToStore,
   setActiveEpisodeId,
+  setEpisodes,
   removeEpisodeFromStore,
   selectCurrentInstance,
   type Episode,
@@ -52,6 +51,50 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
   const [deletingEpisode, setDeletingEpisode] = useState<Episode | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const dispatch = useAppDispatch();
+
+  // Silent refresh when panel opens (if data exists)
+  const refreshEpisodes = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const data = await backendApi.post<{ list?: Episode[] }>("/api/user/world/list/episode", {
+        data: { productId: projectId, page: 1, pageSize: 999 },
+      });
+      if (!data?.list) return;
+
+      const list = data.list;
+      store.dispatch(setEpisodes(list));
+
+      // Fix sort values: any zero, duplicates, or out-of-order
+      const sorts = list.map((ep) => ep.sort ?? 0);
+      const hasZero = sorts.some((s) => s === 0);
+      const hasDuplicates = new Set(sorts).size !== sorts.length;
+      if (list.length > 1 && (hasZero || hasDuplicates)) {
+        const SORT_GAP = 1024;
+        const datas = list.map((ep, i) => ({
+          id: String(ep.id),
+          title: String(ep.title ?? ""),
+          sort: (i + 1) * SORT_GAP,
+          projectId,
+        }));
+        await backendApi
+          .post("/api/user/world/batch/updateOrAdd/episode", {
+            data: { datas },
+          })
+          .catch(() => {});
+        store.dispatch(setEpisodes(list.map((ep, i) => ({ ...ep, sort: (i + 1) * SORT_GAP }))));
+      }
+    } catch {
+      // silent fail
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (episodes.length > 0) {
+      void refreshEpisodes();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const currentEpisode = useMemo(
     () => episodes.find((episode) => String(episode.id) === String(activeEpisodeId)),
     [activeEpisodeId, episodes]
@@ -59,8 +102,38 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
   const totalDuration = useMemo(() => getDurationFromRows(rows), [rows]);
   const totalShots = rows.length;
 
+  const handleReorder = useCallback(
+    async (reordered: Episode[]) => {
+      if (!projectId) return;
+      // Optimistic update
+      store.dispatch(setEpisodes(reordered));
+      // Persist with new sort values
+      const SORT_GAP = 1024;
+      const datas = reordered.map((ep, i) => ({
+        id: String(ep.id),
+        title: String(ep.title ?? ""),
+        sort: (i + 1) * SORT_GAP,
+        projectId,
+      }));
+      try {
+        await backendApi.post("/api/user/world/batch/updateOrAdd/episode", {
+          data: { datas },
+        });
+      } catch (error) {
+        console.error("[EpisodesPanel] reorder failed:", error);
+        toast.error(tc("saveFailed"));
+        void refreshEpisodes();
+      }
+    },
+    [projectId, refreshEpisodes, tc]
+  );
+
   const handleCreated = (episodeId: string, title?: string) => {
-    store.dispatch(addEpisodeToStore({ id: episodeId, title: title ?? "" } as Episode));
+    // Compute sort for the new episode: after the last one
+    const maxSort = episodes.reduce((max, ep) => Math.max(max, ep.sort ?? 0), 0);
+    store.dispatch(
+      addEpisodeToStore({ id: episodeId, title: title ?? "", sort: maxSort + 1024 } as Episode)
+    );
     store.dispatch(setActiveEpisodeId(episodeId));
   };
 
@@ -77,7 +150,7 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
 
       if (String(activeEpisodeId) === episodeId) {
         const remaining = episodes.filter((ep) => String(ep.id) !== episodeId);
-        if (remaining[0]?.id) setActiveEpisodeId(String(remaining[0].id));
+        if (remaining[0]?.id) store.dispatch(setActiveEpisodeId(String(remaining[0].id)));
       }
 
       setDeletingEpisode(null);
@@ -95,8 +168,18 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
         title={t("title")}
         onClose={onClose}
         loading={isLoading}
+        actions={
+          <button
+            type="button"
+            onClick={() => void refreshEpisodes()}
+            className="flex size-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title={tc("refresh")}
+          >
+            <IconRefresh className="size-3.5" />
+          </button>
+        }
         footer={
-          <Button className="w-full" onClick={() => setCreateOpen(true)}>
+          <Button className="w-full" size="lg" onClick={() => setCreateOpen(true)}>
             <IconPlus className="size-3.5" />
             {t("addEpisode")}
           </Button>
@@ -105,9 +188,10 @@ export function EpisodesPanel({ onClose }: { onClose: () => void }) {
         <EpisodeList
           episodes={episodes}
           activeEpisodeId={activeEpisodeId}
-          onSelect={(id) => setActiveEpisodeId(id)}
+          onSelect={(id) => store.dispatch(setActiveEpisodeId(id))}
           onEdit={(ep) => setEditingEpisode(ep)}
           onDelete={(ep) => setDeletingEpisode(ep)}
+          onReorder={handleReorder}
         />
       </PanelLayout>
 

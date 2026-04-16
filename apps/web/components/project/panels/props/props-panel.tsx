@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconPlus } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -34,7 +32,6 @@ export function PropsPanel({ onClose }: { onClose: () => void }) {
   const [editProp, setEditProp] = useState<PropPanelItem | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [assetProps, setAssetProps] = useState<PropPanelItem[]>([]);
   const pageRef = useRef(1);
   const pendingFocusRef = useRef<AssetPanelFocusDetail | null>(null);
 
@@ -42,14 +39,10 @@ export function PropsPanel({ onClose }: { onClose: () => void }) {
     () =>
       mergeProps(
         props.map((item, index) => normalizePropItem(item, index, "world")),
-        assetProps
+        []
       ),
-    [assetProps, props]
+    [props]
   );
-
-  const loadAssetProps = useCallback(async () => {
-    setAssetProps([]);
-  }, []);
 
   const loadProps = useCallback(
     async (options?: { reset?: boolean; silent?: boolean }) => {
@@ -80,9 +73,6 @@ export function PropsPanel({ onClose }: { onClose: () => void }) {
         pageRef.current = targetPage;
         const totalCount = Number(data?.totalCount ?? 0);
         setHasMore(totalCount > 0 ? targetPage * 20 < totalCount : nextList.length === 20);
-        if (reset) {
-          await loadAssetProps();
-        }
       } catch (err) {
         console.error("[PropsPanel] 加载失败:", err);
       } finally {
@@ -92,7 +82,7 @@ export function PropsPanel({ onClose }: { onClose: () => void }) {
         }
       }
     },
-    [loadAssetProps, worldId]
+    [worldId]
   );
 
   useEffect(() => {

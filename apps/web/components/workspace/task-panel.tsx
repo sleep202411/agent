@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo } from "react";
 import {
   IconLoader2,
@@ -10,7 +8,9 @@ import {
   IconPhoto,
   IconVideo,
   IconMicrophone,
+  IconWand,
 } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/src/store";
 import type { Task, TaskStatus, TaskType } from "@/src/store/slices/taskSlice";
@@ -20,33 +20,35 @@ import { useTaskFetch } from "@/src/hooks/use-task-subscription";
 
 const STATUS_CONFIG: Record<
   TaskStatus,
-  { icon: React.ComponentType<{ className?: string }>; label: string; color: string }
+  { icon: React.ComponentType<{ className?: string }>; labelKey: string; color: string }
 > = {
-  pending: { icon: IconClock, label: "排队中", color: "text-muted-foreground" },
-  running: { icon: IconLoader2, label: "执行中", color: "text-blue-400" },
-  completed: { icon: IconCircleCheck, label: "已完成", color: "text-green-400" },
-  failed: { icon: IconAlertTriangle, label: "失败", color: "text-red-400" },
-  cancelled: { icon: IconX, label: "已取消", color: "text-muted-foreground" },
+  pending: { icon: IconClock, labelKey: "taskPending", color: "text-muted-foreground" },
+  running: { icon: IconLoader2, labelKey: "taskRunning", color: "text-blue-400" },
+  completed: { icon: IconCircleCheck, labelKey: "taskCompleted", color: "text-green-400" },
+  failed: { icon: IconAlertTriangle, labelKey: "taskFailed", color: "text-red-400" },
+  cancelled: { icon: IconX, labelKey: "taskCancelled", color: "text-muted-foreground" },
 };
 
 const TYPE_CONFIG: Record<
   TaskType,
-  { icon: React.ComponentType<{ className?: string }>; label: string }
+  { icon: React.ComponentType<{ className?: string }>; labelKey: string }
 > = {
-  image: { icon: IconPhoto, label: "生成图片" },
-  video: { icon: IconVideo, label: "生成视频" },
-  audio: { icon: IconMicrophone, label: "生成音频" },
+  image: { icon: IconPhoto, labelKey: "taskImage" },
+  video: { icon: IconVideo, labelKey: "taskVideo" },
+  audio: { icon: IconMicrophone, labelKey: "taskAudio" },
+  fusion: { icon: IconWand, labelKey: "taskFusion" },
 };
 
 // ─── Task Item ─────────────────────────────────────────
 
 function TaskItem({ task, onSelect }: { task: Task; onSelect?: (task: Task) => void }) {
+  const t = useTranslations("workspace");
   const status = STATUS_CONFIG[task.status];
   const type = TYPE_CONFIG[task.type];
   const StatusIcon = status.icon;
   const TypeIcon = type.icon;
   const isRunning = task.status === "running";
-  const timeAgo = formatTimeAgo(task.createdAt);
+  const timeAgo = formatTimeAgo(task.createdAt, t);
 
   return (
     <div
@@ -63,13 +65,13 @@ function TaskItem({ task, onSelect }: { task: Task; onSelect?: (task: Task) => v
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{type.label}</span>
+          <span className="truncate text-sm font-medium">{t(type.labelKey)}</span>
           {typeof task.input?.title === "string" && (
             <span className="truncate text-xs text-muted-foreground">{task.input.title}</span>
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className={cn("text-xs", status.color)}>{status.label}</span>
+          <span className={cn("text-xs", status.color)}>{t(status.labelKey)}</span>
           <span className="text-xs text-muted-foreground">{timeAgo}</span>
         </div>
       </div>
@@ -88,6 +90,7 @@ interface TaskPanelProps {
 }
 
 export function TaskPanel({ userId, className, onSelectTask }: TaskPanelProps) {
+  const t = useTranslations("workspace");
   useTaskFetch(userId);
 
   const tasks = useAppSelector((s) => s.task.tasks);
@@ -110,7 +113,9 @@ export function TaskPanel({ userId, className, onSelectTask }: TaskPanelProps) {
     <div className={cn("space-y-3", className)}>
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">
-          {activeTasks.length > 0 ? `进行中的任务 (${activeTasks.length})` : "最近任务"}
+          {activeTasks.length > 0
+            ? t("activeTasks", { count: activeTasks.length })
+            : t("recentTasks")}
         </h2>
       </div>
 
@@ -125,10 +130,10 @@ export function TaskPanel({ userId, className, onSelectTask }: TaskPanelProps) {
 
 // ─── Helpers ───────────────────────────────────────────
 
-function formatTimeAgo(timestamp: number): string {
+function formatTimeAgo(timestamp: number, t: ReturnType<typeof useTranslations>): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return "刚刚";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
-  return `${Math.floor(seconds / 86400)} 天前`;
+  if (seconds < 60) return t("justNow");
+  if (seconds < 3600) return t("minutesAgo", { count: Math.floor(seconds / 60) });
+  if (seconds < 86400) return t("hoursAgo", { count: Math.floor(seconds / 3600) });
+  return t("daysAgo", { count: Math.floor(seconds / 86400) });
 }

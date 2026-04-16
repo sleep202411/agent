@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect } from "react";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
@@ -9,8 +7,8 @@ import {
   setAiModelCacheLoading,
 } from "@/src/store/slices/aiModelCacheSlice";
 import { backendApi } from "@/src/lib/api";
-import { normalizeAiModel, type RawAiModel } from "@/src/lib/ai-model-schema";
-import { ALL_AI_MODEL_PATHS } from "@/src/lib/ai-model-paths";
+import { normalizeAiModel, type RawAiModel } from "@/components/ui/schema-field/schema";
+import { ALL_AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 
 const idle =
   typeof requestIdleCallback === "function"
@@ -41,7 +39,7 @@ export function useAiModelsPreload() {
           );
           const rawModels = (raw ?? []) as RawAiModel[];
           store.dispatch(setAiRawModelCache({ path, models: rawModels }));
-          const models = rawModels.map(normalizeAiModel);
+          const models = rawModels.map((m) => normalizeAiModel(m));
           store.dispatch(setAiModelCache({ path, models }));
         } catch (err) {
           console.error(`[useAiModelsPreload] Failed to load models for ${path}:`, err);

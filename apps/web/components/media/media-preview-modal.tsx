@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -10,7 +8,7 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AudioPlayer } from "@/components/media/audio-player";
@@ -30,14 +28,15 @@ interface MediaPreviewModalProps {
   src?: string | null;
   name?: string | null;
   link?: string | null;
+  prompt?: string | null;
   createdAt?: string | null;
   details?: MediaPreviewDetail[];
   onDownload?: () => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
 }
 
-function formatDateTime(value?: string | null) {
-  if (!value) return "未知";
+function formatDateTime(value?: string | null, fallback = "Unknown") {
+  if (!value) return fallback;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString();
@@ -55,6 +54,7 @@ export function MediaPreviewModal({
   src,
   name,
   link,
+  prompt,
   createdAt,
   details = [],
   onDownload,
@@ -77,6 +77,7 @@ export function MediaPreviewModal({
     const originalOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.stopImmediatePropagation();
         onOpenChange(false);
       }
     };
@@ -106,9 +107,22 @@ export function MediaPreviewModal({
     try {
       await navigator.clipboard.writeText(copyTarget);
       toast.success(tc("copySuccess"));
-    } catch (error) {
-      console.error("[MediaPreviewModal] 复制链接失败:", error);
-      toast.error(tc("copyFailed"));
+    } catch {
+      // Clipboard API blocked (iframe / permissions policy) — try execCommand fallback
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = copyTarget;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+        toast.success(tc("copySuccess"));
+      } catch {
+        // Both methods blocked — prompt user to copy manually
+        window.prompt(tc("manualCopyHint"), copyTarget);
+      }
     }
   };
 
@@ -153,11 +167,11 @@ export function MediaPreviewModal({
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[140] bg-background/58 backdrop-blur-2xl">
+    <div className="pointer-events-auto fixed inset-0 z-140 bg-background/58 backdrop-blur-2xl flex items-center justify-center">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_color-mix(in_oklab,var(--foreground)_10%,transparent),_transparent_38%),radial-gradient(circle_at_bottom,_color-mix(in_oklab,var(--primary)_10%,transparent),_transparent_34%)]" />
       <div className="absolute inset-0" onClick={() => onOpenChange(false)} aria-hidden="true" />
 
-      <div className="relative mx-auto flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-[1800px] gap-4 px-2 py-4">
+      <div className="relative mx-auto flex h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-450 gap-4 p-4">
         <div
           className="flex min-h-0 min-w-0 flex-1 flex-col px-3 py-2"
           onClick={(event) => event.stopPropagation()}
@@ -184,7 +198,7 @@ export function MediaPreviewModal({
                 </div>
               )
             ) : (
-              <div className="text-sm text-muted-foreground">当前素材暂不支持预览</div>
+              <div className="text-sm text-muted-foreground">{t("previewNotSupported")}</div>
             )}
           </div>
 
@@ -210,7 +224,7 @@ export function MediaPreviewModal({
                 disabled={!copyTarget}
               >
                 <IconCopy className="size-4" />
-                复制链接
+                {t("copyLink")}
               </Button>
               {onDelete ? (
                 <Button
@@ -250,9 +264,10 @@ export function MediaPreviewModal({
           </div>
 
           <div className="mt-6 flex-1 space-y-5 overflow-auto">
-            <InfoBlock label="名称" value={resolvedName} />
+            <InfoBlock label={t("labelName")} value={resolvedName} fallback={t("notAvailable")} />
             <InfoBlock
-              label="链接"
+              label={t("labelLink")}
+              fallback={t("notAvailable")}
               value={
                 copyTarget ? (
                   <div className="flex items-start gap-2">
@@ -265,14 +280,31 @@ export function MediaPreviewModal({
                       <IconExternalLink className="size-4" />
                     </button>
                   </div>
-                ) : (
-                  "暂无"
-                )
+                ) : undefined
               }
             />
-            <InfoBlock label="日期" value={formatDateTime(createdAt)} />
+            <InfoBlock
+              label={t("labelDate")}
+              value={formatDateTime(createdAt, t("unknown"))}
+              fallback={t("notAvailable")}
+            />
+            {prompt ? (
+              <InfoBlock
+                label={t("labelPrompt")}
+                value={
+                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                    {prompt}
+                  </p>
+                }
+              />
+            ) : null}
             {details.map((detail) => (
-              <InfoBlock key={detail.label} label={detail.label} value={detail.value} />
+              <InfoBlock
+                key={detail.label}
+                label={detail.label}
+                value={detail.value}
+                fallback={t("notAvailable")}
+              />
             ))}
           </div>
         </aside>
@@ -292,12 +324,20 @@ export function MediaPreviewModal({
   );
 }
 
-function InfoBlock({ label, value }: { label: string; value?: React.ReactNode }) {
+function InfoBlock({
+  label,
+  value,
+  fallback = "N/A",
+}: {
+  label: string;
+  value?: React.ReactNode;
+  fallback?: string;
+}) {
   return (
     <div className="space-y-2">
       <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
       <div className="rounded-2xl border border-border bg-muted/20 px-3 py-3 text-sm text-foreground">
-        {value ?? "暂无"}
+        {value ?? fallback}
       </div>
     </div>
   );

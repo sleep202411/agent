@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";

@@ -1,6 +1,5 @@
-"use client";
-
 import { useMemo } from "react";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconArrowUp,
   IconChevronDown,
@@ -22,8 +21,9 @@ import {
 import type { RawAiModel } from "@/src/types/workspace";
 import type { MentionItem } from "@/components/storyboard/editor/mention-node";
 import type { Asset } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
-const OSS_BASE = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+const OSS_BASE = env.OSS_BASE_URL;
 
 function getRoleImagePath(role?: Asset) {
   const roleImgPath = Array.isArray(role?.roleImgPath)
@@ -82,6 +82,7 @@ export function AudioPromptInput({
   onSubmit,
   characters,
 }: AudioPromptInputProps) {
+  const t = useTranslations("storyboard");
   const mentionItems = useMemo<MentionItem[]>(
     () =>
       characters
@@ -102,7 +103,7 @@ export function AudioPromptInput({
       <RichMentionEditor
         value={prompt}
         onChange={onPromptChange}
-        placeholder="请输入需要配音的台词文本，支持 @角色"
+        placeholder={t("voicePromptPlaceholder")}
         mentionItems={mentionItems}
         mentionTypes={["character"]}
         showAvatar={false}
@@ -113,9 +114,7 @@ export function AudioPromptInput({
         submitMode="mod"
       />
 
-      <div className="px-2 pb-2 text-[11px] text-[#8F8F92]">
-        未指定时，自动匹配提示词中角色的配音设置
-      </div>
+      <div className="px-2 pb-2 text-[11px] text-[#8F8F92]">{t("autoMatchVoiceHint")}</div>
 
       <div className="flex items-end justify-between gap-4 pt-2">
         <div className="flex items-center gap-3">
@@ -128,7 +127,7 @@ export function AudioPromptInput({
               )}
             >
               <IconWand className="size-4 text-white/75" />
-              <SelectValue placeholder={loading ? "加载模型中" : "选择模型"} />
+              <SelectValue placeholder={loading ? t("loadingModels") : t("selectModel")} />
             </SelectTrigger>
             <SelectContent className="border-white/10 bg-[#2F2F35] text-white">
               {voiceModels.map((item) => (
@@ -150,7 +149,9 @@ export function AudioPromptInput({
           >
             <span className="pointer-events-none absolute inset-0 rounded-lg border border-[#E52227]/35 opacity-70" />
             <IconMicrophone className="size-4 text-white/75" />
-            <span className="flex-1 truncate text-left">{selectedVoiceName || "选择语音"}</span>
+            <span className="flex-1 truncate text-left">
+              {selectedVoiceName || t("selectVoice")}
+            </span>
             {hasVoice && onClearVoice ? (
               <span
                 onClick={(e) => {
