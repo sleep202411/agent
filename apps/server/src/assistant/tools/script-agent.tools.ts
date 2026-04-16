@@ -8,7 +8,7 @@ import type { AiService } from '../../ai/ai.service';
 import type { ScriptAgentService } from '../../pipeline/script-agent.service';
 import { extractTextFromUrl } from '../../pipeline/engine/file-extract';
 import { withRetry, runWithConcurrency } from '../../pipeline/engine/retry';
-import { loadPipelinePrompt } from '../prompts';
+import { loadPipelinePrompt, loadSkill } from '../prompts';
 import type { AnalyzeResult } from '../../pipeline/pipelines/novel-to-storyboard/schemas';
 import { analyzeStep } from '../../pipeline/pipelines/novel-to-storyboard/analyze.step';
 
@@ -882,6 +882,10 @@ export function createScriptAgentTools(
         const STORYBOARD_CHUNK_SIZE = 8000;
         const STORYBOARD_CHUNK_OVERLAP = 500;
 
+        const useSeedance = ctx.context.videoPromptStyle === 'seedance';
+        const videoPromptStyleSkill = useSeedance
+          ? loadSkill('seedance_video_prompt')
+          : loadSkill('video_prompt');
         const storyboardSystemPrompt = loadPipelinePrompt(
           'storyboard-generation',
           {
@@ -892,6 +896,9 @@ export function createScriptAgentTools(
             shotSizeOptions,
             perspectiveOptions,
             movementOptions,
+            videoPromptStyle: videoPromptStyleSkill
+              ? `\n## Video Prompt Style Reference\n\n${videoPromptStyleSkill}`
+              : '',
           },
         );
 

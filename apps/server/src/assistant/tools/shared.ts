@@ -78,11 +78,16 @@ export const storyboardProposalSchema = z.object({
     .array(z.string())
     .min(1)
     .describe(
-      '表头，必须使用以下固定字段名（按需选用）：description（画面描述）、video_prompt（视频提示词）、style_planting（风格）、movement（运镜）、dialogue（台词）、shot_size（景别）、perspective（视角）、duration（时长）',
+      '表头，必须使用以下固定字段名（按需选用）：description（画面描述）、video_prompt（视频提示词，Seedance格式）、style_planting（风格）、movement（运镜）、dialogue（台词）、shot_size（景别）、perspective（视角）、duration（时长）',
     ),
   rows: z
-    .array(z.array(z.string()))
-    .describe('分镜表数据行，每行的列顺序必须与 headers 一致'),
+    .array(z.array(z.coerce.string()))
+    .describe(
+      '分镜表数据行，每行的列顺序必须与 headers 一致。' +
+        '其中 video_prompt 列必须使用 Seedance 多镜头格式，示例：' +
+        '"镜号1（8秒）\\n\\n第一镜头：（0-3秒）\\n固定镜头，近景侧拍45度角，林墨缓缓点头，目光中满是赞叹。\\n\\n第二镜头：（3-8秒）\\n跟随镜头，中景正视，苏婉轻盈步入画面，将茶盏放在小几上。" ' +
+        '每个镜号5-15秒，子镜头时间连续，必须包含运镜+景别+动作。禁止使用普通描述性句子。',
+    ),
 });
 
 export const mutationResultSchema = z.object({

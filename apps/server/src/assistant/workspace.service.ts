@@ -38,6 +38,7 @@ export type WorkspaceContext = {
   activeTab?: string;
   activePanel?: string;
   locale?: string;
+  videoPromptStyle?: 'default' | 'seedance';
 };
 
 @Injectable()

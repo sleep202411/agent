@@ -125,7 +125,11 @@ export function createProposalTools(ctx: AssistantToolContext) {
       description:
         '提议一版分镜表草稿或局部 patch，用户确认后自动保存到当前剧集。' +
         'headers 必须使用系统上下文中 [分镜列定义] 列出的 presetColumnKey。' +
-        '对于 SINGLE_OPTION 类型的列，值必须从 options 中选择。',
+        '对于 SINGLE_OPTION 类型的列，值必须从 options 中选择。' +
+        '【重要】video_prompt 列必须使用 Seedance 多镜头格式：' +
+        '以"镜号N（X秒）"开头，包含多个子镜头"第一镜头：（0-A秒）运镜方式，景别+角度，动作描述"。' +
+        '禁止使用普通描述性句子。示例：' +
+        '"镜号1（8秒）\\n\\n第一镜头：（0-3秒）\\n固定镜头，近景侧拍45度角，角色缓缓点头，目光中满是赞叹。\\n\\n第二镜头：（3-8秒）\\n跟随镜头，中景正视，角色轻盈步入画面，将茶盏放在小几上。"',
       inputSchema: storyboardProposalSchema,
       outputSchema: storyboardProposalDecisionSchema,
       execute: async (

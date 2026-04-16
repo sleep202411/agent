@@ -1,11 +1,16 @@
 import { useRef, useState } from "react";
-import { IconChevronDown, IconLoader2, IconPlus, IconSend } from "@tabler/icons-react";
+import { IconChevronDown, IconLoader2, IconMovie, IconPlus, IconSend } from "@tabler/icons-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { useAppDispatch } from "@/src/store";
-import { setAgentType, addAttachments, sendUserMessage } from "@/src/store/slices/assistantSlice";
+import { useAppDispatch, useAppSelector } from "@/src/store";
+import {
+  setAgentType,
+  setVideoPromptStyle,
+  addAttachments,
+  sendUserMessage,
+} from "@/src/store/slices/assistantSlice";
 import { AI_AGENTS, MAX_ATTACHMENTS } from "./constants";
 
 interface ChatToolbarProps {
@@ -33,6 +38,9 @@ export function ChatToolbar({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const currentAgent = AI_AGENTS.find((a) => a.key === selectedAgent) ?? AI_AGENTS[0];
+  const videoPromptStyle = useAppSelector(
+    (s) => (projectId ? s.assistant.projects[projectId]?.videoPromptStyle : undefined) ?? "default"
+  );
 
   return (
     <>
@@ -101,6 +109,26 @@ export function ChatToolbar({
               ))}
             </PopoverContent>
           </Popover>
+
+          <Button
+            variant="ghost"
+            color="muted"
+            size="sm"
+            className={cn("gap-1 text-xs", videoPromptStyle === "seedance" && "text-primary")}
+            onClick={() => {
+              if (projectId) {
+                dispatch(
+                  setVideoPromptStyle({
+                    projectId,
+                    style: videoPromptStyle === "seedance" ? "default" : "seedance",
+                  })
+                );
+              }
+            }}
+          >
+            <IconMovie className="size-3.5" />
+            {videoPromptStyle === "seedance" ? "Seedance" : t("defaultStyle")}
+          </Button>
         </div>
 
         <Button

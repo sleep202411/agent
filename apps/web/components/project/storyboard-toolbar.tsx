@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { IconDownload, IconLoader2, IconPencil, IconPlus, IconUpload } from "@tabler/icons-react";
+import {
+  IconDownload,
+  IconLoader2,
+  IconPencil,
+  IconPlus,
+  IconRefresh,
+  IconUpload,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ProjectEditorDialog } from "@/components/project/project-editor-dialog";
@@ -15,6 +22,7 @@ import {
   setRows as setRowsAction,
   setDetail as setDetailAction,
   touchProjectList as touchProjectListAction,
+  touchStoryboard,
   selectCurrentInstance,
 } from "@/src/store/slices/projectSlice";
 
@@ -232,7 +240,17 @@ export function StoryboardToolbar() {
           ) : null}
         </div>
 
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            title={t("refreshStoryboard")}
+            disabled={noStoryboard || isStoryboardLoading}
+            onClick={() => dispatch(touchStoryboard())}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <IconRefresh className="size-4" />
+          </Button>
           <StoryboardFieldSettingsPanel
             storyBoardId={activeEpisodeId}
             disabled={noStoryboard || isStoryboardLoading}
