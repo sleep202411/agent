@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
-import { IconLoader2, IconPlus, IconX } from "@tabler/icons-react";
+import { IconCertificate, IconLoader2, IconPlus, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -20,6 +21,14 @@ import {
 import { useTranslations } from "@/src/i18n/i18n";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import { api } from "@/src/lib/api";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+  EmptyContent,
+} from "@/components/ui/empty";
 import {
   useMyCertifications,
   useCertificationRoles,
@@ -64,47 +73,65 @@ export function CertificationDialog({ open, onOpenChange }: CertificationDialogP
             <DialogTitle>{t("myCertifications")}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
+          <div className="py-2">
             {isLoading ? (
               <div className="flex h-20 items-center justify-center">
                 <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
               </div>
             ) : (certifications ?? []).length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">
-                {t("noCertifications")}
-              </p>
-            ) : (
-              (certifications ?? []).map((cert) => (
-                <button
-                  key={cert.id}
-                  type="button"
-                  onClick={() => {
-                    if (cert.authStatus === AUTH_STATUS.REJECTED) {
-                      setEditCert(cert);
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <IconCertificate />
+                  </EmptyMedia>
+                  <EmptyTitle>{t("noCertifications")}</EmptyTitle>
+                  <EmptyDescription>{t("noCertificationsDesc")}</EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button
+                    onClick={() => {
+                      setEditCert(null);
                       setAddOpen(true);
-                    }
+                    }}
+                  >
+                    <IconPlus className="size-4" />
+                    {t("addCertification")}
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            ) : (
+              <div className="space-y-3">
+                {(certifications ?? []).map((cert) => (
+                  <button
+                    key={cert.id}
+                    type="button"
+                    onClick={() => {
+                      if (cert.authStatus === AUTH_STATUS.REJECTED) {
+                        setEditCert(cert);
+                        setAddOpen(true);
+                      }
+                    }}
+                    className="flex w-full items-center justify-between rounded-lg border border-border px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                  >
+                    <span className="text-sm font-medium">
+                      {certRoles?.[String(cert.authRoleId)] ?? t("unknownRole")}
+                    </span>
+                    {statusLabel(cert.authStatus)}
+                  </button>
+                ))}
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    setEditCert(null);
+                    setAddOpen(true);
                   }}
-                  className="flex w-full items-center justify-between rounded-lg border border-border px-4 py-3 text-left transition-colors hover:bg-muted/50"
                 >
-                  <span className="text-sm font-medium">
-                    {certRoles?.[String(cert.authRoleId)] ?? t("unknownRole")}
-                  </span>
-                  {statusLabel(cert.authStatus)}
-                </button>
-              ))
+                  <IconPlus className="size-4" />
+                  {t("addCertification")}
+                </Button>
+              </div>
             )}
           </div>
-
-          <Button
-            className="w-full"
-            onClick={() => {
-              setEditCert(null);
-              setAddOpen(true);
-            }}
-          >
-            <IconPlus className="size-4" />
-            {t("addCertification")}
-          </Button>
         </DialogContent>
       </Dialog>
 
@@ -200,7 +227,7 @@ function CertificationFormDialog({
           <DialogTitle>{t("certInfo")}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <DialogBody>
           <Field>
             <FieldLabel>{t("certRole")}</FieldLabel>
             <Select value={roleId} onValueChange={setRoleId}>
@@ -260,7 +287,7 @@ function CertificationFormDialog({
               />
             </div>
           </Field>
-        </div>
+        </DialogBody>
 
         <DialogFooter>
           <Button

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { IconEdit, IconArrowDown, IconLoader2 } from "@tabler/icons-react";
 import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useUserInfo } from "@/src/hooks/use-user";
 import {
@@ -8,10 +9,10 @@ import {
   useMyJoinedProjects,
   useMyPersonalWorks,
 } from "@/src/hooks/use-my-projects";
+import { updateProject, type Project } from "@/src/services/project";
 import { env } from "@/src/env";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
-import type { Project } from "@/src/services/project";
 
 export default function ProfilePage() {
   const t = useTranslations("profile");
@@ -136,17 +137,29 @@ function PersonalWorksTab() {
 
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-      {works.map((work, i) => {
-        const w = work as Record<string, unknown>;
-        const title = String(w.title ?? w.name ?? "");
-        const cover = String(w.coverImg ?? w.bannerLink ?? w.thumbnail ?? "");
-        const coverUrl =
-          cover && !cover.startsWith("http") ? `${env.BANNER_BASE_URL}/${cover}` : cover;
+      {works.map((work) => {
+        const title = work.title || work.introduction || "";
+        const videoPath = work.videoLink || "";
+        const bannerPath = work.videoBanner || "";
+        const coverUrl = bannerPath
+          ? bannerPath.startsWith("http")
+            ? bannerPath
+            : `${env.OSS_BASE_URL}/${bannerPath}`
+          : videoPath
+            ? `${env.OSS_BASE_URL}/${videoPath}?x-oss-process=video/snapshot,t_0,m_fast`
+            : "";
+        const isReviewing = work.review === 0;
+
         return (
           <div
-            key={String(w.id ?? i)}
-            className="group overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
+            key={work.id}
+            className="group relative overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
           >
+            {isReviewing && (
+              <div className="absolute right-2 top-2 z-10 rounded-full bg-yellow-500/80 px-2 py-0.5 text-[10px] font-medium text-white">
+                {t("reviewing")}
+              </div>
+            )}
             <div className="aspect-video overflow-hidden bg-muted">
               {coverUrl ? (
                 <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
@@ -239,7 +252,15 @@ function ProjectCard({ project }: { project: Project }) {
           {project.projectStatus === 0 && (
             <button
               type="button"
-              onClick={(e) => e.stopPropagation()}
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  await updateProject({ id: project.id, projectStatus: 8 });
+                  toast.success(t("delistSuccess"));
+                } catch {
+                  toast.error(t("delistFailed"));
+                }
+              }}
               className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               <IconArrowDown className="size-3" />

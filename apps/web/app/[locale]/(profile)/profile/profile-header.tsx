@@ -16,6 +16,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
@@ -48,6 +58,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const [referralLink, setReferralLink] = useState("");
   const [referralDialogOpen, setReferralDialogOpen] = useState(false);
   const [certDialogOpen, setCertDialogOpen] = useState(false);
+  const [availableAlertOpen, setAvailableAlertOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -203,12 +214,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
                   <h1 className="text-2xl font-bold text-white">{displayName}</h1>
                   <button
                     type="button"
-                    onClick={() => {
-                      const next = !(info as Record<string, unknown>)?.availableForWork;
-                      doUpdateUserInfo({ availableForWork: next } as Record<string, unknown>, {
-                        onSuccess: () => toast.success(next ? t("availableOn") : t("availableOff")),
-                      });
-                    }}
+                    onClick={() => setAvailableAlertOpen(true)}
                     className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
                       (info as Record<string, unknown>)?.availableForWork
                         ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
@@ -314,6 +320,36 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
       </Dialog>
 
       <CertificationDialog open={certDialogOpen} onOpenChange={setCertDialogOpen} />
+
+      <AlertDialog open={availableAlertOpen} onOpenChange={setAvailableAlertOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {(info as Record<string, unknown>)?.availableForWork
+                ? t("availableOffTitle")
+                : t("availableOnTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {(info as Record<string, unknown>)?.availableForWork
+                ? t("availableOffDesc")
+                : t("availableOnDesc")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const next = !(info as Record<string, unknown>)?.availableForWork;
+                doUpdateUserInfo({ availableForWork: next } as Record<string, unknown>, {
+                  onSuccess: () => toast.success(next ? t("availableOn") : t("availableOff")),
+                });
+              }}
+            >
+              {t("confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
