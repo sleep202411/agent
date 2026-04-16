@@ -89,6 +89,57 @@ export const getMyPersonalWorks = (page = 1, pageSize = 10) =>
     pageSize: String(pageSize),
   });
 
+/** 创建个人作品 */
+export const createPersonalWork = (data: {
+  title: string;
+  introduction?: string;
+  tags?: number[];
+  viewStatus?: number;
+}) => api.post<{ id: number }>("/vedio/create/personal/video", { data });
+
+/** 上传个人作品视频 */
+export async function uploadPersonalVideo(id: number | string, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("id", String(id));
+
+  const response = await fetch(
+    `${typeof window !== "undefined" ? window.location.origin : ""}/vedio/upload/personal/video/backup`,
+    {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Upload failed: HTTP ${response.status}`);
+  }
+
+  const body = await response.json();
+  if (body.code !== 200 && body.code !== "SUCCESS" && !body.success) {
+    throw new Error(body.msg || body.message || "Upload failed");
+  }
+
+  return (body.data ?? body.path ?? "") as string;
+}
+
+/** 更新个人作品 */
+export const updatePersonalWork = (data: {
+  id: number | string;
+  title?: string;
+  introduction?: string;
+  viewStatus?: number;
+}) =>
+  api.postForm(
+    "/vedio/update/personal/video",
+    Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v ?? "")]))
+  );
+
+/** 获取个人作品播放链接 */
+export const getPersonalVideoLink = (id: number | string) =>
+  api.postForm<string>("/vedio/play/personal/getLink", { id: String(id) });
+
 /** 获取 IP 详情 */
 export const getProjectDetail = (projectId: number | string) =>
   api.postForm<Project>("/project/query", {

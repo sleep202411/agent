@@ -33,6 +33,7 @@ import { Route as StudioAssetsRouteImport } from "./routes/_studio.assets";
 import { Route as AuthRegisterRouteImport } from "./routes/_auth.register";
 import { Route as AuthLoginRouteImport } from "./routes/_auth.login";
 import { Route as AuthForgotPasswordRouteImport } from "./routes/_auth.forgot-password";
+import { Route as ProfileInteractiveIdRouteImport } from "./routes/profile_.interactive.$id";
 import { Route as IpsIdEditRouteImport } from "./routes/ips_.$id_.edit";
 import { Route as CrewsIdWorkspaceRouteImport } from "./routes/crews_.$id_.workspace";
 import { Route as IpsIdEpisodesEpIdEditorRouteImport } from "./routes/ips_.$id_.episodes.$epId.editor";
@@ -155,6 +156,11 @@ const AuthForgotPasswordRoute = AuthForgotPasswordRouteImport.update({
   path: "/forgot-password",
   getParentRoute: () => AuthRoute,
 } as any);
+const ProfileInteractiveIdRoute = ProfileInteractiveIdRouteImport.update({
+  id: "/profile_/interactive/$id",
+  path: "/profile/interactive/$id",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const IpsIdEditRoute = IpsIdEditRouteImport.update({
   id: "/ips_/$id_/edit",
   path: "/ips/$id/edit",
@@ -196,6 +202,7 @@ export interface FileRoutesByFullPath {
   "/ips/": typeof IpsIndexRoute;
   "/crews/$id/workspace": typeof CrewsIdWorkspaceRoute;
   "/ips/$id/edit": typeof IpsIdEditRoute;
+  "/profile/interactive/$id": typeof ProfileInteractiveIdRoute;
   "/ips/$id/episodes/$epId/editor": typeof IpsIdEpisodesEpIdEditorRoute;
 }
 export interface FileRoutesByTo {
@@ -223,6 +230,7 @@ export interface FileRoutesByTo {
   "/ips": typeof IpsIndexRoute;
   "/crews/$id/workspace": typeof CrewsIdWorkspaceRoute;
   "/ips/$id/edit": typeof IpsIdEditRoute;
+  "/profile/interactive/$id": typeof ProfileInteractiveIdRoute;
   "/ips/$id/episodes/$epId/editor": typeof IpsIdEpisodesEpIdEditorRoute;
 }
 export interface FileRoutesById {
@@ -253,6 +261,7 @@ export interface FileRoutesById {
   "/ips/": typeof IpsIndexRoute;
   "/crews_/$id_/workspace": typeof CrewsIdWorkspaceRoute;
   "/ips_/$id_/edit": typeof IpsIdEditRoute;
+  "/profile_/interactive/$id": typeof ProfileInteractiveIdRoute;
   "/ips_/$id_/episodes/$epId/editor": typeof IpsIdEpisodesEpIdEditorRoute;
 }
 export interface FileRouteTypes {
@@ -282,6 +291,7 @@ export interface FileRouteTypes {
     | "/ips/"
     | "/crews/$id/workspace"
     | "/ips/$id/edit"
+    | "/profile/interactive/$id"
     | "/ips/$id/episodes/$epId/editor";
   fileRoutesByTo: FileRoutesByTo;
   to:
@@ -309,6 +319,7 @@ export interface FileRouteTypes {
     | "/ips"
     | "/crews/$id/workspace"
     | "/ips/$id/edit"
+    | "/profile/interactive/$id"
     | "/ips/$id/episodes/$epId/editor";
   id:
     | "__root__"
@@ -338,6 +349,7 @@ export interface FileRouteTypes {
     | "/ips/"
     | "/crews_/$id_/workspace"
     | "/ips_/$id_/edit"
+    | "/profile_/interactive/$id"
     | "/ips_/$id_/episodes/$epId/editor";
   fileRoutesById: FileRoutesById;
 }
@@ -360,6 +372,7 @@ export interface RootRouteChildren {
   IpsIndexRoute: typeof IpsIndexRoute;
   CrewsIdWorkspaceRoute: typeof CrewsIdWorkspaceRoute;
   IpsIdEditRoute: typeof IpsIdEditRoute;
+  ProfileInteractiveIdRoute: typeof ProfileInteractiveIdRoute;
   IpsIdEpisodesEpIdEditorRoute: typeof IpsIdEpisodesEpIdEditorRoute;
 }
 
@@ -533,6 +546,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AuthForgotPasswordRouteImport;
       parentRoute: typeof AuthRoute;
     };
+    "/profile_/interactive/$id": {
+      id: "/profile_/interactive/$id";
+      path: "/profile/interactive/$id";
+      fullPath: "/profile/interactive/$id";
+      preLoaderRoute: typeof ProfileInteractiveIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/ips_/$id_/edit": {
       id: "/ips_/$id_/edit";
       path: "/ips/$id/edit";
@@ -608,6 +628,7 @@ const rootRouteChildren: RootRouteChildren = {
   IpsIndexRoute: IpsIndexRoute,
   CrewsIdWorkspaceRoute: CrewsIdWorkspaceRoute,
   IpsIdEditRoute: IpsIdEditRoute,
+  ProfileInteractiveIdRoute: ProfileInteractiveIdRoute,
   IpsIdEpisodesEpIdEditorRoute: IpsIdEpisodesEpIdEditorRoute,
 };
 export const routeTree = rootRouteImport
