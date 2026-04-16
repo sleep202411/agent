@@ -180,7 +180,7 @@ export function ScriptView() {
     editorProps: {
       attributes: {
         class:
-          "prose prose-invert prose-sm max-w-none min-h-[calc(100vh-300px)] px-8 py-6 focus:outline-none",
+          "prose dark:prose-invert prose-sm max-w-none min-h-[calc(100vh-300px)] px-8 py-6 text-[13px] leading-relaxed text-foreground/75 focus:outline-none [&_h1]:text-foreground/90 [&_h2]:text-foreground/90 [&_h3]:text-foreground/90",
       },
     },
     onUpdate: ({ editor: instance }) => {
