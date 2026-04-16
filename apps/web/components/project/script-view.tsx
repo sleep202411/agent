@@ -165,6 +165,7 @@ export function ScriptView() {
   const [storyboardRows, setStoryboardRows] = useState<string[][]>([]);
   const [autoload, setAutoload] = useState(false);
   const [applyingStoryboard, setApplyingStoryboard] = useState(false);
+  const [exportingAll, setExportingAll] = useState(false);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -350,6 +351,77 @@ export function ScriptView() {
     saveAs(blob, `${title}.docx`);
     toast.success(t("exportSuccess"));
   }, [editor, activeEpisode, activeEpisodeId, t]);
+
+  const handleExportAll = useCallback(async () => {
+    if (allEpisodes.length === 0) {
+      toast.warning(t("noEpisodes"));
+      return;
+    }
+
+    setExportingAll(true);
+    try {
+      const paragraphs: Paragraph[] = [
+        new Paragraph({
+          text: typeof detail?.name === "string" ? detail.name : "Scripts",
+          heading: HeadingLevel.TITLE,
+          alignment: AlignmentType.CENTER,
+        }),
+        new Paragraph({ text: "" }),
+      ];
+
+      for (const episode of allEpisodes) {
+        const epId = String(episode.id);
+        let content = "";
+        try {
+          const data = await backendApi.post<{ content?: string }>(
+            `/api/user/project/scripts/episode/detail/${epId}`
+          );
+          content = data?.content ?? "";
+        } catch {
+          // skip failed episode
+        }
+
+        paragraphs.push(
+          new Paragraph({
+            text: episode.title || `Episode ${epId}`,
+            heading: HeadingLevel.HEADING_1,
+            spacing: { before: 400 },
+          })
+        );
+
+        if (!content) {
+          paragraphs.push(
+            new Paragraph({
+              children: [new TextRun({ text: t("emptyScript"), italics: true, color: "999999" })],
+            })
+          );
+          continue;
+        }
+
+        // Parse HTML content to plain text paragraphs
+        const div = document.createElement("div");
+        div.innerHTML = content;
+        const textBlocks = div.innerText.split(/\n+/).filter(Boolean);
+        for (const block of textBlocks) {
+          paragraphs.push(new Paragraph({ text: block }));
+        }
+      }
+
+      const doc = new Document({
+        sections: [{ properties: {}, children: paragraphs }],
+      });
+
+      const projectName = typeof detail?.name === "string" ? detail.name : "scripts";
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, `${projectName}-all-scripts.docx`);
+      toast.success(t("exportSuccess"));
+    } catch (error) {
+      console.error("[ScriptView] export all failed:", error);
+      toast.error(t("exportFailed"));
+    } finally {
+      setExportingAll(false);
+    }
+  }, [allEpisodes, detail, t]);
 
   const processFile = useCallback(
     async (file: File) => {
@@ -654,6 +726,20 @@ export function ScriptView() {
             >
               <IconDownload className="size-3.5" />
               {tc("export")}
+            </Button>
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              onClick={() => void handleExportAll()}
+              disabled={exportingAll || allEpisodes.length === 0}
+            >
+              {exportingAll ? (
+                <IconLoader2 className="size-3.5 animate-spin" />
+              ) : (
+                <IconDownload className="size-3.5" />
+              )}
+              {t("exportAll")}
             </Button>
             <Button size="sm" disabled={!changed || saving} onClick={() => void handleSave()}>
               {saving ? (

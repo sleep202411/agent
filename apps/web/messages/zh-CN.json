@@ -1223,6 +1223,8 @@
     "saved": "剧本已保存",
     "saveFailed": "保存剧本失败",
     "exportSuccess": "剧本已导出",
+    "exportAll": "导出全部",
+    "exportFailed": "导出失败",
     "loadFailed": "加载剧本失败",
     "importedTxt": "文本文件已导入",
     "importedWord": "Word 文件已导入",
