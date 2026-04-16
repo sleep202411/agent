@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { useAppDispatch } from "@/src/store";
+import { useAppDispatch, useAppSelector } from "@/src/store";
 import { setAgentType, addAttachments, sendUserMessage } from "@/src/store/slices/assistantSlice";
 import { AI_AGENTS, MAX_ATTACHMENTS } from "./constants";
 
@@ -33,7 +33,6 @@ export function ChatToolbar({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const currentAgent = AI_AGENTS.find((a) => a.key === selectedAgent) ?? AI_AGENTS[0];
-
   return (
     <>
       <input

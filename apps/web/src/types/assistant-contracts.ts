@@ -104,6 +104,7 @@ export interface AssistantWorkspaceSelection {
   activeTab?: string | null;
   activePanel?: string | null;
   locale?: string | null;
+  videoPromptStyle?: "default" | "seedance";
 }
 
 export interface AssistantWorkspaceContext extends AssistantWorkspaceSelection {

@@ -22,6 +22,7 @@ import { createGroupedAssistantTools, type UserTier } from './tools';
 import {
   loadAgentPrompt,
   loadAssistantSystemPrompt,
+  loadSkill,
   type AssistantAgentType,
   assistantAgentTypes,
 } from './prompts';
@@ -157,6 +158,10 @@ export class AssistantService {
         typeof payload.workspaceContext?.locale === 'string'
           ? payload.workspaceContext.locale
           : undefined,
+      videoPromptStyle:
+        payload.workspaceContext?.videoPromptStyle === 'seedance'
+          ? 'seedance'
+          : undefined,
     };
 
     const messages = payload.messages as AssistantMessage[];
@@ -270,7 +275,7 @@ export class AssistantService {
       system: this.buildSystemPrompt(
         projectContext,
         payload.agentType,
-        wsContext.locale,
+        wsContext,
       ),
       messages: modelMessages,
       stopWhen: stepCountIs(20),
@@ -298,8 +303,9 @@ export class AssistantService {
   private buildSystemPrompt(
     context: ProjectContext,
     rawAgentType?: string,
-    locale?: string,
+    wsContext?: Partial<WorkspaceContext>,
   ) {
+    const locale = wsContext?.locale;
     const agentType: AssistantAgentType = assistantAgentTypes.includes(
       rawAgentType as AssistantAgentType,
     )
@@ -387,10 +393,53 @@ export class AssistantService {
         (context.sceneSummary?.sampleNames ?? []).join('、') || '暂无',
       propSample: (context.propSummary?.sampleNames ?? []).join('、') || '暂无',
       localeHint: langMap[locale ?? ''] ?? '',
+      videoPromptInstruction:
+        wsContext?.videoPromptStyle === 'seedance'
+          ? this.buildSeedanceVideoPromptInstruction()
+          : '- video_prompt（视频提示词）：**必填**，每个镜头都必须生成。必须包含运动描述（镜头移动、人物动作、环境变化）和时间流动感。不能和 image_prompt 或 description 重复。',
     });
+
+    this.logger.log(
+      `buildSystemPrompt: videoPromptStyle=${wsContext?.videoPromptStyle}, promptLen=${basePrompt.length}`,
+    );
 
     const agentSection = loadAgentPrompt(agentType);
     return agentSection ? `${basePrompt}\n\n${agentSection}` : basePrompt;
+  }
+
+  /**
+   * Build the video_prompt instruction for Seedance style.
+   * Inlines the format + example directly in the storyboard rules
+   * so the LLM can't miss it.
+   */
+  private buildSeedanceVideoPromptInstruction(): string {
+    return `- video_prompt（视频提示词）：**必填**，每个镜头都必须生成。**必须使用 Seedance 多镜头格式**，绝对禁止使用普通描述性句子。格式如下：
+
+  \`\`\`
+  镜号N（总时长X秒）
+
+  第一镜头：（0-A秒）
+  运镜方式，景别+角度，动作/场景描述，台词
+
+  第二镜头：（A-B秒）
+  运镜方式，景别+角度，动作/场景描述，台词
+  \`\`\`
+
+  示例：
+  \`\`\`
+  镜号1（10秒）
+
+  第一镜头：（0-3秒）
+  固定镜头，近景侧拍45度角，林墨缓缓点头，目光中满是赞叹，镜头捕捉他发自内心的欣赏之情。
+
+  第二镜头：（3-7秒）
+  跟随镜头，中景正视，苏婉轻盈步入画面，将茶盏轻轻放在小几上，动作从容不迫。她的目光温柔地看向林墨。
+
+  第三镜头：（7-10秒）
+  慢推，近景，苏婉双手轻轻交叠于身前，姿态端庄而礼貌。镜头缓缓推进至面部特写，眼神明亮。
+  \`\`\`
+
+  要点：每个镜号5-15秒，子镜头时间连续不重叠，每个子镜头必须包含运镜方式+景别角度+动作描述。台词用引号包裹标注说话人。`;
   }
 
   // ─── Message helpers ───────────────────────────────────

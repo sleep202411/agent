@@ -79,6 +79,7 @@ function createEmptyConversation() {
     draftInput: "",
     attachments: [] as AssistantAttachment[],
     agentType: "general" as AssistantAgentType,
+    videoPromptStyle: "default" as "default" | "seedance",
     sending: false,
     streaming: false,
     error: null as string | null,
@@ -397,12 +398,14 @@ async function applyWorkspaceMutationEffects(
 
 function buildWorkspaceContext(state: RootState, projectId: string): AssistantWorkspaceSelection {
   const inst = state.project.instances[projectId] ?? selectCurrentInstance(state);
+  const videoPromptStyle = state.assistant.projects[projectId]?.videoPromptStyle ?? "default";
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
     activeTab: inst.activeTab,
     activePanel: inst.activePanel,
     locale: typeof document !== "undefined" ? document.documentElement.lang || "zh-CN" : "zh-CN",
+    videoPromptStyle,
   };
 }
 
@@ -661,6 +664,14 @@ export const applyToolResult = createAsyncThunk<
     })
   );
 
+  // Refresh storyboard if a storyboard proposal was accepted
+  if (
+    result.toolName === "propose_storyboard_patch" &&
+    (result.output as Record<string, unknown>)?.action === "accept"
+  ) {
+    dispatch(touchStoryboard());
+  }
+
   const abortController = createProjectAbortController(projectId);
 
   try {
@@ -729,6 +740,15 @@ export const assistantSlice = createSlice({
       const { projectId, agentType } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       state.projects[projectId] = { ...current, agentType };
+    },
+
+    setVideoPromptStyle: (
+      state,
+      action: PayloadAction<{ projectId: string; style: "default" | "seedance" }>
+    ) => {
+      const { projectId, style } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = { ...current, videoPromptStyle: style };
     },
 
     setDraft: (state, action: PayloadAction<{ projectId: string; draft: string }>) => {
@@ -944,6 +964,7 @@ export const {
   setPanelOpen,
   setPanelExpanded,
   setAgentType,
+  setVideoPromptStyle,
   setDraft,
   pushAttachment,
   updateAttachment,

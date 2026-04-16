@@ -1,8 +1,73 @@
+import { useCallback } from "react";
 import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Document, Packer, Paragraph, HeadingLevel, AlignmentType } from "docx";
+import { saveAs } from "file-saver";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
+
+// ─── Export download button ─────────────────────────────
+
+function ExportDownloadButton({ content, filename }: { content: string; filename: string }) {
+  const handleDownload = useCallback(async () => {
+    // Parse text content into docx paragraphs
+    // Content format: "Title\n====\n\ncontent...\n\n---\n\nTitle2\n====\n\ncontent..."
+    const sections = content.split(/\n\n---\n\n/);
+    const paragraphs: Paragraph[] = [];
+
+    for (const section of sections) {
+      const lines = section.split("\n");
+      let titleFound = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Title line (followed by === underline)
+        if (i + 1 < lines.length && /^=+$/.test(lines[i + 1])) {
+          paragraphs.push(
+            new Paragraph({ text: line, heading: HeadingLevel.HEADING_1, spacing: { before: 400 } })
+          );
+          i++; // skip underline
+          titleFound = true;
+          continue;
+        }
+        if (line.trim() === "") {
+          if (titleFound) paragraphs.push(new Paragraph({ text: "" }));
+          continue;
+        }
+        paragraphs.push(new Paragraph({ text: line }));
+        titleFound = true;
+      }
+    }
+
+    const doc = new Document({
+      sections: [{ properties: {}, children: paragraphs }],
+    });
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, filename);
+  }, [content, filename]);
+
+  return (
+    <div className="my-2">
+      <button
+        type="button"
+        onClick={() => void handleDownload()}
+        className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+      >
+        <svg
+          className="size-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+        </svg>
+        {filename}
+      </button>
+    </div>
+  );
+}
 
 // ─── Tool result summary ───────────────────────────────
 
@@ -316,6 +381,28 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   }
 
                   return null;
+                }
+
+                // Export tool — render download button (generates docx in browser)
+                if (toolName === "export_all_scripts" && part.state === "output-available") {
+                  const output = (part.output ??
+                    (part as unknown as Record<string, unknown>).result) as Record<
+                    string,
+                    unknown
+                  > | null;
+                  if (output?.success && output.content) {
+                    const filename = String(output.filename ?? "scripts.txt").replace(
+                      /\.txt$/,
+                      ".docx"
+                    );
+                    return (
+                      <ExportDownloadButton
+                        key={`${message.id}-${part.toolCallId}-export`}
+                        content={String(output.content)}
+                        filename={filename}
+                      />
+                    );
+                  }
                 }
 
                 // Interactive tools — composer handles the input UI

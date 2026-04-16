@@ -38,6 +38,7 @@ export type WorkspaceContext = {
   activeTab?: string;
   activePanel?: string;
   locale?: string;
+  videoPromptStyle?: 'default' | 'seedance';
 };
 
 @Injectable()
@@ -604,6 +605,34 @@ export class WorkspaceService {
       '/api/user/project/scripts/episode/createOrUpdate',
       { data: { episodeId, content }, maxRetries: 2 },
     );
+  }
+
+  async getEpisodeScript(
+    headers: HeadersLike,
+    episodeId: string,
+  ): Promise<string> {
+    const res = await this.request<{ content?: string }>(
+      headers,
+      `/api/user/project/scripts/episode/detail/${episodeId}`,
+    );
+    return (res as unknown as { content?: string })?.content ?? '';
+  }
+
+  async getAllScripts(
+    headers: HeadersLike,
+    projectId: string,
+  ): Promise<{ episodeId: string; title: string; content: string }[]> {
+    const episodes = await this.listEpisodes(headers, projectId);
+    const results: { episodeId: string; title: string; content: string }[] = [];
+    for (const ep of episodes) {
+      const content = await this.getEpisodeScript(headers, ep.id);
+      results.push({
+        episodeId: ep.id,
+        title: ep.title ?? `Episode ${ep.sort}`,
+        content,
+      });
+    }
+    return results;
   }
 
   async deleteEpisode(headers: HeadersLike, episodeId: string) {

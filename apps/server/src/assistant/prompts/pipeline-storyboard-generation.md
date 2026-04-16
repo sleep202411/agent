@@ -18,3 +18,5 @@ Available scenes: {{sceneList}}
 Available shot sizes: {{shotSizeOptions}}
 Available perspectives: {{perspectiveOptions}}
 Available movements: {{movementOptions}}
+
+{{videoPromptStyle}}
