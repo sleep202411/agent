@@ -207,9 +207,11 @@
     "validateStyle": "Please select an art style"
   },
   "nav": {
-    "studio": "Studio",
+    "studio": "Creator Hub",
     "ipPlaza": "IP Plaza",
     "studioHall": "Studios",
+    "creators": "Talent Market",
+    "news": "News",
     "workbench": "Workbench",
     "getStarted": "Get Started"
   },

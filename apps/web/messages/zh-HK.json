@@ -207,9 +207,11 @@
     "validateStyle": "請選擇畫風"
   },
   "nav": {
-    "studio": "Studio",
+    "studio": "創作者中心",
     "ipPlaza": "IP 廣場",
     "studioHall": "劇組大廳",
+    "creators": "人才集市",
+    "news": "新聞",
     "workbench": "工作台",
     "getStarted": "免費開始"
   },

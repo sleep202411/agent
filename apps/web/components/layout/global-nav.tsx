@@ -50,7 +50,7 @@ export function GlobalNav() {
     { href: "/ips", label: t("ipPlaza"), icon: IconDiamond },
     { href: "/crews", label: t("studioHall"), icon: IconMovie },
     { href: "/creators", label: t("creators"), icon: IconUsers },
-    { href: "/projects", label: "Studio", icon: IconLayoutDashboard },
+    { href: "/projects", label: t("studio"), icon: IconLayoutDashboard, target: "_blank" as const },
     { href: "/news", label: t("news"), icon: IconNews },
   ];
 
@@ -81,10 +81,7 @@ export function GlobalNav() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-      <div
-        className="mx-auto flex h-14 items-center justify-between px-6"
-        style={{ maxWidth: 1400 }}
-      >
+      <div className="mx-auto flex h-14 items-center justify-between px-6">
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">
           <Link to="/ips" className="flex items-center gap-2 shrink-0">
@@ -92,10 +89,11 @@ export function GlobalNav() {
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">
-            {navItems.map(({ href, label, icon: Icon }) => (
+            {navItems.map(({ href, label, icon: Icon, target }) => (
               <Link
                 key={href}
                 to={href}
+                target={target}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors",
                   isActive(href)
