@@ -339,7 +339,7 @@ export function AssistantTaskCard({ taskId, onContinue, onError }: TaskCardProps
       )}
 
       {/* Error + dismiss */}
-      {(progress.status === "failed" || progress.status === "cancelled") && (
+      {(progress.status === "failed" || progress.status === "cancelled") && !continued && (
         <div className="mt-3 space-y-2">
           {progress.error && (
             <div className="rounded-lg bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
