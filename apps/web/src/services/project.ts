@@ -72,8 +72,19 @@ export const getMyJoinedProjects = (page = 1, pageSize = 10) =>
   });
 
 /** 个人作品（视频） */
+export interface PersonalWork {
+  id: number;
+  title?: string;
+  introduction?: string;
+  videoBanner?: string | null;
+  videoLink?: string | null;
+  viewStatus?: number;
+  review?: number; // 0=审核中, 1=已通过
+  createTime?: string;
+}
+
 export const getMyPersonalWorks = (page = 1, pageSize = 10) =>
-  api.postForm<unknown[]>("/vedio/query/mypersonal", {
+  api.postForm<PersonalWork[]>("/vedio/query/mypersonal", {
     page: String(page),
     pageSize: String(pageSize),
   });

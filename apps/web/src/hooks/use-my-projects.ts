@@ -11,6 +11,7 @@ import {
   uploadProjectVideo,
   updateProject,
   type Project,
+  type PersonalWork,
   type ProjectMember,
   type ProjectJob,
   type ProfitInfo,
@@ -24,7 +25,7 @@ export const myProjectKeys = {
 };
 
 export function useMyPersonalWorks() {
-  return useQuery<unknown[]>({
+  return useQuery<PersonalWork[]>({
     queryKey: myProjectKeys.works,
     queryFn: () => getMyPersonalWorks(1, 50),
   });
