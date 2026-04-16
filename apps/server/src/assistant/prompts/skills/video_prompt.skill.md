@@ -10,7 +10,7 @@
 ## 一、標準格式
 
 ```
-[鏡頭類型], [主體描述], [動作/運動描述], [環境/場景變化], [運鏡方式], [氛圍/情緒], [風格], [畫質]
+[鏡頭類型], [主體描述], [動作/運動描述], [環境/場景變化], [運鏡方式], [光線], [氛圍/情緒], [風格], [畫質]
 ```
 
 ---
@@ -44,17 +44,26 @@
 - 必須明確指定攝影機如何移動
 - 範例：`camera pushes in slightly, dolly-in, tracking shot`
 
-### 6. 氛圍/情緒 (Atmosphere)
+### 6. 光線 (Lighting) ⭐ 必填
+
+- 必須明確描述光線條件，這是視頻畫面品質的關鍵
+- 自然光：golden hour sunlight, overcast diffused light, harsh midday sun, moonlight
+- 人工光：neon lights, candlelight, fluorescent, warm lamplight
+- 方向：backlit, side-lit, top-down light, rim lighting
+- 特效：volumetric light, light rays through window, lens flare
+- 範例：`soft golden hour backlight with warm rim lighting`
+
+### 7. 氛圍/情緒 (Atmosphere)
 
 - 情感基調：ethereal atmosphere, tense mood, festive
-- 範例：`warm cozy lighting, ethereal atmosphere`
+- 範例：`ethereal atmosphere, melancholic mood`
 
-### 7. 風格 (Style)
+### 8. 風格 (Style)
 
 - cinematic style, documentary, handheld camera feel
 - 範例：`cinematic style, high fidelity`
 
-### 8. 畫質 (Quality)
+### 9. 畫質 (Quality)
 
 - smooth motion, 4k, 24fps, sharp details
 - 範例：`realistic, smooth motion, 4k`
@@ -196,6 +205,6 @@ Slow dolly-in to extreme close-up, a young girl's face, tears slowly rolling dow
 
 1. **全英文**
 2. **30-100詞**
-3. **必須包含**：運鏡方式 + 動作描述 + 時長
+3. **必須包含**：運鏡方式 + 動作描述 + 光線 + 時長
 4. **結尾加** `cinematic motion, X seconds`
 5. **保持角色一致**：Keep face consistent, no flicker
