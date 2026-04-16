@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconEdit, IconArrowDown, IconLoader2 } from "@tabler/icons-react";
+import { IconEdit, IconArrowDown, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -13,6 +13,7 @@ import { updateProject, type Project } from "@/src/services/project";
 import { env } from "@/src/env";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
+import { PublishWorkDialog } from "./publish-work-dialog";
 
 export default function ProfilePage() {
   const t = useTranslations("profile");
@@ -118,6 +119,10 @@ function MyIPsTab() {
 function PersonalWorksTab() {
   const t = useTranslations("profile");
   const { data: works, isLoading } = useMyPersonalWorks();
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [editWork, setEditWork] = useState<import("@/src/services/project").PersonalWork | null>(
+    null
+  );
 
   if (isLoading) {
     return (
@@ -127,55 +132,87 @@ function PersonalWorksTab() {
     );
   }
 
-  if (!works?.length) {
-    return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        {t("noData")}
-      </div>
-    );
-  }
-
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-      {works.map((work) => {
-        const title = work.title || work.introduction || "";
-        const videoPath = work.videoLink || "";
-        const bannerPath = work.videoBanner || "";
-        const coverUrl = bannerPath
-          ? bannerPath.startsWith("http")
-            ? bannerPath
-            : `${env.OSS_BASE_URL}/${bannerPath}`
-          : videoPath
-            ? `${env.OSS_BASE_URL}/${videoPath}?x-oss-process=video/snapshot,t_0,m_fast`
-            : "";
-        const isReviewing = work.review === 0;
-
-        return (
-          <div
-            key={work.id}
-            className="group relative overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
-          >
-            {isReviewing && (
-              <div className="absolute right-2 top-2 z-10 rounded-full bg-yellow-500/80 px-2 py-0.5 text-[10px] font-medium text-white">
-                {t("reviewing")}
-              </div>
-            )}
-            <div className="aspect-video overflow-hidden bg-muted">
-              {coverUrl ? (
-                <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-muted-foreground/30">
-                  {title.slice(0, 1) || "?"}
-                </div>
-              )}
-            </div>
-            <div className="p-3">
-              <div className="truncate text-sm font-medium">{title || t("noData")}</div>
+    <>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        {/* Publish card */}
+        <button
+          type="button"
+          onClick={() => {
+            setEditWork(null);
+            setPublishOpen(true);
+          }}
+          className="overflow-hidden rounded-xl border border-dashed border-border bg-card text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+        >
+          <div className="flex aspect-video items-center justify-center bg-muted/30">
+            <div className="flex flex-col items-center gap-2">
+              <IconPlus className="size-8" />
+              <span className="text-sm font-medium">{t("publishWork")}</span>
             </div>
           </div>
-        );
-      })}
-    </div>
+          <div className="p-3">
+            <div className="text-sm font-medium">&nbsp;</div>
+          </div>
+        </button>
+
+        {(works ?? []).map((work) => {
+          const title = work.title || work.introduction || "";
+          const videoPath = work.videoLink || "";
+          const bannerPath = work.videoBanner || "";
+          const coverUrl = bannerPath
+            ? bannerPath.startsWith("http")
+              ? bannerPath
+              : `${env.OSS_BASE_URL}/${bannerPath}`
+            : videoPath
+              ? `${env.OSS_BASE_URL}/${videoPath}?x-oss-process=video/snapshot,t_0,m_fast`
+              : "";
+          const isReviewing = work.review === 0;
+
+          return (
+            <div
+              key={work.id}
+              className="group relative overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
+            >
+              {isReviewing && (
+                <div className="absolute right-2 top-2 z-10 rounded-full bg-yellow-500/80 px-2 py-0.5 text-[10px] font-medium text-white">
+                  {t("reviewing")}
+                </div>
+              )}
+              <div className="aspect-video overflow-hidden bg-muted">
+                {coverUrl ? (
+                  <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-muted-foreground/30">
+                    {title.slice(0, 1) || "?"}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between p-3">
+                <div className="min-w-0 truncate text-sm font-medium">{title || t("noData")}</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditWork(work);
+                    setPublishOpen(true);
+                  }}
+                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <IconEdit className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <PublishWorkDialog
+        open={publishOpen}
+        onOpenChange={(next) => {
+          setPublishOpen(next);
+          if (!next) setEditWork(null);
+        }}
+        editWork={editWork}
+      />
+    </>
   );
 }
 

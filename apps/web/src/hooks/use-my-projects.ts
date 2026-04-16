@@ -3,6 +3,9 @@ import {
   getMyProjects,
   getMyJoinedProjects,
   getMyPersonalWorks,
+  createPersonalWork,
+  uploadPersonalVideo,
+  updatePersonalWork,
   getProjectDetail,
   getProjectVideoLink,
   getProjectMembers,
@@ -28,6 +31,29 @@ export function useMyPersonalWorks() {
   return useQuery<PersonalWork[]>({
     queryKey: myProjectKeys.works,
     queryFn: () => getMyPersonalWorks(1, 50),
+  });
+}
+
+export function useCreatePersonalWork() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: createPersonalWork,
+    onSuccess: () => qc.invalidateQueries({ queryKey: myProjectKeys.works }),
+  });
+}
+
+export function useUploadPersonalVideo() {
+  return useMutation({
+    mutationFn: ({ id, file }: { id: number | string; file: File }) =>
+      uploadPersonalVideo(id, file),
+  });
+}
+
+export function useUpdatePersonalWork() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: updatePersonalWork,
+    onSuccess: () => qc.invalidateQueries({ queryKey: myProjectKeys.works }),
   });
 }
 
