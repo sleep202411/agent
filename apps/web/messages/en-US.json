@@ -1221,6 +1221,7 @@
     "placeholder": "Write your script here...",
     "saved": "Script saved",
     "saveFailed": "Failed to save script",
+    "exportSuccess": "Script exported",
     "loadFailed": "Failed to load script",
     "importedTxt": "Text file imported",
     "importedWord": "Word file imported",

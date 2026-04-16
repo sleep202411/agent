@@ -1221,6 +1221,7 @@
     "placeholder": "在这里编写剧本...",
     "saved": "剧本已保存",
     "saveFailed": "保存剧本失败",
+    "exportSuccess": "剧本已导出",
     "loadFailed": "加载剧本失败",
     "importedTxt": "文本文件已导入",
     "importedWord": "Word 文件已导入",

@@ -589,6 +589,78 @@ export function createScriptAgentTools(
     }),
 
     /**
+     * Tool: Export all episode scripts as a single merged document.
+     * Returns HTML content that the frontend can download.
+     */
+    export_all_scripts: tool({
+      description:
+        'Export all episode scripts from the current project as a single merged document. ' +
+        'Use this when the user asks to download, export, or save all scripts together. ' +
+        'Returns the merged content as HTML that will be offered as a download.',
+      inputSchema: z.object({}),
+      outputSchema: z.object({
+        success: z.boolean(),
+        episodeCount: z.number(),
+        content: z
+          .string()
+          .describe('Merged plain text content of all scripts'),
+        filename: z.string(),
+      }),
+      execute: async () => {
+        const projectId = ctx.context.projectId;
+        if (!projectId) throw new Error('No project selected');
+
+        const scripts = await ctx.ws.getAllScripts(ctx.headers, projectId);
+
+        if (scripts.length === 0) {
+          return {
+            success: false,
+            episodeCount: 0,
+            content: '',
+            filename: '',
+          };
+        }
+
+        // Strip HTML tags to plain text
+        const stripHtml = (html: string) =>
+          html
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/p>/gi, '\n\n')
+            .replace(/<\/h[1-6]>/gi, '\n\n')
+            .replace(/<\/li>/gi, '\n')
+            .replace(/<[^>]+>/g, '')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+        const textParts = scripts.map((s, i) => {
+          const title = s.title || `Episode ${i + 1}`;
+          const body = s.content ? stripHtml(s.content) : '(empty)';
+          return `${title}\n${'='.repeat(title.length)}\n\n${body}`;
+        });
+        const mergedText = textParts.join('\n\n---\n\n');
+
+        const date = new Date().toISOString().slice(0, 10);
+        const filename = `scripts-all-${date}.txt`;
+
+        logger.log(
+          `export_all_scripts: exported ${scripts.length} episodes for project ${projectId}`,
+        );
+
+        return {
+          success: true,
+          episodeCount: scripts.length,
+          content: mergedText,
+          filename,
+        };
+      },
+    }),
+
+    /**
      * Tool 5: Generate storyboard shots for a batch of episodes.
      * Each episode's shots are written to the correct episodeId.
      * Supports batching like generate_scripts.

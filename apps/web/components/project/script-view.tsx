@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import mammoth from "mammoth";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";
+import { saveAs } from "file-saver";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -9,6 +11,7 @@ import {
   IconBold,
   IconCloudUpload,
   IconDeviceFloppy,
+  IconDownload,
   IconH1,
   IconH2,
   IconH3,
@@ -132,6 +135,11 @@ export function ScriptView() {
   const ts = useTranslations("storyboard");
   const dispatch = useAppDispatch();
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
+  const allEpisodes = useAppSelector((s) => selectCurrentInstance(s).episodes);
+  const activeEpisode = useMemo(
+    () => allEpisodes.find((ep) => String(ep.id) === String(activeEpisodeId)),
+    [allEpisodes, activeEpisodeId]
+  );
   const episodesVersion = useAppSelector((s) => selectCurrentInstance(s).episodesVersion);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
@@ -254,6 +262,94 @@ export function ScriptView() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [handleSave]);
+
+  const handleExport = useCallback(async () => {
+    if (!editor) return;
+    const title = activeEpisode?.title || `episode-${activeEpisodeId}`;
+    const json = editor.getJSON();
+
+    // Convert tiptap JSON to docx paragraphs
+    const paragraphs: Paragraph[] = [
+      new Paragraph({ text: title, heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }),
+      new Paragraph({ text: "" }),
+    ];
+
+    const processNode = (node: Record<string, unknown>) => {
+      const type = node.type as string;
+      const content = (node.content as Record<string, unknown>[]) ?? [];
+      const textContent = content
+        .filter((c) => (c.type as string) === "text")
+        .map((c) => {
+          const marks = (c.marks as Array<{ type: string }>) ?? [];
+          const isBold = marks.some((m) => m.type === "bold");
+          const isItalic = marks.some((m) => m.type === "italic");
+          const isStrike = marks.some((m) => m.type === "strike");
+          return new TextRun({
+            text: (c.text as string) ?? "",
+            bold: isBold,
+            italics: isItalic,
+            strike: isStrike,
+          });
+        });
+
+      if (type === "heading") {
+        const level = (node.attrs as Record<string, unknown>)?.level as number;
+        const heading =
+          level === 1
+            ? HeadingLevel.HEADING_1
+            : level === 2
+              ? HeadingLevel.HEADING_2
+              : HeadingLevel.HEADING_3;
+        paragraphs.push(new Paragraph({ children: textContent, heading }));
+      } else if (type === "bulletList" || type === "orderedList") {
+        const items = (node.content as Record<string, unknown>[]) ?? [];
+        items.forEach((item, idx) => {
+          const itemContent = (item.content as Record<string, unknown>[]) ?? [];
+          const firstP = itemContent[0];
+          if (firstP) {
+            const runs = ((firstP.content as Record<string, unknown>[]) ?? [])
+              .filter((c) => (c.type as string) === "text")
+              .map((c) => new TextRun({ text: (c.text as string) ?? "" }));
+            if (type === "orderedList") {
+              runs.unshift(new TextRun({ text: `${idx + 1}. ` }));
+            } else {
+              runs.unshift(new TextRun({ text: "• " }));
+            }
+            paragraphs.push(new Paragraph({ children: runs, indent: { left: 360 } }));
+          }
+        });
+      } else if (type === "blockquote") {
+        const inner = (node.content as Record<string, unknown>[]) ?? [];
+        inner.forEach((p) => {
+          const runs = ((p.content as Record<string, unknown>[]) ?? [])
+            .filter((c) => (c.type as string) === "text")
+            .map(
+              (c) => new TextRun({ text: (c.text as string) ?? "", italics: true, color: "666666" })
+            );
+          paragraphs.push(new Paragraph({ children: runs, indent: { left: 720 } }));
+        });
+      } else if (type === "horizontalRule") {
+        paragraphs.push(new Paragraph({ text: "───────────────────" }));
+      } else {
+        if (textContent.length > 0) {
+          paragraphs.push(new Paragraph({ children: textContent }));
+        } else {
+          paragraphs.push(new Paragraph({ text: "" }));
+        }
+      }
+    };
+
+    const docContent = (json.content as Record<string, unknown>[]) ?? [];
+    docContent.forEach(processNode);
+
+    const doc = new Document({
+      sections: [{ properties: {}, children: paragraphs }],
+    });
+
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `${title}.docx`);
+    toast.success(t("exportSuccess"));
+  }, [editor, activeEpisode, activeEpisodeId, t]);
 
   const processFile = useCallback(
     async (file: File) => {
@@ -548,6 +644,16 @@ export function ScriptView() {
                 <IconCloudUpload className="size-3.5" />
               )}
               {tc("import")}
+            </Button>
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              onClick={handleExport}
+              disabled={!editor}
+            >
+              <IconDownload className="size-3.5" />
+              {tc("export")}
             </Button>
             <Button size="sm" disabled={!changed || saving} onClick={() => void handleSave()}>
               {saving ? (
