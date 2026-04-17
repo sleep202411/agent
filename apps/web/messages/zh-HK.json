@@ -1189,6 +1189,8 @@
     "left": "左",
     "right": "右",
     "referenceImage": "參考圖",
+    "referenceVideo": "參考影片",
+    "referenceAudio": "參考音訊",
     "images": "圖片",
     "videos": "影片",
     "addMedia": "添加",

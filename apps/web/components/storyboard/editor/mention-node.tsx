@@ -69,6 +69,7 @@ const chevronStyle: React.CSSProperties = {
 };
 
 const audioIconSvg = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+const videoIconSvg = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`;
 
 function MentionChipView({ node }: NodeViewProps) {
   const { id, label, imgUrl, mentionType } = node.attrs as {
@@ -84,8 +85,11 @@ function MentionChipView({ node }: NodeViewProps) {
   const refEntry = refMap.map.get(id) ?? refMap.map.get(imgUrl);
   const isInvalid = refEntry ? !refEntry.valid : false;
   const displayLabel = refEntry?.displayLabel || label;
-  const isAudio = mentionType === "reference" && !imgUrl;
-  const hasAvatar = Boolean(imgUrl);
+  const mediaKind =
+    refEntry?.mediaType ?? (mentionType === "reference" && !imgUrl ? "audio" : "image");
+  const isVideo = mediaKind === "video";
+  const isAudio = mediaKind === "audio";
+  const hasAvatar = Boolean(imgUrl) && !isVideo && !isAudio;
 
   const invalidStyle: React.CSSProperties = isInvalid
     ? { opacity: 0.45, textDecoration: "line-through", filter: "grayscale(1)" }
@@ -115,7 +119,7 @@ function MentionChipView({ node }: NodeViewProps) {
       >
         {hasAvatar ? (
           <img src={imgUrl} alt="" style={{ ...avatarStyle, ...invalidStyle }} />
-        ) : isAudio ? (
+        ) : isVideo || isAudio ? (
           <span
             style={{
               ...avatarStyle,
@@ -126,7 +130,7 @@ function MentionChipView({ node }: NodeViewProps) {
               backgroundColor: "#444",
               borderRadius: "9999px",
             }}
-            dangerouslySetInnerHTML={{ __html: audioIconSvg }}
+            dangerouslySetInnerHTML={{ __html: isVideo ? videoIconSvg : audioIconSvg }}
           />
         ) : null}
         <span style={{ ...nameStyle, ...invalidStyle }}>{displayLabel}</span>

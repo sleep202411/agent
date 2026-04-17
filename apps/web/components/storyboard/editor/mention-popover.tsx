@@ -4,6 +4,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconBox,
   IconLoader2,
+  IconMusic,
   IconPhoto,
   IconUser,
   IconVideo,
@@ -32,6 +33,7 @@ export interface ReferenceMediaItem {
   url: string;
   path: string;
   label?: string;
+  kind?: "image" | "video" | "audio";
 }
 
 export interface MentionPopoverProps {
@@ -159,7 +161,10 @@ export function MentionPopover({
 }: MentionPopoverProps) {
   const t = useTranslations("storyboard");
 
-  const isVideo = (path: string) => /\.(mp4|webm|mov)(\?|$)/i.test(path);
+  const isVideoItem = (item: MentionFlatItem) =>
+    item.kind === "video" || (!item.kind && /\.(mp4|webm|mov)(\?|$)/i.test(item.id));
+  const isAudioItem = (item: MentionFlatItem) =>
+    item.kind === "audio" || (!item.kind && /\.(mp3|wav|m4a|aac|ogg|flac)(\?|$)/i.test(item.id));
 
   return createPortal(
     <div
@@ -199,12 +204,17 @@ export function MentionPopover({
                 </SectionHeader>
                 {refItems.map((item) => {
                   const index = flattenedItems.indexOf(item);
+                  const itemIsVideo = isVideoItem(item);
+                  const itemIsAudio = isAudioItem(item);
+                  const showImg = !itemIsVideo && !itemIsAudio;
                   return (
                     <CompactItem
                       key={item.key}
-                      imgUrl={item.imgUrl}
+                      imgUrl={showImg ? item.imgUrl : undefined}
                       icon={
-                        isVideo(item.id) ? (
+                        itemIsAudio ? (
+                          <IconMusic className="size-3.5" />
+                        ) : itemIsVideo ? (
                           <IconVideo className="size-3.5" />
                         ) : (
                           <IconPhoto className="size-3.5" />

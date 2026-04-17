@@ -6,7 +6,7 @@ import {
   updateVideoForm,
   type VideoReferences,
 } from "@/src/store/slices/projectSlice";
-import type { AiModel } from "@/components/ui/schema-field/schema";
+import { classifyAsset, type AiModel } from "@/components/ui/schema-field/schema";
 import {
   buildReferenceMap,
   extractMentionsFromHtml,
@@ -71,7 +71,9 @@ export function useVideoReferences({
     outpaintingRefVideo,
   } = references;
 
-  const refIsFull = referenceImages.length >= maxImages;
+  // @ mentions only produce image refs, so "full" is per-image count, not total bucket
+  const refIsFull =
+    referenceImages.filter((item) => classifyAsset(item) === "image").length >= maxImages;
 
   // ─── Clean prompt when refs are removed ──
   const cleanPromptOnRefRemoval = useCallback(
@@ -201,17 +203,24 @@ export function useVideoReferences({
         return;
       }
 
-      // Multimodal images (append)
-      if (target === "multimodalImages") {
-        const newRefs = dedupeRefs(referenceImages, toReferenceAssets(paths));
-        onSetReferenceImages([...referenceImages, ...newRefs].slice(0, maxImages));
-        return;
-      }
-
-      // Multimodal videos (append)
-      if (target === "multimodalVideos") {
-        const newVids = dedupeRefs(firstFrames, toReferenceAssets(paths));
-        onSetFirstFrames([...firstFrames, ...newVids].slice(0, maxVideos || 3));
+      // Multimodal: all 3 kinds share referenceImages bucket, per-kind caps apply within bucket
+      if (
+        target === "multimodalImages" ||
+        target === "multimodalVideos" ||
+        target === "multimodalAudios"
+      ) {
+        const kind =
+          target === "multimodalVideos"
+            ? "video"
+            : target === "multimodalAudios"
+              ? "audio"
+              : "image";
+        const kindCap = kind === "video" ? maxVideos : kind === "audio" ? maxAudios : maxImages;
+        const currentOfKind = referenceImages.filter((item) => classifyAsset(item) === kind);
+        const incoming = dedupeRefs(referenceImages, toReferenceAssets(paths, undefined, kind));
+        const slotsLeft = Math.max(0, kindCap - currentOfKind.length);
+        if (slotsLeft <= 0 || incoming.length === 0) return;
+        onSetReferenceImages([...referenceImages, ...incoming.slice(0, slotsLeft)]);
         return;
       }
 
@@ -347,18 +356,35 @@ export function useVideoReferences({
 
     refInitDoneRef.current = true;
 
-    // --- Enforcement: truncate when model limit decreases ---
-    if (referenceImages.length > maxImages) {
-      const kept = referenceImages.slice(0, maxImages);
-      const keptUrls = new Set(kept.map((r) => r.url || ossUrl(r.path)).filter(Boolean));
+    // --- Enforcement: truncate per-kind when a cap decreases ---
+    const caps: Record<"image" | "video" | "audio", number> = {
+      image: maxImages,
+      video: maxVideos,
+      audio: maxAudios,
+    };
+    const countsSeen: Record<"image" | "video" | "audio", number> = {
+      image: 0,
+      video: 0,
+      audio: 0,
+    };
+    const kept: ReferenceAsset[] = [];
+    const dropped: ReferenceAsset[] = [];
+    for (const item of referenceImages) {
+      const kind = classifyAsset(item);
+      if (countsSeen[kind] < caps[kind]) {
+        countsSeen[kind] += 1;
+        kept.push(item);
+      } else {
+        dropped.push(item);
+      }
+    }
+    if (dropped.length > 0) {
       const removedUrls = new Set<string>();
-      for (const item of referenceImages) {
+      for (const item of dropped) {
         const url = item.url || ossUrl(item.path);
-        if (url && !keptUrls.has(url)) {
-          removedUrls.add(url);
-          if (item.url) removedUrls.add(item.url);
-          if (item.path) removedUrls.add(item.path);
-        }
+        if (url) removedUrls.add(url);
+        if (item.url) removedUrls.add(item.url);
+        if (item.path) removedUrls.add(item.path);
       }
       dispatch(setVideoReferences({ key, field: "referenceImages", value: kept }));
       if (removedUrls.size > 0) {
@@ -375,6 +401,8 @@ export function useVideoReferences({
     defaultReferenceImage,
     modeModels,
     maxImages,
+    maxVideos,
+    maxAudios,
     referenceImages,
     references,
     activeMode,
@@ -384,10 +412,16 @@ export function useVideoReferences({
 
   // ─── Reference map ──
   const promptMentions = useMemo(() => extractMentionsFromHtml(prompt), [prompt]);
-  const refPrefix = t("referenceImage");
+  const refPrefixImage = t("referenceImage");
+  const refPrefixVideo = t("referenceVideo");
+  const refPrefixAudio = t("referenceAudio");
+  const refPrefixes = useMemo(
+    () => ({ image: refPrefixImage, video: refPrefixVideo, audio: refPrefixAudio }),
+    [refPrefixImage, refPrefixVideo, refPrefixAudio]
+  );
   const referenceMap: ReferenceMap = useMemo(
-    () => buildReferenceMap(referenceImages, promptMentions, refPrefix),
-    [referenceImages, promptMentions, refPrefix]
+    () => buildReferenceMap(referenceImages, promptMentions, refPrefixes),
+    [referenceImages, promptMentions, refPrefixes]
   );
   const referenceMapCtx = useMemo(
     () => ({ map: referenceMap, isFull: refIsFull }),

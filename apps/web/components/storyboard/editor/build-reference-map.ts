@@ -4,6 +4,8 @@ interface ReferenceItem {
   url?: string;
   path: string;
   label?: string;
+  /** Explicit media kind; overrides URL-extension detection when present */
+  kind?: "image" | "video" | "audio";
 }
 
 interface MentionInfo {
@@ -16,61 +18,80 @@ interface MentionInfo {
 /**
  * Build a reference map from current reference group items and prompt mentions.
  *
- * - Items in reference group get valid=true with their 1-based index
+ * - Items in reference group get valid=true with their per-kind 1-based index
  * - Mentions in prompt that are NOT in reference group get valid=false (gray + strikethrough)
  * - Named entities (character/scene/prop) keep their name
- * - Unnamed references get "参考图 N" label
+ * - Unnamed references get "参考图 N" / "参考视频 N" / "参考音频 N" by kind
+ *
+ * `refPrefix` can be either a single string (same prefix for all kinds) or a record
+ * keyed by kind. Per-kind numbering lets mixed buckets render naturally — e.g. a
+ * bucket [img, img, video, img] shows "参考图 1/2/3" and "参考视频 1".
  */
 export function buildReferenceMap(
   referenceItems: ReferenceItem[],
   promptMentions: MentionInfo[],
-  /** Label prefix for unnamed references, e.g. "参考图" → "参考图 1" */
-  refPrefix = "参考图"
+  refPrefix: string | Partial<Record<"image" | "video" | "audio", string>> = "参考图"
 ): ReferenceMap {
   const map: ReferenceMap = new Map();
 
-  // Index all reference group items by url/path for quick lookup
+  const resolvePrefix = (kind: "image" | "video" | "audio"): string => {
+    if (typeof refPrefix === "string") return refPrefix;
+    return refPrefix[kind] ?? refPrefix.image ?? "参考图";
+  };
+
+  const getKind = (item: ReferenceItem): "image" | "video" | "audio" =>
+    item.kind ?? detectMediaType(item.url ?? item.path ?? "");
+
+  // Assign per-kind 1-based index to each reference item
+  const kindCounts: Record<"image" | "video" | "audio", number> = { image: 0, video: 0, audio: 0 };
+  const itemKindIndex = new Map<number, { kind: "image" | "video" | "audio"; index: number }>();
+  referenceItems.forEach((item, i) => {
+    const kind = getKind(item);
+    kindCounts[kind] += 1;
+    itemKindIndex.set(i, { kind, index: kindCounts[kind] });
+  });
+
   const refUrlSet = new Set<string>();
   for (const item of referenceItems) {
     if (item.url) refUrlSet.add(item.url);
     if (item.path) refUrlSet.add(item.path);
   }
 
-  // Build entries for each mention in the prompt
   for (const mention of promptMentions) {
     const inRefGroup = refUrlSet.has(mention.imgUrl) || refUrlSet.has(mention.id);
 
-    // Find index in reference group (1-based)
-    let index = 0;
+    let globalIndex = 0;
+    let kindIndex = 0;
+    let kind: "image" | "video" | "audio" = detectMediaType(mention.imgUrl);
     if (inRefGroup) {
       const idx = referenceItems.findIndex(
         (r) => r.url === mention.imgUrl || r.path === mention.imgUrl || r.path === mention.id
       );
-      if (idx >= 0) index = idx + 1;
+      if (idx >= 0) {
+        globalIndex = idx + 1;
+        const entry = itemKindIndex.get(idx);
+        if (entry) {
+          kind = entry.kind;
+          kindIndex = entry.index;
+        }
+      }
     }
 
-    // Determine display label:
-    // 1. If the matched reference item has a label (name), use it
-    // 2. Otherwise use position-based index
-    const matchedItem = index > 0 ? referenceItems[index - 1] : null;
+    const matchedItem = globalIndex > 0 ? referenceItems[globalIndex - 1] : null;
     const itemLabel = matchedItem?.label;
     const displayLabel = itemLabel
       ? itemLabel
-      : index > 0
-        ? `${refPrefix} ${index}`
+      : kindIndex > 0
+        ? `${resolvePrefix(kind)} ${kindIndex}`
         : mention.label;
 
-    // Detect media type from URL
-    const mediaType = detectMediaType(mention.imgUrl);
-
     const entry: ReferenceMapEntry = {
-      index,
+      index: globalIndex,
       valid: inRefGroup,
-      mediaType,
+      mediaType: kind,
       displayLabel,
     };
 
-    // Use both id and imgUrl as keys for lookup flexibility
     map.set(mention.id, entry);
     if (mention.imgUrl) map.set(mention.imgUrl, entry);
   }

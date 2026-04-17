@@ -89,6 +89,8 @@ import {
   getModeConfig,
   buildModePayload,
   resolveModeInputs,
+  calcModelCost,
+  classifyAsset,
   type AiModel,
 } from "@/components/ui/schema-field/schema";
 import { useAiModels } from "@/src/hooks/use-ai-models";
@@ -380,10 +382,31 @@ export function AiVideoGeneratorDialog({
     [modeModels]
   );
 
-  // Base cost from backend model data (full pricing TBD — backend will add pricing field)
-  const cost = useMemo(() => {
-    return (currentModel?.cost ?? 0) * (count || 1);
-  }, [currentModel, count]);
+  const cost = useMemo(
+    () => calcModelCost(currentModel, { size, videoLength, count }),
+    [currentModel, size, videoLength, count]
+  );
+
+  // Per-kind labels for mention popover (参考图 N / 参考视频 N / 参考音频 N)
+  const referenceMediaItems = useMemo(() => {
+    const counts = { image: 0, video: 0, audio: 0 } as Record<"image" | "video" | "audio", number>;
+    return referenceImages.map((r) => {
+      const kind = classifyAsset(r);
+      counts[kind] += 1;
+      const prefix =
+        kind === "video"
+          ? t("referenceVideo")
+          : kind === "audio"
+            ? t("referenceAudio")
+            : t("referenceImage");
+      return {
+        url: r.url || ossUrl(r.path),
+        path: r.path,
+        label: r.label || `${prefix} ${counts[kind]}`,
+        kind,
+      };
+    });
+  }, [referenceImages, t]);
 
   const title = shotNumber ? t("aiVideoTitle", { number: shotNumber }) : t("aiVideoTitleDefault");
   const modeExitLabel = editMode
@@ -728,7 +751,7 @@ export function AiVideoGeneratorDialog({
       case "multiRefSubject":
         return { assetType: "img" as const, multiple: false };
       case "multimodalImages":
-        return { assetType: ["img", "video", "audio"] as const, multiple: true };
+        return { assetType: "img" as const, multiple: true };
       case "multimodalVideos":
         return { assetType: "video" as const, multiple: true };
       case "multimodalAudios":
@@ -1002,11 +1025,7 @@ export function AiVideoGeneratorDialog({
                   minHeight={96}
                   maxHeight={240}
                   className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
-                  referenceMedia={referenceImages.map((r, i) => ({
-                    url: r.url || ossUrl(r.path),
-                    path: r.path,
-                    label: r.label || `${t("referenceImage")} ${i + 1}`,
-                  }))}
+                  referenceMedia={referenceMediaItems}
                   onMentionInserted={videoRefs.handleMentionInserted}
                   mentionDisabled={videoRefs.refIsFull}
                 />

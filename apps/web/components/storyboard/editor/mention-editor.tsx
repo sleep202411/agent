@@ -175,6 +175,7 @@ export function MentionEditor({
         name: ref.label || `${t("referenceImage")} ${i + 1}`,
         mentionType: "reference",
         imgUrl: ref.url,
+        kind: ref.kind,
       });
     });
 

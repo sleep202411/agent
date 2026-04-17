@@ -35,13 +35,19 @@ export interface AiModel {
   description?: string;
   type: "image" | "video" | "audio" | "lipsync" | "music";
   isDefault: boolean;
+  /** Flat fallback (integralCost). Video models with costTable price by size × length. */
   cost: number;
+  /**
+   * Optional per-size unit cost table from `description.cost`.
+   * Shape: Array<{ [size]: creditsPerSecond }>. Total = unit × videoLength × count.
+   */
+  costTable?: Array<Record<string, number>>;
   inputSchema: AiModelInputSchema;
-  /** Max reference images (from backend description, default 3) */
+  /** Max reference images, from description `images: [min, max]` tuple (0 = not supported) */
   maxImages: number;
-  /** Max reference videos (from backend description, default 0) */
+  /** Max reference videos, from description `videos: [min, max]` tuple (0 = not supported) */
   maxVideos: number;
-  /** Max reference audios (from backend description, default 0) */
+  /** Max reference audios, from description `audios: [min, max]` tuple (0 = not supported) */
   maxAudios: number;
 }
 
@@ -99,10 +105,34 @@ import { getModelDescription } from "./descriptions";
 
 // ─── Normalize ──────────────────────────────────────────
 
+/** Read the upper bound from a `[min, max]` tuple returned by backend. */
+function parseMaxCount(raw: unknown): number {
+  if (!Array.isArray(raw)) return 0;
+  const nums = raw.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  return nums.length > 0 ? Math.max(...nums) : 0;
+}
+
 export function normalizeAiModel(raw: RawAiModel, locale = "zh-CN"): AiModel {
   const desc = parseDescription(raw.description);
   const sizes = Array.isArray(desc.size) ? desc.size : [];
   const videoLengths = Array.isArray(desc.videoLength) ? desc.videoLength : [];
+  const ratios = Array.isArray(desc.ratio)
+    ? desc.ratio.map((v: unknown) => String(v ?? "").trim()).filter(Boolean)
+    : [];
+  const costTable = Array.isArray(desc.cost)
+    ? desc.cost
+        .filter(
+          (item): item is Record<string, unknown> => typeof item === "object" && item !== null
+        )
+        .map((item) =>
+          Object.fromEntries(
+            Object.entries(item)
+              .map(([k, v]) => [k, Number(v)] as const)
+              .filter(([, v]) => Number.isFinite(v))
+          )
+        )
+        .filter((item) => Object.keys(item).length > 0)
+    : [];
   const type = inferType(raw.path);
 
   const properties: Record<string, ModelParameterSchema> = {};
@@ -134,6 +164,17 @@ export function normalizeAiModel(raw: RawAiModel, locale = "zh-CN"): AiModel {
     };
   }
 
+  if (ratios.length > 0) {
+    properties.ratio = {
+      type: "string",
+      title: "Ratio",
+      enum: ratios,
+      "x-enum-labels": Object.fromEntries(ratios.map((r) => [r, r])),
+      default: ratios[0],
+      "x-order": 2,
+    };
+  }
+
   return {
     id: raw.serviceCode ?? String(raw.id ?? ""),
     name: raw.serviceName ?? "",
@@ -141,28 +182,14 @@ export function normalizeAiModel(raw: RawAiModel, locale = "zh-CN"): AiModel {
     type,
     isDefault: raw.isDefault ?? false,
     cost: Math.abs(raw.integralCost ?? 0),
+    costTable: costTable.length > 0 ? costTable : undefined,
     inputSchema: {
       type: "object",
       properties,
     },
-    maxImages:
-      typeof desc.maxImages === "number"
-        ? desc.maxImages
-        : raw.path?.includes("multimodalvideo")
-          ? 9
-          : 3,
-    maxVideos:
-      typeof desc.maxVideos === "number"
-        ? desc.maxVideos
-        : raw.path?.includes("multimodalvideo")
-          ? 3
-          : 0,
-    maxAudios:
-      typeof desc.maxAudios === "number"
-        ? desc.maxAudios
-        : raw.path?.includes("multimodalvideo")
-          ? 3
-          : 0,
+    maxImages: parseMaxCount(desc.images),
+    maxVideos: parseMaxCount(desc.videos),
+    maxAudios: parseMaxCount(desc.audios),
   };
 }
 
@@ -183,6 +210,34 @@ export function getFieldLabel(field: ModelParameterSchema): string {
 /** Get display label for an enum value */
 export function getEnumLabel(field: ModelParameterSchema, value: string | number): string {
   return field["x-enum-labels"]?.[String(value)] ?? String(value);
+}
+
+/**
+ * Compute total credits for a generation.
+ *
+ * Video models may expose `costTable` like `[{"720p": 20}]` (credits per second per size).
+ * Total = unit(size) × videoLength × count. Falls back to flat `cost × count` when
+ * the table is absent or the selected size has no entry.
+ */
+export function calcModelCost(
+  model: AiModel | null | undefined,
+  opts: { size?: string | number; videoLength?: string | number; count?: number } = {}
+): number {
+  if (!model) return 0;
+  const count = Math.max(1, Number(opts.count) || 1);
+  const size = opts.size != null ? String(opts.size) : "";
+  const length = Number(opts.videoLength) || 0;
+
+  if (model.costTable && size) {
+    for (const entry of model.costTable) {
+      const unit = entry?.[size];
+      if (typeof unit === "number" && Number.isFinite(unit)) {
+        const perItem = length > 0 ? unit * length : unit;
+        return perItem * count;
+      }
+    }
+  }
+  return model.cost * count;
 }
 
 // ─── Video Mode Configurations ──────────────────────
@@ -211,11 +266,12 @@ export interface AiModePayloadField {
  * Describes how to extract a parameter from the current state.
  *
  * Source types:
- * - "ref:fieldName"      → references[fieldName][0].path → ossUrl (single asset)
- * - "refArray:fieldName" → references[fieldName][*].path → ossUrl[] (all assets)
- * - "refTags:fieldName"  → references[fieldName][*].typeTag → string[] (with default "obj")
- * - "formData:fieldName" → formData[fieldName] (dynamic form field)
- * - "setting:fieldName"  → modeSettings[fieldName]
+ * - "ref:fieldName"                   → references[fieldName][0].path → ossUrl (single asset)
+ * - "refArray:fieldName"              → references[fieldName][*].path → ossUrl[] (all assets)
+ * - "refArrayByType:fieldName:kind"   → filter by media kind (image/video/audio) by extension
+ * - "refTags:fieldName"               → references[fieldName][*].typeTag → string[] (with default "obj")
+ * - "formData:fieldName"              → formData[fieldName] (dynamic form field)
+ * - "setting:fieldName"               → modeSettings[fieldName]
  */
 export interface AiModeInputField {
   /** Key to set in task input */
@@ -261,6 +317,28 @@ export interface AiModeConfig {
 
 // ── Functions ───────────────────────────────────────
 
+const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif", "heic", "heif"]);
+const VIDEO_EXTS = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v", "flv"]);
+const AUDIO_EXTS = new Set(["mp3", "wav", "m4a", "aac", "ogg", "flac"]);
+
+/** Classify an asset path by file extension. Falls back to "image" for unknown. */
+export function classifyMediaByPath(path: string): "image" | "video" | "audio" {
+  const match = /\.([a-z0-9]+)(?:\?|#|$)/i.exec(path ?? "");
+  const ext = match?.[1]?.toLowerCase() ?? "";
+  if (VIDEO_EXTS.has(ext)) return "video";
+  if (AUDIO_EXTS.has(ext)) return "audio";
+  if (IMAGE_EXTS.has(ext)) return "image";
+  return "image";
+}
+
+/** Classify a reference asset: explicit `kind` wins over path extension. */
+export function classifyAsset(asset: {
+  path: string;
+  kind?: "image" | "video" | "audio";
+}): "image" | "video" | "audio" {
+  return asset.kind ?? classifyMediaByPath(asset.path);
+}
+
 /**
  * Resolve input fields from the current video instance state.
  * Returns the built inputBase and any validation error (first failed required field).
@@ -273,7 +351,10 @@ export interface AiModeConfig {
  */
 export function resolveModeInputs(
   config: AiModeConfig,
-  references: Record<string, { path: string; url?: string; typeTag?: string }[]>,
+  references: Record<
+    string,
+    { path: string; url?: string; typeTag?: string; kind?: "image" | "video" | "audio" }[]
+  >,
   formData: Record<string, unknown>,
   modeSettings: Record<string, unknown>,
   ossUrlFn: (path: string) => string
@@ -281,7 +362,7 @@ export function resolveModeInputs(
   const params: Record<string, unknown> = {};
 
   for (const field of config.inputs) {
-    const [sourceType, sourceField] = field.source.split(":") as [string, string];
+    const [sourceType, sourceField, sourceArg] = field.source.split(":");
     let value: unknown;
 
     switch (sourceType) {
@@ -296,6 +377,16 @@ export function resolveModeInputs(
         // All reference assets → ossUrl[] of non-empty paths
         const assets = references[sourceField];
         const urls = (assets ?? []).filter((a) => a.path).map((a) => ossUrlFn(a.path));
+        value = urls.length > 0 ? urls : undefined;
+        break;
+      }
+      case "refArrayByType": {
+        // Filter by media kind — explicit asset.kind wins over path-extension fallback
+        const kind = sourceArg as "image" | "video" | "audio";
+        const assets = references[sourceField];
+        const urls = (assets ?? [])
+          .filter((a) => a.path && classifyAsset(a) === kind)
+          .map((a) => ossUrlFn(a.path));
         value = urls.length > 0 ? urls : undefined;
         break;
       }
@@ -437,7 +528,9 @@ const MODE_VIDEO_MULTIMODAL: AiModeConfig = {
   id: "multimodal",
   endpoint: "/api/ai/task/video/generate/multimodalvideo",
   inputs: [
-    { key: "images", source: "refArray:referenceImages" },
+    { key: "images", source: "refArrayByType:referenceImages:image" },
+    { key: "videos", source: "refArrayByType:referenceImages:video" },
+    { key: "audios", source: "refArrayByType:referenceImages:audio" },
     { key: "ratio", source: "formData:ratio" },
     { key: "resolution", source: "formData:size" },
     { key: "duration", source: "formData:videoLength" },
@@ -446,6 +539,8 @@ const MODE_VIDEO_MULTIMODAL: AiModeConfig = {
     { apiKey: "prompt", from: "prompt" },
     { apiKey: "model", from: "model", transform: "string" },
     { apiKey: "images", from: "images" },
+    { apiKey: "videos", from: "videos" },
+    { apiKey: "audios", from: "audios" },
     { apiKey: "ratio", from: "ratio" },
     { apiKey: "resolution", from: "resolution" },
     { apiKey: "duration", from: "duration", transform: "number" },

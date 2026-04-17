@@ -47,7 +47,7 @@ import { VoicePickerDialog } from "./character-voice-picker";
 import { CharacterAiRecordDialog } from "./character-ai-record-dialog";
 import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
 
-export function createEmptyForm(): CharacterFormState {
+function createEmptyForm(): CharacterFormState {
   return {
     id: "",
     aiId: "",
@@ -64,7 +64,7 @@ export function createEmptyForm(): CharacterFormState {
   };
 }
 
-export function buildFormState(character: CharacterPanelItem | null): CharacterFormState {
+function buildFormState(character: CharacterPanelItem | null): CharacterFormState {
   if (!character) return createEmptyForm();
   return {
     id: String(character.id ?? ""),

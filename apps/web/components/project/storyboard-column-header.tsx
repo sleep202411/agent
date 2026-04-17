@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { IconDownload, IconLoader2, IconWand } from "@tabler/icons-react";
+import { IconDownload, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -748,15 +748,16 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
             {headerTitle}
             {(isImagePromptColumn || isDescriptionColumn) && (
               <Button
-                variant="ghost"
-                color="muted"
-                size="icon-xs"
+                size="xs"
                 onClick={(event) => {
                   event.stopPropagation();
                   setShowAutoloadDialog(true);
                 }}
+                disabled={autoloadLoading}
+                className="bg-[#E52227] text-white hover:bg-[#FF3D42]"
               >
-                <IconWand className="size-3.5" />
+                {autoloadLoading ? <IconLoader2 className="size-3 animate-spin" /> : null}
+                {t("autoAssociateTitle")}
               </Button>
             )}
             {isDialogueColumn ? (

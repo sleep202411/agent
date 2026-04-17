@@ -3,7 +3,9 @@ import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Document, Packer, Paragraph, HeadingLevel, AlignmentType } from "docx";
-import { saveAs } from "file-saver";
+import fileSaver from "file-saver";
+
+const { saveAs } = fileSaver;
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 

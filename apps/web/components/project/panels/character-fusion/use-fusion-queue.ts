@@ -86,7 +86,7 @@ export function useFusionQueue({ characterId }: UseFusionQueueOptions) {
         data: {
           page: 1,
           pageSize: 50,
-          shotColumnId: ROLE_FUSION_COLUMN_ID,
+          shotcolumnId: ROLE_FUSION_COLUMN_ID,
           shotId: characterId,
           type: "img",
           sort: 0,
