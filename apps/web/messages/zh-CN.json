@@ -1781,7 +1781,16 @@
     "projectsPageDesc": "创建、编辑和管理你的 AI 动画项目。",
     "projectCount": "{count} 个项目",
     "creating": "创建中...",
-    "noProjectsYetHint": "还没有项目，创建你的第一个项目开始吧。"
+    "noProjectsYetHint": "还没有项目，创建你的第一个项目开始吧。",
+    "studioHomePlaceholder": "拖拽/粘贴 🖼️ 图片到这里，来试试【角色】、【风格】参考",
+    "studioHomeScript": "剧本",
+    "studioHomeSend": "发送",
+    "studioHomeTitle": "你想创作什么？",
+    "studioHomeSubtitle": "输入你的想法 — 让 AI 即刻把创意变成惊艳画面。",
+    "agentCharacter": "角色设计",
+    "agentEpisode": "剧集设计",
+    "agentProp": "道具设计",
+    "agentScene": "场景设计"
   },
   "asset": {
     "title": "素材库",

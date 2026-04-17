@@ -4,7 +4,7 @@ import { UserMenu } from "@/components/layout/user-menu";
 
 export function WorkspaceHeader() {
   return (
-    <header className="flex h-16 shrink-0 items-center justify-end gap-2 border-b border-border/50 px-4">
+    <header className="relative z-20 flex h-16 shrink-0 items-center justify-end gap-2 px-4">
       <NotificationButton />
       <UserMenu />
     </header>

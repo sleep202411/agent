@@ -1,17 +1,25 @@
 "use client";
 
 import {
+  IconHome2,
   IconFoldersFilled,
   IconSubtask,
   IconPhotoFilled,
   IconSettingsFilled,
   IconFlame,
 } from "@tabler/icons-react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { WorkspaceSidebarItem } from "./workspace-sidebar-item";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const workspaceItems = [
+  {
+    path: "/studio",
+    exact: true,
+    label: "Home",
+    icon: <IconHome2 className="size-5" />,
+  },
   {
     path: "/studio/projects",
     label: "Projects",
@@ -37,15 +45,16 @@ const workspaceItems = [
 export function WorkspaceSidebar() {
   const pathname = usePathname() ?? "/";
 
-  const isItemActive = (path: string) => {
+  const isItemActive = (path: string, exact = false) => {
+    if (exact) return pathname === path;
     return pathname === path || pathname.startsWith(`${path}/`);
   };
 
   return (
     <aside className="flex w-16 shrink-0 flex-col items-center border-r border-border/70 bg-background py-4">
-      <div className="mb-4">
+      <Link href="/studio" aria-label="Studio home" className="mb-4">
         <IconFlame className="size-7 text-primary" />
-      </div>
+      </Link>
 
       <nav className="flex flex-1 flex-col gap-3">
         {workspaceItems.map((item) => (
@@ -54,7 +63,7 @@ export function WorkspaceSidebar() {
             href={item.path}
             label={item.label}
             icon={item.icon}
-            isActive={isItemActive(item.path)}
+            isActive={isItemActive(item.path, item.exact)}
           />
         ))}
       </nav>
