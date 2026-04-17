@@ -1,12 +1,12 @@
 /**
  * Environment variables.
  *
- * In Vite, public env vars use the VITE_ prefix and are accessed via import.meta.env.
- * Critical vars throw at build/startup time if missing — never silently fallback.
+ * Next.js replaces `process.env.NEXT_PUBLIC_FOO` with the literal value **at build time**,
+ * but only for static dot-access (not dynamic `process.env[name]`). Keep every access
+ * as a literal below so client bundles carry the inlined value.
  */
 
-function required(name: string): string {
-  const value = import.meta.env[name];
+function required(name: string, value: string | undefined): string {
   if (!value) {
     throw new Error(`Missing required environment variable: ${name}`);
   }
@@ -14,11 +14,11 @@ function required(name: string): string {
 }
 
 export const env = {
-  OSS_BASE_URL: required("VITE_OSS_BASE_URL"),
+  OSS_BASE_URL: required("NEXT_PUBLIC_OSS_BASE_URL", process.env.NEXT_PUBLIC_OSS_BASE_URL),
   /** Base URL for IP project banner/avatar images (fizzdragon-banner OSS) */
-  BANNER_BASE_URL: required("VITE_BANNER_BASE_URL"),
+  BANNER_BASE_URL: required("NEXT_PUBLIC_BANNER_BASE_URL", process.env.NEXT_PUBLIC_BANNER_BASE_URL),
   /** Base URL for user avatar images */
-  USER_BASE_URL: import.meta.env.VITE_USER_BASE_URL ?? "",
-  SITE_REGION: import.meta.env.VITE_SITE_REGION ?? "global",
-  PARENT_ORIGIN: import.meta.env.VITE_PARENT_ORIGIN ?? "",
+  USER_BASE_URL: process.env.NEXT_PUBLIC_USER_BASE_URL ?? "",
+  SITE_REGION: process.env.NEXT_PUBLIC_SITE_REGION ?? "global",
+  PARENT_ORIGIN: process.env.NEXT_PUBLIC_PARENT_ORIGIN ?? "",
 } as const;

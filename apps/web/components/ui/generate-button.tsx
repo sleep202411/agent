@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect } from "react";
 import { IconLoader2, IconSparkles } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";

@@ -1,4 +1,7 @@
+"use client";
+
 import { useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import {
   IconCredits,
   IconCrown,
@@ -11,7 +14,6 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useTheme } from "next-themes";
-import { Link } from "@tanstack/react-router";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,7 +87,7 @@ export function UserMenu() {
               )}
             </div>
             <Link
-              to="/settings"
+              href="/studio/settings"
               className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <IconSettings className="size-4" />

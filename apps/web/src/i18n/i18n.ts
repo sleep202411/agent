@@ -58,6 +58,8 @@ export function useLocale(): string {
 export function setLanguage(lng: string): void {
   if (!isValidLocale(lng)) return;
   void i18n.changeLanguage(lng);
-  localStorage.setItem("language", lng);
-  document.documentElement.lang = lng;
+  if (typeof window !== "undefined") {
+    localStorage.setItem("language", lng);
+    document.documentElement.lang = lng;
+  }
 }

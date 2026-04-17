@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback } from "react";
 import { experimental_useObject as useObject } from "@ai-sdk/react";
 import { useAppSelector, useAppDispatch } from "@/src/store";

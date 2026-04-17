@@ -1,5 +1,7 @@
+"use client";
+
 import { useEffect, useRef } from "react";
-import { useParams, useSearch } from "@tanstack/react-router";
+import { useParams, useSearchParams } from "next/navigation";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -33,11 +35,11 @@ import {
  * 应在项目详情页顶层调用一次，其他组件通过 useProjectStore 消费数据。
  */
 export function useProjectDetail() {
-  const params = useParams({ strict: false });
-  const search = useSearch({ strict: false }) as Record<string, string | undefined>;
-  const id = params.id as string;
-  const urlWorldId = search.worldId ?? null;
-  const urlEpisodeId = search.episodeId ?? null;
+  const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const id = params?.id ?? "";
+  const urlWorldId = searchParams?.get("worldId") ?? null;
+  const urlEpisodeId = searchParams?.get("episodeId") ?? null;
 
   const loadedProjectIdRef = useRef<string | null>(null);
   const loadedWorldIdRef = useRef<string | null>(null);

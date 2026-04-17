@@ -22,11 +22,8 @@ import type {
   SimpleMode,
   VideoMode,
   VideoResultItem,
-} from "@/components/storyboard/ai-generator/video-dialog/video-types";
-import {
-  ossUrl,
-  toHistoryItem,
-} from "@/components/storyboard/ai-generator/video-dialog/video-types";
+} from "@/src/lib/video-types";
+import { ossUrl, toHistoryItem } from "@/src/lib/video-types";
 import type { RawAiModel, AssetRecord } from "@/src/types/workspace";
 
 // ─── Re-export video types used by consumers ──────────

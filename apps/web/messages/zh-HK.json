@@ -1781,7 +1781,16 @@
     "projectsPageDesc": "建立、編輯和管理你的 AI 動畫專案。",
     "projectCount": "{count} 個專案",
     "creating": "建立中...",
-    "noProjectsYetHint": "還沒有專案，建立你的第一個專案開始吧。"
+    "noProjectsYetHint": "還沒有專案，建立你的第一個專案開始吧。",
+    "studioHomePlaceholder": "拖拽/貼上 🖼️ 圖片到這裡，來試試【角色】、【風格】參考",
+    "studioHomeScript": "劇本",
+    "studioHomeSend": "發送",
+    "studioHomeTitle": "你想創作什麼？",
+    "studioHomeSubtitle": "輸入你的想法 — 讓 AI 即刻把創意變成驚豔畫面。",
+    "agentCharacter": "角色設計",
+    "agentEpisode": "劇集設計",
+    "agentProp": "道具設計",
+    "agentScene": "場景設計"
   },
   "asset": {
     "title": "素材庫",

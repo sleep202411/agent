@@ -1781,7 +1781,16 @@
     "projectsPageDesc": "Create, edit and manage your AI animation projects.",
     "projectCount": "{count} projects",
     "creating": "Creating...",
-    "noProjectsYetHint": "No projects yet. Create your first project to get started."
+    "noProjectsYetHint": "No projects yet. Create your first project to get started.",
+    "studioHomePlaceholder": "Drag/paste 🖼️ an image here to try it as a [character] or [style] reference",
+    "studioHomeScript": "Script",
+    "studioHomeSend": "Send",
+    "studioHomeTitle": "What do you want to create?",
+    "studioHomeSubtitle": "Type your prompt — turn ideas into stunning AI visuals instantly.",
+    "agentCharacter": "Character Design",
+    "agentEpisode": "Episode Design",
+    "agentProp": "Prop Design",
+    "agentScene": "Scene Design"
   },
   "asset": {
     "title": "Assets",

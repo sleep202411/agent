@@ -1,3 +1,5 @@
+"use client";
+
 import { useAppSelector } from "@/src/store";
 import {
   selectCurrentInstance,
