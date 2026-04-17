@@ -11,15 +11,20 @@ import { storyosInstructions } from "../prompts/storyos";
 import { defaultRouterModel } from "../lib/models";
 
 /**
- * The router agent — the only agent surface the user talks to. Holds only
- * meta-tools; all business logic (generate, write, commit) lives inside
- * workflows invoked via `invoke_workflow`. See `docs/storyos-v2/phase-2-design.md`
- * §8 for the rationale.
+ * Supervisor agent — the only agent surface the user talks to. Plans the
+ * creation flow, routes work into background workflows, and observes their
+ * outputs to decide the next step. Holds only meta-tools; all generation
+ * lives inside workflows invoked via `invoke_workflow`.
+ *
+ * Differs from the original "router" design in that it is allowed (and
+ * expected) to reason about user intent, chain related phases when safe,
+ * and ask clarifying questions when ambiguous — see prompts/storyos.ts.
  */
 export const storyosAgent = new Agent({
   id: "storyos",
   name: "StoryOS",
-  description: "FizzSpace StoryOS router agent — translates user intent into workflow invocations.",
+  description:
+    "FizzSpace StoryOS supervisor — plans the creation flow, dispatches work into workflows, and coordinates HITL with the user.",
   instructions: storyosInstructions,
   // Resolved per-request so startup succeeds even if the API key is injected
   // later (e.g. via Mastra Studio settings UI or a secrets-loader middleware).
