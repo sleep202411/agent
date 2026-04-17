@@ -26,7 +26,6 @@ const nextConfig: NextConfig = {
       // Java Studio service
       { source: "/api/:path*", destination: `${JAVA_STUDIO_URL}/api/:path*` },
       { source: "/anon/:path*", destination: `${JAVA_STUDIO_URL}/anon/:path*` },
-      { source: "/studio/:path*", destination: `${JAVA_STUDIO_URL}/studio/:path*` },
       // Java Content service
       { source: "/user/:path*", destination: `${JAVA_CONTENT_URL}/user/:path*` },
       { source: "/project/:path*", destination: `${JAVA_CONTENT_URL}/project/:path*` },

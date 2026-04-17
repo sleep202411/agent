@@ -52,6 +52,6 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Skip Next internals, static assets, and API proxy paths
-    "/((?!_next|api|aurora|user|project|anon|studio|vedio|newsapi|.*\\..*).*)",
+    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|.*\\..*).*)",
   ],
 };
