@@ -28,7 +28,7 @@ import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import {
   parseObjectSafely,
   normalizeStoragePath,
-} from "@/components/project/panels/characters/character-utils";
+} from "@/app/(project)/_components/panels/characters/character-utils";
 import type { RawAiModel } from "@/src/types/workspace";
 import type { Asset } from "@/src/store/slices/projectSlice";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";

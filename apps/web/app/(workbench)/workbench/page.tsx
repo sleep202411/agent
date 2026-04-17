@@ -17,7 +17,7 @@ import {
   MESSAGE_TYPE_CONFIG,
   MESSAGE_FILTERS,
   type WorkbenchMessage,
-} from "@/components/workbench/workbench-mock";
+} from "@/app/(workbench)/_components/workbench-mock";
 
 export default function WorkbenchPage() {
   const t = useTranslations("workbench");

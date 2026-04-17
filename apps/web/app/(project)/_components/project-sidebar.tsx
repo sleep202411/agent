@@ -12,7 +12,7 @@ import {
   IconMusic,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { DragonIcon } from "@/components/project/ai-assistant/dragon-icon";
+import { DragonIcon } from "@/app/(project)/_components/ai-assistant/dragon-icon";
 import { cn } from "@/lib/utils";
 import type { WorkspacePanelKey } from "@/src/types/workspace";
 import { useAppSelector, useAppDispatch } from "@/src/store";

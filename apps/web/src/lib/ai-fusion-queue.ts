@@ -21,10 +21,7 @@ import {
   type TaskOutput,
 } from "@/src/store/slices/taskSlice";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
-import {
-  normalizeStoragePath,
-  ROLE_FUSION_COLUMN_ID,
-} from "@/components/project/panels/characters/character-utils";
+import { normalizeStoragePath, ROLE_FUSION_COLUMN_ID } from "@/src/lib/asset-paths";
 import type { FusionGenerateInput } from "@/src/store/slices/projectSlice";
 
 // ─── Constants ─────────────────────────────────────────

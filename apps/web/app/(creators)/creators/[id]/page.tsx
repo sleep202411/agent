@@ -26,7 +26,7 @@ import {
   MOCK_CREATORS,
   LEVEL_COLORS,
   AVAILABILITY_CONFIG,
-} from "@/components/creators/creators-mock";
+} from "@/app/(creators)/_components/creators-mock";
 
 const MOCK_DETAIL = {
   timezone: "UTC+8",

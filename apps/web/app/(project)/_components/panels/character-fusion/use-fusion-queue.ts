@@ -8,7 +8,7 @@ import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import {
   normalizeStoragePath,
   ROLE_FUSION_COLUMN_ID,
-} from "@/components/project/panels/characters/character-utils";
+} from "@/app/(project)/_components/panels/characters/character-utils";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { removeTask } from "@/src/store/slices/taskSlice";

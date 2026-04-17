@@ -4,7 +4,11 @@ import { useState } from "react";
 import { IconX, IconPlus, IconInfoCircle } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { PRESET_REWARDS, type IPCreateForm, type IPRewardTier } from "@/components/ip/ip-mock";
+import {
+  PRESET_REWARDS,
+  type IPCreateForm,
+  type IPRewardTier,
+} from "@/app/(ips)/_components/ip-mock";
 
 interface Props {
   form: IPCreateForm;

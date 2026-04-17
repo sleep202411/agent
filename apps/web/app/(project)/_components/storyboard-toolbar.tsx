@@ -11,9 +11,9 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ProjectEditorDialog } from "@/components/project/project-editor-dialog";
-import { StoryboardAiImportDialog } from "@/components/project/storyboard-ai-import-dialog";
-import { StoryboardFieldSettingsPanel } from "@/components/project/storyboard-field-settings-panel";
+import { ProjectEditorDialog } from "@/app/(project)/_components/project-editor-dialog";
+import { StoryboardAiImportDialog } from "@/app/(project)/_components/storyboard-ai-import-dialog";
+import { StoryboardFieldSettingsPanel } from "@/app/(project)/_components/storyboard-field-settings-panel";
 import { backendApi } from "@/src/lib/api";
 import { exportStoryboard } from "@/src/lib/storyboard-export";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";

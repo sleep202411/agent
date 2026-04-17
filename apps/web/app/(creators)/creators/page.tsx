@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MOCK_CREATORS } from "@/components/creators/creators-mock";
-import { CreatorsHero } from "@/components/creators/creators-hero";
-import { CreatorsSpotlight } from "@/components/creators/creators-spotlight";
-import { CreatorsTalentGrid } from "@/components/creators/creators-talent-grid";
-import { CreatorsFeed } from "@/components/creators/creators-feed";
+import { MOCK_CREATORS } from "@/app/(creators)/_components/creators-mock";
+import { CreatorsHero } from "@/app/(creators)/_components/creators-hero";
+import { CreatorsSpotlight } from "@/app/(creators)/_components/creators-spotlight";
+import { CreatorsTalentGrid } from "@/app/(creators)/_components/creators-talent-grid";
+import { CreatorsFeed } from "@/app/(creators)/_components/creators-feed";
 
 export default function CreatorsPage() {
   const [searchTerm, setSearchTerm] = useState("");

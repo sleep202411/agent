@@ -19,7 +19,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import {
   BatchGenerateConfig,
   StoryboardBatchGenerateDialog,
-} from "@/components/project/storyboard-batch-generate-dialog";
+} from "@/app/(project)/_components/storyboard-batch-generate-dialog";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { store } from "@/src/store";
 import {
@@ -36,7 +36,7 @@ import {
 import {
   BatchVoiceConfig,
   StoryboardBatchVoiceDialog,
-} from "@/components/project/storyboard-batch-voice-dialog";
+} from "@/app/(project)/_components/storyboard-batch-voice-dialog";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 import { env } from "@/src/env";
 

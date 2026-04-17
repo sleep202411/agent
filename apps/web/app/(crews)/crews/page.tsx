@@ -15,9 +15,14 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { MOCK_CREWS, STATUS_TABS, ROLE_FILTERS, PLATFORM_STATS } from "@/components/crew/crew-mock";
-import { CrewCard } from "@/components/crew/crew-card";
-import { CrewActivityFeed } from "@/components/crew/crew-activity-feed";
+import {
+  MOCK_CREWS,
+  STATUS_TABS,
+  ROLE_FILTERS,
+  PLATFORM_STATS,
+} from "@/app/(crews)/_components/crew-mock";
+import { CrewCard } from "@/app/(crews)/_components/crew-card";
+import { CrewActivityFeed } from "@/app/(crews)/_components/crew-activity-feed";
 
 const HOW_IT_WORKS = [
   {

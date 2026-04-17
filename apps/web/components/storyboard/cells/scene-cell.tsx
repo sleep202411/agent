@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { IconMapPin } from "@tabler/icons-react";
 import { WorldAssetSelectDialog } from "@/components/storyboard/dialogs/world-asset-select-dialog";
-import { dispatchFocusAssetPanel } from "@/components/project/panels/asset-panel-events";
+import { dispatchFocusAssetPanel } from "@/src/lib/panel-events";
 import { AssetReferenceCard } from "./character-cell";
 import { ossUrl, persistValueList } from "./cell-utils";
 import { useAppSelector } from "@/src/store";

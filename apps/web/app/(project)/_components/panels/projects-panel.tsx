@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PanelLayout } from "./panel-layout";
-import { ProjectEditorDialog } from "@/components/project/project-editor-dialog";
+import { ProjectEditorDialog } from "@/app/(project)/_components/project-editor-dialog";
 import { backendApi } from "@/src/lib/api";
 import { env } from "@/src/env";
 import type { ProjectOptionItem } from "@/src/types/workspace";

@@ -15,7 +15,11 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { STATUS_CONFIG, MOCK_CREW_DETAIL, type CrewDetail } from "@/components/crew/crew-mock";
+import {
+  STATUS_CONFIG,
+  MOCK_CREW_DETAIL,
+  type CrewDetail,
+} from "@/app/(crews)/_components/crew-mock";
 
 export default function CrewDetailPage({ id }: { id: string }) {
   const t = useTranslations("crew");

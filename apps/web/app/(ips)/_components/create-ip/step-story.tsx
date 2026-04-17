@@ -3,7 +3,7 @@
 import { IconInfoCircle } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { TARGET_EPISODES_OPTIONS, type IPCreateForm } from "@/components/ip/ip-mock";
+import { TARGET_EPISODES_OPTIONS, type IPCreateForm } from "@/app/(ips)/_components/ip-mock";
 
 interface Props {
   form: IPCreateForm;

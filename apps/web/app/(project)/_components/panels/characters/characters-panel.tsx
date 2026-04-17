@@ -12,7 +12,7 @@ import { ImportEntityDialog } from "../import-entity-dialog";
 import {
   WORKSPACE_FOCUS_ASSET_PANEL_EVENT,
   type AssetPanelFocusDetail,
-} from "../asset-panel-events";
+} from "@/src/lib/panel-events";
 import { PanelLayout } from "../panel-layout";
 import {
   mergeCharacters,

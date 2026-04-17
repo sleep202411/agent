@@ -8,7 +8,7 @@ import { backendApi, type Paginated } from "@/src/lib/api";
 import {
   WORKSPACE_FOCUS_ASSET_PANEL_EVENT,
   type AssetPanelFocusDetail,
-} from "../asset-panel-events";
+} from "@/src/lib/panel-events";
 import { PanelLayout } from "../panel-layout";
 import { SceneList } from "./scene-list";
 import { SceneCreateDialog } from "./scene-create-dialog";

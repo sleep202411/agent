@@ -27,8 +27,8 @@ import {
   ACTIVITY_LIST,
   DELIVERY_RECORDS,
   MEMBER_STATUS_META,
-} from "@/components/crew/workspace-mock";
-import { EpisodeAccordion } from "@/components/crew/episode-accordion";
+} from "@/app/(crews)/_components/workspace-mock";
+import { EpisodeAccordion } from "@/app/(crews)/_components/episode-accordion";
 
 const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },

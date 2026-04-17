@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconArrowDown, IconInfoCircle, IconMessagePlus, IconSparkles } from "@tabler/icons-react";
 import { BorderGlow } from "@/components/ui/border-glow";
 import { useTranslations } from "@/src/i18n/i18n";
-import { PanelLayout } from "@/components/project/panels/panel-layout";
+import { PanelLayout } from "@/app/(project)/_components/panels/panel-layout";
 import {
   getAssistantToolName,
   isAssistantToolPart,

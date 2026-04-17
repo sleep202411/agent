@@ -1,12 +1,15 @@
 import type { AssetRecord } from "@/src/types/workspace";
 import type { Asset } from "@/src/store/slices/projectSlice";
-import { env } from "@/src/env";
+import {
+  ossUrl as sharedOssUrl,
+  normalizeStoragePath as sharedNormalizeStoragePath,
+  ROLE_RECORD_COLUMN_ID,
+  ROLE_FUSION_COLUMN_ID,
+  ROLE_THREE_VIEW_COLUMN_ID,
+} from "@/src/lib/asset-paths";
 
-const OSS_BASE = env.OSS_BASE_URL;
 export const PAGE_SIZE = 20;
-export const ROLE_RECORD_COLUMN_ID = -1;
-export const ROLE_FUSION_COLUMN_ID = -6;
-export const ROLE_THREE_VIEW_COLUMN_ID = -11;
+export { ROLE_RECORD_COLUMN_ID, ROLE_FUSION_COLUMN_ID, ROLE_THREE_VIEW_COLUMN_ID };
 
 export type CharacterPanelItem = Asset & {
   __panelKey: string;
@@ -39,23 +42,8 @@ export type CharacterFormState = {
   threeViewsImagePath: string;
 };
 
-export function ossUrl(path?: string | null) {
-  if (!path) return "";
-  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("blob:")) {
-    return path;
-  }
-  return `${OSS_BASE}/${path}`;
-}
-
-export function normalizeStoragePath(path?: string | null) {
-  const raw = String(path ?? "").trim();
-  if (!raw) return "";
-  const prefix = `${OSS_BASE}/`;
-  if (raw.startsWith(prefix)) {
-    return raw.slice(prefix.length);
-  }
-  return raw;
-}
+export const ossUrl = sharedOssUrl;
+export const normalizeStoragePath = sharedNormalizeStoragePath;
 
 export function toArray(value: unknown) {
   return Array.isArray(value) ? value : [];

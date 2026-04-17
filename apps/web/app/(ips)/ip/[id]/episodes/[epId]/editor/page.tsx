@@ -25,8 +25,12 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { VideoNodeMemo } from "@/components/ip/interactive-node";
-import { MOCK_NODES, MOCK_EDGES, type VideoNodeData } from "@/components/ip/interactive-mock";
+import { VideoNodeMemo } from "@/app/(ips)/_components/interactive-node";
+import {
+  MOCK_NODES,
+  MOCK_EDGES,
+  type VideoNodeData,
+} from "@/app/(ips)/_components/interactive-mock";
 
 const NODE_TYPES = { video: VideoNodeMemo };
 

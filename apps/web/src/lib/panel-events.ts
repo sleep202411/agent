@@ -1,3 +1,9 @@
+/**
+ * Cross-feature event bus for focusing an asset panel from outside the project view
+ * (e.g. from a storyboard cell). Kept here so non-project code can dispatch without
+ * reaching into the project feature's private tree.
+ */
+
 export type AssetPanelTarget = "characters" | "scenes" | "props";
 
 export interface AssetPanelFocusDetail {
