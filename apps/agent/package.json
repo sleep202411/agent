@@ -1,0 +1,44 @@
+{
+  "name": "agent",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "mastra dev",
+    "dev:worker": "tsx watch src/worker.ts",
+    "build": "mastra build",
+    "start": "mastra start",
+    "start:worker": "tsx src/worker.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "mastra": "^1.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  },
+  "dependencies": {
+    "@ai-sdk/alibaba": "^1.0.17",
+    "@ai-sdk/openai-compatible": "^2.0.41",
+    "@mastra/ai-sdk": "^1.4.0",
+    "@mastra/core": "^1.25.0",
+    "@mastra/duckdb": "^1.1.2",
+    "@mastra/evals": "^1.2.1",
+    "@mastra/libsql": "^1.8.1",
+    "@mastra/loggers": "^1.1.1",
+    "@mastra/memory": "^1.15.1",
+    "@mastra/observability": "^1.9.1",
+    "@repo/shared": "*",
+    "bullmq": "^5.74.1",
+    "ioredis": "^5.10.1"
+  }
+}

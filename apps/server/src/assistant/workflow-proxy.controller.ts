@@ -1,0 +1,266 @@
+/**
+ * Proxies workflow + drafts REST traffic from the frontend to the Mastra
+ * agent server. Upstream routes live in apps/agent's Mastra `apiRoutes`;
+ * we inject the authenticated `x-storyos-context` header so Mastra's
+ * middleware can populate the requestContext.
+ *
+ * Mirrors the shape of the existing `/assistant/stream-v2` proxy.
+ */
+import {
+  Body,
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  Logger,
+  Param,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
+import type { Request } from 'express';
+import { CurrentUser, type AuthUser } from '../auth';
+
+type JsonBody = Record<string, unknown>;
+
+type ContextHeader = {
+  userId: string;
+  projectId: string;
+  worldId?: string;
+  episodeId?: string;
+  locale?: string;
+  userTier?: string;
+};
+
+@Controller('workflow')
+export class WorkflowProxyController {
+  private readonly logger = new Logger(WorkflowProxyController.name);
+
+  private get mastraUrl(): string {
+    return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
+      /\/$/,
+      '',
+    );
+  }
+
+  private buildHeaders(
+    req: Request,
+    context: ContextHeader,
+    hasBody: boolean,
+  ): Record<string, string> {
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'accept-language':
+        (req.headers['accept-language'] as string | undefined) ?? 'zh-CN',
+      'x-storyos-context': JSON.stringify(context),
+    };
+    if (hasBody) headers['Content-Type'] = 'application/json';
+    const cookie = req.headers.cookie as string | undefined;
+    if (cookie) headers.cookie = cookie;
+    return headers;
+  }
+
+  private buildContext(
+    user: AuthUser,
+    workspaceContext?: Record<string, unknown>,
+  ): ContextHeader {
+    return {
+      userId: user.userId,
+      projectId: String(workspaceContext?.projectId ?? ''),
+      worldId: workspaceContext?.worldId
+        ? String(workspaceContext.worldId)
+        : undefined,
+      episodeId: workspaceContext?.episodeId
+        ? String(workspaceContext.episodeId)
+        : undefined,
+      locale:
+        typeof workspaceContext?.locale === 'string'
+          ? workspaceContext.locale
+          : undefined,
+      userTier: user.userLevel ?? 'free',
+    };
+  }
+
+  private async forward<T = unknown>(
+    path: string,
+    init: {
+      method: 'GET' | 'POST';
+      headers: Record<string, string>;
+      body?: string;
+    },
+  ): Promise<T> {
+    const url = `${this.mastraUrl}${path}`;
+    let upstream: globalThis.Response;
+    try {
+      upstream = await fetch(url, init);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Mastra upstream fetch failed (${path}): ${msg}`);
+      throw new HttpException(
+        { message: `Mastra upstream unavailable: ${msg}` },
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    if (!upstream.ok) {
+      const text = await upstream.text().catch(() => '');
+      this.logger.warn(
+        `Mastra ${init.method} ${path} → ${upstream.status}: ${text.slice(0, 200)}`,
+      );
+      throw new HttpException(
+        { message: text.slice(0, 400) || 'Mastra error' },
+        upstream.status === 404 ? HttpStatus.NOT_FOUND : HttpStatus.BAD_GATEWAY,
+      );
+    }
+    return (await upstream.json()) as T;
+  }
+
+  // ─── Status + events ────────────────────────────────────────────────
+
+  @Get(':runId/status')
+  async status(
+    @Param('runId') runId: string,
+    @Query('projectId') projectId: string,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    if (!projectId)
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    const context = this.buildContext(user, { projectId });
+    return this.forward(`/workflow/${encodeURIComponent(runId)}/status`, {
+      method: 'GET',
+      headers: this.buildHeaders(req, context, false),
+    });
+  }
+
+  @Get(':runId/events')
+  async events(
+    @Param('runId') runId: string,
+    @Query('projectId') projectId: string,
+    @Query('limit') limit: string | undefined,
+    @Query('fromId') fromId: string | undefined,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    if (!projectId)
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    const context = this.buildContext(user, { projectId });
+    const qs = new URLSearchParams();
+    if (limit) qs.set('limit', limit);
+    if (fromId) qs.set('fromId', fromId);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return this.forward(
+      `/workflow/${encodeURIComponent(runId)}/events${suffix}`,
+      {
+        method: 'GET',
+        headers: this.buildHeaders(req, context, false),
+      },
+    );
+  }
+
+  // ─── Confirm / cancel / resume ──────────────────────────────────────
+
+  @Post(':runId/confirm')
+  async confirm(
+    @Param('runId') runId: string,
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = String(body.projectId ?? '');
+    if (!projectId)
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    const context = this.buildContext(user, { projectId });
+    const payload = {
+      approved: Boolean(body.approved ?? false),
+      feedback: body.feedback,
+      acceptedClientRefIds: body.acceptedClientRefIds,
+    };
+    return this.forward(`/workflow/${encodeURIComponent(runId)}/confirm`, {
+      method: 'POST',
+      headers: this.buildHeaders(req, context, true),
+      body: JSON.stringify(payload),
+    });
+  }
+
+  @Post(':runId/cancel')
+  async cancel(
+    @Param('runId') runId: string,
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = String(body.projectId ?? '');
+    if (!projectId)
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    const context = this.buildContext(user, { projectId });
+    return this.forward(`/workflow/${encodeURIComponent(runId)}/cancel`, {
+      method: 'POST',
+      headers: this.buildHeaders(req, context, true),
+      body: JSON.stringify({}),
+    });
+  }
+
+  @Post(':runId/resume')
+  async resume(
+    @Param('runId') runId: string,
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = String(body.projectId ?? '');
+    if (!projectId)
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    const context = this.buildContext(user, { projectId });
+    const payload = {
+      resumeData: body.resumeData,
+      stepId: body.stepId,
+    };
+    return this.forward(`/workflow/${encodeURIComponent(runId)}/resume`, {
+      method: 'POST',
+      headers: this.buildHeaders(req, context, true),
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // ─── Listing ────────────────────────────────────────────────────────
+
+  @Get('user/:userId')
+  async listByUser(
+    @Param('userId') userId: string,
+    @Query('projectId') projectId: string,
+    @Query('limit') limit: string | undefined,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    if (userId !== user.userId) {
+      throw new HttpException(
+        "cannot list another user's workflows",
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    if (!projectId)
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    const context = this.buildContext(user, { projectId });
+    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : '';
+    return this.forward(`/workflow/user/${encodeURIComponent(userId)}${qs}`, {
+      method: 'GET',
+      headers: this.buildHeaders(req, context, false),
+    });
+  }
+
+  @Get('workspace/:workspaceId')
+  async listByWorkspace(
+    @Param('workspaceId') workspaceId: string,
+    @Query('limit') limit: string | undefined,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const context = this.buildContext(user, { projectId: workspaceId });
+    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : '';
+    return this.forward(
+      `/workflow/workspace/${encodeURIComponent(workspaceId)}${qs}`,
+      { method: 'GET', headers: this.buildHeaders(req, context, false) },
+    );
+  }
+}

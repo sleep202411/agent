@@ -5,10 +5,20 @@ import { WorkspaceService } from './workspace.service';
 import { ConversationService } from './conversation.service';
 import { ScriptAgentService } from '../pipeline/script-agent.service';
 import { TaskModule } from '../pipeline/task/task.module';
+// v3 proxy controllers (thin pass-through to the Mastra agent service).
+// Kept alongside the legacy controllers until the frontend fully migrates.
+import { MastraProxyController } from './mastra-proxy.controller';
+import { WorkflowProxyController } from './workflow-proxy.controller';
+import { DraftsProxyController } from './drafts-proxy.controller';
 
 @Module({
   imports: [TaskModule],
-  controllers: [AssistantController],
+  controllers: [
+    AssistantController,
+    MastraProxyController,
+    WorkflowProxyController,
+    DraftsProxyController,
+  ],
   providers: [
     AssistantService,
     WorkspaceService,
