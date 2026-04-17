@@ -36,8 +36,8 @@ export const worldKeys = {
 type WorldListType = "own" | "created";
 
 const WORLD_LIST_URLS: Record<WorldListType, string> = {
-  own: "/user/world/query/world/ownproject",
-  created: "/user/world/query/myworld",
+  own: "/api/user/world/query/world/ownproject",
+  created: "/api/user/world/query/myworld",
 };
 
 async function fetchWorldList(type: WorldListType) {
