@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useRef } from "react";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import { useAppSelector } from "@/src/store";

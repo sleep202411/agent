@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback } from "react";
 import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
 import Markdown from "react-markdown";

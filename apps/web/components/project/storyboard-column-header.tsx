@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { IconDownload, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";

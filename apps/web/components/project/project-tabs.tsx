@@ -1,3 +1,5 @@
+"use client";
+
 import { IconFileText, IconLayoutGrid, IconClock } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { motion } from "motion/react";

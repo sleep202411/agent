@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch } from "@/src/store";

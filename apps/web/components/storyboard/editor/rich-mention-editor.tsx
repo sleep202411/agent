@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { TiptapCell } from "./mention-editor";

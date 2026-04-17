@@ -1,3 +1,5 @@
+"use client";
+
 import { IconLoader2, IconPhoto, IconTrash, IconWand } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";

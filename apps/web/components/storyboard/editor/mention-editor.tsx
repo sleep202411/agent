@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useEditor, EditorContent } from "@tiptap/react";

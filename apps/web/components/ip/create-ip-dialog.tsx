@@ -1,5 +1,7 @@
+"use client";
+
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
@@ -40,7 +42,7 @@ interface CreateIPDialogProps {
 
 export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
   const t = useTranslations("ipCreate");
-  const navigate = useNavigate();
+  const router = useRouter();
   const [name, setName] = useState("");
   const [typeId, setTypeId] = useState("");
   const [description, setDescription] = useState("");
@@ -58,7 +60,7 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
       setTypeId("");
       setDescription("");
       toast.success(t("createSuccess"));
-      void navigate({ to: "/ips/$id/edit", params: { id: mockId } });
+      router.push(`/ips/${mockId}/edit`);
     }, 500);
   };
 

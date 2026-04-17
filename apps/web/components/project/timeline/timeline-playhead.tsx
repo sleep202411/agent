@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, type MouseEvent as ReactMouseEvent } from "react";
 import { formatClock, PLAYHEAD_OFFSET, snapTimeToTick } from "./timeline-types";
 

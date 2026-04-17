@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconChevronLeft, IconChevronRight, IconPencil, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";

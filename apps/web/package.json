@@ -2,12 +2,11 @@
   "name": "web",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "dev": "vite dev --port 3000",
-    "build": "vite build",
-    "preview": "vite preview",
-    "start": "node dist/server/server.js",
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "eslint",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,10 +16,7 @@
     "@reduxjs/toolkit": "^2.11.2",
     "@remotion/player": "^4.0.443",
     "@tabler/icons-react": "^3.41.1",
-    "@tailwindcss/typography": "^0.5.19",
     "@tanstack/react-query": "^5.96.1",
-    "@tanstack/react-router": "latest",
-    "@tanstack/react-start": "latest",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.23",
     "@tiptap/extension-placeholder": "^3.22.1",
@@ -41,8 +37,8 @@
     "mammoth": "^1.12.0",
     "marked": "^17.0.5",
     "motion": "^12.38.0",
+    "next": "16.2.4",
     "next-themes": "^0.4.6",
-    "nitro": "^3.0.260311-beta",
     "ogl": "^1.0.11",
     "qrcode": "^1.5.4",
     "radix-ui": "^1.4.3",
@@ -65,15 +61,14 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4",
-    "@tanstack/router-plugin": "^1.132.0",
+    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^5.1.4",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "vite": "^7.3.1",
-    "vite-tsconfig-paths": "^5.1.4"
+    "typescript": "^5"
   }
 }

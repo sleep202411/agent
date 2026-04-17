@@ -1,3 +1,5 @@
+"use client";
+
 import { useRef, useState } from "react";
 import { IconSparkles, IconPlus, IconX, IconFile, IconMovie } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";

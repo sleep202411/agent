@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconLoader2, IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";

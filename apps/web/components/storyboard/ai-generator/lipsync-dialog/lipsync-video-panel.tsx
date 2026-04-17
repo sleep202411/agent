@@ -1,3 +1,5 @@
+"use client";
+
 import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconCircleCheck,

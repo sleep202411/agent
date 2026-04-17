@@ -1,3 +1,5 @@
+"use client";
+
 import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { IconCheck, IconChevronDown } from "@tabler/icons-react";

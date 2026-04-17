@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { IconClock } from "@tabler/icons-react";

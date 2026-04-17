@@ -1,3 +1,5 @@
+"use client";
+
 import { createContext, useContext, useState } from "react";
 import { IconArrowsMaximize, IconArrowsMinimize, IconX, IconLoader2 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";

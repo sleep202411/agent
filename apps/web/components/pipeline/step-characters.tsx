@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { IconPlus, IconTrash, IconEdit, IconPhoto } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";

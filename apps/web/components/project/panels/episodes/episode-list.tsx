@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useRef } from "react";
 import { IconDeviceTv } from "@tabler/icons-react";
 import { DragDropProvider } from "@dnd-kit/react";

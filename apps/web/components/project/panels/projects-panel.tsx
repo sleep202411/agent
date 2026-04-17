@@ -1,6 +1,8 @@
+"use client";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useNavigate } from "@tanstack/react-router";
+import { useRouter } from "next/navigation";
 import { IconDots, IconLoader2, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,7 +31,7 @@ function ossUrl(path?: string) {
 export function ProjectsPanel({ onClose }: { onClose: () => void }) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
-  const navigate = useNavigate();
+  const router = useRouter();
 
   const dispatch = useAppDispatch();
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
@@ -69,9 +71,7 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
   const navigateToProject = (project: ProjectOptionItem) => {
     if (!project.id) return;
     const nextWorldId = String(project.worldId ?? worldId ?? "");
-    void navigate({
-      to: `/projects/${project.id}${nextWorldId ? `?worldId=${nextWorldId}` : ""}`,
-    });
+    router.push(`/projects/${project.id}${nextWorldId ? `?worldId=${nextWorldId}` : ""}`);
     onClose();
   };
 

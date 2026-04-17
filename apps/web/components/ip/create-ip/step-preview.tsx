@@ -1,3 +1,5 @@
+"use client";
+
 import { IconCircleCheck, IconAlertTriangle } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";

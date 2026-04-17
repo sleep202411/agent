@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useRef, useState } from "react";
 import { IconLoader2, IconPlayerPause, IconPlayerPlay, IconUpload } from "@tabler/icons-react";
 import { toast } from "sonner";

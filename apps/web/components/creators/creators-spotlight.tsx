@@ -1,5 +1,4 @@
-import { Link } from "@tanstack/react-router";
-import { IconStar, IconArrowRight, IconSparkles, IconClock } from "@tabler/icons-react";
+import { IconStar, IconSparkles, IconClock } from "@tabler/icons-react";
 import { MOCK_CREATORS, LEVEL_COLORS, AVAILABILITY_CONFIG, type Creator } from "./creators-mock";
 
 function SpotlightCard({ creator }: { creator: Creator }) {

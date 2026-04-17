@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { IconLoader2, IconRowInsertBottom, IconRowInsertTop, IconTrash } from "@tabler/icons-react";

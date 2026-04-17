@@ -1,3 +1,5 @@
+"use client";
+
 import { IconCurrencyDollar, IconChartBar, IconBolt } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { STAGE_CONFIG, type IPItem } from "./ip-mock";

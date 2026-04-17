@@ -1,3 +1,5 @@
+"use client";
+
 import { IconLoader2, IconRefresh, IconX } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch } from "@/src/store";

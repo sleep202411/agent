@@ -1,10 +1,12 @@
+"use client";
+
 import { useEffect, useSyncExternalStore, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthDialog } from "@/components/layout/auth-dialog";
 import { UserMenu } from "@/components/layout/user-menu";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { fetchUser } from "@/src/store/slices/authSlice";
-import { Link } from "@tanstack/react-router";
-import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale } from "@/src/i18n/locale-url";
 import { useTheme } from "next-themes";
@@ -23,8 +25,8 @@ import { cn } from "@/lib/utils";
 const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment"];
 
 export function GlobalNav() {
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
+  const pathname = usePathname() ?? "/";
+  const router = useRouter();
   const t = useTranslations("nav");
   const locale = useLocale();
   const { theme, setTheme } = useTheme();
@@ -68,7 +70,7 @@ export function GlobalNav() {
     const nextLocale = locales[(currentIndex + 1) % locales.length];
     setCurrentLocale(nextLocale);
     setLanguage(nextLocale);
-    void navigate({ to: pathname, replace: true });
+    router.replace(pathname);
   };
 
   if (!mounted) {
@@ -84,7 +86,7 @@ export function GlobalNav() {
       <div className="mx-auto flex h-14 items-center justify-between px-6">
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">
-          <Link to="/ips" className="flex items-center gap-2 shrink-0">
+          <Link href="/ips" className="flex items-center gap-2 shrink-0">
             <img src="/logo.png" alt="FizzDragon" className="h-7" />
           </Link>
 
@@ -92,7 +94,7 @@ export function GlobalNav() {
             {navItems.map(({ href, label, icon: Icon, target }) => (
               <Link
                 key={href}
-                to={href}
+                href={href}
                 target={target}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors",

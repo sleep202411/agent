@@ -1,3 +1,5 @@
+"use client";
+
 import { useTranslations } from "@/src/i18n/i18n";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";

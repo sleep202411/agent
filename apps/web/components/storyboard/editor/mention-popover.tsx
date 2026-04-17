@@ -1,3 +1,5 @@
+"use client";
+
 import { type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useTranslations } from "@/src/i18n/i18n";

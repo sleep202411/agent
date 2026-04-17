@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import mammoth from "mammoth";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from "docx";

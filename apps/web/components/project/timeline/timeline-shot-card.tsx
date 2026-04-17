@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   IconDots,

@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useRef, useState } from "react";
 import { IconAlertTriangle, IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";

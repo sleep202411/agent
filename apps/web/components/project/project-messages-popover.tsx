@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconBell, IconLoader2, IconMessage } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";

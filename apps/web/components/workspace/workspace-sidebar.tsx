@@ -1,3 +1,5 @@
+"use client";
+
 import {
   IconFoldersFilled,
   IconSubtask,
@@ -5,7 +7,7 @@ import {
   IconSettingsFilled,
   IconFlame,
 } from "@tabler/icons-react";
-import { useLocation } from "@tanstack/react-router";
+import { usePathname } from "next/navigation";
 import { WorkspaceSidebarItem } from "./workspace-sidebar-item";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -33,7 +35,7 @@ const workspaceItems = [
 ];
 
 export function WorkspaceSidebar() {
-  const { pathname } = useLocation();
+  const pathname = usePathname() ?? "/";
 
   const isItemActive = (path: string) => {
     return pathname === path || pathname.startsWith(`${path}/`);

@@ -20,17 +20,19 @@ COPY --from=deps /app/ ./
 COPY --from=pruner /app/out/full/ .
 
 # Build args
-ARG VITE_OSS_BASE_URL
-ARG VITE_BANNER_BASE_URL
-ARG VITE_SITE_REGION
-ARG VITE_PARENT_ORIGIN
+ARG NEXT_PUBLIC_OSS_BASE_URL
+ARG NEXT_PUBLIC_BANNER_BASE_URL
+ARG NEXT_PUBLIC_USER_BASE_URL
+ARG NEXT_PUBLIC_SITE_REGION
+ARG NEXT_PUBLIC_PARENT_ORIGIN
 ARG SERVER_URL
 ARG JAVA_STUDIO_URL
 ARG JAVA_CONTENT_URL
 
-# Write .env file for Vite to pick up VITE_* vars at build time
-RUN printf "VITE_OSS_BASE_URL=%s\nVITE_BANNER_BASE_URL=%s\nVITE_SITE_REGION=%s\nVITE_PARENT_ORIGIN=%s\nSERVER_URL=%s\nJAVA_STUDIO_URL=%s\nJAVA_CONTENT_URL=%s\n" \
-  "$VITE_OSS_BASE_URL" "$VITE_BANNER_BASE_URL" "$VITE_SITE_REGION" "$VITE_PARENT_ORIGIN" \
+# Write .env.production for Next.js to pick up at build time (NEXT_PUBLIC_* gets inlined)
+RUN printf "NEXT_PUBLIC_OSS_BASE_URL=%s\nNEXT_PUBLIC_BANNER_BASE_URL=%s\nNEXT_PUBLIC_USER_BASE_URL=%s\nNEXT_PUBLIC_SITE_REGION=%s\nNEXT_PUBLIC_PARENT_ORIGIN=%s\nSERVER_URL=%s\nJAVA_STUDIO_URL=%s\nJAVA_CONTENT_URL=%s\n" \
+  "$NEXT_PUBLIC_OSS_BASE_URL" "$NEXT_PUBLIC_BANNER_BASE_URL" "$NEXT_PUBLIC_USER_BASE_URL" \
+  "$NEXT_PUBLIC_SITE_REGION" "$NEXT_PUBLIC_PARENT_ORIGIN" \
   "$SERVER_URL" "$JAVA_STUDIO_URL" "$JAVA_CONTENT_URL" \
   > apps/web/.env.production
 
@@ -48,11 +50,13 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 appuser
 
-# Nitro build output (self-contained, no node_modules needed)
-COPY --from=builder --chown=appuser:nodejs /app/apps/web/.output ./.output
+# Next.js standalone output
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=appuser:nodejs /app/apps/web/public ./apps/web/public
 
 USER appuser
 
 EXPOSE 3000
 
-CMD ["node", ".output/server/index.mjs"]
+CMD ["node", "apps/web/server.js"]

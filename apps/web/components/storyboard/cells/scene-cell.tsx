@@ -1,3 +1,5 @@
+"use client";
+
 import { useCallback, useState } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { IconMapPin } from "@tabler/icons-react";

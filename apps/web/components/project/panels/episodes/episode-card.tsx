@@ -1,3 +1,5 @@
+"use client";
+
 import { IconGripVertical, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { useTranslations } from "@/src/i18n/i18n";

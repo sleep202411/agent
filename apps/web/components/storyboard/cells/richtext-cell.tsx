@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
 import type { MentionItem, MentionType } from "@/components/storyboard/editor/mention-node";

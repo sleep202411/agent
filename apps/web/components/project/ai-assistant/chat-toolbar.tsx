@@ -1,3 +1,5 @@
+"use client";
+
 import { useRef, useState } from "react";
 import { IconChevronDown, IconLoader2, IconPlus, IconSend } from "@tabler/icons-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";

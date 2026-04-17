@@ -1,3 +1,5 @@
+"use client";
+
 import { useTranslations } from "@/src/i18n/i18n";
 import { IconLoader2, IconPlayerPlay, IconPlayerStop } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
