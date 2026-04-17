@@ -33,7 +33,6 @@ import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
 import { uploadProjectImage, buildOssUrl } from "@/src/lib/uploads/workspace-upload";
-import type { Asset } from "@/src/store/slices/projectSlice";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
 import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import {
@@ -232,8 +231,13 @@ export function CharacterEditDialog({
   const handleSave = useCallback(async () => {
     const trimmedName = formData.name.trim();
     if (!trimmedName || !worldId || saving) return;
+    if (!formData.id) {
+      throw new Error("[CharacterEditDialog] missing character id on save");
+    }
 
     const submitData = {
+      id: formData.id,
+      aiId: formData.aiId || undefined,
       name: trimmedName,
       description: formData.description || "",
       prompt: formData.prompt || "",
@@ -255,26 +259,17 @@ export function CharacterEditDialog({
 
     try {
       setSaving(true);
-      if (formData.id) {
-        await backendApi.post("/api/user/world/update/worldrole", {
-          data: { ...submitData, id: formData.id, aiId: formData.aiId || undefined },
-        });
-        toast.success(t("updateSuccess"));
-      } else {
-        await backendApi.post<Asset>("/api/user/world/create/worldrole", {
-          data: { ...submitData, aiId: formData.aiId || undefined },
-        });
-        toast.success(t("createSuccess"));
-      }
+      await backendApi.post("/api/user/world/update/worldrole", { data: submitData });
+      toast.success(t("updateSuccess"));
       onOpenChange(false);
       onSaved();
     } catch (error) {
       console.error("[CharacterEditDialog] 保存失败:", error);
-      toast.error(formData.id ? t("updateFailed") : t("createFailed"));
+      toast.error(t("updateFailed"));
     } finally {
       setSaving(false);
     }
-  }, [formData, onOpenChange, onSaved, saving, worldId]);
+  }, [formData, onOpenChange, onSaved, saving, t, worldId]);
 
   const handleDelete = useCallback(async () => {
     if (!formData.id || deleting) return;
@@ -305,7 +300,7 @@ export function CharacterEditDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden p-0 sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>{formData.id ? t("editCharacter") : t("createCharacter")}</DialogTitle>
+            <DialogTitle>{t("editCharacter")}</DialogTitle>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto p-4">
@@ -604,22 +599,20 @@ export function CharacterEditDialog({
           </div>
 
           <DialogFooter>
-            {formData.id ? (
-              <Button
-                variant="soft"
-                color="destructive"
-                className="mr-auto"
-                onClick={() => void handleDelete()}
-                disabled={deleting}
-              >
-                {deleting ? (
-                  <IconLoader2 className="size-4 animate-spin" />
-                ) : (
-                  <IconTrash className="size-4" />
-                )}
-                {tc("delete")}
-              </Button>
-            ) : null}
+            <Button
+              variant="soft"
+              color="destructive"
+              className="mr-auto"
+              onClick={() => void handleDelete()}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : (
+                <IconTrash className="size-4" />
+              )}
+              {tc("delete")}
+            </Button>
             <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
               {tc("cancel")}
             </Button>

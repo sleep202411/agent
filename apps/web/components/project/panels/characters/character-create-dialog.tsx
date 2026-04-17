@@ -43,7 +43,7 @@ export function QuickCreateCharacterDialog({
     if (!trimmed || !worldId || creating) return;
     try {
       setCreating(true);
-      const result = await backendApi.post<Asset>("/api/user/world/create/worldrole", {
+      const id = await backendApi.post<string>("/api/user/world/create/worldrole", {
         data: {
           name: trimmed,
           description: "",
@@ -55,7 +55,7 @@ export function QuickCreateCharacterDialog({
         },
       });
       toast.success(t("createSuccess"));
-      onCreated(normalizeCharacter({ ...result, name: result?.name || trimmed }));
+      onCreated(normalizeCharacter({ id: String(id ?? ""), name: trimmed } as Asset));
       onOpenChange(false);
     } catch (error) {
       console.error("[QuickCreateCharacterDialog] 创建失败:", error);
