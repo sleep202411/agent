@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "@/components/providers";
-import { GlobalNav } from "@/components/layout/global-nav";
-import { SiteFooter } from "@/components/layout/site-footer";
 import i18n, { setLanguage, useLocale } from "@/src/i18n/i18n";
 import { setCurrentLocale, localeFromPathname } from "@/src/i18n/locale-url";
 
@@ -37,19 +35,9 @@ export function RootLayoutClient({
     }
   }, [pathname, i18nLocale]);
 
-  // Hide footer on studio, project editor, and workbench pages (full-screen layouts)
-  const hideFooter =
-    pathname.startsWith("/projects/") ||
-    pathname.startsWith("/workbench") ||
-    pathname.includes("/editor");
-
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
-      <Providers>
-        <GlobalNav />
-        {children}
-        {!hideFooter && <SiteFooter />}
-      </Providers>
+      <Providers>{children}</Providers>
     </ThemeProvider>
   );
 }

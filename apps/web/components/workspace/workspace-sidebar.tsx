@@ -13,22 +13,22 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 const workspaceItems = [
   {
-    path: "/projects",
+    path: "/studio/projects",
     label: "Projects",
     icon: <IconFoldersFilled className="size-5" />,
   },
   {
-    path: "/tasks",
+    path: "/studio/tasks",
     label: "Tasks",
     icon: <IconSubtask className="size-5" />,
   },
   {
-    path: "/assets",
+    path: "/studio/assets",
     label: "Assets",
     icon: <IconPhotoFilled className="size-5" />,
   },
   {
-    path: "/settings",
+    path: "/studio/settings",
     label: "Settings",
     icon: <IconSettingsFilled className="size-5" />,
   },

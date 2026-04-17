@@ -22,7 +22,9 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
-const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment"];
+// Rendered only under app/(site)/layout.tsx. One exception: the interactive
+// editor inside (site) wants a full-screen canvas, so hide here by pathname.
+const HIDDEN_PATTERNS = ["/editor"];
 
 export function GlobalNav() {
   const pathname = usePathname() ?? "/";
@@ -49,10 +51,15 @@ export function GlobalNav() {
   if (shouldHide) return null;
 
   const navItems = [
-    { href: "/ips", label: t("ipPlaza"), icon: IconDiamond },
+    { href: "/ip", label: t("ipPlaza"), icon: IconDiamond },
     { href: "/crews", label: t("studioHall"), icon: IconMovie },
     { href: "/creators", label: t("creators"), icon: IconUsers },
-    { href: "/projects", label: t("studio"), icon: IconLayoutDashboard, target: "_blank" as const },
+    {
+      href: "/studio/projects",
+      label: t("studio"),
+      icon: IconLayoutDashboard,
+      target: "_blank" as const,
+    },
     { href: "/news", label: t("news"), icon: IconNews },
   ];
 
@@ -86,7 +93,7 @@ export function GlobalNav() {
       <div className="mx-auto flex h-14 items-center justify-between px-6">
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">
-          <Link href="/ips" className="flex items-center gap-2 shrink-0">
+          <Link href="/ip" className="flex items-center gap-2 shrink-0">
             <img src="/logo.png" alt="FizzDragon" className="h-7" />
           </Link>
 
