@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  IconHome2,
-  IconFoldersFilled,
-  IconSubtask,
-  IconPhotoFilled,
-  IconSettingsFilled,
-  IconFlame,
-} from "@tabler/icons-react";
+import { IconHome2 } from "@tabler/icons-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { WorkspaceSidebarItem } from "./workspace-sidebar-item";
@@ -19,26 +12,6 @@ const workspaceItems = [
     exact: true,
     label: "Home",
     icon: <IconHome2 className="size-5" />,
-  },
-  {
-    path: "/studio/projects",
-    label: "Projects",
-    icon: <IconFoldersFilled className="size-5" />,
-  },
-  {
-    path: "/studio/tasks",
-    label: "Tasks",
-    icon: <IconSubtask className="size-5" />,
-  },
-  {
-    path: "/studio/assets",
-    label: "Assets",
-    icon: <IconPhotoFilled className="size-5" />,
-  },
-  {
-    path: "/studio/settings",
-    label: "Settings",
-    icon: <IconSettingsFilled className="size-5" />,
   },
 ];
 
@@ -52,8 +25,8 @@ export function WorkspaceSidebar() {
 
   return (
     <aside className="flex w-16 shrink-0 flex-col items-center border-r border-border/70 bg-background py-4">
-      <Link href="/studio" aria-label="Studio home" className="mb-4">
-        <IconFlame className="size-7 text-primary" />
+      <Link href="/studio" aria-label="FizzDragon" className="mb-6 block px-2">
+        <img src="/logo.png" alt="FizzDragon" className="h-auto w-full max-w-[44px]" />
       </Link>
 
       <nav className="flex flex-1 flex-col gap-3">
