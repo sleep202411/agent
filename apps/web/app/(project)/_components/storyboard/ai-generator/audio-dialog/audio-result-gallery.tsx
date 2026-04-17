@@ -11,7 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { AudioWaveformBars } from "@/components/storyboard/ai-generator/audio-waveform-bars";
+import { AudioWaveformBars } from "@/app/(project)/_components/storyboard/ai-generator/audio-waveform-bars";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import type { ResultItem } from "@/src/store/slices/projectSlice";

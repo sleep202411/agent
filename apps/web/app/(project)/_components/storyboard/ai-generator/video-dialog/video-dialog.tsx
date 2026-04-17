@@ -26,9 +26,9 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
-import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
-import { ReferenceMapProvider } from "@/components/storyboard/editor/reference-map-context";
-import { autoSelectReferences } from "@/components/storyboard/editor/build-reference-map";
+import { RichMentionEditor } from "@/app/(project)/_components/storyboard/editor/rich-mention-editor";
+import { ReferenceMapProvider } from "@/app/(project)/_components/storyboard/editor/reference-map-context";
+import { autoSelectReferences } from "@/app/(project)/_components/storyboard/editor/build-reference-map";
 import { useVideoReferences } from "./use-video-references";
 
 import { useTranslations } from "@/src/i18n/i18n";
@@ -76,13 +76,13 @@ import type {
   SimpleMode,
   VideoMode,
   VideoResultItem,
-} from "./video-types";
+} from "@/src/lib/video-types";
 import {
   ensureVideoReference,
   MAX_CONCURRENT,
   ossUrl,
   parseVideoGenerateResult,
-} from "./video-types";
+} from "@/src/lib/video-types";
 import { VideoReferencePanel } from "./video-reference-group";
 import { ToolbarSelect, VideoModeSettings } from "./video-mode-settings";
 

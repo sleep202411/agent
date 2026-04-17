@@ -13,8 +13,8 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { AiAudioGeneratorDialog } from "@/components/storyboard/ai-generator";
-import { AudioWaveformBars } from "@/components/storyboard/ai-generator/audio-waveform-bars";
+import { AiAudioGeneratorDialog } from "@/app/(project)/_components/storyboard/ai-generator";
+import { AudioWaveformBars } from "@/app/(project)/_components/storyboard/ai-generator/audio-waveform-bars";
 import { cn } from "@/lib/utils";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { useAppSelector } from "@/src/store";

@@ -26,14 +26,14 @@ import {
   SelectCell,
   ShotNoCell,
   SoundPathCell,
-} from "@/components/storyboard/cells";
-import { MusicCell } from "@/components/storyboard/cells/music-cell";
-import { StoryboardDialogProvider } from "@/components/storyboard/storyboard-dialog-context";
-import { StoryboardLiftedDialogs } from "@/components/storyboard/storyboard-lifted-dialogs";
+} from "@/app/(project)/_components/storyboard/cells";
+import { MusicCell } from "@/app/(project)/_components/storyboard/cells/music-cell";
+import { StoryboardDialogProvider } from "@/app/(project)/_components/storyboard/storyboard-dialog-context";
+import { StoryboardLiftedDialogs } from "@/app/(project)/_components/storyboard/storyboard-lifted-dialogs";
 import { LipSyncCell } from "@/app/(project)/_components/storyboard-lipsync-cell";
 import { StoryboardColumnHeader } from "@/app/(project)/_components/storyboard-column-header";
 import { StoryboardToolbar } from "@/app/(project)/_components/storyboard-toolbar";
-import { TextCell } from "@/components/storyboard/cells/text-cell";
+import { TextCell } from "@/app/(project)/_components/storyboard/cells/text-cell";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useGuide } from "@/src/lib/guide/use-guide";
 import { backendApi } from "@/src/lib/api";

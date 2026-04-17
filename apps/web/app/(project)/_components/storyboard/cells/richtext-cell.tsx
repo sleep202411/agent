@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
-import type { MentionItem, MentionType } from "@/components/storyboard/editor/mention-node";
+import { RichMentionEditor } from "@/app/(project)/_components/storyboard/editor/rich-mention-editor";
+import type {
+  MentionItem,
+  MentionType,
+} from "@/app/(project)/_components/storyboard/editor/mention-node";
 import {
   getCellDisplayValue,
   normalizeRichTextValue,

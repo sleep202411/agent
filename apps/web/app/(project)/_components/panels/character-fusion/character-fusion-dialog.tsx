@@ -22,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ResultGallery } from "@/components/storyboard/ai-generator/result-gallery";
+import { ResultGallery } from "@/app/(project)/_components/storyboard/ai-generator/result-gallery";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import {

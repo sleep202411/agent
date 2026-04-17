@@ -29,12 +29,12 @@ import { PromptInput } from "./prompt-input";
 import {
   ReferenceMapProvider,
   type ReferenceMap,
-} from "@/components/storyboard/editor/reference-map-context";
+} from "@/app/(project)/_components/storyboard/editor/reference-map-context";
 import {
   buildReferenceMap,
   extractMentionsFromHtml,
   removeMentionsByUrls,
-} from "@/components/storyboard/editor/build-reference-map";
+} from "@/app/(project)/_components/storyboard/editor/build-reference-map";
 import { ResultGallery } from "./result-gallery";
 import { backendApi } from "@/src/lib/api";
 import { submitImageTask, retryImageTask } from "@/src/lib/ai-image-queue";

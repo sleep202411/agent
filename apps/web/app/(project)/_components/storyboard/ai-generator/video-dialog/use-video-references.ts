@@ -14,8 +14,8 @@ import {
   extractMentionsFromHtml,
   removeMentionsByUrls,
   detectMediaType,
-} from "@/components/storyboard/editor/build-reference-map";
-import type { ReferenceMap } from "@/components/storyboard/editor/reference-map-context";
+} from "@/app/(project)/_components/storyboard/editor/build-reference-map";
+import type { ReferenceMap } from "@/app/(project)/_components/storyboard/editor/reference-map-context";
 import {
   dedupeRefs,
   ossUrl,
@@ -23,7 +23,7 @@ import {
   type MultiRefType,
   type PickerTarget,
   type ReferenceAsset,
-} from "./video-types";
+} from "@/src/lib/video-types";
 
 interface UseVideoReferencesOptions {
   open: boolean;

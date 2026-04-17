@@ -20,7 +20,7 @@ import {
   AiImageGeneratorDialog,
   AiLipSyncGeneratorDialog,
   AiVideoGeneratorDialog,
-} from "@/components/storyboard/ai-generator";
+} from "@/app/(project)/_components/storyboard/ai-generator";
 import {
   AlertDialog,
   AlertDialogAction,

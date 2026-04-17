@@ -3,7 +3,7 @@
 import { useTranslations } from "@/src/i18n/i18n";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
-import type { EditMode } from "./video-types";
+import type { EditMode } from "@/src/lib/video-types";
 
 export interface VideoModeSettingsProps {
   editMode: EditMode | null;

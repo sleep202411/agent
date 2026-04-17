@@ -11,7 +11,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
+import { RichMentionEditor } from "@/app/(project)/_components/storyboard/editor/rich-mention-editor";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { RawAiModel } from "@/src/types/workspace";
-import type { MentionItem } from "@/components/storyboard/editor/mention-node";
+import type { MentionItem } from "@/app/(project)/_components/storyboard/editor/mention-node";
 import type { Asset } from "@/src/store/slices/projectSlice";
 import { env } from "@/src/env";
 

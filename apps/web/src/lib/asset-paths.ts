@@ -29,3 +29,11 @@ export function normalizeStoragePath(path?: string | null) {
   }
   return raw;
 }
+
+/** Build an OSS video-snapshot URL for thumbnails (first-frame, fast mode). */
+export function getVideoThumbnail(path?: string) {
+  const fullUrl = ossUrl(path);
+  if (!fullUrl || fullUrl.startsWith("blob:")) return fullUrl;
+  const separator = fullUrl.includes("?") ? "&" : "?";
+  return `${fullUrl}${separator}x-oss-process=video/snapshot,t_0,m_fast`;
+}

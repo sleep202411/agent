@@ -20,9 +20,9 @@ import {
   AiAudioGeneratorDialog,
   AiBasicAudioGeneratorDialog,
   AiLipSyncGeneratorDialog,
-} from "@/components/storyboard/ai-generator";
-import { useStoryboardDialog } from "@/components/storyboard/storyboard-dialog-context";
-import { AudioWaveformBars } from "@/components/storyboard/ai-generator/audio-waveform-bars";
+} from "@/app/(project)/_components/storyboard/ai-generator";
+import { useStoryboardDialog } from "@/app/(project)/_components/storyboard/storyboard-dialog-context";
+import { AudioWaveformBars } from "@/app/(project)/_components/storyboard/ai-generator/audio-waveform-bars";
 import { cn } from "@/lib/utils";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { backendApi } from "@/src/lib/api";

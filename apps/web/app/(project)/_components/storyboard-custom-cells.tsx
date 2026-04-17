@@ -1,6 +1,6 @@
 /**
  * Thin re-export barrel – keeps existing imports working after the split.
- * All implementation now lives in @/components/storyboard/cells/.
+ * All implementation now lives in @/app/(project)/_components/storyboard/cells/.
  */
 export {
   ShotNoCell,
@@ -13,4 +13,4 @@ export {
   MediaCell,
   buildMentionItems,
   renderMentionPreviewHtml,
-} from "@/components/storyboard/cells";
+} from "@/app/(project)/_components/storyboard/cells";

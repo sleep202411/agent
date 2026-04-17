@@ -1,5 +1,8 @@
 import { toast } from "sonner";
-import type { MentionItem, MentionType } from "@/components/storyboard/editor/mention-node";
+import type {
+  MentionItem,
+  MentionType,
+} from "@/app/(project)/_components/storyboard/editor/mention-node";
 import { backendApi } from "@/src/lib/api";
 import { store } from "@/src/store";
 import { env } from "@/src/env";

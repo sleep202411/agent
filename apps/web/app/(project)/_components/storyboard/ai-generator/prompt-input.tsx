@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslations } from "@/src/i18n/i18n";
-import { RichMentionEditor } from "@/components/storyboard/editor/rich-mention-editor";
+import { RichMentionEditor } from "@/app/(project)/_components/storyboard/editor/rich-mention-editor";
 import { ReferenceGroup } from "./reference-group";
 import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
 import { GenerateButton } from "@/components/ui/generate-button";

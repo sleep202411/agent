@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   AiImageGeneratorDialog,
   AiVideoGeneratorDialog,
-} from "@/components/storyboard/ai-generator";
+} from "@/app/(project)/_components/storyboard/ai-generator";
 import { useStoryboardDialog } from "./storyboard-dialog-context";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";

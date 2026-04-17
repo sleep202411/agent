@@ -5,7 +5,7 @@ import { IconCircleCheck, IconLoader2, IconSparkles } from "@tabler/icons-react"
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { AiLipSyncGeneratorDialog } from "@/components/storyboard/ai-generator";
+import { AiLipSyncGeneratorDialog } from "@/app/(project)/_components/storyboard/ai-generator";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import {

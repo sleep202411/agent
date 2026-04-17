@@ -6,7 +6,7 @@ import { IconCircleCheck, IconLoader2, IconSparkles } from "@tabler/icons-react"
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
-import { useStoryboardDialog } from "@/components/storyboard/storyboard-dialog-context";
+import { useStoryboardDialog } from "@/app/(project)/_components/storyboard/storyboard-dialog-context";
 import { cn } from "@/lib/utils";
 import { buildOssImageUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { backendApi } from "@/src/lib/api";

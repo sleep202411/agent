@@ -9,8 +9,8 @@ import type {
   PickerTarget,
   ReferenceAsset,
   SimpleMode,
-} from "./video-types";
-import { getVideoThumbnail, ossUrl } from "./video-types";
+} from "@/src/lib/video-types";
+import { getVideoThumbnail, ossUrl } from "@/src/lib/video-types";
 import { classifyAsset } from "@/components/ui/schema-field/schema";
 
 export { ReferenceGroup };
