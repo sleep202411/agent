@@ -21,7 +21,10 @@ import {
   type TaskOutput,
 } from "@/src/store/slices/taskSlice";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
-import { normalizeStoragePath } from "@/components/project/panels/characters/character-utils";
+import {
+  normalizeStoragePath,
+  ROLE_FUSION_COLUMN_ID,
+} from "@/components/project/panels/characters/character-utils";
 import type { FusionGenerateInput } from "@/src/store/slices/projectSlice";
 
 // ─── Constants ─────────────────────────────────────────
@@ -76,6 +79,8 @@ async function executeTask(taskId: string) {
   try {
     const response = await backendApi.post<string>(API_PATH, {
       data: {
+        shotColumnId: ROLE_FUSION_COLUMN_ID,
+        shotId: input.worldRoleId,
         worldRoleId: input.worldRoleId,
         prompt: input.prompt,
         model: input.model || undefined,

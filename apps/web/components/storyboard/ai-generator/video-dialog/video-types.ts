@@ -34,6 +34,8 @@ export interface ReferenceAsset {
   typeTag?: MultiRefType;
   /** Display label — e.g. character name when auto-added from @mention */
   label?: string;
+  /** Explicit media kind (set when picker narrows type). Overrides path-extension classification. */
+  kind?: "image" | "video" | "audio";
 }
 
 export interface VideoQueueTask {
@@ -241,11 +243,16 @@ export function dedupeRefs(
   });
 }
 
-export function toReferenceAssets(paths: string[], typeTag?: MultiRefType) {
+export function toReferenceAssets(
+  paths: string[],
+  typeTag?: MultiRefType,
+  kind?: "image" | "video" | "audio"
+) {
   return paths.map((path) => ({
     url: ossUrl(path),
     path,
     ...(typeTag ? { typeTag } : {}),
+    ...(kind ? { kind } : {}),
   }));
 }
 

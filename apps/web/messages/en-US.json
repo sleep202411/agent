@@ -1189,6 +1189,8 @@
     "left": "Left",
     "right": "Right",
     "referenceImage": "Reference",
+    "referenceVideo": "Video Ref",
+    "referenceAudio": "Audio Ref",
     "images": "Images",
     "videos": "Videos",
     "addMedia": "Add",

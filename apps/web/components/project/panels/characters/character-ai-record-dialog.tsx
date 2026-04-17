@@ -238,8 +238,7 @@ export function CharacterAiRecordDialog({
               <button
                 type="button"
                 onClick={() => void handleGenerate()}
-                disabled={!prompt?.trim()}
-                className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/5 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex aspect-square items-center justify-center rounded-lg border border-dashed border-border/60 bg-muted/5 text-muted-foreground transition-colors hover:border-primary/60 hover:bg-primary/5 hover:text-foreground"
               >
                 <div className="flex flex-col items-center gap-2 text-xs">
                   <IconWand className="size-5" />

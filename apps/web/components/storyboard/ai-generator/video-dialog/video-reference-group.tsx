@@ -9,6 +9,7 @@ import type {
   SimpleMode,
 } from "./video-types";
 import { getVideoThumbnail, ossUrl } from "./video-types";
+import { classifyAsset } from "@/components/ui/schema-field/schema";
 
 export { ReferenceGroup };
 
@@ -273,17 +274,54 @@ export function VideoReferencePanel({
   }
 
   if (uploadMode === "multimodal") {
+    const mmImages = referenceImages.filter((item) => classifyAsset(item) === "image");
+    const mmVideos = referenceImages.filter((item) => classifyAsset(item) === "video");
+    const mmAudios = referenceImages.filter((item) => classifyAsset(item) === "audio");
+    const removeByPath = (path: string) => {
+      onSetReferenceImages(referenceImages.filter((item) => item.path !== path));
+    };
     return (
-      <ReferenceGroup
-        label={t("addMedia")}
-        items={referenceImages}
-        {...videoResolveProps}
-        maxCount={maxImages}
-        onAdd={() => onOpenPicker("multimodalImages")}
-        onRemove={(index) => {
-          onSetReferenceImages(referenceImages.filter((_, i) => i !== index));
-        }}
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        {maxImages > 0 && (
+          <ReferenceGroup
+            label={t("referenceImage")}
+            items={mmImages}
+            {...videoResolveProps}
+            maxCount={maxImages}
+            onAdd={() => onOpenPicker("multimodalImages")}
+            onRemove={(index) => {
+              const target = mmImages[index];
+              if (target) removeByPath(target.path);
+            }}
+          />
+        )}
+        {maxVideos > 0 && (
+          <ReferenceGroup
+            label={t("video")}
+            items={mmVideos}
+            {...videoResolveProps}
+            maxCount={maxVideos}
+            onAdd={() => onOpenPicker("multimodalVideos")}
+            onRemove={(index) => {
+              const target = mmVideos[index];
+              if (target) removeByPath(target.path);
+            }}
+          />
+        )}
+        {maxAudios > 0 && (
+          <ReferenceGroup
+            label={t("audio")}
+            items={mmAudios}
+            {...videoResolveProps}
+            maxCount={maxAudios}
+            onAdd={() => onOpenPicker("multimodalAudios")}
+            onRemove={(index) => {
+              const target = mmAudios[index];
+              if (target) removeByPath(target.path);
+            }}
+          />
+        )}
+      </div>
     );
   }
 

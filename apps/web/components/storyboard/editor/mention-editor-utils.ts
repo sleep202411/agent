@@ -24,6 +24,8 @@ export interface MentionFlatItem {
   imgUrl?: string;
   voiceId?: string;
   model?: string;
+  /** Media kind for reference items (image/video/audio) */
+  kind?: "image" | "video" | "audio";
 }
 
 export const OSS_BASE = env.OSS_BASE_URL;

@@ -72,7 +72,12 @@ function parseImageSizes(model?: RawAiModel) {
 }
 
 function parseVideoDescription(model?: RawAiModel) {
-  if (!model?.description) return { sizes: [] as string[], videoLengths: [] as number[] };
+  if (!model?.description)
+    return {
+      sizes: [] as string[],
+      videoLengths: [] as number[],
+      costTable: [] as Array<Record<string, number>>,
+    };
   try {
     const parsed = JSON.parse(model.description);
     const sizes = Array.isArray(parsed?.size)
@@ -83,10 +88,37 @@ function parseVideoDescription(model?: RawAiModel) {
           .map((item: unknown) => Number(item))
           .filter((item: number) => Number.isFinite(item) && item > 0)
       : [];
-    return { sizes, videoLengths };
+    const costTable = Array.isArray(parsed?.cost)
+      ? parsed.cost
+          .filter(
+            (item: unknown): item is Record<string, unknown> =>
+              typeof item === "object" && item !== null
+          )
+          .map((item: Record<string, unknown>) =>
+            Object.fromEntries(
+              Object.entries(item)
+                .map(([k, v]) => [k, Number(v)] as const)
+                .filter(([, v]) => Number.isFinite(v))
+            )
+          )
+          .filter((item: Record<string, number>) => Object.keys(item).length > 0)
+      : [];
+    return { sizes, videoLengths, costTable };
   } catch {
-    return { sizes: [], videoLengths: [] };
+    return { sizes: [], videoLengths: [], costTable: [] };
   }
+}
+
+function lookupVideoUnitCost(
+  costTable: Array<Record<string, number>>,
+  size: string
+): number | undefined {
+  if (!size) return undefined;
+  for (const entry of costTable) {
+    const unit = entry?.[size];
+    if (typeof unit === "number" && Number.isFinite(unit)) return unit;
+  }
+  return undefined;
 }
 
 function normalizeProjectSize(value?: string) {
@@ -203,9 +235,16 @@ export function StoryboardBatchGenerateDialog({
     () => models.find((item) => String(item.serviceCode ?? "") === model),
     [model, models]
   );
-  const currentModelCost = Math.abs(Number(currentModel?.integralCost ?? 0));
   const sizeOptions = useMemo(() => parseImageSizes(currentModel), [currentModel]);
   const videoDescription = useMemo(() => parseVideoDescription(currentModel), [currentModel]);
+  const flatModelCost = Math.abs(Number(currentModel?.integralCost ?? 0));
+  const currentModelCost = useMemo(() => {
+    if (!isVideo) return flatModelCost;
+    const unit = lookupVideoUnitCost(videoDescription.costTable, videoSize);
+    const length = Number(videoLength) || 0;
+    if (unit != null && length > 0) return unit * length;
+    return flatModelCost;
+  }, [flatModelCost, isVideo, videoDescription.costTable, videoLength, videoSize]);
 
   const [prevModels, setPrevModels] = useState(models);
   if (prevModels !== models && models.length > 0) {
