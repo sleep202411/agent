@@ -3,7 +3,10 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
-import { normalizeStoragePath } from "@/components/project/panels/characters/character-utils";
+import {
+  normalizeStoragePath,
+  ROLE_FUSION_COLUMN_ID,
+} from "@/components/project/panels/characters/character-utils";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { removeTask } from "@/src/store/slices/taskSlice";
@@ -79,8 +82,15 @@ export function useFusionQueue({ characterId }: UseFusionQueueOptions) {
     }
     try {
       setHistoryLoading(true);
-      const response = await backendApi.post<Paginated<AssetRecord>>("/api/ai/record/role/list", {
-        data: { page: 1, pageSize: 50, roleId: characterId, type: "img", sort: 0 },
+      const response = await backendApi.post<Paginated<AssetRecord>>("/api/ai/record/shot/list", {
+        data: {
+          page: 1,
+          pageSize: 50,
+          shotColumnId: ROLE_FUSION_COLUMN_ID,
+          shotId: characterId,
+          type: "img",
+          sort: 0,
+        },
       });
       const items = (response?.list ?? []).map((item) => ({
         id: String(item.id ?? ""),

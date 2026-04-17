@@ -5,6 +5,7 @@ import { env } from "@/src/env";
 const OSS_BASE = env.OSS_BASE_URL;
 export const PAGE_SIZE = 20;
 export const ROLE_RECORD_COLUMN_ID = -1;
+export const ROLE_FUSION_COLUMN_ID = -6;
 export const ROLE_THREE_VIEW_COLUMN_ID = -11;
 
 export type CharacterPanelItem = Asset & {
