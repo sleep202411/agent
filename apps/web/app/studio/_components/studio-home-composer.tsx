@@ -1,49 +1,136 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { IconArrowUp, IconPaperclip, IconSparkles } from "@tabler/icons-react";
+import { IconArrowUp, IconLoader2, IconPaperclip, IconSparkles, IconX } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { api } from "@/src/lib/api";
-import { useAppDispatch } from "@/src/store";
-import { initAgent, setTaskId } from "@/src/store/slices/agentSlice";
+import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
+import { quickCreateWorldProduct } from "@/src/services/world";
+import type {
+  OpenProjectMessage,
+  StudioAgent,
+  StudioSeedAttachment,
+} from "@/src/types/studio-seed";
 
-type AgentKey = "character" | "episode" | "prop" | "scene";
-
-const AGENTS: { key: AgentKey; labelKey: string }[] = [
+const AGENTS: { key: StudioAgent; labelKey: string }[] = [
   { key: "character", labelKey: "agentCharacter" },
   { key: "episode", labelKey: "agentEpisode" },
   { key: "prop", labelKey: "agentProp" },
   { key: "scene", labelKey: "agentScene" },
 ];
 
+const ACCEPTED_EXTENSIONS = [".txt", ".md", ".text", ".docx", ".pdf"];
+const MAX_SCRIPT_SIZE = 50 * 1024 * 1024; // 50MB
+
+function isSupportedScript(file: File) {
+  const name = file.name.toLowerCase();
+  return ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
 export function StudioHomeComposer() {
   const t = useTranslations("workspace");
-  const dispatch = useAppDispatch();
+  const tc = useTranslations("common");
+
   const [prompt, setPrompt] = useState("");
-  const [agent, setAgent] = useState<AgentKey>("character");
+  const [agent, setAgent] = useState<StudioAgent>("character");
   const [focused, setFocused] = useState(false);
+  const [scriptFile, setScriptFile] = useState<File | null>(null);
+  const [scriptAttachment, setScriptAttachment] = useState<StudioSeedAttachment | null>(null);
+  const [scriptUploading, setScriptUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const canSubmit = prompt.trim().length > 0;
+  const canSubmit =
+    !submitting && !scriptUploading && (prompt.trim().length > 0 || scriptAttachment !== null);
+
+  // ─── Script upload ────────────────────────────────────
+
+  const handleScriptPick = () => fileInputRef.current?.click();
+
+  const handleScriptChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+
+    if (!isSupportedScript(file)) {
+      toast.warning(tc("unsupportedFileType"));
+      return;
+    }
+    if (file.size > MAX_SCRIPT_SIZE) {
+      toast.warning(tc("fileSizeExceedMb", { size: Math.round(MAX_SCRIPT_SIZE / 1024 / 1024) }));
+      return;
+    }
+
+    setScriptFile(file);
+    setScriptAttachment(null);
+    setScriptUploading(true);
+    try {
+      const uploaded = await uploadWorkspaceFile(file, {
+        uploadType: "WORLD",
+        sourceType: "LOCAL",
+        maxSize: MAX_SCRIPT_SIZE,
+      });
+      setScriptAttachment({
+        path: uploaded.path,
+        url: uploaded.url ?? "",
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+      });
+    } catch (err) {
+      console.warn("[StudioHomeComposer] script upload failed", err);
+      toast.error(tc("uploadFailed"));
+      setScriptFile(null);
+    } finally {
+      setScriptUploading(false);
+    }
+  };
+
+  const handleScriptRemove = () => {
+    setScriptFile(null);
+    setScriptAttachment(null);
+  };
+
+  // ─── Submit ───────────────────────────────────────────
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
-    const id = crypto.randomUUID();
-    dispatch(initAgent({ id, prompt: prompt.trim() }));
+    console.info("[studio-composer] submit", {
+      agent,
+      hasPrompt: !!prompt.trim(),
+      hasScript: !!scriptAttachment,
+    });
+    setSubmitting(true);
     try {
-      const task = await api.post<{ id: string }>("/aurora/api/tasks", {
-        data: {
-          type: "agent",
-          input: { prompt: prompt.trim(), totalSteps: 3, agent },
+      const { worldId, projectId } = await quickCreateWorldProduct(t("unnamedWorld"));
+      console.info("[studio-composer] quick-create ok", { worldId, projectId });
+      const msg: OpenProjectMessage = {
+        type: "openProject",
+        projectId,
+        worldId,
+        seed: {
+          agent,
+          prompt: prompt.trim(),
+          attachment: scriptAttachment ?? undefined,
         },
-      });
-      dispatch(setTaskId(task.id));
+      };
+      if (typeof window !== "undefined" && window.self !== window.top) {
+        console.info("[studio-composer] postMessage openProject → parent", msg);
+        window.parent.postMessage(msg, "*");
+        // parent will navigate away; leave composer disabled
+      } else {
+        console.warn("[studio-composer] standalone mode — no iframe parent to receive");
+        toast.info(tc("createSuccess"));
+        setSubmitting(false);
+      }
     } catch (err) {
-      console.warn("[StudioHomeComposer] Failed to create task:", err);
+      console.warn("[studio-composer] quick-create failed", err);
+      toast.error(tc("uploadFailed"));
+      setSubmitting(false);
     }
-    setPrompt("");
   };
 
   return (
@@ -81,7 +168,32 @@ export function StudioHomeComposer() {
             placeholder={t("studioHomePlaceholder")}
             rows={3}
             className="min-h-[140px] w-full resize-none bg-transparent px-5 pt-5 text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+            disabled={submitting}
           />
+
+          {/* Attached script chip */}
+          {(scriptFile || scriptAttachment) && (
+            <div className="flex items-center gap-2 px-4 pb-1">
+              <div className="flex items-center gap-2 rounded-full border border-border/70 bg-muted/40 px-3 py-1 text-xs text-muted-foreground">
+                {scriptUploading ? (
+                  <IconLoader2 className="size-3.5 shrink-0 animate-spin" />
+                ) : (
+                  <IconPaperclip className="size-3.5 shrink-0" />
+                )}
+                <span className="max-w-[240px] truncate">
+                  {scriptFile?.name ?? scriptAttachment?.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleScriptRemove}
+                  className="flex size-4 items-center justify-center rounded-full hover:bg-muted hover:text-foreground"
+                  aria-label={tc("delete") ?? "Remove"}
+                >
+                  <IconX className="size-3" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Toolbar */}
           <div className="flex items-center justify-between gap-2 px-3 pb-3">
@@ -89,12 +201,14 @@ export function StudioHomeComposer() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".txt,.md,.text,.docx,.pdf"
+                accept={ACCEPTED_EXTENSIONS.join(",")}
                 className="hidden"
+                onChange={handleScriptChange}
               />
               <ToolbarPill
                 icon={<IconPaperclip className="size-3.5" />}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={handleScriptPick}
+                disabled={scriptUploading || submitting}
               >
                 {t("studioHomeScript")}
               </ToolbarPill>
@@ -107,7 +221,11 @@ export function StudioHomeComposer() {
               aria-label={t("studioHomeSend")}
               className="flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_18px_-2px_oklch(0.591_0.225_26.8/0.5)] transition-all hover:bg-primary-hover disabled:opacity-40 disabled:shadow-none"
             >
-              <IconArrowUp className="size-4" />
+              {submitting ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : (
+                <IconArrowUp className="size-4" />
+              )}
             </button>
           </div>
         </div>
@@ -129,16 +247,19 @@ function ToolbarPill({
   children,
   icon,
   onClick,
+  disabled,
 }: {
   children: React.ReactNode;
   icon: React.ReactNode;
   onClick?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex h-7 items-center gap-1.5 rounded-full border border-border/70 px-3 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground"
+      disabled={disabled}
+      className="flex h-7 items-center gap-1.5 rounded-full border border-border/70 px-3 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
     >
       {icon}
       {children}

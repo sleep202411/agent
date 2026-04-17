@@ -1784,7 +1784,7 @@
     "projectCount": "{count} projects",
     "creating": "Creating...",
     "noProjectsYetHint": "No projects yet. Create your first project to get started.",
-    "studioHomePlaceholder": "Drag/paste 🖼️ an image here to try it as a [character] or [style] reference",
+    "studioHomePlaceholder": "Describe the character / episode / scene / prop you want to create — attach a script for reference if you have one…",
     "studioHomeScript": "Script",
     "studioHomeSend": "Send",
     "studioHomeTitle": "What do you want to create?",

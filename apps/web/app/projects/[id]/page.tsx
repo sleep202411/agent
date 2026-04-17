@@ -24,6 +24,7 @@ import { useProjectDetail } from "@/src/hooks/use-project-detail";
 import { useStoryboardData } from "@/src/hooks/use-storyboard-data";
 import { useAiModelsPreload } from "@/src/hooks/use-ai-models";
 import { useWorldAssets } from "@/src/hooks/use-world-assets";
+import { useStudioSeed } from "@/src/hooks/use-studio-seed";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { setActivePanel, selectCurrentInstance } from "@/src/store/slices/projectSlice";
@@ -37,6 +38,13 @@ export default function ProjectDetailPage() {
   useStoryboardData();
   useWorldAssets();
   useAiModelsPreload();
+
+  // TODO: wire the seed into the StoryOS first-message flow.
+  // For now just log so the transport chain can be verified end-to-end.
+  const { seed } = useStudioSeed();
+  useEffect(() => {
+    if (seed) console.info("[studio-seed] received", seed);
+  }, [seed]);
 
   const batchGeneratingActive = useAppSelector(
     (s) => selectCurrentInstance(s).batchGeneratingActive

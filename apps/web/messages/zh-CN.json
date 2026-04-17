@@ -1784,7 +1784,7 @@
     "projectCount": "{count} 个项目",
     "creating": "创建中...",
     "noProjectsYetHint": "还没有项目，创建你的第一个项目开始吧。",
-    "studioHomePlaceholder": "拖拽/粘贴 🖼️ 图片到这里，来试试【角色】、【风格】参考",
+    "studioHomePlaceholder": "描述你想创作的角色 / 剧集 / 场景 / 道具，也可以附上一份剧本做参考…",
     "studioHomeScript": "剧本",
     "studioHomeSend": "发送",
     "studioHomeTitle": "你想创作什么？",
