@@ -1,9 +1,13 @@
 /**
- * role_phase — commits a pre-computed list of characters to Java, with HITL.
+ * role_phase — produce a committed character list from the project skeleton.
  *
- * Distinct from role_design (which *invents* characters from an outline).
- * This phase takes characters produced upstream (e.g. by script_breakdown)
- * and does draft → HITL → batch commit. Reused as a step in main_flow.
+ * Loads the Redis-cached story outline (written by story_outline workflow),
+ * calls the roleDesigner Agent to elaborate each cast roster entry into a
+ * full character design, then draft → HITL → batch commit to Java.
+ *
+ * Distinct from `role_design`, which invents characters from a short outline
+ * string with no upstream material. `role_phase` always reads the skeleton
+ * so its output is consistent with the rest of the pipeline.
  */
 import { randomUUID } from "node:crypto";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -21,6 +25,7 @@ import {
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
+import { getOutline, type StoryOutline } from "../../lib/outline";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -33,7 +38,8 @@ const CharacterSchema = z.object({
 
 export const RolePhaseInputSchema = z.object({
   worldId: z.string().min(1),
-  characters: z.array(CharacterSchema).min(1),
+  /** User feedback from a prior revise round — steers roleDesigner. */
+  feedback: z.string().optional(),
 });
 
 export const RolePhaseOutputSchema = z.object({
@@ -61,11 +67,120 @@ const SuspendSchema = z.object({
   phase: z.literal("role"),
 });
 
+// ─── Step 0: resolve characters (from input or from skeleton) ────────
+
+/**
+ * Shape that downstream steps expect — always has a concrete characters[].
+ */
+const ResolvedInputSchema = z.object({
+  worldId: z.string().min(1),
+  characters: z.array(CharacterSchema).min(1),
+});
+
+function buildElaboratePrompt(
+  skeleton: StoryOutline,
+  entry: StoryOutline["cast"][number],
+  feedback?: string
+): string {
+  const chapterRefs = entry.firstAppearance
+    ? skeleton.structure
+        .filter((ch) => ch.chapterId === entry.firstAppearance)
+        .map((ch) => `- ${ch.chapterId} 《${ch.title}》：${ch.summary}`)
+        .join("\n")
+    : "";
+  const feedbackBlock = feedback ? `\n\n【用户补充意见（优先遵循）】\n${feedback}\n` : "";
+  return [
+    "请基于下面的故事骨架与角色名册条目，产出**一个完整角色设计**（JSON）。",
+    "",
+    "## 故事概况",
+    `类型：${skeleton.genre} / 基调：${skeleton.tone}`,
+    `主线：${skeleton.threads.main}`,
+    `摘要：${skeleton.storySummary}`,
+    "",
+    "## 这个角色在骨架里的信息",
+    `- 姓名：${entry.name}`,
+    `- 功能定位：${entry.role}`,
+    `- 角色弧线：${entry.arc}`,
+    entry.firstAppearance ? `- 首次出场：${entry.firstAppearance}` : "",
+    chapterRefs ? `\n相关章节：\n${chapterRefs}` : "",
+    feedbackBlock,
+    "",
+    "## 你产出的字段（都是 string）",
+    "- name：沿用骨架里给的姓名，不要改",
+    "- role：沿用骨架里给的功能定位，不要改",
+    "- appearance：15-40 字外貌设计。发型、服饰、体态、显著视觉标志，用顿号连接",
+    "- personality：20-50 字性格 + 说话风格 + 典型行为，紧扣 arc 给的成长弧线",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const resolveInputStep = createStep({
+  id: "resolve_input",
+  inputSchema: RolePhaseInputSchema,
+  outputSchema: ResolvedInputSchema,
+  execute: async ({ inputData, mastra, requestContext }) => {
+    const runId = requestContext?.get("runId") as string | undefined;
+    if (!runId) throw new Error("runId missing");
+
+    const ctx = getContext(requestContext);
+    const record = await getOutline(ctx.projectId);
+    if (!record) {
+      throw new Error(
+        `role_phase: no story outline cached for project ${ctx.projectId}. Run story_outline first.`
+      );
+    }
+    const roleDesigner = mastra?.getAgent("roleDesigner");
+    if (!roleDesigner) throw new Error("roleDesigner agent not registered");
+
+    const cast = record.outline.cast ?? [];
+    if (cast.length === 0) {
+      throw new Error("role_phase: story outline has empty cast roster");
+    }
+
+    const characters: z.infer<typeof CharacterSchema>[] = [];
+    for (let i = 0; i < cast.length; i++) {
+      const entry = cast[i];
+      await throwIfCancelled(runId);
+      await reportProgress(runId, {
+        stepId: "role_phase.elaborate",
+        current: i,
+        total: cast.length,
+        label: `角色设计师正在扩展「${entry.name}」…`,
+      });
+      const prompt = buildElaboratePrompt(record.outline, entry, inputData.feedback);
+      const response = await roleDesigner.generate(prompt, {
+        structuredOutput: {
+          schema: CharacterSchema,
+          errorStrategy: "strict",
+        },
+      });
+      const designed = response.object as z.infer<typeof CharacterSchema> | undefined;
+      if (!designed) {
+        throw new Error(`roleDesigner returned no design for ${entry.name}`);
+      }
+      characters.push({
+        name: entry.name, // force skeleton name (the agent may have drifted)
+        role: entry.role,
+        appearance: designed.appearance,
+        personality: designed.personality,
+      });
+    }
+    await reportProgress(runId, {
+      stepId: "role_phase.elaborate",
+      current: cast.length,
+      total: cast.length,
+      label: `角色设计完成：${cast.length} 位`,
+    });
+    return { worldId: inputData.worldId, characters };
+  },
+});
+
 // ─── Step 1: collect drafts ───────────────────────────────────────────
 
 const collectDraftsStep = createStep({
   id: "collect_drafts",
-  inputSchema: RolePhaseInputSchema,
+  inputSchema: ResolvedInputSchema,
   outputSchema: z.object({ draftCount: z.number() }),
   stateSchema: StateSchema,
   execute: async ({ inputData, setState, requestContext }) => {
@@ -238,11 +353,13 @@ const applyDecisionStep = createStep({
 
 export const rolePhaseWorkflow = createWorkflow({
   id: "role_phase",
-  description: "接收外部提供的角色清单，草稿→HITL→入库。用作主流程的角色阶段。",
+  description:
+    "角色阶段：从故事骨架（或 caller 提供的 characters 列表）扩展出完整角色设计，草稿 → HITL → 入库。",
   inputSchema: RolePhaseInputSchema,
   outputSchema: RolePhaseOutputSchema,
   stateSchema: StateSchema,
 })
+  .then(resolveInputStep)
   .then(collectDraftsStep)
   .then(waitConfirmationStep)
   .then(applyDecisionStep)

@@ -24,7 +24,9 @@ import {
   listWorkspaceWorkflows,
   readEvents,
   resumeWorkflow,
+  startWorkflow,
 } from "../workflows/engine";
+import { WORKFLOW_NAMES, type WorkflowName } from "../lib/redis-keys";
 import type { StoryosContext } from "../lib/workspace-client";
 
 function requireContext(c: import("hono").Context): StoryosContext {
@@ -49,6 +51,33 @@ function requireContext(c: import("hono").Context): StoryosContext {
 }
 
 export const workflowRoutes = [
+  // ─── POST /workflow/start ─────────────────────────────────────────
+  // Deterministic workflow dispatch — bypasses the supervisor LLM entirely.
+  // Used by frontend buttons like "继续 · 生成分镜" that know exactly which
+  // workflow to run next. The LLM-routed path (invoke_workflow tool inside
+  // the supervisor agent) still exists for freeform natural-language requests.
+  registerApiRoute("/workflow/start", {
+    method: "POST",
+    handler: async (c) => {
+      const ctx = requireContext(c);
+      const body = (await c.req.json()) as {
+        workflowName?: string;
+        inputData?: unknown;
+      };
+      if (!body.workflowName || !WORKFLOW_NAMES.includes(body.workflowName as WorkflowName)) {
+        throw new HTTPException(400, {
+          message: `invalid workflowName; expected one of ${WORKFLOW_NAMES.join(", ")}`,
+        });
+      }
+      const { runId } = await startWorkflow({
+        workflowName: body.workflowName as WorkflowName,
+        inputData: body.inputData ?? {},
+        ctx,
+      });
+      return c.json({ runId, workflowName: body.workflowName });
+    },
+  }),
+
   // ─── GET /workflow/:runId/status ──────────────────────────────────
   registerApiRoute("/workflow/:runId/status", {
     method: "GET",

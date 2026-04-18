@@ -4,11 +4,12 @@ import { backendApi } from "@/src/lib/api";
 import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
 import { uploadWorkspaceFile, computeFileHash } from "@/src/lib/uploads/workspace-upload";
 import {
-  sendAssistantChat,
+  sendAssistantChatV2,
   saveConversation,
   fetchConversationHistory,
   clearConversation as clearConversationApi,
 } from "@/src/lib/assistant/assistant-client";
+import { startWorkflow, type WorkflowName } from "@/src/lib/workflow/workflow-client";
 import type {
   AssistantAttachment,
   AssistantMessage,
@@ -534,7 +535,14 @@ export const loadHistory = createAsyncThunk<
   {
     condition: (projectId, { getState }) => {
       const current = getState().assistant.projects[projectId];
-      return !current?.historyLoaded;
+      if (current?.historyLoaded) return false;
+      // Defensive: if we already have real messages (beyond the welcome
+      // placeholder), don't re-fetch — a stale empty-history response would
+      // clobber an in-flight conversation. historyLoaded *should* already
+      // guard this, but panel remounts (Next.js RSC refetch) have been seen
+      // to land here mid-stream.
+      if ((current?.messages.length ?? 0) > 1) return false;
+      return true;
     },
   }
 );
@@ -597,13 +605,11 @@ export const sendUserMessage = createAsyncThunk<
     try {
       const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
       const workspaceContext = buildWorkspaceContext(getState(), projectId);
-      const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
-      const finalMessage = await sendAssistantChat({
+      const finalMessage = await sendAssistantChatV2({
         projectId,
         messages: nextMessages,
         workspaceContext,
-        agentType,
         signal: abortController.signal,
         onMessage: (message) => {
           dispatch(appendStreamChunk({ projectId, message }));
@@ -636,6 +642,72 @@ export const sendUserMessage = createAsyncThunk<
       const current = getState().assistant.projects[projectId];
       return !current?.sending;
     },
+  }
+);
+
+// ─── Deterministic workflow dispatch (button-bypass) ────
+//
+// Used by "continue · next phase" and "retry" buttons. Instead of pushing the
+// click through the supervisor LLM (which sometimes re-routes to the wrong
+// phase because it re-reads stale context), we directly call the workflow
+// engine and synthesize the chat turn locally. Matches oii's
+// `forceEnterWorkflow` pattern but over our own endpoint.
+
+export const startWorkflowFromButton = createAsyncThunk<
+  void,
+  {
+    projectId: string;
+    userLabel: string;
+    workflowName: WorkflowName;
+    inputData?: Record<string, unknown>;
+  },
+  { state: RootState; dispatch: AppDispatch }
+>(
+  "assistant/startWorkflowFromButton",
+  async ({ projectId, userLabel, workflowName, inputData }, { dispatch, getState }) => {
+    dispatch(ensureProject(projectId));
+
+    const inst = selectCurrentInstance(getState());
+    const worldId = inst.worldId ?? undefined;
+
+    const userMessage: AssistantMessage = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      role: "user",
+      parts: [{ type: "text", text: userLabel, state: "done" }],
+    };
+    dispatch(commitUserMessage({ projectId, userMessage }));
+
+    try {
+      const { runId } = await startWorkflow({
+        projectId,
+        worldId,
+        workflowName,
+        inputData: inputData ?? {},
+      });
+
+      const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const assistantMessage: AssistantMessage = {
+        id: `assistant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-invoke_workflow",
+            toolCallId,
+            state: "output-available",
+            input: { workflowName, inputData: inputData ?? {} },
+            output: { runId, workflowName, message: `已派发 ${workflowName}` },
+          },
+        ],
+      };
+      dispatch(finalizeAssistantMessage({ projectId, message: assistantMessage }));
+
+      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      void saveConversation(projectId, finalMessages);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "派发 workflow 失败";
+      toast.error(errMsg);
+      dispatch(finalizeAssistantMessage({ projectId, message: null }));
+    }
   }
 );
 
@@ -676,13 +748,11 @@ export const applyToolResult = createAsyncThunk<
 
   try {
     const workspaceContext = buildWorkspaceContext(getState(), projectId);
-    const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
-    const finalMessage = await sendAssistantChat({
+    const finalMessage = await sendAssistantChatV2({
       projectId,
       messages: nextMessages,
       workspaceContext,
-      agentType,
       signal: abortController.signal,
       onMessage: (message) => {
         dispatch(appendStreamChunk({ projectId, message }));
@@ -917,12 +987,25 @@ export const assistantSlice = createSlice({
       const { projectId, messages, messageLimit, tier, conversationId, retentionDays } =
         action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
+      // Guard against clobbering an in-flight conversation with a late/stale
+      // empty-history response. Only rewrite messages when we actually got
+      // history back, OR when the local conversation is still at the empty
+      // welcome state. Metadata (limits, tier, etc.) is always updated.
+      const incomingEmpty = messages.length === 0;
+      const localHasContent = current.messages.length > 1;
       const welcomeMsg = createWelcomeMessage();
+      const nextMessages =
+        incomingEmpty && localHasContent
+          ? current.messages
+          : messages.length > 0
+            ? [welcomeMsg, ...messages]
+            : [welcomeMsg];
       state.projects[projectId] = {
         ...current,
-        messages: messages.length > 0 ? [welcomeMsg, ...messages] : [welcomeMsg],
+        messages: nextMessages,
         historyLoaded: true,
-        historyMessageCount: messages.length,
+        historyMessageCount:
+          incomingEmpty && localHasContent ? current.historyMessageCount : messages.length,
         messageLimit,
         tier,
         conversationId,

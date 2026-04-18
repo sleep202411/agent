@@ -347,7 +347,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
               sending={sending}
               hasPendingTools={hasPendingTools}
               hasUploadingAttachments={hasUploadingAttachments}
-              selectedAgent={selectedAgent}
               error={error}
               editorRef={editorRef}
               activePendingTool={activePendingTool}

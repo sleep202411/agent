@@ -42,7 +42,16 @@ const EpisodeScriptRef = z.object({
 
 export const StoryboardPhaseInputSchema = z.object({
   projectId: z.string().min(1),
-  episodes: z.array(EpisodeScriptRef).min(1).max(60),
+  /** Optional: only storyboard these episode ids (skip others). */
+  onlyEpisodeIds: z.array(z.string()).optional(),
+  feedback: z.string().optional(),
+});
+
+/** Internal — shape the generate step consumes. */
+const ResolvedGenerateInputSchema = z.object({
+  projectId: z.string(),
+  episodes: z.array(EpisodeScriptRef).min(1),
+  feedback: z.string().optional(),
 });
 
 export const StoryboardPhaseOutputSchema = z.object({
@@ -78,11 +87,67 @@ const SuspendSchema = z.object({
   phase: z.literal("storyboard"),
 });
 
+// ─── Step 0: resolve inputs — pull committed episodes + scripts ──────
+
+const resolveInputStep = createStep({
+  id: "resolve_input",
+  inputSchema: StoryboardPhaseInputSchema,
+  outputSchema: ResolvedGenerateInputSchema,
+  execute: async ({ inputData, requestContext }) => {
+    const ctx = getContext(requestContext);
+
+    // 1. List episodes from Java (sorted).
+    const listed = await javaRequest<{
+      list?: Array<{
+        id: string | number;
+        title?: string;
+        sort?: number;
+      }>;
+    }>(ctx, "/api/user/world/list/episode", {
+      data: { productId: inputData.projectId, page: 1, pageSize: 999 },
+    });
+    const episodesMeta = (listed.list ?? [])
+      .sort((a, b) => Number(a.sort ?? 0) - Number(b.sort ?? 0))
+      .map((ep) => ({ id: String(ep.id), title: String(ep.title ?? "") }));
+
+    const filter = inputData.onlyEpisodeIds?.length ? new Set(inputData.onlyEpisodeIds) : null;
+
+    const episodes: z.infer<typeof EpisodeScriptRef>[] = [];
+    for (const meta of episodesMeta) {
+      if (filter && !filter.has(meta.id)) continue;
+      // 2. Fetch script content per episode from Java.
+      try {
+        const scriptResp = await javaRequest<{
+          content?: string;
+          script?: string;
+        }>(ctx, `/api/user/project/scripts/episode/detail/${encodeURIComponent(meta.id)}`);
+        const content = (scriptResp.content ?? scriptResp.script ?? "").trim();
+        if (!content) continue;
+        episodes.push({
+          episodeId: meta.id,
+          title: meta.title,
+          scriptContent: content,
+        });
+      } catch {
+        // Skip episodes missing scripts — caller can retry after script_phase.
+      }
+    }
+    if (episodes.length === 0) {
+      throw new Error("storyboard_phase: no episodes with scripts found. Run script_phase first.");
+    }
+    return {
+      projectId: inputData.projectId,
+      episodes,
+      feedback: inputData.feedback,
+    };
+  },
+});
+
 // ─── Step 1: generate storyboard per episode ──────────────────────────
 
 const generateStep = createStep({
   id: "generate",
-  inputSchema: StoryboardPhaseInputSchema,
+  inputSchema: ResolvedGenerateInputSchema,
   outputSchema: z.object({ episodeCount: z.number(), totalShots: z.number() }),
   stateSchema: StateSchema,
   execute: async ({ inputData, setState, mastra, requestContext }) => {
@@ -315,11 +380,13 @@ const applyDecisionStep = createStep({
 
 export const storyboardPhaseWorkflow = createWorkflow({
   id: "storyboard_phase",
-  description: "逐集出分镜表（长任务），HITL 确认后批量保存到各集。",
+  description:
+    "分镜阶段：每集调分镜师出镜头 → HITL → 批量入库。支持 fromProjectOutline 自动读已入库剧集/剧本。",
   inputSchema: StoryboardPhaseInputSchema,
   outputSchema: StoryboardPhaseOutputSchema,
   stateSchema: StateSchema,
 })
+  .then(resolveInputStep)
   .then(generateStep)
   .then(waitConfirmationStep)
   .then(applyDecisionStep)

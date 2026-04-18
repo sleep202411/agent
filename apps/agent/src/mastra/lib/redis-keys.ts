@@ -18,6 +18,8 @@ export const TTL = {
   JAVA_CACHE_SHORT: 60,
   /** Medium-lived Java GET response cache (snapshot-like reads) */
   JAVA_CACHE_MEDIUM: 300,
+  /** Story skeleton — latest-wins per project; reused by downstream phases */
+  OUTLINE: 30 * 24 * 3600,
 } as const;
 
 export const ENTITY_TYPES = ["film", "episode", "role", "scene", "prop", "script", "shot"] as const;
@@ -32,7 +34,7 @@ export const WORKFLOW_NAMES = [
   "batch_create_asset",
   "script_edit",
   // Phase workflows (also reachable as main_flow sub-steps).
-  "script_breakdown",
+  "story_outline",
   "role_phase",
   "episode_phase",
   "script_phase",
@@ -113,6 +115,17 @@ export const K = {
   workflowRunsByWorkspace: (workspaceId: string) => {
     assertSafeId(workspaceId, "workspaceId");
     return `workflow:workspace:${workspaceId}:runs`;
+  },
+
+  // ─── Story outline (skeleton produced by story_outline workflow) ─
+  /**
+   * Latest-wins per project. The story_outline workflow writes here on
+   * completion; downstream phases (role/episode/script/storyboard) read
+   * from here instead of re-analyzing raw text.
+   */
+  outline: (projectId: string) => {
+    assertSafeId(projectId, "projectId");
+    return `outline:${projectId}`;
   },
 
   // ─── Script chunks + embeddings (Phase 3) ─────────────────────────

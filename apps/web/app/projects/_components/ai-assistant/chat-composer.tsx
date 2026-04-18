@@ -36,7 +36,6 @@ interface ChatComposerProps {
   sending: boolean;
   hasPendingTools: boolean;
   hasUploadingAttachments: boolean;
-  selectedAgent: string;
   error: string | null;
   editorRef: React.RefObject<HTMLDivElement | null>;
   activePendingTool?: ActivePendingTool | null;
@@ -54,7 +53,6 @@ export function ChatComposer({
   sending,
   hasPendingTools,
   hasUploadingAttachments,
-  selectedAgent,
   error,
   editorRef,
   activePendingTool,
@@ -104,7 +102,6 @@ export function ChatComposer({
               sending={sending}
               hasPendingTools={hasPendingTools}
               hasUploadingAttachments={hasUploadingAttachments}
-              selectedAgent={selectedAgent}
             />
 
             {error && error.startsWith("MESSAGE_LIMIT_REACHED:") ? (

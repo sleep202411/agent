@@ -12,7 +12,7 @@ export const WORKFLOW_NAMES = [
   "role_design",
   "batch_create_asset",
   "script_edit",
-  "script_breakdown",
+  "story_outline",
   "role_phase",
   "episode_phase",
   "script_phase",

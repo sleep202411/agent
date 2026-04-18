@@ -62,9 +62,27 @@ export const invokeWorkflow = createTool({
   execute: async ({ workflowName, inputData }, execCtx) => {
     const ctx = getContext(execCtx?.requestContext);
     const resolvedInput = await resolveAttachmentRefs(inputData);
+
+    // Supervisor doesn't see projectId / worldId (they live in requestContext),
+    // so inject them automatically before the workflow validates its input.
+    // Preserve anything the LLM explicitly passed — don't clobber overrides.
+    const injected =
+      resolvedInput && typeof resolvedInput === "object" && !Array.isArray(resolvedInput)
+        ? {
+            projectId: ctx.projectId,
+            ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
+            ...(ctx.episodeId ? { episodeId: ctx.episodeId } : {}),
+            ...(resolvedInput as Record<string, unknown>),
+          }
+        : {
+            projectId: ctx.projectId,
+            ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
+            ...(ctx.episodeId ? { episodeId: ctx.episodeId } : {}),
+          };
+
     const { runId } = await startWorkflow({
       workflowName: workflowName as WorkflowName,
-      inputData: resolvedInput,
+      inputData: injected,
       ctx,
     });
     return {

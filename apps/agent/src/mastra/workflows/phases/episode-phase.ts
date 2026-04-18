@@ -1,12 +1,13 @@
 /**
- * episode_phase — plan N episodes from a story outline via the episode-planner
- * persona, HITL-confirm, then batch upsert to Java.
+ * episode_phase — plan N episodes via the episode-planner persona, HITL,
+ * then batch upsert to Java.
  *
- * Java endpoint `/api/user/world/batch/updateOrAdd/episode` is already in
- * production and accepts a list of {title, introduction, frontPrompt,
- * behindPrompt, sort, projectId} entries. We use it directly — no BatchWriter
- * wrapper yet because episode inserts don't need idempotency keys (Java's
- * own sort-based merge handles duplicates).
+ * Reads from the project skeleton (Redis outline:{projectId}, written by
+ * story_outline) for storySummary + cast roster + chapter structure +
+ * genre/tone. Call with targetEpisodeCount + optional feedback only.
+ *
+ * Java endpoint `/api/user/world/batch/updateOrAdd/episode` accepts a list of
+ * {title, introduction, frontPrompt, behindPrompt, sort, projectId} entries.
  */
 import { randomUUID } from "node:crypto";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -22,6 +23,7 @@ import {
 } from "../../lib/drafts";
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest } from "../../lib/workspace-client";
+import { getOutline, type StoryOutline } from "../../lib/outline";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -34,11 +36,30 @@ const EpisodePlan = z.object({
 
 export const EpisodePhaseInputSchema = z.object({
   projectId: z.string().min(1),
-  storySummary: z.string().min(10),
+  targetEpisodeCount: z.number().int().min(1).max(60),
+  /** User feedback from a prior revise round — steers the planner. */
+  feedback: z.string().optional(),
+});
+
+/** Internal — resolved from skeleton before planStep runs. */
+const ResolvedPlanInputSchema = z.object({
+  projectId: z.string(),
+  storySummary: z.string(),
   characters: z.array(z.object({ name: z.string(), role: z.string() })).default([]),
   targetEpisodeCount: z.number().int().min(1).max(60),
   genre: z.string().optional(),
   tone: z.string().optional(),
+  structure: z
+    .array(
+      z.object({
+        chapterId: z.string(),
+        title: z.string(),
+        summary: z.string(),
+        keyEvents: z.array(z.string()),
+      })
+    )
+    .optional(),
+  feedback: z.string().optional(),
 });
 
 export const EpisodePhaseOutputSchema = z.object({
@@ -68,11 +89,44 @@ const SuspendSchema = z.object({
   phase: z.literal("episode"),
 });
 
+// ─── Step 0: resolve inputs (direct or from skeleton) ────────────────
+
+const resolveInputStep = createStep({
+  id: "resolve_input",
+  inputSchema: EpisodePhaseInputSchema,
+  outputSchema: ResolvedPlanInputSchema,
+  execute: async ({ inputData, requestContext }) => {
+    const ctx = getContext(requestContext);
+    const record = await getOutline(ctx.projectId);
+    if (!record) {
+      throw new Error(
+        `episode_phase: no story outline cached for project ${ctx.projectId}. Run story_outline first.`
+      );
+    }
+    const skeleton: StoryOutline = record.outline;
+    return {
+      projectId: inputData.projectId,
+      storySummary: skeleton.storySummary,
+      characters: skeleton.cast.map((c) => ({ name: c.name, role: c.role })),
+      targetEpisodeCount: inputData.targetEpisodeCount,
+      genre: skeleton.genre,
+      tone: skeleton.tone,
+      structure: skeleton.structure.map((ch) => ({
+        chapterId: ch.chapterId,
+        title: ch.title,
+        summary: ch.summary,
+        keyEvents: ch.keyEvents,
+      })),
+      feedback: inputData.feedback,
+    };
+  },
+});
+
 // ─── Step 1: plan episodes (LLM) ──────────────────────────────────────
 
 const planStep = createStep({
   id: "plan",
-  inputSchema: EpisodePhaseInputSchema,
+  inputSchema: ResolvedPlanInputSchema,
   outputSchema: z.object({ done: z.literal(true) }),
   stateSchema: StateSchema,
   execute: async ({ inputData, setState, state, mastra, requestContext }) => {
@@ -116,8 +170,27 @@ const planStep = createStep({
   },
 });
 
-function buildPrompt(input: z.infer<typeof EpisodePhaseInputSchema>): string {
+function buildPrompt(input: z.infer<typeof ResolvedPlanInputSchema>): string {
   const cast = input.characters.map((c) => `- ${c.name}（${c.role}）`).join("\n");
+  const chapterBlock = input.structure?.length
+    ? [
+        "",
+        "原作章节骨架（尽量参考、合理重划为剧集；不必 1 对 1）：",
+        input.structure
+          .map((ch) =>
+            [
+              `- ${ch.chapterId}《${ch.title}》：${ch.summary}`,
+              ch.keyEvents.length ? `  关键：${ch.keyEvents.join("；")}` : "",
+            ]
+              .filter(Boolean)
+              .join("\n")
+          )
+          .join("\n"),
+      ].join("\n")
+    : "";
+  const feedbackBlock = input.feedback
+    ? `\n\n【用户修改意见（优先遵循）】\n${input.feedback}\n`
+    : "";
   const parts = [
     `目标集数：${input.targetEpisodeCount}`,
     input.genre ? `类型：${input.genre}` : "",
@@ -127,8 +200,10 @@ function buildPrompt(input: z.infer<typeof EpisodePhaseInputSchema>): string {
     input.storySummary,
     "",
     cast ? `角色清单：\n${cast}` : "",
+    chapterBlock,
+    feedbackBlock,
     "",
-    `请输出严格 ${input.targetEpisodeCount} 集的分集大纲，JSON 数组 episodes 返回。`,
+    `请输出严格 ${input.targetEpisodeCount} 集的分集大纲，JSON 数组 episodes 返回。每集 introduction 控制在 80-200 字。`,
   ].filter(Boolean);
   return parts.join("\n");
 }
@@ -227,7 +302,10 @@ const applyDecisionStep = createStep({
     await throwIfCancelled(runId);
 
     const ctx = getContext(requestContext);
-    const input = getInitData<z.infer<typeof EpisodePhaseInputSchema>>();
+    const rawInput = getInitData<z.infer<typeof EpisodePhaseInputSchema>>();
+    // projectId is auto-injected by invoke_workflow; fall back to ctx if
+    // some legacy caller passed nothing.
+    const projectId = rawInput.projectId || ctx.projectId;
     const draftClientRefIds = state.draftClientRefIds ?? [];
     const titleByRef = state.titleByRef ?? {};
 
@@ -269,7 +347,7 @@ const applyDecisionStep = createStep({
       introduction: d.data.introduction,
       frontPrompt: d.data.frontPrompt,
       behindPrompt: d.data.behindPrompt,
-      projectId: input.projectId,
+      projectId,
       sort: (idx + 1) * SORT_GAP,
     }));
 
@@ -285,7 +363,7 @@ const applyDecisionStep = createStep({
       const listed = await javaRequest<{ list?: Array<{ id: string | number; sort?: number }> }>(
         ctx,
         "/api/user/world/list/episode",
-        { data: { productId: input.projectId, page: 1, pageSize: 999 } }
+        { data: { productId: projectId, page: 1, pageSize: 999 } }
       );
       const bySort = new Map(
         (listed.list ?? []).map((ep) => [Number(ep.sort ?? 0), String(ep.id)])
@@ -354,11 +432,12 @@ const applyDecisionStep = createStep({
 
 export const episodePhaseWorkflow = createWorkflow({
   id: "episode_phase",
-  description: "根据故事主线生成分集大纲 → HITL → 批量入库 episode。",
+  description: "分集阶段：从故事骨架 / caller 提供的主线 → 规划分集 → HITL → 入库 episode。",
   inputSchema: EpisodePhaseInputSchema,
   outputSchema: EpisodePhaseOutputSchema,
   stateSchema: StateSchema,
 })
+  .then(resolveInputStep)
   .then(planStep)
   .then(collectDraftsStep)
   .then(waitConfirmationStep)

@@ -6,7 +6,7 @@ import { chatRoute } from "@mastra/ai-sdk";
 import { storyosAgent } from "./agents/storyos";
 import { roleDesignerAgent } from "./agents/personas/role-designer";
 import { scriptwriterAgent } from "./agents/personas/scriptwriter";
-import { analystAgent } from "./agents/personas/analyst";
+import { storyEditorAgent } from "./agents/personas/story-editor";
 import { episodePlannerAgent } from "./agents/personas/episode-planner";
 import { storyboarderAgent } from "./agents/personas/storyboarder";
 import { evaluatorAgent } from "./agents/personas/evaluator";
@@ -85,7 +85,7 @@ export const mastra = new Mastra({
     storyos: storyosAgent,
     roleDesigner: roleDesignerAgent,
     scriptwriter: scriptwriterAgent,
-    analyst: analystAgent,
+    storyEditor: storyEditorAgent,
     episodePlanner: episodePlannerAgent,
     storyboarder: storyboarderAgent,
     evaluator: evaluatorAgent,
@@ -98,7 +98,7 @@ export const mastra = new Mastra({
     batch_create_asset: batchCreateAssetWorkflow,
     script_edit: scriptEditWorkflow,
     // Phase workflows used inside main_flow — also reachable standalone
-    script_breakdown: scriptBreakdownWorkflow,
+    story_outline: scriptBreakdownWorkflow,
     role_phase: rolePhaseWorkflow,
     episode_phase: episodePhaseWorkflow,
     script_phase: scriptPhaseWorkflow,

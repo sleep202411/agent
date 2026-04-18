@@ -105,6 +105,8 @@ function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): s
   }
 }
 import { ToolProposalCard } from "./tool-cards/tool-proposal-card";
+import { ToolPersonaCard } from "./tool-cards/tool-persona-card";
+import { ToolWorkflowCard } from "./tool-cards/tool-workflow-card";
 import { AssistantFilePreview, PipelineThinkingIndicator } from "./sub-components";
 import { markdownComponents } from "./markdown-components";
 import {
@@ -115,6 +117,7 @@ import {
   type AssistantToolInvocation,
   type AssistantToolResult,
 } from "@/src/lib/assistant/assistant-types";
+import { isAskPersonaTool } from "@/src/lib/assistant/personas";
 
 // ─── Pipeline tool config ──────────────────────────────
 
@@ -418,6 +421,27 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 ) {
                   // Result summaries rendered outside the message bubble (above)
                   return null;
+                }
+
+                // invoke_workflow — rich task card with polling + HITL buttons
+                if (toolName === "invoke_workflow") {
+                  return (
+                    <ToolWorkflowCard
+                      key={`${message.id}-${part.toolCallId}-workflow`}
+                      part={part}
+                    />
+                  );
+                }
+
+                // ask_* persona tools — render the answer with who replied
+                if (isAskPersonaTool(toolName)) {
+                  return (
+                    <ToolPersonaCard
+                      key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
+                      toolName={toolName}
+                      part={part}
+                    />
+                  );
                 }
 
                 // Proposal tools — render interactive card with content preview

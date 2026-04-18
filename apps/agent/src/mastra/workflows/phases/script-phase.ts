@@ -21,24 +21,35 @@ import {
 } from "../../lib/drafts";
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest } from "../../lib/workspace-client";
+import { getOutline } from "../../lib/outline";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
 const EpisodeRef = z.object({
   episodeId: z.string().min(1),
   title: z.string().min(1),
-  introduction: z.string().min(1),
+  // Java's list/episode response sometimes omits introduction; allow empty
+  // and fall back to storySummary when composing the prompt.
+  introduction: z.string().default(""),
 });
 
 export const ScriptPhaseInputSchema = z.object({
   projectId: z.string().min(1),
-  episodes: z.array(EpisodeRef).min(1).max(60),
-  storySummary: z.string().min(10),
+  /** User feedback from revise round — sent to scriptwriter as guidance. */
+  feedback: z.string().optional(),
+});
+
+/** Internal — resolved from skeleton + Java committed data. */
+const ResolvedGenerateInputSchema = z.object({
+  projectId: z.string(),
+  episodes: z.array(EpisodeRef).min(1),
+  storySummary: z.string(),
   characters: z
     .array(z.object({ name: z.string(), role: z.string(), personality: z.string().optional() }))
     .default([]),
   genre: z.string().optional(),
   tone: z.string().optional(),
+  feedback: z.string().optional(),
 });
 
 export const ScriptPhaseOutputSchema = z.object({
@@ -74,11 +85,94 @@ const SuspendSchema = z.object({
   phase: z.literal("script"),
 });
 
+// ─── Step 0: resolve inputs (from skeleton + Java episodes) ───────────
+
+const resolveInputStep = createStep({
+  id: "resolve_input",
+  inputSchema: ScriptPhaseInputSchema,
+  outputSchema: ResolvedGenerateInputSchema,
+  execute: async ({ inputData, requestContext }) => {
+    // requestContext is authoritative for projectId — LLM's guess may be wrong.
+    const ctx = getContext(requestContext);
+    const projectId = ctx.projectId;
+    const record = await getOutline(projectId);
+    if (!record) {
+      throw new Error(
+        `script_phase: no story outline cached for project ${projectId}. Run story_outline first.`
+      );
+    }
+    const skeleton = record.outline;
+
+    // Fetch committed episodes from Java — they must already be in DB.
+    const listed = await javaRequest<{
+      list?: Array<{
+        id: string | number;
+        title?: string;
+        introduction?: string;
+        sort?: number;
+      }>;
+    }>(ctx, "/api/user/world/list/episode", {
+      data: { productId: projectId, page: 1, pageSize: 999 },
+    });
+    // eslint-disable-next-line no-console
+    console.log(
+      `[script_phase] list/episode returned ${(listed.list ?? []).length} rows for project ${projectId}`
+    );
+    const episodes = (listed.list ?? [])
+      .filter((ep) => ep.title)
+      .sort((a, b) => Number(a.sort ?? 0) - Number(b.sort ?? 0))
+      .map((ep) => ({
+        episodeId: String(ep.id),
+        title: String(ep.title),
+        introduction: String(ep.introduction ?? ""),
+      }));
+    if (episodes.length === 0) {
+      throw new Error(
+        `script_phase: no committed episodes found for project ${projectId}. Run episode_phase first.`
+      );
+    }
+
+    // Use committed roles from Java for personality hints (falls back to
+    // skeleton cast arcs if Java doesn't have description fields).
+    const listedRoles = await javaRequest<{
+      list?: Array<{
+        id?: string | number;
+        name?: string;
+        description?: string;
+      }>;
+    }>(ctx, "/api/user/world/list/worldrole", {
+      data: { worldId: ctx.worldId ?? "", page: 1, pageSize: 999 },
+    }).catch(() => ({ list: [] as Array<{ name?: string; description?: string }> }));
+    const personalityByName = new Map<string, string>();
+    for (const r of listedRoles.list ?? []) {
+      if (r.name && r.description) {
+        personalityByName.set(String(r.name), String(r.description));
+      }
+    }
+
+    const characters = skeleton.cast.map((c) => ({
+      name: c.name,
+      role: c.role,
+      personality: personalityByName.get(c.name) ?? c.arc,
+    }));
+
+    return {
+      projectId: inputData.projectId,
+      episodes,
+      storySummary: skeleton.storySummary,
+      characters,
+      genre: skeleton.genre,
+      tone: skeleton.tone,
+      feedback: inputData.feedback,
+    };
+  },
+});
+
 // ─── Step 1: generate scripts per episode ─────────────────────────────
 
 const generateStep = createStep({
   id: "generate",
-  inputSchema: ScriptPhaseInputSchema,
+  inputSchema: ResolvedGenerateInputSchema,
   outputSchema: z.object({ generatedCount: z.number(), totalChars: z.number() }),
   stateSchema: StateSchema,
   execute: async ({ inputData, setState, mastra, requestContext }) => {
@@ -187,7 +281,7 @@ function buildPrompt(args: {
     storySummary,
     castBlock,
     "本集标题：" + episode.title,
-    "本集大纲：" + episode.introduction,
+    episode.introduction ? "本集大纲：" + episode.introduction : "",
     "",
     "要求：",
     '- 格式：每场戏以"场景 N: 地点 - 时间"开头',
@@ -254,7 +348,8 @@ const applyDecisionStep = createStep({
     await throwIfCancelled(runId);
 
     const ctx = getContext(requestContext);
-    const input = getInitData<z.infer<typeof ScriptPhaseInputSchema>>();
+    const rawInput = getInitData<z.infer<typeof ScriptPhaseInputSchema>>();
+    const projectId = rawInput.projectId || ctx.projectId;
     const generated = state.generated ?? [];
 
     if (!inputData.approved) {
@@ -295,7 +390,7 @@ const applyDecisionStep = createStep({
 
     try {
       await javaRequest<unknown>(ctx, "/api/user/project/scripts/episode/batch/createOrUpdate", {
-        data: { projectId: input.projectId, episodeIds, contents },
+        data: { projectId, episodeIds, contents },
         timeoutMs: 300_000,
       });
       for (const d of accepts) {
@@ -346,11 +441,13 @@ const applyDecisionStep = createStep({
 
 export const scriptPhaseWorkflow = createWorkflow({
   id: "script_phase",
-  description: "逐集生成剧本（长任务），HITL 确认后批量保存到剧集。",
+  description:
+    "剧本阶段：按集调用编剧 → 长任务生成剧本 → HITL → 批量保存。支持 fromProjectOutline 自动读骨架 + 已入库分集。",
   inputSchema: ScriptPhaseInputSchema,
   outputSchema: ScriptPhaseOutputSchema,
   stateSchema: StateSchema,
 })
+  .then(resolveInputStep)
   .then(generateStep)
   .then(waitConfirmationStep)
   .then(applyDecisionStep)

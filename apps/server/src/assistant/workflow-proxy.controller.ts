@@ -115,6 +115,36 @@ export class WorkflowProxyController {
     return (await upstream.json()) as T;
   }
 
+  // ─── Deterministic start (button-bypass) ───────────────────────────
+  // Frontend "continue" buttons hit this when they know the exact next
+  // workflow to run, skipping the supervisor LLM.
+
+  @Post('start')
+  async start(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = String(body.projectId ?? '');
+    const workflowName = String(body.workflowName ?? '');
+    if (!projectId || !workflowName) {
+      throw new HttpException(
+        'projectId and workflowName required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const worldId = body.worldId ? String(body.worldId) : undefined;
+    const context = this.buildContext(user, { projectId, worldId });
+    return this.forward('/workflow/start', {
+      method: 'POST',
+      headers: this.buildHeaders(req, context, true),
+      body: JSON.stringify({
+        workflowName,
+        inputData: body.inputData ?? {},
+      }),
+    });
+  }
+
   // ─── Status + events ────────────────────────────────────────────────
 
   @Get(':runId/status')
