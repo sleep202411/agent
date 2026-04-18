@@ -144,6 +144,63 @@ export async function sendAssistantChat({
   return latest;
 }
 
+// ─── v3 (Mastra supervisor) chat ──────────────────────
+
+/**
+ * v3 entry point — streams from the Mastra-backed `/assistant/stream-v2`
+ * proxy. Wire-compatible with the legacy `sendAssistantChat`: same inputs,
+ * same AI SDK UI-message streaming, different URL.
+ *
+ * This is a thin client for the evaluator / supervisor / workflow era.
+ * The legacy `sendAssistantChat` is kept intact for projects still bound
+ * to the old conversation store.
+ */
+export async function sendAssistantChatV2({
+  projectId,
+  messages,
+  workspaceContext,
+  signal,
+  onMessage,
+}: Omit<SendAssistantChatOptions, "agentType">) {
+  const response = await fetch("/aurora/assistant/stream-v2", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept-Language":
+        workspaceContext.locale ||
+        (typeof document !== "undefined" ? document.documentElement.lang : "") ||
+        "zh-CN",
+    },
+    body: JSON.stringify({
+      projectId,
+      messages: sanitizeMessages(messages),
+      workspaceContext,
+    }),
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(await parseError(response));
+  }
+
+  const stream = toChunkStream(response.body);
+  let latest: AssistantMessage | null = null;
+  const placeholderMessage: AssistantMessage = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [],
+  };
+  for await (const message of readUIMessageStream({
+    message: placeholderMessage as Parameters<typeof readUIMessageStream>[0]["message"],
+    stream,
+  })) {
+    latest = message as AssistantMessage;
+    onMessage(latest);
+  }
+  return latest;
+}
+
 // ─── Save API ─────────────────────────────────────────
 
 export async function saveConversation(
