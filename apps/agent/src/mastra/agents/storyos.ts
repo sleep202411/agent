@@ -8,6 +8,14 @@ import {
   queryContext,
   showDrafts,
 } from "../tools/meta";
+import {
+  askArtDirector,
+  askCharacterDesigner,
+  askEpisodePlanner,
+  askSceneDesigner,
+  askScriptwriter,
+  askStoryboardDesigner,
+} from "../tools/personas";
 import { storyosInstructions } from "../prompts/storyos";
 import { defaultRouterModel } from "../lib/models";
 
@@ -31,12 +39,22 @@ export const storyosAgent = new Agent({
   // later (e.g. via Mastra Studio settings UI or a secrets-loader middleware).
   model: () => defaultRouterModel(),
   tools: {
+    // Workflow orchestration (heavy tasks — batch / HITL / DB commit)
     invoke_workflow: invokeWorkflow,
     cancel_workflow: cancelWorkflowTool,
-    query_context: queryContext,
-    show_drafts: showDrafts,
     list_active_workflows: listActiveWorkflows,
     explain_current_state: explainCurrentState,
+    // State reads + quality review
+    query_context: queryContext,
+    show_drafts: showDrafts,
     evaluate: evaluateDrafts,
+    // Direct-call persona consultations (light tasks — single-turn reply,
+    // no DB write, no HITL). See tools/personas/ask-tools.ts.
+    ask_scriptwriter: askScriptwriter,
+    ask_character_designer: askCharacterDesigner,
+    ask_scene_designer: askSceneDesigner,
+    ask_art_director: askArtDirector,
+    ask_storyboard_designer: askStoryboardDesigner,
+    ask_episode_planner: askEpisodePlanner,
   },
 });
