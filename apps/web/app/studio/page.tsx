@@ -1,11 +1,18 @@
+"use client";
+
+import { useRef } from "react";
 import DotField from "./_components/backgrounds/dot-field";
-import { RecentProjectsStrip } from "./_components/recent-projects-strip";
+import { ProjectsSection } from "./_components/projects-section";
+import { RecruitmentStrip } from "./_components/recruitment-strip";
+import { StickyComposerPill } from "./_components/sticky-composer-pill";
 import { StudioHomeComposer } from "./_components/studio-home-composer";
 
 export default function StudioHomePage() {
+  const heroRef = useRef<HTMLDivElement>(null);
+
   return (
     <>
-      <div className="pointer-events-none fixed inset-y-0 left-16 right-0 z-0">
+      <div className="pointer-events-none fixed inset-0 z-0">
         <DotField
           glowColor="transparent"
           bulgeStrength={18}
@@ -16,10 +23,14 @@ export default function StudioHomePage() {
           gradientTo="rgba(255, 255, 255, 0.15)"
         />
       </div>
-      <div className="relative z-10 flex min-h-full flex-col gap-16 px-8 pb-24 pt-4">
-        <StudioHomeComposer />
-        <RecentProjectsStrip />
+      <div className="relative z-10 flex min-h-full flex-col gap-16 px-8 pb-24 pt-16">
+        <div ref={heroRef}>
+          <StudioHomeComposer />
+        </div>
+        <ProjectsSection />
+        <RecruitmentStrip />
       </div>
+      <StickyComposerPill heroRef={heroRef} />
     </>
   );
 }

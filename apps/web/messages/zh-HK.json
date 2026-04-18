@@ -88,7 +88,9 @@
     "duplicateFile": "「{name}」已新增過，請勿重複上傳",
     "fileTooLargeForAi": "「{name}」檔案過大（超過 {size}MB），AI 將無法讀取內容",
     "fileContentTruncated": "「{name}」內容較長，已截取前 {size} 萬字",
-    "unsupportedAttachmentType": "僅支援文字、Word 和 PDF 檔案：{name}"
+    "unsupportedAttachmentType": "僅支援文字、Word 和 PDF 檔案：{name}",
+    "personalAccount": "個人帳號",
+    "verified": "已認證"
   },
   "tabs": {
     "script": "劇本",
@@ -1782,7 +1784,7 @@
     "projectCount": "{count} 個專案",
     "creating": "建立中...",
     "noProjectsYetHint": "還沒有專案，建立你的第一個專案開始吧。",
-    "studioHomePlaceholder": "拖拽/貼上 🖼️ 圖片到這裡，來試試【角色】、【風格】參考",
+    "studioHomePlaceholder": "描述你想創作的角色 / 劇集 / 場景 / 道具，也可以附上一份劇本做參考…",
     "studioHomeScript": "劇本",
     "studioHomeSend": "發送",
     "studioHomeTitle": "你想創作什麼？",
@@ -1790,7 +1792,16 @@
     "agentCharacter": "角色設計",
     "agentEpisode": "劇集設計",
     "agentProp": "道具設計",
-    "agentScene": "場景設計"
+    "agentScene": "場景設計",
+    "myRecruitment": "我的招募",
+    "unnamedUser": "未命名用戶",
+    "unknownRole": "未知角色",
+    "passApply": "通過",
+    "rejectApply": "拒絕",
+    "passSuccess": "已通過",
+    "rejectSuccess": "已拒絕",
+    "processFailed": "處理失敗",
+    "noDescription": "暫無描述"
   },
   "asset": {
     "title": "素材庫",

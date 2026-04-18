@@ -88,7 +88,9 @@
     "duplicateFile": "\"{name}\" already added",
     "fileTooLargeForAi": "\"{name}\" is too large (over {size}MB), AI cannot read it",
     "fileContentTruncated": "\"{name}\" is long, truncated to first {size}k chars",
-    "unsupportedAttachmentType": "Only text, Word, and PDF files supported: {name}"
+    "unsupportedAttachmentType": "Only text, Word, and PDF files supported: {name}",
+    "personalAccount": "Account",
+    "verified": "Verified"
   },
   "tabs": {
     "script": "Script",
@@ -1782,7 +1784,7 @@
     "projectCount": "{count} projects",
     "creating": "Creating...",
     "noProjectsYetHint": "No projects yet. Create your first project to get started.",
-    "studioHomePlaceholder": "Drag/paste 🖼️ an image here to try it as a [character] or [style] reference",
+    "studioHomePlaceholder": "Describe the character / episode / scene / prop you want to create — attach a script for reference if you have one…",
     "studioHomeScript": "Script",
     "studioHomeSend": "Send",
     "studioHomeTitle": "What do you want to create?",
@@ -1790,7 +1792,16 @@
     "agentCharacter": "Character Design",
     "agentEpisode": "Episode Design",
     "agentProp": "Prop Design",
-    "agentScene": "Scene Design"
+    "agentScene": "Scene Design",
+    "myRecruitment": "My Recruitment",
+    "unnamedUser": "Unnamed user",
+    "unknownRole": "Unknown role",
+    "passApply": "Approve",
+    "rejectApply": "Reject",
+    "passSuccess": "Approved",
+    "rejectSuccess": "Rejected",
+    "processFailed": "Failed to process",
+    "noDescription": "No description"
   },
   "asset": {
     "title": "Assets",
