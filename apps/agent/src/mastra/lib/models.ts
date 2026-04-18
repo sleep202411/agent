@@ -14,6 +14,7 @@
  */
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAlibaba } from "@ai-sdk/alibaba";
+import { createAzure } from "@ai-sdk/azure";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 
 // ─── DeepSeek (OpenAI-compatible) ─────────────────────────────────────
@@ -51,16 +52,67 @@ export function createAlibabaModel(modelId: AlibabaModelId = "qwen3-max"): Langu
   return provider(modelId);
 }
 
+// ─── Azure OpenAI / AI Foundry ────────────────────────────────────────
+
+/**
+ * Azure OpenAI deployments hosted on AI Foundry.
+ *
+ * Required env:
+ *   AZURE_OPENAI_API_KEY        — API key from Foundry
+ *   AZURE_OPENAI_RESOURCE_NAME  — the "resourceName" part of
+ *                                 https://<resource>.openai.azure.com
+ *
+ * Optional env:
+ *   AZURE_OPENAI_API_VERSION    — default "2024-10-21"
+ *   AZURE_OPENAI_BASE_URL       — full override for custom endpoints
+ *                                 (Foundry regional endpoints, AI gateway,
+ *                                 etc.). Wins over resourceName if set.
+ *
+ * The string passed in must be an Azure **deployment name** (what you
+ * configured in Foundry), NOT the underlying model id. Two deployments
+ * of the same model are distinct.
+ */
+export function createAzureModel(deploymentName: string): LanguageModelV3 {
+  const apiKey = process.env.AZURE_OPENAI_API_KEY;
+  const resourceName = process.env.AZURE_OPENAI_RESOURCE_NAME;
+  const baseURL = process.env.AZURE_OPENAI_BASE_URL;
+  if (!apiKey) {
+    throw new Error("AZURE_OPENAI_API_KEY is not set. Grab it from your Foundry project settings.");
+  }
+  if (!resourceName && !baseURL) {
+    throw new Error("Either AZURE_OPENAI_RESOURCE_NAME or AZURE_OPENAI_BASE_URL must be set.");
+  }
+  const azure = createAzure({
+    apiKey,
+    ...(baseURL ? { baseURL } : { resourceName: resourceName! }),
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION ?? "2024-10-21",
+  });
+  return azure(deploymentName);
+}
+
 // ─── Agent-level defaults ─────────────────────────────────────────────
 
 /**
- * Router-agent model. Prefers DeepSeek (cheap, fast, decent for tool calling);
- * falls back to Alibaba qwen3-max only if DEEPSEEK_API_KEY is missing. The
- * router does structured tool calling, so stability matters — if DeepSeek
- * proves flaky in production, flip the default here.
+ * Supervisor / router model.
+ *
+ * Provider selection (via env):
+ *   STORYOS_ROUTER_PROVIDER=azure    → Azure OpenAI / Foundry
+ *   STORYOS_ROUTER_PROVIDER=alibaba  → Alibaba DashScope (qwen)
+ *   (anything else or unset)         → DeepSeek (default when API key present)
+ *                                      falls back to Alibaba if DeepSeek key
+ *                                      is missing.
+ *
+ * STORYOS_ROUTER_MODEL is interpreted per-provider:
+ *   azure    → deployment name
+ *   alibaba  → qwen model id
+ *   deepseek → "deepseek-chat" | "deepseek-reasoner"
  */
 export function defaultRouterModel(): LanguageModelV3 {
-  if (process.env.STORYOS_ROUTER_PROVIDER === "alibaba" || !process.env.DEEPSEEK_API_KEY) {
+  const provider = process.env.STORYOS_ROUTER_PROVIDER;
+  if (provider === "azure") {
+    return createAzureModel(process.env.STORYOS_ROUTER_MODEL ?? "gpt-4o");
+  }
+  if (provider === "alibaba" || !process.env.DEEPSEEK_API_KEY) {
     return createAlibabaModel(process.env.STORYOS_ROUTER_MODEL ?? "qwen3-max");
   }
   return createDeepSeekModel(
@@ -69,12 +121,20 @@ export function defaultRouterModel(): LanguageModelV3 {
 }
 
 /**
- * Persona agents (role-designer, scriptwriter, storyboard-artist, mood-master)
- * — long-form structured output. DeepSeek is the default for cost; personas
- * that need stronger creative writing can override via env.
+ * Persona agents (role-designer, scriptwriter, storyboard-artist, mood-master,
+ * art-director, scene-designer, analyst, episode-planner, evaluator).
+ *
+ * Provider selection mirrors defaultRouterModel, via STORYOS_PERSONA_PROVIDER
+ * and STORYOS_PERSONA_MODEL. For creative Chinese writing DeepSeek / Qwen
+ * tend to be stronger; Azure GPT-4o shines on structured reasoning and
+ * tool-use stability.
  */
 export function defaultPersonaModel(): LanguageModelV3 {
-  if (process.env.STORYOS_PERSONA_PROVIDER === "alibaba") {
+  const provider = process.env.STORYOS_PERSONA_PROVIDER;
+  if (provider === "azure") {
+    return createAzureModel(process.env.STORYOS_PERSONA_MODEL ?? "gpt-4o");
+  }
+  if (provider === "alibaba") {
     return createAlibabaModel(process.env.STORYOS_PERSONA_MODEL ?? "qwen3-max");
   }
   return createDeepSeekModel(
