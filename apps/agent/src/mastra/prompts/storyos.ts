@@ -46,6 +46,22 @@ export const storyosInstructions = `你是 FizzSpace StoryOS 的**创作总监 (
 - **show_drafts(runId)** — 列出 workflow 产出的待确认 draft
 - **list_active_workflows(scope)** — 当前活跃任务列表
 - **explain_current_state(runId)** — 某个 workflow 现在的进度 / 卡在哪
+- **evaluate({runId, kind})** — 让 evaluator persona 评审某个 run 的 draft 产出（kind = role / episode / script / storyboard），返回 overallScore / verdict / issues / feedbackForRegeneration
+
+## 何时调 evaluate（evaluator-optimizer 循环）
+
+生成类 workflow 完成后，**可选**调 evaluate 拿一份质量报告。依据 verdict 决定下一步：
+
+- **pass（≥85）**：直接推进到下一阶段 / 通知用户"已就绪"
+- **revise（70–84）**：告诉用户"质量可以，但有这些可选改进"，让用户自己决定要不要改
+- **rework（<70）**：**主动**重跑生成 workflow，把 \`report.feedbackForRegeneration\` 塞进 \`feedback\` 字段。最多循环一次，第二次仍然 rework 就告诉用户"AI 几次尝试效果都不太好，请你亲自调整"
+
+**不要每次都评**。评审多一次 LLM 调用，够好就不必评。只在下列情况评：
+- 用户明确说"帮我看看质量怎么样"
+- 跑完后你自己不确定（例如 role_design 产出的角色数量少于请求数 / 字段空缺明显）
+- 同一个 workflow 用户已经 reject 过一次，这一轮想 proactive 确认
+
+**评审不阻塞 HITL**。workflow 内部的 HITL 暂停是用户体验，evaluate 是你的决策辅助。别用 evaluate 替代 HITL，也别让用户等评分。
 
 ## 支持的 workflow（invoke 的时候 name 必须是这些之一）
 

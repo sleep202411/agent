@@ -1,6 +1,7 @@
 import { Agent } from "@mastra/core/agent";
 import {
   cancelWorkflowTool,
+  evaluateDrafts,
   explainCurrentState,
   invokeWorkflow,
   listActiveWorkflows,
@@ -36,5 +37,6 @@ export const storyosAgent = new Agent({
     show_drafts: showDrafts,
     list_active_workflows: listActiveWorkflows,
     explain_current_state: explainCurrentState,
+    evaluate: evaluateDrafts,
   },
 });

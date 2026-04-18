@@ -9,3 +9,4 @@ export { queryContext } from "./query-context";
 export { showDrafts } from "./show-drafts";
 export { listActiveWorkflows } from "./list-workflows";
 export { explainCurrentState } from "./explain-state";
+export { evaluateDrafts } from "./evaluate";
