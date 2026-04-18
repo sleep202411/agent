@@ -10,6 +10,8 @@ import { analystAgent } from "./agents/personas/analyst";
 import { episodePlannerAgent } from "./agents/personas/episode-planner";
 import { storyboarderAgent } from "./agents/personas/storyboarder";
 import { evaluatorAgent } from "./agents/personas/evaluator";
+import { artDirectorAgent } from "./agents/personas/art-director";
+import { sceneDesignerAgent } from "./agents/personas/scene-designer";
 import { workflowRoutes } from "./routes/workflow";
 import { roleDesignWorkflow } from "./workflows/role-design";
 import { batchCreateAssetWorkflow } from "./workflows/batch-create-asset";
@@ -87,6 +89,8 @@ export const mastra = new Mastra({
     episodePlanner: episodePlannerAgent,
     storyboarder: storyboarderAgent,
     evaluator: evaluatorAgent,
+    artDirector: artDirectorAgent,
+    sceneDesigner: sceneDesignerAgent,
   },
   workflows: {
     // Single-phase workflows (still reachable individually via invoke_workflow)
