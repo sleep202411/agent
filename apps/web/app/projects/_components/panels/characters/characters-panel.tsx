@@ -245,8 +245,17 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
           onLoadMore={() => void loadWorldCharacters(false, search.trim())}
           onRetryImage={async (character) => {
             if (!projectId || !character.id) return;
+            const prompt = (character.prompt ?? character.description ?? "").trim();
+            if (!prompt) {
+              console.warn("[image-retry] no prompt for character", character.id);
+              return;
+            }
             try {
-              await regenerateAssetImage(projectId, "role", character.id, worldId ?? undefined);
+              await regenerateAssetImage(projectId, "role", character.id, {
+                prompt,
+                assetName: character.name,
+                worldId: worldId ?? undefined,
+              });
               refetchImageStatuses();
             } catch (err) {
               // Keep UI intact; polling will re-sync. Error surfaced via toast elsewhere.

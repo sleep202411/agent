@@ -70,11 +70,23 @@ async function testRegenerate() {
     return;
   }
 
+  const testPrompt =
+    process.env.TEST_PROMPT ??
+    "A thoughtful woman in her 30s, shoulder-length brown hair, wearing a blue sweater, portrait style, soft lighting";
+
   const triggerResp = JSON.parse(
     curl(
       "POST",
       `/aurora/assets/role/${TEST_ROLE_ID}/regenerate-image`,
-      JSON.stringify({ projectId: PROJECT_ID, worldId: WORLD_ID })
+      JSON.stringify({
+        projectId: PROJECT_ID,
+        worldId: WORLD_ID,
+        prompt: testPrompt,
+        // Must match Java's existing role name — update endpoint validates
+        // name as non-empty. For this test we hard-code 克丽斯汀娜 (role 628)
+        // to match the list output; override via TEST_ASSET_NAME if needed.
+        assetName: process.env.TEST_ASSET_NAME ?? "克丽斯汀娜",
+      })
     )
   );
   if (!triggerResp.ok) {

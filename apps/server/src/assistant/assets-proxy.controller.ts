@@ -124,13 +124,31 @@ export class AssetsProxyController {
   async regenerate(
     @Param('assetType') assetType: string,
     @Param('assetId') assetId: string,
-    @Body() body: { projectId?: string; worldId?: string },
+    @Body()
+    body: {
+      projectId?: string;
+      worldId?: string;
+      prompt?: string;
+      assetName?: string;
+    },
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
+    // Validate assetType before any body fields — cheap discriminator, and
+    // tests that intentionally pass a bad type should see the right error
+    // regardless of what else is in the body.
+    if (assetType !== 'role' && assetType !== 'scene' && assetType !== 'prop') {
+      throw new HttpException(
+        'assetType must be role / scene / prop',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     const projectId = String(body.projectId ?? '');
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    if (!body.prompt || !String(body.prompt).trim()) {
+      throw new HttpException('prompt required', HttpStatus.BAD_REQUEST);
     }
     const context = this.buildContext(user, {
       projectId,
@@ -141,7 +159,10 @@ export class AssetsProxyController {
       {
         method: 'POST',
         headers: this.buildHeaders(req, context, true),
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          prompt: String(body.prompt),
+          assetName: body.assetName ? String(body.assetName) : undefined,
+        }),
       },
     );
   }

@@ -47,14 +47,23 @@ export async function regenerateAssetImage(
   projectId: string,
   assetType: "role" | "scene" | "prop",
   assetId: string,
-  worldId?: string
+  opts: {
+    prompt: string;
+    assetName?: string;
+    worldId?: string;
+  }
 ): Promise<void> {
   const url = `/aurora/assets/${assetType}/${encodeURIComponent(assetId)}/regenerate-image`;
   const resp = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId, worldId }),
+    body: JSON.stringify({
+      projectId,
+      worldId: opts.worldId,
+      prompt: opts.prompt,
+      assetName: opts.assetName,
+    }),
   });
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");

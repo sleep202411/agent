@@ -5,11 +5,16 @@
  * Status query just reads the project's Redis hash; regenerate enqueues
  * a new job on the asset-images queue with a timestamped id so it
  * bypasses the idempotency key of any in-flight job for the same asset.
+ *
+ * Regenerate intentionally takes the prompt + display name in the POST
+ * body rather than looking them up server-side — Java doesn't expose a
+ * single-asset query endpoint that works reliably, and the frontend
+ * already has the record loaded anyway.
  */
 import { registerApiRoute } from "@mastra/core/server";
 import { HTTPException } from "hono/http-exception";
 import { getProjectAssetImageStatus } from "../lib/asset-image-status";
-import { javaRequest, type StoryosContext } from "../lib/workspace-client";
+import type { StoryosContext } from "../lib/workspace-client";
 import { buildImageJobId, getImageQueue } from "../workflows/engine/image-queue";
 
 function requireContext(c: import("hono").Context): StoryosContext {
@@ -46,10 +51,10 @@ export const assetsRoutes = [
   }),
 
   // ─── POST /assets/:assetType/:assetId/regenerate-image ───────────
-  // User-initiated retry. We re-fetch the prompt from Java (source of
-  // truth — not Redis, which may have expired) and enqueue a job with a
-  // timestamped id so it runs even if the original job is still queued
-  // or in a retry backoff window.
+  // User-initiated retry. Prompt + name come from the frontend (which
+  // already has the record loaded in the panel) — Java doesn't expose
+  // a reliable single-asset query endpoint so we avoid that dependency.
+  // A fresh timestamped job id bypasses in-flight idempotency.
   registerApiRoute("/assets/:assetType/:assetId/regenerate-image", {
     method: "POST",
     handler: async (c) => {
@@ -61,16 +66,19 @@ export const assetsRoutes = [
         throw new HTTPException(400, { message: "assetType must be role / scene / prop" });
       }
 
-      const prompt = await fetchAssetPrompt(ctx, assetType, assetId);
-      if (!prompt.trim()) {
+      const body = (await c.req.json().catch(() => ({}))) as {
+        prompt?: string;
+        assetName?: string;
+      };
+      const prompt = (body.prompt ?? "").trim();
+      if (!prompt) {
         throw new HTTPException(400, {
-          message: "asset has no visual prompt; cannot generate image",
+          message: "prompt is required in request body",
         });
       }
+      const assetName = (body.assetName ?? "").trim() || assetId;
 
-      const assetName = await fetchAssetName(ctx, assetType, assetId);
       const regenerateAt = Date.now();
-
       const queue = getImageQueue();
       await queue.add(
         "generate",
@@ -91,27 +99,3 @@ export const assetsRoutes = [
     },
   }),
 ];
-
-// ─── Internal: pull prompt/name from Java ─────────────────────────
-
-async function fetchAssetPrompt(
-  ctx: StoryosContext,
-  assetType: "role" | "scene" | "prop",
-  assetId: string
-): Promise<string> {
-  const endpoint = `/api/user/world/query/world${assetType}?id=${encodeURIComponent(assetId)}`;
-  const resp = await javaRequest<{ prompt?: string; description?: string }>(ctx, endpoint, {
-    method: "GET",
-  });
-  return (resp.prompt ?? resp.description ?? "").trim();
-}
-
-async function fetchAssetName(
-  ctx: StoryosContext,
-  assetType: "role" | "scene" | "prop",
-  assetId: string
-): Promise<string> {
-  const endpoint = `/api/user/world/query/world${assetType}?id=${encodeURIComponent(assetId)}`;
-  const resp = await javaRequest<{ name?: string }>(ctx, endpoint, { method: "GET" });
-  return resp.name ?? assetId;
-}

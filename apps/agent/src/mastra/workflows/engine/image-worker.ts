@@ -129,7 +129,7 @@ async function handleImageJob(job: Job<AssetImageJobData, unknown, AssetImageJob
   // 2. Persist to Java.
   const updateStart = Date.now();
   try {
-    await updateAssetImage(ctx, assetType, assetId, ossPath);
+    await updateAssetImage(ctx, assetType, assetId, assetName, ossPath);
     logJob("info", "java_update_success", {
       ...baseCtx,
       durationMs: Date.now() - updateStart,
@@ -169,11 +169,14 @@ async function updateAssetImage(
   ctx: StoryosContext,
   assetType: "role" | "scene" | "prop",
   assetId: string,
+  assetName: string,
   ossPath: string
 ): Promise<void> {
-  // Map asset type to Java endpoint. All three support image arrays under
-  // the matching field name (Java's convention — `roleImgPath` on role,
-  // `sceneImgPath` on scene, etc.).
+  // Java's update endpoints validate required fields (at minimum `name`)
+  // even when we only want to patch the image path — so we have to echo
+  // the name back. Name comes from the job payload (role_phase commit
+  // passes the committed name; user-initiated retries pass it from the
+  // frontend panel which already has the record loaded).
   const endpoint = `/api/user/world/update/world${assetType}`;
   const imgField =
     assetType === "role" ? "roleImgPath" : assetType === "scene" ? "sceneImgPath" : "propImgPath";
@@ -181,6 +184,7 @@ async function updateAssetImage(
   await javaRequest<unknown>(ctx, endpoint, {
     data: {
       id: assetId,
+      name: assetName,
       [imgField]: [ossPath],
     },
   });
