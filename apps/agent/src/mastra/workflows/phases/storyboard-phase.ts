@@ -145,6 +145,21 @@ const resolveInputStep = createStep({
 
 // ─── Step 1: generate storyboard per episode ──────────────────────────
 
+/**
+ * Episodes are storyboarded in parallel because each prompt is
+ * self-contained — we only feed `ep.scriptContent` (no cross-episode
+ * context), so serial order gives us no consistency benefit. At
+ * concurrency=4 a 13-episode run drops from ~12 minutes to ~3 minutes.
+ *
+ * Concurrency is env-tunable (STORYBOARD_GENERATE_CONCURRENCY); bumping
+ * it higher trades wall-clock for DeepSeek RPM pressure. 4 is a safe
+ * default that stays well under any account-level limit.
+ */
+const STORYBOARD_GENERATE_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.STORYBOARD_GENERATE_CONCURRENCY ?? 4)
+);
+
 const generateStep = createStep({
   id: "generate",
   inputSchema: ResolvedGenerateInputSchema,
@@ -157,47 +172,86 @@ const generateStep = createStep({
     const storyboarder = mastra?.getAgent("storyboarder");
     if (!storyboarder) throw new Error("storyboarder agent not registered");
 
-    const generated: z.infer<typeof StateSchema>["generated"] = [];
     const total = inputData.episodes.length;
-    let totalShots = 0;
+    const concurrency = Math.min(STORYBOARD_GENERATE_CONCURRENCY, total);
+
+    // Per-index slots preserve input order in the final `generated` array
+    // regardless of which worker finishes when.
+    type GeneratedEntry = z.infer<typeof StateSchema>["generated"][number];
+    const generatedByIndex: Array<GeneratedEntry | null> = new Array(total).fill(null);
+    const errorsByIndex: Array<string | null> = new Array(total).fill(null);
+
+    let completedCount = 0;
+    let cursor = 0;
 
     await reportProgress(runId, {
       stepId: "storyboard_phase.generate",
       current: 0,
       total,
-      label: `分镜师开始逐集出分镜（共 ${total} 集）`,
+      label: `分镜师开始并行出分镜（共 ${total} 集，并发 ${concurrency}）`,
     });
 
-    for (let i = 0; i < total; i++) {
+    const runOne = async (i: number) => {
       await throwIfCancelled(runId);
       const ep = inputData.episodes[i];
+      try {
+        const response = await storyboarder.generate(buildPrompt(ep), {
+          structuredOutput: {
+            schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
+            errorStrategy: "warn",
+          },
+        });
+        const rows = (
+          (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? []
+        ).slice(0, 60);
 
-      const response = await storyboarder.generate(buildPrompt(ep), {
-        structuredOutput: {
-          schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
-          errorStrategy: "warn",
-        },
-      });
-      const rows = (
-        (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? []
-      ).slice(0, 60);
+        const clientRefId = randomUUID();
+        await putDraft(runId, "shot", clientRefId, {
+          episodeId: ep.episodeId,
+          title: ep.title,
+          rows,
+        });
+        generatedByIndex[i] = { clientRefId, episodeId: ep.episodeId, title: ep.title, rows };
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        errorsByIndex[i] = reason;
+      } finally {
+        // Increment under the single-threaded event loop — no races.
+        completedCount += 1;
+        await reportProgress(runId, {
+          stepId: "storyboard_phase.generate",
+          current: completedCount,
+          total,
+          label: `已出 ${completedCount}/${total} 集分镜`,
+        });
+      }
+    };
 
-      const clientRefId = randomUUID();
-      await putDraft(runId, "shot", clientRefId, {
-        episodeId: ep.episodeId,
-        title: ep.title,
-        rows,
-      });
-      generated.push({ clientRefId, episodeId: ep.episodeId, title: ep.title, rows });
-      totalShots += rows.length;
+    // Cursor-driven worker pool: each worker pulls the next unassigned
+    // index until the cursor exhausts the input. Pattern matches the one
+    // in lib/batch-writer.ts.
+    const workers = Array.from({ length: concurrency }, async () => {
+      while (true) {
+        const i = cursor++;
+        if (i >= total) return;
+        await runOne(i);
+      }
+    });
+    await Promise.all(workers);
 
-      await reportProgress(runId, {
-        stepId: "storyboard_phase.generate",
-        current: i + 1,
-        total,
-        label: `已出 ${i + 1}/${total} 集分镜（${totalShots} 个镜头）`,
-      });
+    // Fail the step if ANY episode failed — current behavior matches the
+    // old serial loop (which would throw on first failure). Parallel just
+    // means we surface ALL failures for diagnostics, not just the first.
+    const failedCount = errorsByIndex.filter((e) => e !== null).length;
+    if (failedCount > 0) {
+      const firstError = errorsByIndex.find((e): e is string => e !== null) ?? "unknown";
+      throw new Error(
+        `storyboard generation failed for ${failedCount}/${total} episodes. First error: ${firstError}`
+      );
     }
+
+    const generated = generatedByIndex.filter((g): g is GeneratedEntry => g !== null);
+    const totalShots = generated.reduce((sum, g) => sum + g.rows.length, 0);
 
     setState({ generated });
     return { episodeCount: generated.length, totalShots };
