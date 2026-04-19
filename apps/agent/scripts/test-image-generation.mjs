@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * E2E smoke test for the Replicate image generation stack.
+ * E2E smoke test for the Java-backed asset image generation stack.
  *
- * Requires REPLICATE_API_TOKEN to be set — skips with a clear message otherwise.
+ * Requires a valid cookie + an existing role id in Java. Java handles the
+ * model inference + OSS upload; we just enqueue and wait for the worker
+ * to flip the Redis status to `ready`.
  *
  * Covers:
  *   1. /aurora/assets/image-status returns empty hash for a fresh project
- *   2. Enqueue job via role_phase commit (not done here — test the retry
- *      path which is equivalent)
+ *   2. Bad assetType → 400
  *   3. /aurora/assets/:type/:id/regenerate-image enqueues a job
  *   4. Polling the status endpoint shows pending → generating → ready
- *   5. Java role record has roleImgPath[0] updated
  */
 
 import { execSync } from "child_process";
@@ -67,10 +67,6 @@ async function testRegenerate() {
   if (!TEST_ROLE_ID) {
     log.warn("TEST_ROLE_ID env not set — skipping. Grab one from Java:");
     log.dim("  curl -s localhost:3000/api/user/world/list/worldrole -b ... | jq '.list[0].id'");
-    return;
-  }
-  if (!process.env.REPLICATE_API_TOKEN) {
-    log.warn("REPLICATE_API_TOKEN not set — skipping. Set it in apps/agent/.env");
     return;
   }
 

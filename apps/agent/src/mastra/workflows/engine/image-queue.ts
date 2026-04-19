@@ -1,14 +1,21 @@
 /**
  * BullMQ queue for asset-image generation — separate from the workflow queue.
  *
+ * Each job calls Java's /api/ai/image/generate/basic synchronously (Java
+ * handles model inference + OSS upload), then PATCHes the asset record
+ * with the returned storage path. We don't talk to Replicate or OSS
+ * directly from this process.
+ *
  * Why a dedicated queue rather than a new job type on storyos-workflows:
- *   - Different concurrency: workflow runs are expensive LLM chains; image
- *     generation is fast I/O-bound. 16 parallel image jobs ≠ 16 workflow runs.
+ *   - Different concurrency: workflow runs are expensive LLM chains;
+ *     image jobs are I/O-bound on Java's response time (5-30s each).
+ *     16 parallel image jobs ≠ 16 workflow runs — they compete for
+ *     different resources.
  *   - Different retry policy: BullMQ-level attempts=3 with exponential
- *     backoff is the right answer for flaky Replicate/OSS calls; workflows
- *     manage their own retries internally.
- *   - Isolation: if image generation gets stuck behind a Replicate rate
- *     limit, it shouldn't starve workflow run slots.
+ *     backoff is the right answer for flaky Java / upstream calls;
+ *     workflows manage their own retries internally.
+ *   - Isolation: if image generation gets stuck behind a slow upstream,
+ *     it shouldn't starve workflow run slots.
  */
 import { Queue } from "bullmq";
 import { buildConnection } from "./queue";

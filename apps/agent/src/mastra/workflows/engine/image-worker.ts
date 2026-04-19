@@ -19,7 +19,7 @@
 import { Worker, type Job } from "bullmq";
 import { IMAGE_QUEUE_NAME, type AssetImageJobData, type AssetImageJobName } from "./image-queue";
 import { buildConnection } from "./queue";
-import { generateAndStoreImage } from "../../lib/image-pipeline";
+import { generateAssetImageViaJava } from "../../lib/java-image-gen";
 import { setAssetImageStatus } from "../../lib/asset-image-status";
 import { javaRequest, type StoryosContext } from "../../lib/workspace-client";
 
@@ -93,13 +93,14 @@ async function handleImageJob(job: Job<AssetImageJobData, unknown, AssetImageJob
   let ossPath: string;
   const genStart = Date.now();
   try {
-    ossPath = await generateAndStoreImage(ctx, {
+    // Java's generate endpoint handles model inference + OSS upload + path
+    // assignment in one synchronous call (blocks 5-30s while the image is
+    // generated). We don't need Replicate or direct OSS access — Java owns
+    // credentials, billing attribution, and safety filters.
+    ossPath = await generateAssetImageViaJava(ctx, {
+      assetType,
+      assetId,
       prompt,
-      uploadType: "WORLD",
-      fileNameHint: `${assetType}-${assetId}-${Date.now()}.webp`,
-      providerOptions: {
-        num_inference_steps: 4,
-      },
     });
     logJob("info", "generate_success", {
       ...baseCtx,
@@ -187,10 +188,15 @@ async function updateAssetImage(
 
 function classifyFailure(err: unknown): "failed_config" | "failed_policy" | "failed_server" {
   if (err instanceof Error) {
-    if (err.message.includes("REPLICATE_API_TOKEN")) return "failed_config";
-    // Replicate returns 4xx with messages mentioning "NSFW" / "safety" /
-    // "content policy" for rejected prompts; surface those as policy failures.
-    if (/nsfw|safety|policy|moderation/i.test(err.message)) return "failed_policy";
+    const msg = err.message;
+    // Java returns "Unauthorized"/"401" when the caller's session is
+    // dropped mid-flight — that's a config / auth issue, not a user
+    // retryable server error.
+    if (/unauthorized|401|no cookie|not login/i.test(msg)) return "failed_config";
+    // Java's safety filter messages typically mention these terms. Keep
+    // the regex permissive since upstream text varies (could be Tongyi's
+    // zh, DALL-E's en, etc.).
+    if (/nsfw|safety|policy|moderation|违规|敏感|不合规|违禁/i.test(msg)) return "failed_policy";
   }
   return "failed_server";
 }
