@@ -93,7 +93,7 @@ type WsFrame =
   | {
       event: "heartbeat";
       data: {
-        runHash: string; // sha256(runId + status + currentStep + progress)
+        runHash: string; // cheap digest — see "Heartbeat hash" section below
         serverTime: number; // ms since epoch, for clock-drift detection
       };
     }
@@ -132,19 +132,30 @@ type WsFrame =
 
 ### Dedup by ID
 
-Every `workflow_event` carries a unique `id` (ULID, assigned at `appendEvent`
-time). Clients maintain a `Set<string>` of seen IDs per connection; dupes on
-reconnect are silently dropped. Copies oii's `emitOperation` pattern.
+Every `workflow_event` carries a unique `id` (UUID via `crypto.randomUUID()`,
+assigned at `appendEvent` time — the durable Redis stream stores the same id
+as a field so REST replays surface the same dedup key). Clients maintain a
+`Set<string>` of seen IDs per connection; dupes on reconnect are silently
+dropped. Copies oii's `emitOperation` pattern.
 
 ### Heartbeat hash as consistency safeguard
 
-`runHash = sha256(runId + status + currentStep + progress.current + progress.total)`.
-Client compares against locally cached state. If mismatch, client triggers a
-one-shot `GET /aurora/workflow/:runId/status` to reconcile. Catches the rare
-case of dropped `workflow_event` frames without forcing full reload.
+```
+runHash = `${status}:${currentStep ?? ""}:${progress.current ?? 0}/${progress.total ?? 0}`
+```
 
-**This is the key resilience pattern borrowed from oii.** Without it, a single
-dropped frame leaves the UI permanently stale.
+Plain string concat, not a cryptographic hash. We don't care about
+collisions — we just need a stable digest that flips whenever the view of
+the run changes. Sub-microsecond to compute on both server and client;
+symmetric by design so the compare at heartbeat time is meaningful.
+
+Client compares against its locally cached state. If mismatch, client
+triggers a one-shot `GET /aurora/workflow/:runId/status` to reconcile.
+Catches the rare case of dropped `workflow_event` frames without forcing a
+full reload.
+
+**This is the key resilience pattern borrowed from oii.** Without it, a
+single dropped frame leaves the UI permanently stale.
 
 ## URL design
 
@@ -166,24 +177,33 @@ when new runs start. Defers complexity for no real benefit at our scale.
 
 ## Server: Nest WebSocket gateway
 
-New file: `apps/server/src/assistant/workflow-events.gateway.ts`.
+Live at `apps/server/src/assistant/workflow-events.gateway.ts`. Uses
+`@nestjs/platform-ws` (native `ws` library, not socket.io) — keeps the
+client side zero-dependency (browser's built-in `new WebSocket()` is
+enough) and skips socket.io's proprietary handshake.
 
 ```typescript
+// Wired up in AssistantModule providers + main.ts:
+//   app.useWebSocketAdapter(new WsAdapter(app));
+
 @WebSocketGateway({
   path: "/aurora/workflow-events",
-  cors: { origin: true, credentials: true },
+  // @nestjs/platform-ws doesn't honor `cors` like socket.io does.
+  // Browser same-origin + cookie auth handle cross-origin via the standard
+  // upgrade handshake.
 })
 export class WorkflowEventsGateway implements OnGatewayInit, OnGatewayDisconnect {
-  private redisSubscriber: Redis; // dedicated connection for SUBSCRIBE
+  private redisSubscriber: Redis; // dedicated connection for PSUBSCRIBE
   private socketsByRun = new Map<string, Set<WebSocket>>(); // runId → subscribers
-  private runByClient = new Map<WebSocket, string>(); // inverse for cleanup
-  private heartbeatInterval: NodeJS.Timeout;
+  private heartbeatTimer: NodeJS.Timeout;
 
-  afterInit(server: Server) {
+  afterInit(_server: Server) {
     this.redisSubscriber = new Redis(process.env.REDIS_URL!);
-    this.redisSubscriber.psubscribe("events:*"); // one pattern sub for all runs
+    // Pattern matches Mastra's K.workflowEventsChannel(runId)
+    // = `workflow:events:${runId}`.
+    this.redisSubscriber.psubscribe("workflow:events:*");
     this.redisSubscriber.on("pmessage", (_pattern, channel, message) => {
-      const runId = channel.slice("events:".length);
+      const runId = channel.slice("workflow:events:".length);
       const sockets = this.socketsByRun.get(runId);
       if (!sockets) return;
       const frame = { event: "workflow_event", data: JSON.parse(message) };
@@ -193,7 +213,7 @@ export class WorkflowEventsGateway implements OnGatewayInit, OnGatewayDisconnect
       }
     });
 
-    this.heartbeatInterval = setInterval(() => this.sendHeartbeats(), 30_000);
+    this.heartbeatTimer = setInterval(() => this.sendHeartbeats(), 30_000);
   }
 
   async handleConnection(client: WebSocket, request: IncomingMessage) {
@@ -435,10 +455,13 @@ endpoints are still there as a safety net for page reloads (not realtime).
 - **Multiple tabs**: two tabs with the same runId → two WS subscriptions,
   duplicate work. Acceptable. If becomes a problem, use BroadcastChannel to
   dedupe within a browser.
-- **runHash computation**: SHA-256 feels heavy at 30s intervals × N runs.
-  Alternative: version counter incremented by `appendEvent`. Simpler, fewer
-  collisions. **Recommend counter over hash.** Revise the schema to
-  `{ runVersion: number }` before implementing.
+- ~~**runHash computation**~~: **Resolved.** Neither SHA-256 nor a version
+  counter. Went with a plain string digest derived from existing meta
+  fields:
+  `${status}:${currentStep}:${progress.current}/${progress.total}`.
+  Zero write amplification on `appendEvent`, sub-microsecond compute on
+  both sides, and detects every visible state change. Collision risk is
+  irrelevant — we only compare for equality, never hash across runs.
 - **Batched events**: if Mastra emits 10 events in 10ms, the client gets 10
   frames. Consider server-side coalescing (hold 100ms, send batch). Defer
   until observed as a problem.
