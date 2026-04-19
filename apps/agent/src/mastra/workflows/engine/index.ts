@@ -22,6 +22,13 @@ export {
 export { QUEUE_NAME, getQueue } from "./queue";
 export { startWorker, type WorkflowEngineWorker } from "./worker";
 export {
+  IMAGE_QUEUE_NAME,
+  getImageQueue,
+  buildImageJobId,
+  type AssetImageJobData,
+} from "./image-queue";
+export { startImageWorker, type AssetImageWorker } from "./image-worker";
+export {
   reportProgress,
   throwIfCancelled,
   WorkflowCancelledError,

@@ -128,6 +128,18 @@ export const K = {
     return `workflow:workspace:${workspaceId}:runs`;
   },
 
+  // ─── Asset image generation status ────────────────────────────────
+  /**
+   * Per-project hash tracking the image-generation status of each asset.
+   * Field keys are `{assetType}:{assetId}` (e.g. "role:12345"); values are
+   * JSON-encoded `{ status, imageUrl?, error?, updatedAt }`. Frontend polls
+   * /aurora/assets/image-status?projectId=X which returns this hash.
+   */
+  projectAssetImageStatus: (projectId: string) => {
+    assertSafeId(projectId, "projectId");
+    return `project:${projectId}:asset-image-status`;
+  },
+
   // ─── Story outline (skeleton produced by story_outline workflow) ─
   /**
    * Latest-wins per project. The story_outline workflow writes here on

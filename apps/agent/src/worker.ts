@@ -23,7 +23,7 @@ try {
 }
 
 const { mastra } = await import("./mastra/index.js");
-const { startWorker } = await import("./mastra/workflows/engine/index.js");
+const { startWorker, startImageWorker } = await import("./mastra/workflows/engine/index.js");
 
 // Alias ALIBABA_API_KEY to DASHSCOPE_API_KEY before any Mastra LLM call —
 // same shim as the API server's index.ts so the worker uses the same model.
@@ -33,6 +33,12 @@ if (!process.env.DASHSCOPE_API_KEY && process.env.ALIBABA_API_KEY) {
 
 const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 4);
 const worker = startWorker({ mastra, concurrency });
+
+// Image-generation worker runs in the same process but on a separate queue.
+// Higher default concurrency: image jobs are I/O-bound (Replicate + OSS),
+// not CPU/LLM-bound like workflow runs.
+const imageConcurrency = Number(process.env.IMAGE_WORKER_CONCURRENCY ?? 16);
+const imageWorker = startImageWorker({ concurrency: imageConcurrency });
 
 worker.on("ready", () => {
   // eslint-disable-next-line no-console
@@ -54,10 +60,23 @@ worker.on("completed", (job) => {
   console.log(`[storyos-worker] job ${job.id} completed`);
 });
 
+imageWorker.on("ready", () => {
+  // eslint-disable-next-line no-console
+  console.log(`[image-worker] ready (concurrency=${imageConcurrency})`);
+});
+imageWorker.on("failed", (job, err) => {
+  // eslint-disable-next-line no-console
+  console.error(`[image-worker] job ${job?.id} failed:`, err?.message ?? err);
+});
+imageWorker.on("completed", (job) => {
+  // eslint-disable-next-line no-console
+  console.log(`[image-worker] job ${job.id} completed`);
+});
+
 async function shutdown(signal: string): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`[storyos-worker] received ${signal}, draining…`);
-  await worker.close();
+  await Promise.all([worker.close(), imageWorker.close()]);
   process.exit(0);
 }
 

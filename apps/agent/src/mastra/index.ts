@@ -13,6 +13,7 @@ import { evaluatorAgent } from "./agents/personas/evaluator";
 import { artDirectorAgent } from "./agents/personas/art-director";
 import { sceneDesignerAgent } from "./agents/personas/scene-designer";
 import { workflowRoutes } from "./routes/workflow";
+import { assetsRoutes } from "./routes/assets";
 import { roleDesignWorkflow } from "./workflows/role-design";
 import { batchCreateAssetWorkflow } from "./workflows/batch-create-asset";
 import { scriptEditWorkflow } from "./workflows/script-edit";
@@ -122,9 +123,11 @@ export const mastra = new Mastra({
       { path: "/workflow/*", handler: populateRequestContext },
       { path: "/drafts/*", handler: populateRequestContext },
       { path: "/chat/*", handler: populateRequestContext },
+      { path: "/assets/*", handler: populateRequestContext },
     ],
     apiRoutes: [
       ...workflowRoutes,
+      ...assetsRoutes,
       // AI SDK v5–compatible chat stream. Consumed by apps/web's
       // `readUIMessageStream()` via the NestJS proxy at /assistant/stream-v2.
       chatRoute({ path: "/chat/storyos", agent: "storyos" }),

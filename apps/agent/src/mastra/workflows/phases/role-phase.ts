@@ -26,6 +26,8 @@ import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
+import { getImageQueue, buildImageJobId } from "../engine/image-queue";
+import { setAssetImageStatus } from "../../lib/asset-image-status";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -336,6 +338,42 @@ const applyDecisionStep = createStep({
       total: items.length,
       label: `角色入库完成：成功 ${committed.length} / 失败 ${failed.length}`,
     });
+
+    // Fire-and-forget: kick off image generation for each newly committed
+    // role. This is NOT in main_flow's critical path — workflow advances
+    // to episode_phase immediately; images populate in the asset library
+    // as they finish (see apps/agent/src/mastra/workflows/engine/image-worker.ts).
+    if (committed.length > 0) {
+      const queue = getImageQueue();
+      const committedItems = new Map(items.map((it) => [it.clientRefId, it]));
+      await Promise.all(
+        committed.map(async (c) => {
+          const draft = committedItems.get(c.clientRefId);
+          if (!draft) return;
+          const prompt = draft.data.prompt ?? draft.data.description ?? "";
+          if (!prompt.trim()) return; // nothing to generate an image from
+          // Seed the status hash BEFORE enqueueing so the UI shows "pending"
+          // the instant the user navigates to the asset library, even if
+          // the worker hasn't picked up the job yet.
+          await setAssetImageStatus(ctx.projectId, "role", c.serverId, {
+            status: "pending",
+          });
+          await queue.add(
+            "generate",
+            {
+              projectId: ctx.projectId,
+              worldId: ctx.worldId ?? "",
+              assetType: "role",
+              assetId: c.serverId,
+              prompt,
+              assetName: c.name,
+              ctx,
+            },
+            { jobId: buildImageJobId("role", c.serverId) }
+          );
+        })
+      );
+    }
 
     return {
       outcome,
