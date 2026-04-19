@@ -25,9 +25,13 @@ import {
   isAwaitingUser,
   isTerminal,
   type Draft,
+  type WorkflowEvent,
   type WorkflowName,
+  type WorkflowProgress,
+  type WorkflowStatus,
   type WorkflowStatusResponse,
 } from "@/src/lib/workflow/workflow-client";
+import { WorkflowEventsClient } from "@/src/lib/workflow/workflow-events-client";
 import type { AssistantToolInvocation } from "@/src/lib/assistant/assistant-types";
 
 // ─── Types ─────────────────────────────────────────────
@@ -41,8 +45,6 @@ interface InvokeWorkflowOutput {
 interface ToolWorkflowCardProps {
   part: AssistantToolInvocation;
 }
-
-const POLL_INTERVAL_MS = 1500;
 
 // ─── Display labels ────────────────────────────────────
 
@@ -87,69 +89,203 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [actionBusy, setActionBusy] = useState<null | "accept" | "revise" | "cancel">(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const pollAbortRef = useRef<AbortController | null>(null);
   // Once we've posted an in-chat failure notice for this runId, don't post it
-  // again — polling keeps returning the same failed state.
+  // again — the WS may re-surface the same terminal event on reconnect.
   const failureAnnouncedRef = useRef(false);
+  // Tracks whether we've fetched drafts for the current suspension so we
+  // don't spam /drafts on every heartbeat mismatch while the user sits on
+  // the card. Cleared when status leaves "suspended".
+  const draftsFetchedForSuspensionRef = useRef(false);
+  // Latest status captured by ref for the WS onMismatch/heartbeat callbacks
+  // (which close over a stable lambda and otherwise see stale state).
+  const statusRef = useRef<WorkflowStatusResponse | null>(null);
+  statusRef.current = status;
 
-  // Poll /status (and /drafts when suspended) until terminal.
+  // Event-driven status updates: seed with one REST fetch, then let the
+  // WorkflowEventsGateway push the rest via WebSocket. Polling is gone.
   useEffect(() => {
     if (!runId || !projectId) return;
     let cancelled = false;
-    const controller = new AbortController();
-    pollAbortRef.current = controller;
 
-    const tick = async () => {
+    const fetchStatus = async () => {
       try {
-        const s = await getWorkflowStatus(runId, projectId, controller.signal);
+        const s = await getWorkflowStatus(runId, projectId);
         if (cancelled) return;
         setStatus(s);
-        if (s.status === "suspended") {
-          const d = await getWorkflowDrafts(runId, projectId, undefined, controller.signal);
-          if (!cancelled) setDrafts(d.drafts);
-        } else if (isTerminal(s.status)) {
-          // Chat-card sync: when the worker marks the run failed / cancelled,
-          // post a concise AI message so the chat narrative reflects reality
-          // (otherwise supervisor's optimistic "已派发" is the last word).
-          if ((s.status === "failed" || s.status === "cancelled") && !failureAnnouncedRef.current) {
-            failureAnnouncedRef.current = true;
-            const workflowLabelText = workflowName
-              ? t(WORKFLOW_LABEL_KEYS[workflowName] ?? "workflowGeneric")
-              : t("workflowGeneric");
-            const reason = s.error ?? t(`workflowPhase.${s.status}`);
-            const headline =
-              s.status === "failed"
-                ? t("workflowFailureAnnounce", { label: workflowLabelText, reason })
-                : t("workflowCancelledAnnounce", { label: workflowLabelText });
-            dispatch(
-              finalizeAssistantMessage({
-                projectId,
-                message: {
-                  id: crypto.randomUUID(),
-                  role: "assistant",
-                  parts: [{ type: "text", text: headline, state: "done" }],
-                },
-              })
-            );
-          }
+        if (s.status === "suspended" && !draftsFetchedForSuspensionRef.current) {
+          const d = await getWorkflowDrafts(runId, projectId);
           if (!cancelled) {
-            clearInterval(intervalId);
+            setDrafts(d.drafts);
+            draftsFetchedForSuspensionRef.current = true;
           }
+        } else if (s.status !== "suspended") {
+          draftsFetchedForSuspensionRef.current = false;
         }
+        maybeAnnounceFailure(s);
       } catch {
-        // Transient errors are fine; keep polling.
+        // Initial fetch failure is logged silently — heartbeat mismatch
+        // will retry shortly.
       }
     };
 
-    void tick();
-    const intervalId = setInterval(() => void tick(), POLL_INTERVAL_MS);
+    const maybeAnnounceFailure = (s: WorkflowStatusResponse) => {
+      if (!isTerminal(s.status)) return;
+      if (s.status !== "failed" && s.status !== "cancelled") return;
+      if (failureAnnouncedRef.current) return;
+      failureAnnouncedRef.current = true;
+      const workflowLabelText = workflowName
+        ? t(WORKFLOW_LABEL_KEYS[workflowName] ?? "workflowGeneric")
+        : t("workflowGeneric");
+      const reason = s.error ?? t(`workflowPhase.${s.status}`);
+      const headline =
+        s.status === "failed"
+          ? t("workflowFailureAnnounce", { label: workflowLabelText, reason })
+          : t("workflowCancelledAnnounce", { label: workflowLabelText });
+      dispatch(
+        finalizeAssistantMessage({
+          projectId,
+          message: {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            parts: [{ type: "text", text: headline, state: "done" }],
+          },
+        })
+      );
+    };
+
+    const applyEvent = (ev: WorkflowEvent) => {
+      const data = (ev.data ?? {}) as {
+        stepId?: string;
+        current?: number;
+        total?: number;
+        label?: string;
+        error?: string;
+      };
+      setStatus((prev) => {
+        const base: WorkflowStatusResponse = prev ?? {
+          runId,
+          workflowName: workflowName ?? ("main_flow" as WorkflowName),
+          workspaceId: projectId,
+          userId: "",
+          status: "queued" as WorkflowStatus,
+          startedAt: ev.timestamp,
+          updatedAt: ev.timestamp,
+        };
+        const next: WorkflowStatusResponse = { ...base, updatedAt: ev.timestamp };
+        switch (ev.type) {
+          case "enqueued":
+            next.status = "queued";
+            break;
+          case "started":
+          case "resumed":
+            next.status = "running";
+            break;
+          case "step.started":
+            next.status = "running";
+            if (data.stepId) next.currentStep = data.stepId;
+            break;
+          case "progress":
+            next.status = next.status === "suspended" ? "suspended" : "running";
+            if (data.stepId) next.currentStep = data.stepId;
+            if (typeof data.current === "number" && typeof data.total === "number") {
+              const progress: WorkflowProgress = {
+                current: data.current,
+                total: data.total,
+                label: data.label,
+              };
+              next.progress = progress;
+            }
+            break;
+          case "suspended":
+            next.status = "suspended";
+            break;
+          case "completed":
+            next.status = "completed";
+            next.completedAt = ev.timestamp;
+            break;
+          case "failed":
+            next.status = "failed";
+            next.completedAt = ev.timestamp;
+            if (data.error) next.error = data.error;
+            break;
+          case "cancelled":
+            next.status = "cancelled";
+            next.completedAt = ev.timestamp;
+            break;
+          default:
+            // step.completed, step.failed, draft.* — surface progression
+            // but don't override the higher-level status.
+            break;
+        }
+        return next;
+      });
+      // React state updates are async; check the new phase via the event
+      // itself rather than the yet-unupdated state.
+      if (ev.type === "suspended" && !draftsFetchedForSuspensionRef.current) {
+        void getWorkflowDrafts(runId, projectId)
+          .then((d) => {
+            if (cancelled) return;
+            setDrafts(d.drafts);
+            draftsFetchedForSuspensionRef.current = true;
+          })
+          .catch(() => {
+            // ignore; mismatch will retry
+          });
+      } else if (
+        ev.type === "resumed" ||
+        ev.type === "completed" ||
+        ev.type === "failed" ||
+        ev.type === "cancelled"
+      ) {
+        draftsFetchedForSuspensionRef.current = false;
+      }
+      if (ev.type === "failed" || ev.type === "cancelled") {
+        // Announce in chat. `data.error` may be absent; fall back to
+        // generic phase label.
+        maybeAnnounceFailure({
+          ...(statusRef.current ?? ({} as WorkflowStatusResponse)),
+          status: ev.type,
+          error: data.error,
+          runId,
+          workflowName: workflowName ?? ("main_flow" as WorkflowName),
+          workspaceId: projectId,
+          userId: statusRef.current?.userId ?? "",
+          startedAt: statusRef.current?.startedAt ?? ev.timestamp,
+          updatedAt: ev.timestamp,
+          completedAt: ev.timestamp,
+        });
+      }
+    };
+
+    void fetchStatus();
+
+    const client = new WorkflowEventsClient({
+      runId,
+      projectId,
+      onEvent: (ev) => {
+        if (cancelled) return;
+        applyEvent(ev);
+      },
+      onMismatch: () => {
+        if (cancelled) return;
+        void fetchStatus();
+      },
+      getLocalHashInputs: () => {
+        const s = statusRef.current;
+        if (!s) return null;
+        return {
+          status: s.status,
+          currentStep: s.currentStep,
+          progress: s.progress,
+        };
+      },
+    });
 
     return () => {
       cancelled = true;
-      controller.abort();
-      clearInterval(intervalId);
+      client.destroy();
     };
-  }, [runId, projectId]);
+  }, [runId, projectId, workflowName, t, dispatch]);
 
   if (!runId) {
     // Missing runId — show the tool-reported message verbatim as a fallback.
