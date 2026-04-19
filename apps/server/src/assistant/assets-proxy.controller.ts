@@ -96,9 +96,14 @@ export class AssetsProxyController {
     }
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => '');
+      // Pass 4xx through unchanged; 5xx / unreachables become 502.
+      const code =
+        upstream.status >= 400 && upstream.status < 500
+          ? upstream.status
+          : HttpStatus.BAD_GATEWAY;
       throw new HttpException(
         { message: text.slice(0, 400) || 'Mastra error' },
-        upstream.status === 404 ? HttpStatus.NOT_FOUND : HttpStatus.BAD_GATEWAY,
+        code,
       );
     }
     return (await upstream.json()) as T;

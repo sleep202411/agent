@@ -107,9 +107,16 @@ export class WorkflowProxyController {
       this.logger.warn(
         `Mastra ${init.method} ${path} → ${upstream.status}: ${text.slice(0, 200)}`,
       );
+      // Pass through client-error codes (400/401/403/404/409/422) so the
+      // frontend sees a meaningful status instead of a generic 502. Only
+      // genuine upstream server errors (5xx) or unreachables become 502.
+      const code =
+        upstream.status >= 400 && upstream.status < 500
+          ? upstream.status
+          : HttpStatus.BAD_GATEWAY;
       throw new HttpException(
         { message: text.slice(0, 400) || 'Mastra error' },
-        upstream.status === 404 ? HttpStatus.NOT_FOUND : HttpStatus.BAD_GATEWAY,
+        code,
       );
     }
     return (await upstream.json()) as T;
