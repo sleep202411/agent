@@ -3,16 +3,30 @@
 import { useState } from "react";
 import Link from "next/link";
 import { IconDots, IconFolder, IconLayoutGrid, IconLoader2, IconPlus } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { env } from "@/src/env";
+import { backendApi } from "@/src/lib/api";
 import {
   useWorldsWithProducts,
+  worldKeys,
   type V1World,
   type V1WorldProduct,
   type WorldGroup,
@@ -90,7 +104,11 @@ type ViewProps = {
 
 function FlatView({ groups, loading, creating, onCreateProject }: ViewProps) {
   const allProducts = groups.flatMap((g) =>
-    g.products.map((p) => ({ product: p, world: g.world }))
+    g.products.map((p) => ({
+      product: p,
+      world: g.world,
+      isLastInWorld: g.products.length === 1,
+    }))
   );
 
   return (
@@ -98,8 +116,13 @@ function FlatView({ groups, loading, creating, onCreateProject }: ViewProps) {
       <CreateButton creating={creating} onClick={onCreateProject} />
       {loading && Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
       {!loading &&
-        allProducts.map(({ product, world }) => (
-          <ProductCard key={product.id} product={product} world={world} />
+        allProducts.map(({ product, world, isLastInWorld }) => (
+          <ProductCard
+            key={product.id}
+            product={product}
+            world={world}
+            isLastInWorld={isLastInWorld}
+          />
         ))}
       {!loading && allProducts.length === 0 && <EmptyState />}
     </div>
@@ -138,7 +161,12 @@ function GroupedView({ groups, loading, creating, onCreateProject }: ViewProps) 
             </div>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {products.map((p) => (
-                <ProductCard key={p.id} product={p} world={world} />
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  world={world}
+                  isLastInWorld={products.length === 1}
+                />
               ))}
             </div>
           </div>
@@ -160,10 +188,22 @@ function GroupedView({ groups, loading, creating, onCreateProject }: ViewProps) 
   );
 }
 
-function ProductCard({ product, world }: { product: V1WorldProduct; world: V1World }) {
+function ProductCard({
+  product,
+  world,
+  isLastInWorld,
+}: {
+  product: V1WorldProduct;
+  world: V1World;
+  isLastInWorld: boolean;
+}) {
   const tw = useTranslations("workspace");
+  const tc = useTranslations("common");
+  const queryClient = useQueryClient();
   const cover = ossUrl(product.imagePath);
   const description = product.description?.trim() || tw("noDescription");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleLinkClick = (e: React.MouseEvent) => {
     // 嵌入到 parent iframe 时，改走 postMessage 让 parent 在自己那边跳
@@ -173,6 +213,41 @@ function ProductCard({ product, world }: { product: V1WorldProduct; world: V1Wor
         { type: "openProject", projectId: product.id, worldId: product.worldId },
         "*"
       );
+    }
+  };
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      if (isLastInWorld) {
+        // Java rejects worldproduct delete when it's the last one — the
+        // contract is "delete the world itself, which cascades".
+        await backendApi.post("/api/user/world/delete/world", {
+          data: { id: product.worldId },
+        });
+      } else {
+        // Non-last: delete only the project. Java expects `id` on the
+        // query string (matches the legacy Vue client — body form returns
+        // 未知異常).
+        await backendApi.post(
+          `/api/user/world/delete/worldproduct?id=${encodeURIComponent(product.id)}`
+        );
+      }
+      toast.success(tw("projectDeleteSuccess"));
+      setConfirmOpen(false);
+      // Always refresh this world's product list. If we just deleted the
+      // world itself, also invalidate the world list so the empty world
+      // disappears from the UI too.
+      void queryClient.invalidateQueries({ queryKey: worldKeys.products(product.worldId) });
+      if (isLastInWorld) {
+        void queryClient.invalidateQueries({ queryKey: worldKeys.all });
+      }
+    } catch (err) {
+      console.error("[ProductCard] delete failed", err);
+      toast.error(err instanceof Error ? err.message : tw("projectDeleteFailed"));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -207,13 +282,57 @@ function ProductCard({ product, world }: { product: V1WorldProduct; world: V1Wor
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>Open</DropdownMenuItem>
-            <DropdownMenuItem>Duplicate</DropdownMenuItem>
-            <DropdownMenuItem>Rename</DropdownMenuItem>
-            <DropdownMenuItem variant="destructive">Delete</DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link
+                href={`/projects/${product.id}?worldId=${product.worldId}`}
+                target="_blank"
+                onClick={handleLinkClick}
+              >
+                {tw("projectMenuOpen")}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={(e) => {
+                e.preventDefault();
+                setConfirmOpen(true);
+              }}
+            >
+              {tw("projectMenuDelete")}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tw("projectDeleteConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {isLastInWorld
+                ? tw("projectDeleteConfirmDescriptionLastInWorld", {
+                    name: product.name,
+                    worldName: world.name,
+                  })
+                : tw("projectDeleteConfirmDescription", { name: product.name })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDelete();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <IconLoader2 className="mr-1.5 size-3.5 animate-spin" />}
+              {tw("projectMenuDelete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

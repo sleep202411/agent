@@ -107,6 +107,8 @@ function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): s
 import { ToolProposalCard } from "./tool-cards/tool-proposal-card";
 import { ToolPersonaCard } from "./tool-cards/tool-persona-card";
 import { ToolWorkflowCard } from "./tool-cards/tool-workflow-card";
+import { ToolRequireParamsCard } from "./tool-cards/tool-require-params-card";
+import { ProjectParamsSummary } from "./tool-cards/project-params-form";
 import { AssistantFilePreview, PipelineThinkingIndicator } from "./sub-components";
 import { markdownComponents } from "./markdown-components";
 import {
@@ -420,6 +422,43 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   toolName === "configure_params"
                 ) {
                   // Result summaries rendered outside the message bubble (above)
+                  return null;
+                }
+
+                // Project-params preflight — rendered inline in the message
+                // stream (oii-style). Pending: show the interactive form.
+                // Done: show a read-only confirmation summary that persists
+                // in history.
+                if (toolName === "require_project_params") {
+                  const state = part.state;
+                  if (state === "output-available" || state === "approval-responded") {
+                    return (
+                      <ProjectParamsSummary
+                        key={`${message.id}-${part.toolCallId}-params-summary`}
+                      />
+                    );
+                  }
+                  if (
+                    (state === "input-available" || state === "approval-requested") &&
+                    isLastAssistant
+                  ) {
+                    return (
+                      <ToolRequireParamsCard
+                        key={`${message.id}-${part.toolCallId}-params-form`}
+                        onConfirmed={() => {
+                          onApplyToolResult?.({
+                            toolCallId: part.toolCallId,
+                            toolName: "require_project_params",
+                            output: { confirmed: true },
+                          });
+                        }}
+                      />
+                    );
+                  }
+                  // Stale pending on older messages, errors, or in-flight
+                  // input-streaming — render nothing to keep history tidy.
+                  // NOTE: if Mastra re-emits the tool call in a restreamed
+                  // turn with new state, this branch handles it.
                   return null;
                 }
 

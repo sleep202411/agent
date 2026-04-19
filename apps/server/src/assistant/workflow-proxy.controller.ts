@@ -4,7 +4,7 @@
  * we inject the authenticated `x-storyos-context` header so Mastra's
  * middleware can populate the requestContext.
  *
- * Mirrors the shape of the existing `/assistant/stream-v2` proxy.
+ * Mirrors the shape of the existing `/assistant/submit-message-to-agent` proxy.
  */
 import {
   Body,

@@ -6,6 +6,8 @@ import {
   invokeWorkflow,
   listActiveWorkflows,
   queryContext,
+  requireProjectParams,
+  resumeWorkflowTool,
   showDrafts,
 } from "../tools/meta";
 import {
@@ -44,6 +46,11 @@ export const storyosAgent = new Agent({
     cancel_workflow: cancelWorkflowTool,
     list_active_workflows: listActiveWorkflows,
     explain_current_state: explainCurrentState,
+    // HITL resume — called on <CONFIRM_WORKFLOW> marker in user message.
+    resume_workflow: resumeWorkflowTool,
+    // Preflight UI gate — checks the 4 core project params are set before
+    // any generative workflow. Frontend renders the form.
+    require_project_params: requireProjectParams,
     // State reads + quality review
     query_context: queryContext,
     show_drafts: showDrafts,

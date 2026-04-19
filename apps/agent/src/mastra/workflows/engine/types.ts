@@ -51,6 +51,14 @@ export type WorkflowEventType =
   | "step.completed"
   | "step.failed"
   | "progress"
+  /**
+   * Persona-voiced in-flight narration from the workflow itself. Frontend
+   * card accumulates these as streaming bullets so the user sees the
+   * 剧本统筹/角色设计师/etc persona "thinking" in real time. Cleared when
+   * the final `completed` event arrives (final summary comes from `result`).
+   * data: { persona?: string; text: string }
+   */
+  | "narrate"
   | "suspended"
   | "resumed"
   | "completed"

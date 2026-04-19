@@ -15,6 +15,7 @@ export const WORKFLOW_NAMES = [
   "script_edit",
   "story_outline",
   "role_phase",
+  "role_image_phase",
   "episode_phase",
   "script_phase",
   "storyboard_phase",
@@ -85,6 +86,10 @@ export const WorkflowEventTypeSchema = z.enum([
   "step.completed",
   "step.failed",
   "progress",
+  // Persona-voiced narration emitted BY the workflow itself (e.g. "剧本统筹
+  // 正在拆解素材…"). Consumed by the frontend workflow card, accumulated as
+  // a streaming bullet list. data: {persona?: string, text: string}.
+  "narrate",
   "suspended",
   "resumed",
   "completed",

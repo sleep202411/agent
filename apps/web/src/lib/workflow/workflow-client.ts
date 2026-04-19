@@ -24,6 +24,7 @@ export type WorkflowName =
   | "script_edit"
   | "story_outline"
   | "role_phase"
+  | "role_image_phase"
   | "episode_phase"
   | "script_phase"
   | "storyboard_phase";
@@ -52,11 +53,17 @@ export type WorkflowEventType =
   | "step.completed"
   | "step.failed"
   | "progress"
+  | "narrate"
   | "suspended"
   | "resumed"
   | "completed"
   | "failed"
   | "cancelled";
+
+export type NarrateEventData = {
+  persona?: string;
+  text: string;
+};
 
 export type WorkflowEvent = {
   id?: string;

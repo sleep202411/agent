@@ -19,6 +19,7 @@ import { batchCreateAssetWorkflow } from "./workflows/batch-create-asset";
 import { scriptEditWorkflow } from "./workflows/script-edit";
 import { scriptBreakdownWorkflow } from "./workflows/phases/script-breakdown";
 import { rolePhaseWorkflow } from "./workflows/phases/role-phase";
+import { roleImagePhaseWorkflow } from "./workflows/phases/role-image-phase";
 import { episodePhaseWorkflow } from "./workflows/phases/episode-phase";
 import { scriptPhaseWorkflow } from "./workflows/phases/script-phase";
 import { storyboardPhaseWorkflow } from "./workflows/phases/storyboard-phase";
@@ -101,6 +102,7 @@ export const mastra = new Mastra({
     // Phase workflows used inside main_flow — also reachable standalone
     story_outline: scriptBreakdownWorkflow,
     role_phase: rolePhaseWorkflow,
+    role_image_phase: roleImagePhaseWorkflow,
     episode_phase: episodePhaseWorkflow,
     script_phase: scriptPhaseWorkflow,
     storyboard_phase: storyboardPhaseWorkflow,
@@ -129,7 +131,8 @@ export const mastra = new Mastra({
       ...workflowRoutes,
       ...assetsRoutes,
       // AI SDK v5–compatible chat stream. Consumed by apps/web's
-      // `readUIMessageStream()` via the NestJS proxy at /assistant/stream-v2.
+      // `readUIMessageStream()` via the NestJS proxy at
+      // /assistant/submit-message-to-agent.
       chatRoute({ path: "/chat/storyos", agent: "storyos" }),
     ],
   },

@@ -21,6 +21,7 @@ import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { scriptBreakdownWorkflow } from "./phases/script-breakdown";
 import { rolePhaseWorkflow, RolePhaseOutputSchema } from "./phases/role-phase";
+import { roleImagePhaseWorkflow } from "./phases/role-image-phase";
 import { episodePhaseWorkflow, EpisodePhaseOutputSchema } from "./phases/episode-phase";
 import { scriptPhaseWorkflow, ScriptPhaseOutputSchema } from "./phases/script-phase";
 import { storyboardPhaseWorkflow, StoryboardPhaseOutputSchema } from "./phases/storyboard-phase";
@@ -69,9 +70,18 @@ const toRolePhaseInput = createStep({
   },
 });
 
+const toRoleImagePhaseInput = createStep({
+  id: "to_role_image_phase_input",
+  inputSchema: RolePhaseOutputSchema,
+  outputSchema: z.object({}),
+  execute: async () => ({}),
+});
+
 const toEpisodePhaseInput = createStep({
   id: "to_episode_phase_input",
-  inputSchema: RolePhaseOutputSchema,
+  // Input is role_image_phase's output now that image gen is a dedicated
+  // step — kept loose since we only need init data anyway.
+  inputSchema: z.unknown(),
   outputSchema: z.object({
     projectId: z.string(),
     targetEpisodeCount: z.number(),
@@ -162,6 +172,8 @@ export const mainFlowWorkflow = createWorkflow({
   .then(scriptBreakdownWorkflow)
   .then(toRolePhaseInput)
   .then(rolePhaseWorkflow)
+  .then(toRoleImagePhaseInput)
+  .then(roleImagePhaseWorkflow)
   .then(toEpisodePhaseInput)
   .then(episodePhaseWorkflow)
   .then(toScriptPhaseInput)

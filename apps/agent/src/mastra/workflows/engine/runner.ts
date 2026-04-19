@@ -58,9 +58,20 @@ export async function resumeWorkflow(input: {
 }): Promise<void> {
   const meta = await getMeta(input.runId);
   if (!meta) throw new Error(`Workflow run not found: ${input.runId}`);
+  // Idempotent for non-suspended states — the frontend double-click, WS
+  // replay, or stale UI can all re-fire confirm after the run has already
+  // transitioned. Throwing 500 in those cases surfaces a scary red toast
+  // for what is effectively a no-op.
+  if (meta.status === "completed") return;
+  if (meta.status === "failed" || meta.status === "cancelled") return;
+  if (meta.status === "queued" || meta.status === "running") {
+    // Another resume is already in flight (or already ran); don't enqueue
+    // a second one — that would step on Mastra's internal state.
+    return;
+  }
   if (meta.status !== "suspended") {
     throw new Error(
-      `Workflow run ${input.runId} is not suspended (status=${meta.status}); cannot resume`
+      `Workflow run ${input.runId} is in unknown status=${meta.status}; cannot resume`
     );
   }
 

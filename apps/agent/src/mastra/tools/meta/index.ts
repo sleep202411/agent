@@ -10,3 +10,5 @@ export { showDrafts } from "./show-drafts";
 export { listActiveWorkflows } from "./list-workflows";
 export { explainCurrentState } from "./explain-state";
 export { evaluateDrafts } from "./evaluate";
+export { requireProjectParams } from "./require-params";
+export { resumeWorkflowTool } from "./resume-workflow";

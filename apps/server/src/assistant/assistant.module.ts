@@ -12,6 +12,7 @@ import { MastraProxyController } from './mastra-proxy.controller';
 import { WorkflowProxyController } from './workflow-proxy.controller';
 import { DraftsProxyController } from './drafts-proxy.controller';
 import { AssetsProxyController } from './assets-proxy.controller';
+import { DictionariesController } from './dictionaries.controller';
 import { WorkflowEventsGateway } from './workflow-events.gateway';
 
 @Module({
@@ -22,6 +23,7 @@ import { WorkflowEventsGateway } from './workflow-events.gateway';
     WorkflowProxyController,
     DraftsProxyController,
     AssetsProxyController,
+    DictionariesController,
   ],
   providers: [
     AssistantService,

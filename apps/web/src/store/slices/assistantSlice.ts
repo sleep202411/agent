@@ -4,7 +4,7 @@ import { backendApi } from "@/src/lib/api";
 import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
 import { uploadWorkspaceFile, computeFileHash } from "@/src/lib/uploads/workspace-upload";
 import {
-  sendAssistantChatV2,
+  submitMessageToAgent,
   saveConversation,
   fetchConversationHistory,
   clearConversation as clearConversationApi,
@@ -100,6 +100,17 @@ function createEmptyConversation() {
     conversationId: "" as string,
     /** History retention in days */
     retentionDays: 1,
+    /**
+     * In-flight generative workflow for this project. Set by ToolWorkflowCard
+     * when it sees the workflow enter queued/running, cleared on terminal
+     * state. Used to swap the chat composer into a "工作中 + 停止" pill —
+     * typing isn't actionable while a workflow is running.
+     */
+    activeWorkflow: null as {
+      runId: string;
+      workflowName: WorkflowName;
+      status: "queued" | "running" | "suspended";
+    } | null,
   };
 }
 
@@ -606,7 +617,7 @@ export const sendUserMessage = createAsyncThunk<
       const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
       const workspaceContext = buildWorkspaceContext(getState(), projectId);
 
-      const finalMessage = await sendAssistantChatV2({
+      const finalMessage = await submitMessageToAgent({
         projectId,
         messages: nextMessages,
         workspaceContext,
@@ -645,13 +656,15 @@ export const sendUserMessage = createAsyncThunk<
   }
 );
 
-// ─── Deterministic workflow dispatch (button-bypass) ────
+// ─── Workflow dispatch via supervisor (button path) ─────
 //
-// Used by "continue · next phase" and "retry" buttons. Instead of pushing the
-// click through the supervisor LLM (which sometimes re-routes to the wrong
-// phase because it re-reads stale context), we directly call the workflow
-// engine and synthesize the chat turn locally. Matches oii's
-// `forceEnterWorkflow` pattern but over our own endpoint.
+// Unified with the freeform chat path (oii-style). Button clicks post a user
+// message AND send `forceEnterWorkflow = {workflowName, inputData}` to the
+// supervisor. The supervisor sees the flag, skips routing / preflight, still
+// produces the pre-dispatch 3-段 persona narration, then invokes the named
+// workflow. Single entry point, consistent conversation surface, persona
+// narration on every action — at the cost of one extra LLM round-trip
+// vs the old direct-to-engine path.
 
 export const startWorkflowFromButton = createAsyncThunk<
   void,
@@ -665,10 +678,8 @@ export const startWorkflowFromButton = createAsyncThunk<
 >(
   "assistant/startWorkflowFromButton",
   async ({ projectId, userLabel, workflowName, inputData }, { dispatch, getState }) => {
+    abortProjectStream(projectId);
     dispatch(ensureProject(projectId));
-
-    const inst = selectCurrentInstance(getState());
-    const worldId = inst.worldId ?? undefined;
 
     const userMessage: AssistantMessage = {
       id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -677,36 +688,99 @@ export const startWorkflowFromButton = createAsyncThunk<
     };
     dispatch(commitUserMessage({ projectId, userMessage }));
 
+    const abortController = createProjectAbortController(projectId);
+
     try {
-      const { runId } = await startWorkflow({
+      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+
+      const finalMessage = await submitMessageToAgent({
         projectId,
-        worldId,
-        workflowName,
-        inputData: inputData ?? {},
+        messages: nextMessages,
+        workspaceContext,
+        signal: abortController.signal,
+        forceEnterWorkflow: { workflowName, inputData: inputData ?? {} },
+        onMessage: (message) => {
+          dispatch(appendStreamChunk({ projectId, message }));
+        },
       });
 
-      const toolCallId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const assistantMessage: AssistantMessage = {
-        id: `assistant_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        role: "assistant",
-        parts: [
-          {
-            type: "tool-invoke_workflow",
-            toolCallId,
-            state: "output-available",
-            input: { workflowName, inputData: inputData ?? {} },
-            output: { runId, workflowName, message: `已派发 ${workflowName}` },
-          },
-        ],
-      };
-      dispatch(finalizeAssistantMessage({ projectId, message: assistantMessage }));
+      if (abortController.signal.aborted) return;
+
+      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
+      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
 
       const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
       void saveConversation(projectId, finalMessages);
     } catch (err) {
+      if (abortController.signal.aborted) return;
       const errMsg = err instanceof Error ? err.message : "派发 workflow 失败";
+      dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
-      dispatch(finalizeAssistantMessage({ projectId, message: null }));
+    }
+  }
+);
+
+// ─── HITL confirm/revise via supervisor (unified path) ──
+//
+// Same shape as startWorkflowFromButton but for in-flight workflow HITL
+// gates. The supervisor sees a `<CONFIRM_WORKFLOW>` tag and calls the
+// `resume_workflow` tool, which enqueues a resume job on the engine.
+// Replaces the old direct `/workflow/:runId/confirm` REST call so every
+// user action on a workflow card flows through the same chat pipe.
+
+export const confirmWorkflowFromButton = createAsyncThunk<
+  void,
+  {
+    projectId: string;
+    runId: string;
+    userLabel: string;
+    approved: boolean;
+    feedback?: string;
+  },
+  { state: RootState; dispatch: AppDispatch }
+>(
+  "assistant/confirmWorkflowFromButton",
+  async ({ projectId, runId, userLabel, approved, feedback }, { dispatch, getState }) => {
+    abortProjectStream(projectId);
+    dispatch(ensureProject(projectId));
+
+    const userMessage: AssistantMessage = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      role: "user",
+      parts: [{ type: "text", text: userLabel, state: "done" }],
+    };
+    dispatch(commitUserMessage({ projectId, userMessage }));
+
+    const abortController = createProjectAbortController(projectId);
+
+    try {
+      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+
+      const finalMessage = await submitMessageToAgent({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        signal: abortController.signal,
+        confirmWorkflow: { runId, approved, feedback },
+        onMessage: (message) => {
+          dispatch(appendStreamChunk({ projectId, message }));
+        },
+      });
+
+      if (abortController.signal.aborted) return;
+
+      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
+      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
+
+      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      void saveConversation(projectId, finalMessages);
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      const errMsg = err instanceof Error ? err.message : "确认 workflow 失败";
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
     }
   }
 );
@@ -749,7 +823,7 @@ export const applyToolResult = createAsyncThunk<
   try {
     const workspaceContext = buildWorkspaceContext(getState(), projectId);
 
-    const finalMessage = await sendAssistantChatV2({
+    const finalMessage = await submitMessageToAgent({
       projectId,
       messages: nextMessages,
       workspaceContext,
@@ -1039,6 +1113,33 @@ export const assistantSlice = createSlice({
         historyLoaded: true,
       };
     },
+
+    setActiveWorkflow: (
+      state,
+      action: PayloadAction<{
+        projectId: string;
+        runId: string;
+        workflowName: WorkflowName;
+        status: "queued" | "running" | "suspended";
+      }>
+    ) => {
+      const { projectId, runId, workflowName, status } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = {
+        ...current,
+        activeWorkflow: { runId, workflowName, status },
+      };
+    },
+
+    clearActiveWorkflow: (state, action: PayloadAction<{ projectId: string; runId: string }>) => {
+      const { projectId, runId } = action.payload;
+      const current = state.projects[projectId];
+      if (!current?.activeWorkflow) return;
+      // Only clear if this is still the active run — guards against a stale
+      // completion event clobbering a newly-started workflow.
+      if (current.activeWorkflow.runId !== runId) return;
+      state.projects[projectId] = { ...current, activeWorkflow: null };
+    },
   },
 });
 
@@ -1061,6 +1162,8 @@ export const {
   markHistoryLoaded,
   setMessageLimit,
   resetProjectConversation,
+  setActiveWorkflow,
+  clearActiveWorkflow,
 } = assistantSlice.actions;
 
 // ─── Selectors ──────────────────────────────────────────

@@ -1,6 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import { IconLoader2, IconPlayerStopFilled } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import { useAppSelector } from "@/src/store";
+import { cn } from "@/lib/utils";
+import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
 import type {
   AssistantAttachment,
   AssistantToolInvocation,
@@ -42,6 +47,8 @@ interface ChatComposerProps {
   activeTask?: { taskId: string; toolName: string } | null;
   onTaskContinue?: (taskId: string, result: unknown) => void;
   onToolResult?: (result: AssistantToolResult) => void;
+  /** When true, disable send — project-params form gate is active upstream. */
+  blocked?: boolean;
 }
 
 // ─── Component ─────────────────────────────────────────
@@ -59,8 +66,18 @@ export function ChatComposer({
   activeTask,
   onTaskContinue,
   onToolResult,
+  blocked,
 }: ChatComposerProps) {
   const t = useTranslations("ai");
+  const activeWorkflow = useAppSelector((s) =>
+    projectId ? s.assistant.projects[projectId]?.activeWorkflow : null
+  );
+  // Only swap into the "working" pill when the workflow is actively running
+  // or queued — if it's suspended (HITL), the user must interact with the
+  // workflow card's draft-review UI, composer stays hidden behind toolCard
+  // regardless. If it's terminal, composer goes back to normal.
+  const workingPillVisible =
+    !!activeWorkflow && (activeWorkflow.status === "queued" || activeWorkflow.status === "running");
 
   const toolCard = activePendingTool ? renderToolCard(activePendingTool, onToolResult) : null;
 
@@ -71,6 +88,15 @@ export function ChatComposer({
       onError={(err) => toast.error(err)}
     />
   ) : null;
+
+  if (workingPillVisible && activeWorkflow) {
+    return (
+      <div className="pb-2">
+        <WorkingPill runId={activeWorkflow.runId} projectId={projectId} label={t("aiWorking")} />
+        <p className="mt-2 text-center text-[11px] text-muted-foreground/50">{t("aiDisclaimer")}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="pb-2">
@@ -102,6 +128,7 @@ export function ChatComposer({
               sending={sending}
               hasPendingTools={hasPendingTools}
               hasUploadingAttachments={hasUploadingAttachments}
+              blocked={blocked}
             />
 
             {error && error.startsWith("MESSAGE_LIMIT_REACHED:") ? (
@@ -186,6 +213,11 @@ function renderToolCard(
       );
     }
 
+    case "require_project_params":
+      // Rendered inline in MessageBubble (oii-style, part of chat history).
+      // Do not duplicate here.
+      return null;
+
     case "configure_params": {
       const data = input as unknown as AssistantConfigureParamsInput;
       return (
@@ -227,4 +259,58 @@ function renderToolCard(
     default:
       return null;
   }
+}
+
+// ─── Working pill (replaces composer while workflow is running) ───────
+
+function WorkingPill({
+  runId,
+  projectId,
+  label,
+}: {
+  runId: string;
+  projectId: string | null;
+  label: string;
+}) {
+  const [stopping, setStopping] = useState(false);
+  const handleStop = async () => {
+    if (!projectId || stopping) return;
+    setStopping(true);
+    try {
+      await cancelWorkflow(runId, projectId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setStopping(false);
+    }
+  };
+  return (
+    <div className="flex justify-center py-2">
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-full bg-muted/80 py-2.5 pl-4 pr-2",
+          "text-[13px] text-foreground/80 shadow-lg"
+        )}
+      >
+        <IconLoader2 className="size-3.5 animate-spin text-muted-foreground" />
+        <span className="font-medium">{label}</span>
+        <button
+          type="button"
+          onClick={handleStop}
+          disabled={stopping}
+          title="停止"
+          className={cn(
+            "ml-1 flex size-7 shrink-0 items-center justify-center rounded-full",
+            "bg-background/80 text-foreground/70 transition-colors hover:bg-background disabled:opacity-50"
+          )}
+        >
+          {stopping ? (
+            <IconLoader2 className="size-3.5 animate-spin" />
+          ) : (
+            <IconPlayerStopFilled className="size-3" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }

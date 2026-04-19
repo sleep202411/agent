@@ -36,6 +36,7 @@ export const WORKFLOW_NAMES = [
   // Phase workflows (also reachable as main_flow sub-steps).
   "story_outline",
   "role_phase",
+  "role_image_phase",
   "episode_phase",
   "script_phase",
   "storyboard_phase",

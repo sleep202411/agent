@@ -23,6 +23,18 @@ type MastraChatBody = {
     activePanel?: unknown;
     locale?: unknown;
   };
+  /** Button-driven workflow trigger. Supervisor reads from requestContext and
+   * skips LLM routing, dispatching the named workflow directly. */
+  forceEnterWorkflow?: {
+    workflowName?: unknown;
+    inputData?: unknown;
+  };
+  /** HITL confirm/revise on an in-flight suspended workflow. */
+  confirmWorkflow?: {
+    runId?: unknown;
+    approved?: unknown;
+    feedback?: unknown;
+  };
 };
 
 @Controller('assistant')
@@ -36,7 +48,7 @@ export class MastraProxyController {
     );
   }
 
-  @Post('stream-v2')
+  @Post('submit-message-to-agent')
   async stream(
     @Body() body: MastraChatBody,
     @CurrentUser() user: AuthUser,
@@ -53,6 +65,37 @@ export class MastraProxyController {
         HttpStatus.BAD_REQUEST,
       );
     }
+
+    // Extract forceEnterWorkflow (button-driven dispatch).
+    const forceEnterWorkflow =
+      body.forceEnterWorkflow &&
+      typeof body.forceEnterWorkflow.workflowName === 'string' &&
+      body.forceEnterWorkflow.workflowName.length > 0
+        ? {
+            workflowName: body.forceEnterWorkflow.workflowName,
+            inputData:
+              body.forceEnterWorkflow.inputData &&
+              typeof body.forceEnterWorkflow.inputData === 'object'
+                ? (body.forceEnterWorkflow.inputData as Record<string, unknown>)
+                : {},
+          }
+        : undefined;
+
+    // Extract confirmWorkflow (HITL 满意 / 修改 button).
+    const confirmWorkflow =
+      body.confirmWorkflow &&
+      typeof body.confirmWorkflow.runId === 'string' &&
+      body.confirmWorkflow.runId.length > 0 &&
+      typeof body.confirmWorkflow.approved === 'boolean'
+        ? {
+            runId: body.confirmWorkflow.runId,
+            approved: body.confirmWorkflow.approved,
+            feedback:
+              typeof body.confirmWorkflow.feedback === 'string'
+                ? body.confirmWorkflow.feedback
+                : undefined,
+          }
+        : undefined;
 
     const context = {
       userId: user.userId,
@@ -76,6 +119,7 @@ export class MastraProxyController {
           ? body.workspaceContext.locale
           : undefined,
       userTier: user.userLevel ?? 'free',
+      ...(forceEnterWorkflow ? { forceEnterWorkflow } : {}),
     };
 
     // Extract attachment text server-side, strip file parts. See
@@ -90,11 +134,50 @@ export class MastraProxyController {
       // Keep going — text parts still reach the agent.
     }
 
+    // Button-driven signals: inject XML-style markers into the last user
+    // message so the supervisor LLM sees them. Markers never hit the UI —
+    // frontend Redux keeps the clean label; injection happens on the wire.
+    const markers: string[] = [];
+    if (forceEnterWorkflow) {
+      markers.push(
+        `<FORCE_WORKFLOW workflow="${forceEnterWorkflow.workflowName}" inputData=${JSON.stringify(
+          forceEnterWorkflow.inputData ?? {},
+        )} />`,
+      );
+    }
+    if (confirmWorkflow) {
+      const feedbackAttr = confirmWorkflow.feedback
+        ? ` feedback=${JSON.stringify(confirmWorkflow.feedback)}`
+        : '';
+      markers.push(
+        `<CONFIRM_WORKFLOW runId="${confirmWorkflow.runId}" approved=${confirmWorkflow.approved}${feedbackAttr} />`,
+      );
+    }
+    if (markers.length > 0) {
+      const markerText = `\n\n${markers.join('\n')}`;
+      for (let i = (messages as unknown[]).length - 1; i >= 0; i--) {
+        const m = (messages as Array<Record<string, unknown>>)[i];
+        if (m?.role !== 'user') continue;
+        const parts = m.parts as Array<Record<string, unknown>> | undefined;
+        if (Array.isArray(parts)) {
+          const last = parts[parts.length - 1];
+          if (last && last.type === 'text' && typeof last.text === 'string') {
+            last.text = `${last.text as string}${markerText}`;
+          } else {
+            parts.push({ type: 'text', text: markerText.trimStart() });
+          }
+        } else if (typeof m.content === 'string') {
+          m.content = `${m.content}${markerText}`;
+        }
+        break;
+      }
+    }
+
     // AI SDK v5-compatible chat endpoint (registered by chatRoute in apps/agent).
     // Emits UIMessageChunk events that match readUIMessageStream in the web client.
     const upstream = `${this.mastraUrl}/chat/storyos`;
     this.logger.log(
-      `POST /assistant/stream-v2 → ${upstream} userId=${user.userId} project=${body.projectId} messages=${messages.length}`,
+      `POST /assistant/submit-message-to-agent → ${upstream} userId=${user.userId} project=${body.projectId} messages=${messages.length}`,
     );
 
     const cookie = (req.headers.cookie as string | undefined) ?? '';

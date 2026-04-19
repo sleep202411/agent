@@ -147,22 +147,44 @@ export async function sendAssistantChat({
 // ─── v3 (Mastra supervisor) chat ──────────────────────
 
 /**
- * v3 entry point — streams from the Mastra-backed `/assistant/stream-v2`
- * proxy. Wire-compatible with the legacy `sendAssistantChat`: same inputs,
- * same AI SDK UI-message streaming, different URL.
+ * Unified agent submission — streams from the Mastra-backed
+ * `/assistant/submit-message-to-agent` proxy. Same endpoint naming as oii.
+ * Handles freeform chat + forceEnterWorkflow (button dispatch) +
+ * confirmWorkflow (HITL 满意/修改) in a single channel.
  *
  * This is a thin client for the evaluator / supervisor / workflow era.
  * The legacy `sendAssistantChat` is kept intact for projects still bound
  * to the old conversation store.
  */
-export async function sendAssistantChatV2({
+export interface ForceEnterWorkflow {
+  /** Target workflow ID — supervisor must skip routing and invoke directly. */
+  workflowName: string;
+  /** Optional pre-filled inputData; supervisor merges with its own context. */
+  inputData?: Record<string, unknown>;
+}
+
+export interface ConfirmWorkflowPayload {
+  /** Which suspended workflow run this confirmation targets. */
+  runId: string;
+  /** User's decision — true = satisfied, false = revise with feedback. */
+  approved: boolean;
+  /** Free-form feedback when approved=false. */
+  feedback?: string;
+}
+
+export async function submitMessageToAgent({
   projectId,
   messages,
   workspaceContext,
   signal,
   onMessage,
-}: Omit<SendAssistantChatOptions, "agentType">) {
-  const response = await fetch("/aurora/assistant/stream-v2", {
+  forceEnterWorkflow,
+  confirmWorkflow,
+}: Omit<SendAssistantChatOptions, "agentType"> & {
+  forceEnterWorkflow?: ForceEnterWorkflow;
+  confirmWorkflow?: ConfirmWorkflowPayload;
+}) {
+  const response = await fetch("/aurora/assistant/submit-message-to-agent", {
     method: "POST",
     credentials: "include",
     headers: {
@@ -176,6 +198,8 @@ export async function sendAssistantChatV2({
       projectId,
       messages: sanitizeMessages(messages),
       workspaceContext,
+      ...(forceEnterWorkflow ? { forceEnterWorkflow } : {}),
+      ...(confirmWorkflow ? { confirmWorkflow } : {}),
     }),
     signal,
   });
@@ -186,13 +210,18 @@ export async function sendAssistantChatV2({
 
   const stream = toChunkStream(response.body);
   let latest: AssistantMessage | null = null;
-  const placeholderMessage: AssistantMessage = {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    parts: [],
-  };
+  // If the last turn is an assistant message (i.e. we're resuming a
+  // suspended tool call via applyToolResult), seed the stream with that
+  // message so the continuation accumulates onto existing parts rather
+  // than replacing them. Otherwise start fresh so a new user message gets
+  // a distinct assistant reply.
+  const lastMsg = messages[messages.length - 1];
+  const seedMessage: AssistantMessage =
+    lastMsg?.role === "assistant"
+      ? { ...lastMsg, parts: [...lastMsg.parts] }
+      : { id: crypto.randomUUID(), role: "assistant", parts: [] };
   for await (const message of readUIMessageStream({
-    message: placeholderMessage as Parameters<typeof readUIMessageStream>[0]["message"],
+    message: seedMessage as Parameters<typeof readUIMessageStream>[0]["message"],
     stream,
   })) {
     latest = message as AssistantMessage;

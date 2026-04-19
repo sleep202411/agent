@@ -3,25 +3,26 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import {
   IconAlertCircle,
-  IconCheck,
   IconCopy,
   IconLoader2,
   IconMovie,
+  IconPhoto,
   IconUsers,
-  IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
 import {
+  clearActiveWorkflow,
   commitUserMessage,
+  confirmWorkflowFromButton,
   finalizeAssistantMessage,
+  setActiveWorkflow,
   startWorkflowFromButton,
 } from "@/src/store/slices/assistantSlice";
 import {
   cancelWorkflow,
-  confirmWorkflow,
   getWorkflowDrafts,
   getWorkflowStatus,
   isAwaitingUser,
@@ -60,9 +61,66 @@ const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
   script_edit: "workflowScriptEdit",
   story_outline: "workflowStoryOutline",
   role_phase: "workflowRolePhase",
+  role_image_phase: "workflowRoleImagePhase",
   episode_phase: "workflowEpisodePhase",
   script_phase: "workflowScriptPhase",
   storyboard_phase: "workflowStoryboardPhase",
+};
+
+interface WorkflowPersona {
+  name: string;
+  emoji: string;
+  /** Gradient background for the pill — tints the persona's visual voice. */
+  gradientFrom: string;
+  gradientTo: string;
+}
+
+const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
+  main_flow: { name: "创作总监", emoji: "🎬", gradientFrom: "#e52227", gradientTo: "#ff3d42" },
+  story_outline: {
+    name: "剧本统筹",
+    emoji: "📖",
+    gradientFrom: "#d12062",
+    gradientTo: "#ff3d42",
+  },
+  role_design: {
+    name: "角色设计师",
+    emoji: "🧑‍🎨",
+    gradientFrom: "#8b5cf6",
+    gradientTo: "#e52227",
+  },
+  role_phase: {
+    name: "角色设计师",
+    emoji: "🧑‍🎨",
+    gradientFrom: "#8b5cf6",
+    gradientTo: "#e52227",
+  },
+  role_image_phase: {
+    name: "角色设计师",
+    emoji: "🖼️",
+    gradientFrom: "#8b5cf6",
+    gradientTo: "#e52227",
+  },
+  episode_phase: {
+    name: "剧集规划师",
+    emoji: "🎞️",
+    gradientFrom: "#0ea5e9",
+    gradientTo: "#6366f1",
+  },
+  script_phase: { name: "编剧", emoji: "✍️", gradientFrom: "#f59e0b", gradientTo: "#e52227" },
+  storyboard_phase: {
+    name: "分镜师",
+    emoji: "🎥",
+    gradientFrom: "#10b981",
+    gradientTo: "#0ea5e9",
+  },
+  batch_create_asset: {
+    name: "资产录入",
+    emoji: "📦",
+    gradientFrom: "#64748b",
+    gradientTo: "#475569",
+  },
+  script_edit: { name: "编剧", emoji: "✍️", gradientFrom: "#f59e0b", gradientTo: "#e52227" },
 };
 
 function groupDraftsByType(drafts: Draft[]): Record<string, Draft[]> {
@@ -92,6 +150,7 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
 
   const [status, setStatus] = useState<WorkflowStatusResponse | null>(null);
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [narration, setNarration] = useState<Array<{ id: string; text: string }>>([]);
   const [actionBusy, setActionBusy] = useState<null | "accept" | "revise" | "cancel">(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // Once we've posted an in-chat failure notice for this runId, don't post it
@@ -106,6 +165,19 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
   const statusRef = useRef<WorkflowStatusResponse | null>(null);
   statusRef.current = status;
 
+  // Mirror the card's workflow status up to Redux so the ChatComposer
+  // can swap to a "工作中 + 停止" pill while the workflow is in flight.
+  // Cleared on terminal status in the same effect.
+  useEffect(() => {
+    if (!runId || !projectId || !workflowName) return;
+    const s = status?.status;
+    if (s === "queued" || s === "running" || s === "suspended") {
+      dispatch(setActiveWorkflow({ projectId, runId, workflowName, status: s }));
+    } else if (s === "completed" || s === "failed" || s === "cancelled") {
+      dispatch(clearActiveWorkflow({ projectId, runId }));
+    }
+  }, [dispatch, projectId, runId, workflowName, status?.status]);
+
   // Event-driven status updates: seed with one REST fetch, then let the
   // WorkflowEventsGateway push the rest via WebSocket. Polling is gone.
   useEffect(() => {
@@ -117,6 +189,22 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
         const s = await getWorkflowStatus(runId, projectId);
         if (cancelled) return;
         setStatus(s);
+        if (s.recentEvents) {
+          const narrates = s.recentEvents
+            .filter((e) => e.type === "narrate")
+            .map((e) => {
+              const d = e.data as { text?: string } | undefined;
+              return d?.text ? { id: e.id ?? String(e.timestamp), text: d.text } : null;
+            })
+            .filter((n): n is { id: string; text: string } => n !== null);
+          if (narrates.length > 0) {
+            setNarration((prev) => {
+              const seen = new Set(prev.map((n) => n.text));
+              const additions = narrates.filter((n) => !seen.has(n.text));
+              return additions.length ? [...prev, ...additions] : prev;
+            });
+          }
+        }
         if (s.status === "suspended" && !draftsFetchedForSuspensionRef.current) {
           const d = await getWorkflowDrafts(runId, projectId);
           if (!cancelled) {
@@ -159,6 +247,21 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
     };
 
     const applyEvent = (ev: WorkflowEvent) => {
+      // Narrate events are persona-voiced status updates the workflow emits
+      // to keep the user company while it runs. Accumulate and let the card
+      // render them as a bullet list.
+      if (ev.type === "narrate") {
+        const d = ev.data as { text?: string } | undefined;
+        if (d?.text) {
+          const text = d.text;
+          setNarration((prev) =>
+            prev.some((n) => n.id === ev.id || n.text === text)
+              ? prev
+              : [...prev, { id: ev.id ?? `${ev.timestamp}-${prev.length}`, text }]
+          );
+        }
+        return;
+      }
       const data = (ev.data ?? {}) as {
         stepId?: string;
         current?: number;
@@ -260,6 +363,12 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
           completedAt: ev.timestamp,
         });
       }
+      if (ev.type === "completed") {
+        // WS completion events only carry status phase — fetch once more
+        // to pull `meta.result` (章节/角色/场景 structured data) so the
+        // WorkflowResultPanel can render without needing a page refresh.
+        void fetchStatus();
+      }
     };
 
     void fetchStatus();
@@ -301,11 +410,7 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
     );
   }
 
-  const workflowLabel = workflowName
-    ? t(WORKFLOW_LABEL_KEYS[workflowName] ?? "workflowGeneric")
-    : t("workflowGeneric");
   const phase = status?.status ?? "queued";
-  const stepLabel = status?.currentStep;
   const progress = status?.progress;
 
   const postSyntheticUserMessage = (text: string) => {
@@ -333,12 +438,38 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
     setActionBusy("accept");
     setActionError(null);
     try {
-      await confirmWorkflow(runId, projectId, { approved: true });
-      postSyntheticUserMessage(t("workflowUserSatisfied"));
+      await dispatch(
+        confirmWorkflowFromButton({
+          projectId,
+          runId,
+          userLabel: t("workflowUserSatisfied"),
+          approved: true,
+        })
+      );
+      void pollStatusUntilAdvanced();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
       setActionBusy(null);
+    }
+  };
+
+  /**
+   * After confirm/revise, poll the status a handful of times to catch the
+   * case where WS missed the "resumed → completed" transition. Bails as
+   * soon as the card's phase changes away from "suspended".
+   */
+  const pollStatusUntilAdvanced = async () => {
+    if (!runId || !projectId) return;
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, 700));
+      try {
+        const s = await getWorkflowStatus(runId, projectId);
+        setStatus(s);
+        if (s.status !== "suspended") return;
+      } catch {
+        // transient; next iteration will retry
+      }
     }
   };
 
@@ -349,8 +480,16 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
     setActionBusy("revise");
     setActionError(null);
     try {
-      await confirmWorkflow(runId, projectId, { approved: false, feedback: feedback.trim() });
-      postSyntheticUserMessage(`${t("workflowUserRequestedRevision")}：${feedback.trim()}`);
+      await dispatch(
+        confirmWorkflowFromButton({
+          projectId,
+          runId,
+          userLabel: `${t("workflowUserRequestedRevision")}：${feedback.trim()}`,
+          approved: false,
+          feedback: feedback.trim(),
+        })
+      );
+      void pollStatusUntilAdvanced();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -374,15 +513,21 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
   };
 
   const accent = toneForPhase(phase);
+  const persona = workflowName ? WORKFLOW_PERSONA[workflowName] : null;
+  const stateLabelKey = phase === "completed" ? "workflowStateDone" : "workflowStateRunning";
 
   return (
-    <div className={cn("rounded-xl border px-3 py-2.5 text-[13px]", accent.border, accent.bg)}>
-      {/* Header row: workflow label + phase badge */}
-      <div className="flex items-center gap-2">
-        <PhaseIcon phase={phase} />
-        <span className="font-medium">{workflowLabel}</span>
-        <span className={cn("rounded-md px-1.5 py-0.5 text-[11px]", accent.badge)}>
-          {t(`workflowPhase.${phase}`)}
+    <div className="text-[13px]">
+      {/* Persona pill — mirrors oii's persona header; hidden for unknown
+          workflows / terminal-error states. */}
+      {persona && phase !== "failed" && phase !== "cancelled" && <PersonaPill persona={persona} />}
+
+      {/* State + progress row: state label + optional count/label on right */}
+      <div className="mt-2 flex items-center gap-2">
+        <span className="font-semibold text-foreground/90">
+          {phase === "failed" || phase === "cancelled"
+            ? t(`workflowPhase.${phase}`)
+            : t(stateLabelKey)}
         </span>
         {progress && progress.total > 0 && (
           <span className="ml-auto text-[11px] text-muted-foreground">
@@ -392,12 +537,10 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
         )}
       </div>
 
-      {/* Current step (when running) */}
-      {stepLabel && !isTerminal(phase) && !isAwaitingUser(phase) && (
-        <div className="mt-1.5 text-[12px] text-muted-foreground">
-          {t("workflowCurrentStep")}：{stepLabel}
-        </div>
-      )}
+      {/* Persona narration — accumulated bullets from the workflow's
+          narrate events. Shows while running and stays as history after
+          completion (alongside the structured result panel below). */}
+      {narration.length > 0 && <NarrationList items={narration} running={!isTerminal(phase)} />}
 
       {/* Progress bar */}
       {progress && progress.total > 0 && (
@@ -412,14 +555,19 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
       {/* Suspended: draft summary + HITL actions */}
       {isAwaitingUser(phase) && drafts && <DraftSummary drafts={drafts} t={t} />}
 
-      {/* Completed: confirm prompt + 2-button closed loop (continue / revise) */}
+      {/* Completed: structured result summary + confirm/revise buttons */}
       {phase === "completed" && workflowName && (
-        <CompletedActions
-          workflowName={workflowName}
-          projectId={projectId}
-          worldId={worldId}
-          t={t}
-        />
+        <>
+          {status?.result ? (
+            <WorkflowResultPanel workflowName={workflowName} result={status.result} t={t} />
+          ) : null}
+          <CompletedActions
+            workflowName={workflowName}
+            projectId={projectId}
+            worldId={worldId}
+            t={t}
+          />
+        </>
       )}
 
       {/* Failed / cancelled */}
@@ -506,6 +654,150 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
 }
 
 // ─── Sub-components ────────────────────────────────────
+
+function PersonaPill({ persona }: { persona: WorkflowPersona }) {
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 py-1 text-white shadow-sm"
+      style={{
+        background: `linear-gradient(90deg, ${persona.gradientFrom} 0%, ${persona.gradientTo} 100%)`,
+      }}
+    >
+      <span className="flex size-6 items-center justify-center rounded-full bg-white/20 text-[14px]">
+        {persona.emoji}
+      </span>
+      <span className="text-[12px] font-semibold">{persona.name}</span>
+    </div>
+  );
+}
+
+function NarrationList({
+  items,
+  running,
+}: {
+  items: Array<{ id: string; text: string }>;
+  running: boolean;
+}) {
+  return (
+    <ul className="mt-2 list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-foreground/85">
+      {items.map((n) => (
+        <li key={n.id}>{n.text}</li>
+      ))}
+      {running && (
+        <li className="list-none">
+          <span className="inline-flex gap-0.5">
+            <span className="size-1 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:0ms]" />
+            <span className="size-1 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:150ms]" />
+            <span className="size-1 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:300ms]" />
+          </span>
+        </li>
+      )}
+    </ul>
+  );
+}
+
+/**
+ * Inline summary of a completed workflow's output. Replaces the old
+ * supervisor-driven post-completion recap — the workflow's own result
+ * payload is shape-specific per workflow, and we render it directly so
+ * the user can review content before confirming.
+ */
+function WorkflowResultPanel({
+  workflowName,
+  result,
+  t,
+}: {
+  workflowName: WorkflowName;
+  result: unknown;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  if (workflowName === "story_outline" || workflowName === "main_flow") {
+    return <StoryOutlineResult result={result} t={t} />;
+  }
+  return null;
+}
+
+interface StoryOutlineResultShape {
+  storySummary?: string;
+  genre?: string;
+  tone?: string;
+  structure?: Array<{ chapterId?: string; title?: string; summary?: string }>;
+  cast?: Array<{ name?: string; role?: string; arc?: string }>;
+  settings?: Array<{ name?: string; typeHint?: string }>;
+  threads?: { main?: string; subs?: Array<{ name?: string; description?: string }> };
+}
+
+function StoryOutlineResult({
+  result,
+  t,
+}: {
+  result: unknown;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const data = result as StoryOutlineResultShape | null;
+  if (!data || !data.structure) return null;
+  return (
+    <div className="mt-3 space-y-3 rounded-lg border border-border/40 bg-white/2 p-3">
+      {data.storySummary && (
+        <div>
+          <ResultHeading>{t("workflowResultStorySummary")}</ResultHeading>
+          <p className="text-[12px] leading-relaxed text-foreground/80">{data.storySummary}</p>
+        </div>
+      )}
+      {data.structure.length > 0 && (
+        <div>
+          <ResultHeading>
+            {t("workflowResultChapters", { count: data.structure.length })}
+          </ResultHeading>
+          <ol className="space-y-1 text-[12px] leading-relaxed">
+            {data.structure.map((ch, i) => (
+              <li key={ch.chapterId ?? i} className="flex gap-1.5">
+                <span className="shrink-0 text-muted-foreground">{i + 1}.</span>
+                <span>
+                  <span className="font-medium text-foreground/90">{ch.title}</span>
+                  {ch.summary ? <span className="text-foreground/60"> — {ch.summary}</span> : null}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {data.cast && data.cast.length > 0 && (
+        <div>
+          <ResultHeading>{t("workflowResultCast", { count: data.cast.length })}</ResultHeading>
+          <ul className="space-y-0.5 text-[12px] leading-relaxed">
+            {data.cast.map((c, i) => (
+              <li key={c.name ?? i}>
+                <span className="font-medium text-foreground/90">{c.name}</span>
+                {c.role ? <span className="text-foreground/60"> · {c.role}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {data.settings && data.settings.length > 0 && (
+        <div>
+          <ResultHeading>
+            {t("workflowResultSettings", { count: data.settings.length })}
+          </ResultHeading>
+          <ul className="flex flex-wrap gap-x-2 gap-y-0.5 text-[12px] leading-relaxed text-foreground/80">
+            {data.settings.map((s, i) => (
+              <li key={s.name ?? i}>{s.name}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResultHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+      {children}
+    </div>
+  );
+}
 
 function DraftSummary({
   drafts,
@@ -595,14 +887,23 @@ const NEXT_STEPS: Partial<Record<WorkflowName, NextStep[]>> = {
   ],
   role_design: [
     {
-      key: "continueToEpisodes",
-      labelKey: "workflowNextContinueToEpisodes",
-      prompt: "基于这些角色，继续做分集大纲。",
-      icon: IconMovie,
-      nextWorkflow: "episode_phase",
+      key: "continueToRoleImages",
+      labelKey: "workflowNextContinueToRoleImages",
+      prompt: "为这些角色生成主图。",
+      icon: IconPhoto,
+      nextWorkflow: "role_image_phase",
     },
   ],
   role_phase: [
+    {
+      key: "continueToRoleImages",
+      labelKey: "workflowNextContinueToRoleImages",
+      prompt: "为这些角色生成主图。",
+      icon: IconPhoto,
+      nextWorkflow: "role_image_phase",
+    },
+  ],
+  role_image_phase: [
     {
       key: "continueToEpisodes",
       labelKey: "workflowNextContinueToEpisodes",
@@ -648,6 +949,9 @@ function buildInputData(
         ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
         ...(feedback ? { feedback } : {}),
       };
+    case "role_image_phase":
+      // No required inputs — workflow reads committed roles from Java.
+      return feedback ? { feedback } : {};
     case "episode_phase":
       return {
         projectId: ctx.projectId,
@@ -798,19 +1102,6 @@ function FailureMessage({
       )}
     </div>
   );
-}
-
-function PhaseIcon({ phase }: { phase: string }) {
-  if (phase === "completed") {
-    return <IconCheck className="size-3.5 text-green-500" />;
-  }
-  if (phase === "failed" || phase === "cancelled") {
-    return <IconX className="size-3.5 text-destructive/80" />;
-  }
-  if (phase === "suspended") {
-    return <IconAlertCircle className="size-3.5 text-amber-400" />;
-  }
-  return <IconLoader2 className="size-3.5 animate-spin text-muted-foreground" />;
 }
 
 // ─── Tone mapping ──────────────────────────────────────

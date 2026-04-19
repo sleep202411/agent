@@ -15,6 +15,8 @@ interface ChatToolbarProps {
   sending: boolean;
   hasPendingTools: boolean;
   hasUploadingAttachments: boolean;
+  /** When true, block sending — project-params form upstream must be filled first. */
+  blocked?: boolean;
 }
 
 export function ChatToolbar({
@@ -24,6 +26,7 @@ export function ChatToolbar({
   sending,
   hasPendingTools,
   hasUploadingAttachments,
+  blocked,
 }: ChatToolbarProps) {
   const tc = useTranslations("common");
   const dispatch = useAppDispatch();
@@ -57,13 +60,16 @@ export function ChatToolbar({
 
         <Button
           size="icon-sm"
-          onClick={() => projectId && !hasPendingTools && void dispatch(sendUserMessage(projectId))}
+          onClick={() =>
+            projectId && !hasPendingTools && !blocked && void dispatch(sendUserMessage(projectId))
+          }
           disabled={
             sending ||
             hasPendingTools ||
             hasUploadingAttachments ||
             !projectId ||
-            !draftInput.trim()
+            !draftInput.trim() ||
+            Boolean(blocked)
           }
         >
           {sending ? (

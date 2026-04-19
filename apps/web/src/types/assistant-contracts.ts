@@ -49,7 +49,12 @@ export const assistantMutationActions = [
 
 export type AssistantMutationAction = (typeof assistantMutationActions)[number];
 
-export const assistantUiToolNames = ["show_options", "confirm_action", "configure_params"] as const;
+export const assistantUiToolNames = [
+  "show_options",
+  "confirm_action",
+  "configure_params",
+  "require_project_params",
+] as const;
 
 export type AssistantUiToolName = (typeof assistantUiToolNames)[number];
 
@@ -171,6 +176,21 @@ export interface AssistantConfigureParamsInput {
 export interface AssistantConfigureParamsResult {
   confirmed: boolean;
   values?: Record<string, unknown>;
+}
+
+/**
+ * Signal tool — supervisor calls this when it detects the user wants to
+ * create but the project's 4 core params (aspectRatioType / chapterLength /
+ * stylePainting / dialogLanguage) aren't all set. Frontend renders
+ * ProjectParamsForm; submit → confirmed:true, supervisor continues.
+ */
+export interface AssistantRequireProjectParamsInput {
+  /** Optional short explanation the LLM can pass — not rendered, just logged. */
+  reason?: string;
+}
+
+export interface AssistantRequireProjectParamsResult {
+  confirmed: boolean;
 }
 
 export type AssistantProposalAction = "accept" | "accept_edited" | "reject";

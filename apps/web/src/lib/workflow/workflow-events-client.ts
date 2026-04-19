@@ -128,13 +128,21 @@ export class WorkflowEventsClient {
     this.clearReconnectTimer();
     this.opts.onStatusChange?.(this.reconnectAttempt === 0 ? "connecting" : "reconnecting");
 
-    // Same-origin WS URL — reuses the page's cookie for auth automatically.
+    // Production (through Nginx) uses the same origin — Nginx's
+    // /aurora/workflow-events location block proxies the Upgrade header
+    // to Nest. In local dev the Next.js dev server does NOT proxy WS
+    // upgrades (only HTTP via next.config rewrites), so we have to hit
+    // Nest directly on :3001. Detected by hostname + port matching the
+    // typical dev setup.
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const isDev =
+      location.hostname === "localhost" && (location.port === "3000" || location.port === "5173");
+    const host = isDev ? "localhost:3001" : location.host;
     const qs = new URLSearchParams({
       runId: this.opts.runId,
       projectId: this.opts.projectId,
     });
-    const url = `${proto}//${location.host}/aurora/workflow-events?${qs.toString()}`;
+    const url = `${proto}//${host}/aurora/workflow-events?${qs.toString()}`;
 
     let ws: WebSocket;
     try {

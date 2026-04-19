@@ -83,10 +83,12 @@ function isTextLike(mime?: string, name?: string): boolean {
 }
 
 async function fetchBinary(url: string): Promise<Buffer> {
-  // OSS read-after-write isn't strongly consistent on newly uploaded objects —
-  // a file the client just finished PUTting can 404 for a few hundred ms, and
-  // in practice we've seen the window stretch past 3s on cross-region buckets.
-  const delays = [0, 500, 1000, 2000, 3000, 5000];
+  // OSS read-after-write isn't strongly consistent on newly uploaded objects.
+  // On fizzstudio-sg's cross-region setup we observed that the FIRST GET
+  // always 404s — propagation takes a few seconds minimum. So we skip the
+  // immediate probe and wait 3s before the first attempt, then back off
+  // more gently for the stubborn cases.
+  const delays = [3000, 1500, 2500, 4000, 6000];
   let lastStatus = 0;
   let lastBody = '';
   for (let i = 0; i < delays.length; i++) {

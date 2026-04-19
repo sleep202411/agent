@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrowDown, IconInfoCircle, IconMessagePlus, IconSparkles } from "@tabler/icons-react";
+import {
+  IconArrowDown,
+  IconCheck,
+  IconInfoCircle,
+  IconMessagePlus,
+  IconSparkles,
+} from "@tabler/icons-react";
 import { BorderGlow } from "@/components/ui/border-glow";
 import { useTranslations } from "@/src/i18n/i18n";
 import { PanelLayout } from "@/app/projects/_components/panels/panel-layout";
@@ -237,6 +243,9 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
         <div className="flex h-full flex-col relative">
           {/* Messages area — extra bottom padding so content scrolls behind composer */}
           <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-6">
+            {/* Project-params gate — shown until the user sets the 4 params the
+                downstream workflows depend on. Blocks message sending so the
+                supervisor never dispatches story_outline without them. */}
             {/* Welcome + quick actions */}
             {!hasMeaningfulMessages ? (
               <div className="space-y-3">
