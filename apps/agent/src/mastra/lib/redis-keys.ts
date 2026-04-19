@@ -98,6 +98,17 @@ export const K = {
     assertSafeId(runId, "runId");
     return `workflow:run:${runId}:events`;
   },
+  /**
+   * Pub/sub channel for realtime event fan-out. Nest's WorkflowEventsGateway
+   * PSUBSCRIBEs to `workflow:events:*` and forwards frames to connected
+   * browser WebSocket clients. Separate from the stream key above so the
+   * durable audit log and the volatile realtime channel don't conflict on
+   * pattern matching.
+   */
+  workflowEventsChannel: (runId: string) => {
+    assertSafeId(runId, "runId");
+    return `workflow:events:${runId}`;
+  },
   workflowCancel: (runId: string) => {
     assertSafeId(runId, "runId");
     return `workflow:run:${runId}:cancel`;
