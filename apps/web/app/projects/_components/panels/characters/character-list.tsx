@@ -1,10 +1,26 @@
 "use client";
 
-import { IconLoader2, IconPhoto, IconTrash, IconWand } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconCopy,
+  IconLoader2,
+  IconPhoto,
+  IconRefresh,
+  IconTrash,
+  IconWand,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
+import {
+  friendlyStatusKey,
+  isFailed,
+  isInFlight,
+  statusFieldKey,
+  type AssetImageStatusMap,
+} from "@/src/lib/assets/image-status-client";
 import type { CharacterPanelItem } from "./character-utils";
 
 export function CharacterList({
@@ -13,20 +29,24 @@ export function CharacterList({
   loadingMore,
   hasMore,
   selectedVersion,
+  imageStatuses,
   onSelectVersion,
   onFusion,
   onDelete,
   onLoadMore,
+  onRetryImage,
 }: {
   characters: CharacterPanelItem[];
   loading: boolean;
   loadingMore: boolean;
   hasMore: boolean;
   selectedVersion: string;
+  imageStatuses?: AssetImageStatusMap;
   onSelectVersion: (character: CharacterPanelItem) => void;
   onFusion: (character: CharacterPanelItem) => void;
   onDelete: (character: CharacterPanelItem) => void;
   onLoadMore: () => void;
+  onRetryImage?: (character: CharacterPanelItem) => void;
 }) {
   const t = useTranslations("character");
   const tc = useTranslations("common");
@@ -65,6 +85,16 @@ export function CharacterList({
           name,
           path,
         }));
+        const statusRecord =
+          character.id && imageStatuses
+            ? imageStatuses[statusFieldKey("role", character.id)]
+            : undefined;
+        // Worker writes the fresh OSS path to both Java and the Redis
+        // status record. Prefer the status record when present — it's the
+        // most up-to-date view (Java reload may lag by a few seconds).
+        const imagePath = statusRecord?.imageUrl ?? character.roleImgPath[0];
+        const imageIsLoading = statusRecord && isInFlight(statusRecord.status);
+        const imageHasFailed = statusRecord && isFailed(statusRecord.status);
         return (
           <div
             key={character.__panelKey}
@@ -119,16 +149,65 @@ export function CharacterList({
                   selectedVersion === character.__panelKey && "border-primary"
                 )}
               >
-                <div className="h-[135px] w-[120px] overflow-hidden rounded-[4px] bg-[#414145]">
-                  {character.roleImgPath[0] ? (
+                <div className="relative h-[135px] w-[120px] overflow-hidden rounded-[4px] bg-[#414145]">
+                  {imagePath ? (
                     <img
-                      src={buildOssUrl(character.roleImgPath[0])}
+                      src={buildOssUrl(imagePath)}
                       alt=""
                       className="h-full w-full object-cover"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
                       <IconPhoto className="size-6 text-white/25" />
+                    </div>
+                  )}
+                  {imageIsLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-[1px]">
+                      <IconLoader2 className="size-6 animate-spin text-white/80" />
+                    </div>
+                  )}
+                  {imageHasFailed && statusRecord && (
+                    <div
+                      className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 p-2 text-center"
+                      title={statusRecord.error ?? t("imageFailed")}
+                    >
+                      <IconAlertCircle className="size-5 text-red-400" />
+                      <span className="text-[10px] text-white/80">
+                        {t(friendlyStatusKey(statusRecord.status))}
+                      </span>
+                      <div className="mt-0.5 flex items-center gap-1">
+                        {onRetryImage && character.id && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRetryImage(character);
+                            }}
+                            className="flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 text-[10px] text-white/90 hover:bg-white/20"
+                          >
+                            <IconRefresh className="size-3" />
+                            {tc("retry")}
+                          </button>
+                        )}
+                        {statusRecord.error && (
+                          <button
+                            type="button"
+                            title={tc("copyError")}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await navigator.clipboard.writeText(statusRecord.error ?? "");
+                                toast.success(tc("copied"));
+                              } catch {
+                                toast.error(tc("copyFailed"));
+                              }
+                            }}
+                            className="flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-white/90 hover:bg-white/20"
+                          >
+                            <IconCopy className="size-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

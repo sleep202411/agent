@@ -32,6 +32,8 @@ import {
   selectCurrentInstance,
   type Asset,
 } from "@/src/store/slices/projectSlice";
+import { useAssetImageStatuses } from "@/src/lib/assets/use-asset-image-statuses";
+import { regenerateAssetImage } from "@/src/lib/assets/image-status-client";
 
 export function CharactersPanel({ onClose }: { onClose: () => void }) {
   const t = useTranslations("character");
@@ -41,6 +43,8 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
   const charactersVersion = useAppSelector(
     (state) => selectCurrentInstance(state).charactersVersion
   );
+  const { statuses: imageStatuses, refetch: refetchImageStatuses } =
+    useAssetImageStatuses(projectId);
 
   const [worldCharacters, setWorldCharacters] = useState<CharacterPanelItem[]>([]);
   const [search, setSearch] = useState("");
@@ -231,6 +235,7 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
           loadingMore={loadingMore}
           hasMore={hasMore}
           selectedVersion={selectedVersion}
+          imageStatuses={imageStatuses}
           onSelectVersion={(character) => {
             setSelectedVersion(character.__panelKey);
             setEditingCharacter(character);
@@ -238,6 +243,16 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
           onFusion={setFusionCharacter}
           onDelete={setDeleteTarget}
           onLoadMore={() => void loadWorldCharacters(false, search.trim())}
+          onRetryImage={async (character) => {
+            if (!projectId || !character.id) return;
+            try {
+              await regenerateAssetImage(projectId, "role", character.id, worldId ?? undefined);
+              refetchImageStatuses();
+            } catch (err) {
+              // Keep UI intact; polling will re-sync. Error surfaced via toast elsewhere.
+              console.warn("[image-retry] failed:", err);
+            }
+          }}
         />
       </PanelLayout>
 
