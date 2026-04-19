@@ -4,11 +4,13 @@ import { useEffect, useRef, useState, type ComponentType } from "react";
 import {
   IconAlertCircle,
   IconCheck,
+  IconCopy,
   IconLoader2,
   IconMovie,
   IconUsers,
   IconX,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
@@ -23,8 +25,11 @@ import {
   getWorkflowDrafts,
   getWorkflowStatus,
   isAwaitingUser,
+  isErrorRetryable,
   isTerminal,
+  workflowErrorLabelKey,
   type Draft,
+  type ErrorClassification,
   type WorkflowEvent,
   type WorkflowName,
   type WorkflowProgress,
@@ -420,11 +425,13 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
       {/* Failed / cancelled */}
       {(phase === "failed" || phase === "cancelled") && (
         <div className="mt-1.5 flex flex-col gap-2">
-          <div className="flex items-start gap-1.5 text-[12px] text-destructive/80">
-            <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-            <span>{status?.error ?? t(`workflowPhase.${phase}`)}</span>
-          </div>
-          {workflowName && (
+          <FailureMessage
+            classification={status?.errorClassification}
+            rawError={status?.error}
+            phase={phase}
+            t={t}
+          />
+          {workflowName && isErrorRetryable(status?.errorClassification) && (
             <button
               type="button"
               onClick={() => {
@@ -734,6 +741,61 @@ function CompletedActions({
       </button>
 
       <div className="mt-0.5 text-[11px] text-muted-foreground">{t("workflowReviseHint")}</div>
+    </div>
+  );
+}
+
+/**
+ * Friendly error surface for failed / cancelled workflows. Shows the
+ * classified short label (e.g. "服务繁忙，请稍后重试") with the raw error
+ * available via hover tooltip + copy button — mirrors the image-card
+ * failure pattern.
+ */
+function FailureMessage({
+  classification,
+  rawError,
+  phase,
+  t,
+}: {
+  classification: ErrorClassification | undefined;
+  rawError: string | undefined;
+  phase: string;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const tc = useTranslations("common");
+  const friendlyKey = workflowErrorLabelKey(classification);
+  // For cancelled (not failed), fall back to the generic phase label
+  // rather than the "unknown" error bucket.
+  const friendlyText =
+    phase === "cancelled"
+      ? t("workflowPhase.cancelled")
+      : (t(friendlyKey) ?? t("workflowPhase.failed"));
+
+  return (
+    <div
+      className="flex items-start gap-1.5 text-[12px] text-destructive/80"
+      title={rawError || undefined}
+    >
+      <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+      <span className="flex-1">{friendlyText}</span>
+      {rawError && (
+        <button
+          type="button"
+          title={tc("copyError")}
+          onClick={async (e) => {
+            e.stopPropagation();
+            try {
+              await navigator.clipboard.writeText(rawError);
+              toast.success(tc("copied"));
+            } catch {
+              toast.error(tc("copyFailed"));
+            }
+          }}
+          className="mt-0.5 shrink-0 rounded p-0.5 text-destructive/60 hover:bg-destructive/10 hover:text-destructive/80"
+        >
+          <IconCopy className="size-3" />
+        </button>
+      )}
     </div>
   );
 }

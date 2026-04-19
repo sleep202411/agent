@@ -6,6 +6,7 @@
  * validates inbound confirm/cancel payloads against the schemas.
  */
 import { z } from "zod";
+import { ERROR_CLASSIFICATIONS } from "./error-classification.js";
 
 export const WORKFLOW_NAMES = [
   "main_flow",
@@ -49,6 +50,8 @@ export const WorkflowMetaPublicSchema = z.object({
   updatedAt: z.number(),
   completedAt: z.number().optional(),
   error: z.string().optional(),
+  /** Categorized error for UI — see shared/error-classification.ts. */
+  errorClassification: z.enum(ERROR_CLASSIFICATIONS).optional(),
   suspendPayload: z.unknown().optional(),
   result: z.unknown().optional(),
 });

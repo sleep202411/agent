@@ -1,3 +1,4 @@
+import type { ErrorClassification } from "@repo/shared";
 import type { WorkflowName } from "../../lib/redis-keys";
 import type { StoryosContext } from "../../lib/workspace-client";
 
@@ -31,6 +32,12 @@ export type WorkflowMeta = {
   updatedAt: number;
   completedAt?: number;
   error?: string;
+  /**
+   * Categorized error for the UI layer — lets us show "服务繁忙，请稍后
+   *重试" instead of a raw "DeepSeek 429" string. Raw `error` is still
+   * available for copy/debug. See packages/shared/src/error-classification.ts.
+   */
+  errorClassification?: ErrorClassification;
   /** Populated when status=suspended — what the resume UI should present. */
   suspendPayload?: unknown;
   /** Populated when status=completed — workflow's final output. */

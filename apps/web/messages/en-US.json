@@ -1560,6 +1560,16 @@
       "failed": "Failed",
       "cancelled": "Cancelled"
     },
+    "workflowError": {
+      "upstream_rate_limit": "Service busy — please retry shortly",
+      "upstream_timeout": "Request timed out — please retry",
+      "upstream_auth": "Session expired — please refresh and log in again",
+      "content_policy": "Content rejected — please adjust the description",
+      "invalid_input": "Input is incomplete or invalid",
+      "server_error": "System hiccup — please retry",
+      "network": "Network issue — check your connection and retry",
+      "unknown": "Unexpected error — please retry or contact support"
+    },
     "workflowEntity": {
       "role": "Characters",
       "scene": "Scenes",

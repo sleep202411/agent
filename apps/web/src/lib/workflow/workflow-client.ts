@@ -28,6 +28,17 @@ export type WorkflowName =
   | "script_phase"
   | "storyboard_phase";
 
+/** Mirrors packages/shared/src/error-classification.ts — keep in sync. */
+export type ErrorClassification =
+  | "upstream_rate_limit"
+  | "upstream_timeout"
+  | "upstream_auth"
+  | "content_policy"
+  | "invalid_input"
+  | "server_error"
+  | "network"
+  | "unknown";
+
 export type WorkflowProgress = {
   current: number;
   total: number;
@@ -67,10 +78,29 @@ export type WorkflowStatusResponse = {
   updatedAt: number;
   completedAt?: number;
   error?: string;
+  errorClassification?: ErrorClassification;
   suspendPayload?: unknown;
   result?: unknown;
   recentEvents?: WorkflowEvent[];
 };
+
+/**
+ * Short friendly label per classification. Caller wraps in t() under the
+ * "workflowError" namespace (see apps/web/messages/*.json).
+ */
+export function workflowErrorLabelKey(c: ErrorClassification | undefined): string {
+  if (!c) return "workflowError.unknown";
+  return `workflowError.${c}`;
+}
+
+/**
+ * Whether the failure is worth showing a "retry" button vs telling the
+ * user they need to adjust something first. Mirrors isAutoRetryable in
+ * packages/shared/src/error-classification.ts.
+ */
+export function isErrorRetryable(c: ErrorClassification | undefined): boolean {
+  return c !== "content_policy" && c !== "invalid_input" && c !== "upstream_auth";
+}
 
 export type DraftEntityType = "role" | "scene" | "prop" | "episode" | "script" | "storyboard";
 

@@ -1560,6 +1560,16 @@
       "failed": "失敗",
       "cancelled": "已取消"
     },
+    "workflowError": {
+      "upstream_rate_limit": "服務繁忙，請稍後重試",
+      "upstream_timeout": "回應超時，請重試",
+      "upstream_auth": "登入已失效，請重新整理頁面重新登入",
+      "content_policy": "內容不合規，請調整描述後再試",
+      "invalid_input": "輸入資訊不完整或有誤",
+      "server_error": "系統暫時故障，請稍後重試",
+      "network": "網路異常，請檢查網路後重試",
+      "unknown": "遇到未知錯誤，請重試或聯絡客服"
+    },
     "workflowEntity": {
       "role": "角色",
       "scene": "場景",

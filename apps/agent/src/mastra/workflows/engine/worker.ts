@@ -13,6 +13,7 @@ import { RequestContext } from "@mastra/core/request-context";
 import { appendEvent, clearCancel, isCancelled, setStatus } from "./state";
 import { buildConnection, QUEUE_NAME, type StoryosJobData, type StoryosJobName } from "./queue";
 import { WorkflowCancelledError } from "./progress";
+import { classifyError } from "../../lib/error-classifier";
 import type { ResumeJobData, RunJobData } from "./types";
 import type { StoryosContext } from "../../lib/workspace-client";
 
@@ -131,17 +132,20 @@ async function applyResult(runId: string, result: unknown): Promise<void> {
   }
   if (r.status === "failed") {
     const message = formatWorkflowError(r.error);
-    await setStatus(runId, "failed", { error: message });
-    await appendEvent(runId, "failed", { error: message });
+    const classification = classifyError(r.error ?? message);
+    await setStatus(runId, "failed", { error: message, errorClassification: classification });
+    await appendEvent(runId, "failed", { error: message, classification });
     await clearCancel(runId);
     return;
   }
   // tripwire / paused / anything unexpected — log and mark failed so the run
   // doesn't sit forever in "running".
+  const unexpectedMsg = `Unexpected workflow status: ${r.status ?? "undefined"}`;
   await setStatus(runId, "failed", {
-    error: `Unexpected workflow status: ${r.status ?? "undefined"}`,
+    error: unexpectedMsg,
+    errorClassification: "unknown",
   });
-  await appendEvent(runId, "failed", { status: r.status });
+  await appendEvent(runId, "failed", { status: r.status, classification: "unknown" });
 }
 
 async function applyError(runId: string, err: unknown): Promise<void> {
@@ -152,8 +156,9 @@ async function applyError(runId: string, err: unknown): Promise<void> {
     return;
   }
   const message = formatWorkflowError(err);
-  await setStatus(runId, "failed", { error: message });
-  await appendEvent(runId, "failed", { error: message });
+  const classification = classifyError(err);
+  await setStatus(runId, "failed", { error: message, errorClassification: classification });
+  await appendEvent(runId, "failed", { error: message, classification });
   await clearCancel(runId);
 }
 
