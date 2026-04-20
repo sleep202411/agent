@@ -340,17 +340,20 @@ const applyDecisionStep = createStep({
         summary: "本故事骨架里没有需要单独设计的道具，已跳过。",
         compact: true,
       });
-      try {
-        await startWorkflow({
-          workflowName: "prop_image_phase",
-          inputData: {},
-          ctx,
-        });
-      } catch (err) {
-        console.warn(
-          `[prop_phase] auto-chain prop_image_phase failed (no_props path):`,
-          err instanceof Error ? err.message : String(err)
-        );
+      const inMainFlow = requestContext?.get("inMainFlow") === true;
+      if (!inMainFlow) {
+        try {
+          await startWorkflow({
+            workflowName: "prop_image_phase",
+            inputData: {},
+            ctx,
+          });
+        } catch (err) {
+          console.warn(
+            `[prop_phase] auto-chain prop_image_phase failed (no_props path):`,
+            err instanceof Error ? err.message : String(err)
+          );
+        }
       }
       return {
         outcome: "no_props" as const,
@@ -449,17 +452,21 @@ const applyDecisionStep = createStep({
     });
 
     // Auto-chain regardless of partial_failure — see role-phase comment.
-    try {
-      await startWorkflow({
-        workflowName: "prop_image_phase",
-        inputData: {},
-        ctx,
-      });
-    } catch (err) {
-      console.warn(
-        `[prop_phase] auto-chain prop_image_phase failed:`,
-        err instanceof Error ? err.message : String(err)
-      );
+    // Skip when running inside main_flow (see role-phase for details).
+    const inMainFlow = requestContext?.get("inMainFlow") === true;
+    if (!inMainFlow) {
+      try {
+        await startWorkflow({
+          workflowName: "prop_image_phase",
+          inputData: {},
+          ctx,
+        });
+      } catch (err) {
+        console.warn(
+          `[prop_phase] auto-chain prop_image_phase failed:`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
     }
 
     return {

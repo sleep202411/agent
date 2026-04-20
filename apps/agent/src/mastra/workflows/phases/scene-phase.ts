@@ -424,18 +424,23 @@ const applyDecisionStep = createStep({
 
     // Auto-chain regardless of partial_failure — image phase works off
     // whatever's in Java, hard failures throw before here and surface on
-    // the workflow_failed card with a retry button.
-    try {
-      await startWorkflow({
-        workflowName: "scene_image_phase",
-        inputData: {},
-        ctx,
-      });
-    } catch (err) {
-      console.warn(
-        `[scene_phase] auto-chain scene_image_phase failed:`,
-        err instanceof Error ? err.message : String(err)
-      );
+    // the workflow_failed card with a retry button. Skip when running
+    // inside main_flow (its .then() already runs scene_image_phase next;
+    // auto-chaining here would spawn a second parallel run).
+    const inMainFlow = requestContext?.get("inMainFlow") === true;
+    if (!inMainFlow) {
+      try {
+        await startWorkflow({
+          workflowName: "scene_image_phase",
+          inputData: {},
+          ctx,
+        });
+      } catch (err) {
+        console.warn(
+          `[scene_phase] auto-chain scene_image_phase failed:`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
     }
 
     return {

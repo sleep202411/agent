@@ -222,8 +222,13 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
       >
         <div
           className={cn(
-            "max-w-full overflow-hidden py-2 text-[13px] leading-relaxed break-words",
-            message.role === "user" ? "rounded-xl bg-muted px-3" : "w-full px-2"
+            "max-w-full overflow-hidden text-[13px] leading-relaxed break-words",
+            // User message bubbles need internal padding for the pill
+            // shape; assistant messages flow into the chat area and rely
+            // on the list's space-y-4 for inter-message spacing — extra
+            // py-2 here just stacks 16px of whitespace between every
+            // chip / card, which looks loose for small compact chips.
+            message.role === "user" ? "rounded-xl bg-muted px-3 py-2" : "w-full px-2"
           )}
         >
           {message.metadata?.attachments?.length ? (

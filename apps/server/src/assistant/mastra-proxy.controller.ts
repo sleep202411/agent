@@ -286,11 +286,23 @@ export class MastraProxyController {
       }
     }
 
+    // Strip synthetic workflow-lifecycle parts from the history we forward
+    // to the supervisor LLM. These `tool-workflow_*` parts are rendered as
+    // chat cards for the user, but the supervisor never actually called
+    // them — they're published directly to Redis by the workflow engine
+    // (see packages/shared/src/workflow-messages.ts). Leaving them in the
+    // LLM's view of the history causes it to hallucinate future calls to
+    // `workflow_progress` / `workflow_completed` / `workflow_suspended` as
+    // if they were registered tools, which then fail with output-error
+    // and pollute the next assistant message. Also drops empty messages
+    // (parts become []) so no ghost bubbles reach Mastra either.
+    const sanitizedMessages = sanitizeHistoryForSupervisor(messages);
+
     // AI SDK v5-compatible chat endpoint (registered by chatRoute in apps/agent).
     // Emits UIMessageChunk events that match readUIMessageStream in the web client.
     const upstream = `${this.mastraUrl}/chat/storyos`;
     this.logger.log(
-      `POST /assistant/submit-message-to-agent → ${upstream} userId=${user.userId} project=${body.projectId} messages=${messages.length}`,
+      `POST /assistant/submit-message-to-agent → ${upstream} userId=${user.userId} project=${body.projectId} messages=${sanitizedMessages.length} (raw=${messages.length})`,
     );
 
     const cookie = (req.headers.cookie as string | undefined) ?? '';
@@ -310,7 +322,7 @@ export class MastraProxyController {
       upstreamResponse = await fetch(upstream, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages: sanitizedMessages }),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -455,4 +467,72 @@ export class MastraProxyController {
       return part?.type === 'text' && (!part.text || part.text === '');
     });
   }
+}
+
+/**
+ * Remove synthetic workflow-lifecycle parts from the message history
+ * forwarded to the supervisor LLM.
+ *
+ * Background: the workflow engine publishes synthetic assistant messages
+ * (one per lifecycle transition — started/progress/suspended/completed/
+ * failed) directly to Redis, with parts shaped like AI SDK v5 tool calls
+ * (`type: "tool-workflow_progress"` etc.) so the frontend can render them
+ * as generative-UI cards. These parts are NOT actual supervisor tool
+ * calls — the supervisor has no `workflow_progress` tool registered.
+ *
+ * If we leave them in the history we send back to the LLM, the model
+ * reads them as "I called these tools in the previous turn" and starts
+ * hallucinating more calls to them on the next turn, which Mastra then
+ * flags as output-error (unknown tool) and breaks the response.
+ *
+ * Also drops `step-start` placeholders that surround the stripped tool
+ * parts, and any message whose `parts` becomes empty after the strip —
+ * those become ghost bubbles on Mastra's side otherwise.
+ */
+function sanitizeHistoryForSupervisor(
+  messages: unknown,
+): Record<string, unknown>[] {
+  if (!Array.isArray(messages)) return [];
+  const WORKFLOW_TOOL_PREFIXES = [
+    'tool-workflow_started',
+    'tool-workflow_progress',
+    'tool-workflow_suspended',
+    'tool-workflow_completed',
+    'tool-workflow_failed',
+  ];
+  const isWorkflowToolPart = (part: unknown): boolean => {
+    if (!part || typeof part !== 'object') return false;
+    const type = (part as { type?: unknown }).type;
+    if (typeof type !== 'string') return false;
+    return WORKFLOW_TOOL_PREFIXES.some((p) => type === p);
+  };
+  const out: Record<string, unknown>[] = [];
+  for (const raw of messages as Array<Record<string, unknown>>) {
+    if (!raw || typeof raw !== 'object') continue;
+    const parts = raw.parts;
+    if (!Array.isArray(parts)) {
+      out.push(raw);
+      continue;
+    }
+    const filtered = (parts as unknown[]).filter((p) => !isWorkflowToolPart(p));
+    // Drop leading/trailing `step-start` parts that are now orphaned (no
+    // tool call follows) — these used to bracket the removed workflow
+    // tool parts and just add noise without them.
+    while (
+      filtered.length > 0 &&
+      (filtered[0] as { type?: unknown })?.type === 'step-start'
+    ) {
+      filtered.shift();
+    }
+    while (
+      filtered.length > 0 &&
+      (filtered[filtered.length - 1] as { type?: unknown })?.type ===
+        'step-start'
+    ) {
+      filtered.pop();
+    }
+    if (filtered.length === 0) continue;
+    out.push({ ...raw, parts: filtered });
+  }
+  return out;
 }

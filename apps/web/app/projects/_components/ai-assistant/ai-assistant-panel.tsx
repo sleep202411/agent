@@ -157,7 +157,33 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const hasMeaningfulMessages = messages.length > 1;
   const hasUploadingAttachments = attachments.some((a) => a.status === "uploading");
 
-  const renderedMessages = useMemo(() => messages, [messages]);
+  // Suppress messages that will render empty — today the culprit is
+  // `workflow_progress` with `current >= total`, which WorkflowProgressCard
+  // returns null for (the accompanying workflow_completed/suspended/failed
+  // message carries the terminal state, making the 100% progress card a
+  // duplicate). Without this filter those messages still occupy ~16px
+  // of vertical space each (py-2 on the bubble) and pollute the timeline
+  // with empty gaps. Keep the filter narrow so non-empty messages aren't
+  // accidentally dropped.
+  const renderedMessages = useMemo(
+    () =>
+      messages.filter((m) => {
+        if (!Array.isArray(m.parts) || m.parts.length === 0) return true;
+        // Keep the message if ANY part is something other than a "done"
+        // workflow_progress. A message whose ONLY content is a 100% progress
+        // part is the one we want to drop.
+        return m.parts.some((part) => {
+          if (!part || typeof part !== "object") return true;
+          const p = part as { type?: unknown; output?: unknown };
+          if (p.type !== "tool-workflow_progress") return true;
+          const out = p.output as { current?: unknown; total?: unknown } | undefined;
+          const current = typeof out?.current === "number" ? out.current : 0;
+          const total = typeof out?.total === "number" ? out.total : 0;
+          return !(total > 0 && current >= total);
+        });
+      }),
+    [messages]
+  );
 
   // Coarse streaming length — bucketized so we don't trigger scroll on every token
   // Changes roughly every ~80 chars, enough to keep up without thrashing

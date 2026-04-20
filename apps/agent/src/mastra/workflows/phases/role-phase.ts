@@ -439,17 +439,25 @@ const applyDecisionStep = createStep({
     // generates for what's in the DB and surfaces its own failures; a true
     // hard failure would throw before this point and the user gets the
     // retry button on the workflow_failed card instead.
-    try {
-      await startWorkflow({
-        workflowName: "role_image_phase",
-        inputData: {},
-        ctx,
-      });
-    } catch (err) {
-      console.warn(
-        `[role_phase] auto-chain role_image_phase failed:`,
-        err instanceof Error ? err.message : String(err)
-      );
+    //
+    // Skip the auto-chain when running INSIDE main_flow — main_flow's
+    // .then(roleImagePhaseWorkflow) step already runs the image phase
+    // next, and a standalone startWorkflow() here would spawn a SECOND
+    // parallel image run (duplicate cards, duplicate Java dispatch).
+    const inMainFlow = requestContext?.get("inMainFlow") === true;
+    if (!inMainFlow) {
+      try {
+        await startWorkflow({
+          workflowName: "role_image_phase",
+          inputData: {},
+          ctx,
+        });
+      } catch (err) {
+        console.warn(
+          `[role_phase] auto-chain role_image_phase failed:`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
     }
 
     return {

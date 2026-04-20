@@ -50,14 +50,27 @@ export const MainFlowOutputSchema = z.object({
 
 // ─── Adapters (only where phase-to-phase shapes actually differ) ─────
 
+/**
+ * Flag sub-workflows can read (role_phase / scene_phase / prop_phase) to
+ * skip their auto-chain into the corresponding *_image_phase. main_flow's
+ * composition already runs the image phase as the next .then(), so
+ * auto-chaining from inside the text phase would kick off a SECOND
+ * standalone image run in parallel — two image runs, two progress cards,
+ * double Java dispatch. When the text phase is invoked standalone
+ * (user typed "设计角色" or clicked 继续·设计角色), this flag isn't set
+ * and the auto-chain fires as before.
+ */
 const toBreakdownInput = createStep({
   id: "to_breakdown_input",
   inputSchema: MainFlowInputSchema,
   outputSchema: z.object({ text: z.string(), styleHint: z.string().optional() }),
-  execute: async ({ inputData }) => ({
-    text: inputData.text,
-    styleHint: inputData.styleHint,
-  }),
+  execute: async ({ inputData, requestContext }) => {
+    requestContext?.set("inMainFlow", true);
+    return {
+      text: inputData.text,
+      styleHint: inputData.styleHint,
+    };
+  },
 });
 
 const toRolePhaseInput = createStep({
