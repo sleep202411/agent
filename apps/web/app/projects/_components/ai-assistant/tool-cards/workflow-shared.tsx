@@ -28,6 +28,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 
 // ─── Display labels ────────────────────────────────────
@@ -294,9 +302,88 @@ function labelForDraftField(key: string): string {
 
 function formatDraftFieldValue(v: unknown): string {
   if (v == null) return "";
-  if (Array.isArray(v)) return v.map((x) => String(x)).join("、");
+  if (Array.isArray(v)) {
+    return v
+      .map((x) => {
+        if (x == null) return "";
+        // Objects inside arrays hit this path — without the JSON.stringify
+        // branch they collapse to "[object Object]" and the dialog shows
+        // garbage. Arrays of objects SHOULD be routed to DraftFieldTable
+        // above; this fallback is defensive for mixed/unexpected shapes.
+        if (typeof x === "object") return JSON.stringify(x);
+        return String(x);
+      })
+      .join("、");
+  }
   if (typeof v === "object") return JSON.stringify(v, null, 2);
   return String(v);
+}
+
+/**
+ * True when `v` is a non-empty array of plain objects — the shape we want to
+ * render as a shadcn Table instead of a string. Catches storyboard rows
+ * (`[{shot_no, scene, description, ...}, ...]`) without false-positiving on
+ * arrays of primitives ("、"-joined strings is fine for those).
+ */
+function isObjectRowArray(v: unknown): v is Record<string, unknown>[] {
+  if (!Array.isArray(v) || v.length === 0) return false;
+  return v.every((row) => row !== null && typeof row === "object" && !Array.isArray(row));
+}
+
+/** Union of column keys across all rows (row 0 first, then any extras). */
+function collectRowColumns(rows: Record<string, unknown>[]): string[] {
+  const seen = new Set<string>();
+  const cols: string[] = [];
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        cols.push(key);
+      }
+    }
+  }
+  return cols;
+}
+
+/** Stringify one cell — objects get JSON, arrays get 、-joined, else String. */
+function renderCellValue(v: unknown): string {
+  if (v == null) return "";
+  if (Array.isArray(v)) {
+    return v.map((x) => (typeof x === "object" ? JSON.stringify(x) : String(x))).join("、");
+  }
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+function DraftFieldTable({ rows }: { rows: Record<string, unknown>[] }) {
+  const columns = collectRowColumns(rows);
+  if (columns.length === 0) {
+    return <div className="text-[12px] text-muted-foreground">空表格</div>;
+  }
+  return (
+    <div className="rounded-md border border-border/60">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {columns.map((col) => (
+              <TableHead key={col}>{labelForDraftField(col)}</TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, i) => (
+            <TableRow key={i}>
+              {columns.map((col) => (
+                <TableCell key={col} className="max-w-[240px] whitespace-pre-wrap break-words">
+                  {renderCellValue(row[col])}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
 }
 
 // Show 2 rows (4 items) by default; collapse the rest behind a chevron.
@@ -513,7 +600,11 @@ function DraftDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      {/* Width scales with content: narrow for single-entity drafts (role /
+          scene / prop), wide for storyboard drafts that carry a multi-column
+          rows table. max-w-5xl keeps the table readable without pushing the
+          sidebar panels off-screen. */}
+      <DialogContent className="max-w-5xl">
         <DialogHeader>
           <DialogTitle>{title || "—"}</DialogTitle>
           <DialogDescription className="sr-only">草稿详情</DialogDescription>
@@ -561,6 +652,8 @@ function DraftDetailDialog({
                     disabled={saving}
                     className="min-h-[140px] w-full resize-y border-0 bg-transparent p-0 text-[13px] leading-relaxed text-foreground/90 focus:outline-none focus:ring-0 disabled:opacity-60"
                   />
+                ) : isObjectRowArray(value) ? (
+                  <DraftFieldTable rows={value} />
                 ) : (
                   <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">
                     {formatDraftFieldValue(value)}
