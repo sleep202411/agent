@@ -96,7 +96,19 @@ function openSession(projectId: string, handlers: ChatSessionHandlers): ActiveSe
       for (const id of ids) session.pendingIds.add(id);
       void drainPending(session);
     },
-    onMessageChanged: (id) => {
+    onMessageChanged: (id, inlineMessage) => {
+      // Steady-state path: the frame already carries the full blob, so
+      // dispatch immediately without a REST round-trip. Fall back to
+      // get-messages only if the server omitted it (legacy / transitional
+      // shape).
+      if (inlineMessage) {
+        try {
+          session.handlers.onMessage(inlineMessage as unknown as AssistantMessage);
+        } catch (err) {
+          console.warn("[chat-session] onMessage handler threw:", err);
+        }
+        return;
+      }
       session.pendingIds.add(id);
       void drainPending(session);
     },

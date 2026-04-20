@@ -44,8 +44,14 @@ export interface StoredMessage extends MessageLike {
 }
 
 export type ChatEvent =
-  | { type: 'message_added'; data: { messageId: string } }
-  | { type: 'message_updated'; data: { messageId: string } }
+  | {
+      type: 'message_added';
+      data: { messageId: string; message?: StoredMessage };
+    }
+  | {
+      type: 'message_updated';
+      data: { messageId: string; message?: StoredMessage };
+    }
   | {
       type: 'message_chunk';
       data: { messageId: string; partIndex: number; appendText: string };
@@ -161,7 +167,7 @@ export class MessageStoreService implements OnModuleDestroy {
     await this.touch(projectId);
     await this.publish(projectId, {
       type: 'message_added',
-      data: { messageId: id },
+      data: { messageId: id, message },
     });
   }
 
@@ -188,7 +194,7 @@ export class MessageStoreService implements OnModuleDestroy {
     await this.touch(projectId);
     await this.publish(projectId, {
       type: 'message_updated',
-      data: { messageId: id },
+      data: { messageId: id, message },
     });
   }
 

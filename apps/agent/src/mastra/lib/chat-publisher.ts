@@ -31,9 +31,21 @@ function channelEvents(projectId: string): string {
   return `chat:events:${projectId}`;
 }
 
+/**
+ * Inline full message blobs on add/update events so connected clients
+ * don't need a REST round-trip to fetch content. Reconnect / snapshot
+ * paths still read Redis (via get-messages), but the steady-state is
+ * pure push — no per-event HTTP hop.
+ */
 type ChatEvent =
-  | { type: "message_added"; data: { messageId: string } }
-  | { type: "message_updated"; data: { messageId: string } }
+  | {
+      type: "message_added";
+      data: { messageId: string; message?: StoredMessage };
+    }
+  | {
+      type: "message_updated";
+      data: { messageId: string; message?: StoredMessage };
+    }
   | {
       type: "message_chunk";
       data: { messageId: string; partIndex: number; appendText: string };
@@ -110,7 +122,10 @@ export async function addChatMessage(projectId: string, message: StoredMessage):
   pipeline.set(keyMsg(projectId, message.id), JSON.stringify(message), "EX", DEFAULT_TTL_SECONDS);
   await pipeline.exec();
   await touch(projectId);
-  await publish(projectId, { type: "message_added", data: { messageId: message.id } });
+  await publish(projectId, {
+    type: "message_added",
+    data: { messageId: message.id, message },
+  });
 }
 
 /**
@@ -128,7 +143,7 @@ export async function updateChatMessage(projectId: string, message: StoredMessag
   await touch(projectId);
   await publish(projectId, {
     type: "message_updated",
-    data: { messageId: message.id },
+    data: { messageId: message.id, message },
   });
 }
 

@@ -4,22 +4,40 @@
  * projectId and emits frame-level events to the caller.
  *
  * Wire protocol (server-authored, see chat-events.gateway.ts):
- *   { event: "message_list",     data: { messageIds } }       — initial snapshot
- *   { event: "message_added",    data: { messageId } }        — new message committed
- *   { event: "message_updated",  data: { messageId } }        — full content mutated
+ *   { event: "message_list",     data: { messageIds } }
+ *        — initial snapshot, triggers batch get-messages fetch on first connect
+ *   { event: "message_added",    data: { messageId, message? } }
+ *        — new message; `message` is the full blob for same-tick renders.
+ *          When omitted (rare fallback), client falls back to get-messages.
+ *   { event: "message_updated",  data: { messageId, message? } }
+ *        — structural change; same payload convention as added
  *   { event: "message_chunk",    data: { messageId, partIndex, appendText } }
- *                                                            — streaming text delta
- *   { event: "message_finalize", data: { messageId } }       — streaming done
- *   { event: "agent_state",      data: { state } }            — running/idle/...
- *   { event: "heartbeat",        data: { conversationHash } } — every 30s
- *   { event: "terminate",        data: { reason, code } }     — server-initiated close
+ *        — streaming text delta, append in place, no fetch
+ *   { event: "message_finalize", data: { messageId } }
+ *        — streaming done, drop caret / unlock actions
+ *   { event: "agent_state",      data: { state } }
+ *        — running/idle/waiting/failed
+ *   { event: "heartbeat",        data: { conversationHash, serverTime } }
+ *        — every 30s
+ *   { event: "terminate",        data: { reason, code } }
+ *        — server-initiated close
  */
 export type ChatAgentState = "idle" | "running" | "waiting" | "failed" | string;
 
+/**
+ * Messages are opaque to this layer — the canonical shape lives in
+ * assistant-types.ts. We only care that `id` exists and the object is
+ * JSON-serializable.
+ */
+export type InlineMessage = { id: string; [k: string]: unknown };
+
 export type ChatEventFrame =
   | { event: "message_list"; data: { messageIds: string[] } }
-  | { event: "message_added"; data: { messageId: string } }
-  | { event: "message_updated"; data: { messageId: string } }
+  | { event: "message_added"; data: { messageId: string; message?: InlineMessage } }
+  | {
+      event: "message_updated";
+      data: { messageId: string; message?: InlineMessage };
+    }
   | {
       event: "message_chunk";
       data: { messageId: string; partIndex: number; appendText: string };
@@ -36,7 +54,13 @@ export interface ChatEventsClientHandlers {
   onOpen?: () => void;
   onFrame?: (frame: ChatEventFrame) => void;
   onMessageList?: (messageIds: string[]) => void;
-  onMessageChanged?: (messageId: string) => void;
+  /**
+   * Fires for both `message_added` and `message_updated`. When the frame
+   * inlined the full blob (the steady-state path), `message` is set and
+   * the consumer can dispatch directly; when absent (rare — legacy
+   * events), the consumer should fall back to a REST fetch by messageId.
+   */
+  onMessageChanged?: (messageId: string, message?: InlineMessage) => void;
   /**
    * Fires on every streaming text-delta. Client should append `appendText`
    * to `message.parts[partIndex].text` in place — do NOT refetch the
@@ -154,7 +178,7 @@ export function openChatEventsClient(
           break;
         case "message_added":
         case "message_updated":
-          handlers.onMessageChanged?.(frame.data.messageId);
+          handlers.onMessageChanged?.(frame.data.messageId, frame.data.message);
           break;
         case "message_chunk":
           handlers.onMessageChunk?.(
