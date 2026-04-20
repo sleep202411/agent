@@ -245,15 +245,32 @@ const generateStep = createStep({
       await throwIfCancelled(runId);
       const ep = inputData.episodes[i];
       try {
+        // errorStrategy: "strict" — schema mismatches (e.g. LLM returned
+        // < 5 rows) throw here so they land in errorsByIndex via catch
+        // below. Previously "warn" silently returned object=undefined,
+        // we fell back to rows=[], persisted an empty-shell draft, and
+        // suspended at HITL with nothing for the user to confirm. The
+        // workflow_failed + retry path is the right UX for "LLM couldn't
+        // produce valid shots".
         const response = await storyboarder.generate(buildPrompt(ep, dialogLanguage), {
           structuredOutput: {
             schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
-            errorStrategy: "warn",
+            errorStrategy: "strict",
           },
         });
         const rows = (
           (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? []
         ).slice(0, 60);
+
+        // Defense-in-depth: even if strict-mode somehow let a valid-but-
+        // empty object slip through (shouldn't, but future schema
+        // refactors might), reject so we fail loudly instead of saving
+        // a draft the HITL dialog can't render.
+        if (rows.length === 0) {
+          throw new Error(
+            `storyboarder returned 0 shots for episode "${ep.title}" — treat as generation failure.`
+          );
+        }
 
         const clientRefId = randomUUID();
         await putDraft(runId, "shot", clientRefId, {
