@@ -153,6 +153,16 @@ function buildRequestContext(ctx: StoryosContext, runId: string): RequestContext
   if (ctx.episodeId) rc.set("episodeId", ctx.episodeId);
   if (ctx.locale) rc.set("locale", ctx.locale);
   if (ctx.acceptLanguage) rc.set("acceptLanguage", ctx.acceptLanguage);
+  // Project-level params — set by supervisor's requestContext → queued into
+  // job.ctx → forwarded here. Without these forwards, workflow steps would
+  // always read `undefined` for dialogLanguage/stylePainting/shotsPerEpisode
+  // and silently fall back to defaults (wrong language, generic style,
+  // hardcoded 15-40 shot range).
+  if (ctx.dialogLanguage) rc.set("dialogLanguage", ctx.dialogLanguage);
+  if (ctx.stylePainting) rc.set("stylePainting", ctx.stylePainting);
+  if (typeof ctx.shotsPerEpisode === "number") {
+    rc.set("shotsPerEpisode", ctx.shotsPerEpisode);
+  }
   rc.set("runId", runId); // So steps can call reportProgress(runId, ...)
   return rc;
 }

@@ -119,6 +119,12 @@ export interface AssistantWorkspaceSelection {
   dialogLanguage?: string | null;
   /** Project's chosen visual style id (from projectDetail.stylePainting). */
   stylePainting?: string | null;
+  /**
+   * Target shots per episode for storyboard_phase. localStorage-only; Java
+   * has no column for it. Flows assistantSlice.buildWorkspaceContext →
+   * server → x-storyos-context → StoryosContext.shotsPerEpisode.
+   */
+  shotsPerEpisode?: number | null;
   videoPromptStyle?: "default" | "seedance";
 }
 

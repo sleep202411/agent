@@ -32,6 +32,7 @@ type MastraChatBody = {
     locale?: unknown;
     dialogLanguage?: unknown;
     stylePainting?: unknown;
+    shotsPerEpisode?: unknown;
   };
   /** Button-driven workflow trigger. Supervisor reads from requestContext and
    * skips LLM routing, dispatching the named workflow directly. */
@@ -173,6 +174,11 @@ export class MastraProxyController {
       stylePainting:
         typeof body.workspaceContext?.stylePainting === 'string'
           ? body.workspaceContext.stylePainting
+          : undefined,
+      shotsPerEpisode:
+        typeof body.workspaceContext?.shotsPerEpisode === 'number' &&
+        Number.isFinite(body.workspaceContext.shotsPerEpisode)
+          ? body.workspaceContext.shotsPerEpisode
           : undefined,
       userTier: user.userLevel ?? 'free',
       ...(forceEnterWorkflow ? { forceEnterWorkflow } : {}),

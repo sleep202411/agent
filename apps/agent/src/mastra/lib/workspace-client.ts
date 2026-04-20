@@ -19,6 +19,12 @@ export type StoryosContext = {
   dialogLanguage?: string;
   /** Project's chosen visual style id (from stylePainting dictionary). */
   stylePainting?: string;
+  /**
+   * Target shots per episode for storyboard_phase. User picks it in
+   * ProjectParamsForm (5-60 range). localStorage-only — Java has no column
+   * for it, so each submit re-sends the value via workspaceContext.
+   */
+  shotsPerEpisode?: number;
 };
 
 type ApiBody<T = unknown> = {
@@ -47,6 +53,15 @@ export function getContext(rc: RequestContext | undefined): StoryosContext {
     acceptLanguage: rc.get("acceptLanguage") as string | undefined,
     dialogLanguage: rc.get("dialogLanguage") as string | undefined,
     stylePainting: rc.get("stylePainting") as string | undefined,
+    shotsPerEpisode: (() => {
+      const raw = rc.get("shotsPerEpisode");
+      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+      if (typeof raw === "string" && raw.trim()) {
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : undefined;
+      }
+      return undefined;
+    })(),
   };
 }
 

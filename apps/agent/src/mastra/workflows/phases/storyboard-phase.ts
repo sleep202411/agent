@@ -262,6 +262,11 @@ const generateStep = createStep({
     // every shot lands in a single language (UI locale can differ).
     const ctx = getContext(requestContext);
     const dialogLanguage = ctx.dialogLanguage;
+    // User-picked target shot count (ProjectParamsForm). buildPrompt uses
+    // a ±3 window; falls back to 15-40 when the value isn't set. Picking
+    // a lower value also sidesteps DeepSeek's tail-laziness (kicks in
+    // ~30 rows) since most episodes will come in under the threshold.
+    const shotsPerEpisode = ctx.shotsPerEpisode;
 
     const total = inputData.episodes.length;
     const concurrency = Math.min(STORYBOARD_GENERATE_CONCURRENCY, total);
@@ -299,7 +304,7 @@ const generateStep = createStep({
         // bad rows below. Previously strict mode killed a whole 30-shot
         // episode because DeepSeek's row 31 was missing `description`.
         const response = await storyboarder.generate(
-          buildPrompt(ep, inputData.sceneNames, dialogLanguage),
+          buildPrompt(ep, inputData.sceneNames, shotsPerEpisode, dialogLanguage),
           {
             structuredOutput: {
               schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
@@ -417,9 +422,18 @@ const MOVEMENT_OPTIONS =
 function buildPrompt(
   ep: z.infer<typeof EpisodeScriptRef>,
   sceneNames: string[],
+  shotsPerEpisode: number | undefined,
   dialogLanguage?: string
 ): string {
   const langLabel = storyboardDialogLanguageLabel(dialogLanguage);
+  // Target shot count — respect the user's pick with ±3 wiggle so LLM has
+  // room to breathe without blowing past the tail-laziness zone. Falls
+  // back to 15-40 when the value wasn't propagated (shouldn't happen
+  // post-worker-fix but keeps the prompt sensible).
+  const shotRangeLine =
+    typeof shotsPerEpisode === "number" && Number.isFinite(shotsPerEpisode)
+      ? `镜头数量约 ${shotsPerEpisode} 个（允许 ${Math.max(5, shotsPerEpisode - 3)}-${shotsPerEpisode + 3} 浮动）。每个镜头时长 2-8 秒。`
+      : "镜头数量 15-40 个之间。每个镜头时长 2-8 秒。";
   // Whitelist gate — when the project already has worldscenes committed
   // (scene_phase ran), force the LLM to pick a scene from the roster so
   // backfillSceneColumn hits the cache instead of creating duplicate
@@ -458,7 +472,7 @@ function buildPrompt(
     "- **dialogue** — 对白或旁白，格式 `角色名：台词内容` 或 `旁白：内容`；没有留空",
     "- **duration** — 该镜头秒数，2-8",
     "",
-    "镜头数量 15-40 个之间。每个镜头时长 2-8 秒。",
+    shotRangeLine,
   ].join("\n");
 }
 

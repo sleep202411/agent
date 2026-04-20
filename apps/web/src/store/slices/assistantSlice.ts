@@ -444,6 +444,18 @@ function buildWorkspaceContext(state: RootState, projectId: string): AssistantWo
       if (raw && raw.length > 0) dialogLanguage = raw;
     } catch {}
   }
+  // shotsPerEpisode — no Java column; localStorage is authoritative. Keep
+  // undefined on failure so the agent falls back to its default 15-40.
+  let shotsPerEpisode: number | undefined;
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(`fizzos:shots-per-episode:${projectId}`);
+      if (raw) {
+        const n = Number(raw);
+        if (Number.isFinite(n) && n >= 5 && n <= 60) shotsPerEpisode = n;
+      }
+    } catch {}
+  }
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
@@ -452,6 +464,7 @@ function buildWorkspaceContext(state: RootState, projectId: string): AssistantWo
     locale: typeof document !== "undefined" ? document.documentElement.lang || "zh-CN" : "zh-CN",
     dialogLanguage: dialogLanguage ?? undefined,
     stylePainting: detail?.stylePainting ?? undefined,
+    shotsPerEpisode,
     videoPromptStyle,
   };
 }
