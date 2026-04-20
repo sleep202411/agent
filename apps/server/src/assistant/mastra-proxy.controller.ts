@@ -30,6 +30,8 @@ type MastraChatBody = {
     activeTab?: unknown;
     activePanel?: unknown;
     locale?: unknown;
+    dialogLanguage?: unknown;
+    stylePainting?: unknown;
   };
   /** Button-driven workflow trigger. Supervisor reads from requestContext and
    * skips LLM routing, dispatching the named workflow directly. */
@@ -160,6 +162,17 @@ export class MastraProxyController {
       locale:
         typeof body.workspaceContext?.locale === 'string'
           ? body.workspaceContext.locale
+          : undefined,
+      // Project-level params — user picks in ProjectParamsForm, flows
+      // through every submit. Not persisted by Java yet (client mirrors
+      // in localStorage), so we rely on the client to resend them.
+      dialogLanguage:
+        typeof body.workspaceContext?.dialogLanguage === 'string'
+          ? body.workspaceContext.dialogLanguage
+          : undefined,
+      stylePainting:
+        typeof body.workspaceContext?.stylePainting === 'string'
+          ? body.workspaceContext.stylePainting
           : undefined,
       userTier: user.userLevel ?? 'free',
       ...(forceEnterWorkflow ? { forceEnterWorkflow } : {}),

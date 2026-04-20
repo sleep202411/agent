@@ -116,16 +116,7 @@ export function ChatComposer({
               blocked={blocked}
             />
 
-            {error && error.startsWith("MESSAGE_LIMIT_REACHED:") ? (
-              <div className="mt-2 rounded-lg bg-primary/10 px-3 py-2 text-xs text-primary">
-                {t("messageLimitReached", {
-                  current: error.split(":")[1],
-                  max: error.split(":")[2],
-                })}
-              </div>
-            ) : error ? (
-              <div className="mt-2 text-xs text-destructive">{error}</div>
-            ) : null}
+            {error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
           </div>
         )}
       </div>

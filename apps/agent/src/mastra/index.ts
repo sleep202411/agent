@@ -16,6 +16,8 @@ import { propDesignerAgent } from "./agents/personas/prop-designer";
 import { workflowRoutes } from "./routes/workflow";
 import { assetsRoutes } from "./routes/assets";
 import { roleDesignWorkflow } from "./workflows/role-design";
+import { sceneDesignWorkflow } from "./workflows/scene-design";
+import { propDesignWorkflow } from "./workflows/prop-design";
 import { batchCreateAssetWorkflow } from "./workflows/batch-create-asset";
 import { scriptEditWorkflow } from "./workflows/script-edit";
 import { scriptBreakdownWorkflow } from "./workflows/phases/script-breakdown";
@@ -103,6 +105,8 @@ export const mastra = new Mastra({
   workflows: {
     // Single-phase workflows (still reachable individually via invoke_workflow)
     role_design: roleDesignWorkflow,
+    scene_design: sceneDesignWorkflow,
+    prop_design: propDesignWorkflow,
     batch_create_asset: batchCreateAssetWorkflow,
     script_edit: scriptEditWorkflow,
     // Phase workflows used inside main_flow — also reachable standalone

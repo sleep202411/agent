@@ -34,6 +34,12 @@ const CharacterSchema = z.object({
   role: z.string().min(1),
   appearance: z.string().min(1),
   personality: z.string().min(1),
+  /**
+   * Image-generation prompt — distinct from `appearance`, which is a
+   * human-readable description. `prompt` is a visual-token-optimized string
+   * passed directly to the image model (Tongyi / Stable Diffusion variants).
+   */
+  prompt: z.string().min(1),
 });
 
 export const RolePhaseInputSchema = z.object({
@@ -108,8 +114,9 @@ function buildElaboratePrompt(
     "## 你产出的字段（都是 string）",
     "- name：沿用骨架里给的姓名，不要改",
     "- role：沿用骨架里给的功能定位，不要改",
-    "- appearance：15-40 字外貌设计。发型、服饰、体态、显著视觉标志，用顿号连接",
+    "- appearance：15-40 字**人读**的外貌描述。发型、服饰、体态、显著视觉标志，用顿号连接",
     "- personality：20-50 字性格 + 说话风格 + 典型行为，紧扣 arc 给的成长弧线",
+    "- prompt：**图像生成提示词**。和 appearance 不同，这是直接喂给图像模型的 prompt —— 40-80 字、顿号/逗号分隔的视觉关键词串，按「主体（年龄+性别+种族）+ 发型发色 + 服装 + 标志性物件/疤痕 + 表情/神态 + 镜头（胸像/半身）」顺序排。**不要**写故事背景 / 情节 / 情感；只写画面上能看到的东西。**不要**加画风/品质 token（写实、电影感、高清、cartoon 这类）—— 下游会根据项目选定画风统一拼接。与 appearance 的视觉信息保持一致但扩充细节到图像模型能画出稳定外观。",
   ]
     .filter(Boolean)
     .join("\n");
@@ -164,6 +171,7 @@ const resolveInputStep = createStep({
         role: entry.role,
         appearance: designed.appearance,
         personality: designed.personality,
+        prompt: designed.prompt,
       });
     }
     await reportProgress(runId, {
@@ -199,7 +207,10 @@ const collectDraftsStep = createStep({
         description: [`定位：${c.role}`, `外观：${c.appearance}`, `性格：${c.personality}`].join(
           "\n"
         ),
-        prompt: c.appearance,
+        // Use the dedicated image-gen prompt (visual-token optimized) rather
+        // than reusing `appearance` (which reads human but may lack style /
+        // lighting / composition tokens needed for consistent images).
+        prompt: c.prompt,
         roleImgPath: [],
         referenceImgPath: [],
         referenceImgDescription: [],

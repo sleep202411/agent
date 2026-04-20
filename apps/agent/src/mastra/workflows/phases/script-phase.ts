@@ -182,6 +182,12 @@ const generateStep = createStep({
     const scriptwriter = mastra?.getAgent("scriptwriter");
     if (!scriptwriter) throw new Error("scriptwriter agent not registered");
 
+    // Pull the project's dialogue language so every episode's script lands
+    // in the same language — prevents the "半角色中文、半角色英文" drift you
+    // get when locale and dialogLanguage disagree.
+    const ctx = getContext(requestContext);
+    const dialogLanguage = ctx.dialogLanguage;
+
     const total = inputData.episodes.length;
     const generated: z.infer<typeof StateSchema>["generated"] = [];
     let totalChars = 0;
@@ -215,6 +221,7 @@ const generateStep = createStep({
         castBlock,
         genre: inputData.genre,
         tone: inputData.tone,
+        dialogLanguage,
       });
 
       const response = await scriptwriter.generate(prompt, {
@@ -286,6 +293,39 @@ function buildCastBlock(
   return `\n角色清单（对白和动作要符合各自性格）：\n${lines.join("\n")}\n`;
 }
 
+/**
+ * Convert a plain-text script (with `\n` line breaks between segments) into
+ * the HTML shape Tiptap expects — one `<p>` per non-empty line. If the LLM
+ * emitted everything on a single line we still render as one paragraph; but
+ * the prompt now explicitly tells it to use line breaks, so this should
+ * produce a proper multi-paragraph layout.
+ */
+function scriptToTiptapHtml(text: string): string {
+  if (!text) return "";
+  const escaped = (s: string): string =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const paragraphs = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => `<p>${escaped(line)}</p>`);
+  if (paragraphs.length === 0) return "";
+  return paragraphs.join("\n");
+}
+
+function dialogLanguageLabel(code: string | undefined): string {
+  switch (code) {
+    case "zh-CN":
+      return "简体中文";
+    case "zh-HK":
+      return "繁体中文";
+    case "en-US":
+      return "English";
+    default:
+      return code || "简体中文";
+  }
+}
+
 function buildPrompt(args: {
   index: number;
   total: number;
@@ -294,11 +334,13 @@ function buildPrompt(args: {
   castBlock: string;
   genre?: string;
   tone?: string;
+  dialogLanguage?: string;
 }): string {
-  const { index, total, episode, storySummary, castBlock, genre, tone } = args;
+  const { index, total, episode, storySummary, castBlock, genre, tone, dialogLanguage } = args;
   const meta = [genre ? `类型：${genre}` : "", tone ? `基调：${tone}` : ""]
     .filter(Boolean)
     .join(" / ");
+  const langLabel = dialogLanguageLabel(dialogLanguage);
 
   return [
     `请为第 ${index}/${total} 集写完整的可拍摄剧本。`,
@@ -311,13 +353,16 @@ function buildPrompt(args: {
     episode.introduction ? "本集大纲：" + episode.introduction : "",
     "",
     "要求：",
-    '- 格式：每场戏以"场景 N: 地点 - 时间"开头',
-    '- 每个角色的台词标注"角色：台词内容"',
-    "- 动作 / 表情 / 环境描写单独成行，用中文标点",
+    `- **全部台词与旁白用${langLabel}**（场景标题、动作描写可保持中文框架，对白严格按此语言）`,
+    "- 格式按拍摄本风格，**每个原子段落独占一行（用 \\n 真实换行分隔）**，不要把整集挤成一大段",
+    '  - 场景标题独占一行："场景 N: 地点 - 时间"',
+    '  - 每句角色台词独占一行："角色：台词内容"',
+    "  - 每个动作 / 表情 / 环境描写独占一行",
+    '  - 旁白 / 画外音独占一行，用"（旁白）"或"V.O."前缀',
     "- 长度：300-800 字；不要灌水，密度高",
     "- 结尾留一个钩子（未解之谜 / 反转信号 / 情绪张力）",
     "",
-    "以 JSON 返回，字段 content 就是完整剧本文本。",
+    "以 JSON 返回，字段 content 是完整剧本文本（里面必须包含真实换行，用 \\n 连接各行）。",
   ]
     .filter(Boolean)
     .join("\n");
@@ -413,7 +458,12 @@ const applyDecisionStep = createStep({
     const failed: z.infer<typeof ScriptPhaseOutputSchema>["failed"] = [];
 
     const episodeIds = accepts.map((d) => d.data.episodeId);
-    const contents = accepts.map((d) => d.data.content);
+    // Java's script store is rendered by the frontend's Tiptap editor, which
+    // expects HTML paragraphs — raw "\n" gets collapsed into one run-on
+    // paragraph. Convert plain text into <p>...</p> blocks before save so
+    // the user sees each segment on its own line. Mirrors the logic from
+    // the pre-Mastra `textToHtml` helper in script-agent.tools.ts.
+    const contents = accepts.map((d) => scriptToTiptapHtml(d.data.content));
 
     try {
       await javaRequest<unknown>(ctx, "/api/user/project/scripts/episode/batch/createOrUpdate", {

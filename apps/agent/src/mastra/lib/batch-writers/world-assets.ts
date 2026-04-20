@@ -45,6 +45,8 @@ export type PropCreateData = {
   worldId: string;
   name: string;
   description?: string;
+  /** Image-generation prompt — visual-token string sent to the image model. */
+  prompt?: string;
 };
 
 // ─── Java single-create helpers (Phase 2a) ────────────────────────────
@@ -94,6 +96,7 @@ async function createPropSingle(ctx: StoryosContext, data: PropCreateData): Prom
     worldId: data.worldId,
     name: data.name,
     description: data.description ?? "",
+    prompt: data.prompt ?? data.description ?? "",
   };
   const resp = await javaRequest<unknown>(ctx, "/api/user/world/create/worldprop", { data: body });
   return toServerId(resp, "Props");

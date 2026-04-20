@@ -1,13 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  IconArrowDown,
-  IconCheck,
-  IconInfoCircle,
-  IconMessagePlus,
-  IconSparkles,
-} from "@tabler/icons-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { IconArrowDown, IconCheck, IconMessagePlus, IconSparkles } from "@tabler/icons-react";
 import { BorderGlow } from "@/components/ui/border-glow";
 import { useTranslations } from "@/src/i18n/i18n";
 import { PanelLayout } from "@/app/projects/_components/panels/panel-layout";
@@ -34,14 +28,6 @@ import {
 } from "@/src/store/slices/assistantSlice";
 import { ensureSession, closeSession } from "@/src/lib/assistant/chat-session";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogFooter,
-  AlertDialogAction,
-} from "@/components/ui/alert-dialog";
 
 import { quickActionsByAgent } from "./constants";
 import { MessageBubble } from "./message-bubble";
@@ -107,11 +93,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const pendingToolUi = conversation?.pendingToolUi ?? EMPTY_PENDING_TOOLS;
   const error = conversation?.error ?? null;
   const historyMessageCount = conversation?.historyMessageCount ?? 0;
-  const messageLimit = conversation?.messageLimit ?? 50;
-  const tier = conversation?.tier ?? "free";
-  const conversationId = conversation?.conversationId ?? "";
-  const messageCount = messages.filter((m) => m.role === "user").length;
-  const [showUsageInfo, setShowUsageInfo] = useState(false);
 
   useEffect(() => {
     if (!draftInput && editorRef.current && editorRef.current.innerText.trim()) {
@@ -172,26 +153,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
           </div>
         }
         title={t("title")}
-        description={
-          <span className="inline-flex items-center gap-1.5">
-            <span>
-              {messageCount === 0
-                ? t("usageHintFresh", { max: messageLimit })
-                : messageCount >= messageLimit
-                  ? t("usageHintFull")
-                  : messageCount >= messageLimit * 0.8
-                    ? t("usageHintAlmost", { remaining: messageLimit - messageCount })
-                    : t("usageHintNormal", { current: messageCount, max: messageLimit })}
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowUsageInfo((v) => !v)}
-              className="inline-flex items-center text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-            >
-              <IconInfoCircle className="size-3" />
-            </button>
-          </span>
-        }
         actions={
           hasMeaningfulMessages ? (
             <Button
@@ -336,60 +297,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
           </div>
         </div>
       </PanelLayout>
-
-      {/* Usage info dialog */}
-      <AlertDialog open={showUsageInfo} onOpenChange={setShowUsageInfo}>
-        <AlertDialogContent className="sm:max-w-xs">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-sm">{t("usageInfoTitle")}</AlertDialogTitle>
-          </AlertDialogHeader>
-
-          <div className="space-y-3 py-1">
-            {/* Tier badge */}
-            <div className="flex items-center gap-2">
-              <span className="rounded-md bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
-                {tier === "free" ? t("tierFree") : tier}
-              </span>
-            </div>
-
-            {/* Progress */}
-            <div>
-              <div className="flex items-baseline justify-between mb-1.5">
-                <span className="text-xs text-muted-foreground">{t("usageInfoMessages")}</span>
-                <span className="text-sm font-semibold tabular-nums">
-                  {messageCount}
-                  <span className="text-muted-foreground/50 font-normal"> / {messageLimit}</span>
-                </span>
-              </div>
-              <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-primary transition-all duration-500"
-                  style={{ width: `${Math.min(100, (messageCount / messageLimit) * 100)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Session ID */}
-            {conversationId && (
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-muted-foreground/50">Session</span>
-                <span className="font-mono text-muted-foreground/40">{conversationId}</span>
-              </div>
-            )}
-
-            {/* Retention warning */}
-            <p className="text-[11px] leading-relaxed text-muted-foreground/50">
-              {tier === "free" ? t("usageRetentionFree") : t("usageRetentionVip")}
-            </p>
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogAction variant="outline" color="muted" size="sm">
-              {t("usageInfoClose")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

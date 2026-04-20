@@ -6,8 +6,19 @@ export type StoryosContext = {
   projectId: string;
   worldId?: string;
   episodeId?: string;
+  /** Browser UI language. */
   locale?: string;
   acceptLanguage?: string;
+  /**
+   * Project's chosen dialogue language (zh-CN / zh-HK / en-US / ...).
+   * Distinct from `locale`. Flows from ProjectParamsForm through
+   * workspaceContext → x-storyos-context → here. Phases that generate
+   * user-facing text (scripts, dialogue, narration) MUST use this to decide
+   * output language, not locale.
+   */
+  dialogLanguage?: string;
+  /** Project's chosen visual style id (from stylePainting dictionary). */
+  stylePainting?: string;
 };
 
 type ApiBody<T = unknown> = {
@@ -34,6 +45,8 @@ export function getContext(rc: RequestContext | undefined): StoryosContext {
     episodeId: rc.get("episodeId") as string | undefined,
     locale: rc.get("locale") as string | undefined,
     acceptLanguage: rc.get("acceptLanguage") as string | undefined,
+    dialogLanguage: rc.get("dialogLanguage") as string | undefined,
+    stylePainting: rc.get("stylePainting") as string | undefined,
   };
 }
 

@@ -51,6 +51,14 @@ export interface ProjectDetail {
   type?: number;
   episode?: number;
   chapterLength?: number;
+  /**
+   * User-chosen target number of episodes for this project. Collected in
+   * `ProjectParamsForm` alongside the other core params but NOT persisted
+   * to Java yet — stored client-side in localStorage via
+   * `fizzos:episode-count:{projectId}`. When Java exposes a column for it
+   * we'll start sending it through the existing update-project pipeline.
+   */
+  targetEpisodeCount?: number;
   status?: number;
   aiId?: string;
   adminUserId?: string;

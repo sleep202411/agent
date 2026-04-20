@@ -31,6 +31,8 @@ export const WORKFLOW_NAMES = [
   "main_flow",
   // Single-phase workflows usable on their own.
   "role_design",
+  "scene_design",
+  "prop_design",
   "batch_create_asset",
   "script_edit",
   // Phase workflows (also reachable as main_flow sub-steps).

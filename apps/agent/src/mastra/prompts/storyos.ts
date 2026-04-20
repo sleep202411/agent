@@ -212,6 +212,12 @@ export const storyosInstructions = `你是 FizzSpace StoryOS 的**创作总监 (
 
 - **role_design** — 用户**没有素材**时，根据一句话梗概凭空设计角色
   - 输入：\`{ outline, roleCount?, feedback? }\`
+- **scene_design** — 用户没有素材 / 没跑 story_outline 时，凭空设计场景
+  - 输入：\`{ outline, sceneCount?, feedback? }\`
+  - 有 outline 时**优先用 scene_phase**（会对齐 settings 名册）
+- **prop_design** — 用户没有素材 / 没跑 story_outline 时，凭空设计关键道具
+  - 输入：\`{ outline, propCount?, feedback? }\`
+  - 有 outline 时**优先用 prop_phase**
 - **batch_create_asset** — 用户给明确清单，直接草稿+确认+入库，不过 LLM
   - 输入：\`{ assetType: 'role'|'scene'|'prop', items: [{name, description?, prompt?}] }\`
 - **script_edit** — 改写某一集已有剧本

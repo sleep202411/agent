@@ -46,6 +46,7 @@ import {
   type WorkflowStatusResponse,
 } from "@/src/lib/workflow/workflow-client";
 import { WorkflowEventsClient } from "@/src/lib/workflow/workflow-events-client";
+import { loadEpisodeCount } from "./project-params-form";
 import type { AssistantToolInvocation } from "@/src/lib/assistant/assistant-types";
 
 // ─── Types ─────────────────────────────────────────────
@@ -130,6 +131,13 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
   const worldId = useAppSelector((s) =>
     projectId ? (s.project.instances[projectId]?.worldId ?? null) : null
   );
+  const targetEpisodeCount = useAppSelector((s) => {
+    const fromDetail = projectId
+      ? s.project.instances[projectId]?.detail?.targetEpisodeCount
+      : undefined;
+    if (typeof fromDetail === "number" && fromDetail > 0) return fromDetail;
+    return projectId ? loadEpisodeCount(projectId) : undefined;
+  });
 
   const output = (part.output as InvokeWorkflowOutput | undefined) ?? {};
   const runId = output.runId;
@@ -457,6 +465,7 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
               inputData: buildInputData(nextStep.nextWorkflow, {
                 projectId,
                 worldId,
+                targetEpisodeCount,
               }),
             })
           );
@@ -581,6 +590,7 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
             workflowName={workflowName}
             projectId={projectId}
             worldId={worldId}
+            targetEpisodeCount={targetEpisodeCount}
             t={t}
           />
         </>
@@ -606,7 +616,11 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
                     projectId,
                     userLabel: `重试「${workflowLabelText}」`,
                     workflowName,
-                    inputData: buildInputData(workflowName, { projectId, worldId }),
+                    inputData: buildInputData(workflowName, {
+                      projectId,
+                      worldId,
+                      targetEpisodeCount,
+                    }),
                   })
                 );
               }}
@@ -1017,13 +1031,14 @@ const NEXT_STEPS: Partial<Record<WorkflowName, NextStep[]>> = {
 };
 
 // Default target episode count when the user jumps into episode_phase via a
-// button. Users who want a different count should type a freeform message
-// instead; the supervisor LLM handles that path.
+// button AND the ProjectParamsForm value (client-side) isn't available
+// (e.g. cleared localStorage + no Redux state). Normally overridden by the
+// value the user picked in the form.
 const DEFAULT_TARGET_EPISODE_COUNT = 10;
 
 function buildInputData(
   workflowName: WorkflowName,
-  ctx: { projectId: string; worldId?: string | null },
+  ctx: { projectId: string; worldId?: string | null; targetEpisodeCount?: number | null },
   feedback?: string
 ): Record<string, unknown> {
   switch (workflowName) {
@@ -1042,7 +1057,10 @@ function buildInputData(
     case "episode_phase":
       return {
         projectId: ctx.projectId,
-        targetEpisodeCount: DEFAULT_TARGET_EPISODE_COUNT,
+        targetEpisodeCount:
+          typeof ctx.targetEpisodeCount === "number" && ctx.targetEpisodeCount > 0
+            ? ctx.targetEpisodeCount
+            : DEFAULT_TARGET_EPISODE_COUNT,
         ...(feedback ? { feedback } : {}),
       };
     case "script_phase":
@@ -1058,11 +1076,13 @@ function CompletedActions({
   workflowName,
   projectId,
   worldId,
+  targetEpisodeCount,
   t,
 }: {
   workflowName: WorkflowName;
   projectId: string | null;
   worldId: string | null;
+  targetEpisodeCount: number | undefined;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const dispatch = useAppDispatch();
@@ -1070,6 +1090,7 @@ function CompletedActions({
   const hasNext = Boolean(steps && steps.length > 0);
 
   const primary = hasNext ? steps![0] : null;
+  const ctx = { projectId: projectId ?? "", worldId, targetEpisodeCount };
 
   const handleContinue = () => {
     if (!projectId || !primary) return;
@@ -1078,7 +1099,7 @@ function CompletedActions({
         projectId,
         userLabel: t(primary.labelKey),
         workflowName: primary.nextWorkflow,
-        inputData: buildInputData(primary.nextWorkflow, { projectId, worldId }),
+        inputData: buildInputData(primary.nextWorkflow, ctx),
       })
     );
   };
@@ -1093,7 +1114,7 @@ function CompletedActions({
         projectId,
         userLabel: `调整「${workflowLabel}」：${feedback.trim()}`,
         workflowName,
-        inputData: buildInputData(workflowName, { projectId, worldId }, feedback.trim()),
+        inputData: buildInputData(workflowName, ctx, feedback.trim()),
       })
     );
   };

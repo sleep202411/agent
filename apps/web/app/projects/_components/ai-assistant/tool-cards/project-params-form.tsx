@@ -38,16 +38,72 @@ function getAspectPreview(label: string): { w: number; h: number } {
   return { w: Math.round(w * scale), h: Math.round(h * scale) };
 }
 
-/** True once aspect/length/style are all set. Mirror of `isProjectParamsComplete`
- * in `packages/shared/src/project-params.ts` — web app deliberately doesn't
- * depend on @repo/shared, so keep both in sync when changing the rule. */
+const EPISODE_COUNT_STORAGE_KEY = (projectId: string) => `fizzos:episode-count:${projectId}`;
+const DIALOG_LANGUAGE_STORAGE_KEY = (projectId: string) => `fizzos:dialog-language:${projectId}`;
+const EPISODE_COUNT_MIN = 2;
+const EPISODE_COUNT_MAX = 40;
+
+export function loadEpisodeCount(projectId: string): number | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(EPISODE_COUNT_STORAGE_KEY(projectId));
+    if (!raw) return undefined;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < EPISODE_COUNT_MIN || n > EPISODE_COUNT_MAX) {
+      return undefined;
+    }
+    return n;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveEpisodeCount(projectId: string, value: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(EPISODE_COUNT_STORAGE_KEY(projectId), String(value));
+  } catch {
+    // storage quota / private mode — not fatal, just lose the value on reload
+  }
+}
+
+/**
+ * Load the project's chosen dialog language (zh-CN / zh-HK / en-US). Falls
+ * back to undefined if nothing's stored. Currently NOT persisted by Java —
+ * ProjectParamsForm keeps the authoritative copy in localStorage so all
+ * downstream workflow invocations can route the value through
+ * workspaceContext.dialogLanguage.
+ */
+export function loadDialogLanguage(projectId: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(DIALOG_LANGUAGE_STORAGE_KEY(projectId));
+    return raw && raw.length > 0 ? raw : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveDialogLanguage(projectId: string, value: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DIALOG_LANGUAGE_STORAGE_KEY(projectId), value);
+  } catch {}
+}
+
+/** True once aspect/length/style + episode count are all set. Mirror of
+ * `isProjectParamsComplete` in `packages/shared/src/project-params.ts` — web
+ * app deliberately doesn't depend on @repo/shared, so keep both in sync when
+ * changing the rule. */
 export function isProjectParamsComplete(detail: ProjectDetail | null | undefined): boolean {
   if (!detail) return false;
   return Boolean(
     detail.aspectRatioType &&
     typeof detail.chapterLength === "number" &&
     detail.chapterLength > 0 &&
-    detail.stylePainting
+    detail.stylePainting &&
+    typeof detail.targetEpisodeCount === "number" &&
+    detail.targetEpisodeCount >= EPISODE_COUNT_MIN
   );
 }
 
@@ -79,6 +135,11 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
   );
   const [stylePainting, setStylePainting] = useState(detail?.stylePainting ?? "");
   const [dialogLanguage, setDialogLanguage] = useState(detail?.dialogLanguage ?? "zh-CN");
+  const [episodeCount, setEpisodeCount] = useState<string>(() => {
+    if (detail?.targetEpisodeCount != null) return String(detail.targetEpisodeCount);
+    const stored = detail?.id ? loadEpisodeCount(detail.id) : undefined;
+    return stored != null ? String(stored) : "";
+  });
 
   useEffect(() => {
     let active = true;
@@ -100,6 +161,11 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
   }, [tp]);
 
   const chapterLengthNum = Number(chapterLength);
+  const episodeCountNum = Number(episodeCount);
+  const episodeCountValid =
+    Number.isFinite(episodeCountNum) &&
+    episodeCountNum >= EPISODE_COUNT_MIN &&
+    episodeCountNum <= EPISODE_COUNT_MAX;
   const canSubmit =
     !readOnly &&
     !loadingDict &&
@@ -107,7 +173,8 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
     Boolean(stylePainting) &&
     Boolean(chapterLength) &&
     Number.isFinite(chapterLengthNum) &&
-    chapterLengthNum > 0;
+    chapterLengthNum > 0 &&
+    episodeCountValid;
   const controlsDisabled = loadingDict || readOnly;
 
   const handleSubmit = () => {
@@ -115,11 +182,16 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
       toast.error(t("paramsFormMissing"));
       return;
     }
+    if (detail?.id) {
+      saveEpisodeCount(detail.id, episodeCountNum);
+      saveDialogLanguage(detail.id, dialogLanguage);
+    }
     onSubmitted?.({
       aspectRatioType,
       chapterLength: chapterLengthNum,
       stylePainting,
       dialogLanguage,
+      targetEpisodeCount: episodeCountNum,
     });
   };
 
@@ -163,6 +235,21 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
         disabled={controlsDisabled}
         onChange={(e) => setChapterLength(e.target.value.replace(/[^\d]/g, ""))}
         placeholder={tp("episodeDurationPlaceholder")}
+        className="h-10 rounded-xl border-0 bg-white/5 text-[13px] focus-visible:ring-1 focus-visible:ring-primary"
+      />
+
+      {/* 剧集数量 */}
+      <SectionTitle>{t("paramsEpisodeCount")}</SectionTitle>
+      <Input
+        value={episodeCount}
+        inputMode="numeric"
+        maxLength={2}
+        disabled={controlsDisabled}
+        onChange={(e) => setEpisodeCount(e.target.value.replace(/[^\d]/g, ""))}
+        placeholder={t("paramsEpisodeCountPlaceholder", {
+          min: EPISODE_COUNT_MIN,
+          max: EPISODE_COUNT_MAX,
+        })}
         className="h-10 rounded-xl border-0 bg-white/5 text-[13px] focus-visible:ring-1 focus-visible:ring-primary"
       />
 

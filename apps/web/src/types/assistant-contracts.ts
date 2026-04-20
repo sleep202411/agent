@@ -108,7 +108,17 @@ export interface AssistantWorkspaceSelection {
   episodeId?: string | null;
   activeTab?: string | null;
   activePanel?: string | null;
+  /** Browser UI language (from document.documentElement.lang). */
   locale?: string | null;
+  /**
+   * Project's chosen dialogue language — distinct from `locale`. User picks
+   * it in ProjectParamsForm; downstream workflows (script_phase,
+   * storyboard_phase) use this to decide what language to generate dialogue
+   * in. Not persisted to Java yet — client mirrors it in localStorage.
+   */
+  dialogLanguage?: string | null;
+  /** Project's chosen visual style id (from projectDetail.stylePainting). */
+  stylePainting?: string | null;
   videoPromptStyle?: "default" | "seedance";
 }
 

@@ -33,6 +33,8 @@ export const GENERATIVE_WORKFLOWS: ReadonlySet<WorkflowName> = new Set<WorkflowN
   "main_flow",
   "story_outline",
   "role_design",
+  "scene_design",
+  "prop_design",
   "role_phase",
   "role_image_phase",
   "scene_phase",

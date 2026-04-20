@@ -10,7 +10,11 @@ import {
   clearConversation as clearConversationApi,
   type ConfirmProjectParamsPayload,
 } from "@/src/lib/assistant/assistant-client";
-import { startWorkflow, type WorkflowName } from "@/src/lib/workflow/workflow-client";
+import {
+  cancelWorkflow,
+  startWorkflow,
+  type WorkflowName,
+} from "@/src/lib/workflow/workflow-client";
 import type {
   AssistantAttachment,
   AssistantMessage,
@@ -93,14 +97,8 @@ function createEmptyConversation() {
     historyLoaded: false,
     /** Number of messages loaded from server history (for separator) */
     historyMessageCount: 0,
-    /** Message limit for the current tier */
-    messageLimit: 50,
-    /** Current tier name */
-    tier: "free" as string,
     /** Conversation ID from server */
     conversationId: "" as string,
-    /** History retention in days */
-    retentionDays: 1,
     /**
      * In-flight generative workflow for this project. Set by ToolWorkflowCard
      * when it sees the workflow enter queued/running, cleared on terminal
@@ -435,12 +433,25 @@ export const finalizeTurnOnIdle = createAsyncThunk<
 function buildWorkspaceContext(state: RootState, projectId: string): AssistantWorkspaceSelection {
   const inst = state.project.instances[projectId] ?? selectCurrentInstance(state);
   const videoPromptStyle = state.assistant.projects[projectId]?.videoPromptStyle ?? "default";
+  const detail = inst.detail;
+  // Language + style are project-level params the user sets in
+  // ProjectParamsForm. dialogLanguage isn't persisted by Java yet — read the
+  // localStorage mirror as a fallback for reloaded sessions.
+  let dialogLanguage: string | null | undefined = detail?.dialogLanguage;
+  if (!dialogLanguage && typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(`fizzos:dialog-language:${projectId}`);
+      if (raw && raw.length > 0) dialogLanguage = raw;
+    } catch {}
+  }
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
     activeTab: inst.activeTab,
     activePanel: inst.activePanel,
     locale: typeof document !== "undefined" ? document.documentElement.lang || "zh-CN" : "zh-CN",
+    dialogLanguage: dialogLanguage ?? undefined,
+    stylePainting: detail?.stylePainting ?? undefined,
     videoPromptStyle,
   };
 }
@@ -555,10 +566,7 @@ export const loadHistory = createAsyncThunk<
         setHistory({
           projectId,
           messages: data.messages as AssistantMessage[],
-          messageLimit: data.messageLimit,
-          tier: data.tier,
           conversationId: data.conversationId,
-          retentionDays: data.retentionDays ?? 7,
         })
       );
     } catch (error) {
@@ -590,14 +598,8 @@ export const newConversation = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch }
 >("assistant/newConversation", async (projectId, { dispatch }) => {
   try {
-    const data = await clearConversationApi(projectId);
+    await clearConversationApi(projectId);
     dispatch(resetProjectConversation(projectId));
-    dispatch(
-      setMessageLimit({
-        projectId,
-        messageLimit: data.messageLimit,
-      })
-    );
   } catch (error) {
     console.warn("[assistant] Failed to clear conversation:", error);
     toast.error("清空对话失败，请重试");
@@ -653,11 +655,6 @@ export const sendUserMessage = createAsyncThunk<
     } catch (error) {
       if (abortController.signal.aborted) return;
       const errMsg = error instanceof Error ? error.message : "AI 请求失败";
-      if (errMsg.startsWith("MESSAGE_LIMIT_REACHED:")) {
-        const [, cur, max] = errMsg.split(":");
-        dispatch(streamError({ projectId, error: `MESSAGE_LIMIT_REACHED:${cur}:${max}` }));
-        return;
-      }
       dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
     }
@@ -694,6 +691,25 @@ export const startWorkflowFromButton = createAsyncThunk<
   async ({ projectId, userLabel, workflowName, inputData }, { dispatch, getState }) => {
     abortProjectStream(projectId);
     dispatch(ensureProject(projectId));
+
+    // Enforce single-in-flight-workflow-per-project: if there's already an
+    // active workflow for this project (queued / running / suspended), cancel
+    // it before starting a new one. Prevents the "retry spawns duplicate
+    // runs / 2 cards on screen" problem reported in manual testing.
+    const prevActive = getState().assistant.projects[projectId]?.activeWorkflow;
+    if (prevActive && prevActive.runId) {
+      try {
+        await cancelWorkflow(prevActive.runId, projectId);
+      } catch (err) {
+        // Non-fatal — worst case the old run finishes in the background;
+        // its results won't be auto-committed because the user's HITL focus
+        // has moved on.
+        console.warn(
+          "[startWorkflowFromButton] cancelWorkflow failed:",
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
 
     const userMessage: AssistantMessage = {
       id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -833,6 +849,12 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
         chapterLength: params.chapterLength,
         stylePainting: params.stylePainting,
         dialogLanguage: params.dialogLanguage,
+        // Client-side only — Java doesn't persist this yet. See
+        // project-params-form.tsx:loadEpisodeCount for the localStorage
+        // mirror that survives reload.
+        ...(params.targetEpisodeCount != null
+          ? { targetEpisodeCount: params.targetEpisodeCount }
+          : {}),
       })
     );
 
@@ -1111,19 +1133,15 @@ export const assistantSlice = createSlice({
       action: PayloadAction<{
         projectId: string;
         messages: AssistantMessage[];
-        messageLimit: number;
-        tier: string;
         conversationId: string;
-        retentionDays: number;
       }>
     ) => {
-      const { projectId, messages, messageLimit, tier, conversationId, retentionDays } =
-        action.payload;
+      const { projectId, messages, conversationId } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       // Guard against clobbering an in-flight conversation with a late/stale
       // empty-history response. Only rewrite messages when we actually got
       // history back, OR when the local conversation is still at the empty
-      // welcome state. Metadata (limits, tier, etc.) is always updated.
+      // welcome state.
       const incomingEmpty = messages.length === 0;
       const localHasContent = current.messages.length > 1;
       const welcomeMsg = createWelcomeMessage();
@@ -1139,10 +1157,7 @@ export const assistantSlice = createSlice({
         historyLoaded: true,
         historyMessageCount:
           incomingEmpty && localHasContent ? current.historyMessageCount : messages.length,
-        messageLimit,
-        tier,
         conversationId,
-        retentionDays,
       };
     },
 
@@ -1150,15 +1165,6 @@ export const assistantSlice = createSlice({
       const { projectId } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       state.projects[projectId] = { ...current, historyLoaded: true };
-    },
-
-    setMessageLimit: (
-      state,
-      action: PayloadAction<{ projectId: string; messageLimit: number }>
-    ) => {
-      const { projectId, messageLimit } = action.payload;
-      const current = state.projects[projectId] ?? createEmptyConversation();
-      state.projects[projectId] = { ...current, messageLimit };
     },
 
     resetProjectConversation: (state, action: PayloadAction<string>) => {
@@ -1219,7 +1225,6 @@ export const {
   streamError,
   setHistory,
   markHistoryLoaded,
-  setMessageLimit,
   resetProjectConversation,
   setActiveWorkflow,
   clearActiveWorkflow,

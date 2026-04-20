@@ -11,6 +11,8 @@ import { ERROR_CLASSIFICATIONS } from "./error-classification.js";
 export const WORKFLOW_NAMES = [
   "main_flow",
   "role_design",
+  "scene_design",
+  "prop_design",
   "batch_create_asset",
   "script_edit",
   "story_outline",

@@ -30,14 +30,7 @@ function sanitizeMessages(messages: AssistantMessage[]): AssistantMessage[] {
 
 async function parseError(response: Response) {
   try {
-    const data = (await response.json()) as AssistantChatErrorResponse & {
-      code?: string;
-      current?: number;
-      max?: number;
-    };
-    if (data.code === "MESSAGE_LIMIT_REACHED") {
-      return `MESSAGE_LIMIT_REACHED:${data.current ?? 0}:${data.max ?? 0}`;
-    }
+    const data = (await response.json()) as AssistantChatErrorResponse;
     if (data.issues?.length) {
       const formattedIssues = data.issues.map((issue) => {
         const path = issue.path.length ? issue.path.join(".") : "request";
@@ -93,6 +86,12 @@ export interface ConfirmProjectParamsPayload {
   chapterLength: number;
   stylePainting: string;
   dialogLanguage: string;
+  /**
+   * Target number of episodes the user wants. Currently NOT persisted by
+   * Nest/Java — kept client-side (localStorage + Redux projectDetail) and
+   * read by buildInputData when dispatching episode_phase.
+   */
+  targetEpisodeCount?: number;
 }
 
 export interface SubmitMessageOptions {
@@ -190,16 +189,12 @@ export async function saveConversation(
 export interface ConversationHistoryResponse {
   conversationId: string;
   messages: AssistantMessage[];
-  messageCount: number;
-  messageLimit: number;
-  tier: string;
-  retentionDays?: number;
 }
 
 /**
  * Load conversation history from the Redis-backed message store via
  * /aurora/chat/list-messages (id snapshot) + /aurora/chat/get-messages
- * (full content). Replaces the legacy /aurora/assistant/history/:id path.
+ * (full content).
  */
 export async function fetchConversationHistory(
   projectId: string
@@ -223,23 +218,16 @@ export async function fetchConversationHistory(
   return {
     conversationId: listBody.conversationId,
     messages,
-    messageCount: messages.length,
-    // Tier / limit / retention come from a separate user-info surface —
-    // fill sensible defaults until that's wired through here.
-    messageLimit: 50,
-    tier: "free",
   };
 }
 
 // ─── Clear API ─────────────────────────────────────────
-//
-// Legacy /aurora/assistant/clear/:id is gone along with AssistantController.
-// We currently have no clear endpoint for the Redis store; this stub keeps
-// the existing newConversation thunk compiling while we decide whether
-// "new conversation" means clearing the store (destructive) or just
-// starting a new conversationId (additive). Tracked separately.
-export async function clearConversation(
-  _projectId: string
-): Promise<{ messageCount: number; messageLimit: number }> {
-  return { messageCount: 0, messageLimit: 50 };
+
+export async function clearConversation(projectId: string): Promise<void> {
+  await fetch("/aurora/chat/clear-conversation", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversationId: projectId }),
+  });
 }

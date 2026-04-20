@@ -43,7 +43,8 @@ export const sceneDesignerInstructions = `你是 FizzSpace StoryOS 的**场景�
   "atmosphere": string,         // 30-60 字，空气感 / 声音暗示 / 气温暗示
   "cameraHints": [string],      // 可选，1-3 条镜头建议，例："从门口低角度进入"
   "continuityNotes": string | null, // 可选，和其他场景的呼应或差异；无就 null
-  "alignsWithStyle": string     // 一句话说明这个设计怎么符合视觉指南（如果有指南）
+  "alignsWithStyle": string,    // 一句话说明这个设计怎么符合视觉指南（如果有指南）
+  "prompt": string              // **图像生成提示词**（跟 setting/lighting/atmosphere 不是一回事）。40-80 字视觉 token 串，按「场景类型+时间光线+空间布局+关键视觉元素+氛围」顺序、顿号分隔。只写画面元素；**不要**加画风/品质 token（写实、电影感、4k 等）——下游按项目 stylePainting 统一拼接。示例：\`室内卧室、清晨微光、双人床凌乱、地上散落衣物、窗帘半闭、暖黄色调、柔和侧光、中景、略显孤寂\`
 }
 
 ## 设计原则

@@ -40,6 +40,12 @@ const PropDesignSchema = z.object({
   significance: z.string().min(1),
   keyScenes: z.array(z.string()).default([]),
   alignsWithStyle: z.string().default(""),
+  /**
+   * Image-generation prompt — visual-token optimized string fed to the image
+   * model. Optional at the LLM layer so a miss doesn't invalidate the whole
+   * design; we fall back to `appearance` at collect_drafts.
+   */
+  prompt: z.string().default(""),
 });
 
 export const PropPhaseInputSchema = z.object({
@@ -109,8 +115,9 @@ function buildElaboratePrompt(
     "",
     "## 必须遵守 Prop Designer 的 JSON schema，字段含义看你 system prompt。",
     "- name 沿用骨架里给的名称，不要改",
-    "- appearance 40-80 字、强调可识别细节",
+    "- appearance 40-80 字、强调可识别细节（给人看）",
     "- significance 紧扣道具在故事中的剧情功能",
+    "- prompt 是**图像生成提示词** —— 40-80 字视觉 token 串，按「道具主体+材质+年代感+使用痕迹+特写/静物视角」顺序、顿号分隔。只写画面能看见的细节。**不要**加画风/品质 token（写实、微距、电影感 等）—— 下游按项目 stylePainting 自动拼接。不要写剧情/情感用途。",
   ]
     .filter(Boolean)
     .join("\n");
@@ -201,10 +208,12 @@ const collectDraftsStep = createStep({
       ]
         .filter(Boolean)
         .join("\n");
+      const imagePrompt = p.prompt && p.prompt.trim().length > 0 ? p.prompt.trim() : p.appearance;
       const data: PropCreateData = {
         worldId: inputData.worldId,
         name: p.name,
         description,
+        prompt: imagePrompt,
       };
       await putDraft(runId, "prop", clientRefId, data);
       draftClientRefIds.push(clientRefId);

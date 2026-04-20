@@ -39,6 +39,13 @@ const SceneDesignSchema = z.object({
   cameraHints: z.array(z.string()).default([]),
   continuityNotes: z.string().nullable().optional(),
   alignsWithStyle: z.string().default(""),
+  /**
+   * Image-generation prompt — visual-token optimized string fed to the image
+   * model. Optional at the LLM layer so a miss doesn't invalidate the whole
+   * design; we synthesize from setting+lighting+atmosphere as fallback at
+   * `collect_drafts`.
+   */
+  prompt: z.string().default(""),
 });
 
 export const ScenePhaseInputSchema = z.object({
@@ -108,6 +115,7 @@ function buildElaboratePrompt(
     "- name 沿用骨架里给的名称，不要改",
     "- keyElements 3-7 个具体视觉锚点",
     "- lighting / atmosphere 各 30-60 字",
+    "- prompt 是**图像生成提示词** —— 40-80 字视觉 token 串，按「场景类型+时间光线+空间布局+关键视觉元素+氛围」顺序、顿号分隔。只写画面元素。**不要**加画风/品质 token（写实、电影感、4k 等）—— 下游会按项目 stylePainting 拼接。",
   ]
     .filter(Boolean)
     .join("\n");
@@ -203,12 +211,18 @@ const collectDraftsStep = createStep({
       ]
         .filter(Boolean)
         .join("\n");
-      const prompt = [s.setting, s.lighting, s.atmosphere].filter(Boolean).join("，");
+      // Prefer the dedicated LLM-produced image prompt; fall back to
+      // composing setting+lighting+atmosphere if the model skipped it
+      // (older-ai-version compat — normally errorStrategy: warn bumps it up).
+      const imagePrompt =
+        s.prompt && s.prompt.trim().length > 0
+          ? s.prompt.trim()
+          : [s.setting, s.lighting, s.atmosphere].filter(Boolean).join("，");
       const data: SceneCreateData = {
         worldId: inputData.worldId,
         name: s.name,
         description,
-        prompt,
+        prompt: imagePrompt,
       };
       await putDraft(runId, "scene", clientRefId, data);
       draftClientRefIds.push(clientRefId);

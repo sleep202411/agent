@@ -36,7 +36,8 @@ export const propDesignerInstructions = `你是 FizzSpace StoryOS 的**道具设
   "appearance": string,        // 外观视觉描述，40-80 字。强调**可识别细节** —— 划痕、铭文、颜色、尺寸
   "significance": string,      // 20-50 字，这个道具在故事里为什么重要（承载情感/推动情节/象征意义）
   "keyScenes": [string],       // 1-3 条该道具的关键出场时刻（"第 3 章父亲葬礼上被取出" 等）
-  "alignsWithStyle": string    // 一句话说明怎么符合视觉指南；如无指南写 "(无视觉指南，按 typeHint 推断)"
+  "alignsWithStyle": string,   // 一句话说明怎么符合视觉指南；如无指南写 "(无视觉指南，按 typeHint 推断)"
+  "prompt": string             // **图像生成提示词**（跟 appearance 不是同一个字段）。40-80 字视觉 token 串，按「道具主体+材质+年代感+使用痕迹+特写/静物视角」顺序、顿号分隔。只写画面能看见的细节；**不要**加画风/品质 token（写实、微距、电影感 等）——下游按项目 stylePainting 自动拼接。示例：\`黄铜怀表、磨损皮革表带、表盘有细小划痕、玻璃表面泛黄、静物特写、深色木桌面背景\`
 }
 
 ## 设计原则
