@@ -3,12 +3,20 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import {
   IconAlertCircle,
+  IconBook,
+  IconBuildingStore,
+  IconCamera,
   IconCopy,
+  IconLayoutList,
   IconLoader2,
   IconMovie,
+  IconPackage,
+  IconPencil,
   IconPhoto,
+  IconSparkles,
   IconUsers,
 } from "@tabler/icons-react";
+import type { Icon } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -46,6 +54,14 @@ interface InvokeWorkflowOutput {
   runId?: string;
   workflowName?: WorkflowName;
   message?: string;
+  /**
+   * Set by the agent's preflight guard when project params aren't complete
+   * (see apps/agent/src/mastra/tools/meta/invoke-workflow.ts). In this case
+   * supervisor will follow up with `require_project_params`, so the card
+   * has nothing to render — we hide it rather than showing the LLM-facing
+   * technical text.
+   */
+  error?: string;
 }
 
 interface ToolWorkflowCardProps {
@@ -62,6 +78,10 @@ const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
   story_outline: "workflowStoryOutline",
   role_phase: "workflowRolePhase",
   role_image_phase: "workflowRoleImagePhase",
+  scene_phase: "workflowScenePhase",
+  scene_image_phase: "workflowSceneImagePhase",
+  prop_phase: "workflowPropPhase",
+  prop_image_phase: "workflowPropImagePhase",
   episode_phase: "workflowEpisodePhase",
   script_phase: "workflowScriptPhase",
   storyboard_phase: "workflowStoryboardPhase",
@@ -69,58 +89,25 @@ const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
 
 interface WorkflowPersona {
   name: string;
-  emoji: string;
-  /** Gradient background for the pill — tints the persona's visual voice. */
-  gradientFrom: string;
-  gradientTo: string;
+  /** Tabler icon component — shown next to the persona name. */
+  icon: Icon;
 }
 
 const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
-  main_flow: { name: "创作总监", emoji: "🎬", gradientFrom: "#e52227", gradientTo: "#ff3d42" },
-  story_outline: {
-    name: "剧本统筹",
-    emoji: "📖",
-    gradientFrom: "#d12062",
-    gradientTo: "#ff3d42",
-  },
-  role_design: {
-    name: "角色设计师",
-    emoji: "🧑‍🎨",
-    gradientFrom: "#8b5cf6",
-    gradientTo: "#e52227",
-  },
-  role_phase: {
-    name: "角色设计师",
-    emoji: "🧑‍🎨",
-    gradientFrom: "#8b5cf6",
-    gradientTo: "#e52227",
-  },
-  role_image_phase: {
-    name: "角色设计师",
-    emoji: "🖼️",
-    gradientFrom: "#8b5cf6",
-    gradientTo: "#e52227",
-  },
-  episode_phase: {
-    name: "剧集规划师",
-    emoji: "🎞️",
-    gradientFrom: "#0ea5e9",
-    gradientTo: "#6366f1",
-  },
-  script_phase: { name: "编剧", emoji: "✍️", gradientFrom: "#f59e0b", gradientTo: "#e52227" },
-  storyboard_phase: {
-    name: "分镜师",
-    emoji: "🎥",
-    gradientFrom: "#10b981",
-    gradientTo: "#0ea5e9",
-  },
-  batch_create_asset: {
-    name: "资产录入",
-    emoji: "📦",
-    gradientFrom: "#64748b",
-    gradientTo: "#475569",
-  },
-  script_edit: { name: "编剧", emoji: "✍️", gradientFrom: "#f59e0b", gradientTo: "#e52227" },
+  main_flow: { name: "创作总监", icon: IconSparkles },
+  story_outline: { name: "剧本统筹", icon: IconBook },
+  role_design: { name: "角色设计师", icon: IconUsers },
+  role_phase: { name: "角色设计师", icon: IconUsers },
+  role_image_phase: { name: "角色设计师", icon: IconPhoto },
+  scene_phase: { name: "场景设计师", icon: IconBuildingStore },
+  scene_image_phase: { name: "场景设计师", icon: IconPhoto },
+  prop_phase: { name: "道具设计师", icon: IconPackage },
+  prop_image_phase: { name: "道具设计师", icon: IconPhoto },
+  episode_phase: { name: "剧集规划师", icon: IconLayoutList },
+  script_phase: { name: "编剧", icon: IconPencil },
+  storyboard_phase: { name: "分镜师", icon: IconCamera },
+  batch_create_asset: { name: "资产录入", icon: IconPackage },
+  script_edit: { name: "编剧", icon: IconPencil },
 };
 
 function groupDraftsByType(drafts: Draft[]): Record<string, Draft[]> {
@@ -402,7 +389,12 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
   }, [runId, projectId, workflowName, t, dispatch]);
 
   if (!runId) {
-    // Missing runId — show the tool-reported message verbatim as a fallback.
+    // Preflight reject (e.g. PROJECT_PARAMS_INCOMPLETE) has no runId — hide
+    // the card entirely; supervisor's follow-up require_project_params call
+    // will render the form.
+    if (output.error) return null;
+    // Missing runId with no declared error — show the tool-reported message
+    // verbatim as a fallback.
     return (
       <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-[12px] text-muted-foreground">
         {output.message ?? t("workflowMissingRunId")}
@@ -438,6 +430,8 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
     setActionBusy("accept");
     setActionError(null);
     try {
+      // Step 1: commit drafts via resume_workflow — always needed so the
+      // suspended run finishes and writes to Java.
       await dispatch(
         confirmWorkflowFromButton({
           projectId,
@@ -446,6 +440,28 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
           approved: true,
         })
       );
+      // Step 2: if the canonical NEXT_STEPS says there's a follow-up phase,
+      // chain straight into it so the user doesn't have to scroll back up
+      // and click a "继续·xxx" button. The old workflow card stays frozen
+      // as a historical record; the new phase shows up as a fresh
+      // assistant message below — linear, no in-place mutation.
+      if (workflowName) {
+        const nextSteps = NEXT_STEPS[workflowName];
+        const nextStep = nextSteps && nextSteps.length > 0 ? nextSteps[0] : null;
+        if (nextStep) {
+          await dispatch(
+            startWorkflowFromButton({
+              projectId,
+              userLabel: t(nextStep.labelKey),
+              workflowName: nextStep.nextWorkflow,
+              inputData: buildInputData(nextStep.nextWorkflow, {
+                projectId,
+                worldId,
+              }),
+            })
+          );
+        }
+      }
       void pollStatusUntilAdvanced();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
@@ -656,17 +672,11 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
 // ─── Sub-components ────────────────────────────────────
 
 function PersonaPill({ persona }: { persona: WorkflowPersona }) {
+  const Icon = persona.icon;
   return (
-    <div
-      className="inline-flex items-center gap-1.5 rounded-full pl-1 pr-3 py-1 text-white shadow-sm"
-      style={{
-        background: `linear-gradient(90deg, ${persona.gradientFrom} 0%, ${persona.gradientTo} 100%)`,
-      }}
-    >
-      <span className="flex size-6 items-center justify-center rounded-full bg-white/20 text-[14px]">
-        {persona.emoji}
-      </span>
-      <span className="text-[12px] font-semibold">{persona.name}</span>
+    <div className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground/80">
+      <Icon className="size-3.5 text-muted-foreground" />
+      <span>{persona.name}</span>
     </div>
   );
 }
@@ -799,6 +809,26 @@ function ResultHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Best-effort extract of a short preview string from an arbitrary draft.
+ * Role/scene/prop drafts have name + description; episode has title +
+ * introduction; script/storyboard varies. We normalize to {title, detail}
+ * so the UI can render every entity type with the same card.
+ */
+function draftPreview(draft: Draft): { title: string; detail?: string } {
+  const d = (draft.data ?? {}) as Record<string, unknown>;
+  const pick = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = d[k];
+      if (typeof v === "string" && v.trim().length > 0) return v.trim();
+    }
+    return undefined;
+  };
+  const title = pick("name", "title", "roleName", "sceneName", "propName") ?? "—";
+  const detail = pick("description", "introduction", "intro", "summary", "prompt");
+  return { title, detail };
+}
+
 function DraftSummary({
   drafts,
   t,
@@ -814,14 +844,31 @@ function DraftSummary({
     );
   }
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
+    <div className="mt-3 flex flex-col gap-3">
       {entries.map(([type, items]) => (
-        <span
-          key={type}
-          className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-foreground/80"
-        >
-          {t(`workflowEntity.${type}`)} × {items.length}
-        </span>
+        <div key={type} className="flex flex-col gap-1.5">
+          <div className="text-[12px] font-medium text-foreground/70">
+            {t(`workflowEntity.${type}`)} · {items.length}
+          </div>
+          <div className="flex flex-col gap-1">
+            {items.map((d) => {
+              const { title, detail } = draftPreview(d);
+              return (
+                <div
+                  key={d.clientRefId}
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2"
+                >
+                  <div className="text-[13px] font-medium text-foreground/90">{title}</div>
+                  {detail ? (
+                    <div className="mt-1 line-clamp-3 whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">
+                      {detail}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ))}
     </div>
   );
@@ -905,9 +952,45 @@ const NEXT_STEPS: Partial<Record<WorkflowName, NextStep[]>> = {
   ],
   role_image_phase: [
     {
+      key: "continueToScenes",
+      labelKey: "workflowNextContinueToScenes",
+      prompt: "基于故事骨架继续设计场景。",
+      icon: IconBuildingStore,
+      nextWorkflow: "scene_phase",
+    },
+  ],
+  scene_phase: [
+    {
+      key: "continueToSceneImages",
+      labelKey: "workflowNextContinueToSceneImages",
+      prompt: "为这些场景生成参考图。",
+      icon: IconPhoto,
+      nextWorkflow: "scene_image_phase",
+    },
+  ],
+  scene_image_phase: [
+    {
+      key: "continueToProps",
+      labelKey: "workflowNextContinueToProps",
+      prompt: "基于故事骨架继续设计道具。",
+      icon: IconPackage,
+      nextWorkflow: "prop_phase",
+    },
+  ],
+  prop_phase: [
+    {
+      key: "continueToPropImages",
+      labelKey: "workflowNextContinueToPropImages",
+      prompt: "为这些道具生成参考图。",
+      icon: IconPhoto,
+      nextWorkflow: "prop_image_phase",
+    },
+  ],
+  prop_image_phase: [
+    {
       key: "continueToEpisodes",
       labelKey: "workflowNextContinueToEpisodes",
-      prompt: "基于这些角色，继续做分集大纲。",
+      prompt: "基于这些设定，继续做分集大纲。",
       icon: IconMovie,
       nextWorkflow: "episode_phase",
     },
@@ -945,12 +1028,16 @@ function buildInputData(
 ): Record<string, unknown> {
   switch (workflowName) {
     case "role_phase":
+    case "scene_phase":
+    case "prop_phase":
       return {
         ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
         ...(feedback ? { feedback } : {}),
       };
     case "role_image_phase":
-      // No required inputs — workflow reads committed roles from Java.
+    case "scene_image_phase":
+    case "prop_image_phase":
+      // No required inputs — workflow reads committed entries from Java.
       return feedback ? { feedback } : {};
     case "episode_phase":
       return {

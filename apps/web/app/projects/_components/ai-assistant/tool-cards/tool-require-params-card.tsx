@@ -1,35 +1,65 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useAppSelector } from "@/src/store";
+import { useTranslations } from "@/src/i18n/i18n";
+import { useAppDispatch, useAppSelector } from "@/src/store";
 import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
+import { confirmProjectParamsFromForm } from "@/src/store/slices/assistantSlice";
 import { ProjectParamsForm, isProjectParamsComplete } from "./project-params-form";
 
 interface ToolRequireParamsCardProps {
-  onConfirmed: () => void;
+  toolCallId: string;
+  /**
+   * Fires only in the auto-confirmed case (params were already complete and
+   * the form didn't need to render). Parent applies a plain tool result so
+   * the supervisor sees `{confirmed: true, autoConfirmed: true}` and keeps
+   * going. User submissions go through the `confirmProjectParamsFromForm`
+   * thunk directly — no tool-result round-trip needed, because Nest is
+   * responsible for the Java save and marker injection.
+   */
+  onAutoConfirmed: () => void;
 }
 
 /**
- * Wraps `ProjectParamsForm` as a tool-card. Auto-confirms when the project
- * already has all 4 params set (user-silent pass-through), so supervisor's
- * mandatory preflight call doesn't show a redundant form.
+ * Wraps `ProjectParamsForm` as a tool-card. Two paths:
+ *   — auto-confirm (params already set): call onAutoConfirmed and render
+ *     nothing, so supervisor continues without a redundant form flash.
+ *   — user submits the form: dispatch confirmProjectParamsFromForm which
+ *     flips the tool part to output-available, appends a visible "信息已確認"
+ *     user bubble, and POSTs confirmProjectParams to Nest.
  */
-export function ToolRequireParamsCard({ onConfirmed }: ToolRequireParamsCardProps) {
+export function ToolRequireParamsCard({ toolCallId, onAutoConfirmed }: ToolRequireParamsCardProps) {
+  const t = useTranslations("ai");
+  const dispatch = useAppDispatch();
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
   const complete = isProjectParamsComplete(detail);
   const autoConfirmedRef = useRef(false);
 
   useEffect(() => {
     if (complete && !autoConfirmedRef.current) {
       autoConfirmedRef.current = true;
-      onConfirmed();
+      onAutoConfirmed();
     }
-  }, [complete, onConfirmed]);
+  }, [complete, onAutoConfirmed]);
 
   if (complete) {
-    // Rendering nothing during auto-confirm avoids a flash of the form.
     return null;
   }
 
-  return <ProjectParamsForm onSubmitted={onConfirmed} />;
+  return (
+    <ProjectParamsForm
+      onSubmitted={(params) => {
+        if (!projectId) return;
+        void dispatch(
+          confirmProjectParamsFromForm({
+            projectId,
+            toolCallId,
+            params,
+            userLabel: t("paramsConfirmBubble"),
+          })
+        );
+      }}
+    />
+  );
 }

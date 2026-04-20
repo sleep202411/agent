@@ -185,6 +185,7 @@ const generateStep = createStep({
     const total = inputData.episodes.length;
     const generated: z.infer<typeof StateSchema>["generated"] = [];
     let totalChars = 0;
+    let completed = 0;
     const castBlock = buildCastBlock(inputData.characters);
 
     await reportProgress(runId, {
@@ -194,7 +195,15 @@ const generateStep = createStep({
       label: `编剧开始逐集写剧本（共 ${total} 集）`,
     });
 
-    for (let i = 0; i < total; i++) {
+    // Parallel generation — the scriptwriter call is I/O-bound on DeepSeek.
+    // Sequential used to take ~15s × N episodes; at concurrency 4 the batch
+    // wraps up roughly 4× faster and still stays well inside DeepSeek's
+    // per-project RPM budget. Keep the ceiling low so one bad project can't
+    // starve sibling workers in the BullMQ pool.
+    const CONCURRENCY = Math.min(GEN_CONCURRENCY, total);
+    let cursor = 0;
+
+    const runOne = async (i: number) => {
       await throwIfCancelled(runId);
       const ep = inputData.episodes[i];
 
@@ -218,7 +227,7 @@ const generateStep = createStep({
       const content = (obj?.content ?? response.text ?? "").trim();
 
       if (!content) {
-        // Skip — mark as generated with empty content; commit step will fail it loudly.
+        // Mark as generated with empty content; commit step fails it loudly.
         generated.push({
           clientRefId: randomUUID(),
           episodeId: ep.episodeId,
@@ -236,18 +245,36 @@ const generateStep = createStep({
         totalChars += content.length;
       }
 
+      completed += 1;
       await reportProgress(runId, {
         stepId: "script_phase.generate",
-        current: i + 1,
+        current: completed,
         total,
-        label: `已生成 ${i + 1}/${total} 集（${totalChars} 字）`,
+        label: `已生成 ${completed}/${total} 集（${totalChars} 字）`,
       });
-    }
+    };
+
+    const worker = async () => {
+      while (true) {
+        const i = cursor++;
+        if (i >= total) return;
+        await runOne(i);
+      }
+    };
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
     setState({ generated });
     return { generatedCount: generated.length, totalChars };
   },
 });
+
+/**
+ * Max parallel LLM calls during script generation. Kept modest (4) so we
+ * stay under DeepSeek's per-key RPM and don't starve sibling workers that
+ * share the same BullMQ pool.
+ */
+const GEN_CONCURRENCY = 4;
 
 function buildCastBlock(
   characters: { name: string; role: string; personality?: string }[]

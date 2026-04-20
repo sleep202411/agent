@@ -8,6 +8,7 @@ import {
   saveConversation,
   fetchConversationHistory,
   clearConversation as clearConversationApi,
+  type ConfirmProjectParamsPayload,
 } from "@/src/lib/assistant/assistant-client";
 import { startWorkflow, type WorkflowName } from "@/src/lib/workflow/workflow-client";
 import type {
@@ -408,6 +409,29 @@ async function applyWorkspaceMutationEffects(
   }
 }
 
+/**
+ * Run post-turn effects once the agent returns to idle. Looks up the most
+ * recent assistant message in state, flips `sending/streaming=false`, and
+ * runs any workspace mutation side-effects (touchProjectList, etc.) based
+ * on that message's tool outputs.
+ *
+ * Wired from the project-scoped WS session's onAgentState handler —
+ * replaces the post-await block that lived inside each submit thunk in
+ * the old SSE pipeline.
+ */
+export const finalizeTurnOnIdle = createAsyncThunk<
+  void,
+  string,
+  { state: RootState; dispatch: AppDispatch }
+>("assistant/finalizeTurnOnIdle", async (projectId, { dispatch, getState }) => {
+  const conversation = getState().assistant.projects[projectId];
+  if (!conversation) return;
+  const lastAssistant =
+    [...conversation.messages].reverse().find((m) => m.role === "assistant") ?? null;
+  dispatch(finalizeAssistantMessage({ projectId, message: null }));
+  await applyWorkspaceMutationEffects(dispatch, projectId, lastAssistant);
+});
+
 function buildWorkspaceContext(state: RootState, projectId: string): AssistantWorkspaceSelection {
   const inst = state.project.instances[projectId] ?? selectCurrentInstance(state);
   const videoPromptStyle = state.assistant.projects[projectId]?.videoPromptStyle ?? "default";
@@ -534,7 +558,7 @@ export const loadHistory = createAsyncThunk<
           messageLimit: data.messageLimit,
           tier: data.tier,
           conversationId: data.conversationId,
-          retentionDays: data.retentionDays,
+          retentionDays: data.retentionDays ?? 7,
         })
       );
     } catch (error) {
@@ -617,25 +641,15 @@ export const sendUserMessage = createAsyncThunk<
       const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
       const workspaceContext = buildWorkspaceContext(getState(), projectId);
 
-      const finalMessage = await submitMessageToAgent({
+      await submitMessageToAgent({
         projectId,
         messages: nextMessages,
         workspaceContext,
         signal: abortController.signal,
-        onMessage: (message) => {
-          dispatch(appendStreamChunk({ projectId, message }));
-        },
       });
-
-      // If aborted (tool result took over), skip finalization
-      if (abortController.signal.aborted) return;
-
-      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-
-      // Save to Redis (fire-and-forget)
-      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
-      void saveConversation(projectId, finalMessages);
+      // Live updates land via the project-scoped WS session (see
+      // chat-session.ts + panel mount). Post-turn effects fire in
+      // finalizeTurnOnIdle when agent_state flips to "idle".
     } catch (error) {
       if (abortController.signal.aborted) return;
       const errMsg = error instanceof Error ? error.message : "AI 请求失败";
@@ -694,24 +708,13 @@ export const startWorkflowFromButton = createAsyncThunk<
       const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
       const workspaceContext = buildWorkspaceContext(getState(), projectId);
 
-      const finalMessage = await submitMessageToAgent({
+      await submitMessageToAgent({
         projectId,
         messages: nextMessages,
         workspaceContext,
         signal: abortController.signal,
         forceEnterWorkflow: { workflowName, inputData: inputData ?? {} },
-        onMessage: (message) => {
-          dispatch(appendStreamChunk({ projectId, message }));
-        },
       });
-
-      if (abortController.signal.aborted) return;
-
-      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-
-      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
-      void saveConversation(projectId, finalMessages);
     } catch (err) {
       if (abortController.signal.aborted) return;
       const errMsg = err instanceof Error ? err.message : "派发 workflow 失败";
@@ -758,27 +761,95 @@ export const confirmWorkflowFromButton = createAsyncThunk<
       const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
       const workspaceContext = buildWorkspaceContext(getState(), projectId);
 
-      const finalMessage = await submitMessageToAgent({
+      await submitMessageToAgent({
         projectId,
         messages: nextMessages,
         workspaceContext,
         signal: abortController.signal,
         confirmWorkflow: { runId, approved, feedback },
-        onMessage: (message) => {
-          dispatch(appendStreamChunk({ projectId, message }));
-        },
       });
-
-      if (abortController.signal.aborted) return;
-
-      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-
-      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
-      void saveConversation(projectId, finalMessages);
     } catch (err) {
       if (abortController.signal.aborted) return;
       const errMsg = err instanceof Error ? err.message : "确认 workflow 失败";
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
+    }
+  }
+);
+
+// ─── Project params "儲存並繼續" (supervisor-owned save) ──
+//
+// User submits the ProjectParamsForm. Nest owns the Java write (server is the
+// source of truth), we only:
+//   1. transition the require_project_params tool part to output-available so
+//      the inline form goes readOnly;
+//   2. append a visible "信息已確認" user bubble;
+//   3. optimistically setDetail so the readOnly form renders with the picked
+//      values (Nest will persist them; if it fails we show a toast);
+//   4. hit submit-message-to-agent with confirmProjectParams payload so Nest
+//      does the Java save + injects <PROJECT_PARAMS_CONFIRMED /> for the LLM.
+
+export const confirmProjectParamsFromForm = createAsyncThunk<
+  void,
+  {
+    projectId: string;
+    toolCallId: string;
+    params: ConfirmProjectParamsPayload;
+    userLabel: string;
+  },
+  { state: RootState; dispatch: AppDispatch }
+>(
+  "assistant/confirmProjectParamsFromForm",
+  async ({ projectId, toolCallId, params, userLabel }, { dispatch, getState }) => {
+    abortProjectStream(projectId);
+    dispatch(ensureProject(projectId));
+
+    const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
+
+    const messagesWithToolResult = current.messages.map((message) =>
+      message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === toolCallId)
+        ? cloneMessageWithToolResult(message, {
+            toolCallId,
+            toolName: "require_project_params",
+            output: { confirmed: true, autoConfirmed: false },
+          })
+        : message
+    );
+
+    const userMessage: AssistantMessage = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      role: "user",
+      parts: [{ type: "text", text: userLabel, state: "done" }],
+    };
+    const nextMessages = [...messagesWithToolResult, userMessage];
+
+    dispatch(commitToolResult({ projectId, messages: nextMessages, toolCallId }));
+
+    const projectDetail = selectCurrentInstance(getState()).detail;
+    dispatch(
+      setProjectDetail({
+        ...(projectDetail ?? {}),
+        aspectRatioType: params.aspectRatioType,
+        chapterLength: params.chapterLength,
+        stylePainting: params.stylePainting,
+        dialogLanguage: params.dialogLanguage,
+      })
+    );
+
+    const abortController = createProjectAbortController(projectId);
+
+    try {
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+      await submitMessageToAgent({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        signal: abortController.signal,
+        confirmProjectParams: params,
+      });
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      const errMsg = err instanceof Error ? err.message : "保存项目参数失败";
       dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
     }
@@ -823,24 +894,12 @@ export const applyToolResult = createAsyncThunk<
   try {
     const workspaceContext = buildWorkspaceContext(getState(), projectId);
 
-    const finalMessage = await submitMessageToAgent({
+    await submitMessageToAgent({
       projectId,
       messages: nextMessages,
       workspaceContext,
       signal: abortController.signal,
-      onMessage: (message) => {
-        dispatch(appendStreamChunk({ projectId, message }));
-      },
     });
-
-    if (abortController.signal.aborted) return;
-
-    dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-    await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-
-    // Save to Redis (fire-and-forget)
-    const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
-    void saveConversation(projectId, finalMessages);
   } catch (error) {
     if (abortController.signal.aborted) return;
     const errMsg = error instanceof Error ? error.message : "AI 请求失败";

@@ -6,7 +6,6 @@ import { projectSlice } from "./slices/projectSlice";
 import { userSlice } from "./slices/userSlice";
 import { aiModelCacheSlice } from "./slices/aiModelCacheSlice";
 import { assistantSlice } from "./slices/assistantSlice";
-import { agentSlice } from "./slices/agentSlice";
 
 export const store = configureStore({
   reducer: {
@@ -16,7 +15,6 @@ export const store = configureStore({
     user: userSlice.reducer,
     aiModelCache: aiModelCacheSlice.reducer,
     assistant: assistantSlice.reducer,
-    agent: agentSlice.reducer,
   },
   devTools: process.env.NODE_ENV !== "production",
   middleware: (getDefaultMiddleware) =>

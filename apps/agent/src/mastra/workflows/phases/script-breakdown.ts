@@ -70,23 +70,69 @@ const ThreadsSchema = z.object({
 /**
  * Cast roster — NAME + role + one-line arc only. No appearance / personality.
  * The character designer persona elaborates from this in role_phase.
+ *
+ * DeepSeek occasionally drops `role` or `arc` on secondary cast entries when
+ * it races through the tail of a long list. We preprocess to fill in
+ * "原文未明示" (matches the persona's own fallback instruction) so one missing
+ * sub-field doesn't nuke the whole run.
  */
-const CastRosterEntrySchema = z.object({
-  name: z.string().min(1).max(20),
-  role: stringLike,
-  arc: stringLike,
-  firstAppearance: z.string().optional(),
-});
+const CastRosterEntrySchema = z.preprocess(
+  (val) => {
+    if (!val || typeof val !== "object") return val;
+    const obj = val as Record<string, unknown>;
+    return {
+      ...obj,
+      role: obj.role ?? "原文未明示",
+      arc: obj.arc ?? "原文未明示",
+    };
+  },
+  z.object({
+    name: z.string().min(1).max(20),
+    role: stringLike,
+    arc: stringLike,
+    firstAppearance: z.string().optional(),
+  })
+);
 
 /**
  * Settings roster — NAME + type hint only. No atmosphere / lighting /
  * specific dressing. The scene designer persona elaborates from this.
  */
-const SettingsRosterEntrySchema = z.object({
-  name: z.string().min(1).max(30),
-  typeHint: stringLike,
-  firstAppearance: z.string().optional(),
-});
+const SettingsRosterEntrySchema = z.preprocess(
+  (val) => {
+    if (!val || typeof val !== "object") return val;
+    const obj = val as Record<string, unknown>;
+    return {
+      ...obj,
+      typeHint: obj.typeHint ?? "未明示",
+    };
+  },
+  z.object({
+    name: z.string().min(1).max(30),
+    typeHint: stringLike,
+    firstAppearance: z.string().optional(),
+  })
+);
+
+/**
+ * Props roster — NAME + type hint only. No detailed design / materials.
+ * The prop designer persona elaborates from this.
+ */
+const PropsRosterEntrySchema = z.preprocess(
+  (val) => {
+    if (!val || typeof val !== "object") return val;
+    const obj = val as Record<string, unknown>;
+    return {
+      ...obj,
+      typeHint: obj.typeHint ?? "未明示",
+    };
+  },
+  z.object({
+    name: z.string().min(1).max(30),
+    typeHint: stringLike,
+    firstAppearance: z.string().optional(),
+  })
+);
 
 const BreakdownShape = z.object({
   storySummary: z.preprocess((val) => {
@@ -99,6 +145,7 @@ const BreakdownShape = z.object({
   threads: ThreadsSchema,
   cast: z.array(CastRosterEntrySchema).min(1),
   settings: z.array(SettingsRosterEntrySchema).default([]),
+  props: z.array(PropsRosterEntrySchema).default([]),
 });
 
 export const ScriptBreakdownInputSchema = z.object({
@@ -206,7 +253,8 @@ function buildStoryEditorPrompt(input: z.infer<typeof ScriptBreakdownInputSchema
     "1. structure 必须覆盖全文，章节划分合理（短篇 3-5 章，中篇 5-15 章，长篇按原文分章）。",
     "2. cast 里**只列角色名册**（name + role + 一句话 arc），不要写外貌/性格/台词——这是角色设计师下一步的活。",
     "3. settings 同理，只列场地名册 + typeHint，不要写氛围/光线/陈设。",
-    "4. threads.main 要提炼贯穿全文的核心线索，subs 列出交织的支线。",
+    "4. props 列剧情里**明确出现且值得设计**的关键道具名册 + typeHint（如'父亲的旧手表'、'亡妻的照片'、'证物袋'）。不要列泛用日常物（桌椅杯盘）。可以为空数组。",
+    "5. threads.main 要提炼贯穿全文的核心线索，subs 列出交织的支线。",
   ].join("\n");
 }
 

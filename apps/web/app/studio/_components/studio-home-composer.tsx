@@ -30,6 +30,7 @@ function isSupportedScript(file: File) {
 
 export function StudioHomeComposer() {
   const t = useTranslations("workspace");
+  const tp = useTranslations("project");
   const tc = useTranslations("common");
 
   const [prompt, setPrompt] = useState("");
@@ -105,7 +106,7 @@ export function StudioHomeComposer() {
     });
     setSubmitting(true);
     try {
-      const { worldId, projectId } = await quickCreateWorldProduct(t("unnamedWorld"));
+      const { worldId, projectId } = await quickCreateWorldProduct(tp("unnamedWorld"));
       console.info("[studio-composer] quick-create ok", { worldId, projectId });
       const msg: OpenProjectMessage = {
         type: "openProject",

@@ -3,8 +3,10 @@ import {
   cancelWorkflowTool,
   evaluateDrafts,
   explainCurrentState,
+  generateProjectCover,
   invokeWorkflow,
   listActiveWorkflows,
+  markProjectParamsUpdated,
   queryContext,
   requireProjectParams,
   resumeWorkflowTool,
@@ -51,6 +53,10 @@ export const storyosAgent = new Agent({
     // Preflight UI gate — checks the 4 core project params are set before
     // any generative workflow. Frontend renders the form.
     require_project_params: requireProjectParams,
+    // UI ack — renders "✓ 更新项目参数" after <PROJECT_PARAMS_CONFIRMED />.
+    mark_project_params_updated: markProjectParamsUpdated,
+    // Auto cover generation via Replicate (no user credits).
+    generate_project_cover: generateProjectCover,
     // State reads + quality review
     query_context: queryContext,
     show_drafts: showDrafts,

@@ -11,9 +11,20 @@ import {
   interpolate,
 } from "remotion";
 import { useTranslations } from "@/src/i18n/i18n";
-import type { Shot } from "@/src/store/slices/agentSlice";
-
 // ─── Types ──────────────────────────────────────────────
+
+export interface Shot {
+  id: string;
+  shotNumber: number | string;
+  description?: string;
+  dialogue?: string;
+  narration?: string;
+  duration: number;
+  imageUrl?: string;
+  videoUrl?: string;
+  dialogueAudioUrl?: string;
+  narrationAudioUrl?: string;
+}
 
 export interface CompositionProps {
   shots: Shot[];

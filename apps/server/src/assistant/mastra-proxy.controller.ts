@@ -1,17 +1,25 @@
 import {
   Body,
   Controller,
+  Get,
   HttpException,
   HttpStatus,
   Logger,
+  Param,
   Post,
   Req,
   Res,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { Readable } from 'stream';
+import { randomUUID } from 'crypto';
 import { CurrentUser, type AuthUser } from '../auth';
 import { preprocessMessages } from './message-preprocess';
+import { WorkspaceService } from './workspace.service';
+import {
+  MessageStoreService,
+  type StoredMessage,
+} from './chat/message-store.service';
+import { AgentStreamService } from './chat/agent-stream.service';
 
 type MastraChatBody = {
   projectId?: string;
@@ -35,11 +43,28 @@ type MastraChatBody = {
     approved?: unknown;
     feedback?: unknown;
   };
+  /**
+   * User clicked "儲存並繼續" on the ProjectParamsForm. Nest saves to Java and
+   * tags the user message with <PROJECT_PARAMS_CONFIRMED /> so supervisor
+   * narrates the confirmation without re-doing the save.
+   */
+  confirmProjectParams?: {
+    aspectRatioType?: unknown;
+    chapterLength?: unknown;
+    stylePainting?: unknown;
+    dialogLanguage?: unknown;
+  };
 };
 
 @Controller('assistant')
 export class MastraProxyController {
   private readonly logger = new Logger(MastraProxyController.name);
+
+  constructor(
+    private readonly workspace: WorkspaceService,
+    private readonly store: MessageStoreService,
+    private readonly agentStream: AgentStreamService,
+  ) {}
 
   private get mastraUrl() {
     return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
@@ -97,6 +122,24 @@ export class MastraProxyController {
           }
         : undefined;
 
+    // Extract confirmProjectParams (ProjectParamsForm 儲存並繼續 button).
+    const confirmProjectParams =
+      body.confirmProjectParams &&
+      typeof body.confirmProjectParams.aspectRatioType === 'string' &&
+      typeof body.confirmProjectParams.stylePainting === 'string' &&
+      typeof body.confirmProjectParams.chapterLength === 'number' &&
+      body.confirmProjectParams.chapterLength > 0
+        ? {
+            aspectRatioType: body.confirmProjectParams.aspectRatioType,
+            chapterLength: body.confirmProjectParams.chapterLength,
+            stylePainting: body.confirmProjectParams.stylePainting,
+            dialogLanguage:
+              typeof body.confirmProjectParams.dialogLanguage === 'string'
+                ? body.confirmProjectParams.dialogLanguage
+                : 'zh-CN',
+          }
+        : undefined;
+
     const context = {
       userId: user.userId,
       projectId: body.projectId,
@@ -126,12 +169,64 @@ export class MastraProxyController {
     // message-preprocess.ts for rationale — OSS/Java URLs aren't fetchable
     // by Mastra's downloadFromUrl, so we resolve them here first.
     const messages = body.messages as Parameters<typeof preprocessMessages>[0];
+    // Snapshot the ORIGINAL client messages before preprocess mutates them
+    // in place. The preprocessed version is LLM-facing (preview + textRef +
+    // instructions block); the user's chat bubble should keep showing the
+    // raw text + file card, so we persist from this snapshot instead.
+    const originalMessages: unknown[] = Array.isArray(messages)
+      ? messages.map((m) => structuredClone(m))
+      : [];
     try {
       await preprocessMessages(messages);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Message preprocess failed: ${msg}`);
       // Keep going — text parts still reach the agent.
+    }
+
+    // Persist project params BEFORE streaming the LLM response. We fetch the
+    // current detail so we can carry over name/description/type/imagePath
+    // (Java does a full replace, not a patch) and overlay the user-picked
+    // fields on top.
+    if (confirmProjectParams) {
+      try {
+        const headers: Record<string, string> = {
+          'accept-language':
+            (req.headers['accept-language'] as string | undefined) ?? 'zh-CN',
+        };
+        const cookie = req.headers.cookie as string | undefined;
+        if (cookie) headers.cookie = cookie;
+        const current = await this.workspace.getProjectDetail(
+          headers,
+          body.projectId,
+        );
+        const worldIdForSave = body.workspaceContext?.worldId
+          ? String(body.workspaceContext.worldId)
+          : current.worldId;
+        await this.workspace.updateProject(headers, {
+          id: body.projectId,
+          worldId: worldIdForSave,
+          name: current.name,
+          description: current.description,
+          type: current.type,
+          episode: current.episode,
+          imagePath: current.imagePath,
+          aspectRatioType: confirmProjectParams.aspectRatioType,
+          chapterLength: confirmProjectParams.chapterLength,
+          stylePainting: confirmProjectParams.stylePainting,
+          dialogLanguage: confirmProjectParams.dialogLanguage,
+        });
+        this.logger.log(
+          `confirmProjectParams saved for ${body.projectId}: ${confirmProjectParams.aspectRatioType}/${confirmProjectParams.chapterLength}/${confirmProjectParams.stylePainting}/${confirmProjectParams.dialogLanguage}`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`confirmProjectParams Java save failed: ${msg}`);
+        throw new HttpException(
+          { message: `保存项目参数失败: ${msg}` },
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
     }
 
     // Button-driven signals: inject XML-style markers into the last user
@@ -151,6 +246,11 @@ export class MastraProxyController {
         : '';
       markers.push(
         `<CONFIRM_WORKFLOW runId="${confirmWorkflow.runId}" approved=${confirmWorkflow.approved}${feedbackAttr} />`,
+      );
+    }
+    if (confirmProjectParams) {
+      markers.push(
+        `<PROJECT_PARAMS_CONFIRMED aspectRatioType="${confirmProjectParams.aspectRatioType}" chapterLength="${confirmProjectParams.chapterLength}" stylePainting="${confirmProjectParams.stylePainting}" dialogLanguage="${confirmProjectParams.dialogLanguage}" />`,
       );
     }
     if (markers.length > 0) {
@@ -221,44 +321,125 @@ export class MastraProxyController {
       );
     }
 
-    upstreamResponse.headers.forEach((value, key) => {
-      if (key.toLowerCase() === 'content-length') return;
-      res.setHeader(key, value);
-    });
-
     if (!upstreamResponse.body) {
-      res.end();
-      return;
+      throw new HttpException(
+        { message: 'Mastra returned no body' },
+        HttpStatus.BAD_GATEWAY,
+      );
     }
 
-    const nodeStream = Readable.fromWeb(
-      upstreamResponse.body as import('stream/web').ReadableStream,
+    // ── Fully WS-based pipeline (oii-aligned) ──
+    //   • POST returns a small JSON envelope immediately.
+    //   • The client relies on its project-scoped WS (opened on panel mount)
+    //     to receive `message_added` / `message_updated` / `agent_state`
+    //     events, then pulls content via POST /aurora/chat/get-messages.
+    //   • The Mastra SSE stream is consumed SERVER-SIDE only — parsed into
+    //     UIMessages and written to Redis by AgentStreamService. No tee,
+    //     no SSE pipe to the browser anymore.
+    const agentInstanceId = randomUUID();
+    const seedAssistantId = randomUUID();
+
+    // Persist the user's ORIGINAL (pre-preprocess) messages so the UI sees
+    // raw text + file card, not the LLM-facing preview/textRef block. Await
+    // so the subsequent message_added for the user bubble hits the WS
+    // before the assistant seed.
+    try {
+      await this.persistInboundMessages(body.projectId, originalMessages);
+    } catch (err) {
+      this.logger.warn(
+        `persistInboundMessages failed project=${body.projectId}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
+    // Fire-and-forget: consume Mastra SSE straight into Redis. Any error is
+    // surfaced via the agent_state="failed" event the consumer publishes.
+    const seedMessage: StoredMessage = {
+      id: seedAssistantId,
+      role: 'assistant',
+      parts: [],
+    };
+    void this.agentStream
+      .consume({
+        projectId: body.projectId,
+        seedMessage,
+        rawStream:
+          upstreamResponse.body as unknown as ReadableStream<Uint8Array>,
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `agentStream.consume failed project=${body.projectId}: ${err instanceof Error ? err.message : err}`,
+        );
+      });
+
+    res.status(HttpStatus.ACCEPTED).json({
+      agentInstanceId,
+      conversationId: body.projectId,
+      seedMessageId: seedAssistantId,
+    });
+  }
+
+  // ─── Stage C reader API — preview ─────────────────────────────────────
+  //
+  // Once the web client migrates to "POST submit + WS subscribe + GET content"
+  // (Stage C), these two endpoints become the only chat read path. For now
+  // they coexist with the legacy SSE pipe above.
+
+  @Get('conversation/:projectId/messages')
+  async listMessageIds(
+    @Param('projectId') projectId: string,
+    @CurrentUser() _user: AuthUser,
+  ) {
+    const messageIds = await this.store.getMessageIds(projectId);
+    const agentState = await this.store.getAgentState(projectId);
+    return { projectId, messageIds, agentState };
+  }
+
+  @Post('get-messages')
+  async getMessages(
+    @Body() body: { projectId?: string; messageIds?: unknown },
+    @CurrentUser() _user: AuthUser,
+  ) {
+    if (!body.projectId || !Array.isArray(body.messageIds)) {
+      throw new HttpException(
+        'projectId and messageIds[] are required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const ids = (body.messageIds as unknown[]).filter(
+      (v): v is string => typeof v === 'string' && v.length > 0,
     );
+    const messages = await this.store.getMessages(body.projectId, ids);
+    return { projectId: body.projectId, messages };
+  }
 
-    // Must attach an error listener BEFORE pipe() — otherwise any upstream
-    // failure (Mastra premature close, socket abort, etc.) crashes the whole
-    // NestJS process with "Unhandled 'error' event".
-    nodeStream.on('error', (err) => {
-      this.logger.warn(
-        `Upstream stream error: ${err instanceof Error ? err.message : err}`,
-      );
-      if (!res.headersSent) {
-        res.status(HttpStatus.BAD_GATEWAY).json({ message: 'stream error' });
-      } else {
-        // Client already saw partial chunks; just end the response.
-        res.end();
-      }
-    });
-    res.on('error', (err) => {
-      this.logger.warn(
-        `Client response error: ${err instanceof Error ? err.message : err}`,
-      );
-    });
-    res.on('close', () => {
-      // If the browser closed first, stop reading upstream so we don't hang.
-      if (!nodeStream.destroyed) nodeStream.destroy();
-    });
+  /**
+   * Walk the inbound messages array and persist anything we don't already
+   * have in the store. Keeps user bubbles + existing assistant history
+   * in Redis so a WS-only client can catch up without replaying SSE.
+   */
+  private async persistInboundMessages(
+    projectId: string,
+    messages: unknown,
+  ): Promise<void> {
+    if (!Array.isArray(messages)) return;
+    const existing = new Set(await this.store.getMessageIds(projectId));
+    for (const raw of messages as Array<Record<string, unknown>>) {
+      if (!raw || typeof raw !== 'object') continue;
+      const id = typeof raw.id === 'string' ? raw.id : null;
+      if (!id || existing.has(id)) continue;
+      // Skip empty-placeholder assistant messages the web client prepends.
+      if (raw.role === 'assistant' && this.isEmptyAssistant(raw)) continue;
+      await this.store.addMessage(projectId, raw as StoredMessage);
+      existing.add(id);
+    }
+  }
 
-    nodeStream.pipe(res);
+  private isEmptyAssistant(message: Record<string, unknown>): boolean {
+    const parts = message.parts;
+    if (!Array.isArray(parts) || parts.length === 0) return true;
+    return parts.every((p) => {
+      const part = p as Record<string, unknown>;
+      return part?.type === 'text' && (!part.text || part.text === '');
+    });
   }
 }

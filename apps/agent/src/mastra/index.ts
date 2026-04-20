@@ -12,6 +12,7 @@ import { storyboarderAgent } from "./agents/personas/storyboarder";
 import { evaluatorAgent } from "./agents/personas/evaluator";
 import { artDirectorAgent } from "./agents/personas/art-director";
 import { sceneDesignerAgent } from "./agents/personas/scene-designer";
+import { propDesignerAgent } from "./agents/personas/prop-designer";
 import { workflowRoutes } from "./routes/workflow";
 import { assetsRoutes } from "./routes/assets";
 import { roleDesignWorkflow } from "./workflows/role-design";
@@ -20,6 +21,10 @@ import { scriptEditWorkflow } from "./workflows/script-edit";
 import { scriptBreakdownWorkflow } from "./workflows/phases/script-breakdown";
 import { rolePhaseWorkflow } from "./workflows/phases/role-phase";
 import { roleImagePhaseWorkflow } from "./workflows/phases/role-image-phase";
+import { scenePhaseWorkflow } from "./workflows/phases/scene-phase";
+import { sceneImagePhaseWorkflow } from "./workflows/phases/scene-image-phase";
+import { propPhaseWorkflow } from "./workflows/phases/prop-phase";
+import { propImagePhaseWorkflow } from "./workflows/phases/prop-image-phase";
 import { episodePhaseWorkflow } from "./workflows/phases/episode-phase";
 import { scriptPhaseWorkflow } from "./workflows/phases/script-phase";
 import { storyboardPhaseWorkflow } from "./workflows/phases/storyboard-phase";
@@ -93,6 +98,7 @@ export const mastra = new Mastra({
     evaluator: evaluatorAgent,
     artDirector: artDirectorAgent,
     sceneDesigner: sceneDesignerAgent,
+    propDesigner: propDesignerAgent,
   },
   workflows: {
     // Single-phase workflows (still reachable individually via invoke_workflow)
@@ -103,6 +109,10 @@ export const mastra = new Mastra({
     story_outline: scriptBreakdownWorkflow,
     role_phase: rolePhaseWorkflow,
     role_image_phase: roleImagePhaseWorkflow,
+    scene_phase: scenePhaseWorkflow,
+    scene_image_phase: sceneImagePhaseWorkflow,
+    prop_phase: propPhaseWorkflow,
+    prop_image_phase: propImagePhaseWorkflow,
     episode_phase: episodePhaseWorkflow,
     script_phase: scriptPhaseWorkflow,
     storyboard_phase: storyboardPhaseWorkflow,

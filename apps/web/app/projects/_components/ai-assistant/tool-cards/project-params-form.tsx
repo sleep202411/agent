@@ -1,18 +1,14 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { IconArrowRight, IconCheck, IconLoader2 } from "@tabler/icons-react";
+import { IconArrowRight } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useAppDispatch, useAppSelector } from "@/src/store";
-import {
-  setDetail,
-  selectCurrentInstance,
-  type ProjectDetail,
-} from "@/src/store/slices/projectSlice";
-import { backendApi } from "@/src/lib/api";
+import { useAppSelector } from "@/src/store";
+import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
+import type { ConfirmProjectParamsPayload } from "@/src/lib/assistant/assistant-client";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import type { ProjectDictionaries } from "@/src/types/workspace";
@@ -42,8 +38,9 @@ function getAspectPreview(label: string): { w: number; h: number } {
   return { w: Math.round(w * scale), h: Math.round(h * scale) };
 }
 
-/** True once aspect/length/style are all set — dialogLanguage not required
- * because Java doesn't persist it yet; once it does, add a check here. */
+/** True once aspect/length/style are all set. Mirror of `isProjectParamsComplete`
+ * in `packages/shared/src/project-params.ts` — web app deliberately doesn't
+ * depend on @repo/shared, so keep both in sync when changing the rule. */
 export function isProjectParamsComplete(detail: ProjectDetail | null | undefined): boolean {
   if (!detail) return false;
   return Boolean(
@@ -55,16 +52,24 @@ export function isProjectParamsComplete(detail: ProjectDetail | null | undefined
 }
 
 interface ProjectParamsFormProps {
-  /** Called after the form is successfully submitted and Redux is refreshed. */
-  onSubmitted: () => void;
+  /**
+   * Called when the user clicks "儲存並繼續". Receives the collected params.
+   * The form itself no longer writes to Java — the parent (tool card) hands
+   * the payload off to the agent, and Nest owns the persistence step.
+   */
+  onSubmitted?: (params: ConfirmProjectParamsPayload) => void;
+  /**
+   * When true, all inputs and the submit button are disabled. Used to keep
+   * the form visible in chat history after submission without allowing edits
+   * (so the decision stays anchored to where it was made).
+   */
+  readOnly?: boolean;
 }
 
-export function ProjectParamsForm({ onSubmitted }: ProjectParamsFormProps) {
+export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectParamsFormProps) {
   const t = useTranslations("ai");
   const tp = useTranslations("project");
-  const dispatch = useAppDispatch();
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
-  const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
 
   const [dictionaries, setDictionaries] = useState<ProjectDictionaries | null>(null);
   const [loadingDict, setLoadingDict] = useState(true);
@@ -74,7 +79,6 @@ export function ProjectParamsForm({ onSubmitted }: ProjectParamsFormProps) {
   );
   const [stylePainting, setStylePainting] = useState(detail?.stylePainting ?? "");
   const [dialogLanguage, setDialogLanguage] = useState(detail?.dialogLanguage ?? "zh-CN");
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -97,57 +101,26 @@ export function ProjectParamsForm({ onSubmitted }: ProjectParamsFormProps) {
 
   const chapterLengthNum = Number(chapterLength);
   const canSubmit =
-    !saving &&
+    !readOnly &&
     !loadingDict &&
     Boolean(aspectRatioType) &&
     Boolean(stylePainting) &&
     Boolean(chapterLength) &&
     Number.isFinite(chapterLengthNum) &&
     chapterLengthNum > 0;
+  const controlsDisabled = loadingDict || readOnly;
 
-  const handleSubmit = async () => {
-    if (!detail?.id || !worldId) return;
+  const handleSubmit = () => {
     if (!canSubmit) {
       toast.error(t("paramsFormMissing"));
       return;
     }
-
-    setSaving(true);
-    const payload = {
-      id: detail.id,
-      worldId,
-      name: detail.name,
-      description: detail.description,
-      type: detail.type,
-      episode: detail.episode,
-      imagePath: detail.imagePath,
+    onSubmitted?.({
       aspectRatioType,
       chapterLength: chapterLengthNum,
       stylePainting,
-      // Java may ignore until schema lands; send eagerly so it persists the
-      // moment the column is added.
       dialogLanguage,
-    };
-
-    try {
-      await backendApi.post("/api/user/world/update/worldproduct", { data: payload });
-      dispatch(
-        setDetail({
-          ...(detail ?? {}),
-          aspectRatioType,
-          chapterLength: chapterLengthNum,
-          stylePainting,
-          dialogLanguage,
-        })
-      );
-      toast.success(tp("projectUpdateSuccess"));
-      onSubmitted();
-    } catch (err) {
-      console.error("[ProjectParamsForm] save failed", err);
-      toast.error(err instanceof Error ? err.message : tp("projectUpdateFailed"));
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   const selectedStyle = dictionaries?.styleOptions.find((s) => s.id === stylePainting);
@@ -166,7 +139,7 @@ export function ProjectParamsForm({ onSubmitted }: ProjectParamsFormProps) {
             <CardPick
               key={opt.value}
               selected={selected}
-              disabled={loadingDict || saving}
+              disabled={controlsDisabled}
               onClick={() => setAspectRatioType(opt.value)}
             >
               <div className="mb-1.5 flex h-7 items-center justify-center">
@@ -187,7 +160,7 @@ export function ProjectParamsForm({ onSubmitted }: ProjectParamsFormProps) {
         value={chapterLength}
         inputMode="numeric"
         maxLength={4}
-        disabled={loadingDict || saving}
+        disabled={controlsDisabled}
         onChange={(e) => setChapterLength(e.target.value.replace(/[^\d]/g, ""))}
         placeholder={tp("episodeDurationPlaceholder")}
         className="h-10 rounded-xl border-0 bg-white/5 text-[13px] focus-visible:ring-1 focus-visible:ring-primary"
@@ -204,10 +177,10 @@ export function ProjectParamsForm({ onSubmitted }: ProjectParamsFormProps) {
               key={opt.id}
               type="button"
               onClick={() => setStylePainting(opt.id)}
-              disabled={loadingDict || saving}
+              disabled={controlsDisabled}
               className={cn(
                 "relative flex w-20 shrink-0 flex-col items-center gap-1 rounded-xl bg-white/5 p-1.5 transition-opacity",
-                loadingDict || saving ? "cursor-not-allowed" : "",
+                controlsDisabled ? "cursor-not-allowed" : "",
                 selected ? "opacity-100" : "opacity-50 hover:opacity-80"
               )}
             >
@@ -242,7 +215,7 @@ export function ProjectParamsForm({ onSubmitted }: ProjectParamsFormProps) {
             <CardPick
               key={opt.value}
               selected={selected}
-              disabled={loadingDict || saving}
+              disabled={controlsDisabled}
               onClick={() => setDialogLanguage(opt.value)}
               compact
             >
@@ -262,9 +235,8 @@ export function ProjectParamsForm({ onSubmitted }: ProjectParamsFormProps) {
           "bg-primary hover:bg-primary-hover active:bg-primary-pressed disabled:opacity-50"
         )}
       >
-        {saving && <IconLoader2 className="size-4 animate-spin" />}
         <span>{t("paramsFormSubmit")}</span>
-        {!saving && <IconArrowRight className="size-4" />}
+        <IconArrowRight className="size-4" />
       </button>
     </div>
   );
@@ -311,73 +283,5 @@ function CardPick({
       )}
       {children}
     </button>
-  );
-}
-
-/**
- * Static read-only echo of the params the user just confirmed. Lives in the
- * chat stream so the decision stays visible in conversation history without
- * taking up as much space as the interactive form.
- */
-export function ProjectParamsSummary() {
-  const t = useTranslations("ai");
-  const tp = useTranslations("project");
-  const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
-  const [dictionaries, setDictionaries] = useState<ProjectDictionaries | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    fetchProjectDictionaries()
-      .then((d) => {
-        if (active) setDictionaries(d);
-      })
-      .catch(() => {
-        // Non-fatal — fall back to showing raw values below.
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (!detail) return null;
-
-  const aspectLabel =
-    dictionaries?.sizeOptions.find((o) => o.value === detail.aspectRatioType)?.label ??
-    detail.aspectRatioType ??
-    "—";
-  const styleLabel =
-    dictionaries?.styleOptions.find((s) => s.id === detail.stylePainting)?.info ??
-    detail.stylePainting ??
-    "—";
-  const languageLabel = DIALOG_LANGUAGE_OPTIONS.find(
-    (o) => o.value === detail.dialogLanguage
-  )?.labelKey;
-  const languageText = languageLabel ? t(languageLabel) : (detail.dialogLanguage ?? "—");
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 text-[13px] font-medium text-foreground/90">
-        <IconCheck className="size-3.5 text-primary" />
-        {t("paramsGateConfirmed")}
-      </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
-        <SummaryRow label={tp("videoSize")} value={aspectLabel} />
-        <SummaryRow
-          label={tp("episodeDuration")}
-          value={detail.chapterLength != null ? String(detail.chapterLength) : "—"}
-        />
-        <SummaryRow label={tp("artStyle")} value={styleLabel} />
-        <SummaryRow label={t("paramsDialogLanguage")} value={languageText} />
-      </div>
-    </div>
-  );
-}
-
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline gap-1.5 min-w-0">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
-      <span className="truncate text-foreground/90">{value}</span>
-    </div>
   );
 }

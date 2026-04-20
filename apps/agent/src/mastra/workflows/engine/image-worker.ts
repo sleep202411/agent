@@ -197,10 +197,24 @@ function classifyFailure(err: unknown): "failed_config" | "failed_policy" | "fai
     // dropped mid-flight — that's a config / auth issue, not a user
     // retryable server error.
     if (/unauthorized|401|no cookie|not login/i.test(msg)) return "failed_config";
-    // Java's safety filter messages typically mention these terms. Keep
-    // the regex permissive since upstream text varies (could be Tongyi's
-    // zh, DALL-E's en, etc.).
-    if (/nsfw|safety|policy|moderation|违规|敏感|不合规|违禁/i.test(msg)) return "failed_policy";
+    // Rate limit / quota — must be checked BEFORE the content-policy branch
+    // because upstream 429 messages often include the word "policy" (e.g.
+    // "throttling policy exceeded" / "rate limit policy") which used to
+    // steal the classification and mask the real cause. AliCloud's specific
+    // code is `Throttling.RateQuota`; Tongyi / DashScope use `RateLimit`.
+    if (
+      /\b429\b/.test(msg) ||
+      /rate[- ]?limit|too many requests|throttling|rate[\s._-]*quota/i.test(msg) ||
+      /quota (?:exceeded|used up)|daily limit|请求频繁|请求过于频繁|额度(?:不足|用完)/i.test(msg)
+    ) {
+      return "failed_server";
+    }
+    // Java's safety filter messages typically mention these terms. Regex
+    // tightened to "content policy" (not just "policy") so rate-limit
+    // wording above can't match here.
+    if (/nsfw|safety|content\s*policy|moderation|违规|敏感|不合规|违禁/i.test(msg)) {
+      return "failed_policy";
+    }
   }
   return "failed_server";
 }

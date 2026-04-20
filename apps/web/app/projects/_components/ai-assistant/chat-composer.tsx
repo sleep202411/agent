@@ -24,7 +24,6 @@ import { ChatToolbar } from "./chat-toolbar";
 import { ToolOptionsCard } from "./tool-cards/tool-options-card";
 import { ToolConfirmCard } from "./tool-cards/tool-confirm-card";
 import { ToolParamsCard } from "./tool-cards/tool-params-card";
-import { AssistantTaskCard } from "./tool-cards/tool-task-card";
 
 // ─── Types ─────────────────────────────────────────────
 
@@ -44,8 +43,6 @@ interface ChatComposerProps {
   error: string | null;
   editorRef: React.RefObject<HTMLDivElement | null>;
   activePendingTool?: ActivePendingTool | null;
-  activeTask?: { taskId: string; toolName: string } | null;
-  onTaskContinue?: (taskId: string, result: unknown) => void;
   onToolResult?: (result: AssistantToolResult) => void;
   /** When true, disable send — project-params form gate is active upstream. */
   blocked?: boolean;
@@ -63,8 +60,6 @@ export function ChatComposer({
   error,
   editorRef,
   activePendingTool,
-  activeTask,
-  onTaskContinue,
   onToolResult,
   blocked,
 }: ChatComposerProps) {
@@ -80,14 +75,6 @@ export function ChatComposer({
     !!activeWorkflow && (activeWorkflow.status === "queued" || activeWorkflow.status === "running");
 
   const toolCard = activePendingTool ? renderToolCard(activePendingTool, onToolResult) : null;
-
-  const taskCard = activeTask ? (
-    <AssistantTaskCard
-      taskId={activeTask.taskId}
-      onContinue={(result) => onTaskContinue?.(activeTask.taskId, result)}
-      onError={(err) => toast.error(err)}
-    />
-  ) : null;
 
   if (workingPillVisible && activeWorkflow) {
     return (
@@ -107,9 +94,7 @@ export function ChatComposer({
           </div>
         )}
 
-        {taskCard ? (
-          <div className="bg-muted/90 px-3 py-3">{taskCard}</div>
-        ) : toolCard ? (
+        {toolCard ? (
           <div className="bg-muted/90">{toolCard}</div>
         ) : (
           <div className="bg-muted/90 px-3 py-3 rounded-t-2xl">

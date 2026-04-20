@@ -48,6 +48,11 @@ export interface StoryOutline {
     typeHint: string;
     firstAppearance?: string;
   }>;
+  props?: Array<{
+    name: string;
+    typeHint: string;
+    firstAppearance?: string;
+  }>;
 }
 
 export interface StoryOutlineRecord {

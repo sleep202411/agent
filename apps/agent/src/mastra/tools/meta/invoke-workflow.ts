@@ -1,8 +1,13 @@
 import { createTool } from "@mastra/core/tools";
+import {
+  getMissingProjectParams,
+  isGenerativeWorkflow,
+  type ProjectParamsDetail,
+} from "@repo/shared/project-params";
 import { z } from "zod";
 import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
 import { getRedis } from "../../lib/redis-client";
-import { getContext } from "../../lib/workspace-client";
+import { getContext, javaRequest } from "../../lib/workspace-client";
 import { startWorkflow } from "../../workflows/engine";
 
 /**
@@ -54,13 +59,41 @@ export const invokeWorkflow = createTool({
         'Workflow-specific input payload. Must match the target workflow\'s inputSchema. For large text fields, pass the attachment ref as "<field>Ref": "att_xxx" (e.g. textRef); the server replaces it with the cached text before enqueueing.'
       ),
   }),
-  outputSchema: z.object({
-    runId: z.string(),
-    workflowName: z.enum(WORKFLOW_NAMES),
-    message: z.string(),
-  }),
+  outputSchema: z.union([
+    z.object({
+      runId: z.string(),
+      workflowName: z.enum(WORKFLOW_NAMES),
+      message: z.string(),
+    }),
+    z.object({
+      error: z.literal("PROJECT_PARAMS_INCOMPLETE"),
+      message: z.string(),
+      missing: z.array(z.string()),
+    }),
+  ]),
   execute: async ({ workflowName, inputData }, execCtx) => {
     const ctx = getContext(execCtx?.requestContext);
+
+    // Preflight: generative workflows require project params to be set. The
+    // supervisor prompt tells the LLM to call `require_project_params` first,
+    // but we don't rely on that — the LLM sometimes skips it. Hard-block here
+    // so a missing-param case always surfaces as a structured error.
+    if (isGenerativeWorkflow(workflowName as WorkflowName)) {
+      const detail = await javaRequest<ProjectParamsDetail>(
+        ctx,
+        `/api/user/project/detail/${ctx.projectId}`
+      ).catch(() => null);
+      const missing = getMissingProjectParams(detail);
+      if (missing.length > 0) {
+        return {
+          error: "PROJECT_PARAMS_INCOMPLETE" as const,
+          message:
+            "项目核心参数未齐（影片尺寸/单集时长/画风）。请立即调用 require_project_params 让用户补齐，收到 {confirmed:true} 后用相同的 workflowName 和 inputData 重新 invoke_workflow。",
+          missing,
+        };
+      }
+    }
+
     const resolvedInput = await resolveAttachmentRefs(inputData);
 
     // Supervisor doesn't see projectId / worldId (they live in requestContext),

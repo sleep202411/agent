@@ -28,7 +28,11 @@ import {
   applyToolResult,
   loadHistory,
   newConversation,
+  appendStreamChunk,
+  finalizeTurnOnIdle,
+  streamError,
 } from "@/src/store/slices/assistantSlice";
+import { ensureSession, closeSession } from "@/src/lib/assistant/chat-session";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -40,7 +44,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { quickActionsByAgent } from "./constants";
-import { MessageBubble, PIPELINE_TOOL_NAMES } from "./message-bubble";
+import { MessageBubble } from "./message-bubble";
 import { ChatComposer } from "./chat-composer";
 import { useAutoScroll } from "./use-auto-scroll";
 
@@ -70,11 +74,30 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const selectedAgent = conversation?.agentType ?? "general";
 
   useEffect(() => {
-    if (projectId) {
-      dispatch(ensureProject(projectId));
-      // Load conversation history from server on mount
-      dispatch(loadHistory(projectId));
-    }
+    if (!projectId) return;
+    dispatch(ensureProject(projectId));
+    // Load conversation history from server on mount.
+    dispatch(loadHistory(projectId));
+    // Open the project-scoped WS so every message_added/updated event
+    // flows into Redux for the whole time the panel is mounted.
+    ensureSession(projectId, {
+      onMessage: (message) => {
+        dispatch(appendStreamChunk({ projectId, message }));
+      },
+      onAgentState: (state) => {
+        if (state === "idle") {
+          void dispatch(finalizeTurnOnIdle(projectId));
+        } else if (state === "failed") {
+          dispatch(streamError({ projectId, error: "Agent run failed" }));
+        }
+      },
+      onError: (err) => {
+        console.warn("[ai-assistant] chat-session error:", err.message);
+      },
+    });
+    return () => {
+      closeSession(projectId);
+    };
   }, [dispatch, projectId]);
 
   const messages = conversation?.messages ?? EMPTY_MESSAGES;
@@ -115,47 +138,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     }
     return null;
   }, [pendingToolUi, messages]);
-  // Track which task IDs have been "continued" so we stop showing their card
-  const [continuedTaskIds, setContinuedTaskIds] = useState<Set<string>>(new Set());
-
-  // Find the latest pipeline tool output that has a taskId (for composer task card)
-  // Only show if it's the LAST assistant message with no user message after it
-  // (if user already sent a message after the task, they've moved past it)
-  const activeTask = useMemo(() => {
-    // Find the last message index that is a user message
-    let lastUserMsgIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        lastUserMsgIndex = i;
-        break;
-      }
-    }
-
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg.role !== "assistant") continue;
-
-      // If there's a user message AFTER this assistant message, task was already continued
-      if (lastUserMsgIndex > i) continue;
-
-      for (let j = msg.parts.length - 1; j >= 0; j--) {
-        const part = msg.parts[j];
-        if (!isAssistantToolPart(part)) continue;
-        const toolName = getAssistantToolName(part);
-        if (!PIPELINE_TOOL_NAMES.has(toolName)) continue;
-        // Only show TaskCard for successful output, not errors
-        if (part.state !== "output-available") continue;
-        const rawOutput = part.output ?? (part as unknown as Record<string, unknown>).result;
-        const output = rawOutput as Record<string, unknown> | undefined;
-        const taskId = output?.taskId ? String(output.taskId) : null;
-        if (taskId && !continuedTaskIds.has(taskId)) {
-          return { taskId, toolName };
-        }
-      }
-      break; // Only check the very last assistant message
-    }
-    return null;
-  }, [messages, continuedTaskIds]);
 
   const hasMeaningfulMessages = messages.length > 1;
   const hasUploadingAttachments = attachments.some((a) => a.status === "uploading");
@@ -180,18 +162,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     containerRef: messagesRef,
     triggers: [messages.length, sending, streamingBucket],
   });
-
-  const handleTaskContinue = useCallback(
-    (taskId: string, _result: unknown) => {
-      if (!projectId) return;
-      setContinuedTaskIds((prev) => new Set(prev).add(taskId));
-      const text = t("taskContinue");
-      if (editorRef.current) editorRef.current.innerText = text;
-      dispatch(setDraft({ projectId, draft: text }));
-      if (projectId) void dispatch(sendUserMessage(projectId));
-    },
-    [projectId, dispatch, t]
-  );
 
   return (
     <>
@@ -359,8 +329,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
               error={error}
               editorRef={editorRef}
               activePendingTool={activePendingTool}
-              activeTask={activeTask}
-              onTaskContinue={handleTaskContinue}
               onToolResult={(result: AssistantToolResult) => {
                 if (projectId) void dispatch(applyToolResult({ projectId, result }));
               }}

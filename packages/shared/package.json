@@ -21,6 +21,10 @@
     "./personas": {
       "types": "./dist/personas.d.ts",
       "default": "./dist/personas.js"
+    },
+    "./project-params": {
+      "types": "./dist/project-params.d.ts",
+      "default": "./dist/project-params.js"
     }
   },
   "scripts": {
