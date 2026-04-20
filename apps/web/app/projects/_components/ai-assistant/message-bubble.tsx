@@ -348,6 +348,22 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 // render nothing — no decision was made, don't clutter.
                 if (toolName === "require_project_params") {
                   const state = part.state;
+                  // Extract optional suggestedParams from the tool input —
+                  // supervisor passes these after running analyze_brief so
+                  // the form can prefill + show a recommendation banner.
+                  const input = part.input as
+                    | { suggestedParams?: Record<string, unknown> }
+                    | undefined;
+                  const suggested = input?.suggestedParams as
+                    | {
+                        stylePainting?: string;
+                        chapterLength?: number;
+                        targetEpisodeCount?: number;
+                        dialogLanguage?: string;
+                        aspectRatioType?: string;
+                        reasoning?: string;
+                      }
+                    | undefined;
                   if (state === "output-available" || state === "approval-responded") {
                     const out = part.output as { autoConfirmed?: boolean } | undefined;
                     if (out?.autoConfirmed) return null;
@@ -355,6 +371,7 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                       <ProjectParamsForm
                         key={`${message.id}-${part.toolCallId}-params-readonly`}
                         readOnly
+                        suggested={suggested}
                       />
                     );
                   }
@@ -366,6 +383,7 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                       <ToolRequireParamsCard
                         key={`${message.id}-${part.toolCallId}-params-form`}
                         toolCallId={part.toolCallId}
+                        suggested={suggested}
                         onAutoConfirmed={() => {
                           onApplyToolResult?.({
                             toolCallId: part.toolCallId,
@@ -452,6 +470,40 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                     <ToolCompletionCard
                       key={`${message.id}-${part.toolCallId}-params-updated`}
                       label={t("paramsUpdatedChip")}
+                    />
+                  );
+                }
+
+                // analyze_brief — small brief-extraction call made before
+                // the params form. Render a tiny chip showing the project
+                // name / description that was inferred so the user sees
+                // what the LLM picked up.
+                if (toolName === "analyze_brief") {
+                  if (part.state !== "output-available") return null;
+                  const out = part.output as
+                    | { projectMeta?: { name?: string; description?: string } }
+                    | undefined;
+                  const name = out?.projectMeta?.name;
+                  if (!name) return null;
+                  return (
+                    <ToolCompletionCard
+                      key={`${message.id}-${part.toolCallId}-brief`}
+                      label={`✓ 已分析《${name}》`}
+                    />
+                  );
+                }
+
+                // save_project_meta — silent writer. Show a tiny chip only
+                // when it actually wrote something (setFields non-empty),
+                // so auto-skipped calls don't clutter the timeline.
+                if (toolName === "save_project_meta") {
+                  if (part.state !== "output-available") return null;
+                  const out = part.output as { setFields?: string[] } | undefined;
+                  if (!out?.setFields || out.setFields.length === 0) return null;
+                  return (
+                    <ToolCompletionCard
+                      key={`${message.id}-${part.toolCallId}-meta`}
+                      label={`✓ 已设置项目信息（${out.setFields.join(" / ")}）`}
                     />
                   );
                 }

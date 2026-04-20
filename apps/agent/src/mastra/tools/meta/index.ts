@@ -14,3 +14,5 @@ export { requireProjectParams } from "./require-params";
 export { resumeWorkflowTool } from "./resume-workflow";
 export { markProjectParamsUpdated } from "./mark-project-params-updated";
 export { generateProjectCover } from "./generate-project-cover";
+export { analyzeBrief } from "./analyze-brief";
+export { saveProjectMeta } from "./save-project-meta";

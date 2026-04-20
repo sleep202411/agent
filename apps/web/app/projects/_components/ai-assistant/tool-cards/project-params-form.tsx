@@ -140,6 +140,22 @@ export function isProjectParamsComplete(detail: ProjectDetail | null | undefined
   );
 }
 
+/**
+ * Recommended values from the supervisor's analyze_brief tool call. When
+ * passed, these act as defaults for the fields the user hasn't set yet —
+ * Java detail still wins, localStorage comes next, then this, then a
+ * final hardcoded fallback. The `reasoning` string surfaces as a one-line
+ * banner above the form so the user sees WHY each value was picked.
+ */
+export interface ProjectParamsSuggestion {
+  stylePainting?: string;
+  chapterLength?: number;
+  targetEpisodeCount?: number;
+  dialogLanguage?: string;
+  aspectRatioType?: string;
+  reasoning?: string;
+}
+
 interface ProjectParamsFormProps {
   /**
    * Called when the user clicks "儲存並繼續". Receives the collected params.
@@ -153,25 +169,43 @@ interface ProjectParamsFormProps {
    * (so the decision stays anchored to where it was made).
    */
   readOnly?: boolean;
+  /** Suggested defaults from analyze_brief. Optional. */
+  suggested?: ProjectParamsSuggestion;
 }
 
-export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectParamsFormProps) {
+export function ProjectParamsForm({
+  onSubmitted,
+  readOnly = false,
+  suggested,
+}: ProjectParamsFormProps) {
   const t = useTranslations("ai");
   const tp = useTranslations("project");
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
 
   const [dictionaries, setDictionaries] = useState<ProjectDictionaries | null>(null);
   const [loadingDict, setLoadingDict] = useState(true);
-  const [aspectRatioType, setAspectRatioType] = useState(detail?.aspectRatioType ?? "");
-  const [chapterLength, setChapterLength] = useState<string>(
-    detail?.chapterLength != null ? String(detail.chapterLength) : ""
+  const [aspectRatioType, setAspectRatioType] = useState(
+    detail?.aspectRatioType || suggested?.aspectRatioType || ""
   );
-  const [stylePainting, setStylePainting] = useState(detail?.stylePainting ?? "");
-  const [dialogLanguage, setDialogLanguage] = useState(detail?.dialogLanguage ?? "zh-CN");
+  const [chapterLength, setChapterLength] = useState<string>(
+    detail?.chapterLength != null
+      ? String(detail.chapterLength)
+      : suggested?.chapterLength != null
+        ? String(suggested.chapterLength)
+        : ""
+  );
+  const [stylePainting, setStylePainting] = useState(
+    detail?.stylePainting || suggested?.stylePainting || ""
+  );
+  const [dialogLanguage, setDialogLanguage] = useState(
+    detail?.dialogLanguage || suggested?.dialogLanguage || "zh-CN"
+  );
   const [episodeCount, setEpisodeCount] = useState<string>(() => {
     if (detail?.targetEpisodeCount != null) return String(detail.targetEpisodeCount);
     const stored = detail?.id ? loadEpisodeCount(detail.id) : undefined;
-    return stored != null ? String(stored) : "";
+    if (stored != null) return String(stored);
+    if (suggested?.targetEpisodeCount != null) return String(suggested.targetEpisodeCount);
+    return "";
   });
   const [shotsPerEpisode, setShotsPerEpisode] = useState<string>(() => {
     const stored = detail?.id ? loadShotsPerEpisode(detail.id) : undefined;
@@ -245,6 +279,14 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
   return (
     <div className="mt-2 flex flex-col">
       <div className="text-[13px] text-muted-foreground">{t("paramsFormHint")}</div>
+
+      {/* analyze_brief 推荐理由 — only shown when supervisor passed a suggestion */}
+      {suggested?.reasoning ? (
+        <div className="mt-2 flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-[12.5px] text-primary-foreground/90">
+          <span className="mt-px text-primary">✨</span>
+          <span className="leading-relaxed">{suggested.reasoning}</span>
+        </div>
+      ) : null}
 
       {/* 影片尺寸 */}
       <SectionTitle>{tp("videoSize")}</SectionTitle>

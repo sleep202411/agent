@@ -1,5 +1,6 @@
 import { Agent } from "@mastra/core/agent";
 import {
+  analyzeBrief,
   cancelWorkflowTool,
   evaluateDrafts,
   explainCurrentState,
@@ -10,6 +11,7 @@ import {
   queryContext,
   requireProjectParams,
   resumeWorkflowTool,
+  saveProjectMeta,
   showDrafts,
 } from "../tools/meta";
 import {
@@ -57,6 +59,13 @@ export const storyosAgent = new Agent({
     mark_project_params_updated: markProjectParamsUpdated,
     // Auto cover generation via Replicate (no user credits).
     generate_project_cover: generateProjectCover,
+    // Quick one-shot brief extraction (name, description, core, param
+    // suggestions) to seed a new project with user material. Used BEFORE
+    // require_project_params on a fresh project.
+    analyze_brief: analyzeBrief,
+    // Silent writer for project header + world world-building fields.
+    // Callable right after analyze_brief — only fills empty slots.
+    save_project_meta: saveProjectMeta,
     // State reads + quality review
     query_context: queryContext,
     show_drafts: showDrafts,

@@ -5,7 +5,11 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
 import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import { confirmProjectParamsFromForm } from "@/src/store/slices/assistantSlice";
-import { ProjectParamsForm, isProjectParamsComplete } from "./project-params-form";
+import {
+  ProjectParamsForm,
+  isProjectParamsComplete,
+  type ProjectParamsSuggestion,
+} from "./project-params-form";
 
 interface ToolRequireParamsCardProps {
   toolCallId: string;
@@ -18,6 +22,8 @@ interface ToolRequireParamsCardProps {
    * responsible for the Java save and marker injection.
    */
   onAutoConfirmed: () => void;
+  /** Supervisor's analyze_brief recommendations. Forwarded to the form. */
+  suggested?: ProjectParamsSuggestion;
 }
 
 /**
@@ -28,7 +34,11 @@ interface ToolRequireParamsCardProps {
  *     flips the tool part to output-available, appends a visible "信息已確認"
  *     user bubble, and POSTs confirmProjectParams to Nest.
  */
-export function ToolRequireParamsCard({ toolCallId, onAutoConfirmed }: ToolRequireParamsCardProps) {
+export function ToolRequireParamsCard({
+  toolCallId,
+  onAutoConfirmed,
+  suggested,
+}: ToolRequireParamsCardProps) {
   const t = useTranslations("ai");
   const dispatch = useAppDispatch();
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
@@ -49,6 +59,7 @@ export function ToolRequireParamsCard({ toolCallId, onAutoConfirmed }: ToolRequi
 
   return (
     <ProjectParamsForm
+      suggested={suggested}
       onSubmitted={(params) => {
         if (!projectId) return;
         void dispatch(
