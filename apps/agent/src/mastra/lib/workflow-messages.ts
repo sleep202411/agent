@@ -26,6 +26,41 @@ import {
   updateChatMessage,
   type StoredMessage,
 } from "./chat-publisher";
+import { getRedis } from "./redis-client";
+
+/**
+ * Per-run hint: the most recently active sub-workflow. Worker reads this
+ * on error so the failure card can surface the phase that actually blew
+ * up (e.g. "storyboard_phase"), not the outer composition (main_flow)
+ * — lets the retry button re-invoke only that phase instead of re-running
+ * the entire pipeline from scratch.
+ *
+ * 24h TTL covers any reasonable workflow lifetime; longer than that and
+ * we'd rather fall back to main_flow than surface a stale hint.
+ */
+const LAST_ACTIVE_WORKFLOW_TTL = 24 * 3600;
+function lastActiveWorkflowKey(runId: string): string {
+  return `workflow:run:${runId}:last_active_workflow`;
+}
+
+async function recordActiveWorkflow(runId: string, workflowName: WorkflowName): Promise<void> {
+  try {
+    const redis = getRedis();
+    await redis.set(lastActiveWorkflowKey(runId), workflowName, "EX", LAST_ACTIVE_WORKFLOW_TTL);
+  } catch {
+    // Non-fatal — retry button just shows main_flow if hint isn't set.
+  }
+}
+
+export async function getLastActiveWorkflow(runId: string): Promise<WorkflowName | null> {
+  try {
+    const redis = getRedis();
+    const v = await redis.get(lastActiveWorkflowKey(runId));
+    return (v as WorkflowName | null) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Message id shapes (deterministic so publishers can idempotently
 //     add-or-update) ───────────────────────────────────────────────────
@@ -98,6 +133,7 @@ export async function publishWorkflowProgress(
   phase: WorkflowMacroPhase,
   extra: Omit<WorkflowProgressOutput, "runId" | "workflowName" | "phase">
 ): Promise<void> {
+  await recordActiveWorkflow(runId, workflowName);
   const id = progressId(runId, workflowName, phase);
   const output = WorkflowProgressOutputSchema.parse({
     runId,
@@ -120,6 +156,7 @@ export async function publishWorkflowSuspended(
   workflowName: WorkflowName,
   extra: Omit<WorkflowSuspendedOutput, "runId" | "workflowName">
 ): Promise<void> {
+  await recordActiveWorkflow(runId, workflowName);
   const output = WorkflowSuspendedOutputSchema.parse({
     runId,
     workflowName,

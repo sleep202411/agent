@@ -14,7 +14,7 @@ import { clearCancel, isCancelled, setStatus } from "./state";
 import { buildConnection, QUEUE_NAME, type StoryosJobData, type StoryosJobName } from "./queue";
 import { WorkflowCancelledError } from "./progress";
 import { classifyError } from "../../lib/error-classifier";
-import { publishWorkflowFailed } from "../../lib/workflow-messages";
+import { getLastActiveWorkflow, publishWorkflowFailed } from "../../lib/workflow-messages";
 import type { ResumeJobData, RunJobData } from "./types";
 import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
 import type { StoryosContext } from "../../lib/workspace-client";
@@ -184,7 +184,7 @@ async function applyResult(
     // failure came from a sub-workflow step, use the sub-workflow's name
     // on the failed card so the user's "重试" button re-invokes that
     // specific phase rather than the whole pipeline from scratch.
-    const failingWorkflow = resolveFailingWorkflow(r.error, workflowName);
+    const failingWorkflow = await resolveFailingWorkflow(runId, r.error, workflowName);
     await setStatus(runId, "failed", { error: message, errorClassification: classification });
     await clearCancel(runId);
     await finalizeFailed(runId, failingWorkflow, projectId, message, classification);
@@ -212,7 +212,7 @@ async function applyError(
   }
   const message = formatWorkflowError(err);
   const classification = classifyError(err);
-  const failingWorkflow = resolveFailingWorkflow(err, workflowName);
+  const failingWorkflow = await resolveFailingWorkflow(runId, err, workflowName);
   await setStatus(runId, "failed", { error: message, errorClassification: classification });
   await clearCancel(runId);
   await finalizeFailed(runId, failingWorkflow, projectId, message, classification);
@@ -224,35 +224,52 @@ async function applyError(
  * blew up. Surface that as the failed card's workflowName so the "重试"
  * button re-invokes only that phase (storyboard_phase etc) — retrying
  * main_flow from scratch would re-run every already-committed phase
- * and waste LLM tokens. If no stepId matches a known workflow, fall
- * back to the outer name.
+ * and waste LLM tokens.
+ *
+ * Two lookup strategies, in order:
+ * 1. Inspect the error object for `stepId` / `stepPath` — Mastra adds
+ *    these on step-level failures but NOT on workflow-level errors like
+ *    "This workflow run was not suspended".
+ * 2. Fall back to the Redis hint published by each sub-workflow's
+ *    progress/suspended/completed emission — if any sub-workflow was
+ *    active before the failure, its name is there.
+ *
+ * Only if both strategies miss do we return the outer workflow name.
  */
-function resolveFailingWorkflow(err: unknown, fallback: WorkflowName): WorkflowName {
-  if (!err || typeof err !== "object") return fallback;
-  const e = err as Record<string, unknown>;
-  const candidates: unknown[] = [e.stepId, e.stepPath];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string") {
-      if ((WORKFLOW_NAMES as readonly string[]).includes(candidate)) {
-        return candidate as WorkflowName;
+async function resolveFailingWorkflow(
+  runId: string,
+  err: unknown,
+  fallback: WorkflowName
+): Promise<WorkflowName> {
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    const candidates: unknown[] = [e.stepId, e.stepPath];
+    for (const candidate of candidates) {
+      if (typeof candidate === "string") {
+        if ((WORKFLOW_NAMES as readonly string[]).includes(candidate)) {
+          return candidate as WorkflowName;
+        }
       }
-    }
-    if (Array.isArray(candidate)) {
-      // Look for the deepest step that matches a known workflow name —
-      // e.g. stepPath might be ["main_flow", "storyboard_phase",
-      // "generate"], we want "storyboard_phase".
-      for (let i = candidate.length - 1; i >= 0; i--) {
-        const v = candidate[i];
-        if (
-          typeof v === "string" &&
-          v !== fallback &&
-          (WORKFLOW_NAMES as readonly string[]).includes(v)
-        ) {
-          return v as WorkflowName;
+      if (Array.isArray(candidate)) {
+        // Look for the deepest step that matches a known workflow name —
+        // e.g. stepPath might be ["main_flow", "storyboard_phase",
+        // "generate"], we want "storyboard_phase".
+        for (let i = candidate.length - 1; i >= 0; i--) {
+          const v = candidate[i];
+          if (
+            typeof v === "string" &&
+            v !== fallback &&
+            (WORKFLOW_NAMES as readonly string[]).includes(v)
+          ) {
+            return v as WorkflowName;
+          }
         }
       }
     }
   }
+  // Strategy 2: Redis hint populated by the last progress/suspended emission.
+  const active = await getLastActiveWorkflow(runId);
+  if (active && active !== fallback) return active;
   return fallback;
 }
 
