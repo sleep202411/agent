@@ -29,18 +29,30 @@ import {
 
 // ─── Message id shapes (deterministic so publishers can idempotently
 //     add-or-update) ───────────────────────────────────────────────────
+//
+// Every id includes `workflowName`. Without it, sub-workflows composed
+// inside `main_flow` all share the parent run's `runId` and their cards
+// would overwrite each other — e.g. role_phase's progress wiping
+// story_outline's progress on the same `wf_{runId}_progress_planning`
+// slot. Including the workflow name gives each sub-workflow its own
+// row in the timeline while still letting the agent emit repeated
+// updates on the same slot (same runId + workflowName + phase → update).
 
-function progressId(runId: string, phase: WorkflowMacroPhase): string {
-  return `wf_${runId}_progress_${phase}`;
+function progressId(runId: string, workflowName: WorkflowName, phase: WorkflowMacroPhase): string {
+  return `wf_${runId}_${workflowName}_progress_${phase}`;
 }
-function suspendedId(runId: string): string {
-  return `wf_${runId}_suspended`;
+function suspendedId(runId: string, workflowName: WorkflowName): string {
+  return `wf_${runId}_${workflowName}_suspended`;
 }
-function completedId(runId: string): string {
-  return `wf_${runId}_completed`;
+function completedId(runId: string, workflowName: WorkflowName): string {
+  return `wf_${runId}_${workflowName}_completed`;
 }
-function failedId(runId: string, terminalStatus: "failed" | "cancelled"): string {
-  return `wf_${runId}_${terminalStatus}`;
+function failedId(
+  runId: string,
+  workflowName: WorkflowName,
+  terminalStatus: "failed" | "cancelled"
+): string {
+  return `wf_${runId}_${workflowName}_${terminalStatus}`;
 }
 
 // ─── Message assembly ────────────────────────────────────────────────
@@ -86,7 +98,7 @@ export async function publishWorkflowProgress(
   phase: WorkflowMacroPhase,
   extra: Omit<WorkflowProgressOutput, "runId" | "workflowName" | "phase">
 ): Promise<void> {
-  const id = progressId(runId, phase);
+  const id = progressId(runId, workflowName, phase);
   const output = WorkflowProgressOutputSchema.parse({
     runId,
     workflowName,
@@ -115,7 +127,7 @@ export async function publishWorkflowSuspended(
   });
   await addChatMessage(
     projectId,
-    buildMessage(suspendedId(runId), "workflow_suspended", output, runId)
+    buildMessage(suspendedId(runId, workflowName), "workflow_suspended", output, runId)
   );
 }
 
@@ -132,7 +144,7 @@ export async function publishWorkflowCompleted(
   });
   await addChatMessage(
     projectId,
-    buildMessage(completedId(runId), "workflow_completed", output, runId)
+    buildMessage(completedId(runId, workflowName), "workflow_completed", output, runId)
   );
 }
 
@@ -149,6 +161,11 @@ export async function publishWorkflowFailed(
   });
   await addChatMessage(
     projectId,
-    buildMessage(failedId(runId, output.terminalStatus), "workflow_failed", output, runId)
+    buildMessage(
+      failedId(runId, workflowName, output.terminalStatus),
+      "workflow_failed",
+      output,
+      runId
+    )
   );
 }

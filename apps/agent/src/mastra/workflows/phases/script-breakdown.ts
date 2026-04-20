@@ -231,14 +231,14 @@ const analyzeStep = createStep({
       await publishWorkflowCompleted(ctx.projectId, runId, "story_outline", {
         committed: [{ serverId: ctx.projectId, title: "故事骨架" }],
         summary: endLabel,
-        // Carry the structured skeleton so the completed card can render
-        // the chapter / cast / settings inline panel (previously supplied
-        // by the old /workflow/:runId/status `meta.result` field).
-        result: result as unknown as Record<string, unknown>,
-        nextStep: {
-          workflowName: "role_phase",
-          labelKey: "workflowNextContinueToRoles",
-        },
+        // Render as a compact one-line chip. story_outline has no HITL —
+        // main_flow auto-chains straight into role_phase — so a big card
+        // with a nextStep button would just be stale decoration (the
+        // "繼續·設計角色" button would be a no-op by the time user sees
+        // it). The structured skeleton is available on subsequent cards
+        // (role_phase / episode_phase) via Redis, no need to duplicate
+        // it here.
+        compact: true,
       });
     }
 
