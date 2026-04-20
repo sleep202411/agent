@@ -1574,7 +1574,8 @@
       "prop": "Props",
       "episode": "Episodes",
       "script": "Scripts",
-      "storyboard": "Storyboards"
+      "storyboard": "Storyboards",
+      "shot": "Storyboards"
     },
     "workflowNextContinueToRoles": "Continue · Design characters",
     "workflowNextContinueToRoleImages": "Continue · Generate role images",

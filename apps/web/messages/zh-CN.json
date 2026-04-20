@@ -1574,7 +1574,8 @@
       "prop": "道具",
       "episode": "剧集",
       "script": "剧本",
-      "storyboard": "分镜"
+      "storyboard": "分镜",
+      "shot": "分镜"
     },
     "workflowNextContinueToRoles": "继续 · 设计角色",
     "workflowNextContinueToRoleImages": "继续 · 生成角色主图",
