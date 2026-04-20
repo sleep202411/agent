@@ -50,10 +50,17 @@ import {
 const StoryboardRow = z.object({
   /** 镜号 — "1" / "2" / …; auto-assigned in collect step so LLM can drift. */
   shot_no: z.string().optional(),
-  /** 场景 — prefer a worldscene name so frontend can linkify via <mention>. */
-  scene: z.string().min(1),
-  /** 画面描述 — human-readable prose; can contain @character / @scene refs. */
-  description: z.string().min(1),
+  /**
+   * 场景 — prefer a worldscene name so frontend can linkify via <mention>.
+   * Optional at schema level (not `.min(1)`) because DeepSeek drops this
+   * field on tail rows of long structured outputs (~rows 29-32 of a
+   * 30-40 row ask). generateStep filters out rows missing scene OR
+   * description before committing — a row lacking either is unusable
+   * in the editor anyway, so dropping it is lossless.
+   */
+  scene: z.string().optional(),
+  /** 画面描述 — same laziness caveat as `scene`. */
+  description: z.string().optional(),
   /** 图片提示词 — visual-token string fed to image model. */
   image_prompt: z.string().optional().default(""),
   /** 影片提示词 — video-gen prompt emphasizing motion / expression. */
@@ -285,13 +292,12 @@ const generateStep = createStep({
       await throwIfCancelled(runId);
       const ep = inputData.episodes[i];
       try {
-        // errorStrategy: "strict" — schema mismatches (e.g. LLM returned
-        // < 5 rows) throw here so they land in errorsByIndex via catch
-        // below. Previously "warn" silently returned object=undefined,
-        // we fell back to rows=[], persisted an empty-shell draft, and
-        // suspended at HITL with nothing for the user to confirm. The
-        // workflow_failed + retry path is the right UX for "LLM couldn't
-        // produce valid shots".
+        // errorStrategy: "strict" still bubbles genuinely malformed output
+        // (bad JSON, wrong top-level shape). But individual rows with
+        // missing scene/description no longer throw — the schema is
+        // lenient on those fields (see StoryboardRow doc) and we drop
+        // bad rows below. Previously strict mode killed a whole 30-shot
+        // episode because DeepSeek's row 31 was missing `description`.
         const response = await storyboarder.generate(
           buildPrompt(ep, inputData.sceneNames, dialogLanguage),
           {
@@ -301,25 +307,33 @@ const generateStep = createStep({
             },
           }
         );
-        const rows = (
-          (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? []
-        )
+        const rawRows =
+          (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? [];
+
+        // Drop rows that can't carry their own weight (missing scene or
+        // description) and renumber — DeepSeek's tail-laziness creates
+        // gaps like shot_no "1"..."30","32" that would otherwise confuse
+        // the commit step's scene backfill. Filtering before .slice(60)
+        // doesn't matter since DeepSeek rarely goes past 40.
+        const rows = rawRows
+          .filter((r) => !!r.scene?.trim() && !!r.description?.trim())
           .slice(0, 60)
-          // Fallback: if LLM left image_prompt empty (schema default), use
-          // description as the seed. Keeps the downstream image-gen step
-          // from dispatching with a blank prompt.
-          .map((row) => ({
+          .map((row, idx) => ({
             ...row,
-            image_prompt: row.image_prompt?.trim() || row.description,
+            shot_no: String(idx + 1),
+            // Fallback: if LLM left image_prompt empty, seed it with
+            // description so the downstream image-gen step has something
+            // to dispatch.
+            image_prompt: row.image_prompt?.trim() || row.description || "",
           }));
 
-        // Defense-in-depth: even if strict-mode somehow let a valid-but-
-        // empty object slip through (shouldn't, but future schema
-        // refactors might), reject so we fail loudly instead of saving
-        // a draft the HITL dialog can't render.
-        if (rows.length === 0) {
+        // Keep a floor — a 2-shot storyboard isn't worth saving, and
+        // surfaces genuine LLM failures (wrong schema entirely, refusals)
+        // as a retryable workflow_failed instead of a silent empty draft.
+        if (rows.length < 5) {
+          const dropped = rawRows.length - rows.length;
           throw new Error(
-            `storyboarder returned 0 shots for episode "${ep.title}" — treat as generation failure.`
+            `storyboarder returned only ${rows.length} usable rows for episode "${ep.title}" (dropped ${dropped} with missing scene/description).`
           );
         }
 
@@ -866,10 +880,13 @@ const applyDecisionStep = createStep({
         // worldscene id + metadata after save. description / image_prompt /
         // video_prompt get mention injection for inline chip rendering.
         const shotNo = r.shot_no && r.shot_no.trim() ? r.shot_no : String(idx + 1);
+        // scene / description are `optional` at the schema level (LLM
+        // sometimes drops them) but generateStep's filter has already
+        // guaranteed both exist here — `?? ""` is just to satisfy TS.
         return [
           shotNo,
-          r.scene,
-          injectMentions(mentionMap, r.description),
+          r.scene ?? "",
+          injectMentions(mentionMap, r.description ?? ""),
           injectMentions(mentionMap, r.image_prompt),
           injectMentions(mentionMap, r.video_prompt ?? ""),
           stylePainting, // style_planting — project-level style per-row
