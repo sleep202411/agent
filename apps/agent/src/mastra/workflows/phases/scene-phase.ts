@@ -19,7 +19,7 @@ import {
   markDraftFailed,
   putDraft,
 } from "../../lib/drafts";
-import { reportProgress, throwIfCancelled } from "../engine";
+import { reportProgress, startWorkflow, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
@@ -423,11 +423,26 @@ const applyDecisionStep = createStep({
       committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      nextStep: {
-        workflowName: "scene_image_phase",
-        labelKey: "workflowNextContinueToSceneImages",
-      },
+      // Compact chip — image phase's progress card takes the "big" slot.
+      compact: true,
+      // No nextStep — image gen auto-chains below (see role-phase comment).
     });
+
+    // Auto-chain regardless of partial_failure — image phase works off
+    // whatever's in Java, hard failures throw before here and surface on
+    // the workflow_failed card with a retry button.
+    try {
+      await startWorkflow({
+        workflowName: "scene_image_phase",
+        inputData: {},
+        ctx,
+      });
+    } catch (err) {
+      console.warn(
+        `[scene_phase] auto-chain scene_image_phase failed:`,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
 
     return {
       outcome,

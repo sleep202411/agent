@@ -17,6 +17,7 @@ import {
   setStatus,
 } from "./state";
 import { getQueue } from "./queue";
+import { publishWorkflowFailed } from "../../lib/workflow-messages";
 import type { ResumeJobData, RunJobData, WorkflowMeta } from "./types";
 
 export async function startWorkflow(input: {
@@ -101,6 +102,22 @@ export async function cancelWorkflow(runId: string): Promise<void> {
   await requestCancel(runId);
   await appendEvent(runId, "cancelled");
   await setStatus(runId, "cancelled");
+
+  // Publish workflow_failed chat message immediately so the frontend's
+  // composer pill can clear right away. The worker's later
+  // finalizeCancelled (when throwIfCancelled fires mid-run) will publish
+  // with the same deterministic message id (`wf_{runId}_cancelled`) and
+  // become an idempotent update — no duplicate card.
+  try {
+    await publishWorkflowFailed(meta.workspaceId, runId, meta.workflowName, {
+      terminalStatus: "cancelled",
+      error: "用户已取消",
+      retryable: true,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[runner] publishWorkflowFailed(cancelled) failed for ${runId}:`, err);
+  }
 }
 
 export async function getWorkflowStatus(runId: string): Promise<WorkflowMeta | null> {

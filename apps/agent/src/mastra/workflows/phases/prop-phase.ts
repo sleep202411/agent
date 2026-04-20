@@ -22,7 +22,7 @@ import {
   markDraftFailed,
   putDraft,
 } from "../../lib/drafts";
-import { reportProgress, throwIfCancelled } from "../engine";
+import { reportProgress, startWorkflow, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
@@ -340,16 +340,28 @@ const applyDecisionStep = createStep({
     const draftClientRefIds = state.draftClientRefIds ?? [];
     const nameByRef = state.nameByRef ?? {};
 
-    // Zero-props short-circuit from waitConfirmationStep.
+    // Zero-props short-circuit from waitConfirmationStep. Even with no
+    // props to commit, auto-chain to prop_image_phase so the user gets a
+    // uniform flow (the image phase will itself emit "no_props" and move
+    // on quickly).
     if (draftClientRefIds.length === 0) {
       await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
         committed: [],
         summary: "本故事骨架里没有需要单独设计的道具，已跳过。",
-        nextStep: {
-          workflowName: "prop_image_phase",
-          labelKey: "workflowNextContinueToPropImages",
-        },
+        compact: true,
       });
+      try {
+        await startWorkflow({
+          workflowName: "prop_image_phase",
+          inputData: {},
+          ctx,
+        });
+      } catch (err) {
+        console.warn(
+          `[prop_phase] auto-chain prop_image_phase failed (no_props path):`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
       return {
         outcome: "no_props" as const,
         committed: [],
@@ -441,11 +453,24 @@ const applyDecisionStep = createStep({
       committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      nextStep: {
-        workflowName: "prop_image_phase",
-        labelKey: "workflowNextContinueToPropImages",
-      },
+      // Compact chip — image phase's progress card takes the "big" slot.
+      compact: true,
+      // No nextStep — image gen auto-chains below.
     });
+
+    // Auto-chain regardless of partial_failure — see role-phase comment.
+    try {
+      await startWorkflow({
+        workflowName: "prop_image_phase",
+        inputData: {},
+        ctx,
+      });
+    } catch (err) {
+      console.warn(
+        `[prop_phase] auto-chain prop_image_phase failed:`,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
 
     return {
       outcome,

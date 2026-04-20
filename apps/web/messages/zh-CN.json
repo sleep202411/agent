@@ -1537,6 +1537,7 @@
     "workflowConfirmPrompt": "已生成，请确认是否满意？",
     "workflowCompletedPrompt": "已完成，请确认是否满意？",
     "workflowStateRunning": "规划中",
+    "workflowStateCommitting": "入库中",
     "workflowStateDone": "规划完成",
     "workflowResultStorySummary": "故事梗概",
     "workflowResultChapters": "{count} 个章节",

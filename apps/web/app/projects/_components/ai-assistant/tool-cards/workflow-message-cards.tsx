@@ -52,9 +52,13 @@ import type {
 // ─── Shared: mirror the workflow status into Redux so the composer's
 //     "工作中" pill + stop button know there's a run in flight.
 //
-// Only the latest assistant message (isActive=true) drives the mirror —
-// past cards in history are stale snapshots and must not reset state.
-// Progress / suspended → setActive; completed / failed / cancelled → clear.
+// setActive must only fire from the latest assistant message (isActive=true)
+// so past cards in history don't overwrite live state. Clearing, however,
+// fires unconditionally from any terminal card — the reducer's runId guard
+// (`current.activeWorkflow.runId === runId`) already filters stale clears,
+// and this way a terminal card that isn't the last-assistant (e.g. the
+// composer streamed a follow-up text part on the same message) can still
+// unstick the pill.
 function useSyncActiveWorkflow(
   isActive: boolean,
   runId: string | undefined,
@@ -64,12 +68,14 @@ function useSyncActiveWorkflow(
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   useEffect(() => {
-    if (!isActive || !projectId || !runId || !workflowName) return;
-    if (status === "queued" || status === "running" || status === "suspended") {
-      dispatch(setActiveWorkflow({ projectId, runId, workflowName, status }));
-    } else {
+    if (!projectId || !runId || !workflowName) return;
+    const terminal = status === "completed" || status === "failed" || status === "cancelled";
+    if (terminal) {
       dispatch(clearActiveWorkflow({ projectId, runId }));
+      return;
     }
+    if (!isActive) return;
+    dispatch(setActiveWorkflow({ projectId, runId, workflowName, status }));
   }, [dispatch, projectId, isActive, runId, workflowName, status]);
 }
 
@@ -205,11 +211,17 @@ export function WorkflowProgressCard({
   // so the progress card would just duplicate it. Suppress the last tick.
   if (done) return null;
 
+  // Phase-aware label: "规划中" for the LLM draft phase, "入库中" for the
+  // commit phase. Without this both phases read "规划中" and the user can't
+  // tell they're watching two different chunks of work.
+  const stateLabel =
+    output.phase === "committing" ? t("workflowStateCommitting") : t("workflowStateRunning");
+
   return (
     <div className="w-full">
       <CardHeader
         workflowName={output.workflowName}
-        stateLabel={t("workflowStateRunning")}
+        stateLabel={stateLabel}
         progress={{ current, total, label: output.label }}
       />
       <ProgressBar current={current} total={total} tone="primary" />
@@ -457,6 +469,24 @@ export function WorkflowCompletedCard({
       );
     }
   };
+
+  // Compact chip form — used for low-signal terminal states that would
+  // otherwise duplicate the card right after (e.g. role/scene/prop_phase
+  // commit, which auto-chains into the image phase and is visually better
+  // served as a one-liner alongside the image card).
+  if (output.compact) {
+    return (
+      <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
+        <IconCheck className="size-3 shrink-0 text-green-500/70" />
+        <span className="font-medium">
+          {output.summary ??
+            (partial
+              ? `已入库 ${committedCount} 项，失败 ${failedCount} 项`
+              : `已入库 ${committedCount} 项`)}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">

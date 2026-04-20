@@ -122,6 +122,15 @@ export const WorkflowCompletedOutputSchema = BaseWorkflowOutput.extend({
   result: z.record(z.string(), z.unknown()).optional(),
   /** Deterministic follow-up — when set, the UI shows a big "继续·xxx" button. */
   nextStep: WorkflowNextStepSchema.optional(),
+  /**
+   * Hint the UI to render this completion as a compact one-line chip
+   * (like a tool indicator) instead of the full card. Set true for
+   * low-signal terminal states — e.g. role/scene/prop_phase commit
+   * that auto-chains to the image phase, so the user sees a small
+   * "✓ 已入库 10 个角色" line instead of a duplicate big card next to
+   * the image-phase progress card.
+   */
+  compact: z.boolean().optional(),
 });
 export type WorkflowCompletedOutput = z.infer<typeof WorkflowCompletedOutputSchema>;
 

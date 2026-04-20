@@ -125,7 +125,7 @@ const dispatchStep = createStep({
       stepId: "dispatch",
       current: 0,
       total: dispatched.length,
-      label: `0/${dispatched.length} 就绪`,
+      label: `派发 ${dispatched.length} 张图任务`,
     });
     await publishWorkflowStarted(ctx.projectId, runId, "role_image_phase", {
       plannedCount: dispatched.length,
@@ -134,7 +134,7 @@ const dispatchStep = createStep({
     await publishWorkflowProgress(ctx.projectId, runId, "role_image_phase", "committing", {
       current: 0,
       total: dispatched.length,
-      label: `0/${dispatched.length} 就绪`,
+      label: `派发 ${dispatched.length} 张图任务`,
     });
 
     return { assetIds: dispatched };
@@ -205,7 +205,7 @@ const waitAllStep = createStep({
 
       if (readyCount !== lastReportedReady) {
         lastReportedReady = readyCount;
-        const label = `${readyCount}/${assetIds.length} 就绪${failedCount > 0 ? `（${failedCount} 失败）` : ""}`;
+        const label = failedCount > 0 ? `已就绪（${failedCount} 失败）` : `已就绪`;
         await reportProgress(runId, {
           stepId: "wait_all",
           current: readyCount,

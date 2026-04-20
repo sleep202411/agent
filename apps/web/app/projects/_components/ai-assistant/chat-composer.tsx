@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { IconLoader2, IconPlayerStopFilled } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useAppSelector } from "@/src/store";
+import { useAppDispatch, useAppSelector } from "@/src/store";
+import { clearActiveWorkflow } from "@/src/store/slices/assistantSlice";
 import { cn } from "@/lib/utils";
 import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
 import type {
@@ -248,10 +249,16 @@ function WorkingPill({
   projectId: string | null;
   label: string;
 }) {
+  const dispatch = useAppDispatch();
   const [stopping, setStopping] = useState(false);
   const handleStop = async () => {
     if (!projectId || stopping) return;
     setStopping(true);
+    // Optimistic: swap the composer back to input immediately. The backend
+    // publish of workflow_failed will follow asynchronously and also clear
+    // via useSyncActiveWorkflow, but we don't want the user staring at a
+    // spinner for the few hundred ms it takes to round-trip.
+    dispatch(clearActiveWorkflow({ projectId, runId }));
     try {
       await cancelWorkflow(runId, projectId);
     } catch (err) {

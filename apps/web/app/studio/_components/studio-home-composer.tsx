@@ -13,13 +13,6 @@ import type {
   StudioSeedAttachment,
 } from "@/src/types/studio-seed";
 
-const AGENTS: { key: StudioAgent; labelKey: string }[] = [
-  { key: "character", labelKey: "agentCharacter" },
-  { key: "episode", labelKey: "agentEpisode" },
-  { key: "prop", labelKey: "agentProp" },
-  { key: "scene", labelKey: "agentScene" },
-];
-
 const ACCEPTED_EXTENSIONS = [".txt", ".md", ".text", ".docx", ".pdf"];
 const MAX_SCRIPT_SIZE = 50 * 1024 * 1024; // 50MB
 
@@ -34,7 +27,9 @@ export function StudioHomeComposer() {
   const tc = useTranslations("common");
 
   const [prompt, setPrompt] = useState("");
-  const [agent, setAgent] = useState<StudioAgent>("character");
+  // Agent pills UI removed — keep a default in seed payload so
+  // downstream consumers that still read `seed.agent` get a valid value.
+  const agent: StudioAgent = "character";
   const [focused, setFocused] = useState(false);
   const [scriptFile, setScriptFile] = useState<File | null>(null);
   const [scriptAttachment, setScriptAttachment] = useState<StudioSeedAttachment | null>(null);
@@ -231,15 +226,6 @@ export function StudioHomeComposer() {
           </div>
         </div>
       </div>
-
-      {/* Agent chips */}
-      <div className="flex flex-wrap items-center justify-center gap-2.5">
-        {AGENTS.map(({ key, labelKey }) => (
-          <AgentChip key={key} active={agent === key} onClick={() => setAgent(key)}>
-            {t(labelKey)}
-          </AgentChip>
-        ))}
-      </div>
     </section>
   );
 }
@@ -263,32 +249,6 @@ function ToolbarPill({
       className="flex h-7 items-center gap-1.5 rounded-full border border-border/70 px-3 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
     >
       {icon}
-      {children}
-    </button>
-  );
-}
-
-function AgentChip({
-  children,
-  active,
-  onClick,
-}: {
-  children: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-9 items-center gap-1.5 rounded-full border px-4 text-sm transition-all",
-        active
-          ? "border-primary/40 bg-primary/10 text-foreground shadow-[0_0_16px_-2px_oklch(0.591_0.225_26.8/0.45)]"
-          : "border-border/70 bg-card text-muted-foreground hover:border-border hover:text-foreground"
-      )}
-    >
-      <IconSparkles className={cn("size-3.5", active ? "text-primary" : "text-muted-foreground")} />
       {children}
     </button>
   );

@@ -1537,6 +1537,7 @@
     "workflowConfirmPrompt": "Generated — does it look right?",
     "workflowCompletedPrompt": "Done — happy with the result?",
     "workflowStateRunning": "Planning",
+    "workflowStateCommitting": "Saving",
     "workflowStateDone": "Planning done",
     "workflowResultStorySummary": "Story summary",
     "workflowResultChapters": "{count} chapters",

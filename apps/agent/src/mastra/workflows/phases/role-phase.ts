@@ -22,7 +22,7 @@ import {
   markDraftFailed,
   putDraft,
 } from "../../lib/drafts";
-import { reportProgress, throwIfCancelled } from "../engine";
+import { reportProgress, startWorkflow, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
@@ -434,11 +434,30 @@ const applyDecisionStep = createStep({
       committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      nextStep: {
-        workflowName: "role_image_phase",
-        labelKey: "workflowNextContinueToRoleImages",
-      },
+      // Compact chip — image phase's progress card takes the "big" slot.
+      compact: true,
+      // No nextStep — image gen is purely mechanical (no user decision),
+      // so we auto-chain role_image_phase below instead of showing a
+      // "继续·出图" button the user would always just click through.
     });
+
+    // Auto-chain: text-phase commit is done, kick off the image phase
+    // for whatever got committed. Partial failure is fine — image phase
+    // generates for what's in the DB and surfaces its own failures; a true
+    // hard failure would throw before this point and the user gets the
+    // retry button on the workflow_failed card instead.
+    try {
+      await startWorkflow({
+        workflowName: "role_image_phase",
+        inputData: {},
+        ctx,
+      });
+    } catch (err) {
+      console.warn(
+        `[role_phase] auto-chain role_image_phase failed:`,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
 
     return {
       outcome,

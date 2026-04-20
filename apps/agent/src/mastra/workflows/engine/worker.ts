@@ -14,7 +14,9 @@ import { appendEvent, clearCancel, isCancelled, setStatus } from "./state";
 import { buildConnection, QUEUE_NAME, type StoryosJobData, type StoryosJobName } from "./queue";
 import { WorkflowCancelledError } from "./progress";
 import { classifyError } from "../../lib/error-classifier";
+import { publishWorkflowFailed } from "../../lib/workflow-messages";
 import type { ResumeJobData, RunJobData } from "./types";
+import type { WorkflowName } from "../../lib/redis-keys";
 import type { StoryosContext } from "../../lib/workspace-client";
 
 export type WorkflowEngineWorker = Worker<StoryosJobData, unknown, StoryosJobName>;
@@ -42,7 +44,7 @@ async function handleRun(mastra: Mastra, job: Job<RunJobData, unknown, "run">): 
   const { runId, workflowName, inputData, ctx } = job.data;
 
   if (await isCancelled(runId)) {
-    await setStatus(runId, "cancelled");
+    await finalizeCancelled(runId, workflowName, ctx.projectId);
     return;
   }
 
@@ -57,9 +59,9 @@ async function handleRun(mastra: Mastra, job: Job<RunJobData, unknown, "run">): 
       inputData,
       requestContext: buildRequestContext(ctx, runId),
     });
-    await applyResult(runId, result);
+    await applyResult(runId, result, workflowName, ctx.projectId);
   } catch (err) {
-    await applyError(runId, err);
+    await applyError(runId, err, workflowName, ctx.projectId);
   }
 }
 
@@ -70,7 +72,7 @@ async function handleResume(
   const { runId, workflowName, resumeData, stepId, ctx } = job.data;
 
   if (await isCancelled(runId)) {
-    await setStatus(runId, "cancelled");
+    await finalizeCancelled(runId, workflowName, ctx.projectId);
     return;
   }
 
@@ -85,9 +87,57 @@ async function handleResume(
       resumeData,
       ...(stepId ? { step: stepId } : {}),
     });
-    await applyResult(runId, result);
+    await applyResult(runId, result, workflowName, ctx.projectId);
   } catch (err) {
-    await applyError(runId, err);
+    await applyError(runId, err, workflowName, ctx.projectId);
+  }
+}
+
+/**
+ * Terminal cancellation path shared by handleRun / handleResume (when the
+ * job fires already-cancelled) and applyError (WorkflowCancelledError).
+ * Updates internal state AND publishes a workflow_failed chat message so the
+ * frontend composer pill can clear — without this the "工作中..." pill sticks
+ * forever because useSyncActiveWorkflow only clears on workflow_failed/completed
+ * card renders.
+ */
+async function finalizeCancelled(
+  runId: string,
+  workflowName: WorkflowName,
+  projectId: string
+): Promise<void> {
+  await setStatus(runId, "cancelled");
+  await appendEvent(runId, "cancelled");
+  await clearCancel(runId);
+  try {
+    await publishWorkflowFailed(projectId, runId, workflowName, {
+      terminalStatus: "cancelled",
+      error: "用户已取消",
+      retryable: true,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[worker] publishWorkflowFailed(cancelled) failed for ${runId}:`, err);
+  }
+}
+
+async function finalizeFailed(
+  runId: string,
+  workflowName: WorkflowName,
+  projectId: string,
+  error: string,
+  classification: ReturnType<typeof classifyError>
+): Promise<void> {
+  try {
+    await publishWorkflowFailed(projectId, runId, workflowName, {
+      terminalStatus: "failed",
+      error,
+      classification,
+      retryable: classification !== "content_policy" && classification !== "invalid_input",
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[worker] publishWorkflowFailed(failed) failed for ${runId}:`, err);
   }
 }
 
@@ -110,7 +160,12 @@ function buildRequestContext(ctx: StoryosContext, runId: string): RequestContext
   return rc;
 }
 
-async function applyResult(runId: string, result: unknown): Promise<void> {
+async function applyResult(
+  runId: string,
+  result: unknown,
+  workflowName: WorkflowName,
+  projectId: string
+): Promise<void> {
   // We keep this boundary loose: Mastra's WorkflowResult type varies with
   // generic parameters and evolves across minor versions. We care about the
   // `status` tag and a handful of fields — access them defensively.
@@ -136,6 +191,7 @@ async function applyResult(runId: string, result: unknown): Promise<void> {
     await setStatus(runId, "failed", { error: message, errorClassification: classification });
     await appendEvent(runId, "failed", { error: message, classification });
     await clearCancel(runId);
+    await finalizeFailed(runId, workflowName, projectId, message, classification);
     return;
   }
   // tripwire / paused / anything unexpected — log and mark failed so the run
@@ -146,13 +202,17 @@ async function applyResult(runId: string, result: unknown): Promise<void> {
     errorClassification: "unknown",
   });
   await appendEvent(runId, "failed", { status: r.status, classification: "unknown" });
+  await finalizeFailed(runId, workflowName, projectId, unexpectedMsg, "unknown");
 }
 
-async function applyError(runId: string, err: unknown): Promise<void> {
+async function applyError(
+  runId: string,
+  err: unknown,
+  workflowName: WorkflowName,
+  projectId: string
+): Promise<void> {
   if (err instanceof WorkflowCancelledError) {
-    await setStatus(runId, "cancelled");
-    await appendEvent(runId, "cancelled");
-    await clearCancel(runId);
+    await finalizeCancelled(runId, workflowName, projectId);
     return;
   }
   const message = formatWorkflowError(err);
@@ -160,6 +220,7 @@ async function applyError(runId: string, err: unknown): Promise<void> {
   await setStatus(runId, "failed", { error: message, errorClassification: classification });
   await appendEvent(runId, "failed", { error: message, classification });
   await clearCancel(runId);
+  await finalizeFailed(runId, workflowName, projectId, message, classification);
 }
 
 /**

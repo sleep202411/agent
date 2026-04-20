@@ -121,7 +121,7 @@ export const invokeWorkflow = createTool({
     return {
       runId,
       workflowName: workflowName as WorkflowName,
-      message: `已启动 workflow "${workflowName}"，runId=${runId}。任务在后台运行，前端会通过任务卡片显示进度。`,
+      message: `OK. runId=${runId}. 立即结束 turn——不要再调任何工具（list_active_workflows / explain_current_state / show_drafts 等一律不要），不要再写任何文字。`,
     };
   },
 });

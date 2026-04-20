@@ -223,6 +223,9 @@ export function getAssistantInteractiveToolName(part: AssistantToolInvocation) {
 }
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  // Workflow dispatch / resume — rendered as a small chip by message-bubble
+  invoke_workflow: "启动工作流",
+  resume_workflow: "继续工作流",
   // UI tools
   show_options: "Options",
   confirm_action: "Confirm",

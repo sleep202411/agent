@@ -433,13 +433,20 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   );
                 }
 
-                // invoke_workflow — dispatch-only tool. The workflow itself
-                // emits its own workflow_started / progress / suspended /
-                // completed / failed messages (see workflow-messages.ts),
-                // which render via the WorkflowCard branches above. We just
-                // swallow the invoke_workflow tool's own output here.
-                if (toolName === "invoke_workflow") {
-                  return null;
+                // invoke_workflow / resume_workflow — the actual workflow
+                // cards (WorkflowStartedCard etc. above) own the rich UI.
+                // Here we render a compact chip (persona / action label) so
+                // the user sees a visible acknowledgement step between the
+                // button click and the first workflow_progress card appearing.
+                // Matches Claude-Code-style tool indicator chips.
+                if (toolName === "invoke_workflow" || toolName === "resume_workflow") {
+                  return (
+                    <ToolIndicator
+                      key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
+                      toolName={toolName}
+                      part={part}
+                    />
+                  );
                 }
 
                 // UI-only ack tools (no execute, fire-and-forget chip). Nest
