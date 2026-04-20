@@ -38,6 +38,15 @@ import {
  * Allowed shotSize / perspective / movement vocabulary is enumerated in
  * `buildPrompt()` below — keep those lists in sync with Java's dropdowns.
  */
+/**
+ * Required fields are the two minimum units a user needs to recognize the
+ * shot: `scene` (which set) + `description` (what's happening). Everything
+ * else (camera metadata, prompts, dialogue, duration) defaults to
+ * sensible values when the LLM drops them — DeepSeek/Qwen drop camera
+ * fields on ~10-30% of shots under load, and hard-rejecting the whole
+ * row just forces pointless regeneration. User can fill missing slots
+ * in the storyboard editor after.
+ */
 const StoryboardRow = z.object({
   /** 镜号 — "1" / "2" / …; auto-assigned in collect step so LLM can drift. */
   shot_no: z.string().optional(),
@@ -46,7 +55,7 @@ const StoryboardRow = z.object({
   /** 画面描述 — human-readable prose; can contain @character / @scene refs. */
   description: z.string().min(1),
   /** 图片提示词 — visual-token string fed to image model. */
-  image_prompt: z.string().min(1),
+  image_prompt: z.string().optional().default(""),
   /** 影片提示词 — video-gen prompt emphasizing motion / expression. */
   video_prompt: z.string().optional().default(""),
   /**
@@ -54,13 +63,13 @@ const StoryboardRow = z.object({
    * 右移镜头 / 左摇镜头 / 右摇镜头 / 升镜头 / 降镜头 / 上摇镜头 / 下摇镜头 /
    * 左旋镜头 / 右旋镜头 / 晃动镜头 / 变焦推进 / 变焦拉远 / 场景镜头
    */
-  movement: z.string().min(1),
+  movement: z.string().optional().default("固定镜头"),
   /** 对白 / 旁白 — "角色：台词" or "旁白：内容"; empty when silent. */
   dialogue: z.string().optional().default(""),
   /** 景别 — 超特写 / 特写 / 中景 / 全景 / 大全景 / 双人镜头 / 过肩 / 主观 / 插镜. */
-  shot_size: z.string().min(1),
+  shot_size: z.string().optional().default("中景"),
   /** 视角 — 平视 / 俯视 / 仰视 / 鸟瞰 / 倾斜 / 航拍 / 背面. */
-  perspective: z.string().min(1),
+  perspective: z.string().optional().default("平视"),
   /** 时长 — seconds, 2-8. */
   duration: z.number().min(1).max(120).optional(),
 });
@@ -260,7 +269,15 @@ const generateStep = createStep({
         });
         const rows = (
           (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? []
-        ).slice(0, 60);
+        )
+          .slice(0, 60)
+          // Fallback: if LLM left image_prompt empty (schema default), use
+          // description as the seed. Keeps the downstream image-gen step
+          // from dispatching with a blank prompt.
+          .map((row) => ({
+            ...row,
+            image_prompt: row.image_prompt?.trim() || row.description,
+          }));
 
         // Defense-in-depth: even if strict-mode somehow let a valid-but-
         // empty object slip through (shouldn't, but future schema
