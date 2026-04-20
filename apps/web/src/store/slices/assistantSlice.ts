@@ -1088,6 +1088,96 @@ export const assistantSlice = createSlice({
       };
     },
 
+    /**
+     * Streaming text delta — append to the target message's text part in
+     * place, no REST fetch. Fires once per WS `message_chunk` frame.
+     *
+     * Missing-message guard: if `message_chunk` arrives before we've seen
+     * `message_added` (race — shouldn't normally happen, since the backend
+     * always calls addMessage before the first chunk), drop the delta. The
+     * message will eventually land via the normal add/update path with
+     * full text, so we won't permanently lose content.
+     */
+    appendMessageChunk: (
+      state,
+      action: PayloadAction<{
+        projectId: string;
+        messageId: string;
+        partIndex: number;
+        appendText: string;
+      }>
+    ) => {
+      const { projectId, messageId, partIndex, appendText } = action.payload;
+      if (!appendText) return;
+      const current = state.projects[projectId];
+      if (!current) return;
+      const msgIdx = current.messages.findIndex((m) => m.id === messageId);
+      if (msgIdx < 0) return;
+      const msg = current.messages[msgIdx];
+      const parts = Array.isArray(msg.parts) ? [...msg.parts] : [];
+      // Ensure the target part exists as a text part. If parts is shorter,
+      // grow it with empty text parts up to partIndex (rare but possible
+      // if a text part appears after some other part).
+      while (parts.length <= partIndex) {
+        parts.push({ type: "text", text: "", state: "streaming" });
+      }
+      const existing = parts[partIndex];
+      if (
+        existing &&
+        typeof existing === "object" &&
+        (existing as { type?: unknown }).type === "text"
+      ) {
+        const prev = (existing as { text?: unknown }).text;
+        const prevText = typeof prev === "string" ? prev : "";
+        parts[partIndex] = {
+          ...(existing as object),
+          type: "text",
+          text: prevText + appendText,
+          state: "streaming",
+        } as (typeof parts)[number];
+      } else {
+        // Slot occupied by a non-text part — prepend a new text part instead
+        // of clobbering. Shouldn't happen under normal flow; logged as a
+        // last-resort fallback.
+        parts.splice(partIndex, 0, {
+          type: "text",
+          text: appendText,
+          state: "streaming",
+        });
+      }
+      const nextMessage = { ...msg, parts };
+      const messages = current.messages.map((m, i) => (i === msgIdx ? nextMessage : m));
+      state.projects[projectId] = { ...current, messages };
+    },
+
+    /**
+     * Streaming done — mark each text part of the target message as
+     * `state: "done"` so the UI can drop the caret / enable actions.
+     * Also clears `sending` / `streaming` flags; finalizeTurnOnIdle still
+     * runs on the agent_state transition to handle post-turn side effects.
+     */
+    finalizeMessage: (state, action: PayloadAction<{ projectId: string; messageId: string }>) => {
+      const { projectId, messageId } = action.payload;
+      const current = state.projects[projectId];
+      if (!current) return;
+      const msgIdx = current.messages.findIndex((m) => m.id === messageId);
+      if (msgIdx < 0) return;
+      const msg = current.messages[msgIdx];
+      const parts = Array.isArray(msg.parts)
+        ? msg.parts.map((p) => {
+            if (!p || typeof p !== "object") return p;
+            const part = p as { type?: unknown; state?: unknown };
+            if (part.type === "text" && part.state === "streaming") {
+              return { ...(p as object), state: "done" } as typeof p;
+            }
+            return p;
+          })
+        : msg.parts;
+      const nextMessage = { ...msg, parts };
+      const messages = current.messages.map((m, i) => (i === msgIdx ? nextMessage : m));
+      state.projects[projectId] = { ...current, messages };
+    },
+
     finalizeAssistantMessage: (
       state,
       action: PayloadAction<{ projectId: string; message: AssistantMessage | null }>
@@ -1221,6 +1311,8 @@ export const {
   commitUserMessage,
   commitToolResult,
   appendStreamChunk,
+  appendMessageChunk,
+  finalizeMessage,
   finalizeAssistantMessage,
   streamError,
   setHistory,

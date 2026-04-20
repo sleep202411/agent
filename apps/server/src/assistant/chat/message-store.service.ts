@@ -8,9 +8,19 @@
  *
  * Events (Redis pub/sub):
  *   chat:events:{projectId}      — JSON frames consumed by ChatEventsGateway
- *     { type: "message_added",   data: { messageId } }
- *     { type: "message_updated", data: { messageId } }
- *     { type: "agent_state",     data: { state } }
+ *     { type: "message_added",     data: { messageId } }
+ *     { type: "message_updated",   data: { messageId } }
+ *     { type: "message_chunk",     data: { messageId, partIndex, appendText } }
+ *     { type: "message_finalize",  data: { messageId } }
+ *     { type: "agent_state",       data: { state } }
+ *
+ * Streaming model (message_chunk / message_finalize):
+ *   For supervisor token-by-token streaming we bypass Redis writes on every
+ *   token — instead, each text delta is published directly to the pub/sub
+ *   channel and the client appends it to its in-memory copy. Redis is
+ *   checkpointed on a coarser interval and finalized once when the stream
+ *   ends. This keeps reconnect resilience (Redis has a "close enough" blob)
+ *   without taking a SET + publish round-trip on every LLM token.
  *
  * TTL: 7 days per conversation (touch on every write). VIP tiers can bump
  * via setConversationTtl(projectId, days) if we expose tier-aware writers.
@@ -36,6 +46,11 @@ export interface StoredMessage extends MessageLike {
 export type ChatEvent =
   | { type: 'message_added'; data: { messageId: string } }
   | { type: 'message_updated'; data: { messageId: string } }
+  | {
+      type: 'message_chunk';
+      data: { messageId: string; partIndex: number; appendText: string };
+    }
+  | { type: 'message_finalize'; data: { messageId: string } }
   | { type: 'agent_state'; data: { state: ChatAgentState } };
 
 function keyMsgs(projectId: string) {
@@ -173,6 +188,72 @@ export class MessageStoreService implements OnModuleDestroy {
     await this.touch(projectId);
     await this.publish(projectId, {
       type: 'message_updated',
+      data: { messageId: id },
+    });
+  }
+
+  /**
+   * Publish a text-delta chunk for a streaming assistant message. Does NOT
+   * touch Redis — the client appends the delta to its in-memory copy of
+   * the message. Periodic `checkpointMessage` calls keep Redis "close
+   * enough" for reconnect recovery, and `finalizeMessage` writes the
+   * terminal blob + publishes `message_finalize`.
+   */
+  async publishChunk(
+    projectId: string,
+    messageId: string,
+    partIndex: number,
+    appendText: string,
+  ): Promise<void> {
+    if (!appendText) return;
+    await this.publish(projectId, {
+      type: 'message_chunk',
+      data: { messageId, partIndex, appendText },
+    });
+  }
+
+  /**
+   * Write the current snapshot to Redis without publishing. Used inside the
+   * streaming loop as a "save point" — if the client reconnects mid-stream
+   * it gets a blob that's at most N ms out of date (where N is the caller's
+   * checkpoint interval). No pub/sub fanout, so connected clients keep
+   * consuming `message_chunk` without dedupe churn.
+   */
+  async checkpointMessage(
+    projectId: string,
+    message: StoredMessage,
+  ): Promise<void> {
+    if (!this.redis) return;
+    const id = this.ensureMessageId(message);
+    await this.redis.set(
+      keyMsg(projectId, id),
+      JSON.stringify(message),
+      'EX',
+      DEFAULT_TTL_SECONDS,
+    );
+    await this.touch(projectId);
+  }
+
+  /**
+   * Terminal call for a streaming assistant message. Writes the final blob
+   * to Redis and publishes `message_finalize` so the client can switch the
+   * bubble from "streaming" to "settled" (drop the caret, unlock actions).
+   */
+  async finalizeMessage(
+    projectId: string,
+    message: StoredMessage,
+  ): Promise<void> {
+    if (!this.redis) return;
+    const id = this.ensureMessageId(message);
+    await this.redis.set(
+      keyMsg(projectId, id),
+      JSON.stringify(message),
+      'EX',
+      DEFAULT_TTL_SECONDS,
+    );
+    await this.touch(projectId);
+    await this.publish(projectId, {
+      type: 'message_finalize',
       data: { messageId: id },
     });
   }

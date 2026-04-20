@@ -23,8 +23,14 @@ import {
   type ChatAgentState,
 } from './message-store.service';
 
-/** Debounce updates to the same in-flight message — don't spam Redis per token. */
-const UPDATE_DEBOUNCE_MS = 400;
+/**
+ * Redis checkpoint interval during streaming. We publish a text-delta chunk
+ * per iteration (pub/sub only, no Redis write) so live WS clients append
+ * tokens in real time, and only snapshot the full blob to Redis every
+ * CHECKPOINT_MS — that way a mid-stream reconnect gets a "close enough"
+ * blob instead of an empty seed, without paying one Redis SET per token.
+ */
+const CHECKPOINT_MS = 1500;
 
 /**
  * Strip the end-of-turn markers the LLM sometimes leaks into user-visible
@@ -69,6 +75,35 @@ function stripEndMarkers(text: string): string {
 function stripInjectedTags(text: string): string {
   if (!text) return text;
   return text.replace(INJECTED_TAG_REGEX, '');
+}
+
+/**
+ * A lightweight view of the text content of an in-progress message — used
+ * by the streaming loop to compute per-token deltas cheaply without
+ * deep-diffing the full parts array each iteration.
+ */
+interface TextSnapshot {
+  partIndex: number;
+  text: string;
+}
+
+/**
+ * Project a message down to its text parts, preserving the part index so
+ * later diffs can emit `publishChunk(partIndex, append)` against the
+ * correct slot in the client's in-memory copy.
+ */
+function snapshotTextParts(message: StoredMessage): TextSnapshot[] {
+  const parts = (message as { parts?: unknown }).parts;
+  if (!Array.isArray(parts)) return [];
+  const out: TextSnapshot[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i] as { type?: unknown; text?: unknown } | null;
+    if (!part || typeof part !== 'object') continue;
+    if (part.type === 'text' && typeof part.text === 'string') {
+      out.push({ partIndex: i, text: part.text });
+    }
+  }
+  return out;
 }
 
 function sanitizeMessage(message: StoredMessage): StoredMessage {
@@ -150,10 +185,21 @@ export class AgentStreamService {
   constructor(private readonly store: MessageStoreService) {}
 
   /**
-   * Consume the Mastra SSE bytes and persist the resulting assistant
-   * message(s) to Redis, publishing events as they flow. The caller
-   * provides a seed message id (so the client and server agree on which
-   * id represents "the reply being streamed right now").
+   * Consume the Mastra SSE bytes, stream text-delta chunks to connected WS
+   * clients, and persist the final assistant message to Redis when the
+   * stream ends. Two signal channels flow out of this:
+   *
+   *   1. `message_added`      — first snapshot lands (id registered, empty
+   *                             or seed-content blob in Redis)
+   *   2. `message_chunk`      — per text-delta, pub/sub only (no Redis)
+   *   3. `message_updated`    — fires for NON-text structural changes
+   *                             (e.g. a new tool part appearing), plus
+   *                             debounced checkpoints so reconnect works
+   *   4. `message_finalize`   — terminal blob + "streaming done" signal
+   *
+   * Clients drop the REST get-messages round-trip for text streaming and
+   * append deltas directly to their in-memory copy; non-text changes
+   * still fall back to the old fetch-on-updated pattern.
    */
   async consume(opts: {
     projectId: string;
@@ -166,8 +212,10 @@ export class AgentStreamService {
 
     await this.store.setAgentState(projectId, 'running');
 
-    let lastWrite = 0;
     let lastMessage: StoredMessage | null = null;
+    let previousParts: TextSnapshot[] = []; // by part index, text-only
+    let previousPartCount = 0;
+    let lastCheckpoint = 0;
     let iterations = 0;
     let addedSeed = false;
 
@@ -184,30 +232,92 @@ export class AgentStreamService {
         // to the client stays the canonical key in Redis and on the WS.
         const sanitized = sanitizeMessage(message as unknown as StoredMessage);
         lastMessage = { ...sanitized, id: seedId } as StoredMessage;
+
         if (!addedSeed) {
           // First real snapshot — addMessage so WS subscribers get
           // `message_added` and the conversation list includes the id.
           await this.store.addMessage(projectId, lastMessage);
           addedSeed = true;
-          lastWrite = Date.now();
+          previousParts = snapshotTextParts(lastMessage);
+          previousPartCount = Array.isArray(lastMessage.parts)
+            ? lastMessage.parts.length
+            : 0;
+          lastCheckpoint = Date.now();
           continue;
         }
-        const now = Date.now();
-        if (now - lastWrite >= UPDATE_DEBOUNCE_MS) {
-          await this.store.updateMessage(projectId, lastMessage);
-          lastWrite = now;
+
+        const currentParts = snapshotTextParts(lastMessage);
+        const currentPartCount = Array.isArray(lastMessage.parts)
+          ? lastMessage.parts.length
+          : 0;
+
+        // 1) Emit text-delta chunks for every text part whose text grew.
+        //    This is the fast path — pub/sub only, no Redis.
+        for (let i = 0; i < currentParts.length; i++) {
+          const prev = previousParts[i];
+          const curr = currentParts[i];
+          if (!curr) continue;
+          const prevText = prev?.text ?? '';
+          // Same part index, text strictly extended — send the tail.
+          if (
+            prev &&
+            prev.partIndex === curr.partIndex &&
+            curr.text.startsWith(prevText) &&
+            curr.text.length > prevText.length
+          ) {
+            const append = curr.text.slice(prevText.length);
+            await this.store.publishChunk(
+              projectId,
+              seedId,
+              curr.partIndex,
+              append,
+            );
+          } else if (!prev || prev.partIndex !== curr.partIndex) {
+            // New text part appeared (e.g. after a tool call) — emit the
+            // whole current text as one chunk so the client can attach to
+            // the right partIndex.
+            if (curr.text.length > 0) {
+              await this.store.publishChunk(
+                projectId,
+                seedId,
+                curr.partIndex,
+                curr.text,
+              );
+            }
+          }
+          // (text got shorter / rewritten backwards is ignored here; the
+          // checkpoint/finalize snapshots will reconcile on the client.)
         }
-      }
-      // Final flush — make sure the terminal state lands even if the last
-      // chunk arrived within the debounce window.
-      if (lastMessage) {
-        if (addedSeed) {
+
+        // 2) Detect structural change (new tool part etc.) — fall back to
+        //    full updateMessage so the client fetches the fresh blob
+        //    containing the new non-text part.
+        const structuralChange = currentPartCount !== previousPartCount;
+        if (structuralChange) {
           await this.store.updateMessage(projectId, lastMessage);
-        } else {
-          // Stream yielded no messages (shouldn't happen in practice).
+        }
+
+        // 3) Periodic Redis checkpoint (no publish) for reconnect safety.
+        const now = Date.now();
+        if (!structuralChange && now - lastCheckpoint >= CHECKPOINT_MS) {
+          await this.store.checkpointMessage(projectId, lastMessage);
+          lastCheckpoint = now;
+        }
+
+        previousParts = currentParts;
+        previousPartCount = currentPartCount;
+      }
+
+      // Final flush — write the terminal blob and publish `message_finalize`
+      // so the client can settle the streaming state (drop the caret etc).
+      if (lastMessage) {
+        if (!addedSeed) {
+          // Stream yielded no messages — just add the seed for consistency.
           await this.store.addMessage(projectId, lastMessage);
         }
+        await this.store.finalizeMessage(projectId, lastMessage);
       }
+
       const partCount = Array.isArray(lastMessage?.parts)
         ? lastMessage.parts.length
         : 0;
@@ -220,6 +330,12 @@ export class AgentStreamService {
       this.logger.warn(
         `consume failed project=${projectId} iterations=${iterations}: ${msg}`,
       );
+      // Best-effort finalize so the frontend doesn't leave the caret running.
+      if (lastMessage && addedSeed) {
+        await this.store
+          .finalizeMessage(projectId, lastMessage)
+          .catch(() => {});
+      }
       await this.store.setAgentState(projectId, 'failed').catch(() => {});
     }
   }

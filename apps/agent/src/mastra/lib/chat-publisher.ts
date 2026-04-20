@@ -33,7 +33,12 @@ function channelEvents(projectId: string): string {
 
 type ChatEvent =
   | { type: "message_added"; data: { messageId: string } }
-  | { type: "message_updated"; data: { messageId: string } };
+  | { type: "message_updated"; data: { messageId: string } }
+  | {
+      type: "message_chunk";
+      data: { messageId: string; partIndex: number; appendText: string };
+    }
+  | { type: "message_finalize"; data: { messageId: string } };
 
 /**
  * Minimum structural shape — matches StoredMessage in Nest's store. Parts
@@ -140,4 +145,43 @@ export async function getChatMessage(
   } catch {
     return null;
   }
+}
+
+/**
+ * Publish a text-delta chunk for a streaming message. Mirror of the Nest
+ * MessageStoreService.publishChunk — same pub/sub channel, same event shape.
+ * Does NOT touch Redis. Used when an agent-side persona (not just supervisor)
+ * wants to stream tokens; today the supervisor path runs through Nest's
+ * AgentStreamService so this is reserved for future use.
+ */
+export async function publishMessageChunk(
+  projectId: string,
+  messageId: string,
+  partIndex: number,
+  appendText: string
+): Promise<void> {
+  if (!appendText) return;
+  await publish(projectId, {
+    type: "message_chunk",
+    data: { messageId, partIndex, appendText },
+  });
+}
+
+/** Final frame — terminal Redis write + publish so the client can settle. */
+export async function finalizeChatMessage(
+  projectId: string,
+  message: StoredMessage
+): Promise<void> {
+  const { redis } = getClients();
+  await redis.set(
+    keyMsg(projectId, message.id),
+    JSON.stringify(message),
+    "EX",
+    DEFAULT_TTL_SECONDS
+  );
+  await touch(projectId);
+  await publish(projectId, {
+    type: "message_finalize",
+    data: { messageId: message.id },
+  });
 }

@@ -29,6 +29,18 @@ import { fetchMessagesByIds } from "./assistant-client";
 
 export interface ChatSessionHandlers {
   onMessage: (message: AssistantMessage) => void;
+  /**
+   * Fires on every streaming text-delta. Consumer should patch the
+   * in-memory AssistantMessage at `parts[partIndex].text += appendText`
+   * without a REST round-trip. Missing messageId (we haven't seen the
+   * `message_added` yet) is a no-op — the full blob will land shortly.
+   */
+  onMessageChunk?: (messageId: string, partIndex: number, appendText: string) => void;
+  /**
+   * Fires when a streaming message finishes. The in-memory copy is now
+   * canonical; consumer can drop any "streaming" UI flag.
+   */
+  onMessageFinalize?: (messageId: string) => void;
   onAgentState?: (state: ChatAgentState) => void;
   onError?: (err: Error) => void;
 }
@@ -87,6 +99,21 @@ function openSession(projectId: string, handlers: ChatSessionHandlers): ActiveSe
     onMessageChanged: (id) => {
       session.pendingIds.add(id);
       void drainPending(session);
+    },
+    onMessageChunk: (id, partIndex, appendText) => {
+      // Fire-and-forget: the consumer patches its in-memory copy. No fetch.
+      try {
+        session.handlers.onMessageChunk?.(id, partIndex, appendText);
+      } catch (err) {
+        console.warn("[chat-session] onMessageChunk handler threw:", err);
+      }
+    },
+    onMessageFinalize: (id) => {
+      try {
+        session.handlers.onMessageFinalize?.(id);
+      } catch (err) {
+        console.warn("[chat-session] onMessageFinalize handler threw:", err);
+      }
     },
     onAgentState: (state) => {
       if (state === session.lastAgentState) return;

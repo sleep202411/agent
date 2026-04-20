@@ -4,12 +4,15 @@
  * projectId and emits frame-level events to the caller.
  *
  * Wire protocol (server-authored, see chat-events.gateway.ts):
- *   { event: "message_list",    data: { messageIds } }       — initial snapshot
- *   { event: "message_added",   data: { messageId } }        — new message committed
- *   { event: "message_updated", data: { messageId } }        — content mutated
- *   { event: "agent_state",     data: { state } }            — running/idle/...
- *   { event: "heartbeat",       data: { conversationHash } } — every 30s
- *   { event: "terminate",       data: { reason, code } }     — server-initiated close
+ *   { event: "message_list",     data: { messageIds } }       — initial snapshot
+ *   { event: "message_added",    data: { messageId } }        — new message committed
+ *   { event: "message_updated",  data: { messageId } }        — full content mutated
+ *   { event: "message_chunk",    data: { messageId, partIndex, appendText } }
+ *                                                            — streaming text delta
+ *   { event: "message_finalize", data: { messageId } }       — streaming done
+ *   { event: "agent_state",      data: { state } }            — running/idle/...
+ *   { event: "heartbeat",        data: { conversationHash } } — every 30s
+ *   { event: "terminate",        data: { reason, code } }     — server-initiated close
  */
 export type ChatAgentState = "idle" | "running" | "waiting" | "failed" | string;
 
@@ -17,6 +20,11 @@ export type ChatEventFrame =
   | { event: "message_list"; data: { messageIds: string[] } }
   | { event: "message_added"; data: { messageId: string } }
   | { event: "message_updated"; data: { messageId: string } }
+  | {
+      event: "message_chunk";
+      data: { messageId: string; partIndex: number; appendText: string };
+    }
+  | { event: "message_finalize"; data: { messageId: string } }
   | { event: "agent_state"; data: { state: ChatAgentState } }
   | {
       event: "heartbeat";
@@ -29,6 +37,17 @@ export interface ChatEventsClientHandlers {
   onFrame?: (frame: ChatEventFrame) => void;
   onMessageList?: (messageIds: string[]) => void;
   onMessageChanged?: (messageId: string) => void;
+  /**
+   * Fires on every streaming text-delta. Client should append `appendText`
+   * to `message.parts[partIndex].text` in place — do NOT refetch the
+   * message via get-messages.
+   */
+  onMessageChunk?: (messageId: string, partIndex: number, appendText: string) => void;
+  /**
+   * Fires when a streaming message finishes. The Redis blob is now final;
+   * clients can drop any "streaming" UI indicator (caret etc).
+   */
+  onMessageFinalize?: (messageId: string) => void;
   onAgentState?: (state: ChatAgentState) => void;
   onTerminate?: (reason: string, code: number) => void;
   /**
@@ -136,6 +155,16 @@ export function openChatEventsClient(
         case "message_added":
         case "message_updated":
           handlers.onMessageChanged?.(frame.data.messageId);
+          break;
+        case "message_chunk":
+          handlers.onMessageChunk?.(
+            frame.data.messageId,
+            frame.data.partIndex,
+            frame.data.appendText
+          );
+          break;
+        case "message_finalize":
+          handlers.onMessageFinalize?.(frame.data.messageId);
           break;
         case "agent_state":
           handlers.onAgentState?.(frame.data.state);

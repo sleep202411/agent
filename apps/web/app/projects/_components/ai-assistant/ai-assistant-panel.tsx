@@ -23,6 +23,8 @@ import {
   loadHistory,
   newConversation,
   appendStreamChunk,
+  appendMessageChunk,
+  finalizeMessage,
   finalizeTurnOnIdle,
   streamError,
 } from "@/src/store/slices/assistantSlice";
@@ -69,6 +71,12 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     ensureSession(projectId, {
       onMessage: (message) => {
         dispatch(appendStreamChunk({ projectId, message }));
+      },
+      onMessageChunk: (messageId, partIndex, appendText) => {
+        dispatch(appendMessageChunk({ projectId, messageId, partIndex, appendText }));
+      },
+      onMessageFinalize: (messageId) => {
+        dispatch(finalizeMessage({ projectId, messageId }));
       },
       onAgentState: (state) => {
         if (state === "idle") {

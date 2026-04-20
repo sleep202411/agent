@@ -53,6 +53,11 @@ type TrackedSocket = WebSocket & {
 type StoreEvent =
   | { type: 'message_added'; data: { messageId: string } }
   | { type: 'message_updated'; data: { messageId: string } }
+  | {
+      type: 'message_chunk';
+      data: { messageId: string; partIndex: number; appendText: string };
+    }
+  | { type: 'message_finalize'; data: { messageId: string } }
   | { type: 'agent_state'; data: { state: string } };
 
 /**
