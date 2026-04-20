@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { IconCheck, IconCircleCheckFilled, IconLoader2 } from "@tabler/icons-react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
@@ -279,7 +279,6 @@ export function CreditsRechargeDialog({
           <div className="flex flex-col items-center py-4">
             <p className="mb-4 text-sm text-muted-foreground">{t("scanToPay")}</p>
             <div className="mb-6 rounded-xl bg-white p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrUrl} alt="QR" className="size-48" />
             </div>
             <div className="flex gap-3">

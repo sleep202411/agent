@@ -1,10 +1,19 @@
-import { createSelector, createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import {
+  createAsyncThunk,
+  createSelector,
+  createSlice,
+  type PayloadAction,
+} from "@reduxjs/toolkit";
+import { backendApi } from "@/src/lib/api";
 
 // ─── Types ──────────────────────────────────────────────
 
 export type TaskType = "image" | "video" | "audio" | "fusion";
 
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+/** Task origin: "local" = created by frontend queue, "server" = synced from backend */
+export type TaskSource = "local" | "server";
 
 export interface TaskOutput {
   storagePath?: string;
@@ -17,6 +26,7 @@ export interface Task {
   remoteId?: string;
   type: TaskType;
   status: TaskStatus;
+  source: TaskSource;
   projectId?: string;
   shotId?: string;
   shotColumnId?: string;
@@ -67,7 +77,10 @@ export const taskSlice = createSlice({
     addTask: (
       state,
       action: PayloadAction<
-        Omit<Task, "id" | "status" | "createdAt" | "updatedAt"> & { id?: string }
+        Omit<Task, "id" | "status" | "source" | "createdAt" | "updatedAt"> & {
+          id?: string;
+          source?: TaskSource;
+        }
       >
     ) => {
       const now = Date.now();
@@ -75,6 +88,7 @@ export const taskSlice = createSlice({
       state.tasks[id] = {
         ...action.payload,
         id,
+        source: action.payload.source ?? "local",
         status: "pending",
         createdAt: now,
         updatedAt: now,
@@ -151,6 +165,28 @@ export const taskSlice = createSlice({
       }
     },
 
+    /** Upsert server-synced tasks. Only touches source="server" tasks for the given scope. */
+    upsertServerTasks: (state, action: PayloadAction<{ tasks: Task[]; shotColumnId?: string }>) => {
+      const { tasks: incoming, shotColumnId } = action.payload;
+      const incomingIds = new Set(incoming.map((t) => t.id));
+
+      // Remove stale server tasks that match the scope but are no longer in the response
+      for (const [id, task] of Object.entries(state.tasks)) {
+        if (task.source !== "server") continue;
+        if (shotColumnId && task.shotColumnId !== shotColumnId) continue;
+        if (!incomingIds.has(id)) {
+          delete state.tasks[id];
+        }
+      }
+
+      // Upsert incoming — skip if a local task with the same id already exists
+      for (const task of incoming) {
+        const existing = state.tasks[task.id];
+        if (existing && existing.source === "local") continue;
+        state.tasks[task.id] = task;
+      }
+    },
+
     applyEvent: (state, action: PayloadAction<TaskEvent>) => {
       const event = action.payload;
       const now = Date.now();
@@ -195,7 +231,136 @@ export const {
   removeTask,
   clearCompleted,
   applyEvent,
+  upsertServerTasks,
 } = taskSlice.actions;
+
+// ─── Server Sync Thunk ─────────────────────────────────
+
+/**
+ * Server task record from integralrecord APIs.
+ *
+ * Status: 0 = failed, 1 = success, 2 = running
+ * Remark: on success = video URL/path, on failure = error reason
+ */
+interface ServerTaskRecord {
+  id?: string | number;
+  requestId?: string;
+  status?: number;
+  remark?: string | null;
+  responseData?: string | null;
+  createTime?: string;
+  shotId?: string | number;
+  shotColumnId?: string | number;
+  modelCode?: string;
+  aiName?: string;
+  [key: string]: unknown;
+}
+
+function serverRecordToTask(record: ServerTaskRecord): Task {
+  const id = String(record.id ?? "");
+  const now = Date.now();
+
+  let status: TaskStatus = "running";
+  let output: TaskOutput | undefined;
+  let error: string | undefined;
+
+  const rawStatus = record.status;
+
+  if (rawStatus === 1) {
+    // Success — remark contains the video URL/path
+    status = "completed";
+    const remark = record.remark ?? "";
+    if (remark) {
+      output = { storagePath: remark, url: remark };
+    }
+  } else if (rawStatus === 0) {
+    // Failed — remark contains the error reason
+    status = "failed";
+    error = record.remark || "生成失败";
+  }
+  // rawStatus === 2 or undefined → running
+
+  return {
+    id,
+    remoteId: record.requestId ? String(record.requestId) : undefined,
+    type: "video",
+    source: "server",
+    status,
+    shotId: record.shotId ? String(record.shotId) : undefined,
+    shotColumnId: record.shotColumnId ? String(record.shotColumnId) : undefined,
+    input: {},
+    output,
+    error,
+    createdAt: record.createTime ? new Date(record.createTime).getTime() : now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Load running/failed tasks from the server (list API).
+ * Called once when dialog opens to restore in-progress tasks.
+ */
+export const loadServerTasks = createAsyncThunk(
+  "task/loadServerTasks",
+  async (params: { shotColumnId: string }, { dispatch }) => {
+    try {
+      const res = await backendApi.post<{ list?: ServerTaskRecord[] }>(
+        "/api/ai/record/integralrecord/runningandfailed/list",
+        { data: { page: 1, pageSize: 50, shotColumnId: params.shotColumnId } }
+      );
+      const records = (res as { list?: ServerTaskRecord[] })?.list ?? [];
+      const tasks = records.map(serverRecordToTask);
+
+      dispatch(
+        upsertServerTasks({
+          tasks,
+          shotColumnId: params.shotColumnId,
+        })
+      );
+    } catch (err) {
+      console.error("[taskSlice] loadServerTasks failed:", err);
+    }
+  }
+);
+
+/**
+ * Poll each running server task by ID using the single-item API.
+ * Called on an interval — iterates all running server tasks and updates their status.
+ * When a task completes or fails, it's updated in place.
+ */
+export const pollServerTasks = createAsyncThunk(
+  "task/pollServerTasks",
+  async (_: void, { getState, dispatch }) => {
+    const state = getState() as { task: TaskState };
+    const runningServerTasks = Object.values(state.task.tasks).filter(
+      (t) => t.source === "server" && t.status === "running"
+    );
+
+    if (runningServerTasks.length === 0) return;
+
+    for (const task of runningServerTasks) {
+      try {
+        const record = await backendApi.post<ServerTaskRecord>(
+          `/api/ai/record/integralrecord/${task.id}`
+        );
+        if (!record) continue;
+        const updated = serverRecordToTask(record as ServerTaskRecord);
+        if (updated.status !== task.status) {
+          dispatch(
+            applyEvent({
+              taskId: task.id,
+              status: updated.status,
+              output: updated.output,
+              error: updated.error,
+            })
+          );
+        }
+      } catch (err) {
+        console.error(`[taskSlice] poll task ${task.id} failed:`, err);
+      }
+    }
+  }
+);
 
 // ─── Selectors ──────────────────────────────────────────
 

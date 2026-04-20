@@ -1,11 +1,31 @@
 import { Module } from '@nestjs/common';
-import { AssistantController } from './assistant.controller';
-import { AssistantService } from './assistant.service';
+import { AuthModule } from '../auth/auth.module';
 import { WorkspaceService } from './workspace.service';
-import { ScriptAgentService } from '../pipeline/script-agent.service';
+import { MastraProxyController } from './mastra-proxy.controller';
+import { AssetsProxyController } from './assets-proxy.controller';
+import { DictionariesController } from './dictionaries.controller';
+import { MessageStoreService } from './chat/message-store.service';
+import { ChatEventsGateway } from './chat/chat-events.gateway';
+import { AgentStreamService } from './chat/agent-stream.service';
+import { ChatController } from './chat/chat.controller';
+import { WorkflowProxyController } from './workflow/workflow-proxy.controller';
+import { DraftsProxyController } from './workflow/drafts-proxy.controller';
 
 @Module({
-  controllers: [AssistantController],
-  providers: [AssistantService, WorkspaceService, ScriptAgentService],
+  imports: [AuthModule],
+  controllers: [
+    MastraProxyController,
+    AssetsProxyController,
+    DictionariesController,
+    ChatController,
+    WorkflowProxyController,
+    DraftsProxyController,
+  ],
+  providers: [
+    WorkspaceService,
+    MessageStoreService,
+    ChatEventsGateway,
+    AgentStreamService,
+  ],
 })
 export class AssistantModule {}

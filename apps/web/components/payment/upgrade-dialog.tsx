@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   IconCheck,
   IconCircleCheckFilled,
@@ -66,31 +66,62 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
     [selectedId, packages]
   );
 
-  const planConfig: Record<string, { name: string; benefits: string[] }> = {
+  type BenefitGroup = { title?: string; items: string[] };
+  const planConfig: Record<string, { name: string; benefits: BenefitGroup[] }> = {
     VIP1: {
       name: t("plans.basic"),
       benefits: [
-        t("benefits.bonusCredits", { value: 1000 }),
-        t("benefits.creditDiscount"),
-        t("benefits.limitedAgent"),
+        {
+          items: [t("benefits.bonusCredits", { value: 1000 }), t("benefits.creditDiscount")],
+        },
+        {
+          title: "StoryOS",
+          items: [
+            t("benefits.storyosMessages", { count: 100 }),
+            t("benefits.storyosRetention", { days: 15 }),
+          ],
+        },
       ],
     },
     VIP2: {
       name: t("plans.standard"),
       benefits: [
-        t("benefits.bonusCredits", { value: 2000 }),
-        t("benefits.creditDiscount"),
-        t("benefits.unlimitedAgent"),
-        t("benefits.freeCourses"),
+        {
+          items: [
+            t("benefits.bonusCredits", { value: 2000 }),
+            t("benefits.creditDiscount"),
+            t("benefits.freeCourses"),
+          ],
+        },
+        {
+          title: "StoryOS",
+          items: [
+            t("benefits.storyosUnlimited"),
+            t("benefits.storyosMessages", { count: 200 }),
+            t("benefits.storyosRetention", { days: 15 }),
+          ],
+        },
       ],
     },
     VIP3: {
       name: t("plans.pro"),
       benefits: [
-        t("benefits.bonusCredits", { value: 3000 }),
-        t("benefits.creditDiscount"),
-        t("benefits.unlimitedAgent"),
-        t("benefits.freeCourses"),
+        {
+          items: [
+            t("benefits.bonusCredits", { value: 3000 }),
+            t("benefits.creditDiscount"),
+            t("benefits.freeCourses"),
+          ],
+        },
+        {
+          title: "StoryOS",
+          items: [
+            t("benefits.storyosUnlimited"),
+            t("benefits.storyosMessages", { count: 500 }),
+            t("benefits.storyosRetention", { days: 15 }),
+            t("benefits.storyosPriority"),
+          ],
+        },
       ],
     },
   };
@@ -376,17 +407,31 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                       </div>
 
                       {/* Benefits */}
-                      <ul className="mt-auto space-y-2.5">
-                        {benefits.map((b, i) => (
-                          <li
-                            key={i}
-                            className="flex items-start gap-2 text-sm text-muted-foreground"
-                          >
-                            <IconCheck className="mt-0.5 size-4 shrink-0 text-white" />
-                            <span>{b}</span>
-                          </li>
+                      <div className="mt-auto space-y-4">
+                        {benefits.map((group, gi) => (
+                          <div key={gi}>
+                            {group.title && (
+                              <div className="mb-2 flex items-center gap-1.5">
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-primary/80">
+                                  {group.title}
+                                </span>
+                                <div className="flex-1 border-t border-white/8" />
+                              </div>
+                            )}
+                            <ul className="space-y-2">
+                              {group.items.map((b, i) => (
+                                <li
+                                  key={i}
+                                  className="flex items-start gap-2 text-sm text-muted-foreground"
+                                >
+                                  <IconCheck className="mt-0.5 size-4 shrink-0 text-white" />
+                                  <span>{b}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     </div>
                   );
                 })}
@@ -405,7 +450,6 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
             <h2 className="mb-2 text-xl font-semibold">{t("wechatPay")}</h2>
             <p className="mb-8 text-sm text-muted-foreground">{t("scanToPay")}</p>
             <div className="mb-8 rounded-2xl bg-white p-5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={qrUrl} alt="QR" className="size-56" />
             </div>
             <div className="flex gap-3">

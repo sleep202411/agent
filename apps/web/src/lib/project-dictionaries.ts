@@ -13,18 +13,17 @@ export function fetchProjectDictionaries(): Promise<ProjectDictionaries> {
 }
 
 async function _fetchProjectDictionaries(): Promise<ProjectDictionaries> {
-  const legacyDictionaryHeaders = { "accept-language": "en-US" } as const;
+  // These three Java endpoints require a trailing slash, which Next.js 16's
+  // `rewrites()` normalizes away. We route through the Nest proxy instead
+  // (apps/server/.../dictionaries.controller.ts) which preserves the URL
+  // exactly when forwarding to Java.
   const [typeMapResult, styleOptionsResult, sizeMetaResult] = await Promise.allSettled([
-    backendApi.get<Record<string, string>>("/api/user/world/static/list/proudct/type", {
-      headers: legacyDictionaryHeaders,
-    }),
+    backendApi.get<Record<string, string>>("/aurora/dictionaries/product-types"),
     backendApi.get<Array<{ id?: string | number; info?: string; picLink?: string }>>(
-      "/api/user/world/static/list/painting/style",
-      { headers: legacyDictionaryHeaders }
+      "/aurora/dictionaries/painting-styles"
     ),
     backendApi.get<{ AspectRatioTypeEnum?: Record<string, string> }>(
-      "/anon/enumMeta/getEnumBySimpleName/AspectRatioTypeEnum",
-      { headers: legacyDictionaryHeaders }
+      "/aurora/dictionaries/aspect-ratios"
     ),
   ]);
 

@@ -19,6 +19,8 @@ import type {
   AssistantShowOptionsResult as SharedAssistantShowOptionsResult,
   AssistantConfigureParamsInput as SharedAssistantConfigureParamsInput,
   AssistantConfigureParamsResult as SharedAssistantConfigureParamsResult,
+  AssistantRequireProjectParamsInput as SharedAssistantRequireProjectParamsInput,
+  AssistantRequireProjectParamsResult as SharedAssistantRequireProjectParamsResult,
   AssistantStoryboardProposal as SharedAssistantStoryboardProposal,
   AssistantStoryboardDecision as SharedAssistantStoryboardDecision,
   AssistantScriptProposalInput as SharedAssistantScriptProposalInput,
@@ -152,6 +154,10 @@ export type AssistantConfigureParamsInput = SharedAssistantConfigureParamsInput;
 
 export type AssistantConfigureParamsResult = SharedAssistantConfigureParamsResult;
 
+export type AssistantRequireProjectParamsInput = SharedAssistantRequireProjectParamsInput;
+
+export type AssistantRequireProjectParamsResult = SharedAssistantRequireProjectParamsResult;
+
 export type AssistantRoleProposal = SharedAssistantRoleProposal;
 
 export type AssistantRoleProposalInput = SharedAssistantRoleProposalInput;
@@ -217,6 +223,9 @@ export function getAssistantInteractiveToolName(part: AssistantToolInvocation) {
 }
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  // Workflow dispatch / resume — rendered as a small chip by message-bubble
+  invoke_workflow: "启动工作流",
+  resume_workflow: "继续工作流",
   // UI tools
   show_options: "Options",
   confirm_action: "Confirm",
@@ -230,6 +239,9 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   // Read tools
   get_project_snapshot: "Reading Project",
   get_world_assets: "Reading Assets",
+  list_characters: "Listing Characters",
+  list_scenes: "Listing Scenes",
+  list_props: "Listing Props",
   search_world_assets: "Searching Assets",
   aggregate_world_assets_for_analysis: "Analyzing Assets",
   get_storyboard_snapshot: "Reading Storyboard",
@@ -255,6 +267,8 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   fill_cell: "Fill Cell",
   save_storyboard_draft: "Save Storyboard",
   batch_create_episodes: "Create Episodes",
+  batch_update_episodes: "Update Episodes",
+  reorder_episodes: "Reorder Episodes",
   save_episode_script: "Save Script",
   // Script agent tools
   analyze_text: "Analyzing Script",

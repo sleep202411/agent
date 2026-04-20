@@ -22,14 +22,9 @@ import type {
   SimpleMode,
   VideoMode,
   VideoResultItem,
-} from "@/components/storyboard/ai-generator/video-dialog/video-types";
-import {
-  getModePath,
-  ossUrl,
-  toHistoryItem,
-} from "@/components/storyboard/ai-generator/video-dialog/video-types";
+} from "@/src/lib/video-types";
+import { ossUrl, toHistoryItem } from "@/src/lib/video-types";
 import type { RawAiModel, AssetRecord } from "@/src/types/workspace";
-import { getRawAiModelsFromCache } from "@/src/hooks/use-ai-models";
 
 // ─── Re-export video types used by consumers ──────────
 export type { VideoResultItem, ReferenceAsset, MultiRefType, SimpleMode, EditMode, VideoMode };
@@ -47,9 +42,23 @@ export interface ProjectDetail {
   aspectRatio?: string;
   aspectRatioType?: string;
   stylePainting?: string;
+  /**
+   * Dialog language for generated scripts. Java schema addition pending —
+   * we send it on update already so it starts persisting the moment Java
+   * adds the column.
+   */
+  dialogLanguage?: string;
   type?: number;
   episode?: number;
   chapterLength?: number;
+  /**
+   * User-chosen target number of episodes for this project. Collected in
+   * `ProjectParamsForm` alongside the other core params but NOT persisted
+   * to Java yet — stored client-side in localStorage via
+   * `fizzos:episode-count:{projectId}`. When Java exposes a column for it
+   * we'll start sending it through the existing update-project pipeline.
+   */
+  targetEpisodeCount?: number;
   status?: number;
   aiId?: string;
   adminUserId?: string;
@@ -83,6 +92,7 @@ export type ResolvedColumnType =
   | "shot_no"
   | "image"
   | "video"
+  | "sound_path"
   | "audio"
   | "music"
   | "richtext"
@@ -176,7 +186,7 @@ function resolveColumn(col: ShotColumn): ShotColumn {
       resolved = "lip_sync";
       break;
     case "sound_path":
-      resolved = "audio";
+      resolved = "sound_path";
       break;
     case "music":
       resolved = "music";
@@ -286,6 +296,8 @@ export interface ImageGenerateInput {
   referenceImageUrl?: string;
   images?: string[];
   mode?: "generate" | "edit";
+  /** Override API endpoint (from AiModeConfig.endpoint) */
+  endpoint?: string;
   promptExtend?: boolean;
   watermark?: boolean;
 }
@@ -644,15 +656,11 @@ function createDefaultAiAudioForm(): AiAudioFormNestedState {
 // ─── AI Video Form State (nested) ────────────────────
 
 interface AiVideoFormNestedState {
-  modelsByMode: Partial<Record<VideoMode, RawAiModel[]>>;
-  modelsLoadedForMode: Partial<Record<VideoMode, boolean>>;
   instances: Record<string, VideoInstanceState>;
 }
 
 function createDefaultAiVideoForm(): AiVideoFormNestedState {
   return {
-    modelsByMode: {},
-    modelsLoadedForMode: {},
     instances: {},
   };
 }
@@ -911,10 +919,38 @@ export const initImageInstance = createAsyncThunk<
   if (opts?.defaultPrompt && !inst.formData.prompt) {
     inst.formData.prompt = opts.defaultPrompt;
   }
-  if (opts?.defaultRefImage) {
-    inst.formData.referenceImages = [
-      { url: buildOssUrl(opts.defaultRefImage), path: opts.defaultRefImage },
-    ];
+  // --- Reference group initialization ---
+  // Priority: 1. prompt mentions → 2. defaultRefImage (preferred > first image)
+  if (inst.formData.referenceImages.length === 0) {
+    const refs: Array<{ url: string; path: string; label?: string }> = [];
+
+    // 1. Extract images from prompt mentions (with names)
+    const promptHtml = inst.formData.prompt;
+    if (promptHtml) {
+      const mentionRegex = /<mention\s+([^>]*)>([^<]*)<\/mention>/gi;
+      const seen = new Set<string>();
+      let match: RegExpExecArray | null;
+      while ((match = mentionRegex.exec(promptHtml)) !== null) {
+        const attrs = match[1];
+        const name = match[2];
+        const url = attrs.match(/imgUrl="([^"]*)"/i)?.[1] ?? "";
+        const type = attrs.match(/type="([^"]*)"/)?.[1] ?? "reference";
+        if (url && url !== "null" && !seen.has(url)) {
+          seen.add(url);
+          const isNamed = ["character", "scene", "prop"].includes(type);
+          refs.push({ url, path: url, label: isNamed && name ? name : undefined });
+        }
+      }
+    }
+
+    // 2. Fallback: defaultRefImage
+    if (refs.length === 0 && opts?.defaultRefImage) {
+      refs.push({ url: buildOssUrl(opts.defaultRefImage), path: opts.defaultRefImage });
+    }
+
+    if (refs.length > 0) {
+      inst.formData.referenceImages = refs;
+    }
   }
   if (instProj.aiImageForm.currentModel && !inst.formData.model) {
     inst.formData.model = instProj.aiImageForm.currentModel.serviceCode ?? "";
@@ -947,33 +983,6 @@ export const deleteImageItem = createAsyncThunk<
 });
 
 // ─── AI Video Form Thunks ─────────────────────────────
-
-export const loadVideoModels = createAsyncThunk<
-  void,
-  { mode: VideoMode },
-  { state: RootState; dispatch: AppDispatch }
->("project/loadVideoModels", async ({ mode }, { getState, dispatch }) => {
-  const inst = selectCurrentInstance(getState());
-  if (inst.aiVideoForm.modelsLoadedForMode[mode]) return;
-
-  // Try preloaded cache first
-  const modePath = getModePath(mode);
-  const cached = getRawAiModelsFromCache(modePath) as RawAiModel[];
-  if (cached.length > 0) {
-    dispatch(setVideoModelsByMode({ mode, models: cached }));
-    return;
-  }
-
-  try {
-    const res = await backendApi.post<RawAiModel[]>(
-      `/api/ai/record/model/list?path=${encodeURIComponent(modePath)}`
-    );
-    const list = Array.isArray(res) ? res : [];
-    dispatch(setVideoModelsByMode({ mode, models: list }));
-  } catch (err) {
-    console.error("[projectSlice] loadVideoModels failed:", err);
-  }
-});
 
 export const loadVideoHistory = createAsyncThunk<
   void,
@@ -1044,36 +1053,12 @@ export const initVideoInstance = createAsyncThunk<
   if (opts?.suffixPrompt && !inst.formData.suffixPrompt) {
     inst.formData.suffixPrompt = opts.suffixPrompt;
   }
-  if (opts?.defaultReferenceImage) {
-    const defaultRef = {
-      url: ossUrl(opts.defaultReferenceImage),
-      path: opts.defaultReferenceImage,
-    };
-    if (inst.references.referenceImages.length === 0) {
-      inst.references.referenceImages = [defaultRef];
-    }
-    if (inst.references.firstFrames.length === 0) {
-      inst.references.firstFrames = [defaultRef];
-    }
-  }
+  // Reference group initialization is handled by the dialog's useEffect,
+  // which has access to mode config and model state for proper filtering.
 
   dispatch(setVideoInstance({ key, instance: inst }));
 
-  // Load models for the active mode + load history
-  const activeMode = inst.editMode ?? inst.uploadMode;
-  await dispatch(loadVideoModels({ mode: activeMode })).unwrap();
-
-  // Set default model if needed
-  const updatedState = getState();
-  const updatedInst = selectCurrentInstance(updatedState);
-  const models = updatedInst.aiVideoForm.modelsByMode[activeMode] ?? [];
-  if (models.length > 0 && !inst.formData.model) {
-    const defaultModel = models.find((m) => m.isDefault) ?? models[0];
-    if (defaultModel?.serviceCode) {
-      dispatch(updateVideoForm({ key, updates: { model: String(defaultModel.serviceCode) } }));
-    }
-  }
-
+  // Load history (models are managed by frontend registry, no API call needed)
   await dispatch(loadVideoHistory({ shotId, colId })).unwrap();
 });
 
@@ -1768,16 +1753,6 @@ export const projectSlice = createSlice({
       };
     },
 
-    setVideoModelsByMode: (
-      state,
-      action: PayloadAction<{ mode: VideoMode; models: RawAiModel[] }>
-    ) => {
-      const inst = getInstance(state);
-      if (!inst) return;
-      inst.aiVideoForm.modelsByMode[action.payload.mode] = action.payload.models;
-      inst.aiVideoForm.modelsLoadedForMode[action.payload.mode] = true;
-    },
-
     setVideoSavedModel: (state, action: PayloadAction<{ key: string; model: string }>) => {
       const inst = getInstance(state);
       if (!inst) return;
@@ -1951,7 +1926,6 @@ export const {
   setVideoHistory,
   setVideoHistoryLoading,
   removeVideoHistoryItem,
-  setVideoModelsByMode,
   setVideoSavedModel,
   // AI Audio Form actions
   setAudioModelsLoaded,
@@ -2057,12 +2031,17 @@ export const makeSelectAllVideoResults = () => {
       (state: RootState, shotId: string, colId: string) => selectShotTasks(state, shotId, colId),
     ],
     (history, tasks): VideoResultItem[] => {
+      // Tasks from taskSlice (both local + server-synced)
       const taskItems = tasks.filter((t) => t.type === "video").map(taskToVideoResultItem);
 
       if (taskItems.length === 0 && history.length === 0) return EMPTY_VIDEO_RESULTS;
 
+      // Dedup history against tasks by storagePath and id
       const taskPaths = new Set(taskItems.map((t) => t.storagePath).filter(Boolean));
-      const dedupedHistory = history.filter((h) => !h.storagePath || !taskPaths.has(h.storagePath));
+      const taskIds = new Set(taskItems.map((t) => t.id));
+      const dedupedHistory = history.filter(
+        (h) => (!h.storagePath || !taskPaths.has(h.storagePath)) && !taskIds.has(h.id)
+      );
 
       return [...taskItems, ...dedupedHistory];
     }

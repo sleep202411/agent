@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useRef } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { createGuideDriver, toDriverSteps } from "./driver";
 import { guideSteps, type GuideId } from "./guide-steps";
 import { isGuideCompleted, markGuideCompleted } from "./guide-storage";

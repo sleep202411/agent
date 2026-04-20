@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import type { AiModel, RawAiModel } from "@/src/lib/ai-model-schema";
+import type { AiModel, RawAiModel } from "@/components/ui/schema-field/schema";
 
 // ─── State ──────────────────────────────────────────────
 

@@ -17,8 +17,12 @@
 /.next/
 /out/
 
-# production
+# turborepo
+/.turbo
+
+# build
 /build
+/dist
 
 # misc
 .DS_Store
@@ -39,7 +43,3 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
-
-# docker
-*.tar

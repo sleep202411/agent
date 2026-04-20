@@ -1,56 +1,108 @@
 "use client";
 
+import { useEffect, useSyncExternalStore, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
+import { usePathname, useRouter } from "next/navigation";
+import { AuthDialog } from "@/components/layout/auth-dialog";
+import { UserMenu } from "@/components/layout/user-menu";
+import { useAppSelector, useAppDispatch } from "@/src/store";
+import { fetchUser } from "@/src/store/slices/authSlice";
+import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
+import { setCurrentLocale } from "@/src/i18n/locale-url";
+import { useTheme } from "next-themes";
 import {
-  IconFlame,
   IconUsers,
-  IconSparkles,
   IconLayoutDashboard,
-  IconBell,
+  IconDiamond,
+  IconMovie,
+  IconMoon,
+  IconSun,
+  IconLanguage,
+  IconNews,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { UserMenu } from "@/components/layout/user-menu";
 
-const HIDDEN_PATTERNS = ["/projects/", "/auth", "/payment"];
+// Rendered only under app/(site)/layout.tsx. One exception: the interactive
+// editor inside (site) wants a full-screen canvas, so hide here by pathname.
+const HIDDEN_PATTERNS = ["/editor"];
 
 export function GlobalNav() {
-  const pathname = usePathname();
-  const locale = useLocale();
+  const pathname = usePathname() ?? "/";
+  const router = useRouter();
   const t = useTranslations("nav");
+  const locale = useLocale();
+  const { theme, setTheme } = useTheme();
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+
+  const [showAuth, setShowAuth] = useState(false);
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.auth.user);
+
+  useEffect(() => {
+    dispatch(fetchUser());
+  }, [dispatch]);
 
   // Hide on studio, project editor, and auth pages
   const shouldHide = HIDDEN_PATTERNS.some((pattern) => pathname.includes(pattern));
   if (shouldHide) return null;
 
   const navItems = [
-    { href: `/${locale}/projects`, label: t("studio"), icon: IconLayoutDashboard },
-    { href: `/${locale}/creators`, label: t("creators"), icon: IconUsers },
+    { href: "/ip", label: t("ipPlaza"), icon: IconDiamond },
+    { href: "/crews", label: t("studioHall"), icon: IconMovie },
+    { href: "/creators", label: t("creators"), icon: IconUsers },
+    {
+      href: "/studio/projects",
+      label: t("studio"),
+      icon: IconLayoutDashboard,
+      target: "_blank" as const,
+    },
+    { href: "/news", label: t("news"), icon: IconNews },
   ];
 
   const isActive = (href: string) => pathname.startsWith(href);
 
+  const isDark = mounted && theme === "dark";
+
+  const toggleTheme = () => {
+    setTheme(isDark ? "light" : "dark");
+  };
+
+  const cycleLocale = () => {
+    const locales = ["zh-CN", "en-US", "zh-HK"];
+    const currentIndex = locales.indexOf(locale);
+    const nextLocale = locales[(currentIndex + 1) % locales.length];
+    setCurrentLocale(nextLocale);
+    setLanguage(nextLocale);
+    router.replace(pathname);
+  };
+
+  if (!mounted) {
+    return (
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-14 items-center" style={{ maxWidth: 1400 }} />
+      </header>
+    );
+  }
+
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-14 max-w-screen-2xl items-center justify-between px-6">
+      <div className="mx-auto flex h-14 items-center justify-between px-6">
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">
-          <Link href={`/${locale}/projects`} className="flex items-center gap-2 shrink-0">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
-              <IconFlame className="size-5 text-primary-foreground" />
-            </div>
-            <span className="text-sm font-bold tracking-tight">
-              <span className="text-foreground">Fizz</span>
-              <span className="text-primary">Dragon</span>
-            </span>
+          <Link href="/ip" className="flex items-center gap-2 shrink-0">
+            <img src="/logo.png" alt="FizzDragon" className="h-7" />
           </Link>
 
           <nav className="hidden items-center gap-1 md:flex">
-            {navItems.map(({ href, label, icon: Icon }) => (
+            {navItems.map(({ href, label, icon: Icon, target }) => (
               <Link
                 key={href}
                 href={href}
+                target={target}
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors",
                   isActive(href)
@@ -65,18 +117,45 @@ export function GlobalNav() {
           </nav>
         </div>
 
-        {/* Right side */}
-        <div className="flex items-center gap-3">
+        {/* Right side: theme + language + CTA */}
+        <div className="flex items-center gap-2">
+          {/* Theme toggle */}
+          {mounted && (
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex size-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {isDark ? <IconMoon className="size-4" /> : <IconSun className="size-4" />}
+            </button>
+          )}
+
+          {/* Language toggle */}
           <button
             type="button"
-            className="relative flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            onClick={cycleLocale}
+            className="flex size-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground transition-colors hover:text-foreground"
+            title={locale}
           >
-            <IconBell className="size-4" />
+            <IconLanguage className="size-4" />
           </button>
 
-          <UserMenu />
+          {/* User or CTA */}
+          {user ? (
+            <UserMenu />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAuth(true)}
+              className="ml-1 rounded-full bg-foreground px-4 py-1.5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+            >
+              {t("getStarted")}
+            </button>
+          )}
         </div>
       </div>
+
+      <AuthDialog open={showAuth} onOpenChange={setShowAuth} />
     </header>
   );
 }

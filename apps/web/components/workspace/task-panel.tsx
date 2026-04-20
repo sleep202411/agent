@@ -12,7 +12,7 @@ import {
   IconMicrophone,
   IconWand,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/src/store";
 import type { Task, TaskStatus, TaskType } from "@/src/store/slices/taskSlice";

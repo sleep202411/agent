@@ -1,9 +1,15 @@
 import { Module } from '@nestjs/common';
-import { AiModule } from './ai/ai.module';
-import { AgentModule } from './agent/agent.module';
+import { APP_GUARD } from '@nestjs/core';
 import { AssistantModule } from './assistant/assistant.module';
+import { AuthModule, AuthGuard } from './auth';
 
 @Module({
-  imports: [AiModule, AgentModule, AssistantModule],
+  imports: [AuthModule, AssistantModule],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: AuthGuard,
+    },
+  ],
 })
 export class AppModule {}

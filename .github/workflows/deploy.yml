@@ -117,7 +117,7 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
           no-cache: true
 
-  # ─── Build web image (per target, NEXT_PUBLIC vars may differ) ─
+  # ─── Build web image (per target, VITE_ vars may differ) ─
   build-web:
     needs: prepare
     runs-on: ubuntu-latest
@@ -145,7 +145,10 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
           build-args: |
-            NEXT_PUBLIC_OSS_BASE_URL=${{ vars.OSS_BASE_URL }}
+            VITE_OSS_BASE_URL=${{ vars.OSS_BASE_URL }}
+            VITE_BANNER_BASE_URL=${{ vars.BANNER_BASE_URL }}
+            VITE_SITE_REGION=${{ vars.SITE_REGION }}
+            VITE_PARENT_ORIGIN=${{ vars.PARENT_ORIGIN }}
             SERVER_URL=http://server:3001
             JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
             JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
@@ -173,24 +176,17 @@ jobs:
       - name: Deploy
         run: |
           cat > .env << EOF
-          IMAGE_PREFIX=${{ env.IMAGE_PREFIX }}
-          WEB_TAG=${{ matrix.target }}
-          SERVER_TAG=${{ needs.prepare.outputs.server_tag }}
-          EOF
-
-          cat > .env.web << EOF
-          SERVER_URL=http://server:3001
-          JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
-          JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
-          EOF
-
-          cat > .env.server << EOF
+          COMPOSE_PROJECT_NAME=${{ matrix.target }}
+          WEB_IMAGE=${{ env.IMAGE_PREFIX }}/studio-web:${{ matrix.target }}
+          SERVER_IMAGE=${{ env.IMAGE_PREFIX }}/studio-server:${{ needs.prepare.outputs.server_tag }}
+          WEB_PORT=${{ vars.WEB_PORT || '3000' }}
+          SERVER_PORT=${{ vars.SERVER_PORT || '3001' }}
           JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
           JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
           ALIBABA_API_KEY=${{ secrets.ALIBABA_API_KEY }}
           ALIBABA_BASE_URL=${{ secrets.ALIBABA_BASE_URL }}
-          AI_MODEL=qwen-plus
-          PORT=3001
+          AI_MODEL=${{ vars.AI_MODEL || 'qwen3-max' }}
+          REDIS_IMAGE=${{ vars.REDIS_IMAGE || 'redis:7-alpine' }}
           EOF
 
           docker compose pull

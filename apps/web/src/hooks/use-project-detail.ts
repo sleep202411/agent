@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useAppSelector } from "@/src/store";
@@ -33,11 +35,11 @@ import {
  * 应在项目详情页顶层调用一次，其他组件通过 useProjectStore 消费数据。
  */
 export function useProjectDetail() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
-  const id = params.id as string;
-  const urlWorldId = searchParams.get("worldId");
-  const urlEpisodeId = searchParams.get("episodeId");
+  const id = params?.id ?? "";
+  const urlWorldId = searchParams?.get("worldId") ?? null;
+  const urlEpisodeId = searchParams?.get("episodeId") ?? null;
 
   const loadedProjectIdRef = useRef<string | null>(null);
   const loadedWorldIdRef = useRef<string | null>(null);

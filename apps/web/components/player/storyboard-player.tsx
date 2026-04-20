@@ -3,8 +3,7 @@
 import { useMemo } from "react";
 import { Player } from "@remotion/player";
 import { StoryboardComposition } from "./storyboard-composition";
-import type { CompositionProps } from "./storyboard-composition";
-import type { Shot } from "@/src/store/slices/agentSlice";
+import type { CompositionProps, Shot } from "./storyboard-composition";
 
 const FPS = 30;
 

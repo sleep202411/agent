@@ -21,6 +21,7 @@ import {
   type TaskOutput,
 } from "@/src/store/slices/taskSlice";
 import type { AudioGenerateInput } from "@/src/store/slices/projectSlice";
+import { env } from "@/src/env";
 
 const MAX_CONCURRENT = 4;
 const QUEUE_INTERVAL = 1000;
@@ -97,7 +98,7 @@ async function executeTask(taskId: string) {
       throw new Error("未获取到音频结果");
     }
 
-    const ossBase = process.env.NEXT_PUBLIC_OSS_BASE_URL ?? "";
+    const ossBase = env.OSS_BASE_URL;
     const url = storagePath.startsWith("http") ? storagePath : `${ossBase}/${storagePath}`;
 
     const output: TaskOutput = { url, storagePath };

@@ -12,6 +12,7 @@ export type AssistantAgentType = (typeof assistantAgentTypes)[number];
 
 export const assistantEntityTypes = [
   "project",
+  "world",
   "episode",
   "character",
   "scene",
@@ -24,6 +25,7 @@ export type AssistantEntityType = (typeof assistantEntityTypes)[number];
 
 export const assistantMutationActions = [
   "project.updated",
+  "world.updated",
   "episode.created",
   "episode.batch_created",
   "episode.updated",
@@ -47,7 +49,12 @@ export const assistantMutationActions = [
 
 export type AssistantMutationAction = (typeof assistantMutationActions)[number];
 
-export const assistantUiToolNames = ["show_options", "confirm_action", "configure_params"] as const;
+export const assistantUiToolNames = [
+  "show_options",
+  "confirm_action",
+  "configure_params",
+  "require_project_params",
+] as const;
 
 export type AssistantUiToolName = (typeof assistantUiToolNames)[number];
 
@@ -101,7 +108,24 @@ export interface AssistantWorkspaceSelection {
   episodeId?: string | null;
   activeTab?: string | null;
   activePanel?: string | null;
+  /** Browser UI language (from document.documentElement.lang). */
   locale?: string | null;
+  /**
+   * Project's chosen dialogue language — distinct from `locale`. User picks
+   * it in ProjectParamsForm; downstream workflows (script_phase,
+   * storyboard_phase) use this to decide what language to generate dialogue
+   * in. Not persisted to Java yet — client mirrors it in localStorage.
+   */
+  dialogLanguage?: string | null;
+  /** Project's chosen visual style id (from projectDetail.stylePainting). */
+  stylePainting?: string | null;
+  /**
+   * Target shots per episode for storyboard_phase. localStorage-only; Java
+   * has no column for it. Flows assistantSlice.buildWorkspaceContext →
+   * server → x-storyos-context → StoryosContext.shotsPerEpisode.
+   */
+  shotsPerEpisode?: number | null;
+  videoPromptStyle?: "default" | "seedance";
 }
 
 export interface AssistantWorkspaceContext extends AssistantWorkspaceSelection {
@@ -168,6 +192,21 @@ export interface AssistantConfigureParamsInput {
 export interface AssistantConfigureParamsResult {
   confirmed: boolean;
   values?: Record<string, unknown>;
+}
+
+/**
+ * Signal tool — supervisor calls this when it detects the user wants to
+ * create but the project's 4 core params (aspectRatioType / chapterLength /
+ * stylePainting / dialogLanguage) aren't all set. Frontend renders
+ * ProjectParamsForm; submit → confirmed:true, supervisor continues.
+ */
+export interface AssistantRequireProjectParamsInput {
+  /** Optional short explanation the LLM can pass — not rendered, just logged. */
+  reason?: string;
+}
+
+export interface AssistantRequireProjectParamsResult {
+  confirmed: boolean;
 }
 
 export type AssistantProposalAction = "accept" | "accept_edited" | "reject";
