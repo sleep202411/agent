@@ -67,6 +67,13 @@ interface InvokeWorkflowOutput {
 
 interface ToolWorkflowCardProps {
   part: AssistantToolInvocation;
+  /**
+   * True when this card sits on a non-last assistant message — the user
+   * has since moved on (sent a new message or started a new workflow), so
+   * clicking 滿意/修改/繼續 on history is disallowed. Matches oii.ai's
+   * "选项暂不支持重选" behavior.
+   */
+  isHistorical?: boolean;
 }
 
 // ─── Display labels ────────────────────────────────────
@@ -74,6 +81,8 @@ interface ToolWorkflowCardProps {
 const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
   main_flow: "workflowMainFlow",
   role_design: "workflowRoleDesign",
+  scene_design: "workflowSceneDesign",
+  prop_design: "workflowPropDesign",
   batch_create_asset: "workflowBatchCreate",
   script_edit: "workflowScriptEdit",
   story_outline: "workflowStoryOutline",
@@ -98,6 +107,8 @@ const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
   main_flow: { name: "创作总监", icon: IconSparkles },
   story_outline: { name: "剧本统筹", icon: IconBook },
   role_design: { name: "角色设计师", icon: IconUsers },
+  scene_design: { name: "场景设计师", icon: IconBuildingStore },
+  prop_design: { name: "道具设计师", icon: IconPackage },
   role_phase: { name: "角色设计师", icon: IconUsers },
   role_image_phase: { name: "角色设计师", icon: IconPhoto },
   scene_phase: { name: "场景设计师", icon: IconBuildingStore },
@@ -124,7 +135,7 @@ function groupDraftsByType(drafts: Draft[]): Record<string, Draft[]> {
 
 // ─── Component ─────────────────────────────────────────
 
-export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
+export function ToolWorkflowCard({ part, isHistorical = false }: ToolWorkflowCardProps) {
   const t = useTranslations("ai");
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((s) => s.project.currentProjectId);
@@ -435,6 +446,10 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
 
   const handleAccept = async () => {
     if (!runId || !projectId || actionBusy) return;
+    if (isHistorical) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
     setActionBusy("accept");
     setActionError(null);
     try {
@@ -500,6 +515,10 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
 
   const handleRevise = async () => {
     if (!runId || !projectId || actionBusy) return;
+    if (isHistorical) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
     const feedback = window.prompt(t("workflowReviseFeedbackPrompt"));
     if (!feedback || !feedback.trim()) return;
     setActionBusy("revise");
@@ -524,6 +543,10 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
 
   const handleCancel = async () => {
     if (!runId || !projectId || actionBusy) return;
+    if (isHistorical) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
     if (!window.confirm(t("workflowCancelConfirm"))) return;
     setActionBusy("cancel");
     setActionError(null);
@@ -592,6 +615,7 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
             worldId={worldId}
             targetEpisodeCount={targetEpisodeCount}
             t={t}
+            isHistorical={isHistorical}
           />
         </>
       )}
@@ -610,6 +634,10 @@ export function ToolWorkflowCard({ part }: ToolWorkflowCardProps) {
               type="button"
               onClick={() => {
                 if (!projectId) return;
+                if (isHistorical) {
+                  toast.info(t("workflowOptionsNoReselect"));
+                  return;
+                }
                 const workflowLabelText = t(WORKFLOW_LABEL_KEYS[workflowName] ?? "workflowGeneric");
                 void dispatch(
                   startWorkflowFromButton({
@@ -1078,12 +1106,14 @@ function CompletedActions({
   worldId,
   targetEpisodeCount,
   t,
+  isHistorical = false,
 }: {
   workflowName: WorkflowName;
   projectId: string | null;
   worldId: string | null;
   targetEpisodeCount: number | undefined;
   t: (key: string, params?: Record<string, string | number>) => string;
+  isHistorical?: boolean;
 }) {
   const dispatch = useAppDispatch();
   const steps = NEXT_STEPS[workflowName];
@@ -1094,6 +1124,10 @@ function CompletedActions({
 
   const handleContinue = () => {
     if (!projectId || !primary) return;
+    if (isHistorical) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
     void dispatch(
       startWorkflowFromButton({
         projectId,
@@ -1106,6 +1140,10 @@ function CompletedActions({
 
   const handleRevise = () => {
     if (!projectId) return;
+    if (isHistorical) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
     const feedback = window.prompt(t("workflowReviseFeedbackPrompt"));
     if (!feedback || !feedback.trim()) return;
     const workflowLabel = t(WORKFLOW_LABEL_KEYS[workflowName] ?? "workflowGeneric");

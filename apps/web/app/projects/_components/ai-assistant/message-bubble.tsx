@@ -384,6 +384,7 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                     <ToolWorkflowCard
                       key={`${message.id}-${part.toolCallId}-workflow`}
                       part={part}
+                      isHistorical={!isLastAssistant}
                     />
                   );
                 }
