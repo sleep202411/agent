@@ -37,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { applySeedanceTemplate, getSeedanceTemplate } from "@/src/lib/seedance";
 
 // ─── Display labels ────────────────────────────────────
 
@@ -502,23 +503,9 @@ function DraftCard({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   );
 }
 
-// Seedance 2.0 character-sheet template — appended in parens after the
-// base prompt. Future: per-entityType templates (scene/prop) if we add
-// equivalent Seedance recipes for those.
-const SEEDANCE_CHARACTER_TEMPLATE =
-  "8K超高清，皮肤肌理细致入微，毛孔极致细节，无动作，极具写实，影棚实拍真人质感。角色设计表，角色多角度转面参考图，补充视角组，正面视图、正侧面视图、背面视图、45度侧视图、俯视顶视图、仰视底视图，头部细节组(正脸、侧脸特写)，材质细节纹理研究组、布料纹理、鞋子的特写镜头，干净的纯白色背景，排版规整，带有文字标注，均匀光照，无阴影，白色背景，去除Ai塑料感，去除Ai味。";
-
-function seedanceTemplateFor(entityType: string | undefined): string | null {
-  if (entityType === "role") return SEEDANCE_CHARACTER_TEMPLATE;
-  return null;
-}
-
 function buildSeedancePrompt(draft: Draft): string {
-  const template = seedanceTemplateFor(draft.entityType);
-  const base = String(((draft.data ?? {}) as Record<string, unknown>).prompt ?? "").trim();
-  if (!template) return base;
-  if (!base) return `(${template})`;
-  return `${base} (${template})`;
+  const base = String(((draft.data ?? {}) as Record<string, unknown>).prompt ?? "");
+  return applySeedanceTemplate(base, draft.entityType);
 }
 
 function DraftDetailDialog({
@@ -546,7 +533,7 @@ function DraftDetailDialog({
 
   const hasPromptField = typeof data.prompt === "string";
   const hasSeedanceAction =
-    !!draft && hasPromptField && seedanceTemplateFor(draft.entityType) !== null;
+    !!draft && hasPromptField && getSeedanceTemplate(draft.entityType) !== null;
   const originalPrompt = String(data.prompt ?? "");
 
   const [editedPrompt, setEditedPrompt] = useState(originalPrompt);
