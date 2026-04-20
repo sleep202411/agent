@@ -19,15 +19,17 @@ COPY --from=pruner /app/out/json/ .
 RUN npm ci --ignore-scripts
 
 # ─── Stage 3: Build ──────────────────────────────────────
-# Produces apps/agent/.mastra/output (a hono-based server bundle that
-# `mastra start` consumes). Doesn't touch src/ — the worker runs that
-# directly via tsx in the runner stage.
+# Produces apps/agent/.mastra/output (hono-based server bundle that
+# `mastra start` consumes) AND packages/shared/dist (compiled TS the
+# worker imports at runtime). Uses `turbo run build --filter=agent`
+# instead of bare `mastra build` so turbo's `dependsOn: ["^build"]`
+# chain runs `@repo/shared`'s build first — otherwise tsx crashes at
+# worker startup trying to resolve `@repo/shared/dist/workflow.js`.
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/ ./
 COPY --from=pruner /app/out/full/ .
-WORKDIR /app/apps/agent
-RUN npx mastra build
+RUN npx turbo run build --filter=agent
 
 # ─── Stage 4: Runner ────────────────────────────────────
 FROM base AS runner
@@ -44,9 +46,11 @@ ENV MASTRA_DB_URL=file:/app/data/mastra.db
 COPY --from=pruner /app/out/json/ .
 RUN npm ci --ignore-scripts
 
-# API server consumes .mastra/output; worker imports from src/. Ship both.
+# API server consumes .mastra/output; worker imports from src/ and resolves
+# `@repo/shared` to its built dist/. Ship all three.
 COPY --from=builder /app/apps/agent/.mastra ./apps/agent/.mastra
 COPY --from=builder /app/apps/agent/src ./apps/agent/src
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
 RUN mkdir -p /app/data
 
