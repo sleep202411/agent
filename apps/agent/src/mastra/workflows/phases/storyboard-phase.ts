@@ -91,6 +91,15 @@ export const StoryboardPhaseInputSchema = z.object({
 const ResolvedGenerateInputSchema = z.object({
   projectId: z.string(),
   episodes: z.array(EpisodeScriptRef).min(1),
+  /**
+   * Existing worldscene names the LLM should pick from. Passed into
+   * the prompt as a whitelist; the post-save backfill then resolves
+   * name → id against Java without creating duplicates. When the
+   * project has no scenes yet, this is empty and LLM falls back to
+   * free-form scene naming (backfill will create new scenes for
+   * each novel name).
+   */
+  sceneNames: z.array(z.string()).default([]),
   feedback: z.string().optional(),
 });
 
@@ -183,9 +192,31 @@ const resolveInputStep = createStep({
     if (episodes.length === 0) {
       throw new Error("storyboard_phase: no episodes with scripts found. Run script_phase first.");
     }
+
+    // Pull existing worldscene names so the storyboarder can pick from
+    // them instead of inventing new ones. Soft-failing — empty list is
+    // fine, just means backfill will create scenes as it encounters them.
+    const worldId = ctx.worldId ?? "";
+    let sceneNames: string[] = [];
+    if (worldId) {
+      try {
+        const sceneList = await javaRequest<{ list?: Array<{ name?: string }> }>(
+          ctx,
+          "/api/user/world/list/worldscene",
+          { data: { worldId, page: 1, pageSize: 999 } }
+        );
+        sceneNames = (sceneList.list ?? [])
+          .map((s) => (typeof s.name === "string" ? s.name.trim() : ""))
+          .filter((n) => n.length > 0);
+      } catch {
+        // leave sceneNames empty — LLM falls back to free-form
+      }
+    }
+
     return {
       projectId: inputData.projectId,
       episodes,
+      sceneNames,
       feedback: inputData.feedback,
     };
   },
@@ -261,12 +292,15 @@ const generateStep = createStep({
         // suspended at HITL with nothing for the user to confirm. The
         // workflow_failed + retry path is the right UX for "LLM couldn't
         // produce valid shots".
-        const response = await storyboarder.generate(buildPrompt(ep, dialogLanguage), {
-          structuredOutput: {
-            schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
-            errorStrategy: "strict",
-          },
-        });
+        const response = await storyboarder.generate(
+          buildPrompt(ep, inputData.sceneNames, dialogLanguage),
+          {
+            structuredOutput: {
+              schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
+              errorStrategy: "strict",
+            },
+          }
+        );
         const rows = (
           (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? []
         )
@@ -366,8 +400,29 @@ const PERSPECTIVE_OPTIONS = "平视 / 俯视 / 仰视 / 鸟瞰 / 倾斜 / 航拍
 const MOVEMENT_OPTIONS =
   "固定镜头 / 推镜头 / 拉镜头 / 左移镜头 / 右移镜头 / 左摇镜头 / 右摇镜头 / 升镜头 / 降镜头 / 上摇镜头 / 下摇镜头 / 左旋镜头 / 右旋镜头 / 晃动镜头 / 变焦推进 / 变焦拉远 / 场景镜头";
 
-function buildPrompt(ep: z.infer<typeof EpisodeScriptRef>, dialogLanguage?: string): string {
+function buildPrompt(
+  ep: z.infer<typeof EpisodeScriptRef>,
+  sceneNames: string[],
+  dialogLanguage?: string
+): string {
   const langLabel = storyboardDialogLanguageLabel(dialogLanguage);
+  // Whitelist gate — when the project already has worldscenes committed
+  // (scene_phase ran), force the LLM to pick a scene from the roster so
+  // backfillSceneColumn hits the cache instead of creating duplicate
+  // scenes on every shot. Empty roster falls back to free-form naming.
+  const sceneBlock =
+    sceneNames.length > 0
+      ? [
+          "",
+          "**可用场景（scene 字段必须从下表里原样选一个，不要自创新名）**：",
+          ...sceneNames.map((n) => `- ${n}`),
+          "",
+        ]
+      : [];
+  const sceneRule =
+    sceneNames.length > 0
+      ? "- **scene** — 场景名，**必须**从上方「可用场景」列表中原样挑一个；找不到合适的就挑最接近的，不要自创"
+      : "- **scene** — 场景名（尽量复用剧本里已出现的场景名，前端会自动 linkify）";
   return [
     `请把以下剧集剧本拆成分镜表，JSON 返回，字段 rows 是镜头数组。`,
     "",
@@ -376,13 +431,13 @@ function buildPrompt(ep: z.infer<typeof EpisodeScriptRef>, dialogLanguage?: stri
     "```",
     ep.scriptContent,
     "```",
-    "",
+    ...sceneBlock,
     `**dialogue 的对白/旁白必须用${langLabel}**。description / image_prompt / video_prompt 按当前语境自然语言。`,
     "每行 rows 严格按约定字段填：",
-    "- **scene** — 场景名（尽量复用剧本里已出现的场景名，前端会自动 linkify）",
+    sceneRule,
     "- **description** — 画面描述（给人读的一句话，可以出现角色名/场景名）",
     "- **image_prompt** — 单帧图像生成提示词（20-60 字视觉 token，按「场景+主体+构图+表情/动作+景别+光线」顺序、顿号分隔；只写画面元素，**不要**加画风/品质 token [写实 / 电影感 / 高清 等]，下游按项目 stylePainting 自动拼接；也不写剧情/情感）",
-    "- **video_prompt** — 视频生成用的**动态**描述（运动 / 表情变化 / 环境变化）",
+    "- **video_prompt** — 视频生成用的**动态**描述(运动 / 表情变化 / 环境变化)",
     `- **shot_size** — 景别，从枚举里选一个：${SHOT_SIZE_OPTIONS}`,
     `- **perspective** — 视角，从枚举里选一个：${PERSPECTIVE_OPTIONS}`,
     `- **movement** — 运镜，从枚举里选一个：${MOVEMENT_OPTIONS}`,
