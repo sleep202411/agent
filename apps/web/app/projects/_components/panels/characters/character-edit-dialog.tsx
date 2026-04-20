@@ -36,6 +36,7 @@ import { backendApi } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
 import { uploadProjectImage, buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
+import { applySeedanceTemplate } from "@/src/lib/seedance";
 import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import {
   normalizeStoragePath,
@@ -329,12 +330,34 @@ export function CharacterEditDialog({
               </Field>
 
               <Field>
-                <FieldLabel>{tc("prompt")}</FieldLabel>
+                {/* Prompt label + Seedance 2.0 template button. Same UX
+                    as the HITL draft dialog (workflow-shared.tsx), so
+                    users who applied the template pre-commit can re-apply
+                    it here if they later tweak the prompt. Idempotent —
+                    clicking twice won't stack the template. */}
+                <div className="flex items-center justify-between gap-2">
+                  <FieldLabel>{tc("prompt")}</FieldLabel>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    color="muted"
+                    onClick={() =>
+                      updateForm({ prompt: applySeedanceTemplate(formData.prompt, "role") })
+                    }
+                  >
+                    <IconWand />
+                    生成 Seedance 2.0 提示词
+                  </Button>
+                </div>
                 <Textarea
                   value={formData.prompt}
                   onChange={(event) => updateForm({ prompt: event.target.value })}
                   placeholder={tc("promptPlaceholder")}
-                  maxLength={500}
+                  // 1000 instead of 500 — the Seedance template alone is
+                  // ~200 chars and gets appended to whatever base prompt
+                  // the user already has. 500 would silently clip the tail.
+                  maxLength={1000}
                   rows={3}
                 />
               </Field>
