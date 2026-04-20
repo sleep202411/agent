@@ -10,7 +10,7 @@
 import { Worker, type Job } from "bullmq";
 import type { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
-import { appendEvent, clearCancel, isCancelled, setStatus } from "./state";
+import { clearCancel, isCancelled, setStatus } from "./state";
 import { buildConnection, QUEUE_NAME, type StoryosJobData, type StoryosJobName } from "./queue";
 import { WorkflowCancelledError } from "./progress";
 import { classifyError } from "../../lib/error-classifier";
@@ -51,7 +51,6 @@ async function handleRun(mastra: Mastra, job: Job<RunJobData, unknown, "run">): 
   const workflow = getWorkflow(mastra, workflowName);
 
   await setStatus(runId, "running");
-  await appendEvent(runId, "started", { workflowName });
 
   try {
     const run = await workflow.createRun({ runId });
@@ -79,7 +78,6 @@ async function handleResume(
   const workflow = getWorkflow(mastra, workflowName);
 
   await setStatus(runId, "running");
-  await appendEvent(runId, "resumed", { stepId });
 
   try {
     const run = await workflow.createRun({ runId });
@@ -107,7 +105,6 @@ async function finalizeCancelled(
   projectId: string
 ): Promise<void> {
   await setStatus(runId, "cancelled");
-  await appendEvent(runId, "cancelled");
   await clearCancel(runId);
   try {
     await publishWorkflowFailed(projectId, runId, workflowName, {
@@ -173,23 +170,17 @@ async function applyResult(
 
   if (r.status === "success") {
     await setStatus(runId, "completed", { result: r.result });
-    await appendEvent(runId, "completed", { status: "success" });
     await clearCancel(runId);
     return;
   }
   if (r.status === "suspended") {
     await setStatus(runId, "suspended", { suspendPayload: r.suspendPayload });
-    await appendEvent(runId, "suspended", {
-      suspended: r.suspended,
-      suspendPayload: r.suspendPayload,
-    });
     return;
   }
   if (r.status === "failed") {
     const message = formatWorkflowError(r.error);
     const classification = classifyError(r.error ?? message);
     await setStatus(runId, "failed", { error: message, errorClassification: classification });
-    await appendEvent(runId, "failed", { error: message, classification });
     await clearCancel(runId);
     await finalizeFailed(runId, workflowName, projectId, message, classification);
     return;
@@ -201,7 +192,6 @@ async function applyResult(
     error: unexpectedMsg,
     errorClassification: "unknown",
   });
-  await appendEvent(runId, "failed", { status: r.status, classification: "unknown" });
   await finalizeFailed(runId, workflowName, projectId, unexpectedMsg, "unknown");
 }
 
@@ -218,7 +208,6 @@ async function applyError(
   const message = formatWorkflowError(err);
   const classification = classifyError(err);
   await setStatus(runId, "failed", { error: message, errorClassification: classification });
-  await appendEvent(runId, "failed", { error: message, classification });
   await clearCancel(runId);
   await finalizeFailed(runId, workflowName, projectId, message, classification);
 }

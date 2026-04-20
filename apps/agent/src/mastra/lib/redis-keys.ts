@@ -101,10 +101,6 @@ export const K = {
     assertSafeId(runId, "runId");
     return `workflow:run:${runId}:state`;
   },
-  workflowEvents: (runId: string) => {
-    assertSafeId(runId, "runId");
-    return `workflow:run:${runId}:events`;
-  },
   workflowCancel: (runId: string) => {
     assertSafeId(runId, "runId");
     return `workflow:run:${runId}:cancel`;

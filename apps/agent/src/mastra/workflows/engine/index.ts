@@ -1,13 +1,11 @@
 export * from "./types";
 export {
-  appendEvent,
   getMeta,
   isCancelled,
   listWorkflowsByUser,
   listWorkflowsByWorkspace,
   patchMeta,
   putMeta,
-  readEvents,
   requestCancel,
   setStatus,
 } from "./state";

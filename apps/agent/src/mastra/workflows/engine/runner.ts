@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 import type { StoryosContext } from "../../lib/workspace-client";
 import type { WorkflowName } from "../../lib/redis-keys";
 import {
-  appendEvent,
   getMeta,
   listWorkflowsByUser,
   listWorkflowsByWorkspace,
@@ -37,7 +36,6 @@ export async function startWorkflow(input: {
     updatedAt: now,
   };
   await putMeta(meta);
-  await appendEvent(runId, "enqueued", { workflowName: input.workflowName });
 
   const jobData: RunJobData = {
     runId,
@@ -77,7 +75,6 @@ export async function resumeWorkflow(input: {
   }
 
   await patchMeta(input.runId, { status: "queued" });
-  await appendEvent(input.runId, "resumed", { stepId: input.stepId });
 
   const jobData: ResumeJobData = {
     runId: input.runId,
@@ -100,7 +97,6 @@ export async function cancelWorkflow(runId: string): Promise<void> {
     return; // idempotent — already in a terminal state
   }
   await requestCancel(runId);
-  await appendEvent(runId, "cancelled");
   await setStatus(runId, "cancelled");
 
   // Publish workflow_failed chat message immediately so the frontend's

@@ -7,23 +7,14 @@
  */
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
-import { appendEvent, reportProgress, throwIfCancelled } from "../engine";
+import { reportProgress, throwIfCancelled } from "../engine";
 import { getImageQueue, buildImageJobId } from "../engine/image-queue";
 import { getProjectAssetImageStatus, setAssetImageStatus } from "../../lib/asset-image-status";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
 
-const PERSONA = "场景设计师";
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
-
-async function narrate(runId: string, text: string): Promise<void> {
-  try {
-    await appendEvent(runId, "narrate", { persona: PERSONA, text });
-  } catch {
-    // Non-fatal.
-  }
-}
 
 export const SceneImagePhaseInputSchema = z.object({
   feedback: z.string().optional(),
@@ -50,7 +41,6 @@ const dispatchStep = createStep({
     const runId = (requestContext?.get("runId") as string | undefined) ?? "";
 
     await throwIfCancelled(runId);
-    await narrate(runId, "正在拉取项目的场景清单…");
 
     type RawScene = {
       id?: string | number;
@@ -78,7 +68,6 @@ const dispatchStep = createStep({
     );
 
     if (scenes.length === 0) {
-      await narrate(runId, "项目里还没有任何场景——建议先跑一次「场景设计」。");
       return { assetIds: [] };
     }
 
@@ -105,7 +94,6 @@ const dispatchStep = createStep({
       dispatched.push(assetId);
     }
 
-    await narrate(runId, `已派发 ${dispatched.length} 个场景的参考图生成任务。`);
     await reportProgress(runId, {
       stepId: "dispatch",
       current: 0,
@@ -204,7 +192,6 @@ const waitAllStep = createStep({
           failedCount === 0
             ? `全部 ${readyCount} 张场景参考图生成完成。`
             : `完成 ${readyCount} 张，失败 ${failedCount} 张（失败的场景可以在资产库单独重试）。`;
-        if (failedCount === 0) await narrate(runId, message);
         await publishWorkflowCompleted(ctx.projectId, runId, "scene_image_phase", {
           committed: Array.from({ length: readyCount }, (_, i) => ({
             serverId: assetIds[i] ?? `scene-${i}`,
@@ -228,7 +215,6 @@ const waitAllStep = createStep({
     }
 
     const message = `生图等待超时：完成 ${readyCount}，失败 ${failedCount}，剩余 ${assetIds.length - readyCount - failedCount} 仍在处理中。`;
-    await narrate(runId, message);
     await publishWorkflowCompleted(ctx.projectId, runId, "scene_image_phase", {
       committed: Array.from({ length: readyCount }, (_, i) => ({
         serverId: assetIds[i] ?? `scene-${i}`,

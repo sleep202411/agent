@@ -1,20 +1,17 @@
 /**
- * Redis-backed workflow meta + event log.
+ * Redis-backed workflow meta.
  *
- * This is our side's audit layer. It's separate from Mastra's workflow
+ * This is our side's state layer. It's separate from Mastra's workflow
  * snapshot (which stores the full execution state in `mastra.storage`).
  *
- * Meta is a JSON string at `workflow:run:{runId}:state`. Events append to
- * a Redis Stream at `workflow:run:{runId}:events` for replay and debugging.
- * Lifecycle events the UI actually watches come from
- * `apps/agent/src/mastra/lib/workflow-messages.ts`, which publishes
- * synthetic tool-workflow_* chat messages on the chat events channel —
- * this module is purely server-side bookkeeping.
+ * Meta is a JSON string at `workflow:run:{runId}:state`. Lifecycle events
+ * the UI actually watches come from `apps/agent/src/mastra/lib/workflow-messages.ts`,
+ * which publishes synthetic tool-workflow_* chat messages on the chat
+ * events channel — this module is purely server-side bookkeeping.
  */
-import { randomUUID } from "node:crypto";
 import { getRedis } from "../../lib/redis-client";
 import { K, TTL } from "../../lib/redis-keys";
-import type { WorkflowEvent, WorkflowEventType, WorkflowMeta, WorkflowStatus } from "./types";
+import type { WorkflowMeta, WorkflowStatus } from "./types";
 
 export async function putMeta(meta: WorkflowMeta): Promise<void> {
   const redis = getRedis();
@@ -66,89 +63,6 @@ export async function setStatus(
       ? { completedAt: now }
       : {};
   return patchMeta(runId, { status, ...completed, ...extras });
-}
-
-// ─── Event log (Redis Stream) ──────────────────────────────────────────
-
-/**
- * Append one event to the run's durable stream for audit / debugging.
- *
- * XADD to `workflow:run:{runId}:events` (capped at ~2000 entries to bound
- * Redis memory). There's no longer a realtime pub/sub here — the frontend
- * watches workflow lifecycle via synthetic tool-workflow_* chat messages
- * (see apps/agent/src/mastra/lib/workflow-messages.ts) which publish on
- * the chat events channel and render per-event cards. This stream is
- * kept purely as a historical audit trail.
- */
-export async function appendEvent(
-  runId: string,
-  type: WorkflowEventType,
-  data?: unknown
-): Promise<void> {
-  const redis = getRedis();
-  const streamKey = K.workflowEvents(runId);
-  const eventId = randomUUID();
-  const timestamp = Date.now();
-  const dataJson = data === undefined ? "" : JSON.stringify(data);
-
-  await redis
-    .multi()
-    .xadd(
-      streamKey,
-      "MAXLEN",
-      "~",
-      "2000",
-      "*",
-      "id",
-      eventId,
-      "type",
-      type,
-      "timestamp",
-      String(timestamp),
-      "data",
-      dataJson
-    )
-    .expire(streamKey, TTL.WORKFLOW)
-    .exec();
-}
-
-export async function readEvents(
-  runId: string,
-  opts: { limit?: number; fromId?: string } = {}
-): Promise<WorkflowEvent[]> {
-  const redis = getRedis();
-  const count = opts.limit ?? 100;
-  const start = opts.fromId ?? "-";
-  // XRANGE returns oldest→newest; we want that order for task card timelines.
-  const entries = (await redis.xrange(
-    K.workflowEvents(runId),
-    start,
-    "+",
-    "COUNT",
-    count
-  )) as Array<[string, string[]]>;
-  return entries.map(([streamId, fields]) => {
-    const kv: Record<string, string> = {};
-    for (let i = 0; i < fields.length; i += 2) kv[fields[i]] = fields[i + 1];
-    let data: unknown = undefined;
-    if (kv.data) {
-      try {
-        data = JSON.parse(kv.data);
-      } catch {
-        data = kv.data;
-      }
-    }
-    return {
-      // Prefer our UUID (matches pub/sub publish payload for client dedup);
-      // fall back to Redis stream id for events written before the UUID
-      // field was introduced.
-      id: kv.id ?? streamId,
-      runId,
-      timestamp: Number(kv.timestamp ?? 0),
-      type: (kv.type as WorkflowEventType) ?? "started",
-      data,
-    };
-  });
 }
 
 // ─── Cancel flag ────────────────────────────────────────────────────────

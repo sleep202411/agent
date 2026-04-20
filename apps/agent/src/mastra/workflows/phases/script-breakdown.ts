@@ -14,17 +14,7 @@
  */
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
-import { appendEvent, reportProgress, throwIfCancelled } from "../engine";
-
-const STORY_EDITOR_PERSONA = "剧本统筹";
-
-async function narrate(runId: string, text: string): Promise<void> {
-  try {
-    await appendEvent(runId, "narrate", { persona: STORY_EDITOR_PERSONA, text });
-  } catch {
-    // Non-fatal — narration is a nicety, not required for correctness.
-  }
-}
+import { reportProgress, throwIfCancelled } from "../engine";
 import { putOutline, type StoryOutline } from "../../lib/outline";
 import { getContext } from "../../lib/workspace-client";
 import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
@@ -176,11 +166,6 @@ const analyzeStep = createStep({
         total: 1,
         label: startLabel,
       });
-      await narrate(runId, "导演，我已经收到您的原始素材，正在通读全文。");
-      await narrate(
-        runId,
-        "我会先按叙事节奏划章、列出角色名册和场景名册——这是后续角色/分集/剧本/分镜的共同基底。"
-      );
       await publishWorkflowProgress(ctx.projectId, runId, "story_outline", "planning", {
         current: 0,
         total: 1,
@@ -238,10 +223,6 @@ const analyzeStep = createStep({
         total: 1,
         label: endLabel,
       });
-      await narrate(
-        runId,
-        `骨架整理完成：${result.structure.length} 个章节，${result.cast.length} 位角色，${result.settings?.length ?? 0} 个场景。`
-      );
       await publishWorkflowProgress(ctx.projectId, runId, "story_outline", "planning", {
         current: 1,
         total: 1,

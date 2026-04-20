@@ -44,37 +44,6 @@ export type WorkflowMeta = {
   result?: unknown;
 };
 
-export type WorkflowEventType =
-  | "enqueued"
-  | "started"
-  | "step.started"
-  | "step.completed"
-  | "step.failed"
-  | "progress"
-  /**
-   * Persona-voiced in-flight narration from the workflow itself. Frontend
-   * card accumulates these as streaming bullets so the user sees the
-   * 剧本统筹/角色设计师/etc persona "thinking" in real time. Cleared when
-   * the final `completed` event arrives (final summary comes from `result`).
-   * data: { persona?: string; text: string }
-   */
-  | "narrate"
-  | "suspended"
-  | "resumed"
-  | "completed"
-  | "failed"
-  | "cancelled";
-
-export type WorkflowEvent = {
-  /** Stream id assigned by Redis (read-back only) */
-  id?: string;
-  runId: string;
-  timestamp: number;
-  type: WorkflowEventType;
-  /** JSON-serializable extras (step id, error detail, progress snapshot, etc.) */
-  data?: unknown;
-};
-
 /**
  * Data carried on a BullMQ "run" job — the worker picks this up and calls
  * `mastra.getWorkflow(workflowName).createRun({runId}).start({inputData})`.

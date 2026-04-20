@@ -45,9 +45,8 @@ describe("K.idem", () => {
 });
 
 describe("K.workflow*", () => {
-  it("builds state, events, cancel, resume keys under run namespace", () => {
+  it("builds state, cancel, resume keys under run namespace", () => {
     expect(K.workflowState("r1")).toBe("workflow:run:r1:state");
-    expect(K.workflowEvents("r1")).toBe("workflow:run:r1:events");
     expect(K.workflowCancel("r1")).toBe("workflow:run:r1:cancel");
     expect(K.workflowResume("r1")).toBe("workflow:run:r1:resume_payload");
   });

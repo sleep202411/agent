@@ -4,7 +4,6 @@
  */
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import {
-  appendEvent,
   clearCancel,
   getMeta,
   isCancelled,
@@ -12,7 +11,6 @@ import {
   listWorkflowsByWorkspace,
   patchMeta,
   putMeta,
-  readEvents,
   requestCancel,
   setStatus,
 } from "./state";
@@ -119,31 +117,6 @@ describe("cancel flag", () => {
     expect(await isCancelled("r1")).toBe(true);
     await clearCancel("r1");
     expect(await isCancelled("r1")).toBe(false);
-  });
-});
-
-describe("event log", () => {
-  it("appends and reads events in chronological order", async () => {
-    await appendEvent("r1", "enqueued", { workflow: "role_design" });
-    await appendEvent("r1", "started");
-    await appendEvent("r1", "step.completed", { stepId: "plan_roles" });
-
-    const events = await readEvents("r1");
-    expect(events.map((e) => e.type)).toEqual(["enqueued", "started", "step.completed"]);
-    expect(events[0].data).toEqual({ workflow: "role_design" });
-    expect(events[2].data).toEqual({ stepId: "plan_roles" });
-  });
-
-  it("respects the limit parameter", async () => {
-    for (let i = 0; i < 10; i++) {
-      await appendEvent("r2", "progress", { i });
-    }
-    const events = await readEvents("r2", { limit: 3 });
-    expect(events).toHaveLength(3);
-  });
-
-  it("returns empty array for runs with no events", async () => {
-    expect(await readEvents("no-such-run")).toEqual([]);
   });
 });
 

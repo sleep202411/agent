@@ -3,7 +3,7 @@
  * check for cancellation. Workflows import these; the engine's runner layer
  * doesn't — it only writes lifecycle events (queued/started/completed/etc.).
  */
-import { appendEvent, isCancelled, patchMeta } from "./state";
+import { isCancelled, patchMeta } from "./state";
 import type { WorkflowMeta } from "./types";
 
 export class WorkflowCancelledError extends Error {
@@ -21,9 +21,8 @@ export type ProgressUpdate = {
 };
 
 /**
- * Update the task card UI with step progress, and drop an event into the
- * audit log. Safe to call frequently; callers should still avoid firing it
- * inside tight inner loops.
+ * Update the task card UI with step progress. Safe to call frequently;
+ * callers should still avoid firing it inside tight inner loops.
  */
 export async function reportProgress(runId: string, update: ProgressUpdate): Promise<void> {
   const patch: Partial<WorkflowMeta> = {};
@@ -38,7 +37,6 @@ export async function reportProgress(runId: string, update: ProgressUpdate): Pro
   if (Object.keys(patch).length > 0) {
     await patchMeta(runId, patch);
   }
-  await appendEvent(runId, "progress", update);
 }
 
 /**
