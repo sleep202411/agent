@@ -9,13 +9,11 @@
 import {
   Body,
   Controller,
-  Get,
   HttpException,
   HttpStatus,
   Logger,
   Param,
   Post,
-  Query,
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -152,50 +150,7 @@ export class WorkflowProxyController {
     });
   }
 
-  // ─── Status + events ────────────────────────────────────────────────
-
-  @Get(':runId/status')
-  async status(
-    @Param('runId') runId: string,
-    @Query('projectId') projectId: string,
-    @CurrentUser() user: AuthUser,
-    @Req() req: Request,
-  ) {
-    if (!projectId)
-      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = this.buildContext(user, { projectId });
-    return this.forward(`/workflow/${encodeURIComponent(runId)}/status`, {
-      method: 'GET',
-      headers: this.buildHeaders(req, context, false),
-    });
-  }
-
-  @Get(':runId/events')
-  async events(
-    @Param('runId') runId: string,
-    @Query('projectId') projectId: string,
-    @Query('limit') limit: string | undefined,
-    @Query('fromId') fromId: string | undefined,
-    @CurrentUser() user: AuthUser,
-    @Req() req: Request,
-  ) {
-    if (!projectId)
-      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = this.buildContext(user, { projectId });
-    const qs = new URLSearchParams();
-    if (limit) qs.set('limit', limit);
-    if (fromId) qs.set('fromId', fromId);
-    const suffix = qs.toString() ? `?${qs.toString()}` : '';
-    return this.forward(
-      `/workflow/${encodeURIComponent(runId)}/events${suffix}`,
-      {
-        method: 'GET',
-        headers: this.buildHeaders(req, context, false),
-      },
-    );
-  }
-
-  // ─── Confirm / cancel / resume ──────────────────────────────────────
+  // ─── Confirm / cancel ──────────────────────────────────────────────
 
   @Post(':runId/confirm')
   async confirm(
@@ -236,68 +191,5 @@ export class WorkflowProxyController {
       headers: this.buildHeaders(req, context, true),
       body: JSON.stringify({}),
     });
-  }
-
-  @Post(':runId/resume')
-  async resume(
-    @Param('runId') runId: string,
-    @Body() body: JsonBody,
-    @CurrentUser() user: AuthUser,
-    @Req() req: Request,
-  ) {
-    const projectId = String(body.projectId ?? '');
-    if (!projectId)
-      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = this.buildContext(user, { projectId });
-    const payload = {
-      resumeData: body.resumeData,
-      stepId: body.stepId,
-    };
-    return this.forward(`/workflow/${encodeURIComponent(runId)}/resume`, {
-      method: 'POST',
-      headers: this.buildHeaders(req, context, true),
-      body: JSON.stringify(payload),
-    });
-  }
-
-  // ─── Listing ────────────────────────────────────────────────────────
-
-  @Get('user/:userId')
-  async listByUser(
-    @Param('userId') userId: string,
-    @Query('projectId') projectId: string,
-    @Query('limit') limit: string | undefined,
-    @CurrentUser() user: AuthUser,
-    @Req() req: Request,
-  ) {
-    if (userId !== user.userId) {
-      throw new HttpException(
-        "cannot list another user's workflows",
-        HttpStatus.FORBIDDEN,
-      );
-    }
-    if (!projectId)
-      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = this.buildContext(user, { projectId });
-    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : '';
-    return this.forward(`/workflow/user/${encodeURIComponent(userId)}${qs}`, {
-      method: 'GET',
-      headers: this.buildHeaders(req, context, false),
-    });
-  }
-
-  @Get('workspace/:workspaceId')
-  async listByWorkspace(
-    @Param('workspaceId') workspaceId: string,
-    @Query('limit') limit: string | undefined,
-    @CurrentUser() user: AuthUser,
-    @Req() req: Request,
-  ) {
-    const context = this.buildContext(user, { projectId: workspaceId });
-    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : '';
-    return this.forward(
-      `/workflow/workspace/${encodeURIComponent(workspaceId)}${qs}`,
-      { method: 'GET', headers: this.buildHeaders(req, context, false) },
-    );
   }
 }

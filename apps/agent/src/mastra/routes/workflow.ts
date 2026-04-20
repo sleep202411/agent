@@ -11,21 +11,9 @@
  */
 import { registerApiRoute } from "@mastra/core/server";
 import { HTTPException } from "hono/http-exception";
-import {
-  ConfirmRequestSchema,
-  ResumeRequestSchema,
-  type StatusResponse,
-} from "@repo/shared/workflow";
+import { ConfirmRequestSchema } from "@repo/shared/workflow";
 import { getDraft, listDrafts, patchDraft } from "../lib/drafts";
-import {
-  cancelWorkflow,
-  getWorkflowStatus,
-  listUserWorkflows,
-  listWorkspaceWorkflows,
-  readEvents,
-  resumeWorkflow,
-  startWorkflow,
-} from "../workflows/engine";
+import { cancelWorkflow, resumeWorkflow, startWorkflow } from "../workflows/engine";
 import { WORKFLOW_NAMES, type WorkflowName } from "../lib/redis-keys";
 import type { StoryosContext } from "../lib/workspace-client";
 
@@ -78,68 +66,12 @@ export const workflowRoutes = [
     },
   }),
 
-  // ─── GET /workflow/:runId/status ──────────────────────────────────
-  registerApiRoute("/workflow/:runId/status", {
-    method: "GET",
-    handler: async (c) => {
-      const runId = c.req.param("runId");
-      const meta = await getWorkflowStatus(runId);
-      if (!meta) throw new HTTPException(404, { message: "workflow run not found" });
-
-      // Recent events for the task card's activity feed.
-      const recentEvents = await readEvents(runId, { limit: 20 });
-
-      const resp: StatusResponse = {
-        ...meta,
-        recentEvents: recentEvents.map((e) => ({
-          id: e.id,
-          runId: e.runId,
-          timestamp: e.timestamp,
-          type: e.type,
-          data: e.data,
-        })),
-      };
-      return c.json(resp);
-    },
-  }),
-
-  // ─── GET /workflow/:runId/events ──────────────────────────────────
-  registerApiRoute("/workflow/:runId/events", {
-    method: "GET",
-    handler: async (c) => {
-      const runId = c.req.param("runId");
-      const limit = Math.min(Number(c.req.query("limit") ?? "100"), 1000);
-      const fromId = c.req.query("fromId") ?? undefined;
-      const events = await readEvents(runId, { limit, fromId });
-      return c.json({ events });
-    },
-  }),
-
   // ─── POST /workflow/:runId/cancel ─────────────────────────────────
   registerApiRoute("/workflow/:runId/cancel", {
     method: "POST",
     handler: async (c) => {
       const runId = c.req.param("runId");
       await cancelWorkflow(runId);
-      return c.json({ ok: true });
-    },
-  }),
-
-  // ─── POST /workflow/:runId/resume ─────────────────────────────────
-  // Raw resume for special cases (LLM-triggered, testing). Normal HITL
-  // uses /workflow/:runId/confirm below.
-  registerApiRoute("/workflow/:runId/resume", {
-    method: "POST",
-    handler: async (c) => {
-      const ctx = requireContext(c);
-      const runId = c.req.param("runId");
-      const body = ResumeRequestSchema.parse(await c.req.json());
-      await resumeWorkflow({
-        runId,
-        resumeData: body.resumeData,
-        stepId: body.stepId,
-        ctx,
-      });
       return c.json({ ok: true });
     },
   }),
@@ -208,36 +140,6 @@ export const workflowRoutes = [
         data: mergedData,
       });
       return c.json({ draft: updated });
-    },
-  }),
-
-  // ─── GET /workflow/user/:userId ────────────────────────────────────
-  registerApiRoute("/workflow/user/:userId", {
-    method: "GET",
-    handler: async (c) => {
-      const ctx = requireContext(c);
-      const userId = c.req.param("userId");
-      if (userId !== ctx.userId) {
-        throw new HTTPException(403, { message: "cannot list another user's workflows" });
-      }
-      const limit = Math.min(Number(c.req.query("limit") ?? "20"), 100);
-      const runs = await listUserWorkflows(userId, limit);
-      return c.json({ runs });
-    },
-  }),
-
-  // ─── GET /workflow/workspace/:workspaceId ──────────────────────────
-  registerApiRoute("/workflow/workspace/:workspaceId", {
-    method: "GET",
-    handler: async (c) => {
-      const ctx = requireContext(c);
-      const workspaceId = c.req.param("workspaceId");
-      if (workspaceId !== ctx.projectId) {
-        throw new HTTPException(403, { message: "workspace id mismatch" });
-      }
-      const limit = Math.min(Number(c.req.query("limit") ?? "20"), 100);
-      const runs = await listWorkspaceWorkflows(workspaceId, limit);
-      return c.json({ runs });
     },
   }),
 ];

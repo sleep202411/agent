@@ -10,7 +10,6 @@ import { AgentStreamService } from './chat/agent-stream.service';
 import { ChatController } from './chat/chat.controller';
 import { WorkflowProxyController } from './workflow/workflow-proxy.controller';
 import { DraftsProxyController } from './workflow/drafts-proxy.controller';
-import { WorkflowEventsGateway } from './workflow/workflow-events.gateway';
 
 @Module({
   imports: [AuthModule],
@@ -27,7 +26,6 @@ import { WorkflowEventsGateway } from './workflow/workflow-events.gateway';
     MessageStoreService,
     ChatEventsGateway,
     AgentStreamService,
-    WorkflowEventsGateway,
   ],
 })
 export class AssistantModule {}
