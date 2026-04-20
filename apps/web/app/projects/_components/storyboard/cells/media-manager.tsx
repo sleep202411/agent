@@ -14,6 +14,7 @@ import {
   IconTrash,
   IconUser,
   IconVideo,
+  IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -27,7 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
@@ -82,6 +83,9 @@ export function MediaManagerDialog({
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [uploadingItems, setUploadingItems] = useState<UploadPreviewItem[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Image-only: when user clicks the main image, show it in an overlay dialog
+  // instead of opening a browser tab. Matches the Vue MediaModal behavior.
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [preferredLoading, setPreferredLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadingItemsRef = useRef<UploadPreviewItem[]>([]);
@@ -287,341 +291,379 @@ export function MediaManagerDialog({
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="h-[85vh] w-[90vw] max-w-[1400px] overflow-hidden border-none bg-[#1A1A1A] p-0 text-white sm:max-w-[1400px]">
-          <div className="relative flex h-full min-h-0">
-            <span className="sr-only">{title}</span>
+          <div className="relative flex h-full min-h-0 flex-col">
+            {/* Header: title + close button. Previously we had only an
+                sr-only title and relied on Esc/backdrop-click to close —
+                but the dialog disables outside-click close (see dialog.tsx
+                onInteractOutside preventDefault), so users were trapped
+                without an obvious exit. */}
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-[#1A1A1A] px-5 py-3">
+              <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-white">{title}</h2>
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  color="muted"
+                  className="size-8 shrink-0 text-white/65 hover:bg-white/10 hover:text-white"
+                  aria-label={tc("close")}
+                >
+                  <IconX className="size-4" />
+                </Button>
+              </DialogClose>
+            </div>
 
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div
-                className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-5 py-5"
-                id="mediaPreviewContainer"
-              >
-                {activeSrc ? (
-                  <>
-                    {isVideo ? (
-                      <video
-                        key={activeSrc}
-                        src={activeSrc}
-                        controls
-                        playsInline
-                        className="max-h-full max-w-full rounded-lg object-contain"
-                      />
-                    ) : (
-                      <img
-                        src={activeSrc}
-                        alt=""
-                        className="max-h-full max-w-full cursor-zoom-in rounded-lg object-contain"
-                        onClick={() => window.open(activeSrc, "_blank")}
-                      />
-                    )}
-
-                    <div className="absolute right-5 top-5 z-10 flex items-center gap-2 rounded-lg bg-black/60 px-3 py-2 backdrop-blur-sm">
-                      {activeFile?.preferred ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          color="muted"
-                          className="h-8 bg-primary text-white hover:bg-primary/90"
-                          onClick={() => void handlePreferredToggle()}
-                          disabled={preferredLoading}
-                        >
-                          {preferredLoading ? (
-                            <IconLoader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <IconCircleCheck className="size-3.5" />
-                          )}
-                          {preferredLoading ? t("processingPreferred") : t("finalizedVersion")}
-                        </Button>
+            <div className="flex min-h-0 flex-1">
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div
+                  className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-5 py-5"
+                  id="mediaPreviewContainer"
+                >
+                  {activeSrc ? (
+                    <>
+                      {isVideo ? (
+                        <video
+                          key={activeSrc}
+                          src={activeSrc}
+                          controls
+                          playsInline
+                          className="max-h-full max-w-full rounded-lg object-contain"
+                        />
                       ) : (
+                        <img
+                          src={activeSrc}
+                          alt=""
+                          className="max-h-full max-w-full cursor-zoom-in rounded-lg object-contain"
+                          onClick={() => setFullscreenOpen(true)}
+                        />
+                      )}
+
+                      <div className="absolute right-5 top-5 z-10 flex items-center gap-2 rounded-lg bg-black/60 px-3 py-2 backdrop-blur-sm">
+                        {activeFile?.preferred ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            color="muted"
+                            className="h-8 bg-primary text-white hover:bg-primary/90"
+                            onClick={() => void handlePreferredToggle()}
+                            disabled={preferredLoading}
+                          >
+                            {preferredLoading ? (
+                              <IconLoader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <IconCircleCheck className="size-3.5" />
+                            )}
+                            {preferredLoading ? t("processingPreferred") : t("finalizedVersion")}
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            color="muted"
+                            className="h-8 text-white hover:bg-white/10 hover:text-white"
+                            onClick={() => void handlePreferredToggle()}
+                            disabled={preferredLoading}
+                          >
+                            {preferredLoading ? (
+                              <IconLoader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <IconCircleCheck className="size-3.5" />
+                            )}
+                            {preferredLoading ? t("processingPreferred") : t("setAsFinalized")}
+                          </Button>
+                        )}
                         <Button
                           type="button"
-                          size="sm"
+                          size="icon"
                           variant="ghost"
                           color="muted"
-                          className="h-8 text-white hover:bg-white/10 hover:text-white"
-                          onClick={() => void handlePreferredToggle()}
+                          className="size-8 text-white hover:bg-white/10 hover:text-white"
+                          onClick={handleDownload}
+                        >
+                          <IconDownload className="size-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          color="muted"
+                          className="size-8 text-white hover:bg-white/10 hover:text-white"
+                          onClick={() => setDeleteOpen(true)}
                           disabled={preferredLoading}
                         >
-                          {preferredLoading ? (
-                            <IconLoader2 className="size-3.5 animate-spin" />
-                          ) : (
-                            <IconCircleCheck className="size-3.5" />
-                          )}
-                          {preferredLoading ? t("processingPreferred") : t("setAsFinalized")}
+                          <IconTrash className="size-4" />
                         </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        color="muted"
-                        className="size-8 text-white hover:bg-white/10 hover:text-white"
-                        onClick={handleDownload}
-                      >
-                        <IconDownload className="size-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        color="muted"
-                        className="size-8 text-white hover:bg-white/10 hover:text-white"
-                        onClick={() => setDeleteOpen(true)}
-                        disabled={preferredLoading}
-                      >
-                        <IconTrash className="size-4" />
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 text-white/35">
-                    {isVideo ? (
-                      <IconVideo className="size-12" />
-                    ) : (
-                      <IconPhoto className="size-12" />
-                    )}
-                    <span className="text-sm">{t("noMaterials")}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-white/10 bg-[#1A1A1A] px-5 py-4">
-                <div className="overflow-x-auto">
-                  <div className="flex min-w-max items-center justify-center gap-3">
-                    {!hasPreferred ? (
-                      <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg bg-[#2A2A2A] px-2 text-center text-xs text-white/55">
-                        {t("notFinalized")}
                       </div>
-                    ) : null}
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-3 text-white/35">
+                      {isVideo ? (
+                        <IconVideo className="size-12" />
+                      ) : (
+                        <IconPhoto className="size-12" />
+                      )}
+                      <span className="text-sm">{t("noMaterials")}</span>
+                    </div>
+                  )}
+                </div>
 
-                    {files.map((file) => {
-                      const filePath = file.path ?? "";
-                      const active = filePath === (activeFile?.path ?? "");
-                      const thumbnail = isVideo
-                        ? getVideoThumbnail(file.url || file.path)
-                        : ossUrl(file.url || file.path);
-                      return (
-                        <button
-                          key={filePath}
-                          type="button"
-                          onClick={() => setActivePath(filePath)}
-                          className={cn(
-                            "relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-lg border-2 border-transparent bg-[#2A2A2A] transition-colors hover:border-white/30",
-                            (active || file.preferred) && "border-primary"
-                          )}
+                <div className="border-t border-white/10 bg-[#1A1A1A] px-5 py-4">
+                  <div className="overflow-x-auto">
+                    <div className="flex min-w-max items-center justify-center gap-3">
+                      {!hasPreferred ? (
+                        <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg bg-[#2A2A2A] px-2 text-center text-xs text-white/55">
+                          {t("notFinalized")}
+                        </div>
+                      ) : null}
+
+                      {files.map((file) => {
+                        const filePath = file.path ?? "";
+                        const active = filePath === (activeFile?.path ?? "");
+                        const thumbnail = isVideo
+                          ? getVideoThumbnail(file.url || file.path)
+                          : ossUrl(file.url || file.path);
+                        return (
+                          <button
+                            key={filePath}
+                            type="button"
+                            onClick={() => setActivePath(filePath)}
+                            className={cn(
+                              "relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-lg border-2 border-transparent bg-[#2A2A2A] transition-colors hover:border-white/30",
+                              (active || file.preferred) && "border-primary"
+                            )}
+                          >
+                            {thumbnail ? (
+                              <img src={thumbnail} alt="" className="h-full w-full object-cover" />
+                            ) : isVideo ? (
+                              <div className="flex h-full w-full items-center justify-center text-white/45">
+                                <IconPlayerPlay className="size-5" />
+                              </div>
+                            ) : null}
+                            {file.preferred ? (
+                              <div className="absolute right-1 top-1 flex size-[18px] items-center justify-center rounded-full bg-primary text-white">
+                                <IconCheck className="size-3" />
+                              </div>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+
+                      {uploadingItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-lg bg-[#2A2A2A]"
                         >
-                          {thumbnail ? (
-                            <img src={thumbnail} alt="" className="h-full w-full object-cover" />
-                          ) : isVideo ? (
+                          {!isVideo ? (
+                            <img
+                              src={item.previewUrl}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
                             <div className="flex h-full w-full items-center justify-center text-white/45">
                               <IconPlayerPlay className="size-5" />
                             </div>
-                          ) : null}
-                          {file.preferred ? (
-                            <div className="absolute right-1 top-1 flex size-[18px] items-center justify-center rounded-full bg-primary text-white">
-                              <IconCheck className="size-3" />
+                          )}
+                          {item.uploading ? (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                              <IconLoader2 className="size-4 animate-spin text-white" />
                             </div>
                           ) : null}
-                        </button>
-                      );
-                    })}
+                        </div>
+                      ))}
 
-                    {uploadingItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-lg bg-[#2A2A2A]"
-                      >
-                        {!isVideo ? (
-                          <img
-                            src={item.previewUrl}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-white/45">
-                            <IconPlayerPlay className="size-5" />
-                          </div>
+                      <button
+                        type="button"
+                        disabled={maxReached}
+                        onClick={() => fileInputRef.current?.click()}
+                        className={cn(
+                          "flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg border-2 border-dashed border-white/15 text-white/55 transition-colors hover:border-primary hover:text-primary",
+                          maxReached &&
+                            "cursor-not-allowed opacity-50 hover:border-white/15 hover:text-white/55"
                         )}
-                        {item.uploading ? (
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                            <IconLoader2 className="size-4 animate-spin text-white" />
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-
-                    <button
-                      type="button"
-                      disabled={maxReached}
-                      onClick={() => fileInputRef.current?.click()}
-                      className={cn(
-                        "flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-lg border-2 border-dashed border-white/15 text-white/55 transition-colors hover:border-primary hover:text-primary",
-                        maxReached &&
-                          "cursor-not-allowed opacity-50 hover:border-white/15 hover:text-white/55"
-                      )}
-                    >
-                      <IconPlus className="size-6" />
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept={isVideo ? "video/*" : "image/*"}
-                      className="hidden"
-                      onChange={(event) => {
-                        const selectedFiles = Array.from(event.target.files ?? []);
-                        for (const item of selectedFiles) {
-                          void handleLocalUpload(item);
-                        }
-                        event.target.value = "";
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex w-[440px] min-h-0 shrink-0 flex-col border-l border-white/10 bg-[#1A1A1A]">
-              <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 pr-14">
-                <div className="flex overflow-hidden rounded-md bg-[#2A2A2A]">
-                  <button
-                    type="button"
-                    onClick={() => setMode("edit")}
-                    className={cn(
-                      "px-4 py-2 text-[13px] transition-colors",
-                      mode === "edit" ? "bg-primary text-white" : "text-white/55 hover:text-white"
-                    )}
-                  >
-                    {t("editTab")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode("review")}
-                    className={cn(
-                      "px-4 py-2 text-[13px] transition-colors",
-                      mode === "review" ? "bg-primary text-white" : "text-white/55 hover:text-white"
-                    )}
-                  >
-                    {t("reviewTab")}
-                  </button>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  color="muted"
-                  className="h-8 text-white/75 hover:bg-white/10 hover:text-white"
-                  onClick={handleShare}
-                >
-                  <IconExternalLink className="size-4" />
-                  {isVideo ? t("shareVideo") : t("shareImage")}
-                </Button>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                {mode === "review" ? (
-                  <MediaReviewPanel
-                    projectId={projectId}
-                    targetType={isVideo ? "VIDEO" : "IMAGE"}
-                    targetId={activeFileId || undefined}
-                  />
-                ) : (
-                  <div className="space-y-6 px-5 py-5">
-                    {loadingDetails ? (
-                      <div className="space-y-3">
-                        <div className="h-5 w-2/3 animate-pulse rounded bg-white/10" />
-                        <div className="h-4 w-1/2 animate-pulse rounded bg-white/10" />
-                        <div className="h-4 w-1/3 animate-pulse rounded bg-white/10" />
-                      </div>
-                    ) : activeFile ? (
-                      <div>
-                        <div className="break-all text-[15px] font-medium text-white">
-                          {String(
-                            (detailMatchesActiveFile ? fileDetails?.name : undefined) ??
-                              activeFile.name ??
-                              activeFile.path?.split("/").pop() ??
-                              t("unknownFile")
-                          )}
-                        </div>
-                        <div className="mt-2 flex items-center gap-2 text-xs text-white/45">
-                          {String(
-                            detailMatchesActiveFile ? (fileDetails?.userAvatarImagePath ?? "") : ""
-                          ) ? (
-                            <img
-                              src={ossUrl(String(fileDetails?.userAvatarImagePath))}
-                              alt=""
-                              className="size-4 rounded-full object-cover"
-                            />
-                          ) : (
-                            <IconUser className="size-4" />
-                          )}
-                          <span className="text-white/70">
-                            {String(
-                              (detailMatchesActiveFile ? fileDetails?.userName : undefined) ??
-                                (detailMatchesActiveFile ? fileDetails?.nickname : undefined) ??
-                                t("unknownUser")
-                            )}
-                          </span>
-                          <span className="text-white/20">·</span>
-                          <span>
-                            {t("updatedAt")}{" "}
-                            {formatMediaTime(
-                              String(
-                                (detailMatchesActiveFile ? fileDetails?.updateTime : undefined) ??
-                                  activeFile.updateTime ??
-                                  activeFile.createTime ??
-                                  ""
-                              )
-                            )}
-                          </span>
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-white/45">
-                          <span>
-                            {String(
-                              (detailMatchesActiveFile ? fileDetails?.type : undefined) ??
-                                (isVideo ? "mp4" : "jpg")
-                            )}
-                          </span>
-                          {(detailMatchesActiveFile ? fileDetails?.width : undefined) &&
-                          (detailMatchesActiveFile ? fileDetails?.height : undefined) ? (
-                            <>
-                              <span className="text-white/20">|</span>
-                              <span>
-                                {fileDetails?.width}×{fileDetails?.height}px
-                              </span>
-                            </>
-                          ) : null}
-                          <span className="text-white/20">|</span>
-                          <span>
-                            {formatMediaBytes(
-                              Number((detailMatchesActiveFile ? fileDetails?.size : undefined) ?? 0)
-                            )}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="py-10 text-center text-sm text-white/35">
-                        {t("selectMaterial")}
-                      </div>
-                    )}
-
-                    <div>
-                      <div className="mb-3 text-sm font-medium text-white/85">
-                        {t("promptLabelField")}
-                      </div>
-                      <Textarea
-                        value={prompt}
-                        onChange={(event) => setPrompt(event.target.value)}
-                        onBlur={() => void handlePromptBlur()}
-                        rows={8}
-                        placeholder={t("promptFieldPlaceholder")}
-                        className="border-white/10 bg-black/20 text-white/90 placeholder:text-white/35"
+                      >
+                        <IconPlus className="size-6" />
+                      </button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept={isVideo ? "video/*" : "image/*"}
+                        className="hidden"
+                        onChange={(event) => {
+                          const selectedFiles = Array.from(event.target.files ?? []);
+                          for (const item of selectedFiles) {
+                            void handleLocalUpload(item);
+                          }
+                          event.target.value = "";
+                        }}
                       />
-                      <div className="mt-2 text-right text-xs text-white/35">
-                        {savingPrompt ? t("savingPrompt") : `${prompt.length}/3000`}
-                      </div>
                     </div>
                   </div>
-                )}
+                </div>
+              </div>
+
+              <div className="flex w-[440px] min-h-0 shrink-0 flex-col border-l border-white/10 bg-[#1A1A1A]">
+                <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 pr-14">
+                  <div className="flex overflow-hidden rounded-md bg-[#2A2A2A]">
+                    <button
+                      type="button"
+                      onClick={() => setMode("edit")}
+                      className={cn(
+                        "px-4 py-2 text-[13px] transition-colors",
+                        mode === "edit" ? "bg-primary text-white" : "text-white/55 hover:text-white"
+                      )}
+                    >
+                      {t("editTab")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMode("review")}
+                      className={cn(
+                        "px-4 py-2 text-[13px] transition-colors",
+                        mode === "review"
+                          ? "bg-primary text-white"
+                          : "text-white/55 hover:text-white"
+                      )}
+                    >
+                      {t("reviewTab")}
+                    </button>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    color="muted"
+                    className="h-8 text-white/75 hover:bg-white/10 hover:text-white"
+                    onClick={handleShare}
+                  >
+                    <IconExternalLink className="size-4" />
+                    {isVideo ? t("shareVideo") : t("shareImage")}
+                  </Button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {mode === "review" ? (
+                    // Review panel needs a concrete targetId to query comments.
+                    // Previously we passed `activeFileId || undefined` and the
+                    // panel silently rendered empty state that looked like a
+                    // hung loader. Show an explicit placeholder until the user
+                    // picks a file.
+                    activeFileId ? (
+                      <MediaReviewPanel
+                        projectId={projectId}
+                        targetType={isVideo ? "VIDEO" : "IMAGE"}
+                        targetId={activeFileId}
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center p-6 text-sm text-white/45">
+                        {t("selectMaterial")}
+                      </div>
+                    )
+                  ) : (
+                    <div className="space-y-6 px-5 py-5">
+                      {loadingDetails ? (
+                        <div className="space-y-3">
+                          <div className="h-5 w-2/3 animate-pulse rounded bg-white/10" />
+                          <div className="h-4 w-1/2 animate-pulse rounded bg-white/10" />
+                          <div className="h-4 w-1/3 animate-pulse rounded bg-white/10" />
+                        </div>
+                      ) : activeFile ? (
+                        <div>
+                          <div className="break-all text-[15px] font-medium text-white">
+                            {String(
+                              (detailMatchesActiveFile ? fileDetails?.name : undefined) ??
+                                activeFile.name ??
+                                activeFile.path?.split("/").pop() ??
+                                t("unknownFile")
+                            )}
+                          </div>
+                          <div className="mt-2 flex items-center gap-2 text-xs text-white/45">
+                            {String(
+                              detailMatchesActiveFile
+                                ? (fileDetails?.userAvatarImagePath ?? "")
+                                : ""
+                            ) ? (
+                              <img
+                                src={ossUrl(String(fileDetails?.userAvatarImagePath))}
+                                alt=""
+                                className="size-4 rounded-full object-cover"
+                              />
+                            ) : (
+                              <IconUser className="size-4" />
+                            )}
+                            <span className="text-white/70">
+                              {String(
+                                (detailMatchesActiveFile ? fileDetails?.userName : undefined) ??
+                                  (detailMatchesActiveFile ? fileDetails?.nickname : undefined) ??
+                                  t("unknownUser")
+                              )}
+                            </span>
+                            <span className="text-white/20">·</span>
+                            <span>
+                              {t("updatedAt")}{" "}
+                              {formatMediaTime(
+                                String(
+                                  (detailMatchesActiveFile ? fileDetails?.updateTime : undefined) ??
+                                    activeFile.updateTime ??
+                                    activeFile.createTime ??
+                                    ""
+                                )
+                              )}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-white/45">
+                            <span>
+                              {String(
+                                (detailMatchesActiveFile ? fileDetails?.type : undefined) ??
+                                  (isVideo ? "mp4" : "jpg")
+                              )}
+                            </span>
+                            {(detailMatchesActiveFile ? fileDetails?.width : undefined) &&
+                            (detailMatchesActiveFile ? fileDetails?.height : undefined) ? (
+                              <>
+                                <span className="text-white/20">|</span>
+                                <span>
+                                  {fileDetails?.width}×{fileDetails?.height}px
+                                </span>
+                              </>
+                            ) : null}
+                            <span className="text-white/20">|</span>
+                            <span>
+                              {formatMediaBytes(
+                                Number(
+                                  (detailMatchesActiveFile ? fileDetails?.size : undefined) ?? 0
+                                )
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-10 text-center text-sm text-white/35">
+                          {t("selectMaterial")}
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="mb-3 text-sm font-medium text-white/85">
+                          {t("promptLabelField")}
+                        </div>
+                        <Textarea
+                          value={prompt}
+                          onChange={(event) => setPrompt(event.target.value)}
+                          onBlur={() => void handlePromptBlur()}
+                          rows={8}
+                          placeholder={t("promptFieldPlaceholder")}
+                          className="border-white/10 bg-black/20 text-white/90 placeholder:text-white/35"
+                        />
+                        <div className="mt-2 text-right text-xs text-white/35">
+                          {savingPrompt ? t("savingPrompt") : `${prompt.length}/3000`}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -650,6 +692,32 @@ export function MediaManagerDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Image-only fullscreen preview. Vue MediaModal had a dedicated
+          expand-to-modal behavior; previously we dumped the user into a
+          browser tab, breaking their session context. Lives as a
+          sibling dialog so it layers above the main media manager. */}
+      {!isVideo && activeSrc ? (
+        <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
+          <DialogContent className="h-[95vh] w-[95vw] max-w-[95vw] overflow-hidden border-none bg-black/95 p-0 text-white sm:max-w-[95vw]">
+            <DialogClose asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                color="muted"
+                aria-label={tc("close")}
+                className="absolute right-4 top-4 z-20 size-10 text-white/80 hover:bg-white/10 hover:text-white"
+              >
+                <IconX className="size-5" />
+              </Button>
+            </DialogClose>
+            <div className="flex h-full w-full items-center justify-center p-6">
+              <img src={activeSrc} alt="" className="max-h-full max-w-full object-contain" />
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </>
   );
 }
