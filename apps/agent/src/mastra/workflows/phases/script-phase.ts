@@ -560,14 +560,21 @@ const applyDecisionStep = createStep({
         ? `已保存 ${committed.length} 集剧本，进入下一阶段。`
         : `保存失败：${failed.length} / ${accepts.length}。剧本草稿保留在 Redis 供重试。`;
 
+    const inMainFlow = requestContext?.get("inMainFlow") === true;
     await publishWorkflowCompleted(ctx.projectId, runId, "script_phase", {
       committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
       failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
       summary: summaryText,
-      nextStep: {
-        workflowName: "storyboard_phase",
-        labelKey: "workflowNextContinueToStoryboard",
-      },
+      // Inside main_flow: compact chip (pipeline auto-advances to
+      // storyboard_phase). Standalone: full card with "继续·生成分镜".
+      ...(inMainFlow
+        ? { compact: true as const }
+        : {
+            nextStep: {
+              workflowName: "storyboard_phase" as const,
+              labelKey: "workflowNextContinueToStoryboard",
+            },
+          }),
     });
 
     return {

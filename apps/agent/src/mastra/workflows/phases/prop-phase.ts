@@ -442,18 +442,25 @@ const applyDecisionStep = createStep({
         ? `已入库 ${committed.length} 个道具，进入下一阶段。`
         : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
 
+    const inMainFlow = requestContext?.get("inMainFlow") === true;
     await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
       committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      // Compact chip — image phase's progress card takes the "big" slot.
-      compact: true,
-      // No nextStep — image gen auto-chains below.
+      // Inside main_flow: compact chip (pipeline auto-advances). Standalone:
+      // full card with "继续·出图" button (see role-phase for rationale).
+      ...(inMainFlow
+        ? { compact: true as const }
+        : {
+            nextStep: {
+              workflowName: "prop_image_phase" as const,
+              labelKey: "workflowNextContinueToPropImages",
+            },
+          }),
     });
 
     // Auto-chain regardless of partial_failure — see role-phase comment.
     // Skip when running inside main_flow (see role-phase for details).
-    const inMainFlow = requestContext?.get("inMainFlow") === true;
     if (!inMainFlow) {
       try {
         await startWorkflow({

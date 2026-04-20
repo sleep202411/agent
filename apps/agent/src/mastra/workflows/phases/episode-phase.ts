@@ -478,14 +478,21 @@ const applyDecisionStep = createStep({
         ? `已入库 ${committed.length} 集，进入下一阶段。`
         : `入库有失败：${failed.length} / ${accepts.length}`;
 
+    const inMainFlow = requestContext?.get("inMainFlow") === true;
     await publishWorkflowCompleted(ctx.projectId, runId, "episode_phase", {
       committed: committed.map((c) => ({ serverId: c.serverId, title: c.title })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      nextStep: {
-        workflowName: "script_phase",
-        labelKey: "workflowNextContinueToScripts",
-      },
+      // Inside main_flow: compact chip (pipeline auto-advances to
+      // script_phase). Standalone: full card with "继续·写剧本" button.
+      ...(inMainFlow
+        ? { compact: true as const }
+        : {
+            nextStep: {
+              workflowName: "script_phase" as const,
+              labelKey: "workflowNextContinueToScripts",
+            },
+          }),
     });
 
     return {

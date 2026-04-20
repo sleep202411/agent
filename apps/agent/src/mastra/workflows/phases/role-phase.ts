@@ -423,15 +423,23 @@ const applyDecisionStep = createStep({
         ? `已入库 ${committed.length} 个角色，进入下一阶段。`
         : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
 
+    const inMainFlow = requestContext?.get("inMainFlow") === true;
     await publishWorkflowCompleted(ctx.projectId, runId, "role_phase", {
       committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      // Compact chip — image phase's progress card takes the "big" slot.
-      compact: true,
-      // No nextStep — image gen is purely mechanical (no user decision),
-      // so we auto-chain role_image_phase below instead of showing a
-      // "继续·出图" button the user would always just click through.
+      // Inside main_flow: a compact chip (pipeline auto-advances to the
+      // image phase via .then(), the button would be stale before the
+      // user could read it). Standalone: a full card with a "继续·出图"
+      // button so the user can pick up where they left off.
+      ...(inMainFlow
+        ? { compact: true as const }
+        : {
+            nextStep: {
+              workflowName: "role_image_phase" as const,
+              labelKey: "workflowNextContinueToRoleImages",
+            },
+          }),
     });
 
     // Auto-chain: text-phase commit is done, kick off the image phase
@@ -444,7 +452,6 @@ const applyDecisionStep = createStep({
     // .then(roleImagePhaseWorkflow) step already runs the image phase
     // next, and a standalone startWorkflow() here would spawn a SECOND
     // parallel image run (duplicate cards, duplicate Java dispatch).
-    const inMainFlow = requestContext?.get("inMainFlow") === true;
     if (!inMainFlow) {
       try {
         await startWorkflow({
