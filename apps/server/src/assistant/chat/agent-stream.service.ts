@@ -106,6 +106,37 @@ function snapshotTextParts(message: StoredMessage): TextSnapshot[] {
   return out;
 }
 
+/**
+ * Cheap fingerprint of a message's structural shape — captures each part's
+ * type + state + toolCallId. Text body (which mutates per-token) is
+ * intentionally omitted; text deltas are emitted separately via
+ * publishChunk. When this fingerprint changes between iterations, the
+ * client needs the fresh full blob (a tool part went from `input-streaming`
+ * to `input-available`, a new tool output arrived, etc.) — without this
+ * signal, the frontend's tool-card routing gets stuck on a stale state.
+ */
+function structuralFingerprint(message: StoredMessage): string {
+  const parts = (message as { parts?: unknown }).parts;
+  if (!Array.isArray(parts)) return '';
+  const tokens: string[] = [];
+  for (const raw of parts) {
+    const part = raw as {
+      type?: unknown;
+      state?: unknown;
+      toolCallId?: unknown;
+    } | null;
+    if (!part || typeof part !== 'object') {
+      tokens.push('?');
+      continue;
+    }
+    const type = typeof part.type === 'string' ? part.type : '?';
+    const state = typeof part.state === 'string' ? part.state : '-';
+    const tcid = typeof part.toolCallId === 'string' ? part.toolCallId : '';
+    tokens.push(`${type}:${state}:${tcid}`);
+  }
+  return tokens.join('|');
+}
+
 function sanitizeMessage(message: StoredMessage): StoredMessage {
   const parts = message.parts;
   if (!Array.isArray(parts)) return message;
@@ -214,7 +245,7 @@ export class AgentStreamService {
 
     let lastMessage: StoredMessage | null = null;
     let previousParts: TextSnapshot[] = []; // by part index, text-only
-    let previousPartCount = 0;
+    let previousFingerprint = '';
     let lastCheckpoint = 0;
     let iterations = 0;
     let addedSeed = false;
@@ -239,17 +270,13 @@ export class AgentStreamService {
           await this.store.addMessage(projectId, lastMessage);
           addedSeed = true;
           previousParts = snapshotTextParts(lastMessage);
-          previousPartCount = Array.isArray(lastMessage.parts)
-            ? lastMessage.parts.length
-            : 0;
+          previousFingerprint = structuralFingerprint(lastMessage);
           lastCheckpoint = Date.now();
           continue;
         }
 
         const currentParts = snapshotTextParts(lastMessage);
-        const currentPartCount = Array.isArray(lastMessage.parts)
-          ? lastMessage.parts.length
-          : 0;
+        const currentFingerprint = structuralFingerprint(lastMessage);
 
         // 1) Emit text-delta chunks for every text part whose text grew.
         //    This is the fast path — pub/sub only, no Redis.
@@ -289,10 +316,13 @@ export class AgentStreamService {
           // checkpoint/finalize snapshots will reconcile on the client.)
         }
 
-        // 2) Detect structural change (new tool part etc.) — fall back to
-        //    full updateMessage so the client fetches the fresh blob
-        //    containing the new non-text part.
-        const structuralChange = currentPartCount !== previousPartCount;
+        // 2) Detect ANY structural change (new part, part state transition
+        //    like input-streaming → input-available, tool output landing)
+        //    and publish the full blob so client-side tool-card routing
+        //    reads a fresh state. Without this, require_project_params
+        //    stays stuck at "input-streaming" until the stream ends, and
+        //    the params form only appears after a full page reload.
+        const structuralChange = currentFingerprint !== previousFingerprint;
         if (structuralChange) {
           await this.store.updateMessage(projectId, lastMessage);
         }
@@ -305,7 +335,7 @@ export class AgentStreamService {
         }
 
         previousParts = currentParts;
-        previousPartCount = currentPartCount;
+        previousFingerprint = currentFingerprint;
       }
 
       // Final flush — write the terminal blob and publish `message_finalize`

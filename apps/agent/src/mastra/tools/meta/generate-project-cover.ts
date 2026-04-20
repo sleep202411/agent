@@ -56,6 +56,79 @@ function aspectRatioFromType(type: string | null | undefined): string {
   return m ? `${m[1]}:${m[2]}` : "16:9";
 }
 
+type WorldDetailLite = {
+  id?: string;
+  description?: string | null;
+  core?: string | null;
+};
+
+type PaintingStyle = {
+  id?: string | number;
+  info?: string | null;
+};
+
+/**
+ * Resolve the project's world.core (concrete visual imagery) so we can
+ * feed it into the Flux prompt as "key visuals". Failure is non-fatal —
+ * fall back to no core.
+ */
+async function resolveWorldCore(
+  ctx: ReturnType<typeof getContext>,
+  worldId: string | null | undefined
+): Promise<{ description: string | null; core: string | null }> {
+  if (!worldId) return { description: null, core: null };
+  try {
+    const world = await javaRequest<WorldDetailLite>(
+      ctx,
+      `/api/user/world/query/world?id=${worldId}`
+    );
+    return {
+      description: typeof world.description === "string" ? world.description : null,
+      core: typeof world.core === "string" ? world.core : null,
+    };
+  } catch (err) {
+    console.warn("[generate_project_cover] world core lookup failed:", err);
+    return { description: null, core: null };
+  }
+}
+
+// In-process cache for the painting-styles dictionary — it never changes
+// during a process lifetime, and the API call is a couple hundred ms.
+let _styleCache: Map<string, string> | null = null;
+
+async function loadPaintingStyles(
+  ctx: ReturnType<typeof getContext>
+): Promise<Map<string, string>> {
+  if (_styleCache) return _styleCache;
+  try {
+    const list = await javaRequest<PaintingStyle[]>(
+      ctx,
+      "/api/user/world/static/list/painting/style/",
+      { method: "GET" }
+    );
+    const out = new Map<string, string>();
+    for (const item of list ?? []) {
+      if (item?.id != null && typeof item.info === "string" && item.info.length > 0) {
+        out.set(String(item.id), item.info);
+      }
+    }
+    _styleCache = out;
+    return out;
+  } catch (err) {
+    console.warn("[generate_project_cover] painting-styles dict lookup failed:", err);
+    return new Map();
+  }
+}
+
+async function resolveStyleLabel(
+  ctx: ReturnType<typeof getContext>,
+  styleId: string | null | undefined
+): Promise<string | null> {
+  if (!styleId) return null;
+  const dict = await loadPaintingStyles(ctx);
+  return dict.get(String(styleId)) ?? null;
+}
+
 async function resolveScriptText(textRef: string | undefined): Promise<string | null> {
   if (!textRef || !textRef.startsWith("att_")) return null;
   try {
@@ -72,6 +145,9 @@ async function resolveScriptText(textRef: string | undefined): Promise<string | 
 async function writeCoverPrompt(opts: {
   script: string | null;
   projectName: string | null;
+  description: string | null;
+  core: string | null;
+  styleLabel: string | null;
   aspectRatio: string;
 }): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -80,9 +156,11 @@ async function writeCoverPrompt(opts: {
     // tool working in local dev without LLM keys.
     const snippet = opts.script?.slice(0, 200).replace(/\s+/g, " ").trim();
     return [
-      "cinematic movie poster",
+      opts.styleLabel ? opts.styleLabel : "cinematic movie poster",
       opts.aspectRatio,
       "dramatic composition, high detail, no text, no watermark",
+      opts.description ? `concept: ${opts.description}` : null,
+      opts.core ? `key visuals: ${opts.core}` : null,
       snippet ? `scene inspiration: ${snippet}` : null,
       opts.projectName ? `title: "${opts.projectName}"` : null,
     ]
@@ -90,13 +168,23 @@ async function writeCoverPrompt(opts: {
       .join(", ");
   }
 
+  // Feed everything we know about the project. The "core 意象" field
+  // (顿号-separated concrete objects like "断桥烟柳、春茶市集、油纸伞")
+  // matters most — it's what gives Flux something specific to draw.
   const userMsg = [
     "请根据下面素材，生成 1 句英文图像生成提示词（≤ 60 词）用于 Flux 模型生成电影海报风格封面：",
     `- 画幅：${opts.aspectRatio}`,
     opts.projectName ? `- 项目名：${opts.projectName}` : null,
+    opts.description ? `- 一句话概念：${opts.description}` : null,
+    opts.core ? `- 核心意象（必须具象体现）：${opts.core}` : null,
+    opts.styleLabel ? `- 画风（用该画风呈现）：${opts.styleLabel}` : null,
     opts.script ? `- 剧本开头片段：\n${opts.script.slice(0, 1200)}` : "- 暂无剧本内容",
     "",
-    "要求：全英文；只出 1 句 prompt 本身，不要解释、不要引号、不要 markdown；cinematic、dramatic、不要让模型画出文字/logo/watermark。",
+    "要求：",
+    "- 全英文；只出 1 句 prompt 本身，不要解释、不要引号、不要 markdown",
+    "- **核心意象**必须具象地出现在画面里（断桥烟柳、油纸伞这类具体物件）",
+    "- **画风**要明确落在 prompt 里（例 Chinese ink wash painting / cyberpunk illustration）",
+    "- cinematic、dramatic、不要让模型画出文字/logo/watermark",
   ]
     .filter(Boolean)
     .join("\n");
@@ -216,11 +304,27 @@ export const generateProjectCover = createTool({
       return { skipped: true, imagePath: detail.imagePath };
     }
 
-    const script = await resolveScriptText(textRef);
+    const worldId = ctx.worldId ?? detail.worldId ?? null;
+    const [script, worldInfo, styleLabel] = await Promise.all([
+      resolveScriptText(textRef),
+      resolveWorldCore(ctx, worldId),
+      resolveStyleLabel(ctx, detail.stylePainting),
+    ]);
     const aspectRatio = aspectRatioFromType(detail.aspectRatioType);
+
+    // Project description lives on `detail`; world description/core live
+    // on the world entity. Prefer project description first (set by
+    // save_project_meta), fall back to world description if project's is
+    // empty — the two fields are typically similar after analyze_brief.
+    const description = detail.description ?? worldInfo.description ?? null;
+    const core = worldInfo.core;
+
     const imagePrompt = await writeCoverPrompt({
       script,
       projectName: detail.name ?? null,
+      description,
+      core,
+      styleLabel,
       aspectRatio,
     });
     console.info("[generate_project_cover] prompt:", imagePrompt.slice(0, 200));
