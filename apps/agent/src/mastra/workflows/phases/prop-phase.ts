@@ -26,6 +26,13 @@ import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowFailed,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+  publishWorkflowSuspended,
+} from "../../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -144,18 +151,33 @@ const resolveInputStep = createStep({
     const propsRoster = record.outline.props ?? [];
     if (propsRoster.length === 0) {
       // Not an error — story may not warrant any story-relevant props.
+      await publishWorkflowStarted(ctx.projectId, runId, "prop_phase", {
+        plannedCount: 0,
+        summary: "故事里没有剧情级道具，将跳过本阶段。",
+      });
       return { worldId: inputData.worldId, props: [] };
     }
+
+    await publishWorkflowStarted(ctx.projectId, runId, "prop_phase", {
+      plannedCount: propsRoster.length,
+      summary: `道具设计师将扩展 ${propsRoster.length} 个道具。`,
+    });
 
     const props: z.infer<typeof PropDesignSchema>[] = [];
     for (let i = 0; i < propsRoster.length; i++) {
       const entry = propsRoster[i];
       await throwIfCancelled(runId);
+      const label = `道具设计师正在扩展「${entry.name}」…`;
       await reportProgress(runId, {
         stepId: "prop_phase.elaborate",
         current: i,
         total: propsRoster.length,
-        label: `道具设计师正在扩展「${entry.name}」…`,
+        label,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "planning", {
+        current: i,
+        total: propsRoster.length,
+        label,
       });
       const prompt = buildElaboratePrompt(record.outline, entry, inputData.feedback);
       const response = await propDesigner.generate(prompt, {
@@ -172,11 +194,17 @@ const resolveInputStep = createStep({
       }
       props.push({ ...designed, name: entry.name });
     }
+    const doneLabel = `道具设计完成：${props.length} 个`;
     await reportProgress(runId, {
       stepId: "prop_phase.elaborate",
       current: props.length,
       total: propsRoster.length,
-      label: `道具设计完成：${props.length} 个`,
+      label: doneLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "planning", {
+      current: props.length,
+      total: propsRoster.length,
+      label: doneLabel,
     });
     return { worldId: inputData.worldId, props };
   },
@@ -247,6 +275,7 @@ const waitConfirmationStep = createStep({
   execute: async ({ inputData, resumeData, suspend, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
+    const ctx = getContext(requestContext);
 
     // Fast-path: zero props in the outline roster — don't bother suspending.
     if (inputData.draftCount === 0) {
@@ -259,6 +288,23 @@ const waitConfirmationStep = createStep({
         current: inputData.draftCount,
         total: inputData.draftCount,
         label: `已生成 ${inputData.draftCount} 个道具，等待确认后进入下一阶段`,
+      });
+      const drafts = await listDrafts<PropCreateData>(runId, {
+        entityType: "prop",
+        statuses: ["pending"],
+      });
+      await publishWorkflowSuspended(ctx.projectId, runId, "prop_phase", {
+        draftGroups: [
+          {
+            entityType: "prop",
+            count: drafts.length,
+            items: drafts.map((d) => ({
+              clientRefId: d.clientRefId,
+              data: d.data as unknown as Record<string, unknown>,
+            })),
+          },
+        ],
+        totalDraftCount: drafts.length,
       });
       return await suspend({
         runId,
@@ -296,6 +342,14 @@ const applyDecisionStep = createStep({
 
     // Zero-props short-circuit from waitConfirmationStep.
     if (draftClientRefIds.length === 0) {
+      await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
+        committed: [],
+        summary: "本故事骨架里没有需要单独设计的道具，已跳过。",
+        nextStep: {
+          workflowName: "prop_image_phase",
+          labelKey: "workflowNextContinueToPropImages",
+        },
+      });
       return {
         outcome: "no_props" as const,
         committed: [],
@@ -306,6 +360,11 @@ const applyDecisionStep = createStep({
 
     if (!inputData.approved) {
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
+      await publishWorkflowFailed(ctx.projectId, runId, "prop_phase", {
+        terminalStatus: "cancelled",
+        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        retryable: false,
+      });
       return {
         outcome: "rejected" as const,
         committed: [],
@@ -327,11 +386,17 @@ const applyDecisionStep = createStep({
 
     for (const it of items) await markDraftCommitting(runId, it.clientRefId);
 
+    const startLabel = `入库 ${items.length} 个道具…`;
     await reportProgress(runId, {
       stepId: "prop_phase.commit",
       current: 0,
       total: items.length,
-      label: `入库 ${items.length} 个道具…`,
+      label: startLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "committing", {
+      current: 0,
+      total: items.length,
+      label: startLabel,
     });
 
     const results = await batchUpsertProps(ctx, items, { concurrency: 1 });
@@ -354,21 +419,39 @@ const applyDecisionStep = createStep({
 
     if (outcome === "committed") await deleteAllDrafts(runId);
 
+    const endLabel = `道具入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
     await reportProgress(runId, {
       stepId: "prop_phase.commit",
       current: committed.length,
       total: items.length,
-      label: `道具入库完成：成功 ${committed.length} / 失败 ${failed.length}`,
+      label: endLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "committing", {
+      current: committed.length,
+      total: items.length,
+      label: endLabel,
+    });
+
+    const summaryText =
+      outcome === "committed"
+        ? `已入库 ${committed.length} 个道具，进入下一阶段。`
+        : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+
+    await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
+      committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
+      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+      summary: summaryText,
+      nextStep: {
+        workflowName: "prop_image_phase",
+        labelKey: "workflowNextContinueToPropImages",
+      },
     });
 
     return {
       outcome,
       committed,
       failed,
-      message:
-        outcome === "committed"
-          ? `已入库 ${committed.length} 个道具，进入下一阶段。`
-          : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`,
+      message: summaryText,
     };
   },
 });

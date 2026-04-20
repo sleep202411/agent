@@ -20,6 +20,13 @@ import {
 } from "../../lib/drafts";
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest } from "../../lib/workspace-client";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowFailed,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+  publishWorkflowSuspended,
+} from "../../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -214,11 +221,21 @@ const generateStep = createStep({
     let completedCount = 0;
     let cursor = 0;
 
+    const startLabel = `分镜师开始并行出分镜（共 ${total} 集，并发 ${concurrency}）`;
     await reportProgress(runId, {
       stepId: "storyboard_phase.generate",
       current: 0,
       total,
-      label: `分镜师开始并行出分镜（共 ${total} 集，并发 ${concurrency}）`,
+      label: startLabel,
+    });
+    await publishWorkflowStarted(ctx.projectId, runId, "storyboard_phase", {
+      plannedCount: total,
+      summary: startLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "planning", {
+      current: 0,
+      total,
+      label: startLabel,
     });
 
     const runOne = async (i: number) => {
@@ -248,11 +265,17 @@ const generateStep = createStep({
       } finally {
         // Increment under the single-threaded event loop — no races.
         completedCount += 1;
+        const label = `已出 ${completedCount}/${total} 集分镜`;
         await reportProgress(runId, {
           stepId: "storyboard_phase.generate",
           current: completedCount,
           total,
-          label: `已出 ${completedCount}/${total} 集分镜`,
+          label,
+        });
+        await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "planning", {
+          current: completedCount,
+          total,
+          label,
         });
       }
     };
@@ -349,6 +372,7 @@ const waitConfirmationStep = createStep({
   execute: async ({ inputData, resumeData, suspend, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
+    const ctx = getContext(requestContext);
 
     if (!resumeData) {
       await reportProgress(runId, {
@@ -356,6 +380,24 @@ const waitConfirmationStep = createStep({
         current: inputData.episodeCount,
         total: inputData.episodeCount,
         label: `${inputData.episodeCount} 集分镜（${inputData.totalShots} 个镜头）已就绪，等待确认`,
+      });
+      const drafts = await listDrafts<{
+        episodeId: string;
+        title: string;
+        rows: z.infer<typeof StoryboardRow>[];
+      }>(runId, { entityType: "shot", statuses: ["pending"] });
+      await publishWorkflowSuspended(ctx.projectId, runId, "storyboard_phase", {
+        draftGroups: [
+          {
+            entityType: "shot",
+            count: drafts.length,
+            items: drafts.map((d) => ({
+              clientRefId: d.clientRefId,
+              data: d.data as unknown as Record<string, unknown>,
+            })),
+          },
+        ],
+        totalDraftCount: drafts.length,
       });
       return await suspend({
         runId,
@@ -660,6 +702,11 @@ const applyDecisionStep = createStep({
 
     if (!inputData.approved) {
       for (const g of generated) await markDraftDiscarded(runId, g.clientRefId);
+      await publishWorkflowFailed(ctx.projectId, runId, "storyboard_phase", {
+        terminalStatus: "cancelled",
+        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        retryable: false,
+      });
       return {
         outcome: "rejected" as const,
         committed: [],
@@ -695,17 +742,29 @@ const applyDecisionStep = createStep({
 
     for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
 
+    await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
+      current: 0,
+      total: accepts.length,
+      label: `开始保存 ${accepts.length} 集分镜…`,
+    });
+
     const committed: z.infer<typeof StoryboardPhaseOutputSchema>["committed"] = [];
     const failed: z.infer<typeof StoryboardPhaseOutputSchema>["failed"] = [];
 
     let i = 0;
     for (const d of accepts) {
       await throwIfCancelled(runId);
+      const label = `保存分镜：${i + 1}/${accepts.length} — ${d.data.title}`;
       await reportProgress(runId, {
         stepId: "storyboard_phase.commit",
         current: i,
         total: accepts.length,
-        label: `保存分镜：${i + 1}/${accepts.length} — ${d.data.title}`,
+        label,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
+        current: i,
+        total: accepts.length,
+        label,
       });
 
       const rows2d = d.data.rows.map((r, idx) => {
@@ -786,21 +845,36 @@ const applyDecisionStep = createStep({
 
     if (failed.length === 0) await deleteAllDrafts(runId);
 
+    const endLabel = `分镜保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
     await reportProgress(runId, {
       stepId: "storyboard_phase.commit",
       current: committed.length,
       total: accepts.length,
-      label: `分镜保存完成：成功 ${committed.length} / 失败 ${failed.length}`,
+      label: endLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
+      current: committed.length,
+      total: accepts.length,
+      label: endLabel,
+    });
+
+    const summaryText =
+      outcome === "committed"
+        ? `已保存 ${committed.length} 集分镜，主流程结束。`
+        : `保存有失败：${failed.length} / ${accepts.length}。`;
+
+    // Terminal workflow — no nextStep (storyboard is the end of the chain).
+    await publishWorkflowCompleted(ctx.projectId, runId, "storyboard_phase", {
+      committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
+      failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
+      summary: summaryText,
     });
 
     return {
       outcome,
       committed,
       failed,
-      message:
-        outcome === "committed"
-          ? `已保存 ${committed.length} 集分镜，主流程结束。`
-          : `保存有失败：${failed.length} / ${accepts.length}。`,
+      message: summaryText,
     };
   },
 });

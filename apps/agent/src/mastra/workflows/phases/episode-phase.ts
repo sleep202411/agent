@@ -24,6 +24,13 @@ import {
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { getOutline, type StoryOutline } from "../../lib/outline";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowFailed,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+  publishWorkflowSuspended,
+} from "../../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -133,12 +140,23 @@ const planStep = createStep({
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
     await throwIfCancelled(runId);
+    const ctx = getContext(requestContext);
 
+    const startLabel = "分集策划师正在规划分集…";
     await reportProgress(runId, {
       stepId: "episode_phase.plan",
       current: 0,
       total: inputData.targetEpisodeCount,
-      label: "分集策划师正在规划分集…",
+      label: startLabel,
+    });
+    await publishWorkflowStarted(ctx.projectId, runId, "episode_phase", {
+      plannedCount: inputData.targetEpisodeCount,
+      summary: `分集策划师将规划 ${inputData.targetEpisodeCount} 集大纲。`,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "planning", {
+      current: 0,
+      total: inputData.targetEpisodeCount,
+      label: startLabel,
     });
 
     const planner = mastra?.getAgent("episodePlanner");
@@ -160,11 +178,17 @@ const planStep = createStep({
     }
 
     setState({ ...state, plannedEpisodes: episodes });
+    const doneLabel = `规划 ${episodes.length} 集大纲完成`;
     await reportProgress(runId, {
       stepId: "episode_phase.plan",
       current: episodes.length,
       total: inputData.targetEpisodeCount,
-      label: `规划 ${episodes.length} 集大纲完成`,
+      label: doneLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "planning", {
+      current: episodes.length,
+      total: inputData.targetEpisodeCount,
+      label: doneLabel,
     });
     return { done: true as const };
   },
@@ -265,6 +289,7 @@ const waitConfirmationStep = createStep({
   execute: async ({ inputData, resumeData, suspend, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
+    const ctx = getContext(requestContext);
 
     if (!resumeData) {
       await reportProgress(runId, {
@@ -272,6 +297,26 @@ const waitConfirmationStep = createStep({
         current: inputData.draftCount,
         total: inputData.draftCount,
         label: `${inputData.draftCount} 集大纲已生成，等待确认`,
+      });
+      const drafts = await listDrafts<{
+        title: string;
+        introduction: string;
+        frontPrompt: string;
+        behindPrompt: string;
+        sortHint: number;
+      }>(runId, { entityType: "episode", statuses: ["pending"] });
+      await publishWorkflowSuspended(ctx.projectId, runId, "episode_phase", {
+        draftGroups: [
+          {
+            entityType: "episode",
+            count: drafts.length,
+            items: drafts.map((d) => ({
+              clientRefId: d.clientRefId,
+              data: d.data as unknown as Record<string, unknown>,
+            })),
+          },
+        ],
+        totalDraftCount: drafts.length,
       });
       return await suspend({
         runId,
@@ -311,6 +356,11 @@ const applyDecisionStep = createStep({
 
     if (!inputData.approved) {
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
+      await publishWorkflowFailed(ctx.projectId, runId, "episode_phase", {
+        terminalStatus: "cancelled",
+        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        retryable: false,
+      });
       return {
         outcome: "rejected" as const,
         committed: [],
@@ -334,11 +384,17 @@ const applyDecisionStep = createStep({
       .sort((a, b) => a.data.sortHint - b.data.sortHint);
 
     for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
+    const startLabel = `入库 ${accepts.length} 集…`;
     await reportProgress(runId, {
       stepId: "episode_phase.commit",
       current: 0,
       total: accepts.length,
-      label: `入库 ${accepts.length} 集…`,
+      label: startLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "committing", {
+      current: 0,
+      total: accepts.length,
+      label: startLabel,
     });
 
     // Java's batch/updateOrAdd/episode expects one payload with `datas` array.
@@ -409,21 +465,39 @@ const applyDecisionStep = createStep({
 
     if (failed.length === 0) await deleteAllDrafts(runId);
 
+    const endLabel = `分集入库：成功 ${committed.length} / 失败 ${failed.length}`;
     await reportProgress(runId, {
       stepId: "episode_phase.commit",
       current: committed.length,
       total: accepts.length,
-      label: `分集入库：成功 ${committed.length} / 失败 ${failed.length}`,
+      label: endLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "committing", {
+      current: committed.length,
+      total: accepts.length,
+      label: endLabel,
+    });
+
+    const summaryText =
+      outcome === "committed"
+        ? `已入库 ${committed.length} 集，进入下一阶段。`
+        : `入库有失败：${failed.length} / ${accepts.length}`;
+
+    await publishWorkflowCompleted(ctx.projectId, runId, "episode_phase", {
+      committed: committed.map((c) => ({ serverId: c.serverId, title: c.title })),
+      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+      summary: summaryText,
+      nextStep: {
+        workflowName: "script_phase",
+        labelKey: "workflowNextContinueToScripts",
+      },
     });
 
     return {
       outcome,
       committed,
       failed,
-      message:
-        outcome === "committed"
-          ? `已入库 ${committed.length} 集，进入下一阶段。`
-          : `入库有失败：${failed.length} / ${accepts.length}`,
+      message: summaryText,
     };
   },
 });

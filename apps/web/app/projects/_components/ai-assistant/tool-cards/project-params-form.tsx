@@ -40,8 +40,13 @@ function getAspectPreview(label: string): { w: number; h: number } {
 
 const EPISODE_COUNT_STORAGE_KEY = (projectId: string) => `fizzos:episode-count:${projectId}`;
 const DIALOG_LANGUAGE_STORAGE_KEY = (projectId: string) => `fizzos:dialog-language:${projectId}`;
+const SHOTS_PER_EPISODE_STORAGE_KEY = (projectId: string) =>
+  `fizzos:shots-per-episode:${projectId}`;
 const EPISODE_COUNT_MIN = 2;
 const EPISODE_COUNT_MAX = 40;
+const SHOTS_PER_EPISODE_MIN = 5;
+const SHOTS_PER_EPISODE_MAX = 60;
+const SHOTS_PER_EPISODE_DEFAULT = 20;
 
 export function loadEpisodeCount(projectId: string): number | undefined {
   if (typeof window === "undefined") return undefined;
@@ -88,6 +93,34 @@ export function saveDialogLanguage(projectId: string, value: string): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(DIALOG_LANGUAGE_STORAGE_KEY(projectId), value);
+  } catch {}
+}
+
+/**
+ * Target number of shots per episode — used by storyboard_phase to decide
+ * how many shot rows to generate per episode. localStorage-only (Java has
+ * no column for it yet); threaded into storyboard_phase input via
+ * workspaceContext on each invoke.
+ */
+export function loadShotsPerEpisode(projectId: string): number | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(SHOTS_PER_EPISODE_STORAGE_KEY(projectId));
+    if (!raw) return undefined;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < SHOTS_PER_EPISODE_MIN || n > SHOTS_PER_EPISODE_MAX) {
+      return undefined;
+    }
+    return n;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveShotsPerEpisode(projectId: string, value: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SHOTS_PER_EPISODE_STORAGE_KEY(projectId), String(value));
   } catch {}
 }
 
@@ -140,6 +173,10 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
     const stored = detail?.id ? loadEpisodeCount(detail.id) : undefined;
     return stored != null ? String(stored) : "";
   });
+  const [shotsPerEpisode, setShotsPerEpisode] = useState<string>(() => {
+    const stored = detail?.id ? loadShotsPerEpisode(detail.id) : undefined;
+    return stored != null ? String(stored) : String(SHOTS_PER_EPISODE_DEFAULT);
+  });
 
   useEffect(() => {
     let active = true;
@@ -162,10 +199,15 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
 
   const chapterLengthNum = Number(chapterLength);
   const episodeCountNum = Number(episodeCount);
+  const shotsPerEpisodeNum = Number(shotsPerEpisode);
   const episodeCountValid =
     Number.isFinite(episodeCountNum) &&
     episodeCountNum >= EPISODE_COUNT_MIN &&
     episodeCountNum <= EPISODE_COUNT_MAX;
+  const shotsPerEpisodeValid =
+    Number.isFinite(shotsPerEpisodeNum) &&
+    shotsPerEpisodeNum >= SHOTS_PER_EPISODE_MIN &&
+    shotsPerEpisodeNum <= SHOTS_PER_EPISODE_MAX;
   const canSubmit =
     !readOnly &&
     !loadingDict &&
@@ -174,7 +216,8 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
     Boolean(chapterLength) &&
     Number.isFinite(chapterLengthNum) &&
     chapterLengthNum > 0 &&
-    episodeCountValid;
+    episodeCountValid &&
+    shotsPerEpisodeValid;
   const controlsDisabled = loadingDict || readOnly;
 
   const handleSubmit = () => {
@@ -185,6 +228,7 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
     if (detail?.id) {
       saveEpisodeCount(detail.id, episodeCountNum);
       saveDialogLanguage(detail.id, dialogLanguage);
+      saveShotsPerEpisode(detail.id, shotsPerEpisodeNum);
     }
     onSubmitted?.({
       aspectRatioType,
@@ -192,6 +236,7 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
       stylePainting,
       dialogLanguage,
       targetEpisodeCount: episodeCountNum,
+      shotsPerEpisode: shotsPerEpisodeNum,
     });
   };
 
@@ -249,6 +294,22 @@ export function ProjectParamsForm({ onSubmitted, readOnly = false }: ProjectPara
         placeholder={t("paramsEpisodeCountPlaceholder", {
           min: EPISODE_COUNT_MIN,
           max: EPISODE_COUNT_MAX,
+        })}
+        className="h-10 rounded-xl border-0 bg-white/5 text-[13px] focus-visible:ring-1 focus-visible:ring-primary"
+      />
+
+      {/* 每集分镜数量 — storyboard_phase reads this off workspaceContext to
+          decide how many shot rows to generate per episode. localStorage only. */}
+      <SectionTitle>{t("paramsShotsPerEpisode")}</SectionTitle>
+      <Input
+        value={shotsPerEpisode}
+        inputMode="numeric"
+        maxLength={2}
+        disabled={controlsDisabled}
+        onChange={(e) => setShotsPerEpisode(e.target.value.replace(/[^\d]/g, ""))}
+        placeholder={t("paramsShotsPerEpisodePlaceholder", {
+          min: SHOTS_PER_EPISODE_MIN,
+          max: SHOTS_PER_EPISODE_MAX,
         })}
         className="h-10 rounded-xl border-0 bg-white/5 text-[13px] focus-visible:ring-1 focus-visible:ring-primary"
       />

@@ -192,6 +192,34 @@ export async function getWorkflowDrafts(
 }
 
 /**
+ * Patch a pending draft's `data` fields — shallow-merged server-side.
+ * Used by DraftDetailDialog to persist inline prompt edits (e.g. the
+ * Seedance 2.0 wrapper) so the workflow's resume picks them up.
+ */
+export async function updateDraftData(
+  runId: string,
+  clientRefId: string,
+  projectId: string,
+  data: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<Draft> {
+  const qs = new URLSearchParams({ projectId });
+  const url = `/aurora/drafts/${encodeURIComponent(runId)}/${encodeURIComponent(
+    clientRefId
+  )}?${qs.toString()}`;
+  const response = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data }),
+    signal,
+  });
+  if (!response.ok) throw new WorkflowApiError(response.status, await readError(response));
+  const body = (await response.json()) as { draft: Draft };
+  return body.draft;
+}
+
+/**
  * HITL approval button — commit drafts or reject them.
  * approved=true → commit drafts and resume.
  * approved=false + feedback → loop back to generation step with guidance.

@@ -27,6 +27,11 @@ async function narrate(runId: string, text: string): Promise<void> {
 }
 import { putOutline, type StoryOutline } from "../../lib/outline";
 import { getContext } from "../../lib/workspace-client";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+} from "../../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -165,19 +170,30 @@ const analyzeStep = createStep({
   outputSchema: ScriptBreakdownOutputSchema,
   execute: async ({ inputData, mastra, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
+    const ctx = getContext(requestContext);
     if (runId) {
       await throwIfCancelled(runId);
+      const startLabel = "剧本统筹正在拆解素材…";
       await reportProgress(runId, {
         stepId: "analyze",
         current: 0,
         total: 1,
-        label: "剧本统筹正在拆解素材…",
+        label: startLabel,
       });
       await narrate(runId, "导演，我已经收到您的原始素材，正在通读全文。");
       await narrate(
         runId,
         "我会先按叙事节奏划章、列出角色名册和场景名册——这是后续角色/分集/剧本/分镜的共同基底。"
       );
+      await publishWorkflowStarted(ctx.projectId, runId, "story_outline", {
+        plannedCount: 1,
+        summary: startLabel,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "story_outline", "planning", {
+        current: 0,
+        total: 1,
+        label: startLabel,
+      });
     }
 
     const storyEditor = mastra?.getAgent("storyEditor");
@@ -223,16 +239,34 @@ const analyzeStep = createStep({
     }
 
     if (runId) {
+      const endLabel = `骨架就绪：${result.structure.length} 章 · ${result.cast.length} 角色 · ${result.settings?.length ?? 0} 场景`;
       await reportProgress(runId, {
         stepId: "analyze",
         current: 1,
         total: 1,
-        label: `骨架就绪：${result.structure.length} 章 · ${result.cast.length} 角色 · ${result.settings?.length ?? 0} 场景`,
+        label: endLabel,
       });
       await narrate(
         runId,
         `骨架整理完成：${result.structure.length} 个章节，${result.cast.length} 位角色，${result.settings?.length ?? 0} 个场景。`
       );
+      await publishWorkflowProgress(ctx.projectId, runId, "story_outline", "planning", {
+        current: 1,
+        total: 1,
+        label: endLabel,
+      });
+      await publishWorkflowCompleted(ctx.projectId, runId, "story_outline", {
+        committed: [{ serverId: ctx.projectId, title: "故事骨架" }],
+        summary: endLabel,
+        // Carry the structured skeleton so the completed card can render
+        // the chapter / cast / settings inline panel (previously supplied
+        // by the old /workflow/:runId/status `meta.result` field).
+        result: result as unknown as Record<string, unknown>,
+        nextStep: {
+          workflowName: "role_phase",
+          labelKey: "workflowNextContinueToRoles",
+        },
+      });
     }
 
     return result;

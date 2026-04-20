@@ -23,6 +23,13 @@ import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowFailed,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+  publishWorkflowSuspended,
+} from "../../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -144,15 +151,26 @@ const resolveInputStep = createStep({
       throw new Error("scene_phase: story outline has empty settings roster");
     }
 
+    await publishWorkflowStarted(ctx.projectId, runId, "scene_phase", {
+      plannedCount: settings.length,
+      summary: `场景设计师将扩展 ${settings.length} 个场景。`,
+    });
+
     const scenes: z.infer<typeof SceneDesignSchema>[] = [];
     for (let i = 0; i < settings.length; i++) {
       const entry = settings[i];
       await throwIfCancelled(runId);
+      const label = `场景设计师正在扩展「${entry.name}」…`;
       await reportProgress(runId, {
         stepId: "scene_phase.elaborate",
         current: i,
         total: settings.length,
-        label: `场景设计师正在扩展「${entry.name}」…`,
+        label,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "scene_phase", "planning", {
+        current: i,
+        total: settings.length,
+        label,
       });
       const prompt = buildElaboratePrompt(record.outline, entry, inputData.feedback);
       const response = await sceneDesigner.generate(prompt, {
@@ -172,11 +190,17 @@ const resolveInputStep = createStep({
     if (scenes.length === 0) {
       throw new Error("scene_phase: sceneDesigner returned no designs for any setting");
     }
+    const doneLabel = `场景设计完成：${scenes.length} 个`;
     await reportProgress(runId, {
       stepId: "scene_phase.elaborate",
       current: scenes.length,
       total: settings.length,
-      label: `场景设计完成：${scenes.length} 个`,
+      label: doneLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "scene_phase", "planning", {
+      current: scenes.length,
+      total: settings.length,
+      label: doneLabel,
     });
     return { worldId: inputData.worldId, scenes };
   },
@@ -256,6 +280,7 @@ const waitConfirmationStep = createStep({
   execute: async ({ inputData, resumeData, suspend, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
+    const ctx = getContext(requestContext);
 
     if (!resumeData) {
       await reportProgress(runId, {
@@ -263,6 +288,23 @@ const waitConfirmationStep = createStep({
         current: inputData.draftCount,
         total: inputData.draftCount,
         label: `已生成 ${inputData.draftCount} 个场景，等待确认后进入下一阶段`,
+      });
+      const drafts = await listDrafts<SceneCreateData>(runId, {
+        entityType: "scene",
+        statuses: ["pending"],
+      });
+      await publishWorkflowSuspended(ctx.projectId, runId, "scene_phase", {
+        draftGroups: [
+          {
+            entityType: "scene",
+            count: drafts.length,
+            items: drafts.map((d) => ({
+              clientRefId: d.clientRefId,
+              data: d.data as unknown as Record<string, unknown>,
+            })),
+          },
+        ],
+        totalDraftCount: drafts.length,
       });
       return await suspend({
         runId,
@@ -300,6 +342,11 @@ const applyDecisionStep = createStep({
 
     if (!inputData.approved) {
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
+      await publishWorkflowFailed(ctx.projectId, runId, "scene_phase", {
+        terminalStatus: "cancelled",
+        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        retryable: false,
+      });
       return {
         outcome: "rejected" as const,
         committed: [],
@@ -321,11 +368,17 @@ const applyDecisionStep = createStep({
 
     for (const it of items) await markDraftCommitting(runId, it.clientRefId);
 
+    const startLabel = `入库 ${items.length} 个场景…`;
     await reportProgress(runId, {
       stepId: "scene_phase.commit",
       current: 0,
       total: items.length,
-      label: `入库 ${items.length} 个场景…`,
+      label: startLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "scene_phase", "committing", {
+      current: 0,
+      total: items.length,
+      label: startLabel,
     });
 
     const results = await batchUpsertScenes(ctx, items, { concurrency: 1 });
@@ -348,11 +401,32 @@ const applyDecisionStep = createStep({
 
     if (outcome === "committed") await deleteAllDrafts(runId);
 
+    const endLabel = `场景入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
     await reportProgress(runId, {
       stepId: "scene_phase.commit",
       current: committed.length,
       total: items.length,
-      label: `场景入库完成：成功 ${committed.length} / 失败 ${failed.length}`,
+      label: endLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "scene_phase", "committing", {
+      current: committed.length,
+      total: items.length,
+      label: endLabel,
+    });
+
+    const summaryText =
+      outcome === "committed"
+        ? `已入库 ${committed.length} 个场景，进入下一阶段。`
+        : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+
+    await publishWorkflowCompleted(ctx.projectId, runId, "scene_phase", {
+      committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
+      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+      summary: summaryText,
+      nextStep: {
+        workflowName: "scene_image_phase",
+        labelKey: "workflowNextContinueToSceneImages",
+      },
     });
 
     return {

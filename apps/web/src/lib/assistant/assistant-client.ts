@@ -92,6 +92,12 @@ export interface ConfirmProjectParamsPayload {
    * read by buildInputData when dispatching episode_phase.
    */
   targetEpisodeCount?: number;
+  /**
+   * Target number of shots per episode for storyboard_phase. Same client-side
+   * persistence story as targetEpisodeCount — not written to Java (no column
+   * there yet), kept in localStorage + threaded into storyboard_phase input.
+   */
+  shotsPerEpisode?: number;
 }
 
 export interface SubmitMessageOptions {

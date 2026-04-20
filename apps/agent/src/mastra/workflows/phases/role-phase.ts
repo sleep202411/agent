@@ -26,6 +26,14 @@ import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
+import { stylePaintingHint } from "../../lib/style-painting";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowFailed,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+  publishWorkflowSuspended,
+} from "../../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -86,7 +94,8 @@ const ResolvedInputSchema = z.object({
 function buildElaboratePrompt(
   skeleton: StoryOutline,
   entry: StoryOutline["cast"][number],
-  feedback?: string
+  feedback?: string,
+  stylePainting?: string
 ): string {
   const chapterRefs = entry.firstAppearance
     ? skeleton.structure
@@ -116,7 +125,8 @@ function buildElaboratePrompt(
     "- role：沿用骨架里给的功能定位，不要改",
     "- appearance：15-40 字**人读**的外貌描述。发型、服饰、体态、显著视觉标志，用顿号连接",
     "- personality：20-50 字性格 + 说话风格 + 典型行为，紧扣 arc 给的成长弧线",
-    "- prompt：**图像生成提示词**。和 appearance 不同，这是直接喂给图像模型的 prompt —— 40-80 字、顿号/逗号分隔的视觉关键词串，按「主体（年龄+性别+种族）+ 发型发色 + 服装 + 标志性物件/疤痕 + 表情/神态 + 镜头（胸像/半身）」顺序排。**不要**写故事背景 / 情节 / 情感；只写画面上能看到的东西。**不要**加画风/品质 token（写实、电影感、高清、cartoon 这类）—— 下游会根据项目选定画风统一拼接。与 appearance 的视觉信息保持一致但扩充细节到图像模型能画出稳定外观。",
+    "- prompt：**图像生成提示词**。和 appearance 不同，这是直接喂给图像模型的 prompt —— **60-120 字**、中文顿号 `、` 分隔的视觉关键词串，按「主体（年龄+性别+人种/种族）+ 体型 + 发型发色 + 眼神/表情 + 服装（**颜色+材质**，至少 2 项）+ 标志物/伤疤/配件（至少 1 项）+ 气质神态 + 镜头（胸像/半身/特写）」顺序排。**不要**写故事背景 / 情节 / 情感；只写画面上能看到的东西。**不要**加画风/品质 token（写实、电影感、高清、8K、4k、cartoon 这类）—— 下游会根据项目选定画风统一拼接。与 appearance 的视觉信息保持一致但扩充细节到图像模型能画出稳定外观。",
+    stylePaintingHint(stylePainting),
   ]
     .filter(Boolean)
     .join("\n");
@@ -145,17 +155,36 @@ const resolveInputStep = createStep({
       throw new Error("role_phase: story outline has empty cast roster");
     }
 
+    // Emit the "workflow started" card now that we know the planned count.
+    await publishWorkflowStarted(ctx.projectId, runId, "role_phase", {
+      plannedCount: cast.length,
+      summary: `角色设计师将扩展 ${cast.length} 位角色。`,
+    });
+
     const characters: z.infer<typeof CharacterSchema>[] = [];
     for (let i = 0; i < cast.length; i++) {
       const entry = cast[i];
       await throwIfCancelled(runId);
+      const label = `角色设计师正在扩展「${entry.name}」…`;
       await reportProgress(runId, {
         stepId: "role_phase.elaborate",
         current: i,
         total: cast.length,
-        label: `角色设计师正在扩展「${entry.name}」…`,
+        label,
       });
-      const prompt = buildElaboratePrompt(record.outline, entry, inputData.feedback);
+      // Emit / update the single "planning" progress card — streams like
+      // AI text until the phase transitions at suspend.
+      await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "planning", {
+        current: i,
+        total: cast.length,
+        label,
+      });
+      const prompt = buildElaboratePrompt(
+        record.outline,
+        entry,
+        inputData.feedback,
+        ctx.stylePainting
+      );
       const response = await roleDesigner.generate(prompt, {
         structuredOutput: {
           schema: CharacterSchema,
@@ -174,11 +203,17 @@ const resolveInputStep = createStep({
         prompt: designed.prompt,
       });
     }
+    const doneLabel = `角色设计完成：${cast.length} 位`;
     await reportProgress(runId, {
       stepId: "role_phase.elaborate",
       current: cast.length,
       total: cast.length,
-      label: `角色设计完成：${cast.length} 位`,
+      label: doneLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "planning", {
+      current: cast.length,
+      total: cast.length,
+      label: doneLabel,
     });
     return { worldId: inputData.worldId, characters };
   },
@@ -249,6 +284,7 @@ const waitConfirmationStep = createStep({
   execute: async ({ inputData, resumeData, suspend, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
+    const ctx = getContext(requestContext);
 
     if (!resumeData) {
       await reportProgress(runId, {
@@ -256,6 +292,25 @@ const waitConfirmationStep = createStep({
         current: inputData.draftCount,
         total: inputData.draftCount,
         label: `已生成 ${inputData.draftCount} 个角色，等待确认后进入下一阶段`,
+      });
+      // Build the draft-preview group for the suspended card.
+      const drafts = await listDrafts<RoleCreateData>(runId, {
+        entityType: "role",
+        statuses: ["pending"],
+      });
+      const items = drafts.map((d) => ({
+        clientRefId: d.clientRefId,
+        data: d.data as unknown as Record<string, unknown>,
+      }));
+      await publishWorkflowSuspended(ctx.projectId, runId, "role_phase", {
+        draftGroups: [
+          {
+            entityType: "role",
+            count: items.length,
+            items,
+          },
+        ],
+        totalDraftCount: items.length,
       });
       return await suspend({
         runId,
@@ -293,6 +348,11 @@ const applyDecisionStep = createStep({
 
     if (!inputData.approved) {
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
+      await publishWorkflowFailed(ctx.projectId, runId, "role_phase", {
+        terminalStatus: "cancelled",
+        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        retryable: false,
+      });
       return {
         outcome: "rejected" as const,
         committed: [],
@@ -314,11 +374,17 @@ const applyDecisionStep = createStep({
 
     for (const it of items) await markDraftCommitting(runId, it.clientRefId);
 
+    const startLabel = `入库 ${items.length} 个角色…`;
     await reportProgress(runId, {
       stepId: "role_phase.commit",
       current: 0,
       total: items.length,
-      label: `入库 ${items.length} 个角色…`,
+      label: startLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "committing", {
+      current: 0,
+      total: items.length,
+      label: startLabel,
     });
 
     const results = await batchUpsertRoles(ctx, items, { concurrency: 1 });
@@ -341,11 +407,17 @@ const applyDecisionStep = createStep({
 
     if (outcome === "committed") await deleteAllDrafts(runId);
 
+    const endLabel = `角色入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
     await reportProgress(runId, {
       stepId: "role_phase.commit",
       current: committed.length,
       total: items.length,
-      label: `角色入库完成：成功 ${committed.length} / 失败 ${failed.length}`,
+      label: endLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "committing", {
+      current: committed.length,
+      total: items.length,
+      label: endLabel,
     });
 
     // Image generation is NOT dispatched here anymore — it's a separate
@@ -353,14 +425,26 @@ const applyDecisionStep = createStep({
     // committed role text before image jobs start. See apps/agent/src/
     // mastra/workflows/phases/role-image-phase.ts.
 
+    const summaryText =
+      outcome === "committed"
+        ? `已入库 ${committed.length} 个角色，进入下一阶段。`
+        : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+
+    await publishWorkflowCompleted(ctx.projectId, runId, "role_phase", {
+      committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
+      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+      summary: summaryText,
+      nextStep: {
+        workflowName: "role_image_phase",
+        labelKey: "workflowNextContinueToRoleImages",
+      },
+    });
+
     return {
       outcome,
       committed,
       failed,
-      message:
-        outcome === "committed"
-          ? `已入库 ${committed.length} 个角色，进入下一阶段。`
-          : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`,
+      message: summaryText,
     };
   },
 });

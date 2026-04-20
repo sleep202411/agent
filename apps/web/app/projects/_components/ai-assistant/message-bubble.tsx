@@ -106,7 +106,13 @@ function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): s
 }
 import { ToolProposalCard } from "./tool-cards/tool-proposal-card";
 import { ToolPersonaCard } from "./tool-cards/tool-persona-card";
-import { ToolWorkflowCard } from "./tool-cards/tool-workflow-card";
+import {
+  WorkflowCompletedCard,
+  WorkflowFailedCard,
+  WorkflowProgressCard,
+  WorkflowStartedCard,
+  WorkflowSuspendedCard,
+} from "./tool-cards/workflow-message-cards";
 import { ToolRequireParamsCard } from "./tool-cards/tool-require-params-card";
 import { ToolCompletionCard } from "./tool-cards/tool-completion-card";
 import { ToolCoverCard } from "./tool-cards/tool-cover-card";
@@ -217,8 +223,8 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
       >
         <div
           className={cn(
-            "max-w-full overflow-hidden px-2 py-2 text-[13px] leading-relaxed break-words",
-            message.role === "user" ? "rounded-xl bg-muted" : ""
+            "max-w-full overflow-hidden py-2 text-[13px] leading-relaxed break-words",
+            message.role === "user" ? "rounded-xl bg-muted px-3" : "w-full px-2"
           )}
         >
           {message.metadata?.attachments?.length ? (
@@ -378,15 +384,62 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   return null;
                 }
 
-                // invoke_workflow — rich task card with polling + HITL buttons
-                if (toolName === "invoke_workflow") {
+                // New-style workflow lifecycle messages (Phase 2).
+                // Each phase transition = a separate assistant message, so
+                // these render as independent cards and only the current
+                // one mutates (via message_updated) as it progresses.
+                if (toolName === "workflow_started") {
                   return (
-                    <ToolWorkflowCard
-                      key={`${message.id}-${part.toolCallId}-workflow`}
+                    <WorkflowStartedCard
+                      key={`${message.id}-${part.toolCallId}-wf-started`}
                       part={part}
-                      isHistorical={!isLastAssistant}
                     />
                   );
+                }
+                if (toolName === "workflow_progress") {
+                  return (
+                    <WorkflowProgressCard
+                      key={`${message.id}-${part.toolCallId}-wf-progress`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
+                if (toolName === "workflow_suspended") {
+                  return (
+                    <WorkflowSuspendedCard
+                      key={`${message.id}-${part.toolCallId}-wf-suspended`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
+                if (toolName === "workflow_completed") {
+                  return (
+                    <WorkflowCompletedCard
+                      key={`${message.id}-${part.toolCallId}-wf-completed`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
+                if (toolName === "workflow_failed") {
+                  return (
+                    <WorkflowFailedCard
+                      key={`${message.id}-${part.toolCallId}-wf-failed`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
+
+                // invoke_workflow — dispatch-only tool. The workflow itself
+                // emits its own workflow_started / progress / suspended /
+                // completed / failed messages (see workflow-messages.ts),
+                // which render via the WorkflowCard branches above. We just
+                // swallow the invoke_workflow tool's own output here.
+                if (toolName === "invoke_workflow") {
+                  return null;
                 }
 
                 // UI-only ack tools (no execute, fire-and-forget chip). Nest

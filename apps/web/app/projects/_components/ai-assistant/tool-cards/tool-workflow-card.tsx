@@ -6,6 +6,8 @@ import {
   IconBook,
   IconBuildingStore,
   IconCamera,
+  IconChevronDown,
+  IconChevronUp,
   IconCopy,
   IconLayoutList,
   IconLoader2,
@@ -15,6 +17,7 @@ import {
   IconPhoto,
   IconSparkles,
   IconUsers,
+  IconWand,
 } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -36,6 +39,7 @@ import {
   isAwaitingUser,
   isErrorRetryable,
   isTerminal,
+  updateDraftData,
   workflowErrorLabelKey,
   type Draft,
   type ErrorClassification,
@@ -48,6 +52,15 @@ import {
 import { WorkflowEventsClient } from "@/src/lib/workflow/workflow-events-client";
 import { loadEpisodeCount } from "./project-params-form";
 import type { AssistantToolInvocation } from "@/src/lib/assistant/assistant-types";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 // ─── Types ─────────────────────────────────────────────
 
@@ -78,7 +91,7 @@ interface ToolWorkflowCardProps {
 
 // ─── Display labels ────────────────────────────────────
 
-const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
+export const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
   main_flow: "workflowMainFlow",
   role_design: "workflowRoleDesign",
   scene_design: "workflowSceneDesign",
@@ -103,7 +116,7 @@ interface WorkflowPersona {
   icon: Icon;
 }
 
-const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
+export const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
   main_flow: { name: "创作总监", icon: IconSparkles },
   story_outline: { name: "剧本统筹", icon: IconBook },
   role_design: { name: "角色设计师", icon: IconUsers },
@@ -601,7 +614,17 @@ export function ToolWorkflowCard({ part, isHistorical = false }: ToolWorkflowCar
       )}
 
       {/* Suspended: draft summary + HITL actions */}
-      {isAwaitingUser(phase) && drafts && <DraftSummary drafts={drafts} t={t} />}
+      {isAwaitingUser(phase) && drafts && (
+        <DraftSummary
+          drafts={drafts}
+          t={t}
+          onDraftUpdated={(next) => {
+            setDrafts((prev) =>
+              prev ? prev.map((d) => (d.clientRefId === next.clientRefId ? next : d)) : prev
+            );
+          }}
+        />
+      )}
 
       {/* Completed: structured result summary + confirm/revise buttons */}
       {phase === "completed" && workflowName && (
@@ -713,7 +736,7 @@ export function ToolWorkflowCard({ part, isHistorical = false }: ToolWorkflowCar
 
 // ─── Sub-components ────────────────────────────────────
 
-function PersonaPill({ persona }: { persona: WorkflowPersona }) {
+export function PersonaPill({ persona }: { persona: WorkflowPersona }) {
   const Icon = persona.icon;
   return (
     <div className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground/80">
@@ -779,7 +802,13 @@ interface StoryOutlineResultShape {
   threads?: { main?: string; subs?: Array<{ name?: string; description?: string }> };
 }
 
-function StoryOutlineResult({
+// Height of the collapsed preview — tall enough to show the story summary
+// plus a hint of the chapter list, low enough that a long outline doesn't
+// dominate the chat scroll. Pair with the fade overlay + chevron button so
+// the user knows there's more to see.
+const STORY_OUTLINE_COLLAPSED_MAX_H = 200;
+
+export function StoryOutlineResult({
   result,
   t,
 }: {
@@ -787,9 +816,12 @@ function StoryOutlineResult({
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const data = result as StoryOutlineResultShape | null;
+  const [expanded, setExpanded] = useState(false);
+
   if (!data || !data.structure) return null;
-  return (
-    <div className="mt-3 space-y-3 rounded-lg border border-border/40 bg-white/2 p-3">
+
+  const body = (
+    <div className="space-y-3 p-3">
       {data.storySummary && (
         <div>
           <ResultHeading>{t("workflowResultStorySummary")}</ResultHeading>
@@ -841,6 +873,42 @@ function StoryOutlineResult({
       )}
     </div>
   );
+
+  return (
+    <div className="mt-3 rounded-lg border border-border/40 bg-white/2">
+      <div
+        className="relative overflow-hidden"
+        style={expanded ? undefined : { maxHeight: STORY_OUTLINE_COLLAPSED_MAX_H }}
+      >
+        {body}
+        {!expanded && (
+          <>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background via-background/80 to-transparent" />
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              aria-label="展开全部"
+              className="absolute right-2 bottom-2 flex size-7 items-center justify-center rounded-full border border-border/60 bg-card shadow-md transition-colors hover:bg-muted"
+            >
+              <IconChevronDown className="size-4" />
+            </button>
+          </>
+        )}
+      </div>
+      {expanded && (
+        <div className="flex justify-end p-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            aria-label="收起"
+            className="flex size-7 items-center justify-center rounded-full border border-border/60 bg-card transition-colors hover:bg-muted"
+          >
+            <IconChevronUp className="size-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ResultHeading({ children }: { children: React.ReactNode }) {
@@ -871,12 +939,70 @@ function draftPreview(draft: Draft): { title: string; detail?: string } {
   return { title, detail };
 }
 
-function DraftSummary({
+// Chinese labels for common draft.data fields so the detail dialog reads
+// naturally. Unknown keys fall back to the raw key name so we never hide
+// data the user might care about.
+const DRAFT_FIELD_LABELS: Record<string, string> = {
+  name: "名称",
+  title: "标题",
+  roleName: "角色名",
+  sceneName: "场景名",
+  propName: "道具名",
+  description: "描述",
+  introduction: "简介",
+  intro: "简介",
+  summary: "摘要",
+  prompt: "图像提示词",
+  aliases: "别名",
+  positioning: "定位",
+  appearance: "外观",
+  personality: "性格",
+  background: "背景",
+  voiceId: "音色",
+  model: "模型",
+  category: "类型",
+  timeOfDay: "时间",
+  setting: "环境",
+  keyElements: "视觉锚点",
+  lighting: "光线",
+  atmosphere: "氛围",
+  era: "年代",
+  material: "材质",
+  significance: "剧情意义",
+  shot_no: "镜号",
+  scene: "场景",
+  image_prompt: "图像提示词",
+  video_prompt: "视频提示词",
+  movement: "运镜",
+  shot_size: "景别",
+  perspective: "视角",
+  duration: "时长",
+  dialogue: "对白",
+  worldId: "世界 ID",
+};
+
+function labelForDraftField(key: string): string {
+  return DRAFT_FIELD_LABELS[key] ?? key;
+}
+
+function formatDraftFieldValue(v: unknown): string {
+  if (v == null) return "";
+  if (Array.isArray(v)) return v.map((x) => String(x)).join("、");
+  if (typeof v === "object") return JSON.stringify(v, null, 2);
+  return String(v);
+}
+
+// Show 2 rows (4 items) by default; collapse the rest behind a chevron.
+const DRAFT_GRID_COLLAPSED_ITEMS = 4;
+
+export function DraftSummary({
   drafts,
   t,
+  onDraftUpdated,
 }: {
   drafts: Draft[];
   t: (key: string, params?: Record<string, string | number>) => string;
+  onDraftUpdated?: (draft: Draft) => void;
 }) {
   const grouped = groupDraftsByType(drafts);
   const entries = Object.entries(grouped);
@@ -886,33 +1012,272 @@ function DraftSummary({
     );
   }
   return (
-    <div className="mt-3 flex flex-col gap-3">
+    <div className="mt-3 flex flex-col gap-4">
       {entries.map(([type, items]) => (
-        <div key={type} className="flex flex-col gap-1.5">
-          <div className="text-[12px] font-medium text-foreground/70">
-            {t(`workflowEntity.${type}`)} · {items.length}
-          </div>
-          <div className="flex flex-col gap-1">
-            {items.map((d) => {
-              const { title, detail } = draftPreview(d);
-              return (
-                <div
-                  key={d.clientRefId}
-                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2"
-                >
-                  <div className="text-[13px] font-medium text-foreground/90">{title}</div>
-                  {detail ? (
-                    <div className="mt-1 line-clamp-3 whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">
-                      {detail}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <DraftGroup key={type} type={type} items={items} t={t} onDraftUpdated={onDraftUpdated} />
       ))}
     </div>
+  );
+}
+
+function DraftGroup({
+  type,
+  items,
+  t,
+  onDraftUpdated,
+}: {
+  type: string;
+  items: Draft[];
+  t: (key: string, params?: Record<string, string | number>) => string;
+  onDraftUpdated?: (draft: Draft) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
+
+  const collapsible = items.length > DRAFT_GRID_COLLAPSED_ITEMS;
+  const visibleItems =
+    !collapsible || expanded ? items : items.slice(0, DRAFT_GRID_COLLAPSED_ITEMS);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-[12px] font-medium text-foreground/70">
+        {t(`workflowEntity.${type}`)} · {items.length}
+      </div>
+      <div className="relative">
+        <div className="grid grid-cols-2 gap-2">
+          {visibleItems.map((d) => (
+            <DraftCard key={d.clientRefId} draft={d} onClick={() => setActiveDraft(d)} />
+          ))}
+        </div>
+        {collapsible && !expanded && (
+          <>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background via-background/80 to-transparent" />
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              aria-label="展开全部"
+              className="absolute right-2 bottom-2 flex size-7 items-center justify-center rounded-full border border-border/60 bg-card shadow-md transition-colors hover:bg-muted"
+            >
+              <IconChevronDown className="size-4" />
+            </button>
+          </>
+        )}
+        {collapsible && expanded && (
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              aria-label="收起"
+              className="flex size-7 items-center justify-center rounded-full border border-border/60 bg-card transition-colors hover:bg-muted"
+            >
+              <IconChevronUp className="size-4" />
+            </button>
+          </div>
+        )}
+      </div>
+      <DraftDetailDialog
+        draft={activeDraft}
+        open={activeDraft !== null}
+        onOpenChange={(o) => {
+          if (!o) setActiveDraft(null);
+        }}
+        onDraftUpdated={(next) => {
+          setActiveDraft(next);
+          onDraftUpdated?.(next);
+        }}
+      />
+    </div>
+  );
+}
+
+function DraftCard({ draft, onClick }: { draft: Draft; onClick: () => void }) {
+  const { title, detail } = draftPreview(draft);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-start gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left transition-colors hover:bg-white/10"
+    >
+      <div className="line-clamp-1 text-[13px] font-medium text-foreground/90">{title}</div>
+      {detail ? (
+        <div className="line-clamp-3 whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">
+          {detail}
+        </div>
+      ) : null}
+    </button>
+  );
+}
+
+// Seedance 2.0 character-sheet template — appended in parens after the
+// base prompt. Future: per-entityType templates (scene/prop) if we add
+// equivalent Seedance recipes for those.
+const SEEDANCE_CHARACTER_TEMPLATE =
+  "8K超高清，皮肤肌理细致入微，毛孔极致细节，无动作，极具写实，影棚实拍真人质感。角色设计表，角色多角度转面参考图，补充视角组，正面视图、正侧面视图、背面视图、45度侧视图、俯视顶视图、仰视底视图，头部细节组(正脸、侧脸特写)，材质细节纹理研究组、布料纹理、鞋子的特写镜头，干净的纯白色背景，排版规整，带有文字标注，均匀光照，无阴影，白色背景，去除Ai塑料感，去除Ai味。";
+
+function seedanceTemplateFor(entityType: string | undefined): string | null {
+  if (entityType === "role") return SEEDANCE_CHARACTER_TEMPLATE;
+  return null;
+}
+
+function buildSeedancePrompt(draft: Draft): string {
+  const template = seedanceTemplateFor(draft.entityType);
+  const base = String(((draft.data ?? {}) as Record<string, unknown>).prompt ?? "").trim();
+  if (!template) return base;
+  if (!base) return `(${template})`;
+  return `${base} (${template})`;
+}
+
+function DraftDetailDialog({
+  draft,
+  open,
+  onOpenChange,
+  onDraftUpdated,
+}: {
+  draft: Draft | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onDraftUpdated?: (next: Draft) => void;
+}) {
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
+
+  const data = (draft?.data ?? {}) as Record<string, unknown>;
+  const { title } = draft ? draftPreview(draft) : { title: "" };
+
+  const entries = Object.entries(data).filter(([, v]) => {
+    if (v == null) return false;
+    if (typeof v === "string") return v.trim().length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    return true;
+  });
+
+  const hasPromptField = typeof data.prompt === "string";
+  const hasSeedanceAction =
+    !!draft && hasPromptField && seedanceTemplateFor(draft.entityType) !== null;
+  const originalPrompt = String(data.prompt ?? "");
+
+  const [editedPrompt, setEditedPrompt] = useState(originalPrompt);
+  const [saving, setSaving] = useState(false);
+
+  // Re-seed textarea whenever a different draft is opened.
+  useEffect(() => {
+    setEditedPrompt(String(((draft?.data ?? {}) as Record<string, unknown>).prompt ?? ""));
+    setSaving(false);
+  }, [draft?.clientRefId, open]);
+
+  const hasChanges = editedPrompt !== originalPrompt;
+
+  const handleSeedance = () => {
+    if (!draft) return;
+    setEditedPrompt(buildSeedancePrompt(draft));
+  };
+
+  const handleReset = () => {
+    setEditedPrompt(originalPrompt);
+  };
+
+  const handleCancel = () => {
+    onOpenChange(false);
+  };
+
+  const handleSave = async () => {
+    if (!draft || saving) return;
+    if (!hasChanges) {
+      onOpenChange(false);
+      return;
+    }
+    if (!projectId) {
+      toast.error("项目 ID 缺失，无法保存");
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await updateDraftData(draft.runId, draft.clientRefId, projectId, {
+        prompt: editedPrompt,
+      });
+      toast.success("已保存");
+      onDraftUpdated?.(updated);
+      onOpenChange(false);
+    } catch (err) {
+      toast.error(`保存失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{title || "—"}</DialogTitle>
+          <DialogDescription className="sr-only">草稿详情</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto p-4">
+          {entries.map(([key, value]) => {
+            const isPromptRow = key === "prompt";
+            return (
+              <div key={key} className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {labelForDraftField(key)}
+                  </div>
+                  {isPromptRow && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        color="muted"
+                        size="xs"
+                        onClick={handleReset}
+                        disabled={!hasChanges || saving}
+                      >
+                        重置
+                      </Button>
+                      {hasSeedanceAction && (
+                        <Button
+                          variant="outline"
+                          color="muted"
+                          size="xs"
+                          onClick={handleSeedance}
+                          disabled={saving}
+                        >
+                          <IconWand />
+                          生成 Seedance 2.0 提示词
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {isPromptRow ? (
+                  <textarea
+                    value={editedPrompt}
+                    onChange={(e) => setEditedPrompt(e.target.value)}
+                    disabled={saving}
+                    className="min-h-[140px] w-full resize-y border-0 bg-transparent p-0 text-[13px] leading-relaxed text-foreground/90 focus:outline-none focus:ring-0 disabled:opacity-60"
+                  />
+                ) : (
+                  <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">
+                    {formatDraftFieldValue(value)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {entries.length === 0 && (
+            <div className="text-[12px] text-muted-foreground">此草稿暂无可展示字段。</div>
+          )}
+        </div>
+
+        <DialogFooter className="flex gap-2 border-t border-border p-4">
+          <Button variant="outline" color="muted" onClick={handleCancel} disabled={saving}>
+            取消
+          </Button>
+          <Button variant="solid" color="primary" onClick={handleSave} disabled={saving}>
+            {saving && <IconLoader2 className="animate-spin" />}
+            {saving ? "保存中…" : "保存"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1064,7 +1429,7 @@ const NEXT_STEPS: Partial<Record<WorkflowName, NextStep[]>> = {
 // value the user picked in the form.
 const DEFAULT_TARGET_EPISODE_COUNT = 10;
 
-function buildInputData(
+export function buildInputData(
   workflowName: WorkflowName,
   ctx: { projectId: string; worldId?: string | null; targetEpisodeCount?: number | null },
   feedback?: string
@@ -1201,7 +1566,7 @@ function CompletedActions({
  * available via hover tooltip + copy button — mirrors the image-card
  * failure pattern.
  */
-function FailureMessage({
+export function FailureMessage({
   classification,
   rawError,
   phase,

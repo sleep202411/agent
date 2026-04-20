@@ -1601,6 +1601,8 @@
     "paramsFormSubmit": "Save and continue",
     "paramsEpisodeCount": "Episode count",
     "paramsEpisodeCountPlaceholder": "Enter episode count ({min}-{max})",
+    "paramsShotsPerEpisode": "Shots per episode",
+    "paramsShotsPerEpisodePlaceholder": "Enter shots per episode ({min}-{max})",
     "paramsFormMissing": "Please fill in all parameters",
     "paramsDialogLanguage": "Language",
     "paramsDialogLanguageSimplifiedChinese": "Simplified Chinese",

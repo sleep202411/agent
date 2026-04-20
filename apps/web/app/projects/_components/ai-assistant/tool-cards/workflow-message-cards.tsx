@@ -1,0 +1,608 @@
+"use client";
+
+/**
+ * Renderers for the five workflow lifecycle message types the agent emits:
+ *   workflow_started / workflow_progress / workflow_suspended /
+ *   workflow_completed / workflow_failed
+ *
+ * Each card is a pure function of its tool part's `output` field — no WS
+ * subscriptions, no status polling, no in-place mutation across messages.
+ * The only live thing is the CURRENT progress message, whose blob the
+ * server updates via the chat WS's existing message_updated plumbing.
+ *
+ * Paired with packages/shared/src/workflow-messages.ts for the payload
+ * schemas. See that file's top doc comment for the overall design.
+ */
+import { useEffect, useRef, useState } from "react";
+import {
+  IconAlertCircle,
+  IconCheck,
+  IconLoader2,
+  IconRefresh,
+  IconSparkles,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { useTranslations } from "@/src/i18n/i18n";
+import { useAppDispatch, useAppSelector } from "@/src/store";
+import {
+  clearActiveWorkflow,
+  confirmWorkflowFromButton,
+  setActiveWorkflow,
+  setDraft,
+  startWorkflowFromButton,
+} from "@/src/store/slices/assistantSlice";
+import {
+  buildInputData,
+  DraftSummary,
+  PersonaPill,
+  StoryOutlineResult,
+  WORKFLOW_LABEL_KEYS,
+  WORKFLOW_PERSONA,
+} from "./tool-workflow-card";
+import type { AssistantToolInvocation } from "@/src/lib/assistant/assistant-types";
+import type { Draft, WorkflowName } from "@/src/lib/workflow/workflow-client";
+import type {
+  WorkflowCompletedOutput,
+  WorkflowFailedOutput,
+  WorkflowProgressOutput,
+  WorkflowSuspendedOutput,
+} from "@repo/shared";
+
+// ─── Shared: mirror the workflow status into Redux so the composer's
+//     "工作中" pill + stop button know there's a run in flight.
+//
+// Only the latest assistant message (isActive=true) drives the mirror —
+// past cards in history are stale snapshots and must not reset state.
+// Progress / suspended → setActive; completed / failed / cancelled → clear.
+function useSyncActiveWorkflow(
+  isActive: boolean,
+  runId: string | undefined,
+  workflowName: WorkflowName | undefined,
+  status: "queued" | "running" | "suspended" | "completed" | "failed" | "cancelled"
+): void {
+  const dispatch = useAppDispatch();
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
+  useEffect(() => {
+    if (!isActive || !projectId || !runId || !workflowName) return;
+    if (status === "queued" || status === "running" || status === "suspended") {
+      dispatch(setActiveWorkflow({ projectId, runId, workflowName, status }));
+    } else {
+      dispatch(clearActiveWorkflow({ projectId, runId }));
+    }
+  }, [dispatch, projectId, isActive, runId, workflowName, status]);
+}
+
+// ─── Shared action buttons (unified look across suspended/completed/failed)
+
+type ActionVariant = "primary" | "secondary";
+
+function ActionButton({
+  variant,
+  onClick,
+  disabled,
+  busy,
+  icon,
+  children,
+}: {
+  variant: ActionVariant;
+  onClick: () => void;
+  disabled?: boolean;
+  busy?: boolean;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-[13px] font-medium transition-colors",
+        variant === "primary"
+          ? "bg-primary/15 text-primary-foreground hover:bg-primary/25"
+          : "bg-muted/60 text-foreground/90 hover:bg-muted",
+        "disabled:opacity-50"
+      )}
+    >
+      {busy && <IconLoader2 className="size-4 animate-spin" />}
+      {icon}
+      {children}
+    </button>
+  );
+}
+
+// ─── Shared header (persona + status label) ────────────────────────────
+
+function CardHeader({
+  workflowName,
+  stateLabel,
+  progress,
+}: {
+  workflowName: WorkflowName;
+  stateLabel: string;
+  progress?: { current: number; total: number; label?: string };
+}) {
+  const persona = WORKFLOW_PERSONA[workflowName];
+  return (
+    <div className="w-full text-[13px]">
+      {persona && <PersonaPill persona={persona} />}
+      <div className="mt-2 flex w-full items-center gap-2">
+        <span className="font-semibold text-foreground/90">{stateLabel}</span>
+        {progress && progress.total > 0 && (
+          <span className="ml-auto truncate text-[11px] text-muted-foreground">
+            {progress.current}/{progress.total}
+            {progress.label ? ` · ${progress.label}` : ""}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({
+  current,
+  total,
+  tone = "primary",
+}: {
+  current: number;
+  total: number;
+  tone?: "primary" | "amber" | "green" | "destructive";
+}) {
+  if (total <= 0) return null;
+  const barClass = {
+    primary: "bg-primary/70",
+    amber: "bg-amber-500/70",
+    green: "bg-green-500/70",
+    destructive: "bg-destructive/70",
+  }[tone];
+  return (
+    <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/5">
+      <div
+        className={cn("h-full transition-all", barClass)}
+        style={{ width: `${Math.min(100, (current / total) * 100)}%` }}
+      />
+    </div>
+  );
+}
+
+// ─── workflow_started ─────────────────────────────────────────────────
+
+/**
+ * Deliberately renders nothing. The workflow emits both a `workflow_started`
+ * message and its first `workflow_progress` message at the top of execution,
+ * and progress already carries persona + planned count + running label — so
+ * rendering started too creates a duplicate card (two identical "规划中
+ * 0/N · 拆解素材…" rows above the actual progress card). We keep the schema
+ * and emit point for now (cheaper than removing from every workflow and
+ * useful if we later want a distinct queued → running transition), but
+ * suppress UI so the stream starts cleanly with progress.
+ */
+export function WorkflowStartedCard(_props: { part: AssistantToolInvocation }) {
+  return null;
+}
+
+// ─── workflow_progress (mutates in place) ─────────────────────────────
+
+export function WorkflowProgressCard({
+  part,
+  isActive,
+}: {
+  part: AssistantToolInvocation;
+  isActive: boolean;
+}) {
+  const output = (part.output ?? {}) as Partial<WorkflowProgressOutput>;
+  const t = useTranslations("ai");
+  useSyncActiveWorkflow(isActive, output.runId, output.workflowName, "running");
+  if (!output.workflowName) return null;
+
+  const current = output.current ?? 0;
+  const total = output.total ?? 0;
+  const done = total > 0 && current >= total;
+
+  // At 100% the workflow_completed / workflow_suspended / workflow_failed
+  // message right after this one carries the final state + next-step button,
+  // so the progress card would just duplicate it. Suppress the last tick.
+  if (done) return null;
+
+  return (
+    <div className="w-full">
+      <CardHeader
+        workflowName={output.workflowName}
+        stateLabel={t("workflowStateRunning")}
+        progress={{ current, total, label: output.label }}
+      />
+      <ProgressBar current={current} total={total} tone="primary" />
+      {output.narrateLines && output.narrateLines.length > 0 && (
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-[12.5px] leading-relaxed text-foreground/85">
+          {output.narrateLines.map((line, i) => (
+            <li key={`${i}-${line.slice(0, 10)}`}>{line}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── workflow_suspended (HITL gate — satisfy / revise buttons) ────────
+
+function toDraftLike(
+  runId: string,
+  entityType: string,
+  preview: { clientRefId: string; data: Record<string, unknown> }
+): Draft {
+  const now = Date.now();
+  return {
+    clientRefId: preview.clientRefId,
+    runId,
+    entityType: entityType as Draft["entityType"],
+    status: "pending",
+    data: preview.data,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function WorkflowSuspendedCard({
+  part,
+  isActive,
+}: {
+  part: AssistantToolInvocation;
+  /**
+   * True when this is the last assistant message — i.e. the workflow is
+   * genuinely waiting for this user. False once any newer message has
+   * arrived (user already acted, workflow moved on), in which case the
+   * buttons silently toast instead of dispatching.
+   */
+  isActive: boolean;
+}) {
+  const output = (part.output ?? {}) as Partial<WorkflowSuspendedOutput>;
+  const t = useTranslations("ai");
+  const dispatch = useAppDispatch();
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
+  useSyncActiveWorkflow(isActive, output.runId, output.workflowName, "suspended");
+
+  const [actionBusy, setActionBusy] = useState<null | "accept" | "revise">(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  // Synchronous re-entry guard. `actionBusy` is useState and its update
+  // isn't observable inside the same render pass, so a fast double-click
+  // would slip through the `if (actionBusy) return` check and dispatch
+  // twice (two "滿意" user messages + two resume_workflow calls in the
+  // chat history). A ref updates synchronously and blocks the second
+  // entry before any async work starts.
+  const dispatchedRef = useRef(false);
+
+  if (!output.workflowName || !output.runId) return null;
+
+  const runId = output.runId;
+  const drafts: Draft[] = (output.draftGroups ?? []).flatMap((g) =>
+    g.items.map((item) => toDraftLike(runId, g.entityType, item))
+  );
+
+  const handleAccept = async () => {
+    if (dispatchedRef.current) return;
+    if (!projectId) return;
+    if (!isActive) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
+    dispatchedRef.current = true;
+    setActionBusy("accept");
+    setActionError(null);
+    try {
+      await dispatch(
+        confirmWorkflowFromButton({
+          projectId,
+          runId,
+          userLabel: t("workflowUserSatisfied"),
+          approved: true,
+        })
+      );
+    } catch (e) {
+      // On failure allow a retry — clear the ref so a subsequent click
+      // can attempt again. On success we intentionally leave it set; the
+      // suspended message will become "historical" once new messages
+      // arrive and the isActive guard will take over from there.
+      dispatchedRef.current = false;
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  /**
+   * Revise from the suspended card drops a placeholder into the composer
+   * instead of firing a window.prompt — matches the completed card's revise
+   * UX. The user types their specific feedback after the prefill and sends
+   * as a normal message; the supervisor routes it back into the suspended
+   * workflow (resume_workflow with approved=false) via its own tool-call.
+   */
+  const handleRevise = () => {
+    if (!projectId) return;
+    if (!isActive) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
+    const text = t("workflowActionRevise");
+    dispatch(setDraft({ projectId, draft: text }));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("ai-assistant:set-draft", {
+          detail: { projectId, text },
+        })
+      );
+    }
+  };
+
+  return (
+    <div className="w-full">
+      <CardHeader
+        workflowName={output.workflowName}
+        stateLabel={t("workflowStateDone")}
+        progress={
+          output.totalDraftCount && output.totalDraftCount > 0
+            ? {
+                current: output.totalDraftCount,
+                total: output.totalDraftCount,
+                label: t("workflowCompleted"),
+              }
+            : undefined
+        }
+      />
+      <ProgressBar
+        current={output.totalDraftCount ?? 0}
+        total={output.totalDraftCount ?? 0}
+        tone="amber"
+      />
+      {drafts.length > 0 && <DraftSummary drafts={drafts} t={t} />}
+      <div className="mt-3 flex flex-col gap-2">
+        <div className="text-[13px] font-medium text-foreground/90">
+          {t("workflowConfirmPrompt")}
+        </div>
+        <ActionButton
+          variant="primary"
+          onClick={handleAccept}
+          disabled={actionBusy !== null}
+          busy={actionBusy === "accept"}
+        >
+          {t("workflowActionAccept")}
+        </ActionButton>
+        <ActionButton
+          variant="secondary"
+          onClick={handleRevise}
+          disabled={actionBusy !== null}
+          busy={actionBusy === "revise"}
+        >
+          {t("workflowActionRevise")}
+        </ActionButton>
+        <div className="mt-0.5 text-[11px] text-muted-foreground">{t("workflowReviseHint")}</div>
+      </div>
+      {actionError && <div className="mt-2 text-[11px] text-destructive/80">{actionError}</div>}
+    </div>
+  );
+}
+
+// ─── workflow_completed (summary + continue button) ──────────────────
+
+export function WorkflowCompletedCard({
+  part,
+  isActive,
+}: {
+  part: AssistantToolInvocation;
+  isActive: boolean;
+}) {
+  const output = (part.output ?? {}) as Partial<WorkflowCompletedOutput>;
+  const t = useTranslations("ai");
+  const dispatch = useAppDispatch();
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
+  const worldId = useAppSelector((s) =>
+    projectId ? (s.project.instances[projectId]?.worldId ?? null) : null
+  );
+  const targetEpisodeCount = useAppSelector((s) =>
+    projectId ? s.project.instances[projectId]?.detail?.targetEpisodeCount : undefined
+  );
+  useSyncActiveWorkflow(isActive, output.runId, output.workflowName, "completed");
+  // See suspended card: useState isn't synchronous, so a double-click
+  // could spawn two next-step workflows before the first call returns.
+  const dispatchedRef = useRef(false);
+
+  if (!output.workflowName) return null;
+
+  const committedCount = output.committed?.length ?? 0;
+  const failedCount = output.failed?.length ?? 0;
+  const partial = failedCount > 0;
+
+  const handleContinue = () => {
+    if (dispatchedRef.current) return;
+    if (!projectId || !output.nextStep) return;
+    if (!isActive) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
+    dispatchedRef.current = true;
+    const next = output.nextStep;
+    void dispatch(
+      startWorkflowFromButton({
+        projectId,
+        userLabel: t(next.labelKey),
+        workflowName: next.workflowName,
+        inputData: buildInputData(next.workflowName, {
+          projectId,
+          worldId,
+          targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
+        }),
+      })
+    );
+  };
+
+  /**
+   * Revise drops a placeholder into the composer instead of sending —
+   * the user then types their feedback after it and presses send.
+   * Cross-component editor sync goes through a CustomEvent the panel
+   * listens to; plain `setDraft` alone won't update the contenteditable.
+   */
+  const handleRevise = () => {
+    if (!projectId) return;
+    if (!isActive) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
+    const text = t("workflowActionRevise");
+    dispatch(setDraft({ projectId, draft: text }));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("ai-assistant:set-draft", {
+          detail: { projectId, text },
+        })
+      );
+    }
+  };
+
+  return (
+    <div className="w-full">
+      <CardHeader
+        workflowName={output.workflowName}
+        stateLabel={t("workflowStateDone")}
+        progress={
+          committedCount > 0
+            ? { current: committedCount, total: committedCount + failedCount }
+            : undefined
+        }
+      />
+      <ProgressBar
+        current={committedCount}
+        total={Math.max(1, committedCount + failedCount)}
+        tone={partial ? "amber" : "green"}
+      />
+      <div className="mt-2 flex items-start gap-1.5 text-[12.5px] text-foreground/85">
+        <IconCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+        <span>
+          {output.summary ??
+            (partial
+              ? `已入库 ${committedCount} 项，失败 ${failedCount} 项。`
+              : `已入库 ${committedCount} 项。`)}
+        </span>
+      </div>
+      {/* Workflow-specific structured result panel (章节/角色/场景 for
+          story_outline; extend the switch below as other workflows grow
+          inline summaries). */}
+      {output.workflowName === "story_outline" && output.result ? (
+        <StoryOutlineResult result={output.result} t={t} />
+      ) : null}
+      {output.nextStep && (
+        <div className="mt-3 flex flex-col gap-2">
+          <ActionButton
+            variant="primary"
+            onClick={handleContinue}
+            disabled={!projectId}
+            icon={<IconSparkles className="size-4" />}
+          >
+            {t(output.nextStep.labelKey)}
+          </ActionButton>
+          <ActionButton variant="secondary" onClick={handleRevise} disabled={!projectId}>
+            {t("workflowActionRevise")}
+          </ActionButton>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">{t("workflowReviseHint")}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── workflow_failed / cancelled ─────────────────────────────────────
+
+export function WorkflowFailedCard({
+  part,
+  isActive,
+}: {
+  part: AssistantToolInvocation;
+  isActive: boolean;
+}) {
+  const output = (part.output ?? {}) as Partial<WorkflowFailedOutput>;
+  const t = useTranslations("ai");
+  const tc = useTranslations("common");
+  const dispatch = useAppDispatch();
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
+  const worldId = useAppSelector((s) =>
+    projectId ? (s.project.instances[projectId]?.worldId ?? null) : null
+  );
+  const targetEpisodeCount = useAppSelector((s) =>
+    projectId ? s.project.instances[projectId]?.detail?.targetEpisodeCount : undefined
+  );
+  useSyncActiveWorkflow(
+    isActive,
+    output.runId,
+    output.workflowName,
+    output.terminalStatus === "cancelled" ? "cancelled" : "failed"
+  );
+
+  if (!output.workflowName || !output.terminalStatus) return null;
+
+  const label = t(`workflowPhase.${output.terminalStatus}`);
+  const workflowLabelText = t(WORKFLOW_LABEL_KEYS[output.workflowName] ?? "workflowGeneric");
+
+  const handleRetry = () => {
+    if (!projectId || !output.workflowName) return;
+    if (!isActive) {
+      toast.info(t("workflowOptionsNoReselect"));
+      return;
+    }
+    void dispatch(
+      startWorkflowFromButton({
+        projectId,
+        userLabel: `重试「${workflowLabelText}」`,
+        workflowName: output.workflowName,
+        inputData: buildInputData(output.workflowName, {
+          projectId,
+          worldId,
+          targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
+        }),
+      })
+    );
+  };
+
+  const copyError = async () => {
+    if (!output.error) return;
+    try {
+      await navigator.clipboard.writeText(output.error);
+      toast.success(tc("copied"));
+    } catch {
+      toast.error(tc("copyFailed"));
+    }
+  };
+
+  return (
+    <div className="w-full text-[13px]">
+      <div className="font-semibold text-destructive/90">{label}</div>
+      <div
+        className="mt-1 flex items-start gap-1.5 text-[12px] text-destructive/80"
+        title={output.error}
+      >
+        <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+        <span className="flex-1">{output.error || label}</span>
+        {output.error && (
+          <button
+            type="button"
+            onClick={copyError}
+            className="mt-0.5 shrink-0 rounded p-0.5 text-destructive/60 hover:bg-destructive/10 hover:text-destructive/80"
+            title={tc("copyError")}
+          >
+            <IconRefresh className="size-3" />
+          </button>
+        )}
+      </div>
+      {output.retryable && (
+        <div className="mt-3">
+          <ActionButton
+            variant="secondary"
+            onClick={handleRetry}
+            disabled={!projectId}
+            icon={<IconRefresh className="size-4" />}
+          >
+            {t("workflowActionRetry")}
+          </ActionButton>
+        </div>
+      )}
+    </div>
+  );
+}

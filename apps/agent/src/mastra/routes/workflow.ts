@@ -16,7 +16,7 @@ import {
   ResumeRequestSchema,
   type StatusResponse,
 } from "@repo/shared/workflow";
-import { listDrafts } from "../lib/drafts";
+import { getDraft, listDrafts, patchDraft } from "../lib/drafts";
 import {
   cancelWorkflow,
   getWorkflowStatus,
@@ -177,6 +177,37 @@ export const workflowRoutes = [
         entityType: entityType ? (entityType as never) : undefined,
       });
       return c.json({ runId, drafts });
+    },
+  }),
+
+  // ─── POST /drafts/:runId/:clientRefId — patch draft.data ──────────
+  // Used by the UI's DraftDetailDialog to persist inline edits (e.g. the
+  // Seedance 2.0 prompt wrapper) back into Redis so the workflow's resume
+  // picks up the edited fields instead of the original LLM output.
+  // Body: `{ data: Partial<DraftData> }` — shallow-merged into existing data.
+  registerApiRoute("/drafts/:runId/:clientRefId", {
+    method: "POST",
+    handler: async (c) => {
+      const runId = c.req.param("runId");
+      const clientRefId = c.req.param("clientRefId");
+      const body = (await c.req.json()) as { data?: Record<string, unknown> };
+      if (!body?.data || typeof body.data !== "object") {
+        throw new HTTPException(400, { message: "body.data must be an object" });
+      }
+      const existing = await getDraft<Record<string, unknown>>(runId, clientRefId);
+      if (!existing) {
+        throw new HTTPException(404, { message: "draft not found" });
+      }
+      if (existing.status !== "pending") {
+        throw new HTTPException(409, {
+          message: `draft status is ${existing.status}, only pending drafts can be edited`,
+        });
+      }
+      const mergedData = { ...existing.data, ...body.data };
+      const updated = await patchDraft<Record<string, unknown>>(runId, clientRefId, {
+        data: mergedData,
+      });
+      return c.json({ draft: updated });
     },
   }),
 

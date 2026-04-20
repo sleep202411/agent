@@ -100,6 +100,32 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     }
   }, [draftInput]);
 
+  // Cross-component editor sync — fired when a workflow card wants to
+  // drop a phrase into the composer (e.g. "我要修改" prefill) without
+  // posting it. setDraft alone doesn't update the contenteditable since
+  // React doesn't manage innerText, so we set it imperatively here and
+  // move the caret to the end so the user can continue typing.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string; text?: string }>).detail;
+      if (!detail || detail.projectId !== projectId) return;
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.innerText = detail.text ?? "";
+      editor.focus();
+      const selection = window.getSelection();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    };
+    window.addEventListener("ai-assistant:set-draft", handler);
+    return () => window.removeEventListener("ai-assistant:set-draft", handler);
+  }, [projectId]);
+
   const hasPendingTools = pendingToolUi.length > 0;
 
   // Find the actual tool part for the first pending tool (to pass full input data to composer)
@@ -147,6 +173,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   return (
     <>
       <PanelLayout
+        bodyClassName="p-0"
         icon={
           <div className="flex size-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <IconSparkles className="size-4" />
@@ -173,7 +200,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
       >
         <div className="flex h-full flex-col relative">
           {/* Messages area — extra bottom padding so content scrolls behind composer */}
-          <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-6">
+          <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-6 px-4">
             {/* Project-params gate — shown until the user sets the 4 params the
                 downstream workflows depend on. Blocks message sending so the
                 supervisor never dispatches story_outline without them. */}

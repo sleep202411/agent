@@ -22,6 +22,14 @@ import {
 import { reportProgress, throwIfCancelled } from "./engine";
 import { getContext } from "../lib/workspace-client";
 import { summarizeBatch } from "../lib/batch-writer";
+import { stylePaintingHint } from "../lib/style-painting";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowFailed,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+  publishWorkflowSuspended,
+} from "../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -70,7 +78,7 @@ const SuspendSchema = z.object({
 
 // ─── Step 1: plan_props ──────────────────────────────────────────────
 
-function buildPlanPrompt(input: z.infer<typeof InputSchema>): string {
+function buildPlanPrompt(input: z.infer<typeof InputSchema>, stylePainting?: string): string {
   const feedbackBlock = input.feedback
     ? `\n\n上一轮用户给的修改意见（必须采纳）：\n${input.feedback}\n`
     : "";
@@ -86,9 +94,12 @@ function buildPlanPrompt(input: z.infer<typeof InputSchema>): string {
     "- 不要列泛用日常物（桌椅杯盘）",
     "- appearance 40-80 字，强调可识别细节（划痕、铭文、颜色、尺寸）",
     "- significance 说清楚这个道具为什么重要",
-    "- prompt 是图像生成提示词，40-80 字视觉 token 串、顿号分隔；只写画面元素，不加画风/品质 token",
+    "- prompt 是图像生成提示词，按道具设计师 persona 规定的格式写，60-120 字，顿号分隔；只写画面元素，不加画风/品质 token",
     "- 返回 JSON 对象，字段 props 是道具数组",
-  ].join("\n");
+    stylePaintingHint(stylePainting),
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 const planPropsStep = createStep({
@@ -98,10 +109,21 @@ const planPropsStep = createStep({
   stateSchema: StateSchema,
   execute: async ({ inputData, setState, state, mastra, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
+    const stylePainting = requestContext?.get("stylePainting") as string | undefined;
+    const ctx = getContext(requestContext);
     if (runId) {
       await throwIfCancelled(runId);
       await reportProgress(runId, {
         stepId: "plan_props",
+        current: 0,
+        total: inputData.propCount,
+        label: "道具设计师正在构思道具…",
+      });
+      await publishWorkflowStarted(ctx.projectId, runId, "prop_design", {
+        plannedCount: inputData.propCount,
+        summary: `道具设计师将设计 ${inputData.propCount} 个道具。`,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "prop_design", "planning", {
         current: 0,
         total: inputData.propCount,
         label: "道具设计师正在构思道具…",
@@ -111,7 +133,7 @@ const planPropsStep = createStep({
     const designer = mastra?.getAgent("propDesigner");
     if (!designer) throw new Error("propDesigner agent not registered");
 
-    const response = await designer.generate(buildPlanPrompt(inputData), {
+    const response = await designer.generate(buildPlanPrompt(inputData, stylePainting), {
       structuredOutput: {
         schema: z.object({ props: z.array(PlannedProp) }),
         errorStrategy: "warn",
@@ -131,11 +153,17 @@ const planPropsStep = createStep({
       draftClientRefIds: state.draftClientRefIds ?? [],
     });
     if (runId) {
+      const doneLabel = `已设计 ${plannedProps.length} 个道具`;
       await reportProgress(runId, {
         stepId: "plan_props",
         current: plannedProps.length,
         total: inputData.propCount,
-        label: `已设计 ${plannedProps.length} 个道具`,
+        label: doneLabel,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "prop_design", "planning", {
+        current: plannedProps.length,
+        total: inputData.propCount,
+        label: doneLabel,
       });
     }
     return { done: true as const };
@@ -207,6 +235,7 @@ const waitConfirmationStep = createStep({
   execute: async ({ inputData, resumeData, suspend, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
+    const ctx = getContext(requestContext);
 
     if (!resumeData) {
       await reportProgress(runId, {
@@ -214,6 +243,23 @@ const waitConfirmationStep = createStep({
         current: inputData.draftCount,
         total: inputData.draftCount,
         label: `${inputData.draftCount} 个道具草稿已生成，等待确认`,
+      });
+      const drafts = await listDrafts<PropCreateData>(runId, {
+        entityType: "prop",
+        statuses: ["pending"],
+      });
+      await publishWorkflowSuspended(ctx.projectId, runId, "prop_design", {
+        draftGroups: [
+          {
+            entityType: "prop",
+            count: drafts.length,
+            items: drafts.map((d) => ({
+              clientRefId: d.clientRefId,
+              data: d.data as unknown as Record<string, unknown>,
+            })),
+          },
+        ],
+        totalDraftCount: drafts.length,
       });
       return await suspend({ runId, draftCount: inputData.draftCount });
     }
@@ -246,6 +292,11 @@ const applyDecisionStep = createStep({
 
     if (!inputData.approved) {
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
+      await publishWorkflowFailed(ctx.projectId, runId, "prop_design", {
+        terminalStatus: "cancelled",
+        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        retryable: false,
+      });
       return {
         outcome: "rejected" as const,
         committed: [],
@@ -265,11 +316,17 @@ const applyDecisionStep = createStep({
 
     for (const item of items) await markDraftCommitting(runId, item.clientRefId);
 
+    const startLabel = `入库 ${items.length} 个道具到项目…`;
     await reportProgress(runId, {
       stepId: "apply_decision",
       current: 0,
       total: items.length,
-      label: `入库 ${items.length} 个道具到项目…`,
+      label: startLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "prop_design", "committing", {
+      current: 0,
+      total: items.length,
+      label: startLabel,
     });
 
     const results = await batchUpsertProps(ctx, items, { concurrency: 1 });
@@ -292,14 +349,33 @@ const applyDecisionStep = createStep({
 
     if (outcome === "committed") await deleteAllDrafts(runId);
 
+    const endLabel = `入库完成 — 成功 ${committed.length}，失败 ${failed.length}`;
+    await publishWorkflowProgress(ctx.projectId, runId, "prop_design", "committing", {
+      current: committed.length,
+      total: items.length,
+      label: endLabel,
+    });
+
+    const summaryText =
+      outcome === "committed"
+        ? `已成功入库 ${committed.length} 个道具。`
+        : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+
+    await publishWorkflowCompleted(ctx.projectId, runId, "prop_design", {
+      committed: committed.map((c) => ({ serverId: c.serverId })),
+      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+      summary: summaryText,
+      nextStep: {
+        workflowName: "prop_image_phase",
+        labelKey: "workflowNextContinueToPropImages",
+      },
+    });
+
     return {
       outcome,
       committed,
       failed,
-      message:
-        outcome === "committed"
-          ? `已成功入库 ${committed.length} 个道具。`
-          : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`,
+      message: summaryText,
     };
   },
 });

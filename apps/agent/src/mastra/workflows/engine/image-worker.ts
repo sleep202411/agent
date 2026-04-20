@@ -59,10 +59,12 @@ export function startImageWorker(opts: { concurrency?: number } = {}): AssetImag
     async (job) => handleImageJob(job),
     {
       connection: buildConnection(),
-      // Phase 1 target: 16 parallel image gens. Replicate default account
-      // concurrent-prediction limit is 50, so we have headroom even if
-      // multiple workers share the queue.
-      concurrency: opts.concurrency ?? 16,
+      // Serial (concurrency=1). Firing 16 jobs in parallel hit dashscope's
+      // per-minute rate limit (429 burst), which cost us whole-batch retry
+      // time and noisy logs. Sequential respects the quota naturally: the
+      // next job fires immediately when the prior returns (no artificial
+      // floor — Java's typical 8-20s gen time is already the pacing).
+      concurrency: opts.concurrency ?? 1,
     }
   );
 }

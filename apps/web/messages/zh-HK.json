@@ -1601,6 +1601,8 @@
     "paramsFormSubmit": "儲存並繼續",
     "paramsEpisodeCount": "劇集數量",
     "paramsEpisodeCountPlaceholder": "請輸入劇集數量（{min}-{max}）",
+    "paramsShotsPerEpisode": "每集分鏡數量",
+    "paramsShotsPerEpisodePlaceholder": "請輸入每集分鏡數量（{min}-{max}）",
     "paramsFormMissing": "請填寫所有參數",
     "paramsDialogLanguage": "語言",
     "paramsDialogLanguageSimplifiedChinese": "簡體中文",

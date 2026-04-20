@@ -10,6 +10,11 @@ import { appendEvent, reportProgress, throwIfCancelled } from "../engine";
 import { getImageQueue, buildImageJobId } from "../engine/image-queue";
 import { getProjectAssetImageStatus, setAssetImageStatus } from "../../lib/asset-image-status";
 import { getContext, javaRequest } from "../../lib/workspace-client";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+} from "../../lib/workflow-messages";
 
 const PERSONA = "道具设计师";
 const POLL_INTERVAL_MS = 2_000;
@@ -106,6 +111,15 @@ const dispatchStep = createStep({
       total: dispatched.length,
       label: `0/${dispatched.length} 就绪`,
     });
+    await publishWorkflowStarted(ctx.projectId, runId, "prop_image_phase", {
+      plannedCount: dispatched.length,
+      summary: `道具设计师派发了 ${dispatched.length} 张参考图任务。`,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "prop_image_phase", "committing", {
+      current: 0,
+      total: dispatched.length,
+      label: `0/${dispatched.length} 就绪`,
+    });
 
     return { assetIds: dispatched };
   },
@@ -131,6 +145,14 @@ const waitAllStep = createStep({
     const { assetIds } = inputData;
 
     if (assetIds.length === 0) {
+      await publishWorkflowCompleted(ctx.projectId, runId, "prop_image_phase", {
+        committed: [],
+        summary: "没有可生成参考图的道具。",
+        nextStep: {
+          workflowName: "episode_phase",
+          labelKey: "workflowNextContinueToEpisodes",
+        },
+      });
       return {
         outcome: "no_props" as const,
         totalCount: 0,
@@ -165,11 +187,17 @@ const waitAllStep = createStep({
 
       if (readyCount !== lastReportedReady) {
         lastReportedReady = readyCount;
+        const label = `${readyCount}/${assetIds.length} 就绪${failedCount > 0 ? `（${failedCount} 失败）` : ""}`;
         await reportProgress(runId, {
           stepId: "wait_all",
           current: readyCount,
           total: assetIds.length,
-          label: `${readyCount}/${assetIds.length} 就绪${failedCount > 0 ? `（${failedCount} 失败）` : ""}`,
+          label,
+        });
+        await publishWorkflowProgress(ctx.projectId, runId, "prop_image_phase", "committing", {
+          current: readyCount,
+          total: assetIds.length,
+          label,
         });
       }
 
@@ -180,6 +208,16 @@ const waitAllStep = createStep({
             ? `全部 ${readyCount} 张道具参考图生成完成。`
             : `完成 ${readyCount} 张，失败 ${failedCount} 张（失败的道具可以在资产库单独重试）。`;
         if (failedCount === 0) await narrate(runId, message);
+        await publishWorkflowCompleted(ctx.projectId, runId, "prop_image_phase", {
+          committed: Array.from({ length: readyCount }, (_, i) => ({
+            serverId: assetIds[i] ?? `prop-${i}`,
+          })),
+          summary: message,
+          nextStep: {
+            workflowName: "episode_phase",
+            labelKey: "workflowNextContinueToEpisodes",
+          },
+        });
         return {
           outcome,
           totalCount: assetIds.length,
@@ -194,6 +232,16 @@ const waitAllStep = createStep({
 
     const message = `生图等待超时：完成 ${readyCount}，失败 ${failedCount}，剩余 ${assetIds.length - readyCount - failedCount} 仍在处理中。`;
     await narrate(runId, message);
+    await publishWorkflowCompleted(ctx.projectId, runId, "prop_image_phase", {
+      committed: Array.from({ length: readyCount }, (_, i) => ({
+        serverId: assetIds[i] ?? `prop-${i}`,
+      })),
+      summary: message,
+      nextStep: {
+        workflowName: "episode_phase",
+        labelKey: "workflowNextContinueToEpisodes",
+      },
+    });
     return {
       outcome: "timeout" as const,
       totalCount: assetIds.length,

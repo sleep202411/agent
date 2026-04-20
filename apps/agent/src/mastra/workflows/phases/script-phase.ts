@@ -22,6 +22,13 @@ import {
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { getOutline } from "../../lib/outline";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowFailed,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+  publishWorkflowSuspended,
+} from "../../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -194,11 +201,21 @@ const generateStep = createStep({
     let completed = 0;
     const castBlock = buildCastBlock(inputData.characters);
 
+    const startLabel = `编剧开始逐集写剧本（共 ${total} 集）`;
     await reportProgress(runId, {
       stepId: "script_phase.generate",
       current: 0,
       total,
-      label: `编剧开始逐集写剧本（共 ${total} 集）`,
+      label: startLabel,
+    });
+    await publishWorkflowStarted(ctx.projectId, runId, "script_phase", {
+      plannedCount: total,
+      summary: startLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "script_phase", "planning", {
+      current: 0,
+      total,
+      label: startLabel,
     });
 
     // Parallel generation — the scriptwriter call is I/O-bound on DeepSeek.
@@ -253,11 +270,17 @@ const generateStep = createStep({
       }
 
       completed += 1;
+      const label = `已生成 ${completed}/${total} 集（${totalChars} 字）`;
       await reportProgress(runId, {
         stepId: "script_phase.generate",
         current: completed,
         total,
-        label: `已生成 ${completed}/${total} 集（${totalChars} 字）`,
+        label,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "script_phase", "planning", {
+        current: completed,
+        total,
+        label,
       });
     };
 
@@ -384,6 +407,7 @@ const waitConfirmationStep = createStep({
   execute: async ({ inputData, resumeData, suspend, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
+    const ctx = getContext(requestContext);
 
     if (!resumeData) {
       await reportProgress(runId, {
@@ -391,6 +415,23 @@ const waitConfirmationStep = createStep({
         current: inputData.generatedCount,
         total: inputData.generatedCount,
         label: `已生成 ${inputData.generatedCount} 集剧本（${inputData.totalChars} 字），等待确认`,
+      });
+      const drafts = await listDrafts<{ episodeId: string; title: string; content: string }>(
+        runId,
+        { entityType: "script", statuses: ["pending"] }
+      );
+      await publishWorkflowSuspended(ctx.projectId, runId, "script_phase", {
+        draftGroups: [
+          {
+            entityType: "script",
+            count: drafts.length,
+            items: drafts.map((d) => ({
+              clientRefId: d.clientRefId,
+              data: d.data as unknown as Record<string, unknown>,
+            })),
+          },
+        ],
+        totalDraftCount: drafts.length,
       });
       return await suspend({
         runId,
@@ -426,6 +467,11 @@ const applyDecisionStep = createStep({
 
     if (!inputData.approved) {
       for (const g of generated) await markDraftDiscarded(runId, g.clientRefId);
+      await publishWorkflowFailed(ctx.projectId, runId, "script_phase", {
+        terminalStatus: "cancelled",
+        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        retryable: false,
+      });
       return {
         outcome: "rejected" as const,
         committed: [],
@@ -447,11 +493,17 @@ const applyDecisionStep = createStep({
 
     for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
 
+    const startLabel = `批量保存 ${accepts.length} 集剧本…`;
     await reportProgress(runId, {
       stepId: "script_phase.commit",
       current: 0,
       total: accepts.length,
-      label: `批量保存 ${accepts.length} 集剧本…`,
+      label: startLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "script_phase", "committing", {
+      current: 0,
+      total: accepts.length,
+      label: startLabel,
     });
 
     const committed: z.infer<typeof ScriptPhaseOutputSchema>["committed"] = [];
@@ -495,21 +547,39 @@ const applyDecisionStep = createStep({
     const outcome: z.infer<typeof ScriptPhaseOutputSchema>["outcome"] =
       failed.length === 0 ? "committed" : "partial_failure";
 
+    const endLabel = `剧本保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
     await reportProgress(runId, {
       stepId: "script_phase.commit",
       current: committed.length,
       total: accepts.length,
-      label: `剧本保存完成：成功 ${committed.length} / 失败 ${failed.length}`,
+      label: endLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "script_phase", "committing", {
+      current: committed.length,
+      total: accepts.length,
+      label: endLabel,
+    });
+
+    const summaryText =
+      outcome === "committed"
+        ? `已保存 ${committed.length} 集剧本，进入下一阶段。`
+        : `保存失败：${failed.length} / ${accepts.length}。剧本草稿保留在 Redis 供重试。`;
+
+    await publishWorkflowCompleted(ctx.projectId, runId, "script_phase", {
+      committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
+      failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
+      summary: summaryText,
+      nextStep: {
+        workflowName: "storyboard_phase",
+        labelKey: "workflowNextContinueToStoryboard",
+      },
     });
 
     return {
       outcome,
       committed,
       failed,
-      message:
-        outcome === "committed"
-          ? `已保存 ${committed.length} 集剧本，进入下一阶段。`
-          : `保存失败：${failed.length} / ${accepts.length}。剧本草稿保留在 Redis 供重试。`,
+      message: summaryText,
     };
   },
 });

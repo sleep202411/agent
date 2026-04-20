@@ -32,6 +32,14 @@ import {
 import { reportProgress, throwIfCancelled } from "./engine";
 import { getContext } from "../lib/workspace-client";
 import { summarizeBatch } from "../lib/batch-writer";
+import { stylePaintingHint } from "../lib/style-painting";
+import {
+  publishWorkflowCompleted,
+  publishWorkflowFailed,
+  publishWorkflowProgress,
+  publishWorkflowStarted,
+  publishWorkflowSuspended,
+} from "../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -40,6 +48,7 @@ const PlannedRole = z.object({
   role: z.string().min(1),
   appearance: z.string().min(1),
   personality: z.string().min(1),
+  prompt: z.string().default(""),
 });
 type PlannedRole = z.infer<typeof PlannedRole>;
 
@@ -85,10 +94,21 @@ const planRolesStep = createStep({
   stateSchema: StateSchema,
   execute: async ({ inputData, setState, state, mastra, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
+    const stylePainting = requestContext?.get("stylePainting") as string | undefined;
+    const ctx = getContext(requestContext);
     if (runId) {
       await throwIfCancelled(runId);
       await reportProgress(runId, {
         stepId: "plan_roles",
+        current: 0,
+        total: inputData.roleCount,
+        label: "设计师正在构思角色…",
+      });
+      await publishWorkflowStarted(ctx.projectId, runId, "role_design", {
+        plannedCount: inputData.roleCount,
+        summary: `角色设计师将设计 ${inputData.roleCount} 个角色。`,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "role_design", "planning", {
         current: 0,
         total: inputData.roleCount,
         label: "设计师正在构思角色…",
@@ -98,7 +118,7 @@ const planRolesStep = createStep({
     const designer = mastra?.getAgent("roleDesigner");
     if (!designer) throw new Error("roleDesigner agent not registered");
 
-    const prompt = buildPlanPrompt(inputData);
+    const prompt = buildPlanPrompt(inputData, stylePainting);
 
     // Ask the persona to produce a structured list of roles.
     const response = await designer.generate(prompt, {
@@ -122,18 +142,24 @@ const planRolesStep = createStep({
       draftClientRefIds: state.draftClientRefIds ?? [],
     });
     if (runId) {
+      const doneLabel = `已设计 ${plannedRoles.length} 个角色`;
       await reportProgress(runId, {
         stepId: "plan_roles",
         current: plannedRoles.length,
         total: inputData.roleCount,
-        label: `已设计 ${plannedRoles.length} 个角色`,
+        label: doneLabel,
+      });
+      await publishWorkflowProgress(ctx.projectId, runId, "role_design", "planning", {
+        current: plannedRoles.length,
+        total: inputData.roleCount,
+        label: doneLabel,
       });
     }
     return { done: true as const };
   },
 });
 
-function buildPlanPrompt(input: z.infer<typeof InputSchema>): string {
+function buildPlanPrompt(input: z.infer<typeof InputSchema>, stylePainting?: string): string {
   const feedbackBlock = input.feedback
     ? `\n\n上一轮用户给的修改意见（必须采纳）：\n${input.feedback}\n`
     : "";
@@ -147,8 +173,12 @@ function buildPlanPrompt(input: z.infer<typeof InputSchema>): string {
     `- 严格 ${input.roleCount} 个，不多不少`,
     "- 每个角色的外观特征要具体（发型发色/服饰/显著标志），便于后续生成立绘",
     "- 性格描述要帮助演员（LLM）在后续对话戏里保持一致",
-    "- 返回 JSON 对象，字段 roles 是角色数组，每个元素有 name / role / appearance / personality",
-  ].join("\n");
+    "- **prompt 字段是图像生成提示词**，60-120 字，按角色设计师 persona 里规定的格式写；必含：年龄段、人种特征、发型发色、眼神表情、2 项以上服饰（颜色+材质）、1 个标志物/伤疤/配件、景别",
+    "- 返回 JSON 对象，字段 roles 是角色数组，每个元素有 name / role / appearance / personality / prompt",
+    stylePaintingHint(stylePainting),
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // ─── Step 2: collect_drafts — write each planned role as a Draft ──────
@@ -174,6 +204,8 @@ const collectDraftsStep = createStep({
     let i = 0;
     for (const role of plannedRoles) {
       const clientRefId = randomUUID();
+      const imagePrompt =
+        role.prompt && role.prompt.trim().length > 0 ? role.prompt.trim() : role.appearance;
       const data: RoleCreateData = {
         worldId,
         name: role.name,
@@ -182,7 +214,7 @@ const collectDraftsStep = createStep({
           `外观：${role.appearance}`,
           `性格：${role.personality}`,
         ].join("\n"),
-        prompt: role.appearance, // image-gen prompt slot — we skip image gen in Phase 2
+        prompt: imagePrompt,
         roleImgPath: [],
         referenceImgPath: [],
         referenceImgDescription: [],
@@ -221,6 +253,7 @@ const waitConfirmationStep = createStep({
   execute: async ({ inputData, resumeData, suspend, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing from requestContext");
+    const ctx = getContext(requestContext);
 
     if (!resumeData) {
       await reportProgress(runId, {
@@ -228,6 +261,23 @@ const waitConfirmationStep = createStep({
         current: inputData.draftCount,
         total: inputData.draftCount,
         label: `${inputData.draftCount} 个角色草稿已生成，等待确认`,
+      });
+      const drafts = await listDrafts<RoleCreateData>(runId, {
+        entityType: "role",
+        statuses: ["pending"],
+      });
+      await publishWorkflowSuspended(ctx.projectId, runId, "role_design", {
+        draftGroups: [
+          {
+            entityType: "role",
+            count: drafts.length,
+            items: drafts.map((d) => ({
+              clientRefId: d.clientRefId,
+              data: d.data as unknown as Record<string, unknown>,
+            })),
+          },
+        ],
+        totalDraftCount: drafts.length,
       });
       return await suspend({
         runId,
@@ -274,6 +324,11 @@ const applyDecisionStep = createStep({
         total: draftClientRefIds.length,
         label: "用户选择重做 — 任务结束，可发起新的 role_design 并带上反馈",
       });
+      await publishWorkflowFailed(ctx.projectId, runId, "role_design", {
+        terminalStatus: "cancelled",
+        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        retryable: false,
+      });
       return {
         outcome: "rejected" as const,
         committed: [],
@@ -297,11 +352,17 @@ const applyDecisionStep = createStep({
       await markDraftCommitting(runId, item.clientRefId);
     }
 
+    const commitStartLabel = `入库 ${items.length} 个角色到项目…`;
     await reportProgress(runId, {
       stepId: "apply_decision",
       current: 0,
       total: items.length,
-      label: `入库 ${items.length} 个角色到项目…`,
+      label: commitStartLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "role_design", "committing", {
+      current: 0,
+      total: items.length,
+      label: commitStartLabel,
     });
 
     const results = await batchUpsertRoles(ctx, items, { concurrency: 1 });
@@ -327,21 +388,39 @@ const applyDecisionStep = createStep({
       await deleteAllDrafts(runId);
     }
 
+    const endLabel = `入库完成 — 成功 ${committed.length}，失败 ${failed.length}`;
     await reportProgress(runId, {
       stepId: "apply_decision",
       current: committed.length,
       total: items.length,
-      label: `入库完成 — 成功 ${committed.length}，失败 ${failed.length}`,
+      label: endLabel,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "role_design", "committing", {
+      current: committed.length,
+      total: items.length,
+      label: endLabel,
+    });
+
+    const summaryText =
+      outcome === "committed"
+        ? `已成功入库 ${committed.length} 个角色。`
+        : `入库完成但有失败：成功 ${committed.length}，失败 ${failed.length}。失败的草稿保留在 Redis 供重试。`;
+
+    await publishWorkflowCompleted(ctx.projectId, runId, "role_design", {
+      committed: committed.map((c) => ({ serverId: c.serverId })),
+      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+      summary: summaryText,
+      nextStep: {
+        workflowName: "role_image_phase",
+        labelKey: "workflowNextContinueToRoleImages",
+      },
     });
 
     return {
       outcome,
       committed,
       failed,
-      message:
-        outcome === "committed"
-          ? `已成功入库 ${committed.length} 个角色。`
-          : `入库完成但有失败：成功 ${committed.length}，失败 ${failed.length}。失败的草稿保留在 Redis 供重试。`,
+      message: summaryText,
     };
   },
 });

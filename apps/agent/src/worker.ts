@@ -35,9 +35,12 @@ const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 4);
 const worker = startWorker({ mastra, concurrency });
 
 // Image-generation worker runs in the same process but on a separate queue.
-// Higher default concurrency: image jobs are I/O-bound (Replicate + OSS),
-// not CPU/LLM-bound like workflow runs.
-const imageConcurrency = Number(process.env.IMAGE_WORKER_CONCURRENCY ?? 16);
+// Serial (concurrency=1) by default — dashscope burst-rate-limits at >1 per
+// few seconds, and the prior concurrency=16 caused whole-batch 429 storms
+// that cost retry time and noisy logs. The provider's typical 8-20s gen
+// latency paces calls naturally. Bump via IMAGE_WORKER_CONCURRENCY if
+// provider quota is known to allow true parallelism.
+const imageConcurrency = Number(process.env.IMAGE_WORKER_CONCURRENCY ?? 1);
 const imageWorker = startImageWorker({ concurrency: imageConcurrency });
 
 worker.on("ready", () => {
