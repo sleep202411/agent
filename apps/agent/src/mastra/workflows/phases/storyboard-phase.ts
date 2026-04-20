@@ -464,8 +464,29 @@ function buildPrompt(
     "每行 rows 严格按约定字段填：",
     sceneRule,
     "- **description** — 画面描述（给人读的一句话，可以出现角色名/场景名）",
-    "- **image_prompt** — 单帧图像生成提示词（20-60 字视觉 token，按「场景+主体+构图+表情/动作+景别+光线」顺序、顿号分隔；只写画面元素，**不要**加画风/品质 token [写实 / 电影感 / 高清 等]，下游按项目 stylePainting 自动拼接；也不写剧情/情感）",
-    "- **video_prompt** — 视频生成用的**动态**描述(运动 / 表情变化 / 环境变化)",
+    // image_prompt / video_prompt specs aligned with the legacy skill files
+    // (apps/server/src/ai/skills/prompt_format_cn.skill.md — the "Pax 版"
+    // authoritative format). Previously we had one-line hand-wavy bullets
+    // that produced 20-60 char prompts; now forcing structured field cards
+    // at 120-220 chars for image, three-part structure for video.
+    "- **image_prompt** — **单帧**图像生成提示词，中文字段化卡（多行文本），**120-220 字**。必须按以下字段顺序和格式：",
+    "  ```",
+    "  画面描述：<主体 + 环境 + 材质细节 + 空间位置关系（前景-中景-后景） + 光影效果 + 可见物理现象；不写角色连续动作链>",
+    "  景别：<大远景 / 全景 / 中景 / 近景 / 特写 / 极特写>",
+    "  拍摄角度：<俯拍 / 仰拍 / 平视 / 鸟瞰 / 过肩>",
+    "  镜头焦距：<14mm 超广角 / 24mm 广角 / 50mm 标准 / 85mm 中长焦>",
+    "  构图：<对角线 / 引导线 / 中心 / 三分法>",
+    "  光影：<暖光 / 冷光 / 逆光 / 侧光 / 黄金时刻 / 蓝调时刻 / ...>",
+    "  画面氛围：<情绪与质感，一句话>",
+    "  ```",
+    "  Blocking 强制：若出现关键道具/角色/门/桌/光源，必须写明相对位置（左/右/前景/后景/门框内/走廊尽头）。**不写** cinematic / 8K / 写实 / masterpiece 之类英文画风质量词——下游会按项目 stylePainting 自动拼接。",
+    "- **video_prompt** — 动态视频提示词，中文，**严格三段式**（A / B / C 三行）：",
+    "  ```",
+    "  A. 镜头运动：<机位 + 运动 + 推进 / 横移 / 跟拍 / 固定微动 / 焦点锁定>",
+    "  B. 画面描述：<持续动作 + 环境反应 + 物理细节，可生成的动态过程>",
+    '  C. 声音：<默认 "无人声，无对白，无背景音乐"；允许自然环境音（风/雪/火焰/布料摩擦），不能有人声或配乐>',
+    "  ```",
+    "  **硬冲突检查**：如果 dialogue 字段为空 / 「-」，video_prompt 的 B 段不可出现「说话 / 喊叫 / 尖叫」，只能写口型开合、喘息、表情动作。",
     `- **shot_size** — 景别，从枚举里选一个：${SHOT_SIZE_OPTIONS}`,
     `- **perspective** — 视角，从枚举里选一个：${PERSPECTIVE_OPTIONS}`,
     `- **movement** — 运镜，从枚举里选一个：${MOVEMENT_OPTIONS}`,
