@@ -1,5 +1,3 @@
-import { readUIMessageStream, uiMessageChunkSchema, type UIMessageChunk } from "ai";
-import { parseJsonEventStream } from "@ai-sdk/provider-utils";
 import type {
   AssistantAttachment,
   AssistantChatErrorResponse,
@@ -30,45 +28,9 @@ function sanitizeMessages(messages: AssistantMessage[]): AssistantMessage[] {
   }));
 }
 
-function toChunkStream(
-  stream: ReadableStream<Uint8Array<ArrayBufferLike>>
-): ReadableStream<UIMessageChunk> {
-  const parsedStream = parseJsonEventStream({
-    stream,
-    schema: uiMessageChunkSchema,
-  });
-
-  return new ReadableStream<UIMessageChunk>({
-    async start(controller) {
-      const reader = parsedStream.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          controller.close();
-          return;
-        }
-        if (value.success) {
-          controller.enqueue(value.value);
-        } else {
-          await reader.cancel();
-          controller.error(value.error);
-          return;
-        }
-      }
-    },
-  });
-}
-
 async function parseError(response: Response) {
   try {
-    const data = (await response.json()) as AssistantChatErrorResponse & {
-      code?: string;
-      current?: number;
-      max?: number;
-    };
-    if (data.code === "MESSAGE_LIMIT_REACHED") {
-      return `MESSAGE_LIMIT_REACHED:${data.current ?? 0}:${data.max ?? 0}`;
-    }
+    const data = (await response.json()) as AssistantChatErrorResponse;
     if (data.issues?.length) {
       const formattedIssues = data.issues.map((issue) => {
         const path = issue.path.length ? issue.path.join(".") : "request";
@@ -82,26 +44,100 @@ async function parseError(response: Response) {
   }
 }
 
-// ─── Chat API (full messages) ──────────────────────────
+export async function fetchMessagesByIds(
+  conversationId: string,
+  messageIds: string[]
+): Promise<AssistantMessage[]> {
+  if (messageIds.length === 0) return [];
+  const response = await fetch("/aurora/chat/get-messages", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversationId, messageIds }),
+  });
+  if (!response.ok) return [];
+  const body = (await response.json()) as {
+    conversationId: string;
+    messages: AssistantMessage[];
+  };
+  return body.messages ?? [];
+}
 
-export interface SendAssistantChatOptions {
+// ─── Chat API (shared option shape) ───────────────────
+
+export interface ForceEnterWorkflow {
+  /** Target workflow ID — supervisor must skip routing and invoke directly. */
+  workflowName: string;
+  /** Optional pre-filled inputData; supervisor merges with its own context. */
+  inputData?: Record<string, unknown>;
+}
+
+export interface ConfirmWorkflowPayload {
+  /** Which suspended workflow run this confirmation targets. */
+  runId: string;
+  /** User's decision — true = satisfied, false = revise with feedback. */
+  approved: boolean;
+  /** Free-form feedback when approved=false. */
+  feedback?: string;
+}
+
+export interface ConfirmProjectParamsPayload {
+  aspectRatioType: string;
+  chapterLength: number;
+  stylePainting: string;
+  dialogLanguage: string;
+  /**
+   * Target number of episodes the user wants. Currently NOT persisted by
+   * Nest/Java — kept client-side (localStorage + Redux projectDetail) and
+   * read by buildInputData when dispatching episode_phase.
+   */
+  targetEpisodeCount?: number;
+  /**
+   * Target number of shots per episode for storyboard_phase. Same client-side
+   * persistence story as targetEpisodeCount — not written to Java (no column
+   * there yet), kept in localStorage + threaded into storyboard_phase input.
+   */
+  shotsPerEpisode?: number;
+}
+
+export interface SubmitMessageOptions {
   projectId: string;
   messages: AssistantMessage[];
   workspaceContext: AssistantWorkspaceSelection;
-  agentType?: string;
   signal?: AbortSignal;
-  onMessage: (message: AssistantMessage) => void;
+  forceEnterWorkflow?: ForceEnterWorkflow;
+  confirmWorkflow?: ConfirmWorkflowPayload;
+  confirmProjectParams?: ConfirmProjectParamsPayload;
 }
 
-export async function sendAssistantChat({
+export interface SubmitMessageResult {
+  agentInstanceId: string;
+  conversationId: string;
+  seedMessageId: string;
+}
+
+// ─── Mastra supervisor chat — fully WS-based ──────────
+//
+// The POST no longer streams. It returns a tiny JSON envelope:
+//   { agentInstanceId, conversationId, seedMessageId }
+// and the server runs the Mastra consumer in the background, writing each
+// UIMessage snapshot to Redis + publishing `message_added` / `message_updated`
+// / `agent_state` events on the chat-events Redis channel.
+//
+// The browser opens ONE WebSocket per project (see chat-events-client +
+// useChatEventsSession hook); this function is pure fire-and-forget from
+// the caller's POV. Message updates flow into Redux via the WS handlers.
+
+export async function submitMessageToAgent({
   projectId,
   messages,
   workspaceContext,
-  agentType,
   signal,
-  onMessage,
-}: SendAssistantChatOptions) {
-  const response = await fetch("/aurora/assistant/chat", {
+  forceEnterWorkflow,
+  confirmWorkflow,
+  confirmProjectParams,
+}: SubmitMessageOptions): Promise<SubmitMessageResult> {
+  const response = await fetch("/aurora/assistant/submit-message-to-agent", {
     method: "POST",
     credentials: "include",
     headers: {
@@ -115,57 +151,43 @@ export async function sendAssistantChat({
       projectId,
       messages: sanitizeMessages(messages),
       workspaceContext,
-      agentType,
+      ...(forceEnterWorkflow ? { forceEnterWorkflow } : {}),
+      ...(confirmWorkflow ? { confirmWorkflow } : {}),
+      ...(confirmProjectParams ? { confirmProjectParams } : {}),
     }),
     signal,
   });
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
     throw new Error(await parseError(response));
   }
 
-  const stream = toChunkStream(response.body);
-  let latest: AssistantMessage | null = null;
-
-  const placeholderMessage: AssistantMessage = {
-    id: crypto.randomUUID(),
-    role: "assistant",
-    parts: [],
-  };
-
-  for await (const message of readUIMessageStream({
-    message: placeholderMessage as Parameters<typeof readUIMessageStream>[0]["message"],
-    stream,
-  })) {
-    latest = message as AssistantMessage;
-    onMessage(latest);
+  const envelope = (await response.json()) as Partial<SubmitMessageResult>;
+  if (!envelope.agentInstanceId || !envelope.seedMessageId) {
+    throw new Error("submit-message-to-agent: missing envelope fields");
   }
-
-  return latest;
+  return {
+    agentInstanceId: envelope.agentInstanceId,
+    conversationId: envelope.conversationId ?? projectId,
+    seedMessageId: envelope.seedMessageId,
+  };
 }
 
 // ─── Save API ─────────────────────────────────────────
-
+//
+// In the new architecture, the server writes every assistant/user message to
+// Redis as part of submit-message-to-agent (see chat/agent-stream.service +
+// mastra-proxy.persistInboundMessages). There's nothing left for the client
+// to save — the store is already the source of truth.
+//
+// This function is kept as a no-op so existing callers (three thunks in
+// assistantSlice) can be migrated incrementally. We'll delete the call sites
+// in a follow-up sweep.
 export async function saveConversation(
-  projectId: string,
-  messages: AssistantMessage[]
+  _projectId: string,
+  _messages: AssistantMessage[]
 ): Promise<void> {
-  try {
-    const response = await fetch("/aurora/assistant/save", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId,
-        messages: sanitizeMessages(messages),
-      }),
-    });
-    if (!response.ok) {
-      console.warn(`[assistant] Save failed: HTTP ${response.status}`);
-    }
-  } catch (err) {
-    console.warn("[assistant] Save failed:", err);
-  }
+  // no-op — persistence happens server-side during the stream.
 }
 
 // ─── History API ───────────────────────────────────────
@@ -173,42 +195,45 @@ export async function saveConversation(
 export interface ConversationHistoryResponse {
   conversationId: string;
   messages: AssistantMessage[];
-  messageCount: number;
-  messageLimit: number;
-  tier: string;
 }
 
+/**
+ * Load conversation history from the Redis-backed message store via
+ * /aurora/chat/list-messages (id snapshot) + /aurora/chat/get-messages
+ * (full content).
+ */
 export async function fetchConversationHistory(
   projectId: string
 ): Promise<ConversationHistoryResponse> {
-  const response = await fetch(`/aurora/assistant/history/${projectId}`, {
+  const listResponse = await fetch("/aurora/chat/list-messages", {
+    method: "POST",
     credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversationId: projectId }),
   });
-  if (!response.ok) {
-    throw new Error(`Failed to load history: HTTP ${response.status}`);
+  if (!listResponse.ok) {
+    throw new Error(`Failed to list messages: HTTP ${listResponse.status}`);
   }
-  const body = (await response.json()) as {
-    success: boolean;
-    data: ConversationHistoryResponse;
+  const listBody = (await listResponse.json()) as {
+    conversationId: string;
+    messageIds: string[];
+    agentState: string;
   };
-  return body.data;
+  const messages =
+    listBody.messageIds.length > 0 ? await fetchMessagesByIds(projectId, listBody.messageIds) : [];
+  return {
+    conversationId: listBody.conversationId,
+    messages,
+  };
 }
 
 // ─── Clear API ─────────────────────────────────────────
 
-export async function clearConversation(
-  projectId: string
-): Promise<{ messageCount: number; messageLimit: number }> {
-  const response = await fetch(`/aurora/assistant/clear/${projectId}`, {
+export async function clearConversation(projectId: string): Promise<void> {
+  await fetch("/aurora/chat/clear-conversation", {
     method: "POST",
     credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conversationId: projectId }),
   });
-  if (!response.ok) {
-    throw new Error(`Failed to clear conversation: HTTP ${response.status}`);
-  }
-  const body = (await response.json()) as {
-    success: boolean;
-    data: { messageCount: number; messageLimit: number };
-  };
-  return body.data;
 }

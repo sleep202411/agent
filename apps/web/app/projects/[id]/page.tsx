@@ -24,6 +24,7 @@ import { useProjectDetail } from "@/src/hooks/use-project-detail";
 import { useStoryboardData } from "@/src/hooks/use-storyboard-data";
 import { useAiModelsPreload } from "@/src/hooks/use-ai-models";
 import { useWorldAssets } from "@/src/hooks/use-world-assets";
+import { useStudioSeedConsumer } from "@/src/hooks/use-studio-seed-consumer";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import { setActivePanel, selectCurrentInstance } from "@/src/store/slices/projectSlice";
@@ -87,6 +88,10 @@ export default function ProjectDetailPage() {
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
+
+  // Bootstrap first AI turn when this page was opened via the studio composer.
+  // No-op when there's no seed (direct visit, page refresh, etc.).
+  useStudioSeedConsumer(projectId);
 
   useEffect(() => {
     // 读取当前 URL 参数（不通过 searchParams 避免循环依赖）

@@ -4,11 +4,17 @@ import { backendApi } from "@/src/lib/api";
 import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
 import { uploadWorkspaceFile, computeFileHash } from "@/src/lib/uploads/workspace-upload";
 import {
-  sendAssistantChat,
+  submitMessageToAgent,
   saveConversation,
   fetchConversationHistory,
   clearConversation as clearConversationApi,
+  type ConfirmProjectParamsPayload,
 } from "@/src/lib/assistant/assistant-client";
+import {
+  cancelWorkflow,
+  startWorkflow,
+  type WorkflowName,
+} from "@/src/lib/workflow/workflow-client";
 import type {
   AssistantAttachment,
   AssistantMessage,
@@ -91,14 +97,19 @@ function createEmptyConversation() {
     historyLoaded: false,
     /** Number of messages loaded from server history (for separator) */
     historyMessageCount: 0,
-    /** Message limit for the current tier */
-    messageLimit: 50,
-    /** Current tier name */
-    tier: "free" as string,
     /** Conversation ID from server */
     conversationId: "" as string,
-    /** History retention in days */
-    retentionDays: 1,
+    /**
+     * In-flight generative workflow for this project. Set by ToolWorkflowCard
+     * when it sees the workflow enter queued/running, cleared on terminal
+     * state. Used to swap the chat composer into a "工作中 + 停止" pill —
+     * typing isn't actionable while a workflow is running.
+     */
+    activeWorkflow: null as {
+      runId: string;
+      workflowName: WorkflowName;
+      status: "queued" | "running" | "suspended";
+    } | null,
   };
 }
 
@@ -396,15 +407,64 @@ async function applyWorkspaceMutationEffects(
   }
 }
 
+/**
+ * Run post-turn effects once the agent returns to idle. Looks up the most
+ * recent assistant message in state, flips `sending/streaming=false`, and
+ * runs any workspace mutation side-effects (touchProjectList, etc.) based
+ * on that message's tool outputs.
+ *
+ * Wired from the project-scoped WS session's onAgentState handler —
+ * replaces the post-await block that lived inside each submit thunk in
+ * the old SSE pipeline.
+ */
+export const finalizeTurnOnIdle = createAsyncThunk<
+  void,
+  string,
+  { state: RootState; dispatch: AppDispatch }
+>("assistant/finalizeTurnOnIdle", async (projectId, { dispatch, getState }) => {
+  const conversation = getState().assistant.projects[projectId];
+  if (!conversation) return;
+  const lastAssistant =
+    [...conversation.messages].reverse().find((m) => m.role === "assistant") ?? null;
+  dispatch(finalizeAssistantMessage({ projectId, message: null }));
+  await applyWorkspaceMutationEffects(dispatch, projectId, lastAssistant);
+});
+
 function buildWorkspaceContext(state: RootState, projectId: string): AssistantWorkspaceSelection {
   const inst = state.project.instances[projectId] ?? selectCurrentInstance(state);
   const videoPromptStyle = state.assistant.projects[projectId]?.videoPromptStyle ?? "default";
+  const detail = inst.detail;
+  // Language + style are project-level params the user sets in
+  // ProjectParamsForm. dialogLanguage isn't persisted by Java yet — read the
+  // localStorage mirror as a fallback for reloaded sessions.
+  let dialogLanguage: string | null | undefined = detail?.dialogLanguage;
+  if (!dialogLanguage && typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(`fizzos:dialog-language:${projectId}`);
+      if (raw && raw.length > 0) dialogLanguage = raw;
+    } catch {}
+  }
+  // shotsPerEpisode — no Java column; localStorage is authoritative. Keep
+  // undefined on failure so the agent falls back to its default 15-40.
+  let shotsPerEpisode: number | undefined;
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(`fizzos:shots-per-episode:${projectId}`);
+      if (raw) {
+        const n = Number(raw);
+        if (Number.isFinite(n) && n >= 5 && n <= 60) shotsPerEpisode = n;
+      }
+    } catch {}
+  }
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
     activeTab: inst.activeTab,
     activePanel: inst.activePanel,
     locale: typeof document !== "undefined" ? document.documentElement.lang || "zh-CN" : "zh-CN",
+    dialogLanguage: dialogLanguage ?? undefined,
+    stylePainting: detail?.stylePainting ?? undefined,
+    shotsPerEpisode,
     videoPromptStyle,
   };
 }
@@ -519,10 +579,7 @@ export const loadHistory = createAsyncThunk<
         setHistory({
           projectId,
           messages: data.messages as AssistantMessage[],
-          messageLimit: data.messageLimit,
-          tier: data.tier,
           conversationId: data.conversationId,
-          retentionDays: data.retentionDays,
         })
       );
     } catch (error) {
@@ -534,7 +591,14 @@ export const loadHistory = createAsyncThunk<
   {
     condition: (projectId, { getState }) => {
       const current = getState().assistant.projects[projectId];
-      return !current?.historyLoaded;
+      if (current?.historyLoaded) return false;
+      // Defensive: if we already have real messages (beyond the welcome
+      // placeholder), don't re-fetch — a stale empty-history response would
+      // clobber an in-flight conversation. historyLoaded *should* already
+      // guard this, but panel remounts (Next.js RSC refetch) have been seen
+      // to land here mid-stream.
+      if ((current?.messages.length ?? 0) > 1) return false;
+      return true;
     },
   }
 );
@@ -547,14 +611,8 @@ export const newConversation = createAsyncThunk<
   { state: RootState; dispatch: AppDispatch }
 >("assistant/newConversation", async (projectId, { dispatch }) => {
   try {
-    const data = await clearConversationApi(projectId);
+    await clearConversationApi(projectId);
     dispatch(resetProjectConversation(projectId));
-    dispatch(
-      setMessageLimit({
-        projectId,
-        messageLimit: data.messageLimit,
-      })
-    );
   } catch (error) {
     console.warn("[assistant] Failed to clear conversation:", error);
     toast.error("清空对话失败，请重试");
@@ -597,36 +655,19 @@ export const sendUserMessage = createAsyncThunk<
     try {
       const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
       const workspaceContext = buildWorkspaceContext(getState(), projectId);
-      const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
-      const finalMessage = await sendAssistantChat({
+      await submitMessageToAgent({
         projectId,
         messages: nextMessages,
         workspaceContext,
-        agentType,
         signal: abortController.signal,
-        onMessage: (message) => {
-          dispatch(appendStreamChunk({ projectId, message }));
-        },
       });
-
-      // If aborted (tool result took over), skip finalization
-      if (abortController.signal.aborted) return;
-
-      dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-      await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-
-      // Save to Redis (fire-and-forget)
-      const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
-      void saveConversation(projectId, finalMessages);
+      // Live updates land via the project-scoped WS session (see
+      // chat-session.ts + panel mount). Post-turn effects fire in
+      // finalizeTurnOnIdle when agent_state flips to "idle".
     } catch (error) {
       if (abortController.signal.aborted) return;
       const errMsg = error instanceof Error ? error.message : "AI 请求失败";
-      if (errMsg.startsWith("MESSAGE_LIMIT_REACHED:")) {
-        const [, cur, max] = errMsg.split(":");
-        dispatch(streamError({ projectId, error: `MESSAGE_LIMIT_REACHED:${cur}:${max}` }));
-        return;
-      }
       dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
     }
@@ -636,6 +677,217 @@ export const sendUserMessage = createAsyncThunk<
       const current = getState().assistant.projects[projectId];
       return !current?.sending;
     },
+  }
+);
+
+// ─── Workflow dispatch via supervisor (button path) ─────
+//
+// Unified with the freeform chat path (oii-style). Button clicks post a user
+// message AND send `forceEnterWorkflow = {workflowName, inputData}` to the
+// supervisor. The supervisor sees the flag, skips routing / preflight, still
+// produces the pre-dispatch 3-段 persona narration, then invokes the named
+// workflow. Single entry point, consistent conversation surface, persona
+// narration on every action — at the cost of one extra LLM round-trip
+// vs the old direct-to-engine path.
+
+export const startWorkflowFromButton = createAsyncThunk<
+  void,
+  {
+    projectId: string;
+    userLabel: string;
+    workflowName: WorkflowName;
+    inputData?: Record<string, unknown>;
+  },
+  { state: RootState; dispatch: AppDispatch }
+>(
+  "assistant/startWorkflowFromButton",
+  async ({ projectId, userLabel, workflowName, inputData }, { dispatch, getState }) => {
+    abortProjectStream(projectId);
+    dispatch(ensureProject(projectId));
+
+    // Enforce single-in-flight-workflow-per-project: if there's already an
+    // active workflow for this project (queued / running / suspended), cancel
+    // it before starting a new one. Prevents the "retry spawns duplicate
+    // runs / 2 cards on screen" problem reported in manual testing.
+    const prevActive = getState().assistant.projects[projectId]?.activeWorkflow;
+    if (prevActive && prevActive.runId) {
+      try {
+        await cancelWorkflow(prevActive.runId, projectId);
+      } catch (err) {
+        // Non-fatal — worst case the old run finishes in the background;
+        // its results won't be auto-committed because the user's HITL focus
+        // has moved on.
+        console.warn(
+          "[startWorkflowFromButton] cancelWorkflow failed:",
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+
+    const userMessage: AssistantMessage = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      role: "user",
+      parts: [{ type: "text", text: userLabel, state: "done" }],
+    };
+    dispatch(commitUserMessage({ projectId, userMessage }));
+
+    const abortController = createProjectAbortController(projectId);
+
+    try {
+      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+
+      await submitMessageToAgent({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        signal: abortController.signal,
+        forceEnterWorkflow: { workflowName, inputData: inputData ?? {} },
+      });
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      const errMsg = err instanceof Error ? err.message : "派发 workflow 失败";
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
+    }
+  }
+);
+
+// ─── HITL confirm/revise via supervisor (unified path) ──
+//
+// Same shape as startWorkflowFromButton but for in-flight workflow HITL
+// gates. The supervisor sees a `<CONFIRM_WORKFLOW>` tag and calls the
+// `resume_workflow` tool, which enqueues a resume job on the engine.
+// Replaces the old direct `/workflow/:runId/confirm` REST call so every
+// user action on a workflow card flows through the same chat pipe.
+
+export const confirmWorkflowFromButton = createAsyncThunk<
+  void,
+  {
+    projectId: string;
+    runId: string;
+    userLabel: string;
+    approved: boolean;
+    feedback?: string;
+  },
+  { state: RootState; dispatch: AppDispatch }
+>(
+  "assistant/confirmWorkflowFromButton",
+  async ({ projectId, runId, userLabel, approved, feedback }, { dispatch, getState }) => {
+    abortProjectStream(projectId);
+    dispatch(ensureProject(projectId));
+
+    const userMessage: AssistantMessage = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      role: "user",
+      parts: [{ type: "text", text: userLabel, state: "done" }],
+    };
+    dispatch(commitUserMessage({ projectId, userMessage }));
+
+    const abortController = createProjectAbortController(projectId);
+
+    try {
+      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+
+      await submitMessageToAgent({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        signal: abortController.signal,
+        confirmWorkflow: { runId, approved, feedback },
+      });
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      const errMsg = err instanceof Error ? err.message : "确认 workflow 失败";
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
+    }
+  }
+);
+
+// ─── Project params "儲存並繼續" (supervisor-owned save) ──
+//
+// User submits the ProjectParamsForm. Nest owns the Java write (server is the
+// source of truth), we only:
+//   1. transition the require_project_params tool part to output-available so
+//      the inline form goes readOnly;
+//   2. append a visible "信息已確認" user bubble;
+//   3. optimistically setDetail so the readOnly form renders with the picked
+//      values (Nest will persist them; if it fails we show a toast);
+//   4. hit submit-message-to-agent with confirmProjectParams payload so Nest
+//      does the Java save + injects <PROJECT_PARAMS_CONFIRMED /> for the LLM.
+
+export const confirmProjectParamsFromForm = createAsyncThunk<
+  void,
+  {
+    projectId: string;
+    toolCallId: string;
+    params: ConfirmProjectParamsPayload;
+    userLabel: string;
+  },
+  { state: RootState; dispatch: AppDispatch }
+>(
+  "assistant/confirmProjectParamsFromForm",
+  async ({ projectId, toolCallId, params, userLabel }, { dispatch, getState }) => {
+    abortProjectStream(projectId);
+    dispatch(ensureProject(projectId));
+
+    const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
+
+    const messagesWithToolResult = current.messages.map((message) =>
+      message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === toolCallId)
+        ? cloneMessageWithToolResult(message, {
+            toolCallId,
+            toolName: "require_project_params",
+            output: { confirmed: true, autoConfirmed: false },
+          })
+        : message
+    );
+
+    const userMessage: AssistantMessage = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      role: "user",
+      parts: [{ type: "text", text: userLabel, state: "done" }],
+    };
+    const nextMessages = [...messagesWithToolResult, userMessage];
+
+    dispatch(commitToolResult({ projectId, messages: nextMessages, toolCallId }));
+
+    const projectDetail = selectCurrentInstance(getState()).detail;
+    dispatch(
+      setProjectDetail({
+        ...(projectDetail ?? {}),
+        aspectRatioType: params.aspectRatioType,
+        chapterLength: params.chapterLength,
+        stylePainting: params.stylePainting,
+        dialogLanguage: params.dialogLanguage,
+        // Client-side only — Java doesn't persist this yet. See
+        // project-params-form.tsx:loadEpisodeCount for the localStorage
+        // mirror that survives reload.
+        ...(params.targetEpisodeCount != null
+          ? { targetEpisodeCount: params.targetEpisodeCount }
+          : {}),
+      })
+    );
+
+    const abortController = createProjectAbortController(projectId);
+
+    try {
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+      await submitMessageToAgent({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        signal: abortController.signal,
+        confirmProjectParams: params,
+      });
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      const errMsg = err instanceof Error ? err.message : "保存项目参数失败";
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
+    }
   }
 );
 
@@ -676,27 +928,13 @@ export const applyToolResult = createAsyncThunk<
 
   try {
     const workspaceContext = buildWorkspaceContext(getState(), projectId);
-    const agentType = getState().assistant.projects[projectId]?.agentType ?? "general";
 
-    const finalMessage = await sendAssistantChat({
+    await submitMessageToAgent({
       projectId,
       messages: nextMessages,
       workspaceContext,
-      agentType,
       signal: abortController.signal,
-      onMessage: (message) => {
-        dispatch(appendStreamChunk({ projectId, message }));
-      },
     });
-
-    if (abortController.signal.aborted) return;
-
-    dispatch(finalizeAssistantMessage({ projectId, message: finalMessage }));
-    await applyWorkspaceMutationEffects(dispatch, projectId, finalMessage);
-
-    // Save to Redis (fire-and-forget)
-    const finalMessages = getState().assistant.projects[projectId]?.messages ?? [];
-    void saveConversation(projectId, finalMessages);
   } catch (error) {
     if (abortController.signal.aborted) return;
     const errMsg = error instanceof Error ? error.message : "AI 请求失败";
@@ -863,6 +1101,96 @@ export const assistantSlice = createSlice({
       };
     },
 
+    /**
+     * Streaming text delta — append to the target message's text part in
+     * place, no REST fetch. Fires once per WS `message_chunk` frame.
+     *
+     * Missing-message guard: if `message_chunk` arrives before we've seen
+     * `message_added` (race — shouldn't normally happen, since the backend
+     * always calls addMessage before the first chunk), drop the delta. The
+     * message will eventually land via the normal add/update path with
+     * full text, so we won't permanently lose content.
+     */
+    appendMessageChunk: (
+      state,
+      action: PayloadAction<{
+        projectId: string;
+        messageId: string;
+        partIndex: number;
+        appendText: string;
+      }>
+    ) => {
+      const { projectId, messageId, partIndex, appendText } = action.payload;
+      if (!appendText) return;
+      const current = state.projects[projectId];
+      if (!current) return;
+      const msgIdx = current.messages.findIndex((m) => m.id === messageId);
+      if (msgIdx < 0) return;
+      const msg = current.messages[msgIdx];
+      const parts = Array.isArray(msg.parts) ? [...msg.parts] : [];
+      // Ensure the target part exists as a text part. If parts is shorter,
+      // grow it with empty text parts up to partIndex (rare but possible
+      // if a text part appears after some other part).
+      while (parts.length <= partIndex) {
+        parts.push({ type: "text", text: "", state: "streaming" });
+      }
+      const existing = parts[partIndex];
+      if (
+        existing &&
+        typeof existing === "object" &&
+        (existing as { type?: unknown }).type === "text"
+      ) {
+        const prev = (existing as { text?: unknown }).text;
+        const prevText = typeof prev === "string" ? prev : "";
+        parts[partIndex] = {
+          ...(existing as object),
+          type: "text",
+          text: prevText + appendText,
+          state: "streaming",
+        } as (typeof parts)[number];
+      } else {
+        // Slot occupied by a non-text part — prepend a new text part instead
+        // of clobbering. Shouldn't happen under normal flow; logged as a
+        // last-resort fallback.
+        parts.splice(partIndex, 0, {
+          type: "text",
+          text: appendText,
+          state: "streaming",
+        });
+      }
+      const nextMessage = { ...msg, parts };
+      const messages = current.messages.map((m, i) => (i === msgIdx ? nextMessage : m));
+      state.projects[projectId] = { ...current, messages };
+    },
+
+    /**
+     * Streaming done — mark each text part of the target message as
+     * `state: "done"` so the UI can drop the caret / enable actions.
+     * Also clears `sending` / `streaming` flags; finalizeTurnOnIdle still
+     * runs on the agent_state transition to handle post-turn side effects.
+     */
+    finalizeMessage: (state, action: PayloadAction<{ projectId: string; messageId: string }>) => {
+      const { projectId, messageId } = action.payload;
+      const current = state.projects[projectId];
+      if (!current) return;
+      const msgIdx = current.messages.findIndex((m) => m.id === messageId);
+      if (msgIdx < 0) return;
+      const msg = current.messages[msgIdx];
+      const parts = Array.isArray(msg.parts)
+        ? msg.parts.map((p) => {
+            if (!p || typeof p !== "object") return p;
+            const part = p as { type?: unknown; state?: unknown };
+            if (part.type === "text" && part.state === "streaming") {
+              return { ...(p as object), state: "done" } as typeof p;
+            }
+            return p;
+          })
+        : msg.parts;
+      const nextMessage = { ...msg, parts };
+      const messages = current.messages.map((m, i) => (i === msgIdx ? nextMessage : m));
+      state.projects[projectId] = { ...current, messages };
+    },
+
     finalizeAssistantMessage: (
       state,
       action: PayloadAction<{ projectId: string; message: AssistantMessage | null }>
@@ -908,25 +1236,31 @@ export const assistantSlice = createSlice({
       action: PayloadAction<{
         projectId: string;
         messages: AssistantMessage[];
-        messageLimit: number;
-        tier: string;
         conversationId: string;
-        retentionDays: number;
       }>
     ) => {
-      const { projectId, messages, messageLimit, tier, conversationId, retentionDays } =
-        action.payload;
+      const { projectId, messages, conversationId } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
+      // Guard against clobbering an in-flight conversation with a late/stale
+      // empty-history response. Only rewrite messages when we actually got
+      // history back, OR when the local conversation is still at the empty
+      // welcome state.
+      const incomingEmpty = messages.length === 0;
+      const localHasContent = current.messages.length > 1;
       const welcomeMsg = createWelcomeMessage();
+      const nextMessages =
+        incomingEmpty && localHasContent
+          ? current.messages
+          : messages.length > 0
+            ? [welcomeMsg, ...messages]
+            : [welcomeMsg];
       state.projects[projectId] = {
         ...current,
-        messages: messages.length > 0 ? [welcomeMsg, ...messages] : [welcomeMsg],
+        messages: nextMessages,
         historyLoaded: true,
-        historyMessageCount: messages.length,
-        messageLimit,
-        tier,
+        historyMessageCount:
+          incomingEmpty && localHasContent ? current.historyMessageCount : messages.length,
         conversationId,
-        retentionDays,
       };
     },
 
@@ -934,15 +1268,6 @@ export const assistantSlice = createSlice({
       const { projectId } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       state.projects[projectId] = { ...current, historyLoaded: true };
-    },
-
-    setMessageLimit: (
-      state,
-      action: PayloadAction<{ projectId: string; messageLimit: number }>
-    ) => {
-      const { projectId, messageLimit } = action.payload;
-      const current = state.projects[projectId] ?? createEmptyConversation();
-      state.projects[projectId] = { ...current, messageLimit };
     },
 
     resetProjectConversation: (state, action: PayloadAction<string>) => {
@@ -955,6 +1280,33 @@ export const assistantSlice = createSlice({
         panelExpanded: current?.panelExpanded ?? false,
         historyLoaded: true,
       };
+    },
+
+    setActiveWorkflow: (
+      state,
+      action: PayloadAction<{
+        projectId: string;
+        runId: string;
+        workflowName: WorkflowName;
+        status: "queued" | "running" | "suspended";
+      }>
+    ) => {
+      const { projectId, runId, workflowName, status } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = {
+        ...current,
+        activeWorkflow: { runId, workflowName, status },
+      };
+    },
+
+    clearActiveWorkflow: (state, action: PayloadAction<{ projectId: string; runId: string }>) => {
+      const { projectId, runId } = action.payload;
+      const current = state.projects[projectId];
+      if (!current?.activeWorkflow) return;
+      // Only clear if this is still the active run — guards against a stale
+      // completion event clobbering a newly-started workflow.
+      if (current.activeWorkflow.runId !== runId) return;
+      state.projects[projectId] = { ...current, activeWorkflow: null };
     },
   },
 });
@@ -972,12 +1324,15 @@ export const {
   commitUserMessage,
   commitToolResult,
   appendStreamChunk,
+  appendMessageChunk,
+  finalizeMessage,
   finalizeAssistantMessage,
   streamError,
   setHistory,
   markHistoryLoaded,
-  setMessageLimit,
   resetProjectConversation,
+  setActiveWorkflow,
+  clearActiveWorkflow,
 } = assistantSlice.actions;
 
 // ─── Selectors ──────────────────────────────────────────

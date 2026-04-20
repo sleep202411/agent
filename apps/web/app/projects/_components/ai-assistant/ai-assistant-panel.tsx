@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrowDown, IconInfoCircle, IconMessagePlus, IconSparkles } from "@tabler/icons-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { IconArrowDown, IconCheck, IconMessagePlus, IconSparkles } from "@tabler/icons-react";
 import { BorderGlow } from "@/components/ui/border-glow";
 import { useTranslations } from "@/src/i18n/i18n";
 import { PanelLayout } from "@/app/projects/_components/panels/panel-layout";
@@ -22,19 +22,17 @@ import {
   applyToolResult,
   loadHistory,
   newConversation,
+  appendStreamChunk,
+  appendMessageChunk,
+  finalizeMessage,
+  finalizeTurnOnIdle,
+  streamError,
 } from "@/src/store/slices/assistantSlice";
+import { ensureSession, closeSession } from "@/src/lib/assistant/chat-session";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogFooter,
-  AlertDialogAction,
-} from "@/components/ui/alert-dialog";
 
 import { quickActionsByAgent } from "./constants";
-import { MessageBubble, PIPELINE_TOOL_NAMES } from "./message-bubble";
+import { MessageBubble } from "./message-bubble";
 import { ChatComposer } from "./chat-composer";
 import { useAutoScroll } from "./use-auto-scroll";
 
@@ -64,11 +62,36 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const selectedAgent = conversation?.agentType ?? "general";
 
   useEffect(() => {
-    if (projectId) {
-      dispatch(ensureProject(projectId));
-      // Load conversation history from server on mount
-      dispatch(loadHistory(projectId));
-    }
+    if (!projectId) return;
+    dispatch(ensureProject(projectId));
+    // Load conversation history from server on mount.
+    dispatch(loadHistory(projectId));
+    // Open the project-scoped WS so every message_added/updated event
+    // flows into Redux for the whole time the panel is mounted.
+    ensureSession(projectId, {
+      onMessage: (message) => {
+        dispatch(appendStreamChunk({ projectId, message }));
+      },
+      onMessageChunk: (messageId, partIndex, appendText) => {
+        dispatch(appendMessageChunk({ projectId, messageId, partIndex, appendText }));
+      },
+      onMessageFinalize: (messageId) => {
+        dispatch(finalizeMessage({ projectId, messageId }));
+      },
+      onAgentState: (state) => {
+        if (state === "idle") {
+          void dispatch(finalizeTurnOnIdle(projectId));
+        } else if (state === "failed") {
+          dispatch(streamError({ projectId, error: "Agent run failed" }));
+        }
+      },
+      onError: (err) => {
+        console.warn("[ai-assistant] chat-session error:", err.message);
+      },
+    });
+    return () => {
+      closeSession(projectId);
+    };
   }, [dispatch, projectId]);
 
   const messages = conversation?.messages ?? EMPTY_MESSAGES;
@@ -78,17 +101,38 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const pendingToolUi = conversation?.pendingToolUi ?? EMPTY_PENDING_TOOLS;
   const error = conversation?.error ?? null;
   const historyMessageCount = conversation?.historyMessageCount ?? 0;
-  const messageLimit = conversation?.messageLimit ?? 50;
-  const tier = conversation?.tier ?? "free";
-  const conversationId = conversation?.conversationId ?? "";
-  const messageCount = messages.filter((m) => m.role === "user").length;
-  const [showUsageInfo, setShowUsageInfo] = useState(false);
 
   useEffect(() => {
     if (!draftInput && editorRef.current && editorRef.current.innerText.trim()) {
       editorRef.current.innerText = "";
     }
   }, [draftInput]);
+
+  // Cross-component editor sync — fired when a workflow card wants to
+  // drop a phrase into the composer (e.g. "我要修改" prefill) without
+  // posting it. setDraft alone doesn't update the contenteditable since
+  // React doesn't manage innerText, so we set it imperatively here and
+  // move the caret to the end so the user can continue typing.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: string; text?: string }>).detail;
+      if (!detail || detail.projectId !== projectId) return;
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.innerText = detail.text ?? "";
+      editor.focus();
+      const selection = window.getSelection();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    };
+    window.addEventListener("ai-assistant:set-draft", handler);
+    return () => window.removeEventListener("ai-assistant:set-draft", handler);
+  }, [projectId]);
 
   const hasPendingTools = pendingToolUi.length > 0;
 
@@ -109,52 +153,37 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     }
     return null;
   }, [pendingToolUi, messages]);
-  // Track which task IDs have been "continued" so we stop showing their card
-  const [continuedTaskIds, setContinuedTaskIds] = useState<Set<string>>(new Set());
-
-  // Find the latest pipeline tool output that has a taskId (for composer task card)
-  // Only show if it's the LAST assistant message with no user message after it
-  // (if user already sent a message after the task, they've moved past it)
-  const activeTask = useMemo(() => {
-    // Find the last message index that is a user message
-    let lastUserMsgIndex = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        lastUserMsgIndex = i;
-        break;
-      }
-    }
-
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg.role !== "assistant") continue;
-
-      // If there's a user message AFTER this assistant message, task was already continued
-      if (lastUserMsgIndex > i) continue;
-
-      for (let j = msg.parts.length - 1; j >= 0; j--) {
-        const part = msg.parts[j];
-        if (!isAssistantToolPart(part)) continue;
-        const toolName = getAssistantToolName(part);
-        if (!PIPELINE_TOOL_NAMES.has(toolName)) continue;
-        // Only show TaskCard for successful output, not errors
-        if (part.state !== "output-available") continue;
-        const rawOutput = part.output ?? (part as unknown as Record<string, unknown>).result;
-        const output = rawOutput as Record<string, unknown> | undefined;
-        const taskId = output?.taskId ? String(output.taskId) : null;
-        if (taskId && !continuedTaskIds.has(taskId)) {
-          return { taskId, toolName };
-        }
-      }
-      break; // Only check the very last assistant message
-    }
-    return null;
-  }, [messages, continuedTaskIds]);
 
   const hasMeaningfulMessages = messages.length > 1;
   const hasUploadingAttachments = attachments.some((a) => a.status === "uploading");
 
-  const renderedMessages = useMemo(() => messages, [messages]);
+  // Suppress messages that will render empty — today the culprit is
+  // `workflow_progress` with `current >= total`, which WorkflowProgressCard
+  // returns null for (the accompanying workflow_completed/suspended/failed
+  // message carries the terminal state, making the 100% progress card a
+  // duplicate). Without this filter those messages still occupy ~16px
+  // of vertical space each (py-2 on the bubble) and pollute the timeline
+  // with empty gaps. Keep the filter narrow so non-empty messages aren't
+  // accidentally dropped.
+  const renderedMessages = useMemo(
+    () =>
+      messages.filter((m) => {
+        if (!Array.isArray(m.parts) || m.parts.length === 0) return true;
+        // Keep the message if ANY part is something other than a "done"
+        // workflow_progress. A message whose ONLY content is a 100% progress
+        // part is the one we want to drop.
+        return m.parts.some((part) => {
+          if (!part || typeof part !== "object") return true;
+          const p = part as { type?: unknown; output?: unknown };
+          if (p.type !== "tool-workflow_progress") return true;
+          const out = p.output as { current?: unknown; total?: unknown } | undefined;
+          const current = typeof out?.current === "number" ? out.current : 0;
+          const total = typeof out?.total === "number" ? out.total : 0;
+          return !(total > 0 && current >= total);
+        });
+      }),
+    [messages]
+  );
 
   // Coarse streaming length — bucketized so we don't trigger scroll on every token
   // Changes roughly every ~80 chars, enough to keep up without thrashing
@@ -175,47 +204,16 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     triggers: [messages.length, sending, streamingBucket],
   });
 
-  const handleTaskContinue = useCallback(
-    (taskId: string, _result: unknown) => {
-      if (!projectId) return;
-      setContinuedTaskIds((prev) => new Set(prev).add(taskId));
-      const text = t("taskContinue");
-      if (editorRef.current) editorRef.current.innerText = text;
-      dispatch(setDraft({ projectId, draft: text }));
-      if (projectId) void dispatch(sendUserMessage(projectId));
-    },
-    [projectId, dispatch, t]
-  );
-
   return (
     <>
       <PanelLayout
+        bodyClassName="p-0"
         icon={
           <div className="flex size-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <IconSparkles className="size-4" />
           </div>
         }
         title={t("title")}
-        description={
-          <span className="inline-flex items-center gap-1.5">
-            <span>
-              {messageCount === 0
-                ? t("usageHintFresh", { max: messageLimit })
-                : messageCount >= messageLimit
-                  ? t("usageHintFull")
-                  : messageCount >= messageLimit * 0.8
-                    ? t("usageHintAlmost", { remaining: messageLimit - messageCount })
-                    : t("usageHintNormal", { current: messageCount, max: messageLimit })}
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowUsageInfo((v) => !v)}
-              className="inline-flex items-center text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-            >
-              <IconInfoCircle className="size-3" />
-            </button>
-          </span>
-        }
         actions={
           hasMeaningfulMessages ? (
             <Button
@@ -236,7 +234,10 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
       >
         <div className="flex h-full flex-col relative">
           {/* Messages area — extra bottom padding so content scrolls behind composer */}
-          <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-6">
+          <div ref={messagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-6 px-4">
+            {/* Project-params gate — shown until the user sets the 4 params the
+                downstream workflows depend on. Blocks message sending so the
+                supervisor never dispatches story_outline without them. */}
             {/* Welcome + quick actions */}
             {!hasMeaningfulMessages ? (
               <div className="space-y-3">
@@ -347,12 +348,9 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
               sending={sending}
               hasPendingTools={hasPendingTools}
               hasUploadingAttachments={hasUploadingAttachments}
-              selectedAgent={selectedAgent}
               error={error}
               editorRef={editorRef}
               activePendingTool={activePendingTool}
-              activeTask={activeTask}
-              onTaskContinue={handleTaskContinue}
               onToolResult={(result: AssistantToolResult) => {
                 if (projectId) void dispatch(applyToolResult({ projectId, result }));
               }}
@@ -360,60 +358,6 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
           </div>
         </div>
       </PanelLayout>
-
-      {/* Usage info dialog */}
-      <AlertDialog open={showUsageInfo} onOpenChange={setShowUsageInfo}>
-        <AlertDialogContent className="sm:max-w-xs">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-sm">{t("usageInfoTitle")}</AlertDialogTitle>
-          </AlertDialogHeader>
-
-          <div className="space-y-3 py-1">
-            {/* Tier badge */}
-            <div className="flex items-center gap-2">
-              <span className="rounded-md bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
-                {tier === "free" ? t("tierFree") : tier}
-              </span>
-            </div>
-
-            {/* Progress */}
-            <div>
-              <div className="flex items-baseline justify-between mb-1.5">
-                <span className="text-xs text-muted-foreground">{t("usageInfoMessages")}</span>
-                <span className="text-sm font-semibold tabular-nums">
-                  {messageCount}
-                  <span className="text-muted-foreground/50 font-normal"> / {messageLimit}</span>
-                </span>
-              </div>
-              <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-primary transition-all duration-500"
-                  style={{ width: `${Math.min(100, (messageCount / messageLimit) * 100)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Session ID */}
-            {conversationId && (
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-muted-foreground/50">Session</span>
-                <span className="font-mono text-muted-foreground/40">{conversationId}</span>
-              </div>
-            )}
-
-            {/* Retention warning */}
-            <p className="text-[11px] leading-relaxed text-muted-foreground/50">
-              {tier === "free" ? t("usageRetentionFree") : t("usageRetentionVip")}
-            </p>
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogAction variant="outline" color="muted" size="sm">
-              {t("usageInfoClose")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

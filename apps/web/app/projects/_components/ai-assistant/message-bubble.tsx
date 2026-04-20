@@ -105,7 +105,18 @@ function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): s
   }
 }
 import { ToolProposalCard } from "./tool-cards/tool-proposal-card";
-import { AssistantFilePreview, PipelineThinkingIndicator } from "./sub-components";
+import { ToolPersonaCard } from "./tool-cards/tool-persona-card";
+import {
+  WorkflowCompletedCard,
+  WorkflowFailedCard,
+  WorkflowProgressCard,
+  WorkflowSuspendedCard,
+} from "./tool-cards/workflow-message-cards";
+import { ToolRequireParamsCard } from "./tool-cards/tool-require-params-card";
+import { ToolCompletionCard } from "./tool-cards/tool-completion-card";
+import { ToolCoverCard } from "./tool-cards/tool-cover-card";
+import { ProjectParamsForm } from "./tool-cards/project-params-form";
+import { AssistantFilePreview } from "./sub-components";
 import { markdownComponents } from "./markdown-components";
 import {
   getAssistantToolName,
@@ -115,55 +126,7 @@ import {
   type AssistantToolInvocation,
   type AssistantToolResult,
 } from "@/src/lib/assistant/assistant-types";
-
-// ─── Pipeline tool config ──────────────────────────────
-
-export const PIPELINE_TOOL_NAMES = new Set([
-  "analyze_text",
-  "map_episodes",
-  "create_episodes_and_assets",
-  "generate_scripts",
-  "generate_storyboard",
-]);
-
-const AGENT_TOOL_LABELS: Record<string, { label: string; steps: string[] }> = {
-  analyze_text: {
-    label: "Analyzing script",
-    steps: [
-      "Extracting characters and aliases",
-      "Identifying scenes and locations",
-      "Generating chapter outline",
-      "Detecting language and style",
-    ],
-  },
-  map_episodes: {
-    label: "Mapping episodes",
-    steps: [
-      "Analyzing narrative arcs",
-      "Distributing chapters to episodes",
-      "Balancing episode lengths",
-    ],
-  },
-  create_episodes_and_assets: { label: "Creating episodes & assets", steps: [] },
-  generate_scripts: {
-    label: "Generating scripts",
-    steps: [
-      "Writing shootable format",
-      "Adding dialogue and actions",
-      "Inserting visual descriptions",
-      "Saving to episodes",
-    ],
-  },
-  generate_storyboard: {
-    label: "Generating storyboard",
-    steps: [
-      "Composing shot descriptions",
-      "Setting camera angles",
-      "Writing video prompts",
-      "Saving to episodes",
-    ],
-  },
-};
+import { isAskPersonaTool } from "@/src/lib/assistant/personas";
 
 // ─── Compact tool indicator ───────────────────────────
 
@@ -259,8 +222,13 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
       >
         <div
           className={cn(
-            "max-w-full overflow-hidden px-2 py-2 text-[13px] leading-relaxed break-words",
-            message.role === "user" ? "rounded-xl bg-muted" : ""
+            "max-w-full overflow-hidden text-[13px] leading-relaxed break-words",
+            // User message bubbles need internal padding for the pill
+            // shape; assistant messages flow into the chat area and rely
+            // on the list's space-y-4 for inter-message spacing — extra
+            // py-2 here just stacks 16px of whitespace between every
+            // chip / card, which looks loose for small compact chips.
+            message.role === "user" ? "rounded-xl bg-muted px-3 py-2" : "w-full px-2"
           )}
         >
           {message.metadata?.attachments?.length ? (
@@ -343,49 +311,6 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
 
               if (isAssistantToolPart(part)) {
                 const toolName = getAssistantToolName(part);
-                const pipelineInfo = AGENT_TOOL_LABELS[toolName];
-
-                if (pipelineInfo) {
-                  const rawOutput =
-                    part.output ?? (part as unknown as Record<string, unknown>).result;
-                  const output =
-                    (part.state === "output-available" || part.state === "output-error") &&
-                    rawOutput
-                      ? (rawOutput as Record<string, unknown>)
-                      : null;
-                  const taskId = output?.taskId ? String(output.taskId) : null;
-
-                  // Completed pipeline task — show as ToolIndicator, not TaskCard
-                  if (
-                    taskId &&
-                    (part.state === "output-available" || part.state === "output-error")
-                  ) {
-                    return (
-                      <ToolIndicator
-                        key={`${message.id}-${part.toolCallId}-${toolName}-done`}
-                        toolName={toolName}
-                        part={part}
-                      />
-                    );
-                  }
-
-                  // In-progress pipeline task — TaskCard rendered in composer
-                  if (taskId) {
-                    return null;
-                  }
-
-                  if (part.state !== "output-available" && part.state !== "output-error") {
-                    return (
-                      <PipelineThinkingIndicator
-                        key={`${message.id}-${part.toolCallId}-thinking`}
-                        label={pipelineInfo.label}
-                        steps={pipelineInfo.steps}
-                      />
-                    );
-                  }
-
-                  return null;
-                }
 
                 // Export tool — render download button (generates docx in browser)
                 if (toolName === "export_all_scripts" && part.state === "output-available") {
@@ -418,6 +343,198 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 ) {
                   // Result summaries rendered outside the message bubble (above)
                   return null;
+                }
+
+                // Project-params preflight — rendered inline in the message
+                // stream. Pending: show the interactive form. Done (user
+                // actually filled the form): show the same form in readOnly
+                // mode so the decision stays anchored where it was made.
+                // Auto-confirmed (params were already set, user did nothing):
+                // render nothing — no decision was made, don't clutter.
+                if (toolName === "require_project_params") {
+                  const state = part.state;
+                  // Extract optional suggestedParams from the tool input —
+                  // supervisor passes these after running analyze_brief so
+                  // the form can prefill + show a recommendation banner.
+                  const input = part.input as
+                    | { suggestedParams?: Record<string, unknown> }
+                    | undefined;
+                  const suggested = input?.suggestedParams as
+                    | {
+                        stylePainting?: string;
+                        chapterLength?: number;
+                        targetEpisodeCount?: number;
+                        dialogLanguage?: string;
+                        aspectRatioType?: string;
+                        reasoning?: string;
+                      }
+                    | undefined;
+                  if (state === "output-available" || state === "approval-responded") {
+                    const out = part.output as { autoConfirmed?: boolean } | undefined;
+                    if (out?.autoConfirmed) return null;
+                    return (
+                      <ProjectParamsForm
+                        key={`${message.id}-${part.toolCallId}-params-readonly`}
+                        readOnly
+                        suggested={suggested}
+                      />
+                    );
+                  }
+                  if (
+                    (state === "input-available" || state === "approval-requested") &&
+                    isLastAssistant
+                  ) {
+                    return (
+                      <ToolRequireParamsCard
+                        key={`${message.id}-${part.toolCallId}-params-form`}
+                        toolCallId={part.toolCallId}
+                        suggested={suggested}
+                        onAutoConfirmed={() => {
+                          onApplyToolResult?.({
+                            toolCallId: part.toolCallId,
+                            toolName: "require_project_params",
+                            output: { confirmed: true, autoConfirmed: true },
+                          });
+                        }}
+                      />
+                    );
+                  }
+                  // Stale pending on older messages, errors, or in-flight
+                  // input-streaming — render nothing to keep history tidy.
+                  // NOTE: if Mastra re-emits the tool call in a restreamed
+                  // turn with new state, this branch handles it.
+                  return null;
+                }
+
+                // New-style workflow lifecycle messages (Phase 2).
+                // Each phase transition = a separate assistant message, so
+                // these render as independent cards and only the current
+                // one mutates (via message_updated) as it progresses.
+                if (toolName === "workflow_progress") {
+                  return (
+                    <WorkflowProgressCard
+                      key={`${message.id}-${part.toolCallId}-wf-progress`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
+                if (toolName === "workflow_suspended") {
+                  return (
+                    <WorkflowSuspendedCard
+                      key={`${message.id}-${part.toolCallId}-wf-suspended`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
+                if (toolName === "workflow_completed") {
+                  return (
+                    <WorkflowCompletedCard
+                      key={`${message.id}-${part.toolCallId}-wf-completed`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
+                if (toolName === "workflow_failed") {
+                  return (
+                    <WorkflowFailedCard
+                      key={`${message.id}-${part.toolCallId}-wf-failed`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
+
+                // invoke_workflow / resume_workflow — the actual workflow
+                // cards (WorkflowProgressCard etc. above) own the rich UI.
+                // Here we render a compact chip (persona / action label) so
+                // the user sees a visible acknowledgement step between the
+                // button click and the first workflow_progress card appearing.
+                // Matches Claude-Code-style tool indicator chips.
+                if (toolName === "invoke_workflow" || toolName === "resume_workflow") {
+                  return (
+                    <ToolIndicator
+                      key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
+                      toolName={toolName}
+                      part={part}
+                    />
+                  );
+                }
+
+                // UI-only ack tools (no execute, fire-and-forget chip). Nest
+                // already did the real work server-side; we just render a
+                // green-check confirmation so the user sees what happened.
+                if (toolName === "mark_project_params_updated") {
+                  const state = part.state;
+                  if (state !== "input-available" && state !== "output-available") {
+                    return null;
+                  }
+                  return (
+                    <ToolCompletionCard
+                      key={`${message.id}-${part.toolCallId}-params-updated`}
+                      label={t("paramsUpdatedChip")}
+                    />
+                  );
+                }
+
+                // analyze_brief — small brief-extraction call made before
+                // the params form. Render a tiny chip showing the project
+                // name / description that was inferred so the user sees
+                // what the LLM picked up.
+                if (toolName === "analyze_brief") {
+                  if (part.state !== "output-available") return null;
+                  const out = part.output as
+                    | { projectMeta?: { name?: string; description?: string } }
+                    | undefined;
+                  const name = out?.projectMeta?.name;
+                  if (!name) return null;
+                  return (
+                    <ToolCompletionCard
+                      key={`${message.id}-${part.toolCallId}-brief`}
+                      label={`✓ 已分析《${name}》`}
+                    />
+                  );
+                }
+
+                // save_project_meta — silent writer. Show a tiny chip only
+                // when it actually wrote something (setFields non-empty),
+                // so auto-skipped calls don't clutter the timeline.
+                if (toolName === "save_project_meta") {
+                  if (part.state !== "output-available") return null;
+                  const out = part.output as { setFields?: string[] } | undefined;
+                  if (!out?.setFields || out.setFields.length === 0) return null;
+                  return (
+                    <ToolCompletionCard
+                      key={`${message.id}-${part.toolCallId}-meta`}
+                      label={`✓ 已设置项目信息（${out.setFields.join(" / ")}）`}
+                    />
+                  );
+                }
+
+                // generate_project_cover — execute-bearing tool. Shows a
+                // pending spinner chip while the agent is generating +
+                // uploading, flips to a green-check chip when done, and
+                // syncs the new imagePath into projectSlice.
+                if (toolName === "generate_project_cover") {
+                  return (
+                    <ToolCoverCard
+                      key={`${message.id}-${part.toolCallId}-cover-${part.state}`}
+                      part={part}
+                    />
+                  );
+                }
+
+                // ask_* persona tools — render the answer with who replied
+                if (isAskPersonaTool(toolName)) {
+                  return (
+                    <ToolPersonaCard
+                      key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
+                      toolName={toolName}
+                      part={part}
+                    />
+                  );
                 }
 
                 // Proposal tools — render interactive card with content preview

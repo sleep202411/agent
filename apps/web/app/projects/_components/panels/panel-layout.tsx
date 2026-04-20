@@ -16,6 +16,7 @@ interface PanelLayoutProps {
   loading?: boolean;
   footer?: React.ReactNode;
   children: React.ReactNode;
+  bodyClassName?: string;
 }
 
 export function PanelLayout({
@@ -28,6 +29,7 @@ export function PanelLayout({
   loading,
   footer,
   children,
+  bodyClassName,
 }: PanelLayoutProps) {
   const animate = useContext(PanelAnimateContext);
   const [expanded, setExpanded] = useState(false);
@@ -81,7 +83,7 @@ export function PanelLayout({
           <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="flex-1 overflow-auto px-4">{children}</div>
+        <div className={cn("flex-1 overflow-auto px-4", bodyClassName)}>{children}</div>
       )}
 
       {/* Footer */}

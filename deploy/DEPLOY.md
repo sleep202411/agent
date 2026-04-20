@@ -12,17 +12,21 @@
 
 ```
 Nginx (80/443)
-  └→ fizzdragon-web (TanStack Start :3000)
+  └→ fizzdragon-web (Next.js :3000)
        └→ fizzdragon-server (NestJS :3001)
-             ├→ Redis (6379) — Script Agent 会话状态缓存
+             ├→ Redis (6379) — 会话 / 聊天消息 / BullMQ / workflow state
+             ├→ fizzdragon-agent (Mastra API :4111) — 监督 agent + /chat/storyos 流 + /workflow/*
+             │    └→ fizzdragon-agent-worker (BullMQ consumer) — 独立进程跑 workflow，共享 libsql 快照卷
              ├→ Java Backend (外部)
-             └→ Alibaba AI API (外部)
+             └→ LLM Provider (DeepSeek / Alibaba DashScope / Azure OpenAI — 按 env 选)
 ```
 
-三个容器通过 Docker/Podman Compose 内部网络通信：
+五个容器通过 Docker/Podman Compose 内部网络通信：
 
 - Web 通过 `http://server:3001` 访问 Server
-- Server 通过 `redis://redis:6379` 访问 Redis
+- Server 通过 `http://agent:4111` 访问 Mastra API
+- Server + Agent + Worker 都通过 `redis://redis:6379` 访问 Redis
+- Agent + Agent-Worker 共享 `agent_data` 卷（libsql workflow 快照 / resume 状态）
 
 ### Redis
 
@@ -150,6 +154,16 @@ docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-serve
   -f apps/server/Dockerfile .
 ```
 
+### 构建 Agent 镜像
+
+Mastra workflow runtime + BullMQ worker。同一个镜像由 compose 的 `agent` 和
+`agent-worker` 两个 service 启动（后者覆盖 CMD 跑 `tsx src/worker.ts`）。
+
+```bash
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-agent:<tag> \
+  -f apps/agent/Dockerfile .
+```
+
 ### 环境变量对照表
 
 | 参数                        | Staging                                       | Prod CN                                   | Prod COM                                        |
@@ -161,6 +175,7 @@ docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-serve
 | `JAVA_CONTENT_URL`          | `https://test.fizzdragon.com/test1`           | `https://fizzdragon.fizzspace.cn/content` | `https://fizzdragon.com/content`                |
 | Web tag                     | `staging`                                     | `production-cn`                           | `production-com`                                |
 | Server tag                  | `staging`                                     | `production-cn`                           | `production-com`                                |
+| Agent tag                   | `staging`                                     | `production-cn`                           | `production-com`                                |
 
 > 环境变量定义在 `apps/web/.env.staging`、`.env.production.cn`、`.env.production.com` 中
 
@@ -292,9 +307,12 @@ docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-web:s
   -f apps/web/Dockerfile .
 docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging \
   -f apps/server/Dockerfile .
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-agent:staging \
+  -f apps/agent/Dockerfile .
 
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
+docker push ghcr.io/fizzdragon-pte-ltd-2/studio-agent:staging
 
 # 2. 服务器部署
 ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
@@ -318,9 +336,12 @@ docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-web:p
   -f apps/web/Dockerfile .
 docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn \
   -f apps/server/Dockerfile .
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-agent:production-cn \
+  -f apps/agent/Dockerfile .
 
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-cn
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn
+docker push ghcr.io/fizzdragon-pte-ltd-2/studio-agent:production-cn
 
 # 2. 服务器部署
 ssh ecs-user@120.26.152.164 "cd /opt/fizzdragon/platform && \
@@ -344,9 +365,12 @@ docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-web:p
   -f apps/web/Dockerfile .
 docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com \
   -f apps/server/Dockerfile .
+docker build --platform linux/amd64 -t ghcr.io/fizzdragon-pte-ltd-2/studio-agent:production-com \
+  -f apps/agent/Dockerfile .
 
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
 docker push ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com
+docker push ghcr.io/fizzdragon-pte-ltd-2/studio-agent:production-com
 
 # 2. 服务器部署
 ssh root@47.237.115.136 "cd /opt/fizzdragon/platform && \
@@ -449,10 +473,13 @@ deploy/
 ```
 ghcr.io/fizzdragon-pte-ltd-2/studio-web:staging
 ghcr.io/fizzdragon-pte-ltd-2/studio-server:staging
+ghcr.io/fizzdragon-pte-ltd-2/studio-agent:staging
 ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-cn
 ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-cn
+ghcr.io/fizzdragon-pte-ltd-2/studio-agent:production-cn
 ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
 ghcr.io/fizzdragon-pte-ltd-2/studio-server:production-com
+ghcr.io/fizzdragon-pte-ltd-2/studio-agent:production-com
 ghcr.io/fizzdragon-pte-ltd-2/redis:7-alpine              # 国内服务器使用（Docker Hub 被墙）
 ```
 

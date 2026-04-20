@@ -15,7 +15,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const LOCALES = ["en-US", "zh-HK"] as const; // non-default locales that carry URL prefix
+const LOCALES = ["en-US", "zh-HK", "zh-CN"] as const; // non-default locales that carry URL prefix
 const DEFAULT_LOCALE = "zh-CN";
 
 export function proxy(request: NextRequest) {

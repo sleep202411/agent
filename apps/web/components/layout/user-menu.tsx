@@ -11,6 +11,7 @@ import {
   IconDeviceDesktop,
   IconSettings,
   IconLogout,
+  IconRosetteDiscountCheckFilled,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useTheme } from "next-themes";
@@ -28,7 +29,9 @@ import { useAppDispatch, useAppSelector } from "@/src/store";
 import { logout } from "@/src/store/slices/authSlice";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
-import { useCredits } from "@/src/hooks/use-user";
+import { useCredits, useUserInfo } from "@/src/hooks/use-user";
+import { useCertificationRoles, useMyCertifications } from "@/src/hooks/use-certification";
+import { AUTH_STATUS } from "@/src/services/certification";
 
 export function UserMenu() {
   const tc = useTranslations("common");
@@ -44,12 +47,21 @@ export function UserMenu() {
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const { data: credits } = useCredits();
+  const { data: userInfo } = useUserInfo();
+  const { data: roleMap } = useCertificationRoles();
+  const { data: myCertifications } = useMyCertifications();
 
   const displayName = user?.nickname || "User";
   const displayEmail = user?.email || "";
   const avatarUrl = user?.avatar || undefined;
   const initials = displayName.slice(0, 1).toUpperCase();
   const userLevel = user?.userLevel || "";
+  const userId = userInfo?.id != null ? String(userInfo.id) : "";
+  const isVerified = userInfo?.authStatus === AUTH_STATUS.APPROVED;
+  const authenticatedRoles = (myCertifications ?? [])
+    .filter((c) => c.authStatus === AUTH_STATUS.APPROVED)
+    .map((c) => roleMap?.[String(c.authRoleId)])
+    .filter((name): name is string => Boolean(name));
 
   return (
     <>
@@ -76,13 +88,24 @@ export function UserMenu() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <p className="truncate text-sm font-semibold">{displayName}</p>
+                {isVerified && (
+                  <IconRosetteDiscountCheckFilled
+                    className="size-4 shrink-0 text-primary"
+                    aria-label={tc("verified")}
+                  />
+                )}
                 {userLevel && (
                   <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                     {userLevel}
                   </span>
                 )}
               </div>
-              {displayEmail && (
+              {userId && (
+                <p className="truncate text-xs text-muted-foreground">
+                  {tc("personalAccount")}：{userId}
+                </p>
+              )}
+              {displayEmail && !userId && (
                 <p className="truncate text-xs text-muted-foreground">{displayEmail}</p>
               )}
             </div>
@@ -93,6 +116,19 @@ export function UserMenu() {
               <IconSettings className="size-4" />
             </Link>
           </div>
+
+          {authenticatedRoles.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-4 pb-4">
+              {authenticatedRoles.map((name) => (
+                <span
+                  key={name}
+                  className="rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground"
+                >
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
 
           <DropdownMenuSeparator />
 
