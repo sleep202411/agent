@@ -28,8 +28,87 @@ services:
       AI_MODEL: ${AI_MODEL:-qwen3-max}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       REDIS_URL: redis://redis:6379
+      # Supervisor chat + workflow endpoints live in the agent container.
+      MASTRA_URL: http://agent:4111
       DISABLE_CONTENT_MODERATION: ${DISABLE_CONTENT_MODERATION:-false}
       AUTH_DISABLED: ${AUTH_DISABLED:-false}
+    depends_on:
+      - redis
+      - agent
+    networks:
+      - app
+
+  # Mastra API — supervisor agent + /chat/storyos stream + /workflow/* + /drafts/*.
+  # NestJS proxies here via MASTRA_URL. Worker process lives in agent-worker,
+  # same image, different command.
+  agent:
+    image: ${AGENT_IMAGE:-fizzdragon-agent}
+    container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-agent
+    restart: always
+    environment:
+      PORT: 4111
+      MASTRA_HOST: 0.0.0.0
+      MASTRA_DB_URL: file:/app/data/mastra.db
+      REDIS_URL: redis://redis:6379
+      JAVA_STUDIO_URL: ${JAVA_STUDIO_URL}
+      JAVA_CONTENT_URL: ${JAVA_CONTENT_URL}
+      # Router / persona provider selection. Leave provider unset to default
+      # to DeepSeek (requires DEEPSEEK_API_KEY). Set STORYOS_*_PROVIDER=azure
+      # or alibaba to override per-env.
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+      ALIBABA_API_KEY: ${ALIBABA_API_KEY:-}
+      ALIBABA_BASE_URL: ${ALIBABA_BASE_URL:-}
+      STORYOS_ROUTER_PROVIDER: ${STORYOS_ROUTER_PROVIDER:-}
+      STORYOS_ROUTER_MODEL: ${STORYOS_ROUTER_MODEL:-}
+      STORYOS_PERSONA_PROVIDER: ${STORYOS_PERSONA_PROVIDER:-}
+      STORYOS_PERSONA_MODEL: ${STORYOS_PERSONA_MODEL:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_RESOURCE_NAME: ${AZURE_OPENAI_RESOURCE_NAME:-}
+      AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-}
+      # Optional — only needed for generate_project_cover tool.
+      REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - agent_data:/app/data
+    depends_on:
+      - redis
+    networks:
+      - app
+
+  # BullMQ consumer — runs the same Mastra workflows as the API but in a
+  # separate process so an API crash doesn't kill in-flight runs. Shares the
+  # libsql volume with `agent` for snapshot / resume state.
+  agent-worker:
+    image: ${AGENT_IMAGE:-fizzdragon-agent}
+    container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-agent-worker
+    restart: always
+    command: ["npx", "tsx", "src/worker.ts"]
+    environment:
+      MASTRA_DB_URL: file:/app/data/mastra.db
+      REDIS_URL: redis://redis:6379
+      JAVA_STUDIO_URL: ${JAVA_STUDIO_URL}
+      JAVA_CONTENT_URL: ${JAVA_CONTENT_URL}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+      ALIBABA_API_KEY: ${ALIBABA_API_KEY:-}
+      ALIBABA_BASE_URL: ${ALIBABA_BASE_URL:-}
+      STORYOS_ROUTER_PROVIDER: ${STORYOS_ROUTER_PROVIDER:-}
+      STORYOS_ROUTER_MODEL: ${STORYOS_ROUTER_MODEL:-}
+      STORYOS_PERSONA_PROVIDER: ${STORYOS_PERSONA_PROVIDER:-}
+      STORYOS_PERSONA_MODEL: ${STORYOS_PERSONA_MODEL:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_RESOURCE_NAME: ${AZURE_OPENAI_RESOURCE_NAME:-}
+      AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-}
+      REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      IMAGE_WORKER_CONCURRENCY: ${IMAGE_WORKER_CONCURRENCY:-1}
+      STORYBOARD_GENERATE_CONCURRENCY: ${STORYBOARD_GENERATE_CONCURRENCY:-4}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - agent_data:/app/data
     depends_on:
       - redis
     networks:
@@ -51,6 +130,7 @@ services:
 
 volumes:
   redis_data:
+  agent_data:
 
 networks:
   app:
