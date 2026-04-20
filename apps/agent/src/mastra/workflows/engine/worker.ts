@@ -16,7 +16,7 @@ import { WorkflowCancelledError } from "./progress";
 import { classifyError } from "../../lib/error-classifier";
 import { publishWorkflowFailed } from "../../lib/workflow-messages";
 import type { ResumeJobData, RunJobData } from "./types";
-import type { WorkflowName } from "../../lib/redis-keys";
+import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
 import type { StoryosContext } from "../../lib/workspace-client";
 
 export type WorkflowEngineWorker = Worker<StoryosJobData, unknown, StoryosJobName>;
@@ -180,9 +180,14 @@ async function applyResult(
   if (r.status === "failed") {
     const message = formatWorkflowError(r.error);
     const classification = classifyError(r.error ?? message);
+    // When the outer workflow is a composition (e.g. main_flow) and the
+    // failure came from a sub-workflow step, use the sub-workflow's name
+    // on the failed card so the user's "重试" button re-invokes that
+    // specific phase rather than the whole pipeline from scratch.
+    const failingWorkflow = resolveFailingWorkflow(r.error, workflowName);
     await setStatus(runId, "failed", { error: message, errorClassification: classification });
     await clearCancel(runId);
-    await finalizeFailed(runId, workflowName, projectId, message, classification);
+    await finalizeFailed(runId, failingWorkflow, projectId, message, classification);
     return;
   }
   // tripwire / paused / anything unexpected — log and mark failed so the run
@@ -207,9 +212,48 @@ async function applyError(
   }
   const message = formatWorkflowError(err);
   const classification = classifyError(err);
+  const failingWorkflow = resolveFailingWorkflow(err, workflowName);
   await setStatus(runId, "failed", { error: message, errorClassification: classification });
   await clearCancel(runId);
-  await finalizeFailed(runId, workflowName, projectId, message, classification);
+  await finalizeFailed(runId, failingWorkflow, projectId, message, classification);
+}
+
+/**
+ * When the outer workflow is a composition like main_flow, a step failure
+ * bubbles up with a `stepId` pointing at the sub-workflow that actually
+ * blew up. Surface that as the failed card's workflowName so the "重试"
+ * button re-invokes only that phase (storyboard_phase etc) — retrying
+ * main_flow from scratch would re-run every already-committed phase
+ * and waste LLM tokens. If no stepId matches a known workflow, fall
+ * back to the outer name.
+ */
+function resolveFailingWorkflow(err: unknown, fallback: WorkflowName): WorkflowName {
+  if (!err || typeof err !== "object") return fallback;
+  const e = err as Record<string, unknown>;
+  const candidates: unknown[] = [e.stepId, e.stepPath];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") {
+      if ((WORKFLOW_NAMES as readonly string[]).includes(candidate)) {
+        return candidate as WorkflowName;
+      }
+    }
+    if (Array.isArray(candidate)) {
+      // Look for the deepest step that matches a known workflow name —
+      // e.g. stepPath might be ["main_flow", "storyboard_phase",
+      // "generate"], we want "storyboard_phase".
+      for (let i = candidate.length - 1; i >= 0; i--) {
+        const v = candidate[i];
+        if (
+          typeof v === "string" &&
+          v !== fallback &&
+          (WORKFLOW_NAMES as readonly string[]).includes(v)
+        ) {
+          return v as WorkflowName;
+        }
+      }
+    }
+  }
+  return fallback;
 }
 
 /**

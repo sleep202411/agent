@@ -92,6 +92,14 @@ export const StoryboardPhaseOutputSchema = z.object({
   message: z.string(),
 });
 
+/**
+ * Per-episode storyboard accumulated during generateStep. `rows` defaults
+ * to `[]` so a partial entry persisted by a previous run (e.g. Mastra
+ * saved state after one episode had been added to `generated` but before
+ * its rows were populated) still parses cleanly on the next start. An
+ * empty `rows` just means "nothing to commit for this episode" — the
+ * commit step's summarize already handles that outcome.
+ */
 const StateSchema = z.object({
   generated: z
     .array(
@@ -99,7 +107,7 @@ const StateSchema = z.object({
         clientRefId: z.string(),
         episodeId: z.string(),
         title: z.string(),
-        rows: z.array(StoryboardRow),
+        rows: z.array(StoryboardRow).default([]),
       })
     )
     .default([]),
