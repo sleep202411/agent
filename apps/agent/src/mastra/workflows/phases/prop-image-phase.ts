@@ -57,6 +57,7 @@ const dispatchStep = createStep({
       name: string;
       description?: string;
       prompt?: string;
+      propImgPath?: string[];
     };
     const props: ResolvedProp[] = (listed.list ?? []).filter(
       (p): p is ResolvedProp => p.id != null && typeof p.name === "string"
@@ -72,6 +73,11 @@ const dispatchStep = createStep({
       const assetId = String(prop.id);
       const prompt = (prop.prompt ?? prop.description ?? "").trim();
       if (!prompt) continue;
+      // Skip props that already have an imgPath (see role-image-phase
+      // for rationale — avoid re-spending credits + inflating total).
+      if (Array.isArray(prop.propImgPath) && prop.propImgPath.some((p) => p && p.trim())) {
+        continue;
+      }
       await setAssetImageStatus(ctx.projectId, "prop", assetId, { status: "pending" });
       await queue.add(
         "generate",

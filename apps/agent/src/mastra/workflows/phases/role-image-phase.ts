@@ -73,6 +73,7 @@ const dispatchStep = createStep({
       name: string;
       description?: string;
       prompt?: string;
+      roleImgPath?: string[];
     };
     const roles: ResolvedRole[] = (listed.list ?? []).filter(
       (r): r is ResolvedRole => r.id != null && typeof r.name === "string"
@@ -88,6 +89,13 @@ const dispatchStep = createStep({
       const assetId = String(role.id);
       const prompt = (role.prompt ?? role.description ?? "").trim();
       if (!prompt) continue;
+      // Skip roles that already have an imgPath — regenerating would just
+      // overwrite an existing image, cost Java credits, and inflate the
+      // progress card's "total" with items the user doesn't actually care
+      // about on THIS run.
+      if (Array.isArray(role.roleImgPath) && role.roleImgPath.some((p) => p && p.trim())) {
+        continue;
+      }
       await setAssetImageStatus(ctx.projectId, "role", assetId, { status: "pending" });
       await queue.add(
         "generate",

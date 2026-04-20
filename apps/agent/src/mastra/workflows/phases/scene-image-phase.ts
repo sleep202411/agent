@@ -62,6 +62,7 @@ const dispatchStep = createStep({
       name: string;
       description?: string;
       prompt?: string;
+      sceneImgPath?: string[];
     };
     const scenes: ResolvedScene[] = (listed.list ?? []).filter(
       (s): s is ResolvedScene => s.id != null && typeof s.name === "string"
@@ -77,6 +78,11 @@ const dispatchStep = createStep({
       const assetId = String(scene.id);
       const prompt = (scene.prompt ?? scene.description ?? "").trim();
       if (!prompt) continue;
+      // Skip scenes that already have an imgPath (see role-image-phase
+      // for rationale — avoid re-spending credits + inflating total).
+      if (Array.isArray(scene.sceneImgPath) && scene.sceneImgPath.some((p) => p && p.trim())) {
+        continue;
+      }
       await setAssetImageStatus(ctx.projectId, "scene", assetId, { status: "pending" });
       await queue.add(
         "generate",
