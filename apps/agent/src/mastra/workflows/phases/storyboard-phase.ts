@@ -464,13 +464,155 @@ function injectMentions(map: MentionMap, text: string): string {
 }
 
 /**
- * Scene column is single-value: if the raw scene name matches a worldscene
- * roster entry, render as a mention; else return verbatim.
+ * Resolve a scene name to its Java worldscene id. Mirrors the frontend's
+ * `ensureSceneIdByName` in storyboard-save.ts: cache hit → return id; miss
+ * → POST `/api/user/world/create/worldscene` and cache the new id.
+ *
+ * `cache` is keyed by `name.toLowerCase().trim()` and is mutated in place
+ * so repeated scene names within a run reuse the same id.
  */
-function buildSceneMention(map: MentionMap, sceneName: string): string {
-  const entry = map.get(sceneName.toLowerCase().trim());
-  if (entry && entry.type === "scene") return buildMentionTag(entry);
-  return sceneName;
+async function resolveSceneId(
+  ctx: import("../../lib/workspace-client").StoryosContext,
+  sceneName: string,
+  cache: Map<string, string>
+): Promise<string> {
+  const key = sceneName.toLowerCase().trim();
+  if (!key) return "";
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const worldId = ctx.worldId ?? "";
+  if (!worldId) return "";
+
+  try {
+    const created = await javaRequest<{ id?: string | number } | null>(
+      ctx,
+      "/api/user/world/create/worldscene",
+      {
+        data: {
+          worldId,
+          name: sceneName.trim(),
+          description: "",
+          prompt: "",
+        },
+      }
+    );
+    const id = String((created as { id?: string | number } | null)?.id ?? "");
+    if (id) cache.set(key, id);
+    return id;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Post-save backfill of the scene column.
+ *
+ * `/api/ai/chat/save/storyboard` creates the shot rows but the scene cell
+ * is left holding raw text. Java's UI reads the scene cell as
+ * `shotValue.value = worldscene id` with `presetColumnKey: "scene"` +
+ * `sceneId/sceneName/worldId` metadata — so the chip can render name +
+ * thumbnail. This mirrors the frontend post-save pass in
+ * `storyboard-save.ts::saveStoryboardTableWithBackfill`.
+ *
+ * Soft-failing: the shot rows are already persisted, backfill degrades
+ * UX (no linkified chip) but never loses data.
+ */
+async function backfillSceneColumn(
+  ctx: import("../../lib/workspace-client").StoryosContext,
+  episodeId: string,
+  rows: z.infer<typeof StoryboardRow>[],
+  sceneIdCache: Map<string, string>
+): Promise<{ ok: number; failed: number; skipped: number }> {
+  const worldId = ctx.worldId ?? "";
+  if (!worldId) return { ok: 0, failed: 0, skipped: rows.length };
+
+  let sceneColumnId = "";
+  try {
+    const columns = await javaRequest<
+      Array<{ id?: string | number; presetColumnKey?: string; columnType?: string }>
+    >(ctx, "/api/user/shotColumn/list", { data: { storyBoardId: episodeId } });
+    const sceneColumn = (columns ?? []).find(
+      (c) =>
+        c.presetColumnKey === "scene" ||
+        (typeof c.columnType === "string" && c.columnType.toUpperCase() === "SCENE")
+    );
+    sceneColumnId = sceneColumn?.id != null ? String(sceneColumn.id) : "";
+  } catch {
+    return { ok: 0, failed: 0, skipped: rows.length };
+  }
+  if (!sceneColumnId) return { ok: 0, failed: 0, skipped: rows.length };
+
+  type PersistedShot = {
+    shotId?: string | number;
+    shotValues?: Array<{ presetColumnKey?: string; value?: string }>;
+  };
+  let shots: PersistedShot[] = [];
+  try {
+    const resp = await javaRequest<{ list?: PersistedShot[] }>(ctx, "/api/user/shot/queryPage", {
+      data: {
+        storyBoardId: episodeId,
+        page: 1,
+        pageSize: 999,
+        shotIds: [],
+        presetColumnKeys: [],
+      },
+    });
+    shots = resp?.list ?? [];
+  } catch {
+    return { ok: 0, failed: 0, skipped: rows.length };
+  }
+
+  // Index by shot_no so we match rows to shotIds even if Java returns
+  // them out of input order.
+  const shotIdByNo = new Map<string, string>();
+  for (const shot of shots) {
+    const shotNo = String(
+      shot.shotValues?.find((v) => v.presetColumnKey === "shot_no")?.value ?? ""
+    ).trim();
+    if (shotNo && shot.shotId != null) {
+      shotIdByNo.set(shotNo, String(shot.shotId));
+    }
+  }
+
+  let ok = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    if (!row.scene) {
+      skipped += 1;
+      continue;
+    }
+    const shotNo = row.shot_no && row.shot_no.trim() ? row.shot_no.trim() : String(idx + 1);
+    const shotId = shotIdByNo.get(shotNo);
+    if (!shotId) {
+      failed += 1;
+      continue;
+    }
+    try {
+      const sceneId = await resolveSceneId(ctx, row.scene, sceneIdCache);
+      if (!sceneId) {
+        failed += 1;
+        continue;
+      }
+      await javaRequest(ctx, "/api/user/shotValue/input", {
+        data: {
+          shotId,
+          shotColumnId: sceneColumnId,
+          value: sceneId,
+          presetColumnKey: "scene",
+          sceneId,
+          sceneName: row.scene,
+          worldId,
+        },
+      });
+      ok += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { ok, failed, skipped };
 }
 
 /**
@@ -534,6 +676,13 @@ const applyDecisionStep = createStep({
     // frontend renders them as clickable chips with thumbnails.
     const mentionMap = await buildMentionMap(ctx);
 
+    // Scene name → worldscene id cache, shared across all episodes in this
+    // run. Pre-seed from the roster so we only hit Java for new names.
+    const sceneIdCache = new Map<string, string>();
+    for (const [key, entry] of mentionMap.entries()) {
+      if (entry.type === "scene" && entry.id) sceneIdCache.set(key, entry.id);
+    }
+
     const accepted = inputData.acceptedClientRefIds
       ? new Set(inputData.acceptedClientRefIds)
       : null;
@@ -561,12 +710,14 @@ const applyDecisionStep = createStep({
 
       const rows2d = d.data.rows.map((r, idx) => {
         // Map StoryboardRow → snake_case columns Java expects. Auto-assign
-        // shot_no from index (LLM may skip or duplicate). Inject mentions
-        // into scene / description / image_prompt / video_prompt.
+        // shot_no from index (LLM may skip or duplicate). scene column gets
+        // plain name here; backfillSceneColumn overwrites it with the
+        // worldscene id + metadata after save. description / image_prompt /
+        // video_prompt get mention injection for inline chip rendering.
         const shotNo = r.shot_no && r.shot_no.trim() ? r.shot_no : String(idx + 1);
         return [
           shotNo,
-          buildSceneMention(mentionMap, r.scene),
+          r.scene,
           injectMentions(mentionMap, r.description),
           injectMentions(mentionMap, r.image_prompt),
           injectMentions(mentionMap, r.video_prompt ?? ""),
@@ -588,6 +739,30 @@ const applyDecisionStep = createStep({
           },
           timeoutMs: 300_000,
         });
+
+        // Backfill scene column with worldscene ids. The save/storyboard
+        // call above leaves scene cells as plain text; the UI needs
+        // `shotValue.value = sceneId` with preset metadata. Soft-failing —
+        // shots are already persisted, missing scene links just degrade UX.
+        try {
+          const sceneBackfill = await backfillSceneColumn(
+            ctx,
+            d.data.episodeId,
+            d.data.rows,
+            sceneIdCache
+          );
+          if (sceneBackfill.failed > 0) {
+            console.warn(
+              `[storyboard_phase] scene backfill ep ${d.data.episodeId}: ok=${sceneBackfill.ok} failed=${sceneBackfill.failed} skipped=${sceneBackfill.skipped}`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `[storyboard_phase] scene backfill error ep ${d.data.episodeId}:`,
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+
         await markDraftCommitted(runId, d.clientRefId, d.data.episodeId);
         committed.push({
           episodeId: d.data.episodeId,
