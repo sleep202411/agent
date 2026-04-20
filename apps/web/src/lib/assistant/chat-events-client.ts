@@ -111,7 +111,7 @@ function buildUrl(conversationId: string, workspaceId?: string): string {
   // location block proxies the Upgrade header to Nest. In local dev the
   // Next.js dev server does NOT proxy WS upgrades (only HTTP via
   // next.config rewrites), so we hit Nest directly on :3001. Matches the
-  // handling in workflow-events-client.ts for the sibling gateway.
+  // dev-vs-prod WS host handling lives here (no sibling gateway anymore).
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   const isDev =
     window.location.hostname === "localhost" &&

@@ -39,7 +39,7 @@ import {
   StoryOutlineResult,
   WORKFLOW_LABEL_KEYS,
   WORKFLOW_PERSONA,
-} from "./tool-workflow-card";
+} from "./workflow-shared";
 import type { AssistantToolInvocation } from "@/src/lib/assistant/assistant-types";
 import type { Draft, WorkflowName } from "@/src/lib/workflow/workflow-client";
 import type {
