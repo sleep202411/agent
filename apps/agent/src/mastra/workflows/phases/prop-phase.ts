@@ -30,7 +30,6 @@ import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
   publishWorkflowProgress,
-  publishWorkflowStarted,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
 
@@ -151,17 +150,8 @@ const resolveInputStep = createStep({
     const propsRoster = record.outline.props ?? [];
     if (propsRoster.length === 0) {
       // Not an error — story may not warrant any story-relevant props.
-      await publishWorkflowStarted(ctx.projectId, runId, "prop_phase", {
-        plannedCount: 0,
-        summary: "故事里没有剧情级道具，将跳过本阶段。",
-      });
       return { worldId: inputData.worldId, props: [] };
     }
-
-    await publishWorkflowStarted(ctx.projectId, runId, "prop_phase", {
-      plannedCount: propsRoster.length,
-      summary: `道具设计师将扩展 ${propsRoster.length} 个道具。`,
-    });
 
     const props: z.infer<typeof PropDesignSchema>[] = [];
     for (let i = 0; i < propsRoster.length; i++) {

@@ -1,11 +1,10 @@
 /**
- * Schemas for the five assistant-message payloads the server emits during a
+ * Schemas for the four assistant-message payloads the server emits during a
  * workflow run. Each becomes a synthetic `tool-<name>` part on an
  * AssistantMessage written to the chat message store; the client renders
  * them as generative-UI cards.
  *
  * Stream model (matches oii.ai):
- *   - started    — fires once when the workflow is enqueued
  *   - progress   — one per macro-phase ("planning" before HITL, "committing"
  *                  after); the message id is reused and `updateMessage` is
  *                  called as the phase advances, so the card streams like
@@ -35,16 +34,6 @@ const BaseWorkflowOutput = z.object({
   runId: z.string().min(1),
   workflowName: WorkflowNameEnum,
 });
-
-// ─── started ──────────────────────────────────────────────────────────
-
-export const WorkflowStartedOutputSchema = BaseWorkflowOutput.extend({
-  /** Expected number of items the workflow will produce (roles, scenes, etc.). */
-  plannedCount: z.number().int().nonnegative().optional(),
-  /** One-line caption shown under the persona header. */
-  summary: z.string().optional(),
-});
-export type WorkflowStartedOutput = z.infer<typeof WorkflowStartedOutputSchema>;
 
 // ─── progress ─────────────────────────────────────────────────────────
 
@@ -148,7 +137,6 @@ export type WorkflowFailedOutput = z.infer<typeof WorkflowFailedOutputSchema>;
 // ─── tool-name union (client-side router) ─────────────────────────────
 
 export const WORKFLOW_MESSAGE_TOOL_NAMES = [
-  "workflow_started",
   "workflow_progress",
   "workflow_suspended",
   "workflow_completed",

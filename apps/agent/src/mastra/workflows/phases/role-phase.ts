@@ -31,7 +31,6 @@ import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
   publishWorkflowProgress,
-  publishWorkflowStarted,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
 
@@ -154,12 +153,6 @@ const resolveInputStep = createStep({
     if (cast.length === 0) {
       throw new Error("role_phase: story outline has empty cast roster");
     }
-
-    // Emit the "workflow started" card now that we know the planned count.
-    await publishWorkflowStarted(ctx.projectId, runId, "role_phase", {
-      plannedCount: cast.length,
-      summary: `角色设计师将扩展 ${cast.length} 位角色。`,
-    });
 
     const characters: z.infer<typeof CharacterSchema>[] = [];
     for (let i = 0; i < cast.length; i++) {

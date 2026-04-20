@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Renderers for the five workflow lifecycle message types the agent emits:
- *   workflow_started / workflow_progress / workflow_suspended /
- *   workflow_completed / workflow_failed
+ * Renderers for the four workflow lifecycle message types the agent emits:
+ *   workflow_progress / workflow_suspended / workflow_completed /
+ *   workflow_failed
  *
  * Each card is a pure function of its tool part's `output` field — no WS
  * subscriptions, no status polling, no in-place mutation across messages.
@@ -170,22 +170,6 @@ function ProgressBar({
       />
     </div>
   );
-}
-
-// ─── workflow_started ─────────────────────────────────────────────────
-
-/**
- * Deliberately renders nothing. The workflow emits both a `workflow_started`
- * message and its first `workflow_progress` message at the top of execution,
- * and progress already carries persona + planned count + running label — so
- * rendering started too creates a duplicate card (two identical "规划中
- * 0/N · 拆解素材…" rows above the actual progress card). We keep the schema
- * and emit point for now (cheaper than removing from every workflow and
- * useful if we later want a distinct queued → running transition), but
- * suppress UI so the stream starts cleanly with progress.
- */
-export function WorkflowStartedCard(_props: { part: AssistantToolInvocation }) {
-  return null;
 }
 
 // ─── workflow_progress (mutates in place) ─────────────────────────────

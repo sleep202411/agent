@@ -11,7 +11,6 @@ import {
   WorkflowCompletedOutputSchema,
   WorkflowFailedOutputSchema,
   WorkflowProgressOutputSchema,
-  WorkflowStartedOutputSchema,
   WorkflowSuspendedOutputSchema,
   type WorkflowCompletedOutput,
   type WorkflowFailedOutput,
@@ -19,7 +18,6 @@ import {
   type WorkflowMessageToolName,
   type WorkflowName,
   type WorkflowProgressOutput,
-  type WorkflowStartedOutput,
   type WorkflowSuspendedOutput,
 } from "@repo/shared";
 import {
@@ -32,9 +30,6 @@ import {
 // ─── Message id shapes (deterministic so publishers can idempotently
 //     add-or-update) ───────────────────────────────────────────────────
 
-function startedId(runId: string): string {
-  return `wf_${runId}_started`;
-}
 function progressId(runId: string, phase: WorkflowMacroPhase): string {
   return `wf_${runId}_progress_${phase}`;
 }
@@ -73,23 +68,6 @@ function buildMessage(
 }
 
 // ─── Public emitters ─────────────────────────────────────────────────
-
-export async function publishWorkflowStarted(
-  projectId: string,
-  runId: string,
-  workflowName: WorkflowName,
-  extra: Omit<WorkflowStartedOutput, "runId" | "workflowName"> = {}
-): Promise<void> {
-  const output = WorkflowStartedOutputSchema.parse({
-    runId,
-    workflowName,
-    ...extra,
-  });
-  await addChatMessage(
-    projectId,
-    buildMessage(startedId(runId), "workflow_started", output, runId)
-  );
-}
 
 /**
  * Emit or mutate the progress message for a given macro-phase.

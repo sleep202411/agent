@@ -34,7 +34,6 @@ import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
   publishWorkflowProgress,
-  publishWorkflowStarted,
   publishWorkflowSuspended,
 } from "../lib/workflow-messages";
 
@@ -122,10 +121,6 @@ const planScenesStep = createStep({
         current: 0,
         total: inputData.sceneCount,
         label: "场景设计师正在构思场景…",
-      });
-      await publishWorkflowStarted(ctx.projectId, runId, "scene_design", {
-        plannedCount: inputData.sceneCount,
-        summary: `场景设计师将设计 ${inputData.sceneCount} 个场景。`,
       });
       await publishWorkflowProgress(ctx.projectId, runId, "scene_design", "planning", {
         current: 0,

@@ -27,7 +27,6 @@ import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
   publishWorkflowProgress,
-  publishWorkflowStarted,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
 
@@ -150,11 +149,6 @@ const resolveInputStep = createStep({
     if (settings.length === 0) {
       throw new Error("scene_phase: story outline has empty settings roster");
     }
-
-    await publishWorkflowStarted(ctx.projectId, runId, "scene_phase", {
-      plannedCount: settings.length,
-      summary: `场景设计师将扩展 ${settings.length} 个场景。`,
-    });
 
     const scenes: z.infer<typeof SceneDesignSchema>[] = [];
     for (let i = 0; i < settings.length; i++) {

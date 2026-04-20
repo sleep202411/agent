@@ -110,7 +110,6 @@ import {
   WorkflowCompletedCard,
   WorkflowFailedCard,
   WorkflowProgressCard,
-  WorkflowStartedCard,
   WorkflowSuspendedCard,
 } from "./tool-cards/workflow-message-cards";
 import { ToolRequireParamsCard } from "./tool-cards/tool-require-params-card";
@@ -388,14 +387,6 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 // Each phase transition = a separate assistant message, so
                 // these render as independent cards and only the current
                 // one mutates (via message_updated) as it progresses.
-                if (toolName === "workflow_started") {
-                  return (
-                    <WorkflowStartedCard
-                      key={`${message.id}-${part.toolCallId}-wf-started`}
-                      part={part}
-                    />
-                  );
-                }
                 if (toolName === "workflow_progress") {
                   return (
                     <WorkflowProgressCard
@@ -434,7 +425,7 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 }
 
                 // invoke_workflow / resume_workflow — the actual workflow
-                // cards (WorkflowStartedCard etc. above) own the rich UI.
+                // cards (WorkflowProgressCard etc. above) own the rich UI.
                 // Here we render a compact chip (persona / action label) so
                 // the user sees a visible acknowledgement step between the
                 // button click and the first workflow_progress card appearing.

@@ -37,7 +37,6 @@ import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
   publishWorkflowProgress,
-  publishWorkflowStarted,
   publishWorkflowSuspended,
 } from "../lib/workflow-messages";
 
@@ -103,10 +102,6 @@ const planRolesStep = createStep({
         current: 0,
         total: inputData.roleCount,
         label: "设计师正在构思角色…",
-      });
-      await publishWorkflowStarted(ctx.projectId, runId, "role_design", {
-        plannedCount: inputData.roleCount,
-        summary: `角色设计师将设计 ${inputData.roleCount} 个角色。`,
       });
       await publishWorkflowProgress(ctx.projectId, runId, "role_design", "planning", {
         current: 0,

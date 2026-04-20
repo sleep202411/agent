@@ -24,7 +24,6 @@ import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
   publishWorkflowProgress,
-  publishWorkflowStarted,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
 
@@ -227,10 +226,6 @@ const generateStep = createStep({
       current: 0,
       total,
       label: startLabel,
-    });
-    await publishWorkflowStarted(ctx.projectId, runId, "storyboard_phase", {
-      plannedCount: total,
-      summary: startLabel,
     });
     await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "planning", {
       current: 0,

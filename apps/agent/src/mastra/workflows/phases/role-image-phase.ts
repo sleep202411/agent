@@ -21,11 +21,7 @@ import { appendEvent, reportProgress, throwIfCancelled } from "../engine";
 import { getImageQueue, buildImageJobId } from "../engine/image-queue";
 import { getProjectAssetImageStatus, setAssetImageStatus } from "../../lib/asset-image-status";
 import { getContext, javaRequest } from "../../lib/workspace-client";
-import {
-  publishWorkflowCompleted,
-  publishWorkflowProgress,
-  publishWorkflowStarted,
-} from "../../lib/workflow-messages";
+import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
 
 const PERSONA = "角色设计师";
 const POLL_INTERVAL_MS = 2_000;
@@ -126,10 +122,6 @@ const dispatchStep = createStep({
       current: 0,
       total: dispatched.length,
       label: `派发 ${dispatched.length} 张图任务`,
-    });
-    await publishWorkflowStarted(ctx.projectId, runId, "role_image_phase", {
-      plannedCount: dispatched.length,
-      summary: `角色设计师派发了 ${dispatched.length} 张主图任务。`,
     });
     await publishWorkflowProgress(ctx.projectId, runId, "role_image_phase", "committing", {
       current: 0,

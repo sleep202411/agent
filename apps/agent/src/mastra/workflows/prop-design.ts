@@ -27,7 +27,6 @@ import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
   publishWorkflowProgress,
-  publishWorkflowStarted,
   publishWorkflowSuspended,
 } from "../lib/workflow-messages";
 
@@ -118,10 +117,6 @@ const planPropsStep = createStep({
         current: 0,
         total: inputData.propCount,
         label: "道具设计师正在构思道具…",
-      });
-      await publishWorkflowStarted(ctx.projectId, runId, "prop_design", {
-        plannedCount: inputData.propCount,
-        summary: `道具设计师将设计 ${inputData.propCount} 个道具。`,
       });
       await publishWorkflowProgress(ctx.projectId, runId, "prop_design", "planning", {
         current: 0,

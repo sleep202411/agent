@@ -28,7 +28,6 @@ import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
   publishWorkflowProgress,
-  publishWorkflowStarted,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
 
@@ -148,10 +147,6 @@ const planStep = createStep({
       current: 0,
       total: inputData.targetEpisodeCount,
       label: startLabel,
-    });
-    await publishWorkflowStarted(ctx.projectId, runId, "episode_phase", {
-      plannedCount: inputData.targetEpisodeCount,
-      summary: `分集策划师将规划 ${inputData.targetEpisodeCount} 集大纲。`,
     });
     await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "planning", {
       current: 0,

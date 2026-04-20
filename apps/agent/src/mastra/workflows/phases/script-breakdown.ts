@@ -27,11 +27,7 @@ async function narrate(runId: string, text: string): Promise<void> {
 }
 import { putOutline, type StoryOutline } from "../../lib/outline";
 import { getContext } from "../../lib/workspace-client";
-import {
-  publishWorkflowCompleted,
-  publishWorkflowProgress,
-  publishWorkflowStarted,
-} from "../../lib/workflow-messages";
+import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -185,10 +181,6 @@ const analyzeStep = createStep({
         runId,
         "我会先按叙事节奏划章、列出角色名册和场景名册——这是后续角色/分集/剧本/分镜的共同基底。"
       );
-      await publishWorkflowStarted(ctx.projectId, runId, "story_outline", {
-        plannedCount: 1,
-        summary: startLabel,
-      });
       await publishWorkflowProgress(ctx.projectId, runId, "story_outline", "planning", {
         current: 0,
         total: 1,
