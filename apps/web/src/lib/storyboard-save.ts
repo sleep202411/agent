@@ -1314,7 +1314,11 @@ async function ensureSceneIdByName(
     return String(existing.id);
   }
 
-  const created = await backendApi.post<Asset>("/api/user/world/create/worldscene", {
+  // Java's `/create/worldscene` returns the new scene id as a bare
+  // string in `data` (body = `{ success: true, data: "1413" }`), so
+  // `backendApi` hands us back the raw string. Older Studio builds
+  // returned `{ id, ... }`; handle both shapes for compatibility.
+  const created = await backendApi.post<Asset | string>("/api/user/world/create/worldscene", {
     data: {
       worldId,
       name: normalizedName,
@@ -1325,9 +1329,13 @@ async function ensureSceneIdByName(
     },
   });
 
-  const id = String(created?.id ?? created?.value ?? "");
+  const id =
+    typeof created === "string" || typeof created === "number"
+      ? String(created)
+      : String(created?.id ?? created?.value ?? "");
   if (id) {
-    sceneMap.set(normalizedName, { ...created, id, name: normalizedName });
+    const base = typeof created === "object" && created !== null ? created : ({} as Asset);
+    sceneMap.set(normalizedName, { ...base, id, name: normalizedName });
   }
   return id;
 }

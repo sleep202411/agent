@@ -676,19 +676,23 @@ async function resolveSceneId(
   if (!worldId) return "";
 
   try {
-    const created = await javaRequest<{ id?: string | number } | null>(
-      ctx,
-      "/api/user/world/create/worldscene",
-      {
-        data: {
-          worldId,
-          name: sceneName.trim(),
-          description: "",
-          prompt: "",
-        },
-      }
-    );
-    const id = String((created as { id?: string | number } | null)?.id ?? "");
+    // Java's `/create/worldscene` returns the new scene id as a bare
+    // string in `data` — i.e. the body is `{ success: true, data: "1413" }`
+    // — so `javaRequest` hands us back the string directly, not an
+    // `{ id }` object. Older Studio builds did return `{ id }`, so accept
+    // both shapes to stay forward/backward compatible.
+    const created = await javaRequest<unknown>(ctx, "/api/user/world/create/worldscene", {
+      data: {
+        worldId,
+        name: sceneName.trim(),
+        description: "",
+        prompt: "",
+      },
+    });
+    const id =
+      typeof created === "string" || typeof created === "number"
+        ? String(created)
+        : String((created as { id?: string | number } | null)?.id ?? "");
     if (id) cache.set(key, id);
     return id;
   } catch {
