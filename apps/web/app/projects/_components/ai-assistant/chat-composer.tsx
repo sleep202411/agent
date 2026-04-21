@@ -4,7 +4,21 @@ import { useState } from "react";
 import { IconLoader2, IconPlayerStopFilled, IconX } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
-import { clearActiveWorkflow, setSelectedWorkflowChip } from "@/src/store/slices/assistantSlice";
+import {
+  clearActiveWorkflow,
+  sendUserMessage,
+  setSelectedWorkflowChip,
+} from "@/src/store/slices/assistantSlice";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
 import type {
@@ -76,6 +90,34 @@ export function ChatComposer({
     !!activeWorkflow && (activeWorkflow.status === "queued" || activeWorkflow.status === "running");
 
   const toolCard = activePendingTool ? renderToolCard(activePendingTool, onToolResult) : null;
+  const dispatch = useAppDispatch();
+  const selectedChipId = useAppSelector((s) =>
+    projectId ? (s.assistant.projects[projectId]?.selectedWorkflowChip ?? null) : null
+  );
+  const [pendingConfirm, setPendingConfirm] = useState<WorkflowChip | null>(null);
+
+  // Unified send gate used by both TextEditor (Ctrl/Cmd+Enter) and
+  // ChatToolbar (send button). When a workflow chip is selected, pop a
+  // confirm dialog first — phases cost credits and can overwrite work,
+  // so we confirm even though the chip click itself is already an
+  // intent signal. Plain chats (no chip) dispatch immediately.
+  const handleSend = () => {
+    if (!projectId) return;
+    if (selectedChipId) {
+      const chip = WORKFLOW_CHIPS.find((c) => c.id === selectedChipId) ?? null;
+      if (chip) {
+        setPendingConfirm(chip);
+        return;
+      }
+    }
+    void dispatch(sendUserMessage(projectId));
+  };
+
+  const handleConfirmSend = () => {
+    if (!projectId) return;
+    setPendingConfirm(null);
+    void dispatch(sendUserMessage(projectId));
+  };
 
   if (workingPillVisible && activeWorkflow) {
     return (
@@ -112,6 +154,7 @@ export function ChatComposer({
               projectId={projectId}
               hasPendingTools={hasPendingTools}
               editorRef={editorRef}
+              onSend={handleSend}
             />
 
             <ChatToolbar
@@ -122,6 +165,7 @@ export function ChatComposer({
               hasPendingTools={hasPendingTools}
               hasUploadingAttachments={hasUploadingAttachments}
               blocked={blocked}
+              onSend={handleSend}
             />
 
             {error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
@@ -136,6 +180,33 @@ export function ChatComposer({
       {toolCard ? null : <WorkflowChipRow projectId={projectId} editorRef={editorRef} />}
 
       <p className="mt-2 text-center text-[11px] text-muted-foreground/50">{t("aiDisclaimer")}</p>
+
+      {/* Pre-send confirm. Phase launches (chip-selected sends) cost
+          credits and can overwrite work — worth a second nod even
+          though the chip click is already an intent signal. */}
+      <AlertDialog
+        open={!!pendingConfirm}
+        onOpenChange={(open) => {
+          if (!open) setPendingConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>启动工作流：{pendingConfirm?.label}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingConfirm?.title}
+              <br />
+              <span className="text-muted-foreground/70">
+                会消耗积分且可能覆盖现有内容，确认启动？
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSend}>确认启动</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
