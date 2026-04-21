@@ -8,68 +8,86 @@ import { cn } from "@/lib/utils";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { AssetRecord } from "@/src/types/workspace";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
+import { normalizeStoragePath } from "@/src/lib/asset-paths";
 import { submitImageTask, retryImageTask } from "@/src/lib/ai-image-queue";
 import { removeTask, type Task } from "@/src/store/slices/taskSlice";
-import { selectCharacterAiTasks } from "@/src/store/selectors/asset-ai-selectors";
+import { selectAssetAiTasks } from "@/src/store/selectors/asset-ai-selectors";
 import { useAppDispatch, useAppSelector } from "@/src/store";
-import { getRecordPath, normalizeStoragePath, ROLE_RECORD_COLUMN_ID } from "./character-utils";
 
 /**
- * Gallery over the character's AI-generated portrait history.
+ * Inline gallery for a world-asset's AI-generated images (characters,
+ * scenes, props — distinguished by `columnKey`). Used as the right-hand
+ * stack in the corresponding edit sheet, alongside a prompt + 生成
+ * composer rendered by the caller.
  *
- * Generation state lives in Redux (`taskSlice` via `submitImageTask`),
- * so in-flight tasks survive dialog close/reopen — and any sibling UI
- * (e.g. the character list on the main panel) can subscribe to the
- * same selector to show per-character loading indicators.
+ * State layers:
+ *   • In-flight / just-completed / failed generations come from the
+ *     Redux `taskSlice` (via `submitImageTask`) — that's why loading
+ *     placeholders survive dialog close/reopen and why sibling UIs
+ *     can subscribe to `selectAssetHasActiveAiTask`.
+ *   • Server-confirmed history is pulled on mount into component state.
+ *   • Once history catches up, completed tasks whose path is present
+ *     in history are evicted so the same image doesn't render twice.
  *
- * History (server-confirmed images) is loaded on mount and stored
- * locally; it's effectively read-only cache. Tasks whose output path
- * shows up in the refreshed history are garbage-collected so the same
- * image doesn't render twice.
- *
- * Callers render their own prompt input + 生成 button below the panel
- * and trigger generation through the `generate()` method on the ref.
+ * Selection semantics are decided by the caller via `onSelect`:
+ *   • Character dialog: replace the single portrait path.
+ *   • Scene / Prop dialog: append to the collection (bounded), with
+ *     "当前" badges on paths already in the collection (passed via
+ *     `selectedPaths`).
  */
 
 type TilePath = { kind: "path"; path: string };
 type TileTask = { kind: "task"; task: Task };
 type GridItem = TilePath | TileTask;
 
-const ROLE_COLUMN_KEY = String(ROLE_RECORD_COLUMN_ID);
+function pickRecordPath(item: AssetRecord): string {
+  return String(item.storagePath ?? item.path ?? item.filePath ?? item.url ?? "");
+}
 
-export type CharacterAiRecordPanelHandle = {
+export type AssetAiRecordPanelHandle = {
   generate: () => void;
 };
 
 type Props = {
-  characterId: string;
+  /** ID of the world asset (characterId / sceneId / propId). */
+  assetId: string;
+  /**
+   * Column key used on the backend to scope generations + history.
+   * String form of the numeric column ID (e.g. "-1" for character
+   * portraits, "-3" for scenes, "-2" for props).
+   */
+  columnKey: string;
   prompt: string;
   /** Optional model id forwarded to the generate endpoint. */
   model?: string;
   referenceImageUrl?: string;
-  selectedPath?: string;
-  /** Called when the user picks a thumbnail as the character portrait. */
+  /**
+   * Paths currently considered "selected" by the caller — renders a
+   * 当前 badge on any match. Pass a single-item array for pick-one
+   * flows; pass the collection directly for multi-select flows.
+   */
+  selectedPaths?: string[];
+  /** Fired with the storage path whenever the user clicks a thumbnail. */
   onSelect: (path: string) => void;
-  /** Optional — called when the user wants to see a full-size preview. */
+  /** Optional — fired on double-click for a full-size preview. */
   onPreview?: (path: string) => void;
 };
 
-export const CharacterAiRecordPanel = forwardRef<CharacterAiRecordPanelHandle, Props>(
-  function CharacterAiRecordPanel(
-    { characterId, prompt, model, referenceImageUrl, selectedPath, onSelect, onPreview },
+export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
+  function AssetAiRecordPanel(
+    { assetId, columnKey, prompt, model, referenceImageUrl, selectedPaths, onSelect, onPreview },
     ref
   ) {
-    const t = useTranslations("character");
     const tc = useTranslations("common");
     const dispatch = useAppDispatch();
 
-    const tasks = useAppSelector((state) => selectCharacterAiTasks(state, characterId));
+    const tasks = useAppSelector((state) => selectAssetAiTasks(state, assetId, columnKey));
 
     const [historyImages, setHistoryImages] = useState<string[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
     const loadHistory = useCallback(async () => {
-      if (!characterId) {
+      if (!assetId) {
         setHistoryImages([]);
         return;
       }
@@ -79,31 +97,31 @@ export const CharacterAiRecordPanel = forwardRef<CharacterAiRecordPanelHandle, P
           data: {
             page: 1,
             pageSize: 50,
-            shotcolumnId: -1,
-            shotId: characterId,
+            shotcolumnId: Number(columnKey),
+            shotId: assetId,
             type: "img",
             sort: 1,
           },
         });
         const list = (data?.list ?? [])
-          .map((item) => normalizeStoragePath(getRecordPath(item)))
+          .map((item) => normalizeStoragePath(pickRecordPath(item)))
           .filter(Boolean);
         setHistoryImages(list);
       } catch (error) {
-        console.error("[CharacterAiRecordPanel] 获取历史失败:", error);
+        console.error("[AssetAiRecordPanel] 获取历史失败:", error);
       } finally {
         setIsLoadingHistory(false);
       }
-    }, [characterId]);
+    }, [assetId, columnKey]);
 
     useEffect(() => {
-      if (!characterId) return;
+      if (!assetId) return;
       void loadHistory();
-    }, [characterId, loadHistory]);
+    }, [assetId, loadHistory]);
 
-    // Once history catches up, evict completed tasks whose output path
-    // is already in the refreshed list — otherwise the same image
-    // renders twice (once as "just completed", once as "in history").
+    // Evict completed tasks whose output path has been confirmed in
+    // the history refresh. Without this the same image renders twice
+    // — once from the task cache, once from history.
     useEffect(() => {
       if (historyImages.length === 0) return;
       const historyPaths = new Set(historyImages);
@@ -119,38 +137,43 @@ export const CharacterAiRecordPanel = forwardRef<CharacterAiRecordPanelHandle, P
     }, [historyImages, tasks, dispatch]);
 
     const generate = useCallback(() => {
-      if (!characterId) {
-        toast.warning(t("savePleaseFirst"));
+      if (!assetId) {
+        toast.warning("请先保存");
         return;
       }
       const trimmed = (prompt ?? "").trim();
       if (!trimmed) {
-        toast.warning(t("pleaseEnterPrompt"));
+        toast.warning(tc("enterPrompt"));
         return;
       }
       submitImageTask({
-        shotId: characterId,
-        shotColumnId: ROLE_COLUMN_KEY,
+        shotId: assetId,
+        shotColumnId: columnKey,
         prompt: trimmed,
         model: model || undefined,
         referenceImageUrl: referenceImageUrl ? buildOssUrl(referenceImageUrl) : undefined,
         watermark: false,
       });
-    }, [characterId, model, prompt, referenceImageUrl, t]);
+    }, [assetId, columnKey, model, prompt, referenceImageUrl, tc]);
 
     useImperativeHandle(ref, () => ({ generate }), [generate]);
 
-    // ─── Compose display grid ─────────────────────────────────
-    // Tasks first (newest = most visually prominent), then history.
-    // Completed tasks not yet pruned (because loadHistory hasn't
-    // refreshed) render as normal thumbnails via their output path.
+    const selectedSet = useMemo(() => {
+      if (!selectedPaths?.length) return new Set<string>();
+      return new Set(selectedPaths.map((p) => normalizeStoragePath(p)).filter(Boolean));
+    }, [selectedPaths]);
+
+    // Grid: tasks first (newest = most visually prominent), then
+    // history. Completed tasks not yet pruned still render via their
+    // output path so the result shows up the moment the queue fires
+    // completeTask — no wait for loadHistory.
     const items: GridItem[] = useMemo(() => {
       const byPath = new Set<string>();
       const list: GridItem[] = [];
       for (const task of tasks) {
         if (task.status === "completed" && task.output?.storagePath) {
           const normalized = normalizeStoragePath(task.output.storagePath);
-          if (!byPath.has(normalized)) {
+          if (normalized && !byPath.has(normalized)) {
             byPath.add(normalized);
             list.push({ kind: "path", path: normalized });
           }
@@ -168,12 +191,9 @@ export const CharacterAiRecordPanel = forwardRef<CharacterAiRecordPanelHandle, P
 
     return (
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-[11px] text-muted-foreground/80">
-            {t("aiGenerateImage")}
-            {isLoadingHistory ? " · 加载中" : null}
-          </div>
-        </div>
+        {isLoadingHistory ? (
+          <div className="text-[11px] text-muted-foreground/60">加载中…</div>
+        ) : null}
 
         <div className="grid grid-cols-5 gap-2">
           {items.map((item) => {
@@ -192,7 +212,7 @@ export const CharacterAiRecordPanel = forwardRef<CharacterAiRecordPanelHandle, P
                     <>
                       <button
                         type="button"
-                        title={task.error || t("generateFailed")}
+                        title={task.error || tc("generateFailed")}
                         onClick={() => retryImageTask(task.id)}
                         className="flex flex-col items-center gap-1 text-destructive hover:text-destructive/80"
                       >
@@ -215,19 +235,19 @@ export const CharacterAiRecordPanel = forwardRef<CharacterAiRecordPanelHandle, P
               );
             }
             const path = item.path;
-            const isSelected = Boolean(selectedPath) && selectedPath === path;
+            const isSelected = selectedSet.has(normalizeStoragePath(path));
             const url = buildOssUrl(path);
             return (
               <button
                 key={path}
                 type="button"
                 onClick={() => onSelect(path)}
-                onDoubleClick={() => onPreview?.(url)}
+                onDoubleClick={() => onPreview?.(path)}
                 className={cn(
                   "relative aspect-square overflow-hidden rounded-md border-2 transition-colors",
                   isSelected ? "border-primary" : "border-transparent hover:border-primary/40"
                 )}
-                title={isSelected ? "已选为角色形象（双击查看大图）" : "点击选为角色形象"}
+                title={isSelected ? "已加入（双击查看大图）" : "点击加入"}
               >
                 <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
                 {isSelected && (

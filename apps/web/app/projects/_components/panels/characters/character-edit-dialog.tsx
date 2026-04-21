@@ -52,10 +52,7 @@ import {
 } from "./character-utils";
 import { CharacterReferenceUploader } from "./character-reference-uploader";
 import { VoicePickerDialog } from "./character-voice-picker";
-import {
-  CharacterAiRecordPanel,
-  type CharacterAiRecordPanelHandle,
-} from "./character-ai-record-panel";
+import { AssetAiRecordPanel, type AssetAiRecordPanelHandle } from "../asset-ai-record-panel";
 import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
 
 function createEmptyForm(): CharacterFormState {
@@ -126,7 +123,7 @@ export function CharacterEditDialog({
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState("");
-  const aiPanelRef = useRef<CharacterAiRecordPanelHandle | null>(null);
+  const aiPanelRef = useRef<AssetAiRecordPanelHandle | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -516,17 +513,18 @@ export function CharacterEditDialog({
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                   <div className="min-h-0 flex-1">
                     {formData.id ? (
-                      <CharacterAiRecordPanel
+                      <AssetAiRecordPanel
                         ref={aiPanelRef}
-                        characterId={formData.id}
+                        assetId={formData.id}
+                        columnKey="-1"
                         prompt={formData.prompt || formData.description}
                         model={imageModelId}
                         referenceImageUrl={formData.referenceImgPath[0] ?? roleImagePath}
-                        selectedPath={roleImagePath}
+                        selectedPaths={roleImagePath ? [roleImagePath] : undefined}
                         onSelect={(path) =>
                           updateForm({ roleImgPath: [normalizeStoragePath(path)] })
                         }
-                        onPreview={(url) => setPreviewImage(url)}
+                        onPreview={(path) => setPreviewImage(buildOssUrl(path))}
                       />
                     ) : (
                       <p className="rounded-md border border-dashed border-border/40 p-3 text-[11px] text-muted-foreground/60">
