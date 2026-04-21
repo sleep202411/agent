@@ -512,6 +512,18 @@ function sanitizeHistoryForSupervisor(
     if (typeof type !== 'string') return false;
     return WORKFLOW_TOOL_PREFIXES.some((p) => type === p);
   };
+  // Anthropic rejects text content blocks with empty strings (400
+  // "text content blocks must be non-empty"). DeepSeek silently tolerates
+  // them. Previous assistant messages that streamed only tool calls —
+  // or tool-card renderings whose text was stripped earlier — can leave
+  // behind `{type: "text", text: ""}` parts that break Claude every
+  // turn. Drop them before forwarding.
+  const isEmptyTextPart = (part: unknown): boolean => {
+    if (!part || typeof part !== 'object') return false;
+    const p = part as { type?: unknown; text?: unknown };
+    if (p.type !== 'text') return false;
+    return typeof p.text !== 'string' || p.text.trim().length === 0;
+  };
   const out: Record<string, unknown>[] = [];
   for (const raw of messages as Array<Record<string, unknown>>) {
     if (!raw || typeof raw !== 'object') continue;
@@ -520,7 +532,9 @@ function sanitizeHistoryForSupervisor(
       out.push(raw);
       continue;
     }
-    const filtered = (parts as unknown[]).filter((p) => !isWorkflowToolPart(p));
+    const filtered = (parts as unknown[]).filter(
+      (p) => !isWorkflowToolPart(p) && !isEmptyTextPart(p),
+    );
     // Drop leading/trailing `step-start` parts that are now orphaned (no
     // tool call follows) — these used to bracket the removed workflow
     // tool parts and just add noise without them.

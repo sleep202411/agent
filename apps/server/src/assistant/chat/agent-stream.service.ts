@@ -137,6 +137,33 @@ function structuralFingerprint(message: StoredMessage): string {
   return tokens.join('|');
 }
 
+/**
+ * True when the message carries at least one part that's worth showing in
+ * the UI. A "shell" message (parts empty, or parts contain only empty
+ * text entries) counts as unusable and triggers the fallback bubble —
+ * prevents silent empty bubbles when the supervisor throws right after
+ * emitting the start chunk but before any real content.
+ */
+function hasUsableContent(message: StoredMessage | null): boolean {
+  if (!message) return false;
+  const parts = message.parts;
+  if (!Array.isArray(parts) || parts.length === 0) return false;
+  for (const raw of parts) {
+    if (!raw || typeof raw !== 'object') continue;
+    const part = raw as { type?: unknown; text?: unknown };
+    if (part.type === 'text') {
+      if (typeof part.text === 'string' && part.text.trim().length > 0) {
+        return true;
+      }
+      continue;
+    }
+    // Any non-text part (tool call / invocation / reasoning / etc.)
+    // is meaningful content.
+    return true;
+  }
+  return false;
+}
+
 function sanitizeMessage(message: StoredMessage): StoredMessage {
   const parts = message.parts;
   if (!Array.isArray(parts)) return message;
@@ -340,38 +367,50 @@ export class AgentStreamService {
 
       // Final flush — write the terminal blob and publish `message_finalize`
       // so the client can settle the streaming state (drop the caret etc).
-      if (lastMessage) {
-        if (!addedSeed) {
-          // Stream yielded no messages — just add the seed for consistency.
-          await this.store.addMessage(projectId, lastMessage);
-        }
-        await this.store.finalizeMessage(projectId, lastMessage);
-      } else if (!addedSeed) {
-        // Stream ended cleanly but produced zero content (upstream likely
-        // dropped an error chunk our schema doesn't parse). Emit a generic
-        // fallback so the user sees a reply bubble instead of silence.
+      //
+      // Three outcomes to distinguish:
+      //   (a) Real content arrived (text or tool call) → finalize as-is
+      //   (b) No message ever yielded (!addedSeed && !lastMessage) → fallback
+      //   (c) A shell message yielded but it ended up empty (parts=[] after
+      //       sanitization, or parts only contain empty-text placeholders) —
+      //       happens when Mastra emits a start-chunk and then the supervisor
+      //       throws before any real chunk lands. Without (c) the user sees
+      //       a silent empty bubble.
+      const emptyShellLanded = !!lastMessage && !hasUsableContent(lastMessage);
+      const shouldFallback = !lastMessage ? !addedSeed : emptyShellLanded;
+
+      if (shouldFallback) {
         const fallback: StoredMessage = {
           id: seedId,
           role: 'assistant',
           parts: [
             {
               type: 'text',
-              text: '抱歉，服务暂时不太稳定，请稍后再试一下。',
+              text: '让我再整理一下思路，麻烦稍后再试一下。',
             },
           ],
         };
-        await this.store.addMessage(projectId, fallback).catch(() => {});
+        if (!addedSeed) {
+          await this.store.addMessage(projectId, fallback).catch(() => {});
+        } else {
+          // Shell was already addMessage'd with empty parts — swap content
+          // via updateMessage so WS subscribers see the new text.
+          await this.store.updateMessage(projectId, fallback).catch(() => {});
+        }
         await this.store.finalizeMessage(projectId, fallback).catch(() => {});
         this.logger.warn(
-          `consume ended with no content project=${projectId} — emitted fallback bubble`,
+          `consume produced no content project=${projectId} — emitted fallback bubble`,
         );
+      } else if (lastMessage) {
+        if (!addedSeed) await this.store.addMessage(projectId, lastMessage);
+        await this.store.finalizeMessage(projectId, lastMessage);
       }
 
       const partCount = Array.isArray(lastMessage?.parts)
         ? lastMessage.parts.length
         : 0;
       this.logger.log(
-        `consume done project=${projectId} iterations=${iterations} finalParts=${partCount}`,
+        `consume done project=${projectId} iterations=${iterations} finalParts=${partCount}${shouldFallback ? ' (fallback bubble emitted)' : ''}`,
       );
       await this.store.setAgentState(projectId, 'idle');
     } catch (err) {
@@ -389,7 +428,7 @@ export class AgentStreamService {
           parts: [
             {
               type: 'text',
-              text: '抱歉，服务暂时不太稳定，请稍后再试一下。',
+              text: '让我再整理一下思路，麻烦稍后再试一下。',
             },
           ],
         };
