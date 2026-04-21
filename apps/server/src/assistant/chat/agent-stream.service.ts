@@ -346,6 +346,25 @@ export class AgentStreamService {
           await this.store.addMessage(projectId, lastMessage);
         }
         await this.store.finalizeMessage(projectId, lastMessage);
+      } else if (!addedSeed) {
+        // Stream ended cleanly but produced zero content (upstream likely
+        // dropped an error chunk our schema doesn't parse). Emit a generic
+        // fallback so the user sees a reply bubble instead of silence.
+        const fallback: StoredMessage = {
+          id: seedId,
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: '抱歉，服务暂时不太稳定，请稍后再试一下。',
+            },
+          ],
+        };
+        await this.store.addMessage(projectId, fallback).catch(() => {});
+        await this.store.finalizeMessage(projectId, fallback).catch(() => {});
+        this.logger.warn(
+          `consume ended with no content project=${projectId} — emitted fallback bubble`,
+        );
       }
 
       const partCount = Array.isArray(lastMessage?.parts)
@@ -360,8 +379,25 @@ export class AgentStreamService {
       this.logger.warn(
         `consume failed project=${projectId} iterations=${iterations}: ${msg}`,
       );
-      // Best-effort finalize so the frontend doesn't leave the caret running.
-      if (lastMessage && addedSeed) {
+      // Surface a generic "service hiccup" bubble so the user doesn't just
+      // stare at an empty chat. Vendor details (credit balance, rate limit,
+      // provider-specific error codes) stay in our logs — never reach the UI.
+      if (!addedSeed) {
+        const fallback: StoredMessage = {
+          id: seedId,
+          role: 'assistant',
+          parts: [
+            {
+              type: 'text',
+              text: '抱歉，服务暂时不太稳定，请稍后再试一下。',
+            },
+          ],
+        };
+        await this.store.addMessage(projectId, fallback).catch(() => {});
+        await this.store.finalizeMessage(projectId, fallback).catch(() => {});
+      } else if (lastMessage) {
+        // Mid-stream failure — keep whatever text landed, just finalize so
+        // the caret stops blinking.
         await this.store
           .finalizeMessage(projectId, lastMessage)
           .catch(() => {});
