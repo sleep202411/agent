@@ -135,7 +135,8 @@ export const invokeWorkflow = createTool({
       workflowName === "main_flow" ||
       workflowName === "episode_phase" ||
       workflowName === "parse_script" ||
-      workflowName === "script_to_storyboard_flow";
+      workflowName === "script_to_storyboard_flow" ||
+      workflowName === "script_import_flow";
     const chapterLength = projectDetail?.chapterLength;
     const injectedEpisodeCount =
       needsEpisodeCount &&

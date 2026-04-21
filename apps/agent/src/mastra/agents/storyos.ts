@@ -16,6 +16,7 @@ import {
   resumeWorkflowTool,
   saveProjectMeta,
   showDrafts,
+  showOptions,
   updateEpisode,
   updateProject,
   updateStoryboardRow,
@@ -74,6 +75,10 @@ export const storyosAgent = new Agent({
     // Preflight UI gate — checks the 4 core project params are set before
     // any generative workflow. Frontend renders the form.
     require_project_params: requireProjectParams,
+    // Generic "user picks from a list" HITL. Supervisor calls it when intent
+    // is legitimately ambiguous (not when the supervisor just wants to avoid
+    // committing). See storyos.ts prompt for when-to-call rules.
+    show_options: showOptions,
     // UI ack — renders "✓ 更新项目参数" after <PROJECT_PARAMS_CONFIRMED />.
     mark_project_params_updated: markProjectParamsUpdated,
     // Auto cover generation via Replicate (no user credits).

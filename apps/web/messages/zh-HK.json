@@ -1514,6 +1514,7 @@
     },
     "workflowMainFlow": "全流程創作",
     "workflowScriptToStoryboardFlow": "劇本→分鏡",
+    "workflowScriptImportFlow": "劇本完整導入",
     "workflowRoleDesign": "角色設計",
     "workflowSceneDesign": "場景設計",
     "workflowPropDesign": "道具設計",

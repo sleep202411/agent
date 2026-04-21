@@ -31,6 +31,8 @@ export const WORKFLOW_NAMES = [
   "main_flow",
   // 用户已上传完整剧本 + 只要分镜的最小路径 flow。
   "script_to_storyboard_flow",
+  // 用户已上传完整剧本 + 完整资产管线（角色/场景/道具图 + 分镜），但不 rewrite 剧本。
+  "script_import_flow",
   // Single-phase workflows usable on their own.
   "role_design",
   "scene_design",

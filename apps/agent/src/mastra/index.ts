@@ -37,6 +37,7 @@ import { storyboardPhaseWorkflow } from "./workflows/phases/storyboard-phase";
 import { mainFlowWorkflow } from "./workflows/main-flow";
 import { parseScriptWorkflow } from "./workflows/parse-script";
 import { scriptToStoryboardFlow } from "./workflows/script-to-storyboard-flow";
+import { scriptImportFlowWorkflow } from "./workflows/script-import-flow";
 
 if (!process.env.DASHSCOPE_API_KEY && process.env.ALIBABA_API_KEY) {
   process.env.DASHSCOPE_API_KEY = process.env.ALIBABA_API_KEY;
@@ -135,6 +136,10 @@ export const mastra = new Mastra({
     // 最小 flow: parse_script → storyboard_phase. Used when user uploaded a
     // full script and only asked for 分镜.
     script_to_storyboard_flow: scriptToStoryboardFlow,
+    // Full pipeline for uploaded scripts: preserves original script text,
+    // builds complete role/scene/prop assets + images + storyboard. Skips
+    // episode_phase and script_phase because parse_script handled those.
+    script_import_flow: scriptImportFlowWorkflow,
   },
   storage: new LibSQLStore({
     id: "storyos-storage",

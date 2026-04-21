@@ -12,6 +12,7 @@
 export type WorkflowName =
   | "main_flow"
   | "script_to_storyboard_flow"
+  | "script_import_flow"
   | "role_design"
   | "scene_design"
   | "prop_design"

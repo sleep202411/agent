@@ -64,9 +64,19 @@ export const PRICES = {
  */
 export async function getUserBalance(ctx: StoryosContext): Promise<number> {
   try {
-    const info = await javaRequest<{ scoreBalance?: number }>(ctx, "/user/query/user/info", {
-      method: "GET",
-    });
+    // Java may return `null` for dev/anonymous users — treat as
+    // "unknown, don't block" by returning Infinity.
+    const info = (await javaRequest<{ scoreBalance?: number } | null>(
+      ctx,
+      "/user/query/user/info",
+      { method: "GET" }
+    )) as { scoreBalance?: number } | null;
+    if (!info) {
+      console.warn(
+        "[billing] getUserBalance: Java returned null info (dev user?); assuming Infinity"
+      );
+      return Number.POSITIVE_INFINITY;
+    }
     const v = Number(info.scoreBalance ?? 0);
     return Number.isFinite(v) ? v : 0;
   } catch (err) {
@@ -189,6 +199,19 @@ export function estimateWorkflowCost(
     case "script_to_storyboard_flow":
       // Parse + storyboard only. No roles/scenes/props/scripts.
       return n * PRICES.parseScriptPerEpisode + n * PRICES.storyboardPerEpisode;
+    case "script_import_flow":
+      // Full pipeline for uploaded scripts. Skips episode_phase (parse
+      // covers it) + script_phase (script is verbatim). Keeps story_outline
+      // (needed for cast/settings/props rosters), role/scene/prop phases,
+      // and storyboard. Same #roles/#scenes/#props assumptions as main_flow.
+      return (
+        PRICES.storyOutlineRun +
+        n * PRICES.parseScriptPerEpisode +
+        n * PRICES.rolePerUnit +
+        n * PRICES.scenePerUnit +
+        Math.ceil(n / 2) * PRICES.propPerUnit +
+        n * PRICES.storyboardPerEpisode
+      );
     case "parse_script":
       return n * PRICES.parseScriptPerEpisode;
     case "story_outline":
