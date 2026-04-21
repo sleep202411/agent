@@ -6,20 +6,23 @@ import {
   IconDeviceFloppy,
   IconLoader2,
   IconTrash,
-  IconUpload,
-  IconVolume,
   IconWand,
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import {
@@ -34,10 +37,12 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
-import { uploadProjectImage, buildOssUrl } from "@/src/lib/uploads/workspace-upload";
-import { useRawAiModels } from "@/src/hooks/use-ai-models";
+import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
+import { useAiModels, useRawAiModels } from "@/src/hooks/use-ai-models";
 import { applySeedanceTemplate } from "@/src/lib/seedance";
 import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
+import { ModelPicker } from "@/components/ui/schema-field/model-picker";
+import { GenerateButton } from "@/components/ui/generate-button";
 import {
   normalizeStoragePath,
   parseObjectSafely,
@@ -47,7 +52,10 @@ import {
 } from "./character-utils";
 import { CharacterReferenceUploader } from "./character-reference-uploader";
 import { VoicePickerDialog } from "./character-voice-picker";
-import { CharacterAiRecordDialog } from "./character-ai-record-dialog";
+import {
+  CharacterAiRecordPanel,
+  type CharacterAiRecordPanelHandle,
+} from "./character-ai-record-panel";
 import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
 
 function createEmptyForm(): CharacterFormState {
@@ -105,21 +113,34 @@ export function CharacterEditDialog({
   const [formData, setFormData] = useState<CharacterFormState>(createEmptyForm());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [uploadingRoleImage, setUploadingRoleImage] = useState(false);
   const [threeViewLoading, setThreeViewLoading] = useState(false);
   const { models: cachedVoiceModels } = useRawAiModels(AI_MODEL_PATHS.voice);
   const voiceModels = cachedVoiceModels as RawAiModel[];
+  const { models: imageModels } = useAiModels("/api/ai/image/generate/basic");
+  const [imageModelId, setImageModelId] = useState("");
+  const selectedImageModel = useMemo(
+    () => imageModels.find((model) => model.id === imageModelId),
+    [imageModels, imageModelId]
+  );
   const [voices, setVoices] = useState<Record<string, VoiceOptionItem[]>>({});
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
-  const [aiRecordOpen, setAiRecordOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState("");
-  const roleInputRef = useRef<HTMLInputElement | null>(null);
+  const aiPanelRef = useRef<CharacterAiRecordPanelHandle | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setFormData(buildFormState(character));
   }, [character, open]);
+
+  // Default-select first model (preferring isDefault) once the image-model
+  // list loads. Users can still switch via the composer's ModelPicker.
+  useEffect(() => {
+    if (imageModels.length === 0) return;
+    if (imageModels.some((model) => model.id === imageModelId)) return;
+    const preferred = imageModels.find((model) => model.isDefault) ?? imageModels[0];
+    if (preferred) setImageModelId(preferred.id);
+  }, [imageModels, imageModelId]);
 
   // Voice models are now read from preloaded cache via useRawAiModels
 
@@ -175,45 +196,33 @@ export function CharacterEditDialog({
     setFormData((current) => ({ ...current, ...updates }));
   }, []);
 
-  const handleRoleImageUpload = useCallback(async (file?: File) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.warning(tc("selectImageFile"));
-      return;
-    }
-    try {
-      setUploadingRoleImage(true);
-      const uploadedPath = await uploadProjectImage(file);
-      setFormData((current) => ({ ...current, roleImgPath: [uploadedPath] }));
-      toast.success(tc("uploadSuccess"));
-    } catch (error) {
-      console.error("[CharacterEditDialog] 上传角色图失败:", error);
-      toast.error(tc("uploadFailed"));
-    } finally {
-      setUploadingRoleImage(false);
-      if (roleInputRef.current) {
-        roleInputRef.current.value = "";
-      }
-    }
-  }, []);
-
+  /**
+   * "生成全局提示图" — replaces the old three-view-specific pipeline.
+   * Combines the user's character prompt with the Seedance 2.0 template
+   * preset and runs the standard `/api/ai/image/generate/basic` endpoint,
+   * then stores the result in the threeViewsImagePath field (UI slot is
+   * still called 三视图 for backwards compat; semantically now a global
+   * reference image).
+   */
   const handleGenerateThreeView = useCallback(async () => {
     if (!formData.id) {
       toast.warning(t("savePleaseFirst"));
       return;
     }
-    if (!roleImagePath) {
-      toast.warning(t("uploadImageFirst"));
+    const promptBase = (formData.prompt ?? "").trim();
+    if (!promptBase) {
+      toast.warning(tc("fillPromptFirst"));
       return;
     }
+    const composedPrompt = applySeedanceTemplate(promptBase, "role");
     try {
       setThreeViewLoading(true);
-      const result = await backendApi.post<string>("/api/ai/image/generate/character-three-view", {
+      const result = await backendApi.post<string>("/api/ai/image/generate/basic", {
         data: {
+          prompt: composedPrompt,
           shotColumnId: ROLE_THREE_VIEW_COLUMN_ID,
           shotId: formData.id,
-          characterImageUrl: buildOssUrl(roleImagePath),
-          prompt: formData.prompt || undefined,
+          referenceImageUrl: roleImagePath ? buildOssUrl(roleImagePath) : undefined,
         },
         timeout: 360_000,
       });
@@ -224,12 +233,12 @@ export function CharacterEditDialog({
       setFormData((current) => ({ ...current, threeViewsImagePath: nextPath }));
       toast.success(tc("threeViewSuccess"));
     } catch (error) {
-      console.error("[CharacterEditDialog] 生成三视图失败:", error);
+      console.error("[CharacterEditDialog] 生成全局提示图失败:", error);
       toast.error(tc("threeViewFailed"));
     } finally {
       setThreeViewLoading(false);
     }
-  }, [formData.id, formData.prompt, roleImagePath]);
+  }, [formData.id, formData.prompt, roleImagePath, t, tc]);
 
   const handleSave = useCallback(async () => {
     const trimmedName = formData.name.trim();
@@ -292,352 +301,351 @@ export function CharacterEditDialog({
 
   return (
     <>
-      <input
-        ref={roleInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(event) => void handleRoleImageUpload(event.target.files?.[0] ?? undefined)}
-      />
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        {/* Bottom sheet. Wider than a standard dialog so the portrait
+            gallery on the right gets room to breathe — the left column
+            only needs to fit labelled form controls, so it's fixed at a
+            narrow band while the right takes the remainder. Max-h 90vh
+            leaves room for the mask. */}
+        <SheetContent
+          side="bottom"
+          className="mx-auto h-[90vh] w-full max-w-[1080px] overflow-hidden p-0"
+        >
+          <SheetHeader>
+            <SheetTitle>{t("editCharacter")}</SheetTitle>
+          </SheetHeader>
 
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden p-0 sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>{t("editCharacter")}</DialogTitle>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto p-4">
-            <FieldGroup>
-              <Field>
-                <FieldLabel required>{t("characterName")}</FieldLabel>
-                <Input
-                  value={formData.name}
-                  onChange={(event) => updateForm({ name: event.target.value })}
-                  placeholder={t("characterNamePlaceholder")}
-                  maxLength={20}
-                />
-              </Field>
-
-              <Field>
-                <FieldLabel required>{t("biography")}</FieldLabel>
-                <Textarea
-                  value={formData.description}
-                  onChange={(event) => updateForm({ description: event.target.value })}
-                  placeholder={t("characterDescriptionPlaceholder")}
-                  maxLength={300}
-                  rows={5}
-                />
-              </Field>
-
-              <Field>
-                {/* Prompt label + Seedance 2.0 template button. Same UX
-                    as the HITL draft dialog (workflow-shared.tsx), so
-                    users who applied the template pre-commit can re-apply
-                    it here if they later tweak the prompt. Idempotent —
-                    clicking twice won't stack the template. */}
-                <div className="flex items-center justify-between gap-2">
-                  <FieldLabel>{tc("prompt")}</FieldLabel>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    color="muted"
-                    onClick={() =>
-                      updateForm({ prompt: applySeedanceTemplate(formData.prompt, "role") })
-                    }
-                  >
-                    <IconWand />
-                    生成 Seedance 2.0 提示词
-                  </Button>
-                </div>
-                <Textarea
-                  value={formData.prompt}
-                  onChange={(event) => updateForm({ prompt: event.target.value })}
-                  placeholder={tc("promptPlaceholder")}
-                  // 1000 instead of 500 — the Seedance template alone is
-                  // ~200 chars and gets appended to whatever base prompt
-                  // the user already has. 500 would silently clip the tail.
-                  maxLength={1000}
-                  rows={3}
-                />
-              </Field>
-
-              <div className="grid grid-cols-2 gap-3">
-                <Field>
-                  <FieldLabel>{t("voiceModel")}</FieldLabel>
-                  <Select
-                    value={formData.voiceModelCode || "__none__"}
-                    onValueChange={(value) =>
-                      updateForm({
-                        voiceModelCode: value === "__none__" ? "" : value,
-                        voiceId: value === "__none__" ? "" : formData.voiceId,
-                      })
-                    }
-                  >
-                    <SelectTrigger className="w-full h-9">
-                      <SelectValue placeholder={t("voiceModelPlaceholder")} />
-                    </SelectTrigger>
-                    <SelectContent position="popper" className="max-h-60">
-                      <SelectItem value="__none__">{t("noVoiceModel")}</SelectItem>
-                      {voiceModels.map((item) => {
-                        const value = String(item.serviceCode ?? "");
-                        if (!value) return null;
-                        return (
-                          <SelectItem key={value} value={value}>
-                            {item.serviceName || value}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                </Field>
-
-                <Field>
-                  <FieldLabel>{t("voice")}</FieldLabel>
-                  <button
-                    type="button"
-                    disabled={!formData.voiceModelCode}
-                    onClick={() => setVoicePickerOpen(true)}
-                    className={cn(
-                      "flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors",
-                      "hover:bg-accent hover:text-accent-foreground",
-                      "disabled:cursor-not-allowed disabled:opacity-50",
-                      formData.voiceId ? "text-foreground" : "text-muted-foreground"
-                    )}
-                  >
-                    <span className="truncate">
-                      {selectedVoiceName && formData.voiceModelCode
-                        ? selectedVoiceName
-                        : t("voicePlaceholder")}
-                    </span>
-                    <IconChevronDown className="size-4 shrink-0 opacity-50" />
-                  </button>
-                </Field>
-              </div>
-
-              <Field>
-                <FieldLabel>{t("characterImages")}</FieldLabel>
-                <div className="flex gap-4">
-                  <div className="w-[150px] shrink-0 space-y-2">
-                    <div className="text-[11px] text-muted-foreground/80">
-                      {t("characterImageLabel")}
-                    </div>
-                    <div className="group relative h-[200px] overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
-                      {hasRoleImage ? (
-                        <>
-                          <img src={roleImageUrl} alt="" className="h-full w-full object-cover" />
-                          {uploadingRoleImage ? (
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-                              <IconLoader2 className="size-5 animate-spin text-white" />
-                            </div>
-                          ) : (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 opacity-0 transition-opacity group-hover:opacity-100">
-                              <Button
-                                size="sm"
-                                variant="soft"
-                                color="muted"
-                                onClick={() => setPreviewImage(roleImageUrl)}
-                              >
-                                {tc("viewFullImage")}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="soft"
-                                color="muted"
-                                onClick={() => roleInputRef.current?.click()}
-                              >
-                                <IconUpload className="size-3" />
-                                {t("uploadImage")}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="soft"
-                                color="muted"
-                                onClick={() => {
-                                  if (!formData.id) {
-                                    toast.warning(t("savePleaseFirst"));
-                                    return;
-                                  }
-                                  setAiRecordOpen(true);
-                                }}
-                              >
-                                <IconWand className="size-3" />
-                                {t("aiGenerateImage")}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="soft"
-                                color="destructive"
-                                onClick={() => updateForm({ roleImgPath: [] })}
-                              >
-                                {tc("delete")}
-                              </Button>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex h-full flex-col items-center justify-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="soft"
-                            color="muted"
-                            onClick={() => roleInputRef.current?.click()}
-                          >
-                            <IconUpload className="size-3" />
-                            {t("uploadImage")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="soft"
-                            color="muted"
-                            onClick={() => {
-                              if (!formData.id) {
-                                toast.warning(t("savePleaseFirst"));
-                                return;
-                              }
-                              setAiRecordOpen(true);
-                            }}
-                          >
-                            <IconWand className="size-3" />
-                            {t("aiGenerateImage")}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            {/* Two-column split. Left = identity (name / biography),
+                voice, reference images, and the 全局提示图 preview —
+                things the user fills in once and rarely touches after;
+                scrolls independently if the form is taller than the
+                sheet. Right = the portrait gallery + composer, which is
+                the iterative loop: tweak prompt → hit 生成 → pick a
+                result. Right column is non-scrolling: gallery flexes,
+                composer is pinned to the bottom so it's always in
+                reach. The shared prompt lives in formData.prompt and is
+                also consumed by the left-hand "生成全局提示图" trigger. */}
+            <div className="grid h-full grid-rows-[minmax(0,1fr)] gap-6 overflow-hidden p-4 md:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+              {/* ─── Left column: portrait → global ref → identity → voice → refs ─── */}
+              <FieldGroup className="overflow-y-auto pr-1">
+                {/* Current portrait — the selected item from the right
+                    column's gallery is mirrored here at a larger size
+                    so the user can see the face-level detail of their
+                    active choice while authoring prompt / biography on
+                    the same column. */}
+                <div>
+                  <div className="mb-2 text-[11px] text-muted-foreground/80">
+                    {t("characterImageLabel")}
                   </div>
-
-                  <div className="flex-1 space-y-2">
-                    <div className="text-[11px] text-muted-foreground/80">{t("threeView")}</div>
-                    <div className="group relative h-[200px] overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
-                      {formData.threeViewsImagePath ? (
-                        <>
-                          <img
-                            src={buildOssUrl(formData.threeViewsImagePath)}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                          {threeViewLoading ? (
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-                              <IconLoader2 className="size-5 animate-spin text-white" />
-                            </div>
-                          ) : (
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/70 opacity-0 transition-opacity group-hover:opacity-100">
-                              <div className="flex flex-col gap-1.5">
-                                <Button
-                                  size="sm"
-                                  variant="soft"
-                                  color="muted"
-                                  onClick={() =>
-                                    setPreviewImage(buildOssUrl(formData.threeViewsImagePath))
-                                  }
-                                >
-                                  {tc("viewFullImage")}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="soft"
-                                  color="muted"
-                                  onClick={() => void handleGenerateThreeView()}
-                                >
-                                  <IconWand className="size-3" />
-                                  {tc("regenerate")}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="soft"
-                                  color="destructive"
-                                  onClick={() => updateForm({ threeViewsImagePath: "" })}
-                                >
-                                  {tc("delete")}
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex h-full items-center justify-center">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            color="muted"
-                            onClick={() => void handleGenerateThreeView()}
-                            disabled={!hasRoleImage || threeViewLoading}
-                          >
-                            {threeViewLoading ? (
-                              <IconLoader2 className="size-3 animate-spin" />
-                            ) : null}
-                            {tc("generateThreeView")}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </Field>
-
-              {otherImages.length > 0 ? (
-                <Field>
-                  <FieldLabel>{t("otherImages")}</FieldLabel>
-                  <div className="flex flex-wrap gap-3">
-                    {otherImages.map((item) => (
-                      <div key={item.name} className="group relative overflow-hidden rounded-lg">
+                  <div className="group relative aspect-9/14 h-48 overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
+                    {hasRoleImage ? (
+                      <>
                         <img
-                          src={buildOssUrl(item.path)}
+                          src={roleImageUrl}
                           alt=""
-                          className="h-[100px] w-[100px] cursor-zoom-in rounded-lg object-cover"
-                          onClick={() => setPreviewImage(buildOssUrl(item.path))}
+                          className="h-full w-full cursor-zoom-in object-cover"
+                          onClick={() => setPreviewImage(roleImageUrl)}
                         />
-                        <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-center text-[11px] text-white">
-                          {item.name}
-                        </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            const nextImages = { ...formData.otherImgPath };
-                            delete nextImages[item.name];
-                            updateForm({ otherImgPath: nextImages });
-                          }}
-                          className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity hover:bg-primary group-hover:opacity-100"
+                          onClick={() => updateForm({ roleImgPath: [] })}
+                          className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100"
+                          title={tc("delete")}
                         >
                           <IconX className="size-3" />
                         </button>
+                      </>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-xs text-center text-muted-foreground/60">
+                        从右侧「AI 生图」中选一张
                       </div>
-                    ))}
+                    )}
                   </div>
-                </Field>
-              ) : null}
+                </div>
 
-              <Field>
-                <FieldLabel>{t("referenceImageDesc")}</FieldLabel>
-                <CharacterReferenceUploader
-                  paths={formData.referenceImgPath}
-                  descriptions={formData.referenceImgDescription}
-                  onChange={(nextPaths, nextDescriptions) =>
-                    updateForm({
-                      referenceImgPath: nextPaths,
-                      referenceImgDescription: nextDescriptions,
-                    })
-                  }
-                />
-              </Field>
-            </FieldGroup>
+                {/* Global reference (三视图 slot) — its generator uses
+                    `formData.prompt` which lives in the right column's
+                    composer. The image is shown here on the left
+                    because it's a single static reference separate from
+                    the rotating portrait list. */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="text-[11px] text-muted-foreground/80">全局提示图</div>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      color="muted"
+                      onClick={() => void handleGenerateThreeView()}
+                      disabled={threeViewLoading || !formData.prompt?.trim()}
+                    >
+                      {threeViewLoading ? (
+                        <IconLoader2 className="size-3 animate-spin" />
+                      ) : (
+                        <IconWand className="size-3" />
+                      )}
+                      生成全局提示图
+                    </Button>
+                  </div>
+                  <div className="group relative h-[160px] overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
+                    {formData.threeViewsImagePath ? (
+                      <>
+                        <img
+                          src={buildOssUrl(formData.threeViewsImagePath)}
+                          alt=""
+                          className="h-full w-full cursor-zoom-in object-cover"
+                          onClick={() => setPreviewImage(buildOssUrl(formData.threeViewsImagePath))}
+                        />
+                        {threeViewLoading ? (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
+                            <IconLoader2 className="size-5 animate-spin text-white" />
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => updateForm({ threeViewsImagePath: "" })}
+                          className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity hover:bg-destructive group-hover:opacity-100"
+                          title={tc("delete")}
+                        >
+                          <IconX className="size-3" />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-xs text-muted-foreground/60">
+                        点右上「生成全局提示图」
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Field>
+                  <FieldLabel required>{t("characterName")}</FieldLabel>
+                  <Input
+                    value={formData.name}
+                    onChange={(event) => updateForm({ name: event.target.value })}
+                    placeholder={t("characterNamePlaceholder")}
+                    maxLength={20}
+                  />
+                </Field>
+
+                <Field>
+                  <FieldLabel required>{t("biography")}</FieldLabel>
+                  <Textarea
+                    value={formData.description}
+                    onChange={(event) => updateForm({ description: event.target.value })}
+                    placeholder={t("characterDescriptionPlaceholder")}
+                    maxLength={300}
+                    rows={5}
+                  />
+                </Field>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Field>
+                    <FieldLabel>{t("voiceModel")}</FieldLabel>
+                    <Select
+                      value={formData.voiceModelCode || "__none__"}
+                      onValueChange={(value) =>
+                        updateForm({
+                          voiceModelCode: value === "__none__" ? "" : value,
+                          voiceId: value === "__none__" ? "" : formData.voiceId,
+                        })
+                      }
+                    >
+                      <SelectTrigger className="w-full h-9">
+                        <SelectValue placeholder={t("voiceModelPlaceholder")} />
+                      </SelectTrigger>
+                      <SelectContent position="popper" className="max-h-60">
+                        <SelectItem value="__none__">{t("noVoiceModel")}</SelectItem>
+                        {voiceModels.map((item) => {
+                          const value = String(item.serviceCode ?? "");
+                          if (!value) return null;
+                          return (
+                            <SelectItem key={value} value={value}>
+                              {item.serviceName || value}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel>{t("voice")}</FieldLabel>
+                    <button
+                      type="button"
+                      disabled={!formData.voiceModelCode}
+                      onClick={() => setVoicePickerOpen(true)}
+                      className={cn(
+                        "flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors",
+                        "hover:bg-accent hover:text-accent-foreground",
+                        "disabled:cursor-not-allowed disabled:opacity-50",
+                        formData.voiceId ? "text-foreground" : "text-muted-foreground"
+                      )}
+                    >
+                      <span className="truncate">
+                        {selectedVoiceName && formData.voiceModelCode
+                          ? selectedVoiceName
+                          : t("voicePlaceholder")}
+                      </span>
+                      <IconChevronDown className="size-4 shrink-0 opacity-50" />
+                    </button>
+                  </Field>
+                </div>
+
+                <Field>
+                  <FieldLabel>{t("referenceImageDesc")}</FieldLabel>
+                  <CharacterReferenceUploader
+                    paths={formData.referenceImgPath}
+                    descriptions={formData.referenceImgDescription}
+                    onChange={(nextPaths, nextDescriptions) =>
+                      updateForm({
+                        referenceImgPath: nextPaths,
+                        referenceImgDescription: nextDescriptions,
+                      })
+                    }
+                  />
+                </Field>
+              </FieldGroup>
+
+              {/* ─── Right column: portrait list on top, composer pinned at bottom ─── */}
+              <div className="flex min-h-0 flex-col gap-4">
+                {/* Gallery takes the free space so the composer below
+                    hugs the bottom; min-h-0 is required on the flex
+                    parent for the inner overflow-y-auto to work. */}
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <div className="min-h-0 flex-1">
+                    {formData.id ? (
+                      <CharacterAiRecordPanel
+                        ref={aiPanelRef}
+                        characterId={formData.id}
+                        prompt={formData.prompt || formData.description}
+                        model={imageModelId}
+                        referenceImageUrl={formData.referenceImgPath[0] ?? roleImagePath}
+                        selectedPath={roleImagePath}
+                        onSelect={(path) =>
+                          updateForm({ roleImgPath: [normalizeStoragePath(path)] })
+                        }
+                        onPreview={(url) => setPreviewImage(url)}
+                      />
+                    ) : (
+                      <p className="rounded-md border border-dashed border-border/40 p-3 text-[11px] text-muted-foreground/60">
+                        保存后才能生成 AI 角色图
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {otherImages.length > 0 ? (
+                  <div className="shrink-0">
+                    <div className="mb-2 text-[11px] text-muted-foreground/80">
+                      {t("otherImages")}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {otherImages.map((item) => (
+                        <div key={item.name} className="group relative overflow-hidden rounded-md">
+                          <img
+                            src={buildOssUrl(item.path)}
+                            alt=""
+                            className="size-[80px] cursor-zoom-in rounded-md object-cover"
+                            onClick={() => setPreviewImage(buildOssUrl(item.path))}
+                          />
+                          <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1 py-0.5 text-center text-[10px] text-white">
+                            {item.name}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextImages = { ...formData.otherImgPath };
+                              delete nextImages[item.name];
+                              updateForm({ otherImgPath: nextImages });
+                            }}
+                            className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity hover:bg-primary group-hover:opacity-100"
+                          >
+                            <IconX className="size-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Composer — mirrors the storyboard AI image dialog's
+                    PromptInput: rounded-xl muted container, focus ring
+                    accent, textarea on top, bottom toolbar with model
+                    picker on the left and GenerateButton on the right.
+                    Pinned to the bottom of the right column via flex
+                    ordering. Writing to formData.prompt is shared with
+                    the 全局提示图 generator on the left. */}
+                <div className="shrink-0 flex flex-col gap-2 rounded-xl border border-border/40 bg-muted p-4 transition-colors focus-within:border-primary/30">
+                  <Textarea
+                    value={formData.prompt}
+                    onChange={(event) => updateForm({ prompt: event.target.value })}
+                    placeholder={tc("promptPlaceholder")}
+                    // 1000 instead of 500 — the Seedance template alone is
+                    // ~200 chars and gets appended to whatever base prompt
+                    // the user already has. 500 would silently clip the tail.
+                    maxLength={1000}
+                    rows={3}
+                    className="min-h-0 resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
+                  />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ModelPicker
+                        models={imageModels}
+                        value={imageModelId}
+                        onChange={setImageModelId}
+                        compact
+                        // Override the default translucent glass — the
+                        // portrait gallery behind the popover has bright
+                        // highlights that bleed through `bg-white/6` and
+                        // render the list text unreadable. Solid popover
+                        // background keeps contrast high.
+                        contentClassName="bg-popover backdrop-blur-none backdrop-saturate-100 border-border"
+                      />
+                    </div>
+                    <GenerateButton
+                      onClick={() => aiPanelRef.current?.generate()}
+                      cost={selectedImageModel?.cost}
+                      className={
+                        !formData.id || !formData.prompt?.trim()
+                          ? "pointer-events-none opacity-50"
+                          : undefined
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <DialogFooter>
-            <Button
-              variant="soft"
-              color="destructive"
-              className="mr-auto"
-              onClick={() => void handleDelete()}
-              disabled={deleting}
-            >
-              {deleting ? (
-                <IconLoader2 className="size-4 animate-spin" />
-              ) : (
-                <IconTrash className="size-4" />
-              )}
-              {tc("delete")}
-            </Button>
+          <SheetFooter>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="soft" color="destructive" className="mr-auto" disabled={deleting}>
+                  {deleting ? (
+                    <IconLoader2 className="size-4 animate-spin" />
+                  ) : (
+                    <IconTrash className="size-4" />
+                  )}
+                  {tc("delete")}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>删除角色</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    确定要删除「{formData.name || t("unnamedCharacter")}」吗？此操作无法撤销。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
+                  <AlertDialogAction color="destructive" onClick={() => void handleDelete()}>
+                    {tc("delete")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <Button variant="outline" color="muted" onClick={() => onOpenChange(false)}>
               {tc("cancel")}
             </Button>
@@ -649,9 +657,9 @@ export function CharacterEditDialog({
               )}
               {tc("save")}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <VoicePickerDialog
         open={voicePickerOpen}
@@ -660,16 +668,6 @@ export function CharacterEditDialog({
         loading={loadingVoices}
         selectedVoiceId={formData.voiceId}
         onSelect={(voice) => updateForm({ voiceId: String(voice.voiceId ?? "") })}
-      />
-
-      <CharacterAiRecordDialog
-        open={aiRecordOpen}
-        onOpenChange={setAiRecordOpen}
-        characterId={formData.id}
-        prompt={formData.prompt || formData.description}
-        referenceImageUrl={buildOssUrl(formData.referenceImgPath[0] ?? roleImagePath)}
-        selectedPath={roleImagePath}
-        onSelect={(path) => updateForm({ roleImgPath: [normalizeStoragePath(path)] })}
       />
 
       <MediaPreviewModal
