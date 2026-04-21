@@ -51,7 +51,7 @@ export function GlobalNav() {
   if (shouldHide) return null;
 
   const navItems = [
-    { href: "/ip", label: t("ipPlaza"), icon: IconDiamond },
+    { href: "/ips", label: t("ipPlaza"), icon: IconDiamond },
     { href: "/crews", label: t("studioHall"), icon: IconMovie },
     { href: "/creators", label: t("creators"), icon: IconUsers },
     {
@@ -93,11 +93,11 @@ export function GlobalNav() {
       <div className="mx-auto flex h-14 items-center justify-between px-6">
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">
-          <Link href="/ip" className="flex items-center gap-2 shrink-0">
+          <Link href="/ips" className="flex items-center gap-2 shrink-0">
             <img src="/logo.png" alt="FizzDragon" className="h-7" />
           </Link>
 
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className="hidden items-center gap-1 md:flex mx-auto">
             {navItems.map(({ href, label, icon: Icon, target }) => (
               <Link
                 key={href}
