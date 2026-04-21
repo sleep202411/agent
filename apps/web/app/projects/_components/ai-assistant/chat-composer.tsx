@@ -145,24 +145,24 @@ type WorkflowChip = {
 
 const WORKFLOW_CHIPS: WorkflowChip[] = [
   {
+    id: "main_flow",
+    label: "完整流程",
+    title: "从头跑一遍：角色 → 场景 → 剧集 → 剧本 → 分镜",
+  },
+  {
     id: "storyboard_phase",
-    label: "🎬 重跑分镜",
+    label: "重跑分镜",
     title: "整集重新生成分镜（会覆盖当前集的所有镜）",
   },
   {
     id: "scene_image_phase",
-    label: "🎨 批量场景图",
+    label: "批量场景图",
     title: "为所有场景批量生成配图",
   },
   {
     id: "role_image_phase",
-    label: "🎭 批量角色图",
+    label: "批量角色图",
     title: "为所有角色批量生成头像",
-  },
-  {
-    id: "main_flow",
-    label: "⚡ 完整流程",
-    title: "从头跑一遍：角色 → 场景 → 剧集 → 剧本 → 分镜",
   },
 ];
 
