@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   IconAlertCircle,
   IconCheck,
+  IconCopy,
   IconLoader2,
   IconRefresh,
   IconSparkles,
@@ -254,6 +255,25 @@ function formatAcceptLabel(
   return t("workflowActionAccept");
 }
 
+/**
+ * What the USER BUBBLE reads after clicking accept. Mirrors the button's
+ * action ("继续 分镜生成" / "完成") but strips the credit suffix — the
+ * bubble is a log of what the user did, not an ad for cost. Falls back to
+ * the generic "满意" i18n string when we don't know the next step.
+ */
+function formatAcceptUserLabel(
+  output: Partial<WorkflowSuspendedOutput>,
+  t: (key: string) => string
+): string {
+  const nextAction = output.nextAction;
+  if (nextAction) {
+    const nextLabel = t(WORKFLOW_LABEL_KEYS[nextAction.workflowName] ?? "workflowActionAccept");
+    return `继续 ${nextLabel}`;
+  }
+  if ((output.estimatedCost ?? 0) > 0) return "完成";
+  return t("workflowUserSatisfied");
+}
+
 function toDraftLike(
   runId: string,
   entityType: string,
@@ -322,7 +342,7 @@ export function WorkflowSuspendedCard({
         confirmWorkflowFromButton({
           projectId,
           runId,
-          userLabel: t("workflowUserSatisfied"),
+          userLabel: formatAcceptUserLabel(output, t),
           approved: true,
         })
       );
@@ -633,7 +653,7 @@ export function WorkflowFailedCard({
             className="mt-0.5 shrink-0 rounded p-0.5 text-destructive/60 hover:bg-destructive/10 hover:text-destructive/80"
             title={tc("copyError")}
           >
-            <IconRefresh className="size-3" />
+            <IconCopy className="size-3" />
           </button>
         )}
       </div>
