@@ -33,6 +33,7 @@ type MastraChatBody = {
     dialogLanguage?: unknown;
     stylePainting?: unknown;
     shotsPerEpisode?: unknown;
+    targetEpisodeCount?: unknown;
   };
   /** Button-driven workflow trigger. Supervisor reads from requestContext and
    * skips LLM routing, dispatching the named workflow directly. */
@@ -56,6 +57,15 @@ type MastraChatBody = {
     chapterLength?: unknown;
     stylePainting?: unknown;
     dialogLanguage?: unknown;
+    /**
+     * Not persisted by Java (no column yet) — client-only; we surface it
+     * in the <PROJECT_PARAMS_CONFIRMED /> marker so the supervisor sees the
+     * user's target episode count and threads it into invoke_workflow
+     * inputData.
+     */
+    targetEpisodeCount?: unknown;
+    /** Same story as targetEpisodeCount. Threaded via marker + context. */
+    shotsPerEpisode?: unknown;
   };
 };
 
@@ -140,6 +150,19 @@ export class MastraProxyController {
               typeof body.confirmProjectParams.dialogLanguage === 'string'
                 ? body.confirmProjectParams.dialogLanguage
                 : 'zh-CN',
+            targetEpisodeCount:
+              typeof body.confirmProjectParams.targetEpisodeCount ===
+                'number' &&
+              Number.isFinite(body.confirmProjectParams.targetEpisodeCount) &&
+              body.confirmProjectParams.targetEpisodeCount > 0
+                ? body.confirmProjectParams.targetEpisodeCount
+                : undefined,
+            shotsPerEpisode:
+              typeof body.confirmProjectParams.shotsPerEpisode === 'number' &&
+              Number.isFinite(body.confirmProjectParams.shotsPerEpisode) &&
+              body.confirmProjectParams.shotsPerEpisode > 0
+                ? body.confirmProjectParams.shotsPerEpisode
+                : undefined,
           }
         : undefined;
 
@@ -179,6 +202,12 @@ export class MastraProxyController {
         typeof body.workspaceContext?.shotsPerEpisode === 'number' &&
         Number.isFinite(body.workspaceContext.shotsPerEpisode)
           ? body.workspaceContext.shotsPerEpisode
+          : undefined,
+      targetEpisodeCount:
+        typeof body.workspaceContext?.targetEpisodeCount === 'number' &&
+        Number.isFinite(body.workspaceContext.targetEpisodeCount) &&
+        body.workspaceContext.targetEpisodeCount > 0
+          ? body.workspaceContext.targetEpisodeCount
           : undefined,
       userTier: user.userLevel ?? 'free',
       ...(forceEnterWorkflow ? { forceEnterWorkflow } : {}),
@@ -236,7 +265,7 @@ export class MastraProxyController {
           dialogLanguage: confirmProjectParams.dialogLanguage,
         });
         this.logger.log(
-          `confirmProjectParams saved for ${body.projectId}: ${confirmProjectParams.aspectRatioType}/${confirmProjectParams.chapterLength}/${confirmProjectParams.stylePainting}/${confirmProjectParams.dialogLanguage}`,
+          `confirmProjectParams saved for ${body.projectId}: ${confirmProjectParams.aspectRatioType}/${confirmProjectParams.chapterLength}/${confirmProjectParams.stylePainting}/${confirmProjectParams.dialogLanguage} targetEpisodeCount=${confirmProjectParams.targetEpisodeCount ?? '-'} shotsPerEpisode=${confirmProjectParams.shotsPerEpisode ?? '-'}`,
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -268,8 +297,20 @@ export class MastraProxyController {
       );
     }
     if (confirmProjectParams) {
+      const extras: string[] = [];
+      if (typeof confirmProjectParams.targetEpisodeCount === 'number') {
+        extras.push(
+          `targetEpisodeCount="${confirmProjectParams.targetEpisodeCount}"`,
+        );
+      }
+      if (typeof confirmProjectParams.shotsPerEpisode === 'number') {
+        extras.push(
+          `shotsPerEpisode="${confirmProjectParams.shotsPerEpisode}"`,
+        );
+      }
+      const extrasSuffix = extras.length > 0 ? ` ${extras.join(' ')}` : '';
       markers.push(
-        `<PROJECT_PARAMS_CONFIRMED aspectRatioType="${confirmProjectParams.aspectRatioType}" chapterLength="${confirmProjectParams.chapterLength}" stylePainting="${confirmProjectParams.stylePainting}" dialogLanguage="${confirmProjectParams.dialogLanguage}" />`,
+        `<PROJECT_PARAMS_CONFIRMED aspectRatioType="${confirmProjectParams.aspectRatioType}" chapterLength="${confirmProjectParams.chapterLength}" stylePainting="${confirmProjectParams.stylePainting}" dialogLanguage="${confirmProjectParams.dialogLanguage}"${extrasSuffix} />`,
       );
     }
     if (markers.length > 0) {
