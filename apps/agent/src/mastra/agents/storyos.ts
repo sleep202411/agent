@@ -46,7 +46,20 @@ export const storyosAgent = new Agent({
   name: "StoryOS",
   description:
     "FizzSpace StoryOS supervisor — plans the creation flow, dispatches work into workflows, and coordinates HITL with the user.",
-  instructions: storyosInstructions,
+  // System prompt as an array so we can attach provider-specific options.
+  // `providerOptions.anthropic.cacheControl` marks this block as cacheable
+  // on Claude — cuts ~8k input tokens per turn down to the 10% cached price
+  // and, crucially, removes them from TPM so Tier 2 (80k ITPM) can keep up
+  // with 500 concurrent users. Non-Anthropic providers ignore the key.
+  instructions: [
+    {
+      role: "system" as const,
+      content: storyosInstructions,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" as const } },
+      },
+    },
+  ],
   // Resolved per-request so startup succeeds even if the API key is injected
   // later (e.g. via Mastra Studio settings UI or a secrets-loader middleware).
   model: () => defaultRouterModel(),
