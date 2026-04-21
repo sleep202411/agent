@@ -4,7 +4,7 @@ import { useState } from "react";
 import { IconLoader2, IconPlayerStopFilled } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
-import { clearActiveWorkflow } from "@/src/store/slices/assistantSlice";
+import { clearActiveWorkflow, setDraft } from "@/src/store/slices/assistantSlice";
 import { cn } from "@/lib/utils";
 import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
 import type {
@@ -122,7 +122,101 @@ export function ChatComposer({
         )}
       </div>
 
+      {/* Workflow chips — click to insert a [[workflow:...]] marker
+          prefix into the composer. The supervisor prompt recognises the
+          marker as the "UI structured trigger" path, which skips the
+          two-step confirmation (click is the confirmation). Hidden when
+          a tool card is taking the composer's place. */}
+      {toolCard ? null : <WorkflowChipRow projectId={projectId} editorRef={editorRef} />}
+
       <p className="mt-2 text-center text-[11px] text-muted-foreground/50">{t("aiDisclaimer")}</p>
+    </div>
+  );
+}
+
+// ─── Workflow chips ────────────────────────────────────
+
+type WorkflowChip = {
+  id: string;
+  label: string;
+  /** Tooltip — explain what the chip runs. */
+  title: string;
+};
+
+const WORKFLOW_CHIPS: WorkflowChip[] = [
+  {
+    id: "storyboard_phase",
+    label: "🎬 重跑分镜",
+    title: "整集重新生成分镜（会覆盖当前集的所有镜）",
+  },
+  {
+    id: "scene_image_phase",
+    label: "🎨 批量场景图",
+    title: "为所有场景批量生成配图",
+  },
+  {
+    id: "role_image_phase",
+    label: "🎭 批量角色图",
+    title: "为所有角色批量生成头像",
+  },
+  {
+    id: "main_flow",
+    label: "⚡ 完整流程",
+    title: "从头跑一遍：角色 → 场景 → 剧集 → 剧本 → 分镜",
+  },
+];
+
+function WorkflowChipRow({
+  projectId,
+  editorRef,
+}: {
+  projectId: string | null;
+  editorRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const dispatch = useAppDispatch();
+
+  const handleClick = (chip: WorkflowChip) => {
+    if (!projectId) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    // `[[workflow:xxx]]` is the marker the supervisor prompt parses as
+    // an explicit workflow trigger. Keep the space after so the user's
+    // typed context doesn't collide with the closing bracket.
+    const marker = `[[workflow:${chip.id}]] `;
+    const existing = editor.innerText;
+    // If the same marker is already there, no-op — don't double-stack.
+    if (existing.includes(marker.trim())) {
+      editor.focus();
+      return;
+    }
+    const newText = marker + existing;
+    editor.innerText = newText;
+    dispatch(setDraft({ projectId, draft: newText }));
+
+    // Park the cursor at the end so the user can keep typing context.
+    editor.focus();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  };
+
+  return (
+    <div role="toolbar" aria-label="快捷启动工作流" className="mt-2 flex flex-wrap gap-1.5 px-1">
+      {WORKFLOW_CHIPS.map((chip) => (
+        <button
+          key={chip.id}
+          type="button"
+          onClick={() => handleClick(chip)}
+          title={chip.title}
+          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:bg-muted hover:text-foreground"
+        >
+          {chip.label}
+        </button>
+      ))}
     </div>
   );
 }
