@@ -3,6 +3,10 @@ services:
     image: ${WEB_IMAGE:-fizzdragon-web}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-web
     restart: always
+    # Per-service memory caps so no single container can starve the others
+    # when the host hits pressure. Sized for an 8c16g ECS: web 1g, server
+    # 1g, agent 2g, agent-worker 4g, redis 512m → ~8.5g with headroom.
+    mem_limit: 1g
     ports:
       - "${WEB_PORT:-3000}:3000"
     environment:
@@ -16,6 +20,7 @@ services:
     image: ${SERVER_IMAGE:-fizzdragon-server}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-server
     restart: always
+    mem_limit: 1g
     ports:
       - "${SERVER_PORT:-3001}:3001"
     environment:
@@ -45,6 +50,7 @@ services:
     image: ${AGENT_IMAGE:-fizzdragon-agent}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-agent
     restart: always
+    mem_limit: 2g
     environment:
       PORT: 4111
       MASTRA_HOST: 0.0.0.0
@@ -86,6 +92,10 @@ services:
     image: ${AGENT_IMAGE:-fizzdragon-agent}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-agent-worker
     restart: always
+    # Worker ceiling highest because it holds live workflow state +
+    # batched LLM buffers for bulk phases (parse_script on a 50K-char
+    # novel, storyboard_phase generating 30 shots × N episodes in parallel).
+    mem_limit: 4g
     command: ["npx", "tsx", "src/worker.ts"]
     environment:
       MASTRA_DB_URL: file:/app/data/mastra.db
@@ -125,8 +135,13 @@ services:
     image: ${REDIS_IMAGE:-redis/redis-stack-server:7.4.0-v3}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-redis
     restart: always
+    # Cap Redis memory so an attachment-cache / chat-event burst can't eat
+    # everything. `allkeys-lru` evicts least-recently-used when the cap is
+    # hit — safe because our attachment / draft / workflow keys all have
+    # TTLs anyway; the LRU eviction is just a backstop against runaway.
+    mem_limit: 512m
     environment:
-      REDIS_ARGS: "--appendonly yes --appendfsync everysec"
+      REDIS_ARGS: "--appendonly yes --appendfsync everysec --maxmemory 450mb --maxmemory-policy allkeys-lru"
     volumes:
       - redis_data:/data
     networks:

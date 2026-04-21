@@ -17,6 +17,8 @@ import { briefAnalyzerAgent } from "./agents/personas/brief-analyzer";
 import { scriptSplitterAgent } from "./agents/personas/script-splitter";
 import { workflowRoutes } from "./routes/workflow";
 import { assetsRoutes } from "./routes/assets";
+import { adminRoutes } from "./routes/admin";
+import { logStartupSelfCheck } from "./lib/startup-self-check";
 import { roleDesignWorkflow } from "./workflows/role-design";
 import { sceneDesignWorkflow } from "./workflows/scene-design";
 import { propDesignWorkflow } from "./workflows/prop-design";
@@ -155,6 +157,7 @@ export const mastra = new Mastra({
     apiRoutes: [
       ...workflowRoutes,
       ...assetsRoutes,
+      ...adminRoutes,
       // AI SDK v5–compatible chat stream. Consumed by apps/web's
       // `readUIMessageStream()` via the NestJS proxy at
       // /assistant/submit-message-to-agent.
@@ -162,3 +165,8 @@ export const mastra = new Mastra({
     ],
   },
 });
+
+// Boot-time visibility: print resolved provider / caching / hardening state
+// once so misconfig (missing key, wrong provider, env typo) surfaces in the
+// startup logs instead of midway through the first user request.
+logStartupSelfCheck();

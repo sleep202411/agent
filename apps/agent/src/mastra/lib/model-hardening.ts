@@ -55,11 +55,18 @@ export class CircuitOpenError extends Error {
   }
 }
 
+export class RequestTimeoutError extends Error {
+  readonly name = "RequestTimeoutError";
+  constructor(timeoutMs: number) {
+    super(`Claude request exceeded ${timeoutMs}ms deadline`);
+  }
+}
+
 export type ErrorClass =
   | "rate_limit" // 429
   | "overloaded" // 529 / 503
   | "network" // fetch failed, ECONNRESET, etc.
-  | "timeout" // request-level timeout
+  | "timeout" // request-level timeout (ours or upstream)
   | "queue_timeout" // our queue-wait timeout
   | "circuit_open" // circuit breaker short-circuit
   | "auth" // 401, 402 (credit low) — NOT retryable, NOT counted
@@ -77,6 +84,7 @@ export function classifyError(err: unknown): ErrorClass {
   if (err instanceof ClaudeQueueTimeoutError) return "queue_timeout";
   if (err instanceof ClaudeOverloadError) return "queue_timeout";
   if (err instanceof CircuitOpenError) return "circuit_open";
+  if (err instanceof RequestTimeoutError) return "timeout";
 
   const asAny = err as {
     name?: string;
@@ -320,6 +328,97 @@ function circuitBreakerMiddleware(breaker: CircuitBreaker, log: Logger): Languag
   };
 }
 
+// ─── Layer 4b: Request-level timeout ────────────────────────────────────
+//
+// Inner-most middleware — wraps the actual provider fetch so a stuck
+// upstream doesn't pin a queue slot indefinitely. Lives INSIDE the
+// rate-limit wrapper so on timeout the slot releases (limiter's
+// `finally { release() }` runs as the timeout error propagates up).
+//
+// Note: for stream calls this only times out the initial handshake that
+// returns the stream object. Mid-stream stalls (stream opens, then no
+// chunks come) need a per-chunk watchdog — out of scope for MVP.
+
+function raceWithTimeout<T>(fn: () => PromiseLike<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new RequestTimeoutError(timeoutMs));
+    }, timeoutMs);
+    fn().then(
+      (v) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
+function requestTimeoutMiddleware(timeoutMs: number): LanguageModelV3Middleware {
+  return {
+    specificationVersion: "v3",
+    wrapGenerate: async ({ doGenerate }) => raceWithTimeout(doGenerate, timeoutMs),
+    wrapStream: async ({ doStream }) => raceWithTimeout(doStream, timeoutMs),
+  };
+}
+
+// ─── Fallback counter ───────────────────────────────────────────────────
+//
+// Lightweight event log keyed by reason. `/admin/hardening-stats` reads
+// this to expose "how often did Claude get bypassed in the last hour".
+// Ring-bufferish: we prune events older than RETAIN_MS on every record
+// so memory stays bounded even under sustained fallback.
+
+const FALLBACK_RETAIN_MS = 3_600_000; // 1 hour
+
+export interface FallbackStats {
+  totalSinceBoot: number;
+  lastHourCount: number;
+  lastHourByReason: Record<string, number>;
+  lastEventAt: number | null;
+}
+
+export class FallbackCounter {
+  private totalCount = 0;
+  private readonly events: Array<{ reason: ErrorClass; at: number }> = [];
+
+  record(reason: ErrorClass): void {
+    const now = Date.now();
+    this.totalCount += 1;
+    this.events.push({ reason, at: now });
+    const cutoff = now - FALLBACK_RETAIN_MS;
+    while (this.events.length > 0 && this.events[0].at < cutoff) {
+      this.events.shift();
+    }
+  }
+
+  stats(): FallbackStats {
+    const now = Date.now();
+    const cutoff = now - FALLBACK_RETAIN_MS;
+    const recent = this.events.filter((e) => e.at >= cutoff);
+    const byReason: Record<string, number> = {};
+    for (const e of recent) {
+      byReason[e.reason] = (byReason[e.reason] ?? 0) + 1;
+    }
+    return {
+      totalSinceBoot: this.totalCount,
+      lastHourCount: recent.length,
+      lastHourByReason: byReason,
+      lastEventAt: this.events[this.events.length - 1]?.at ?? null,
+    };
+  }
+}
+
 // ─── Layer 2: Provider fallback ─────────────────────────────────────────
 
 /**
@@ -332,7 +431,11 @@ function circuitBreakerMiddleware(breaker: CircuitBreaker, log: Logger): Languag
  * without teeing the ReadableStream, so we just log + fall back silently.
  * UI badging for streamed fallbacks is a future add; logs still record it.
  */
-function fallbackMiddleware(fallback: LanguageModelV3, log: Logger): LanguageModelV3Middleware {
+function fallbackMiddleware(
+  fallback: LanguageModelV3,
+  counter: FallbackCounter,
+  log: Logger
+): LanguageModelV3Middleware {
   return {
     specificationVersion: "v3",
     wrapGenerate: async ({ doGenerate, params }) => {
@@ -341,6 +444,7 @@ function fallbackMiddleware(fallback: LanguageModelV3, log: Logger): LanguageMod
       } catch (err) {
         const cls = classifyError(err);
         if (!shouldFallback(cls)) throw err;
+        counter.record(cls);
         log.warn(
           `claude → ${fallback.provider}/${fallback.modelId} fallback (reason=${cls}): ${toMessage(err)}`
         );
@@ -360,6 +464,7 @@ function fallbackMiddleware(fallback: LanguageModelV3, log: Logger): LanguageMod
       } catch (err) {
         const cls = classifyError(err);
         if (!shouldFallback(cls)) throw err;
+        counter.record(cls);
         log.warn(
           `claude → ${fallback.provider}/${fallback.modelId} fallback (stream, reason=${cls}): ${toMessage(err)}`
         );
@@ -382,6 +487,12 @@ export interface HardenConfig {
   circuitFailureThreshold?: number;
   /** Cooldown before the breaker half-opens again. */
   circuitCooldownMs?: number;
+  /**
+   * Hard deadline for a single request to the primary (generate call or
+   * stream handshake). If the call doesn't resolve within this, we throw
+   * RequestTimeoutError → slot releases → fallback fires.
+   */
+  requestTimeoutMs?: number;
 }
 
 const DEFAULTS: Required<HardenConfig> = {
@@ -396,15 +507,20 @@ const DEFAULTS: Required<HardenConfig> = {
   queueMaxDepth: Number(process.env.STORYOS_CLAUDE_QUEUE_MAX_DEPTH ?? 100),
   circuitFailureThreshold: Number(process.env.STORYOS_CLAUDE_CIRCUIT_THRESHOLD ?? 5),
   circuitCooldownMs: Number(process.env.STORYOS_CLAUDE_CIRCUIT_COOLDOWN_MS ?? 60_000),
+  // 30s is comfortably longer than a normal supervisor turn (~2-15s) but
+  // short enough that a hung call doesn't squat on a slot for minutes.
+  requestTimeoutMs: Number(process.env.STORYOS_CLAUDE_REQUEST_TIMEOUT_MS ?? 30_000),
 };
 
 // Stateful layers shared across every call through this process.
 let sharedLimiter: RateLimiter | null = null;
 let sharedBreaker: CircuitBreaker | null = null;
+let sharedFallbackCounter: FallbackCounter | null = null;
 
 function getSharedState(config: Required<HardenConfig>): {
   limiter: RateLimiter;
   breaker: CircuitBreaker;
+  counter: FallbackCounter;
 } {
   if (!sharedLimiter) {
     sharedLimiter = new RateLimiter(
@@ -416,7 +532,47 @@ function getSharedState(config: Required<HardenConfig>): {
   if (!sharedBreaker) {
     sharedBreaker = new CircuitBreaker(config.circuitFailureThreshold, config.circuitCooldownMs);
   }
-  return { limiter: sharedLimiter, breaker: sharedBreaker };
+  if (!sharedFallbackCounter) {
+    sharedFallbackCounter = new FallbackCounter();
+  }
+  return {
+    limiter: sharedLimiter,
+    breaker: sharedBreaker,
+    counter: sharedFallbackCounter,
+  };
+}
+
+/**
+ * Snapshot of current hardening state for ops / monitoring.
+ * Returns null if hardening hasn't been activated yet (non-Anthropic
+ * router) — callers should treat that as "no Claude pressure".
+ */
+export interface HardeningStats {
+  rateLimiter: ReturnType<RateLimiter["stats"]>;
+  circuit: { state: CircuitState };
+  fallback: FallbackStats;
+  config: {
+    maxConcurrency: number;
+    queueTimeoutMs: number;
+    queueMaxDepth: number;
+    circuitFailureThreshold: number;
+    circuitCooldownMs: number;
+    requestTimeoutMs: number;
+  };
+}
+
+let sharedConfig: Required<HardenConfig> | null = null;
+
+export function getHardeningStats(): HardeningStats | null {
+  if (!sharedLimiter || !sharedBreaker || !sharedFallbackCounter || !sharedConfig) {
+    return null;
+  }
+  return {
+    rateLimiter: sharedLimiter.stats(),
+    circuit: { state: sharedBreaker.currentState() },
+    fallback: sharedFallbackCounter.stats(),
+    config: { ...sharedConfig },
+  };
 }
 
 /**
@@ -430,23 +586,30 @@ export function hardenAnthropicModel(
   config: HardenConfig = {}
 ): LanguageModelV3 {
   const merged: Required<HardenConfig> = { ...DEFAULTS, ...config };
-  const { limiter, breaker } = getSharedState(merged);
+  sharedConfig = merged;
+  const { limiter, breaker, counter } = getSharedState(merged);
   const log = makeLogger();
 
   log.info(
     `claude hardening: concurrency=${merged.maxConcurrency} ` +
       `queueTimeout=${merged.queueTimeoutMs}ms maxDepth=${merged.queueMaxDepth} ` +
       `circuitThreshold=${merged.circuitFailureThreshold} ` +
-      `cooldown=${merged.circuitCooldownMs}ms fallback=${fallback.provider}/${fallback.modelId}`
+      `cooldown=${merged.circuitCooldownMs}ms ` +
+      `requestTimeout=${merged.requestTimeoutMs}ms ` +
+      `fallback=${fallback.provider}/${fallback.modelId}`
   );
 
   return wrapLanguageModel({
     model: primary,
     // First entry = OUTERMOST (see ai/dist/index.js::wrapLanguageModel).
+    // Order matters: fallback catches EVERYTHING below it, including the
+    // request-timeout; request-timeout sits INSIDE rate-limit so a timeout
+    // during the actual fetch releases the slot (limiter's finally-block).
     middleware: [
-      fallbackMiddleware(fallback, log),
+      fallbackMiddleware(fallback, counter, log),
       circuitBreakerMiddleware(breaker, log),
       rateLimitMiddleware(limiter, log),
+      requestTimeoutMiddleware(merged.requestTimeoutMs),
     ],
   });
 }
@@ -481,4 +644,6 @@ function toMessage(err: unknown): string {
 export function _resetSharedStateForTests(): void {
   sharedLimiter = null;
   sharedBreaker = null;
+  sharedFallbackCounter = null;
+  sharedConfig = null;
 }
