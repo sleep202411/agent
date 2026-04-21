@@ -25,6 +25,13 @@ export type StoryosContext = {
    * for it, so each submit re-sends the value via workspaceContext.
    */
   shotsPerEpisode?: number;
+  /**
+   * Target number of episodes the user wants. Same localStorage-only
+   * story as shotsPerEpisode — re-sent on every submit so workflows
+   * (parse_script / episode_phase / main_flow / script_*_flow) can
+   * honour the user's pick instead of falling back to the schema default.
+   */
+  targetEpisodeCount?: number;
 };
 
 type ApiBody<T = unknown> = {
@@ -59,6 +66,15 @@ export function getContext(rc: RequestContext | undefined): StoryosContext {
       if (typeof raw === "string" && raw.trim()) {
         const n = Number(raw);
         return Number.isFinite(n) ? n : undefined;
+      }
+      return undefined;
+    })(),
+    targetEpisodeCount: (() => {
+      const raw = rc.get("targetEpisodeCount");
+      if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+      if (typeof raw === "string" && raw.trim()) {
+        const n = Number(raw);
+        return Number.isFinite(n) && n > 0 ? n : undefined;
       }
       return undefined;
     })(),

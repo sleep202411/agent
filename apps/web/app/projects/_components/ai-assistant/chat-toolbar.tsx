@@ -5,7 +5,7 @@ import { IconLoader2, IconPlus, IconSend } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch } from "@/src/store";
-import { addAttachments, sendUserMessage } from "@/src/store/slices/assistantSlice";
+import { addAttachments } from "@/src/store/slices/assistantSlice";
 import { MAX_ATTACHMENTS } from "./constants";
 
 interface ChatToolbarProps {
@@ -17,6 +17,9 @@ interface ChatToolbarProps {
   hasUploadingAttachments: boolean;
   /** When true, block sending — project-params form upstream must be filled first. */
   blocked?: boolean;
+  /** Composer-owned send handler. Gates a confirmation dialog when a
+   *  workflow chip is selected before dispatching sendUserMessage. */
+  onSend: () => void;
 }
 
 export function ChatToolbar({
@@ -27,6 +30,7 @@ export function ChatToolbar({
   hasPendingTools,
   hasUploadingAttachments,
   blocked,
+  onSend,
 }: ChatToolbarProps) {
   const tc = useTranslations("common");
   const dispatch = useAppDispatch();
@@ -60,9 +64,9 @@ export function ChatToolbar({
 
         <Button
           size="icon-sm"
-          onClick={() =>
-            projectId && !hasPendingTools && !blocked && void dispatch(sendUserMessage(projectId))
-          }
+          onClick={() => {
+            if (projectId && !hasPendingTools && !blocked) onSend();
+          }}
           disabled={
             sending ||
             hasPendingTools ||

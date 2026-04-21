@@ -2,15 +2,19 @@
 
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch } from "@/src/store";
-import { setDraft, sendUserMessage } from "@/src/store/slices/assistantSlice";
+import { setDraft } from "@/src/store/slices/assistantSlice";
 
 interface TextEditorProps {
   projectId: string | null;
   hasPendingTools: boolean;
   editorRef: React.RefObject<HTMLDivElement | null>;
+  /** Called on Ctrl/Cmd+Enter. Composer owns the send-gate logic
+   *  (confirmation dialog when a workflow chip is selected) so the
+   *  editor just surfaces the keyboard shortcut. */
+  onSend: () => void;
 }
 
-export function TextEditor({ projectId, hasPendingTools, editorRef }: TextEditorProps) {
+export function TextEditor({ projectId, hasPendingTools, editorRef, onSend }: TextEditorProps) {
   const t = useTranslations("ai");
   const dispatch = useAppDispatch();
 
@@ -30,7 +34,7 @@ export function TextEditor({ projectId, hasPendingTools, editorRef }: TextEditor
       onKeyDown={(event) => {
         if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
           event.preventDefault();
-          if (projectId && !hasPendingTools) void dispatch(sendUserMessage(projectId));
+          if (projectId && !hasPendingTools) onSend();
         }
       }}
     />

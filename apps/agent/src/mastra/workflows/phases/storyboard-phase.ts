@@ -766,11 +766,15 @@ async function backfillSceneColumn(
         failed += 1;
         continue;
       }
+      // SCENE column is multi-value on Java — scalar `value` is
+      // silently discarded. Use `values: [sceneId]` to match the
+      // frontend persistValueList write path.
       await javaRequest(ctx, "/api/user/shotValue/input", {
         data: {
           shotId,
           shotColumnId: sceneColumnId,
-          value: sceneId,
+          value: "",
+          values: [sceneId],
           presetColumnKey: "scene",
           sceneId,
           sceneName: row.scene,

@@ -86,8 +86,8 @@ export const invokeWorkflow = createTool({
     // supervisor prompt tells the LLM to call `require_project_params` first,
     // but we don't rely on that — the LLM sometimes skips it. Hard-block here
     // so a missing-param case always surfaces as a structured error.
-    // Also stash the fetched detail so the input-injection step below can
-    // read `chapterLength` without a second Java round-trip.
+    // Fetched detail is also reused for the cost estimate below (avoids a
+    // second Java round-trip).
     let projectDetail: ProjectParamsDetail | null = null;
     if (isGenerativeWorkflow(workflowName as WorkflowName)) {
       projectDetail = await javaRequest<ProjectParamsDetail>(
@@ -108,7 +108,11 @@ export const invokeWorkflow = createTool({
     // Credit preflight: estimate cost + check balance. Conservative reject
     // so we don't fire LLM calls (real money) for users who can't pay.
     // image phases / batch_create_asset estimate to 0 → always pass.
-    const estimated = estimateWorkflowCost(workflowName as WorkflowName, projectDetail);
+    const estimated = estimateWorkflowCost(
+      workflowName as WorkflowName,
+      projectDetail,
+      ctx.targetEpisodeCount ?? null
+    );
     if (estimated > 0) {
       const balance = await getUserBalance(ctx);
       if (balance < estimated) {
@@ -127,23 +131,23 @@ export const invokeWorkflow = createTool({
         ? (resolvedInput as Record<string, unknown>)
         : {};
 
-    // Auto-inject `targetEpisodeCount` from project.chapterLength for workflows
-    // that take episode count. Without this, LLM omission → schema default of
-    // 10 → user's ProjectParamsForm pick (e.g. 12) gets silently overridden.
-    // Applies to any flow that plans/slices episodes. LLM-provided value wins.
+    // Auto-inject `targetEpisodeCount` from the user's ProjectParamsForm pick
+    // (plumbed via workspaceContext → x-storyos-context → ctx.targetEpisodeCount)
+    // for workflows that plan/slice episodes. Without this, LLM omission →
+    // schema default of 10 → user's pick (e.g. 12) gets silently overridden.
+    // LLM-provided value in the tool call still wins.
     const needsEpisodeCount =
       workflowName === "main_flow" ||
       workflowName === "episode_phase" ||
       workflowName === "parse_script" ||
       workflowName === "script_to_storyboard_flow" ||
       workflowName === "script_import_flow";
-    const chapterLength = projectDetail?.chapterLength;
     const injectedEpisodeCount =
       needsEpisodeCount &&
       !("targetEpisodeCount" in resolvedObj) &&
-      typeof chapterLength === "number" &&
-      chapterLength > 0
-        ? { targetEpisodeCount: chapterLength }
+      typeof ctx.targetEpisodeCount === "number" &&
+      ctx.targetEpisodeCount > 0
+        ? { targetEpisodeCount: ctx.targetEpisodeCount }
         : {};
 
     // Supervisor doesn't see projectId / worldId (they live in requestContext),

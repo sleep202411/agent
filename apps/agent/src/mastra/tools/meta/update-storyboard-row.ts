@@ -234,14 +234,16 @@ export const updateStoryboardRow = createTool({
           if (!sceneId) {
             failedFields.push({ key: "scene", reason: "failed to resolve or create scene" });
           } else {
-            // Tiptap chip renderer expects sceneId/sceneName/worldId
-            // metadata alongside the plain `value` — mirror what the
-            // storyboard-phase backfill writes.
+            // Java treats SCENE as a multi-value column — it silently
+            // ignores the scalar `value` and only persists the `values`
+            // array. Matches the frontend's persistValueList shape in
+            // `cell-utils.ts`.
             await javaRequest(ctx, "/api/user/shotValue/input", {
               data: {
                 shotId,
                 shotColumnId: sceneColumnId,
-                value: sceneId,
+                value: "",
+                values: [sceneId],
                 presetColumnKey: "scene",
                 sceneId,
                 sceneName: patch.scene.trim(),
