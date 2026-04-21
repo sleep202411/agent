@@ -30,6 +30,7 @@ import {
   publishWorkflowProgress,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
+import { PRICES, deductCredits, estimateWorkflowCost, phaseDeductKey } from "../../lib/billing";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -312,6 +313,11 @@ const waitConfirmationStep = createStep({
           },
         ],
         totalDraftCount: drafts.length,
+        estimatedCost: drafts.length * PRICES.episodePerUnit,
+        nextAction: {
+          workflowName: "script_phase",
+          estimatedCost: drafts.length * PRICES.scriptPerEpisode,
+        },
       });
       return await suspend({
         runId,
@@ -348,6 +354,15 @@ const applyDecisionStep = createStep({
     const projectId = rawInput.projectId || ctx.projectId;
     const draftClientRefIds = state.draftClientRefIds ?? [];
     const titleByRef = state.titleByRef ?? {};
+
+    // Charge regardless of approved/rejected — LLM cost incurred at gen.
+    if (draftClientRefIds.length > 0) {
+      await deductCredits(ctx, {
+        amount: draftClientRefIds.length * PRICES.episodePerUnit,
+        reason: `episode_phase ${draftClientRefIds.length} drafts (approved=${inputData.approved})`,
+        idempotencyKey: phaseDeductKey(runId, "episode_phase"),
+      });
+    }
 
     if (!inputData.approved) {
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);

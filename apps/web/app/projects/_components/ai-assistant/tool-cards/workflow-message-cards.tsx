@@ -222,6 +222,38 @@ export function WorkflowProgressCard({
 
 // ─── workflow_suspended (HITL gate — satisfy / revise buttons) ────────
 
+/**
+ * Build the 满意-button label so it tells the user what clicking will do
+ * AND how much it costs. Three shapes in order of preference:
+ *   1. nextAction present → "继续 <下一阶段> (N 积分)"
+ *      The cost shown is the NEXT phase's estimate because THIS phase's
+ *      cost is already locked in at generation time (charged regardless
+ *      of 满意 / 不满意). What the user can still control by clicking is
+ *      whether to spend MORE on the next phase.
+ *   2. nextAction absent but estimatedCost > 0 → "完成 · 已扣 N 积分"
+ *      Terminal phase (storyboard). The button "completes" this phase
+ *      and the current-phase cost has been incurred.
+ *   3. Fallback → plain `workflowActionAccept` label from i18n.
+ */
+function formatAcceptLabel(
+  output: Partial<WorkflowSuspendedOutput>,
+  t: (key: string) => string
+): string {
+  const nextAction = output.nextAction;
+  if (nextAction) {
+    const nextLabel = t(WORKFLOW_LABEL_KEYS[nextAction.workflowName] ?? "workflowActionAccept");
+    if (nextAction.estimatedCost > 0) {
+      return `继续 ${nextLabel} (${nextAction.estimatedCost} 积分)`;
+    }
+    return `继续 ${nextLabel}`;
+  }
+  const currentCost = output.estimatedCost ?? 0;
+  if (currentCost > 0) {
+    return `完成 · ${currentCost} 积分`;
+  }
+  return t("workflowActionAccept");
+}
+
 function toDraftLike(
   runId: string,
   entityType: string,
@@ -361,7 +393,7 @@ export function WorkflowSuspendedCard({
           disabled={actionBusy !== null}
           busy={actionBusy === "accept"}
         >
-          {t("workflowActionAccept")}
+          {formatAcceptLabel(output, t)}
         </ActionButton>
         <ActionButton
           variant="secondary"

@@ -9,6 +9,7 @@ import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
 import { getRedis } from "../../lib/redis-client";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { startWorkflow } from "../../workflows/engine";
+import { estimateWorkflowCost, getUserBalance } from "../../lib/billing";
 
 /**
  * Recursively resolve attachment references embedded in the tool inputData.
@@ -64,11 +65,18 @@ export const invokeWorkflow = createTool({
       runId: z.string(),
       workflowName: z.enum(WORKFLOW_NAMES),
       message: z.string(),
+      estimatedCost: z.number().int().nonnegative().optional(),
     }),
     z.object({
       error: z.literal("PROJECT_PARAMS_INCOMPLETE"),
       message: z.string(),
       missing: z.array(z.string()),
+    }),
+    z.object({
+      error: z.literal("INSUFFICIENT_CREDITS"),
+      message: z.string(),
+      needed: z.number(),
+      current: z.number(),
     }),
   ]),
   execute: async ({ workflowName, inputData }, execCtx) => {
@@ -93,6 +101,22 @@ export const invokeWorkflow = createTool({
           message:
             "项目核心参数未齐（影片尺寸/单集时长/画风）。请立即调用 require_project_params 让用户补齐，收到 {confirmed:true} 后用相同的 workflowName 和 inputData 重新 invoke_workflow。",
           missing,
+        };
+      }
+    }
+
+    // Credit preflight: estimate cost + check balance. Conservative reject
+    // so we don't fire LLM calls (real money) for users who can't pay.
+    // image phases / batch_create_asset estimate to 0 → always pass.
+    const estimated = estimateWorkflowCost(workflowName as WorkflowName, projectDetail);
+    if (estimated > 0) {
+      const balance = await getUserBalance(ctx);
+      if (balance < estimated) {
+        return {
+          error: "INSUFFICIENT_CREDITS" as const,
+          message: `预计消耗 ${estimated} 积分，当前余额 ${balance}。请充值后重试。`,
+          needed: estimated,
+          current: balance,
         };
       }
     }
@@ -140,6 +164,7 @@ export const invokeWorkflow = createTool({
     return {
       runId,
       workflowName: workflowName as WorkflowName,
+      estimatedCost: estimated,
       message: `OK. runId=${runId}. 立即结束 turn——不要再调任何工具（list_active_workflows / explain_current_state / show_drafts 等一律不要），不要再写任何文字。`,
     };
   },
