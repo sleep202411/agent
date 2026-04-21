@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ProjectEditorDialog } from "@/app/projects/_components/project-editor-dialog";
 import { StoryboardAiImportDialog } from "@/app/projects/_components/storyboard-ai-import-dialog";
 import { StoryboardFieldSettingsPanel } from "@/app/projects/_components/storyboard-field-settings-panel";
+import { StoryboardViewModeToggle } from "@/app/projects/_components/storyboard-view-mode-toggle";
 import { backendApi } from "@/src/lib/api";
 import { exportStoryboard } from "@/src/lib/storyboard-export";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
@@ -178,6 +179,8 @@ export function StoryboardToolbar() {
     <>
       <div className="flex items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-4">
+          <StoryboardViewModeToggle />
+
           <Button
             variant="outline"
             color="primary"
