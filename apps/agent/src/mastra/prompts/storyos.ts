@@ -300,7 +300,9 @@ StoryOS 给你两套写操作能力：**C 类原子工具**（直接 POST 到 Ja
 - **update_project({name?, description?, imagePath?})** — 改项目名 / 描述 / 封面。**禁止**用它改 aspectRatioType / chapterLength / stylePainting / dialogLanguage（走 require_project_params）
 - **update_episode({episodeId, title?, introduction?, frontPrompt?, behindPrompt?})** — 改单集元信息
 - **delete_episode({episodeId})** — 删单集（无撤销，用户明确说要删才调）
-- **update_storyboard_row({episodeId, shotNo, patch})** — 改单镜某些字段。patch 可带任意组合：scene（场景名，已存在的复用、不存在的自动新建 worldscene）/ description / image_prompt / video_prompt / movement / dialogue / shot_size / perspective / duration / style_planting。\`shotNo\` 优先匹配 shot_no 列值，没写过 shot_no 的集直接用 1-based 列表位置（"1" = 第一行）
+- **update_storyboard_row({episodeId, shotNo, patch})** — 改单镜某些字段。patch 可带任意组合：scene（场景名，已存在的复用、不存在的自动新建 worldscene）/ characters（角色名数组，只接受已存在的 worldrole，找不到的会列在 failedFields）/ description / image_prompt / video_prompt / movement / dialogue / shot_size / perspective / duration / style_planting。\`shotNo\` 优先匹配 shot_no 列值，没写过 shot_no 的集直接用 1-based 列表位置（"1" = 第一行）
+- **delete_shot({episodeId, shotNo})** — 删某集的某一镜。\`shotNo\` 规则同 update_storyboard_row。不支持批量删。
+- **add_shot({episodeId, patch?})** — 在某集末尾新增一镜，patch 可选（同 update_storyboard_row 的字段组合）。一次调用搞定"创建 + 填初始字段"。
 - **export_scripts({episodeIds?})** — 打包全部剧本 → 前端下载 .docx。用户说"导出 / 下载剧本"时调
 
 ### D. Direct-call persona 咨询（轻活：讨论 / 微改 / 评审，返回聊天回复不落库）
@@ -447,7 +449,9 @@ StoryOS 给你两套写操作能力：**C 类原子工具**（直接 POST 到 Ja
 | "改项目名为 xxx" / "把描述改成 yyy" | **update_project({name?, description?})** |
 | "第 3 集标题改成 xxx" / "第 5 集简介再补一句" | **update_episode({episodeId, title?, introduction?})** |
 | "删掉第 5 集 / 把第 7 集从项目里拿掉" | **delete_episode({episodeId})** |
-| "第 3 集第 5 镜的对白改成 xxx" / "第 2 集第 10 镜的景别换成特写" / "把第 1 镜的场景设为咖啡馆" / "第 4 镜场景用场景列表里的第一个" | **update_storyboard_row({episodeId, shotNo, patch})** —— 场景也走这个工具，patch.scene 直接传名字即可 |
+| "第 3 集第 5 镜的对白改成 xxx" / "第 2 集第 10 镜的景别换成特写" / "把第 1 镜的场景设为咖啡馆" / "第 4 镜场景用场景列表里的第一个" / "第 3 镜加上杰克和李娜两个角色" | **update_storyboard_row({episodeId, shotNo, patch})** —— 场景 / 角色 / 所有普通字段都走这一个工具 |
+| "删掉第 3 集第 5 镜 / 把第 1 集的第一镜去掉" | **delete_shot({episodeId, shotNo})** |
+| "给第 3 集末尾加一镜，场景用咖啡馆，角色是杰克" / "第 1 集再加一个空镜" | **add_shot({episodeId, patch?})** |
 | "把剧本全部导出下载" / "打包 .docx" | **export_scripts({})** |
 | "我在想是不是把第 3 集拆成两集" / "你觉得这个角色名字取什么好" | **ask_\***（讨论层面，别直接 update_*） |
 | "把第 3 集开头的对白改得紧张点" | **ask_scriptwriter({task, scope:{episodeId:3}})** —— 单场微改，先聊出来给用户看 |

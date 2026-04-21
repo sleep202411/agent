@@ -37,6 +37,43 @@ const PATCHABLE_KEYS = [
 type PatchKey = (typeof PATCHABLE_KEYS)[number];
 
 /**
+ * Resolve a list of character names → worldrole ids. Unlike scene,
+ * character names are NOT auto-created — the caller is expected to
+ * reference existing characters. Unknown names are returned in the
+ * `missing` array so we can surface them to the user.
+ */
+async function resolveCharacterIdsByNames(
+  ctx: StoryosContext,
+  worldId: string,
+  names: string[]
+): Promise<{ ids: string[]; missing: string[] }> {
+  const trimmed = names.map((n) => n.trim()).filter(Boolean);
+  if (trimmed.length === 0) return { ids: [], missing: [] };
+
+  const resp = await javaRequest<{
+    list?: Array<{ id?: string | number; name?: string }>;
+  }>(ctx, "/api/user/world/list/worldrole", {
+    data: { worldId, page: 1, pageSize: 200 },
+  });
+  const byName = new Map<string, string>();
+  for (const role of resp?.list ?? []) {
+    const name = String(role.name ?? "")
+      .trim()
+      .toLowerCase();
+    if (name && role.id != null) byName.set(name, String(role.id));
+  }
+
+  const ids: string[] = [];
+  const missing: string[] = [];
+  for (const name of trimmed) {
+    const id = byName.get(name.toLowerCase());
+    if (id) ids.push(id);
+    else missing.push(name);
+  }
+  return { ids, missing };
+}
+
+/**
  * Look up an existing worldscene by name; if none matches, create one
  * and return the new id. Mirrors the logic in storyboard-phase's
  * `resolveSceneId` but without the per-run cache (single-shot tool
@@ -84,7 +121,7 @@ async function resolveSceneIdByName(
 export const updateStoryboardRow = createTool({
   id: "update_storyboard_row",
   description:
-    '改一集分镜表里某一镜的字段（场景 / 描述 / 对白 / 图提 / 视频提 / 运镜 / 景别 / 视角 / 时长 / 风格）。用户明确说"第 N 集第 M 镜的对白改为 xxx" / "把第 1 镜的场景设为咖啡馆"时调。scene 传场景名即可——已存在的直接绑定，不存在的会自动新建 worldscene。批量改整集/多集请用 invoke_workflow("script_edit") 或重跑 storyboard_phase。',
+    '改一集分镜表里某一镜的字段（场景 / 角色 / 描述 / 对白 / 图提 / 视频提 / 运镜 / 景别 / 视角 / 时长 / 风格）。用户明确说"第 N 集第 M 镜的对白改为 xxx" / "把第 1 镜的场景设为咖啡馆" / "把第 3 镜加上杰克和李娜两个角色"时调。scene 传场景名——已存在的直接绑定，不存在的自动新建。characters 传角色名数组——只接受已存在的 worldrole。批量改整集/多集请用 invoke_workflow。',
   inputSchema: z.object({
     episodeId: z.string().describe("Java episode id — 从 query_context 拿"),
     shotNo: z
@@ -98,6 +135,12 @@ export const updateStoryboardRow = createTool({
           .string()
           .optional()
           .describe("场景名（例：咖啡馆）。已存在的复用，不存在的自动新建"),
+        characters: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "角色名数组（例：['杰克', '李娜']）。只接受已存在的 worldrole；找不到的会在 failedFields 里告诉你。传空数组表示清空"
+          ),
         description: z.string().optional().describe("画面描述"),
         image_prompt: z.string().optional().describe("图片提示词"),
         video_prompt: z.string().optional().describe("视频提示词"),
@@ -108,9 +151,15 @@ export const updateStoryboardRow = createTool({
         duration: z.coerce.number().optional().describe("时长（秒）"),
         style_planting: z.string().optional().describe("风格"),
       })
-      .refine((p) => Object.values(p).some((v) => v !== undefined && v !== ""), {
-        message: "patch 至少要提供一个字段",
-      }),
+      .refine(
+        (p) =>
+          Object.entries(p).some(
+            ([, v]) => v !== undefined && v !== "" && (Array.isArray(v) ? v.length >= 0 : true)
+          ),
+        {
+          message: "patch 至少要提供一个字段",
+        }
+      ),
   }),
   outputSchema: z.object({
     ok: z.boolean(),
@@ -210,8 +259,49 @@ export const updateStoryboardRow = createTool({
       }
     }
 
-    // 4. Scene write (separate from the plain-text loop because it
-    //    needs name→id resolution + extra metadata in the payload).
+    // 4a. Characters — multi-value column. Java's shotValue/input
+    //     carries the full id list under `values`, `value` stays "".
+    //     Unknown names don't fail the whole call — we surface them
+    //     per-missing so the supervisor can report back.
+    if (patch.characters !== undefined) {
+      const characterColumnId = columnIdByKey.get("character");
+      const worldId = ctx.worldId ?? "";
+      if (!characterColumnId) {
+        failedFields.push({ key: "characters", reason: "column character not found" });
+      } else if (!worldId && patch.characters.length > 0) {
+        failedFields.push({ key: "characters", reason: "worldId missing from context" });
+      } else {
+        try {
+          const { ids, missing } = await resolveCharacterIdsByNames(ctx, worldId, patch.characters);
+          for (const name of missing) {
+            failedFields.push({
+              key: "characters",
+              reason: `worldrole '${name}' not found — create the character first`,
+            });
+          }
+          // Always write, even if empty — lets the caller clear the column.
+          await javaRequest(ctx, "/api/user/shotValue/input", {
+            data: {
+              shotId,
+              shotColumnId: characterColumnId,
+              value: "",
+              values: ids,
+            },
+          });
+          if (ids.length > 0 || patch.characters.length === 0) {
+            updatedFields.push("characters");
+          }
+        } catch (err) {
+          failedFields.push({
+            key: "characters",
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+
+    // 4b. Scene write (separate from the plain-text loop because it
+    //     needs name→id resolution + extra metadata in the payload).
     if (patch.scene !== undefined && patch.scene !== "") {
       const sceneColumnId = columnIdByKey.get("scene");
       const worldId = ctx.worldId ?? "";

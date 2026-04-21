@@ -22,6 +22,8 @@ export { updateProject } from "./update-project";
 export { updateEpisode, deleteEpisode } from "./episode-crud";
 export { listAssets } from "./list-assets";
 export { updateStoryboardRow } from "./update-storyboard-row";
+export { deleteShot } from "./delete-shot";
+export { addShot } from "./add-shot";
 export { exportScripts } from "./export-scripts";
 // Generic client-side HITL picker — supervisor calls it when the user's
 // intent is genuinely ambiguous and the options have material trade-offs.
