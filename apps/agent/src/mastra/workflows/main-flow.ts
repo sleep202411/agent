@@ -1,17 +1,27 @@
 /**
  * main_flow — the big pipeline workflow.
  *
- * Chains five phases with a HITL gate between each:
+ * Chains every phase with a HITL gate between each:
  *
- *   [1] story_outline      (storyEditor)   — compress source → skeleton (Redis)
+ *   [1] story_outline       (storyEditor)   — compress source → skeleton (Redis)
  *        ↓   no HITL here (pure analysis; skeleton is the contract)
- *   [2] role_phase         (HITL)          — elaborate cast → draft → commit
+ *   [2] role_phase          (HITL)          — elaborate cast → draft → commit
  *        ↓
- *   [3] episode_phase      (HITL)          — plan episodes → draft → commit
+ *   [3] role_image_phase                    — dispatch role image gen
  *        ↓
- *   [4] script_phase       (HITL)          — write per-episode scripts → commit
+ *   [4] scene_phase         (HITL)          — scene roster → draft → commit
  *        ↓
- *   [5] storyboard_phase   (HITL)          — per-episode storyboard → commit
+ *   [5] scene_image_phase                   — dispatch scene image gen
+ *        ↓
+ *   [6] prop_phase          (HITL)          — prop roster → draft → commit
+ *        ↓
+ *   [7] prop_image_phase                    — dispatch prop image gen
+ *        ↓
+ *   [8] episode_phase       (HITL)          — plan episodes → draft → commit
+ *        ↓
+ *   [9] script_phase        (HITL)          — write per-episode scripts → commit
+ *        ↓
+ *  [10] storyboard_phase    (HITL)          — per-episode storyboard → commit
  *
  * Every phase reads from the project skeleton (Redis key outline:{projectId})
  * and/or the Java DB — no data threaded through step I/O schemas, so the
@@ -22,6 +32,10 @@ import { z } from "zod";
 import { scriptBreakdownWorkflow } from "./phases/script-breakdown";
 import { rolePhaseWorkflow, RolePhaseOutputSchema } from "./phases/role-phase";
 import { roleImagePhaseWorkflow } from "./phases/role-image-phase";
+import { scenePhaseWorkflow, ScenePhaseOutputSchema } from "./phases/scene-phase";
+import { sceneImagePhaseWorkflow } from "./phases/scene-image-phase";
+import { propPhaseWorkflow, PropPhaseOutputSchema } from "./phases/prop-phase";
+import { propImagePhaseWorkflow } from "./phases/prop-image-phase";
 import { episodePhaseWorkflow, EpisodePhaseOutputSchema } from "./phases/episode-phase";
 import { scriptPhaseWorkflow, ScriptPhaseOutputSchema } from "./phases/script-phase";
 import { storyboardPhaseWorkflow, StoryboardPhaseOutputSchema } from "./phases/storyboard-phase";
@@ -42,6 +56,8 @@ export const MainFlowInputSchema = z.object({
 export const MainFlowOutputSchema = z.object({
   outcome: z.enum(["committed", "partial_failure", "rejected", "cancelled"]),
   rolesCommitted: z.number(),
+  scenesCommitted: z.number(),
+  propsCommitted: z.number(),
   episodesCommitted: z.number(),
   scriptsCommitted: z.number(),
   storyboardsCommitted: z.number(),
@@ -86,6 +102,40 @@ const toRolePhaseInput = createStep({
 const toRoleImagePhaseInput = createStep({
   id: "to_role_image_phase_input",
   inputSchema: RolePhaseOutputSchema,
+  outputSchema: z.object({}),
+  execute: async () => ({}),
+});
+
+const toScenePhaseInput = createStep({
+  id: "to_scene_phase_input",
+  inputSchema: z.unknown(),
+  outputSchema: z.object({ worldId: z.string() }),
+  execute: async ({ getInitData }) => {
+    const init = getInitData<z.infer<typeof MainFlowInputSchema>>();
+    return { worldId: init.worldId };
+  },
+});
+
+const toSceneImagePhaseInput = createStep({
+  id: "to_scene_image_phase_input",
+  inputSchema: ScenePhaseOutputSchema,
+  outputSchema: z.object({}),
+  execute: async () => ({}),
+});
+
+const toPropPhaseInput = createStep({
+  id: "to_prop_phase_input",
+  inputSchema: z.unknown(),
+  outputSchema: z.object({ worldId: z.string() }),
+  execute: async ({ getInitData }) => {
+    const init = getInitData<z.infer<typeof MainFlowInputSchema>>();
+    return { worldId: init.worldId };
+  },
+});
+
+const toPropImagePhaseInput = createStep({
+  id: "to_prop_image_phase_input",
+  inputSchema: PropPhaseOutputSchema,
   outputSchema: z.object({}),
   execute: async () => ({}),
 });
@@ -136,6 +186,12 @@ const aggregateStep = createStep({
     const rolesResult = getStepResult(rolePhaseWorkflow) as
       | z.infer<typeof RolePhaseOutputSchema>
       | undefined;
+    const scenesResult = getStepResult(scenePhaseWorkflow) as
+      | z.infer<typeof ScenePhaseOutputSchema>
+      | undefined;
+    const propsResult = getStepResult(propPhaseWorkflow) as
+      | z.infer<typeof PropPhaseOutputSchema>
+      | undefined;
     const episodesResult = getStepResult(episodePhaseWorkflow) as
       | z.infer<typeof EpisodePhaseOutputSchema>
       | undefined;
@@ -144,12 +200,16 @@ const aggregateStep = createStep({
       | undefined;
 
     const rolesCommitted = rolesResult?.committed.length ?? 0;
+    const scenesCommitted = scenesResult?.committed.length ?? 0;
+    const propsCommitted = propsResult?.committed.length ?? 0;
     const episodesCommitted = episodesResult?.committed.length ?? 0;
     const scriptsCommitted = scriptsResult?.committed.length ?? 0;
     const storyboardsCommitted = inputData.committed.length;
 
     const anyFailure =
       (rolesResult?.failed.length ?? 0) > 0 ||
+      (scenesResult?.failed.length ?? 0) > 0 ||
+      (propsResult?.failed.length ?? 0) > 0 ||
       (episodesResult?.failed.length ?? 0) > 0 ||
       (scriptsResult?.failed.length ?? 0) > 0 ||
       inputData.failed.length > 0;
@@ -161,13 +221,15 @@ const aggregateStep = createStep({
     return {
       outcome,
       rolesCommitted,
+      scenesCommitted,
+      propsCommitted,
       episodesCommitted,
       scriptsCommitted,
       storyboardsCommitted,
       message:
         outcome === "committed"
-          ? `主流程完成！已入库 ${rolesCommitted} 角色 / ${episodesCommitted} 集大纲 / ${scriptsCommitted} 集剧本 / ${storyboardsCommitted} 集分镜。`
-          : `主流程完成但有失败：角色 ${rolesCommitted} / 分集 ${episodesCommitted} / 剧本 ${scriptsCommitted} / 分镜 ${storyboardsCommitted}。检查各阶段的 drafts 和 errors。`,
+          ? `主流程完成！已入库 ${rolesCommitted} 角色 / ${scenesCommitted} 场景 / ${propsCommitted} 道具 / ${episodesCommitted} 集大纲 / ${scriptsCommitted} 集剧本 / ${storyboardsCommitted} 集分镜。`
+          : `主流程完成但有失败：角色 ${rolesCommitted} / 场景 ${scenesCommitted} / 道具 ${propsCommitted} / 分集 ${episodesCommitted} / 剧本 ${scriptsCommitted} / 分镜 ${storyboardsCommitted}。检查各阶段的 drafts 和 errors。`,
     };
   },
 });
@@ -177,7 +239,7 @@ const aggregateStep = createStep({
 export const mainFlowWorkflow = createWorkflow({
   id: "main_flow",
   description:
-    '从素材到成片的完整主流程：骨架 → 角色 → 分集 → 剧本 → 分镜。每阶段自动进入下一阶段，用户只需点"满意"。',
+    '从素材到成片的完整主流程：骨架 → 角色（+图）→ 场景（+图）→ 道具（+图）→ 分集 → 剧本 → 分镜。每阶段自动进入下一阶段，用户只需点"满意"。',
   inputSchema: MainFlowInputSchema,
   outputSchema: MainFlowOutputSchema,
 })
@@ -187,6 +249,14 @@ export const mainFlowWorkflow = createWorkflow({
   .then(rolePhaseWorkflow)
   .then(toRoleImagePhaseInput)
   .then(roleImagePhaseWorkflow)
+  .then(toScenePhaseInput)
+  .then(scenePhaseWorkflow)
+  .then(toSceneImagePhaseInput)
+  .then(sceneImagePhaseWorkflow)
+  .then(toPropPhaseInput)
+  .then(propPhaseWorkflow)
+  .then(toPropImagePhaseInput)
+  .then(propImagePhaseWorkflow)
   .then(toEpisodePhaseInput)
   .then(episodePhaseWorkflow)
   .then(toScriptPhaseInput)

@@ -48,8 +48,13 @@ import {
  * in the storyboard editor after.
  */
 const StoryboardRow = z.object({
-  /** 镜号 — "1" / "2" / …; auto-assigned in collect step so LLM can drift. */
-  shot_no: z.string().optional(),
+  /**
+   * 镜号 — 后端在 generateStep 里用 `String(idx + 1)` 无条件覆盖，LLM 返
+   * 回什么都不关心。z.coerce.string() 是为了让 DeepSeek / Qwen 那种把
+   * shot_no 当纯数字吐回来的响应（rows.0.shot_no: 1）也能过 schema，
+   * 不然整个 batch 11/11 episodes 全 fail。
+   */
+  shot_no: z.coerce.string().optional(),
   /**
    * 场景 — prefer a worldscene name so frontend can linkify via <mention>.
    * Optional at schema level (not `.min(1)`) because DeepSeek drops this
@@ -77,8 +82,8 @@ const StoryboardRow = z.object({
   shot_size: z.string().optional().default("中景"),
   /** 视角 — 平视 / 俯视 / 仰视 / 鸟瞰 / 倾斜 / 航拍 / 背面. */
   perspective: z.string().optional().default("平视"),
-  /** 时长 — seconds, 2-8. */
-  duration: z.number().min(1).max(120).optional(),
+  /** 时长 — seconds, 2-8. coerce covers LLMs returning "5" as string. */
+  duration: z.coerce.number().min(1).max(120).optional(),
 });
 
 const EpisodeScriptRef = z.object({

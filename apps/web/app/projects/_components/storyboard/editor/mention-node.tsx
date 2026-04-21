@@ -2,6 +2,7 @@ import { mergeAttributes, Node } from "@tiptap/core";
 import { NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import { useReferenceMap } from "./reference-map-context";
+import { ossUrl } from "../cells/cell-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -118,7 +119,11 @@ function MentionChipView({ node }: NodeViewProps) {
         }}
       >
         {hasAvatar ? (
-          <img src={imgUrl} alt="" style={{ ...avatarStyle, ...invalidStyle }} />
+          // imgUrl from the saved mention tag is the raw OSS path
+          // (e.g. "history/img/62/.../abc.jpeg") — not a full URL.
+          // Without ossUrl() the browser resolves it against the current
+          // page origin → 404 on `studio.test.fizzdragon.com/zh-CN/...`.
+          <img src={ossUrl(imgUrl)} alt="" style={{ ...avatarStyle, ...invalidStyle }} />
         ) : isVideo || isAudio ? (
           <span
             style={{
