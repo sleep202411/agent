@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { IconLoader2, IconPlayerStopFilled } from "@tabler/icons-react";
+import { IconLoader2, IconPlayerStopFilled, IconX } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
-import { clearActiveWorkflow, setDraft } from "@/src/store/slices/assistantSlice";
+import { clearActiveWorkflow, setSelectedWorkflowChip } from "@/src/store/slices/assistantSlice";
 import { cn } from "@/lib/utils";
 import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
 import type {
@@ -101,6 +101,13 @@ export function ChatComposer({
           <div className="bg-muted/90 px-3 py-3 rounded-t-2xl">
             <AttachmentList projectId={projectId} attachments={attachments} />
 
+            {/* Inline workflow prefix: when a chip is selected, show its
+                label + "/" separator in primary color before the editor.
+                The label isn't part of the contenteditable — it lives in
+                Redux (`selectedWorkflowChip`) and is prepended as a
+                `[[workflow:...]]` marker at send time. */}
+            <WorkflowPrefix projectId={projectId} />
+
             <TextEditor
               projectId={projectId}
               hasPendingTools={hasPendingTools}
@@ -122,11 +129,10 @@ export function ChatComposer({
         )}
       </div>
 
-      {/* Workflow chips — click to insert a [[workflow:...]] marker
-          prefix into the composer. The supervisor prompt recognises the
-          marker as the "UI structured trigger" path, which skips the
-          two-step confirmation (click is the confirmation). Hidden when
-          a tool card is taking the composer's place. */}
+      {/* Workflow chips — click to select a workflow. The active chip
+          lights up in primary; the chosen chip's label also appears as
+          a colored prefix inside the composer. Hidden when a tool card
+          is taking the composer's place. */}
       {toolCard ? null : <WorkflowChipRow projectId={projectId} editorRef={editorRef} />}
 
       <p className="mt-2 text-center text-[11px] text-muted-foreground/50">{t("aiDisclaimer")}</p>
@@ -166,6 +172,30 @@ const WORKFLOW_CHIPS: WorkflowChip[] = [
   },
 ];
 
+function WorkflowPrefix({ projectId }: { projectId: string | null }) {
+  const dispatch = useAppDispatch();
+  const selectedId = useAppSelector((s) =>
+    projectId ? (s.assistant.projects[projectId]?.selectedWorkflowChip ?? null) : null
+  );
+  if (!selectedId || !projectId) return null;
+  const chip = WORKFLOW_CHIPS.find((c) => c.id === selectedId);
+  if (!chip) return null;
+  return (
+    <div className="mb-1.5 flex items-center gap-1 text-sm leading-relaxed">
+      <span className="font-medium text-primary">{chip.label}</span>
+      <span className="text-primary/60">/</span>
+      <button
+        type="button"
+        onClick={() => dispatch(setSelectedWorkflowChip({ projectId, chipId: null }))}
+        title="取消"
+        className="ml-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-primary/60 transition-colors hover:bg-primary/15 hover:text-primary"
+      >
+        <IconX className="size-2.5" />
+      </button>
+    </div>
+  );
+}
+
 function WorkflowChipRow({
   projectId,
   editorRef,
@@ -174,49 +204,41 @@ function WorkflowChipRow({
   editorRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const dispatch = useAppDispatch();
+  const selectedId = useAppSelector((s) =>
+    projectId ? (s.assistant.projects[projectId]?.selectedWorkflowChip ?? null) : null
+  );
 
   const handleClick = (chip: WorkflowChip) => {
     if (!projectId) return;
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    // `[[workflow:xxx]]` is the marker the supervisor prompt parses as
-    // an explicit workflow trigger. Keep the space after so the user's
-    // typed context doesn't collide with the closing bracket.
-    const marker = `[[workflow:${chip.id}]] `;
-    const existing = editor.innerText;
-    // If the same marker is already there, no-op — don't double-stack.
-    if (existing.includes(marker.trim())) {
-      editor.focus();
-      return;
-    }
-    const newText = marker + existing;
-    editor.innerText = newText;
-    dispatch(setDraft({ projectId, draft: newText }));
-
-    // Park the cursor at the end so the user can keep typing context.
-    editor.focus();
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
+    // Toggle: clicking the currently-selected chip clears it.
+    const next = selectedId === chip.id ? null : chip.id;
+    dispatch(setSelectedWorkflowChip({ projectId, chipId: next }));
+    // Keep the editor focused so typing context continues naturally.
+    editorRef.current?.focus();
   };
 
   return (
     <div role="toolbar" aria-label="快捷启动工作流" className="mt-2 flex flex-wrap gap-1.5 px-1">
-      {WORKFLOW_CHIPS.map((chip) => (
-        <button
-          key={chip.id}
-          type="button"
-          onClick={() => handleClick(chip)}
-          title={chip.title}
-          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:bg-muted hover:text-foreground"
-        >
-          {chip.label}
-        </button>
-      ))}
+      {WORKFLOW_CHIPS.map((chip) => {
+        const active = selectedId === chip.id;
+        return (
+          <button
+            key={chip.id}
+            type="button"
+            onClick={() => handleClick(chip)}
+            title={chip.title}
+            aria-pressed={active}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+              active
+                ? "border-primary/50 bg-primary/15 text-primary shadow-[0_0_12px_rgba(244,114,182,0.25)]"
+                : "border-border/60 bg-muted/40 text-muted-foreground hover:border-primary/40 hover:bg-muted hover:text-foreground"
+            )}
+          >
+            {chip.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
