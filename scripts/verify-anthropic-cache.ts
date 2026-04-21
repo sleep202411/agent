@@ -41,6 +41,10 @@ async function oneCall(userMessage: string) {
       "Content-Type": "application/json",
       "x-api-key": API_KEY,
       "anthropic-version": "2023-06-01",
+      // Explicit beta flag — older API versions need it to enable prompt
+      // caching READS (writes work either way which is why the initial
+      // test saw cache_creation>0 but cache_read=0).
+      "anthropic-beta": "prompt-caching-2024-07-31",
     },
     body: JSON.stringify({
       model: MODEL,
