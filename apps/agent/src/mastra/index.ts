@@ -14,6 +14,7 @@ import { artDirectorAgent } from "./agents/personas/art-director";
 import { sceneDesignerAgent } from "./agents/personas/scene-designer";
 import { propDesignerAgent } from "./agents/personas/prop-designer";
 import { briefAnalyzerAgent } from "./agents/personas/brief-analyzer";
+import { scriptSplitterAgent } from "./agents/personas/script-splitter";
 import { workflowRoutes } from "./routes/workflow";
 import { assetsRoutes } from "./routes/assets";
 import { roleDesignWorkflow } from "./workflows/role-design";
@@ -32,6 +33,8 @@ import { episodePhaseWorkflow } from "./workflows/phases/episode-phase";
 import { scriptPhaseWorkflow } from "./workflows/phases/script-phase";
 import { storyboardPhaseWorkflow } from "./workflows/phases/storyboard-phase";
 import { mainFlowWorkflow } from "./workflows/main-flow";
+import { parseScriptWorkflow } from "./workflows/parse-script";
+import { scriptToStoryboardFlow } from "./workflows/script-to-storyboard-flow";
 
 if (!process.env.DASHSCOPE_API_KEY && process.env.ALIBABA_API_KEY) {
   process.env.DASHSCOPE_API_KEY = process.env.ALIBABA_API_KEY;
@@ -103,6 +106,7 @@ export const mastra = new Mastra({
     sceneDesigner: sceneDesignerAgent,
     propDesigner: propDesignerAgent,
     briefAnalyzer: briefAnalyzerAgent,
+    scriptSplitter: scriptSplitterAgent,
   },
   workflows: {
     // Single-phase workflows (still reachable individually via invoke_workflow)
@@ -124,6 +128,11 @@ export const mastra = new Mastra({
     storyboard_phase: storyboardPhaseWorkflow,
     // Main pipeline that chains all five phases with HITL gates
     main_flow: mainFlowWorkflow,
+    // Script-as-input path: slice uploaded 剧本 into episodes (no LLM rewrite)
+    parse_script: parseScriptWorkflow,
+    // 最小 flow: parse_script → storyboard_phase. Used when user uploaded a
+    // full script and only asked for 分镜.
+    script_to_storyboard_flow: scriptToStoryboardFlow,
   },
   storage: new LibSQLStore({
     id: "storyos-storage",

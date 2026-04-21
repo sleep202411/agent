@@ -16,3 +16,10 @@ export { markProjectParamsUpdated } from "./mark-project-params-updated";
 export { generateProjectCover } from "./generate-project-cover";
 export { analyzeBrief } from "./analyze-brief";
 export { saveProjectMeta } from "./save-project-meta";
+// Fine-grained direct writes — LLM-orchestrated, no HITL. For rename / quick
+// edits. Big structural changes (bulk regenerate) stay in workflows.
+export { updateProject } from "./update-project";
+export { updateEpisode, deleteEpisode } from "./episode-crud";
+export { listAssets } from "./list-assets";
+export { updateStoryboardRow } from "./update-storyboard-row";
+export { exportScripts } from "./export-scripts";

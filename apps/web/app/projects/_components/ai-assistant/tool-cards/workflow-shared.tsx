@@ -43,12 +43,14 @@ import { applySeedanceTemplate, getSeedanceTemplate } from "@/src/lib/seedance";
 
 export const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
   main_flow: "workflowMainFlow",
+  script_to_storyboard_flow: "workflowScriptToStoryboardFlow",
   role_design: "workflowRoleDesign",
   scene_design: "workflowSceneDesign",
   prop_design: "workflowPropDesign",
   batch_create_asset: "workflowBatchCreate",
   script_edit: "workflowScriptEdit",
   story_outline: "workflowStoryOutline",
+  parse_script: "workflowParseScript",
   role_phase: "workflowRolePhase",
   role_image_phase: "workflowRoleImagePhase",
   scene_phase: "workflowScenePhase",
@@ -68,7 +70,9 @@ interface WorkflowPersona {
 
 export const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
   main_flow: { name: "创作总监", icon: IconSparkles },
+  script_to_storyboard_flow: { name: "创作总监", icon: IconSparkles },
   story_outline: { name: "剧本统筹", icon: IconBook },
+  parse_script: { name: "剧本统筹", icon: IconBook },
   role_design: { name: "角色设计师", icon: IconUsers },
   scene_design: { name: "场景设计师", icon: IconBuildingStore },
   prop_design: { name: "道具设计师", icon: IconPackage },

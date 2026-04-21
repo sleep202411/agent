@@ -40,14 +40,22 @@ const BriefShape = z.object({
   projectMeta: ProjectMetaShape,
   suggestedParams: SuggestedParamsShape,
   themeSummary: z.string().min(1).max(200),
+  /**
+   * Body type — drives whether we route to main_flow (novel/synopsis)
+   * or script_to_storyboard_flow / script_import_flow (script).
+   */
+  inputType: z.enum(["script", "novel", "synopsis"]),
+  /** Rough count of natural breakpoints (章/场/幕) for split-planning. */
+  detectedChapterCount: z.number().int().min(0).max(100),
 });
 
 export type AnalyzeBriefOutput = z.infer<typeof BriefShape>;
 
-// Input size guard. The router model takes short prompts; if the user
-// attaches a whole novel, truncate to something sensible. The downstream
-// story_outline workflow will see the full text later.
-const MAX_TEXT_CHARS = 6000;
+// Input size guard. brief-analyzer runs on the persona model (DeepSeek),
+// which is cheap enough to read a whole novel. Cap generously so script
+// detection (looks for scene slugs + dialogue structure early, but chapter
+// count needs the tail) has plenty of signal.
+const MAX_TEXT_CHARS = 50000;
 
 async function resolveText(input: { text?: string; textRef?: string }): Promise<string> {
   if (input.text && input.text.trim().length > 0) {
@@ -122,6 +130,8 @@ export const analyzeBrief = createTool({
           reasoning: "briefAnalyzer 未返回结构化结果，使用系统默认参数",
         },
         themeSummary: "",
+        inputType: "novel" as const,
+        detectedChapterCount: 0,
       };
     }
 

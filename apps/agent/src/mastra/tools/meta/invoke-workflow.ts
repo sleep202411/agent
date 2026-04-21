@@ -106,9 +106,12 @@ export const invokeWorkflow = createTool({
     // Auto-inject `targetEpisodeCount` from project.chapterLength for workflows
     // that take episode count. Without this, LLM omission → schema default of
     // 10 → user's ProjectParamsForm pick (e.g. 12) gets silently overridden.
-    // Only for main_flow / episode_phase; other workflows don't use this field.
-    // LLM-provided value still wins if present.
-    const needsEpisodeCount = workflowName === "main_flow" || workflowName === "episode_phase";
+    // Applies to any flow that plans/slices episodes. LLM-provided value wins.
+    const needsEpisodeCount =
+      workflowName === "main_flow" ||
+      workflowName === "episode_phase" ||
+      workflowName === "parse_script" ||
+      workflowName === "script_to_storyboard_flow";
     const chapterLength = projectDetail?.chapterLength;
     const injectedEpisodeCount =
       needsEpisodeCount &&

@@ -2,17 +2,23 @@ import { Agent } from "@mastra/core/agent";
 import {
   analyzeBrief,
   cancelWorkflowTool,
+  deleteEpisode,
   evaluateDrafts,
   explainCurrentState,
+  exportScripts,
   generateProjectCover,
   invokeWorkflow,
   listActiveWorkflows,
+  listAssets,
   markProjectParamsUpdated,
   queryContext,
   requireProjectParams,
   resumeWorkflowTool,
   saveProjectMeta,
   showDrafts,
+  updateEpisode,
+  updateProject,
+  updateStoryboardRow,
 } from "../tools/meta";
 import {
   askArtDirector,
@@ -68,8 +74,16 @@ export const storyosAgent = new Agent({
     save_project_meta: saveProjectMeta,
     // State reads + quality review
     query_context: queryContext,
+    list_assets: listAssets,
     show_drafts: showDrafts,
     evaluate: evaluateDrafts,
+    // Fine-grained direct writes — atomic CRUD the LLM orchestrates itself.
+    // Big structural regenerates still go through invoke_workflow.
+    update_project: updateProject,
+    update_episode: updateEpisode,
+    delete_episode: deleteEpisode,
+    update_storyboard_row: updateStoryboardRow,
+    export_scripts: exportScripts,
     // Direct-call persona consultations (light tasks — single-turn reply,
     // no DB write, no HITL). See tools/personas/ask-tools.ts.
     ask_scriptwriter: askScriptwriter,
