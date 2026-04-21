@@ -31,6 +31,7 @@ import { MusicCell } from "@/app/projects/_components/storyboard/cells/music-cel
 import { StoryboardDialogProvider } from "@/app/projects/_components/storyboard/storyboard-dialog-context";
 import { StoryboardLiftedDialogs } from "@/app/projects/_components/storyboard/storyboard-lifted-dialogs";
 import { LipSyncCell } from "@/app/projects/_components/storyboard-lipsync-cell";
+import { StoryboardCardView } from "@/app/projects/_components/storyboard-card-view";
 import { StoryboardColumnHeader } from "@/app/projects/_components/storyboard-column-header";
 import { StoryboardToolbar } from "@/app/projects/_components/storyboard-toolbar";
 import { TextCell } from "@/app/projects/_components/storyboard/cells/text-cell";
@@ -347,6 +348,7 @@ export function StoryboardView() {
   const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
   const rows = useAppSelector((s) => selectCurrentInstance(s).rows);
   const isLoading = useAppSelector((s) => selectCurrentInstance(s).isStoryboardLoading);
+  const viewMode = useAppSelector((s) => selectCurrentInstance(s).storyboardViewMode);
 
   // Guided tour — auto-starts on first visit
   useGuide("storyboard", { ready: !isLoading && rows.length > 0 });
@@ -404,6 +406,8 @@ export function StoryboardView() {
           <div className="flex flex-1 items-center justify-center">
             <p className="text-sm text-muted-foreground">{t("noStoryboardData")}</p>
           </div>
+        ) : viewMode === "card" ? (
+          <StoryboardCardView />
         ) : (
           <VirtualStoryboardTable
             rows={rows}

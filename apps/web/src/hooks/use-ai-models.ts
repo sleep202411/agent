@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import {
@@ -25,11 +25,22 @@ const idle =
 export function useAiModelsPreload() {
   const projectId = useAppSelector((s) => s.project.currentProjectId);
   const aiModelCache = useAppSelector((s) => s.aiModelCache.aiModelCache);
+  // Guards the in-flight window: the `aiModelCache` check catches the
+  // "already loaded" case, but under React Strict Mode in dev the
+  // effect fires twice before the first batch resolves — so both
+  // fires see an empty cache and fire a second full batch of requests.
+  // A ref survives the double-invoke and dedupes correctly.
+  const startedRef = useRef(false);
 
   useEffect(() => {
     if (!projectId) return;
-    // Already loaded
-    if (Object.keys(aiModelCache).length > 0) return;
+    if (startedRef.current) return;
+    // Already loaded (e.g., remounted after cache was populated).
+    if (Object.keys(aiModelCache).length > 0) {
+      startedRef.current = true;
+      return;
+    }
+    startedRef.current = true;
 
     store.dispatch(setAiModelCacheLoading(true));
 

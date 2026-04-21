@@ -24,7 +24,6 @@ import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { backendApi } from "@/src/lib/api";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
-import { AssetAiRecordDialog } from "../asset-ai-record-dialog";
 import { env } from "@/src/env";
 
 const OSS_BASE = env.OSS_BASE_URL;
@@ -41,7 +40,6 @@ export function PropImageSection({
   images,
   prompt,
   threeViewImagePath,
-  referenceImagePaths,
   onImagesChange,
   onThreeViewChange,
 }: {
@@ -49,7 +47,6 @@ export function PropImageSection({
   images: string[];
   prompt: string;
   threeViewImagePath: string;
-  referenceImagePaths: string[];
   onImagesChange: (nextImages: string[]) => void;
   onThreeViewChange: (nextPath: string) => void;
 }) {
@@ -61,13 +58,11 @@ export function PropImageSection({
   const [loadingIndex, setLoadingIndex] = useState(-1);
   const [previewUrl, setPreviewUrl] = useState("");
   const [localPreviewUrl, setLocalPreviewUrl] = useState("");
-  const [aiRecordOpen, setAiRecordOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [generatingThreeView, setGeneratingThreeView] = useState(false);
   const [menuOpenIndex, setMenuOpenIndex] = useState(-1);
 
   const threeViewUrl = ossUrl(threeViewImagePath);
-  const referenceImageUrl = ossUrl(referenceImagePaths[0] ?? "") || ossUrl(images[0]);
 
   useEffect(() => {
     return () => {
@@ -224,14 +219,14 @@ export function PropImageSection({
       />
 
       <div className="space-y-3">
-        {/* 道具图：3列 16:9 */}
-        <div className="grid grid-cols-3 gap-2">
+        {/* 道具图：横向滚动，每张 16:9，w-48 便于整排看齐 */}
+        <div className="flex gap-2 overflow-x-auto pb-2">
           {images.map((path, index) => {
             const src = ossUrl(path);
             return (
               <div
                 key={`${path}_${index}`}
-                className="group relative aspect-video overflow-hidden rounded-lg bg-muted"
+                className="group relative aspect-video w-48 shrink-0 overflow-hidden rounded-lg bg-muted"
               >
                 <img src={src} alt="" className="h-full w-full object-cover" />
                 {loadingIndex === index ? (
@@ -292,7 +287,7 @@ export function PropImageSection({
           })}
 
           {uploading && localPreviewUrl ? (
-            <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+            <div className="relative aspect-video w-48 shrink-0 overflow-hidden rounded-lg bg-muted">
               <img src={localPreviewUrl} alt="" className="h-full w-full object-cover opacity-60" />
               <div className="absolute inset-0 flex items-center justify-center bg-black/45">
                 <IconLoader2 className="size-5 animate-spin text-white" />
@@ -301,25 +296,10 @@ export function PropImageSection({
           ) : null}
 
           {!uploading && images.length < MAX_IMAGES ? (
-            <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/10">
+            <div className="flex aspect-video w-48 shrink-0 items-center justify-center rounded-lg border border-dashed border-border bg-muted/10">
               <Button size="sm" variant="soft" color="muted" onClick={() => setPickerOpen(true)}>
                 <IconUpload className="size-3.5" />
                 {tc("upload")}
-              </Button>
-              <Button
-                size="sm"
-                variant="soft"
-                color="muted"
-                onClick={() => {
-                  if (!propId) {
-                    toast.warning(t("savePleaseFirst"));
-                    return;
-                  }
-                  setAiRecordOpen(true);
-                }}
-              >
-                <IconWand className="size-3.5" />
-                {tc("aiGenerate")}
               </Button>
             </div>
           ) : null}
@@ -387,25 +367,6 @@ export function PropImageSection({
           </div>
         </div>
       </div>
-
-      <AssetAiRecordDialog
-        open={aiRecordOpen}
-        onOpenChange={setAiRecordOpen}
-        title={t("aiGenerateProp")}
-        shotId={String(propId ?? "")}
-        shotColumnId="-2"
-        prompt={prompt}
-        referenceImageUrl={referenceImageUrl}
-        selectedPath={images[0] ?? ""}
-        onSelect={(path: string) => {
-          if (images.length >= MAX_IMAGES) {
-            toast.warning(t("maxPropImages", { max: MAX_IMAGES }));
-            return;
-          }
-          onImagesChange([...images, path].slice(0, MAX_IMAGES));
-          toast.success(t("addedAiImage"));
-        }}
-      />
 
       <AssetPickerDialog
         open={pickerOpen}

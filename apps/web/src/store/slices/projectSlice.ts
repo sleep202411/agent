@@ -679,6 +679,9 @@ export interface ProjectInstanceState {
   isAiPanelOpen: boolean;
   isAiPanelExpanded: boolean;
 
+  /** Storyboard page sub-view: table ("list") vs per-row cards ("card"). */
+  storyboardViewMode: "list" | "card";
+
   episodes: Episode[];
   activeEpisodeId: string | null;
   isEpisodesLoading: boolean;
@@ -734,6 +737,8 @@ export function createDefaultProjectInstance(): ProjectInstanceState {
     activePanel: "aiAssistant",
     isAiPanelOpen: false,
     isAiPanelExpanded: false,
+
+    storyboardViewMode: "list",
 
     episodes: [],
     activeEpisodeId: null,
@@ -1249,6 +1254,10 @@ export const projectSlice = createSlice({
     setActiveTab: (state, action: PayloadAction<WorkspaceTab>) => {
       const inst = getInstance(state);
       if (inst) inst.activeTab = action.payload;
+    },
+    setStoryboardViewMode: (state, action: PayloadAction<"list" | "card">) => {
+      const inst = getInstance(state);
+      if (inst) inst.storyboardViewMode = action.payload;
     },
     setActivePanel: (state, action: PayloadAction<WorkspacePanelKey | null>) => {
       const inst = getInstance(state);
@@ -1861,6 +1870,7 @@ export const {
   setLoading,
   setError,
   setActiveTab,
+  setStoryboardViewMode,
   setActivePanel,
   togglePanel,
   setAiPanelOpen,

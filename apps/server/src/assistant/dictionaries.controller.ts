@@ -1,12 +1,14 @@
 /**
- * Proxies three legacy Java dictionary endpoints whose URLs end in a literal
+ * Proxies legacy Java dictionary endpoints whose URLs end in a literal
  * trailing slash. Next.js 16's `rewrites()` normalizes trailing slashes away
  * before forwarding, which breaks these endpoints (Java returns 404 without
  * the `/`). Routing through Nest with `fetch` bypasses that normalization —
  * we hit Java with the exact URL the frontend intends.
  *
- * All three endpoints are passthrough (raw Java envelope) so the existing
- * frontend `backendApi` unwrapping still works unchanged.
+ * Both endpoints are passthrough (raw Java envelope) so the existing
+ * frontend `backendApi` unwrapping still works unchanged. The aspect-ratio
+ * endpoint used to live here too; Java has since dropped the required
+ * trailing slash, so the frontend now calls `/anon/enumMeta/...` directly.
  */
 import {
   Controller,
@@ -41,15 +43,6 @@ export class DictionariesController {
       req,
       'studio',
       '/api/user/world/static/list/painting/style/',
-    );
-  }
-
-  @Get('aspect-ratios')
-  getAspectRatios(@Req() req: Request) {
-    return this.forward(
-      req,
-      'studio',
-      '/anon/enumMeta/getEnumBySimpleName/AspectRatioTypeEnum/',
     );
   }
 
