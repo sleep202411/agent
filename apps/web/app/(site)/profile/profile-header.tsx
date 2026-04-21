@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   IconCamera,
   IconLoader2,
@@ -6,6 +7,7 @@ import {
   IconCopy,
   IconCheck,
   IconPhoto,
+  IconShieldCheck,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -40,6 +42,20 @@ import { AUTH_STATUS } from "@/src/services/certification";
 import { CertificationDialog } from "./certification-dialog";
 import type { UserInfo } from "@/src/services/user";
 
+/**
+ * Real-name verification status badge config. Backend reuses the same
+ * AUTH_STATUS enum on `userInfo.authStatus` as the role-cert table
+ * (0 pending, 3 rejected, 5 approved). Anything else (null / undefined /
+ * unknown number) → user hasn't started the flow, render "去认证".
+ */
+type KycChipVariant = "verified" | "pending" | "rejected" | "unverified";
+function resolveKycVariant(status: number | undefined | null): KycChipVariant {
+  if (status === AUTH_STATUS.APPROVED) return "verified";
+  if (status === AUTH_STATUS.PENDING) return "pending";
+  if (status === AUTH_STATUS.REJECTED) return "rejected";
+  return "unverified";
+}
+
 function resolveAvatarUrl(info: UserInfo | null) {
   const raw = info?.headImg || info?.avatar;
   if (!raw) return "";
@@ -55,6 +71,8 @@ interface ProfileHeaderProps {
 
 export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const t = useTranslations("profile");
+  const tk = useTranslations("kyc");
+  const router = useRouter();
   const [referralLink, setReferralLink] = useState("");
   const [referralDialogOpen, setReferralDialogOpen] = useState(false);
   const [certDialogOpen, setCertDialogOpen] = useState(false);
@@ -62,6 +80,22 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const kycVariant = resolveKycVariant(userInfo?.authStatus);
+  const kycChipLabel = {
+    verified: tk("statusVerified"),
+    pending: tk("statusPending"),
+    rejected: tk("statusRejected"),
+    unverified: tk("goVerify"),
+  }[kycVariant];
+  const kycChipClass = {
+    verified: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    pending: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    rejected: "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20",
+    unverified: "border-white/20 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white",
+  }[kycVariant];
+  // Verified/pending = no action needed. Rejected/unverified = click to go re-verify.
+  const kycClickable = kycVariant !== "verified" && kycVariant !== "pending";
 
   const { mutate: doUpdateUserInfo } = useUpdateUserInfo();
   const { mutate: doUploadAvatar, isPending: uploadingAvatar } = useUploadAvatar();
@@ -249,6 +283,19 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
                     className="rounded-full border border-white/20 bg-white/5 px-2 py-px text-[10px] text-white/60 transition-colors hover:bg-white/10 hover:text-white"
                   >
                     {certBadges.length > 0 ? t("manageCert") : t("addCertification")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!kycClickable}
+                    onClick={() => {
+                      if (kycClickable) router.push("/kyc");
+                    }}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-[10px] font-medium transition-colors ${kycChipClass} ${
+                      kycClickable ? "" : "cursor-default"
+                    }`}
+                  >
+                    <IconShieldCheck className="size-3" />
+                    {kycChipLabel}
                   </button>
                 </div>
               </div>
