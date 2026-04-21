@@ -11,10 +11,18 @@ workflow generation, HITL drafts, persona consultations.
 StoryOS splits work across **two tiers** on purpose — one model does
 routing and nuance, another does bulk generation:
 
-| Tier                    | Env var                                 | Default model       | Used for                                              |
-| ----------------------- | --------------------------------------- | ------------------- | ----------------------------------------------------- |
-| **Router / Supervisor** | `STORYOS_ROUTER_PROVIDER` = `anthropic` | `claude-sonnet-4-5` | Every user chat turn                                  |
-| **Persona**             | `STORYOS_PERSONA_PROVIDER` = `deepseek` | `deepseek-chat`     | All workflow phases, ask\_\*, analyze_brief, evaluate |
+| Tier                    | Env var                                 | Default model   | Used for                                              |
+| ----------------------- | --------------------------------------- | --------------- | ----------------------------------------------------- |
+| **Router / Supervisor** | `STORYOS_ROUTER_PROVIDER` = per-env     | see table below | Every user chat turn                                  |
+| **Persona**             | `STORYOS_PERSONA_PROVIDER` = `deepseek` | `deepseek-chat` | All workflow phases, ask\_\*, analyze_brief, evaluate |
+
+**Router provider per environment**:
+
+| Env             | Provider    | Model               | Rationale                                            |
+| --------------- | ----------- | ------------------- | ---------------------------------------------------- |
+| local / staging | `anthropic` | `claude-sonnet-4-5` | Best long-prompt instruction following               |
+| **prod-com**    | `anthropic` | `claude-sonnet-4-5` | SG / global users → low latency to Claude            |
+| **prod-cn**     | `alibaba`   | `qwen-max`          | CN users → stays in-country, no GFW risk, compliance |
 
 Rationale: Claude is strong at long-prompt instruction-following over our
 ~8k-token supervisor system prompt + 20+ tools, but expensive ($3/$15 per
@@ -45,11 +53,11 @@ briefAnalyzer       scriptSplitter
 Each persona is invoked from inside a workflow phase (bulk generation)
 or from a supervisor tool (`ask_*`, `analyze_brief`, `evaluate`).
 
-### Model hardening (Anthropic only)
+### Model hardening (Anthropic or Alibaba routers)
 
-When `defaultRouterModel()` resolves to Anthropic, the returned model is
-wrapped with `hardenAnthropicModel` — four layers of middleware around
-the real provider:
+When `defaultRouterModel()` resolves to **either** Anthropic or Alibaba,
+the returned model is wrapped with `hardenRouterModel` — four layers of
+middleware around the real provider:
 
 ```
 [outer]  withFallback(DeepSeek)            ← any fallback-worthy error → DeepSeek

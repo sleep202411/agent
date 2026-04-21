@@ -13,11 +13,10 @@
  *   new Agent({ model: defaultRouterModel(), ... })
  */
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createAlibaba } from "@ai-sdk/alibaba";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createAzure } from "@ai-sdk/azure";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import { hardenAnthropicModel } from "./model-hardening";
+import { hardenRouterModel } from "./model-hardening";
 
 /**
  * Env var reader that treats empty/whitespace strings as missing. Crucial
@@ -50,22 +49,35 @@ export function createDeepSeekModel(modelId: DeepSeekModelId = "deepseek-chat"):
   return provider.chatModel(modelId);
 }
 
-// ─── Alibaba DashScope ────────────────────────────────────────────────
+// ─── Alibaba DashScope (Qwen, via OpenAI-compatible endpoint) ────────
 
 type AlibabaModelId = "qwen3-max" | "qwen-plus" | "qwen-turbo" | "qwen-max" | string;
 
-export function createAlibabaModel(modelId: AlibabaModelId = "qwen3-max"): LanguageModelV3 {
-  const alibabaKey = process.env.ALIBABA_API_KEY?.trim();
-  const dashscopeKey = process.env.DASHSCOPE_API_KEY?.trim();
-  const apiKey = alibabaKey || dashscopeKey;
+/**
+ * Qwen via DashScope's OpenAI-compatible endpoint
+ * (`/compatible-mode/v1`). We explicitly use `createOpenAICompatible`
+ * rather than `@ai-sdk/alibaba` because the latter serialises chat
+ * messages in DashScope's **native** shape (`{input:{messages:[...]}}`),
+ * which the compat endpoint rejects with 400 `"messages[i].content is
+ * required"`. The compat endpoint expects OpenAI-format bodies
+ * (`{messages:[{role,content}]}`), so we bypass the native SDK and hit
+ * the compat URL like any other OpenAI-alike provider.
+ *
+ * Used primarily on `prod-cn` (fizzstudio.fizzspace.cn) where router
+ * traffic stays in-country — lower latency, compliance-friendly, and
+ * decoupled from Claude's US-side outages.
+ */
+export function createAlibabaModel(modelId: AlibabaModelId = "qwen-max"): LanguageModelV3 {
+  const apiKey = (process.env.ALIBABA_API_KEY || process.env.DASHSCOPE_API_KEY)?.trim();
   if (!apiKey) {
     throw new Error("ALIBABA_API_KEY (or DASHSCOPE_API_KEY) is not set.");
   }
-  const provider = createAlibaba({
-    apiKey,
+  const provider = createOpenAICompatible({
+    name: "alibaba",
     baseURL: envOrDefault("ALIBABA_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    apiKey,
   });
-  return provider(modelId);
+  return provider.chatModel(modelId);
 }
 
 // ─── Anthropic (Claude) ──────────────────────────────────────────────
@@ -160,23 +172,28 @@ export function createAzureModel(deploymentName: string): LanguageModelV3 {
  * missing, the create* factory throws instead of silently switching to
  * another provider (that would hide real misconfiguration).
  *
- * Recommended for supervisor: anthropic / claude-sonnet-4-5 — best
- * tool-use stability and long-prompt instruction following on our
- * 500-line supervisor prompt. DeepSeek cheaper but has known
- * weaknesses (jumps steps, echoes button labels as prose).
+ * Recommended per-environment:
+ *   - staging / prod-com:  anthropic / claude-sonnet-4-5
+ *   - prod-cn:             alibaba / qwen-max (stays in-country, lower
+ *                          latency, decoupled from US-side outages)
+ * DeepSeek is strong on cost but weaker on long-prompt routing (drops
+ * steps, echoes button labels), so we keep it as a fallback, not primary.
  *
- * When the router is Anthropic, the returned model is wrapped with
- * `hardenAnthropicModel` — a three-layer middleware chain (rate-limit
- * queue → circuit breaker → DeepSeek fallback) that keeps the supervisor
- * responsive under Tier-limited burst load. Other providers pass through
- * unwrapped; DeepSeek self-throttles at the gateway (500-concurrent
- * loadtest was clean).
+ * When the router resolves to **Anthropic or Alibaba**, we wrap it with
+ * `hardenRouterModel` — a four-layer middleware chain (request timeout +
+ * rate-limit queue + circuit breaker + DeepSeek fallback) that keeps
+ * the supervisor responsive under tier-limited / regional-outage
+ * scenarios. Both providers share the same stateful limiter / breaker
+ * (single running process → single set of quotas to track).
+ *
+ * DeepSeek as router passes through unwrapped — its gateway self-
+ * throttles, 500-concurrent loadtest was clean.
  */
 export function defaultRouterModel(): LanguageModelV3 {
   const provider = process.env.STORYOS_ROUTER_PROVIDER?.trim();
   const base = pickProviderModel("STORYOS_ROUTER_PROVIDER", "STORYOS_ROUTER_MODEL");
-  if (provider !== "anthropic") return base;
-  // Fallback target must exist *before* the first Claude call so a
+  if (provider !== "anthropic" && provider !== "alibaba") return base;
+  // Fallback target must exist *before* the first primary call so a
   // mid-turn fallback doesn't crash on "DeepSeek not configured".
   const fallback = createDeepSeekModel(
     (process.env.STORYOS_ROUTER_FALLBACK_MODEL as
@@ -184,7 +201,7 @@ export function defaultRouterModel(): LanguageModelV3 {
       | "deepseek-reasoner"
       | undefined) ?? "deepseek-chat"
   );
-  return hardenAnthropicModel(base, fallback);
+  return hardenRouterModel(base, fallback);
 }
 
 /**

@@ -579,8 +579,13 @@ export function getHardeningStats(): HardeningStats | null {
  * Wrap `primary` with rate-limit → circuit breaker → fallback, composed
  * so the outermost layer catches everything and redirects to `fallback`
  * when the primary is unhealthy.
+ *
+ * Applies to any tier-limited / regional provider we use as router —
+ * currently Anthropic (global) and Alibaba Qwen (CN). Personas and the
+ * fallback itself (DeepSeek) skip this because they're either bulletproof
+ * or have their own self-throttling gateway.
  */
-export function hardenAnthropicModel(
+export function hardenRouterModel(
   primary: LanguageModelV3,
   fallback: LanguageModelV3,
   config: HardenConfig = {}
@@ -638,7 +643,7 @@ function toMessage(err: unknown): string {
 
 // ─── Testing surface ────────────────────────────────────────────────────
 // Exposed only for unit-level tests; production callers go through
-// `hardenAnthropicModel`. Resetting shared state is how tests avoid cross-
+// `hardenRouterModel`. Resetting shared state is how tests avoid cross-
 // test contamination.
 
 export function _resetSharedStateForTests(): void {

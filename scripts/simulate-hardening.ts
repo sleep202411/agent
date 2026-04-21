@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * simulate-hardening — runs the real `hardenAnthropicModel` wrapper against
+ * simulate-hardening — runs the real `hardenRouterModel` wrapper against
  * scripted fake `LanguageModelV3` implementations to visualize the three
  * resilience layers under controlled pressure.
  *
@@ -19,7 +19,7 @@ import type {
   LanguageModelV3GenerateResult,
 } from "@ai-sdk/provider";
 import {
-  hardenAnthropicModel,
+  hardenRouterModel,
   _resetSharedStateForTests,
   type HardenConfig,
 } from "../apps/agent/src/mastra/lib/model-hardening";
@@ -187,7 +187,7 @@ async function scenario1_pureQueueing(): Promise<void> {
     circuitFailureThreshold: 999,
     circuitCooldownMs: 60_000,
   };
-  const hardened = hardenAnthropicModel(primary, fallback, config);
+  const hardened = hardenRouterModel(primary, fallback, config);
   resetClock();
   log("FIRE", "20 parallel calls (primary delay=500ms)");
   const out = await fireParallel(hardened, 20);
@@ -216,7 +216,7 @@ async function scenario2_queueTimeoutFallback(): Promise<void> {
     circuitFailureThreshold: 999,
     circuitCooldownMs: 60_000,
   };
-  const hardened = hardenAnthropicModel(primary, fallback, config);
+  const hardened = hardenRouterModel(primary, fallback, config);
   resetClock();
   log("FIRE", "20 parallel calls");
   const out = await fireParallel(hardened, 20);
@@ -247,7 +247,7 @@ async function scenario3_circuitTrip(): Promise<void> {
     circuitFailureThreshold: 5,
     circuitCooldownMs: 1_000,
   };
-  const hardened = hardenAnthropicModel(primary, fallback, config);
+  const hardened = hardenRouterModel(primary, fallback, config);
   resetClock();
   log("FIRE", "15 calls serially (space out 429s so threshold triggers)");
   const outcomes: CallOutcome[] = [];
@@ -312,7 +312,7 @@ async function scenario4_circuitRecovery(): Promise<void> {
     circuitFailureThreshold: 5,
     circuitCooldownMs: 1_000,
   };
-  const hardened = hardenAnthropicModel(primary, fallback, config);
+  const hardened = hardenRouterModel(primary, fallback, config);
   resetClock();
   log("FIRE", "Phase A: 5 calls (expect all to fail+fallback, trip breaker)");
   for (let i = 0; i < 5; i++) {
