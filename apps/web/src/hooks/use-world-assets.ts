@@ -9,8 +9,6 @@ import {
   setCharactersLoading,
   setScenes,
   setScenesLoading,
-  setProps,
-  setPropsLoading,
   setProjectList,
   setProjectListLoading,
   selectCurrentInstance,
@@ -18,16 +16,28 @@ import {
 } from "@/src/store/slices/projectSlice";
 import type { ProjectOptionItem } from "@/src/types/workspace";
 
+/**
+ * Eagerly preload world-scoped lists that the storyboard consumes on
+ * mount. Specifically:
+ *  - `characters` — CharacterCell when a character column is present,
+ *    plus the characters panel.
+ *  - `scenes` — SceneReferenceCell (scene column is part of the default
+ *    storyboard schema), plus the scenes panel.
+ *  - `projectList` (worldproduct) — the cross-project switcher.
+ *
+ * `props` is NOT preloaded here: there's no PropCell in the storyboard
+ * (check `app/projects/_components/storyboard/cells/` — no prop-cell),
+ * and the @mention popup hits `/api/user/world/list/worldprop` on
+ * demand. `PropsPanel` loads its own list when opened.
+ */
 export function useWorldAssets() {
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const charactersVersion = useAppSelector((s) => selectCurrentInstance(s).charactersVersion);
   const scenesVersion = useAppSelector((s) => selectCurrentInstance(s).scenesVersion);
-  const propsVersion = useAppSelector((s) => selectCurrentInstance(s).propsVersion);
   const projectListVersion = useAppSelector((s) => selectCurrentInstance(s).projectListVersion);
 
   const loadedCharactersRef = useRef<string | null>(null);
   const loadedScenesRef = useRef<string | null>(null);
-  const loadedPropsRef = useRef<string | null>(null);
   const loadedProjectListRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -65,24 +75,6 @@ export function useWorldAssets() {
         store.dispatch(setScenesLoading(false));
       });
   }, [scenesVersion, worldId]);
-
-  useEffect(() => {
-    if (!worldId) return;
-    const key = `${worldId}:${propsVersion}`;
-    if (loadedPropsRef.current === key) return;
-    loadedPropsRef.current = key;
-
-    store.dispatch(setPropsLoading(true));
-    backendApi
-      .post<Paginated<Asset>>("/api/user/world/list/worldprop", {
-        data: { worldId, page: 1, pageSize: 100 },
-      })
-      .then((data) => store.dispatch(setProps(data?.list ?? [])))
-      .catch((error) => {
-        console.error("[useWorldAssets] 加载道具失败:", error);
-        store.dispatch(setPropsLoading(false));
-      });
-  }, [propsVersion, worldId]);
 
   // 项目列表
   useEffect(() => {

@@ -23,7 +23,6 @@ import {
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { backendApi } from "@/src/lib/api";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
-import { AssetAiRecordDialog } from "../asset-ai-record-dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { env } from "@/src/env";
 
@@ -59,7 +58,6 @@ export function SceneImageSection({
   const [loadingIndex, setLoadingIndex] = useState(-1);
   const [previewUrl, setPreviewUrl] = useState("");
   const [localPreviewUrl, setLocalPreviewUrl] = useState("");
-  const [aiRecordOpen, setAiRecordOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [generatingPanorama, setGeneratingPanorama] = useState(false);
   const [menuOpenIndex, setMenuOpenIndex] = useState(-1);
@@ -221,14 +219,14 @@ export function SceneImageSection({
       />
 
       <div className="space-y-3">
-        {/* 场景图：3列 16:9 */}
-        <div className="grid grid-cols-3 gap-2">
+        {/* 场景图：横向滚动，每张 16:9，固定宽度 w-48 便于一行看齐 */}
+        <div className="flex gap-2 overflow-x-auto pb-2">
           {images.map((path, index) => {
             const src = ossUrl(path);
             return (
               <div
                 key={`${path}_${index}`}
-                className="group relative aspect-video overflow-hidden rounded-lg bg-muted"
+                className="group relative aspect-video w-48 shrink-0 overflow-hidden rounded-lg bg-muted"
               >
                 <img src={src} alt="" className="h-full w-full object-cover" />
                 {loadingIndex === index ? (
@@ -292,7 +290,7 @@ export function SceneImageSection({
           })}
 
           {uploading && localPreviewUrl ? (
-            <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+            <div className="relative aspect-video w-48 shrink-0 overflow-hidden rounded-lg bg-muted">
               <img src={localPreviewUrl} alt="" className="h-full w-full object-cover opacity-60" />
               <div className="absolute inset-0 flex items-center justify-center bg-black/45">
                 <IconLoader2 className="size-5 animate-spin text-white" />
@@ -301,7 +299,7 @@ export function SceneImageSection({
           ) : null}
 
           {!uploading && images.length < MAX_IMAGES ? (
-            <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/10">
+            <div className="flex aspect-video w-48 shrink-0 items-center justify-center rounded-lg border border-dashed border-border bg-muted/10">
               <Button
                 type="button"
                 size="sm"
@@ -311,22 +309,6 @@ export function SceneImageSection({
               >
                 <IconUpload className="size-3.5" />
                 {tc("upload")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="soft"
-                color="muted"
-                onClick={() => {
-                  if (!sceneId) {
-                    toast.warning(t("savePleaseFirst"));
-                    return;
-                  }
-                  setAiRecordOpen(true);
-                }}
-              >
-                <IconWand className="size-3.5" />
-                {tc("aiGenerate")}
               </Button>
             </div>
           ) : null}
@@ -408,25 +390,6 @@ export function SceneImageSection({
           const next = [...images, ...paths].slice(0, MAX_IMAGES);
           onImagesChange(next);
           setPickerOpen(false);
-        }}
-      />
-
-      <AssetAiRecordDialog
-        open={aiRecordOpen}
-        onOpenChange={setAiRecordOpen}
-        title={t("aiGenerateScene")}
-        shotId={String(sceneId ?? "")}
-        shotColumnId="-3"
-        prompt={prompt}
-        referenceImageUrl={ossUrl(images[0])}
-        selectedPath={images[0] ?? ""}
-        onSelect={(path: string) => {
-          if (images.length >= MAX_IMAGES) {
-            toast.warning(t("maxSceneImages", { max: MAX_IMAGES }));
-            return;
-          }
-          onImagesChange([...images, path].slice(0, MAX_IMAGES));
-          toast.success(t("addedAiImage"));
         }}
       />
 

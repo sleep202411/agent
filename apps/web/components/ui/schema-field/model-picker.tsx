@@ -57,6 +57,10 @@ interface ModelPickerProps {
   disabled?: boolean;
   compact?: boolean;
   className?: string;
+  /** Extra classes merged onto the popover content. Use to override the
+   * default translucent glass background when the picker is opening over
+   * a bright/busy surface (e.g., character portrait dialog). */
+  contentClassName?: string;
 }
 
 export function ModelPicker({
@@ -66,6 +70,7 @@ export function ModelPicker({
   disabled,
   compact,
   className,
+  contentClassName,
 }: ModelPickerProps) {
   const t = useTranslations("model");
   const locale = useLocale();
@@ -89,7 +94,10 @@ export function ModelPicker({
       <PopoverContent
         align="start"
         side="top"
-        className="w-82 border-white/8 bg-white/6 p-0 shadow-2xl backdrop-blur-2xl backdrop-saturate-150"
+        className={cn(
+          "w-82 border-white/8 bg-white/6 p-0 shadow-2xl backdrop-blur-2xl backdrop-saturate-150",
+          contentClassName
+        )}
         onWheel={(e) => e.stopPropagation()}
       >
         <div className="max-h-[50vh] overflow-y-auto overscroll-contain p-2 space-y-1">

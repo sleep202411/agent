@@ -824,6 +824,8 @@
   },
   "storyboard": {
     "title": "分镜表",
+    "viewList": "列表",
+    "viewCard": "卡片",
     "createShot": "新建镜头",
     "createShotFailed": "创建镜头失败",
     "exportSuccess": "导出分镜表成功",

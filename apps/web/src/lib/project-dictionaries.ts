@@ -13,17 +13,18 @@ export function fetchProjectDictionaries(): Promise<ProjectDictionaries> {
 }
 
 async function _fetchProjectDictionaries(): Promise<ProjectDictionaries> {
-  // These three Java endpoints require a trailing slash, which Next.js 16's
-  // `rewrites()` normalizes away. We route through the Nest proxy instead
-  // (apps/server/.../dictionaries.controller.ts) which preserves the URL
-  // exactly when forwarding to Java.
+  // Product-types and painting-styles still require a trailing slash on the
+  // Java endpoint, which Next.js 16's `rewrites()` normalizes away — those
+  // two route through the Nest proxy (apps/server/.../dictionaries.controller.ts).
+  // `aspect-ratios` had its trailing slash removed on the Java side, so we
+  // call `/anon/...` directly through the Next rewrite.
   const [typeMapResult, styleOptionsResult, sizeMetaResult] = await Promise.allSettled([
     backendApi.get<Record<string, string>>("/aurora/dictionaries/product-types"),
     backendApi.get<Array<{ id?: string | number; info?: string; picLink?: string }>>(
       "/aurora/dictionaries/painting-styles"
     ),
     backendApi.get<{ AspectRatioTypeEnum?: Record<string, string> }>(
-      "/aurora/dictionaries/aspect-ratios"
+      "/anon/enumMeta/getEnumBySimpleName/AspectRatioTypeEnum"
     ),
   ]);
 

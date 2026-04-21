@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { IconLoader2 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -36,7 +37,13 @@ export function SceneCreateDialog({
   }, [open]);
 
   const handleCreate = async () => {
-    if (!name.trim() || !worldId) return;
+    if (!name.trim()) return;
+    if (!worldId) {
+      // Previously silent-returned with no UI feedback — surface the
+      // missing-worldId case so users understand why nothing happens.
+      toast.error("缺少世界 ID");
+      return;
+    }
     setCreating(true);
     try {
       const result = await backendApi.post<Asset>("/api/user/world/create/worldscene", {
