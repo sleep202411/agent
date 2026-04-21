@@ -11,7 +11,8 @@
  */
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
+import { getContext, javaRequest } from "../../lib/workspace-client";
+import { resolveCharacterIdsByNames, resolveSceneIdByName } from "../../lib/storyboard-ids";
 
 type CreateShotResponse = { id?: string | number } | string | number | null;
 
@@ -22,68 +23,6 @@ function extractShotId(raw: unknown): string {
     if (id != null) return String(id);
   }
   return "";
-}
-
-async function resolveSceneIdByName(
-  ctx: StoryosContext,
-  worldId: string,
-  sceneName: string
-): Promise<string> {
-  const trimmed = sceneName.trim();
-  if (!trimmed) return "";
-  try {
-    const listResp = await javaRequest<{
-      list?: Array<{ id?: string | number; name?: string }>;
-    }>(ctx, "/api/user/world/list/worldscene", {
-      data: { worldId, page: 1, pageSize: 200 },
-    });
-    const lower = trimmed.toLowerCase();
-    const match = (listResp?.list ?? []).find(
-      (s) =>
-        String(s.name ?? "")
-          .trim()
-          .toLowerCase() === lower
-    );
-    if (match?.id != null) return String(match.id);
-  } catch {
-    // fall through to create
-  }
-  const created = await javaRequest<unknown>(ctx, "/api/user/world/create/worldscene", {
-    data: { worldId, name: trimmed, description: "", prompt: "" },
-  });
-  if (typeof created === "string" || typeof created === "number") {
-    return String(created);
-  }
-  return String((created as { id?: string | number } | null)?.id ?? "");
-}
-
-async function resolveCharacterIdsByNames(
-  ctx: StoryosContext,
-  worldId: string,
-  names: string[]
-): Promise<{ ids: string[]; missing: string[] }> {
-  const trimmed = names.map((n) => n.trim()).filter(Boolean);
-  if (trimmed.length === 0) return { ids: [], missing: [] };
-  const resp = await javaRequest<{
-    list?: Array<{ id?: string | number; name?: string }>;
-  }>(ctx, "/api/user/world/list/worldrole", {
-    data: { worldId, page: 1, pageSize: 200 },
-  });
-  const byName = new Map<string, string>();
-  for (const role of resp?.list ?? []) {
-    const name = String(role.name ?? "")
-      .trim()
-      .toLowerCase();
-    if (name && role.id != null) byName.set(name, String(role.id));
-  }
-  const ids: string[] = [];
-  const missing: string[] = [];
-  for (const name of trimmed) {
-    const id = byName.get(name.toLowerCase());
-    if (id) ids.push(id);
-    else missing.push(name);
-  }
-  return { ids, missing };
 }
 
 export const addShot = createTool({

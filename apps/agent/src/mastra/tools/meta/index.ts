@@ -22,6 +22,7 @@ export { updateProject } from "./update-project";
 export { updateEpisode, deleteEpisode } from "./episode-crud";
 export { listAssets } from "./list-assets";
 export { updateStoryboardRow } from "./update-storyboard-row";
+export { batchUpdateStoryboardRows } from "./batch-update-storyboard-rows";
 export { deleteShot } from "./delete-shot";
 export { addShot } from "./add-shot";
 export { exportScripts } from "./export-scripts";

@@ -2,6 +2,7 @@ import { Agent } from "@mastra/core/agent";
 import {
   addShot,
   analyzeBrief,
+  batchUpdateStoryboardRows,
   cancelWorkflowTool,
   deleteEpisode,
   deleteShot,
@@ -103,6 +104,7 @@ export const storyosAgent = new Agent({
     update_episode: updateEpisode,
     delete_episode: deleteEpisode,
     update_storyboard_row: updateStoryboardRow,
+    batch_update_storyboard_rows: batchUpdateStoryboardRows,
     delete_shot: deleteShot,
     add_shot: addShot,
     export_scripts: exportScripts,

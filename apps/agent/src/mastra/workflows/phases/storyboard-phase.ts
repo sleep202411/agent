@@ -20,6 +20,7 @@ import {
 } from "../../lib/drafts";
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest } from "../../lib/workspace-client";
+import { resolveSceneIdByName } from "../../lib/storyboard-ids";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -655,46 +656,20 @@ function injectMentions(map: MentionMap, text: string): string {
 }
 
 /**
- * Resolve a scene name to its Java worldscene id. Mirrors the frontend's
- * `ensureSceneIdByName` in storyboard-save.ts: cache hit → return id; miss
- * → POST `/api/user/world/create/worldscene` and cache the new id.
- *
- * `cache` is keyed by `name.toLowerCase().trim()` and is mutated in place
- * so repeated scene names within a run reuse the same id.
+ * Resolve a scene name to its Java worldscene id. Thin wrapper around
+ * the shared `resolveSceneIdByName` — the phase is expected to share
+ * the cache across all episodes in a run, so it passes the same map
+ * into every call.
  */
 async function resolveSceneId(
   ctx: import("../../lib/workspace-client").StoryosContext,
   sceneName: string,
   cache: Map<string, string>
 ): Promise<string> {
-  const key = sceneName.toLowerCase().trim();
-  if (!key) return "";
-  const cached = cache.get(key);
-  if (cached) return cached;
-
   const worldId = ctx.worldId ?? "";
   if (!worldId) return "";
-
   try {
-    // Java's `/create/worldscene` returns the new scene id as a bare
-    // string in `data` — i.e. the body is `{ success: true, data: "1413" }`
-    // — so `javaRequest` hands us back the string directly, not an
-    // `{ id }` object. Older Studio builds did return `{ id }`, so accept
-    // both shapes to stay forward/backward compatible.
-    const created = await javaRequest<unknown>(ctx, "/api/user/world/create/worldscene", {
-      data: {
-        worldId,
-        name: sceneName.trim(),
-        description: "",
-        prompt: "",
-      },
-    });
-    const id =
-      typeof created === "string" || typeof created === "number"
-        ? String(created)
-        : String((created as { id?: string | number } | null)?.id ?? "");
-    if (id) cache.set(key, id);
-    return id;
+    return await resolveSceneIdByName(ctx, worldId, sceneName, cache);
   } catch {
     return "";
   }

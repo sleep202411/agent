@@ -15,7 +15,8 @@
  */
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
+import { getContext, javaRequest } from "../../lib/workspace-client";
+import { resolveCharacterIdsByNames, resolveSceneIdByName } from "../../lib/storyboard-ids";
 
 /**
  * Which shot column keys the LLM is allowed to patch. Keep in sync with
@@ -35,88 +36,6 @@ const PATCHABLE_KEYS = [
 ] as const;
 
 type PatchKey = (typeof PATCHABLE_KEYS)[number];
-
-/**
- * Resolve a list of character names → worldrole ids. Unlike scene,
- * character names are NOT auto-created — the caller is expected to
- * reference existing characters. Unknown names are returned in the
- * `missing` array so we can surface them to the user.
- */
-async function resolveCharacterIdsByNames(
-  ctx: StoryosContext,
-  worldId: string,
-  names: string[]
-): Promise<{ ids: string[]; missing: string[] }> {
-  const trimmed = names.map((n) => n.trim()).filter(Boolean);
-  if (trimmed.length === 0) return { ids: [], missing: [] };
-
-  const resp = await javaRequest<{
-    list?: Array<{ id?: string | number; name?: string }>;
-  }>(ctx, "/api/user/world/list/worldrole", {
-    data: { worldId, page: 1, pageSize: 200 },
-  });
-  const byName = new Map<string, string>();
-  for (const role of resp?.list ?? []) {
-    const name = String(role.name ?? "")
-      .trim()
-      .toLowerCase();
-    if (name && role.id != null) byName.set(name, String(role.id));
-  }
-
-  const ids: string[] = [];
-  const missing: string[] = [];
-  for (const name of trimmed) {
-    const id = byName.get(name.toLowerCase());
-    if (id) ids.push(id);
-    else missing.push(name);
-  }
-  return { ids, missing };
-}
-
-/**
- * Look up an existing worldscene by name; if none matches, create one
- * and return the new id. Mirrors the logic in storyboard-phase's
- * `resolveSceneId` but without the per-run cache (single-shot tool
- * call doesn't need it).
- *
- * Java's `/create/worldscene` returns `{ success, data: "<id>" }` —
- * the id is a bare string in `data`, not an object. Older Studio
- * builds returned `{ id }`; accept both shapes.
- */
-async function resolveSceneIdByName(
-  ctx: StoryosContext,
-  worldId: string,
-  sceneName: string
-): Promise<string> {
-  const trimmed = sceneName.trim();
-  if (!trimmed) return "";
-
-  try {
-    const listResp = await javaRequest<{
-      list?: Array<{ id?: string | number; name?: string }>;
-    }>(ctx, "/api/user/world/list/worldscene", {
-      data: { worldId, page: 1, pageSize: 200 },
-    });
-    const lower = trimmed.toLowerCase();
-    const match = (listResp?.list ?? []).find(
-      (s) =>
-        String(s.name ?? "")
-          .trim()
-          .toLowerCase() === lower
-    );
-    if (match?.id != null) return String(match.id);
-  } catch {
-    // fall through — let the create path try
-  }
-
-  const created = await javaRequest<unknown>(ctx, "/api/user/world/create/worldscene", {
-    data: { worldId, name: trimmed, description: "", prompt: "" },
-  });
-  if (typeof created === "string" || typeof created === "number") {
-    return String(created);
-  }
-  return String((created as { id?: string | number } | null)?.id ?? "");
-}
 
 export const updateStoryboardRow = createTool({
   id: "update_storyboard_row",
