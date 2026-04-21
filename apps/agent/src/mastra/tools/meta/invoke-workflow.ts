@@ -78,12 +78,15 @@ export const invokeWorkflow = createTool({
     // supervisor prompt tells the LLM to call `require_project_params` first,
     // but we don't rely on that — the LLM sometimes skips it. Hard-block here
     // so a missing-param case always surfaces as a structured error.
+    // Also stash the fetched detail so the input-injection step below can
+    // read `chapterLength` without a second Java round-trip.
+    let projectDetail: ProjectParamsDetail | null = null;
     if (isGenerativeWorkflow(workflowName as WorkflowName)) {
-      const detail = await javaRequest<ProjectParamsDetail>(
+      projectDetail = await javaRequest<ProjectParamsDetail>(
         ctx,
         `/api/user/project/detail/${ctx.projectId}`
       ).catch(() => null);
-      const missing = getMissingProjectParams(detail);
+      const missing = getMissingProjectParams(projectDetail);
       if (missing.length > 0) {
         return {
           error: "PROJECT_PARAMS_INCOMPLETE" as const,
@@ -95,23 +98,36 @@ export const invokeWorkflow = createTool({
     }
 
     const resolvedInput = await resolveAttachmentRefs(inputData);
+    const resolvedObj =
+      resolvedInput && typeof resolvedInput === "object" && !Array.isArray(resolvedInput)
+        ? (resolvedInput as Record<string, unknown>)
+        : {};
+
+    // Auto-inject `targetEpisodeCount` from project.chapterLength for workflows
+    // that take episode count. Without this, LLM omission → schema default of
+    // 10 → user's ProjectParamsForm pick (e.g. 12) gets silently overridden.
+    // Only for main_flow / episode_phase; other workflows don't use this field.
+    // LLM-provided value still wins if present.
+    const needsEpisodeCount = workflowName === "main_flow" || workflowName === "episode_phase";
+    const chapterLength = projectDetail?.chapterLength;
+    const injectedEpisodeCount =
+      needsEpisodeCount &&
+      !("targetEpisodeCount" in resolvedObj) &&
+      typeof chapterLength === "number" &&
+      chapterLength > 0
+        ? { targetEpisodeCount: chapterLength }
+        : {};
 
     // Supervisor doesn't see projectId / worldId (they live in requestContext),
     // so inject them automatically before the workflow validates its input.
     // Preserve anything the LLM explicitly passed — don't clobber overrides.
-    const injected =
-      resolvedInput && typeof resolvedInput === "object" && !Array.isArray(resolvedInput)
-        ? {
-            projectId: ctx.projectId,
-            ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
-            ...(ctx.episodeId ? { episodeId: ctx.episodeId } : {}),
-            ...(resolvedInput as Record<string, unknown>),
-          }
-        : {
-            projectId: ctx.projectId,
-            ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
-            ...(ctx.episodeId ? { episodeId: ctx.episodeId } : {}),
-          };
+    const injected = {
+      projectId: ctx.projectId,
+      ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
+      ...(ctx.episodeId ? { episodeId: ctx.episodeId } : {}),
+      ...injectedEpisodeCount,
+      ...resolvedObj,
+    };
 
     const { runId } = await startWorkflow({
       workflowName: workflowName as WorkflowName,
