@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   IconAlertCircle,
   IconCheck,
+  IconCopy,
   IconLoader2,
   IconRefresh,
   IconSparkles,
@@ -222,6 +223,57 @@ export function WorkflowProgressCard({
 
 // ─── workflow_suspended (HITL gate — satisfy / revise buttons) ────────
 
+/**
+ * Build the 满意-button label so it tells the user what clicking will do
+ * AND how much it costs. Three shapes in order of preference:
+ *   1. nextAction present → "继续 <下一阶段> (N 积分)"
+ *      The cost shown is the NEXT phase's estimate because THIS phase's
+ *      cost is already locked in at generation time (charged regardless
+ *      of 满意 / 不满意). What the user can still control by clicking is
+ *      whether to spend MORE on the next phase.
+ *   2. nextAction absent but estimatedCost > 0 → "完成 · 已扣 N 积分"
+ *      Terminal phase (storyboard). The button "completes" this phase
+ *      and the current-phase cost has been incurred.
+ *   3. Fallback → plain `workflowActionAccept` label from i18n.
+ */
+function formatAcceptLabel(
+  output: Partial<WorkflowSuspendedOutput>,
+  t: (key: string) => string
+): string {
+  const nextAction = output.nextAction;
+  if (nextAction) {
+    const nextLabel = t(WORKFLOW_LABEL_KEYS[nextAction.workflowName] ?? "workflowActionAccept");
+    if (nextAction.estimatedCost > 0) {
+      return `继续 ${nextLabel} (${nextAction.estimatedCost} 积分)`;
+    }
+    return `继续 ${nextLabel}`;
+  }
+  const currentCost = output.estimatedCost ?? 0;
+  if (currentCost > 0) {
+    return `完成 · ${currentCost} 积分`;
+  }
+  return t("workflowActionAccept");
+}
+
+/**
+ * What the USER BUBBLE reads after clicking accept. Mirrors the button's
+ * action ("继续 分镜生成" / "完成") but strips the credit suffix — the
+ * bubble is a log of what the user did, not an ad for cost. Falls back to
+ * the generic "满意" i18n string when we don't know the next step.
+ */
+function formatAcceptUserLabel(
+  output: Partial<WorkflowSuspendedOutput>,
+  t: (key: string) => string
+): string {
+  const nextAction = output.nextAction;
+  if (nextAction) {
+    const nextLabel = t(WORKFLOW_LABEL_KEYS[nextAction.workflowName] ?? "workflowActionAccept");
+    return `继续 ${nextLabel}`;
+  }
+  if ((output.estimatedCost ?? 0) > 0) return "完成";
+  return t("workflowUserSatisfied");
+}
+
 function toDraftLike(
   runId: string,
   entityType: string,
@@ -290,7 +342,7 @@ export function WorkflowSuspendedCard({
         confirmWorkflowFromButton({
           projectId,
           runId,
-          userLabel: t("workflowUserSatisfied"),
+          userLabel: formatAcceptUserLabel(output, t),
           approved: true,
         })
       );
@@ -361,7 +413,7 @@ export function WorkflowSuspendedCard({
           disabled={actionBusy !== null}
           busy={actionBusy === "accept"}
         >
-          {t("workflowActionAccept")}
+          {formatAcceptLabel(output, t)}
         </ActionButton>
         <ActionButton
           variant="secondary"
@@ -601,7 +653,7 @@ export function WorkflowFailedCard({
             className="mt-0.5 shrink-0 rounded p-0.5 text-destructive/60 hover:bg-destructive/10 hover:text-destructive/80"
             title={tc("copyError")}
           >
-            <IconRefresh className="size-3" />
+            <IconCopy className="size-3" />
           </button>
         )}
       </div>

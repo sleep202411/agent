@@ -2,17 +2,24 @@ import { Agent } from "@mastra/core/agent";
 import {
   analyzeBrief,
   cancelWorkflowTool,
+  deleteEpisode,
   evaluateDrafts,
   explainCurrentState,
+  exportScripts,
   generateProjectCover,
   invokeWorkflow,
   listActiveWorkflows,
+  listAssets,
   markProjectParamsUpdated,
   queryContext,
   requireProjectParams,
   resumeWorkflowTool,
   saveProjectMeta,
   showDrafts,
+  showOptions,
+  updateEpisode,
+  updateProject,
+  updateStoryboardRow,
 } from "../tools/meta";
 import {
   askArtDirector,
@@ -40,7 +47,20 @@ export const storyosAgent = new Agent({
   name: "StoryOS",
   description:
     "FizzSpace StoryOS supervisor — plans the creation flow, dispatches work into workflows, and coordinates HITL with the user.",
-  instructions: storyosInstructions,
+  // System prompt as an array so we can attach provider-specific options.
+  // `providerOptions.anthropic.cacheControl` marks this block as cacheable
+  // on Claude — cuts ~8k input tokens per turn down to the 10% cached price
+  // and, crucially, removes them from TPM so Tier 2 (80k ITPM) can keep up
+  // with 500 concurrent users. Non-Anthropic providers ignore the key.
+  instructions: [
+    {
+      role: "system" as const,
+      content: storyosInstructions,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" as const } },
+      },
+    },
+  ],
   // Resolved per-request so startup succeeds even if the API key is injected
   // later (e.g. via Mastra Studio settings UI or a secrets-loader middleware).
   model: () => defaultRouterModel(),
@@ -55,6 +75,10 @@ export const storyosAgent = new Agent({
     // Preflight UI gate — checks the 4 core project params are set before
     // any generative workflow. Frontend renders the form.
     require_project_params: requireProjectParams,
+    // Generic "user picks from a list" HITL. Supervisor calls it when intent
+    // is legitimately ambiguous (not when the supervisor just wants to avoid
+    // committing). See storyos.ts prompt for when-to-call rules.
+    show_options: showOptions,
     // UI ack — renders "✓ 更新项目参数" after <PROJECT_PARAMS_CONFIRMED />.
     mark_project_params_updated: markProjectParamsUpdated,
     // Auto cover generation via Replicate (no user credits).
@@ -68,8 +92,16 @@ export const storyosAgent = new Agent({
     save_project_meta: saveProjectMeta,
     // State reads + quality review
     query_context: queryContext,
+    list_assets: listAssets,
     show_drafts: showDrafts,
     evaluate: evaluateDrafts,
+    // Fine-grained direct writes — atomic CRUD the LLM orchestrates itself.
+    // Big structural regenerates still go through invoke_workflow.
+    update_project: updateProject,
+    update_episode: updateEpisode,
+    delete_episode: deleteEpisode,
+    update_storyboard_row: updateStoryboardRow,
+    export_scripts: exportScripts,
     // Direct-call persona consultations (light tasks — single-turn reply,
     // no DB write, no HITL). See tools/personas/ask-tools.ts.
     ask_scriptwriter: askScriptwriter,

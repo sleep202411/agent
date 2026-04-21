@@ -26,6 +26,7 @@ import { reportProgress, startWorkflow, throwIfCancelled } from "../engine";
 import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
+import { PRICES, deductCredits, estimateWorkflowCost, phaseDeductKey } from "../../lib/billing";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -295,6 +296,11 @@ const waitConfirmationStep = createStep({
           },
         ],
         totalDraftCount: drafts.length,
+        estimatedCost: drafts.length * PRICES.propPerUnit,
+        nextAction: {
+          workflowName: "episode_phase",
+          estimatedCost: estimateWorkflowCost("episode_phase", null),
+        },
       });
       return await suspend({
         runId,
@@ -329,6 +335,16 @@ const applyDecisionStep = createStep({
     const ctx = getContext(requestContext);
     const draftClientRefIds = state.draftClientRefIds ?? [];
     const nameByRef = state.nameByRef ?? {};
+
+    // Charge regardless of approved/rejected — LLM cost was incurred at
+    // generate step. See lib/billing.ts.
+    if (draftClientRefIds.length > 0) {
+      await deductCredits(ctx, {
+        amount: draftClientRefIds.length * PRICES.propPerUnit,
+        reason: `prop_phase ${draftClientRefIds.length} drafts (approved=${inputData.approved})`,
+        idempotencyKey: phaseDeductKey(runId, "prop_phase"),
+      });
+    }
 
     // Zero-props short-circuit from waitConfirmationStep. Even with no
     // props to commit, auto-chain to prop_image_phase so the user gets a

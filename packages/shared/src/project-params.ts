@@ -31,7 +31,10 @@ export type ProjectParamKey = "aspectRatioType" | "chapterLength" | "stylePainti
  */
 export const GENERATIVE_WORKFLOWS: ReadonlySet<WorkflowName> = new Set<WorkflowName>([
   "main_flow",
+  "script_to_storyboard_flow",
+  "script_import_flow",
   "story_outline",
+  "parse_script",
   "role_design",
   "scene_design",
   "prop_design",

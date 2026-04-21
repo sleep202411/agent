@@ -115,6 +115,7 @@ import {
 import { ToolRequireParamsCard } from "./tool-cards/tool-require-params-card";
 import { ToolCompletionCard } from "./tool-cards/tool-completion-card";
 import { ToolCoverCard } from "./tool-cards/tool-cover-card";
+import { ToolExportScriptsCard } from "./tool-cards/tool-export-scripts-card";
 import { ProjectParamsForm } from "./tool-cards/project-params-form";
 import { AssistantFilePreview } from "./sub-components";
 import { markdownComponents } from "./markdown-components";
@@ -521,6 +522,17 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   return (
                     <ToolCoverCard
                       key={`${message.id}-${part.toolCallId}-cover-${part.state}`}
+                      part={part}
+                    />
+                  );
+                }
+
+                // export_scripts — shows "packed N episodes" chip + a
+                // download button that builds the .docx client-side.
+                if (toolName === "export_scripts") {
+                  return (
+                    <ToolExportScriptsCard
+                      key={`${message.id}-${part.toolCallId}-export-${part.state}`}
                       part={part}
                     />
                   );

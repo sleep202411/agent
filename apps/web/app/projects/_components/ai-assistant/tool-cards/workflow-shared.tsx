@@ -43,12 +43,15 @@ import { applySeedanceTemplate, getSeedanceTemplate } from "@/src/lib/seedance";
 
 export const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
   main_flow: "workflowMainFlow",
+  script_to_storyboard_flow: "workflowScriptToStoryboardFlow",
+  script_import_flow: "workflowScriptImportFlow",
   role_design: "workflowRoleDesign",
   scene_design: "workflowSceneDesign",
   prop_design: "workflowPropDesign",
   batch_create_asset: "workflowBatchCreate",
   script_edit: "workflowScriptEdit",
   story_outline: "workflowStoryOutline",
+  parse_script: "workflowParseScript",
   role_phase: "workflowRolePhase",
   role_image_phase: "workflowRoleImagePhase",
   scene_phase: "workflowScenePhase",
@@ -68,7 +71,10 @@ interface WorkflowPersona {
 
 export const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
   main_flow: { name: "创作总监", icon: IconSparkles },
+  script_to_storyboard_flow: { name: "创作总监", icon: IconSparkles },
+  script_import_flow: { name: "创作总监", icon: IconSparkles },
   story_outline: { name: "剧本统筹", icon: IconBook },
+  parse_script: { name: "剧本统筹", icon: IconBook },
   role_design: { name: "角色设计师", icon: IconUsers },
   scene_design: { name: "场景设计师", icon: IconBuildingStore },
   prop_design: { name: "道具设计师", icon: IconPackage },
@@ -255,10 +261,17 @@ function draftPreview(draft: Draft): { title: string; detail?: string } {
   return { title, detail };
 }
 
+// Internal plumbing fields we never want to surface to the user in the
+// detail dialog. `sortHint` is handled specially (see below) — for
+// episodes it's rendered as "集数" with a 1-based value; for other
+// entity types (role/scene/prop) it's plumbing and stays hidden.
+const HIDDEN_DRAFT_FIELDS = new Set<string>([]);
+
 // Chinese labels for common draft.data fields so the detail dialog reads
 // naturally. Unknown keys fall back to the raw key name so we never hide
 // data the user might care about.
 const DRAFT_FIELD_LABELS: Record<string, string> = {
+  sortHint: "集数",
   name: "名称",
   title: "标题",
   roleName: "角色名",
@@ -301,6 +314,17 @@ function labelForDraftField(key: string): string {
   return DRAFT_FIELD_LABELS[key] ?? key;
 }
 
+/**
+ * Script content coming back from the LLM often has runs of 3+ `\n` between
+ * dialogue lines (formatting drift across models). Rendered under
+ * `whitespace-pre-wrap` those become huge visual gaps. Collapse any run of
+ * 3+ newlines down to exactly 2 so paragraph breaks stay but gaps don't
+ * balloon.
+ */
+function collapseExtraBlankLines(s: string): string {
+  return s.replace(/\n{3,}/g, "\n\n");
+}
+
 function formatDraftFieldValue(v: unknown): string {
   if (v == null) return "";
   if (Array.isArray(v)) {
@@ -317,7 +341,7 @@ function formatDraftFieldValue(v: unknown): string {
       .join("、");
   }
   if (typeof v === "object") return JSON.stringify(v, null, 2);
-  return String(v);
+  return collapseExtraBlankLines(String(v));
 }
 
 /**
@@ -524,12 +548,26 @@ function DraftDetailDialog({
   const data = (draft?.data ?? {}) as Record<string, unknown>;
   const { title } = draft ? draftPreview(draft) : { title: "" };
 
-  const entries = Object.entries(data).filter(([, v]) => {
-    if (v == null) return false;
-    if (typeof v === "string") return v.trim().length > 0;
-    if (Array.isArray(v)) return v.length > 0;
-    return true;
-  });
+  const entries = Object.entries(data)
+    .filter(([k, v]) => {
+      // `sortHint` is the agent-side 0-based index. Meaningful only for
+      // episodes (rendered as 集数); plumbing for everything else.
+      if (k === "sortHint") {
+        return draft?.entityType === "episode" && typeof v === "number";
+      }
+      if (HIDDEN_DRAFT_FIELDS.has(k)) return false;
+      if (v == null) return false;
+      if (typeof v === "string") return v.trim().length > 0;
+      if (Array.isArray(v)) return v.length > 0;
+      return true;
+    })
+    .map(([k, v]): [string, unknown] => {
+      // Shift to 1-based for display.
+      if (k === "sortHint" && typeof v === "number") return [k, v + 1];
+      return [k, v];
+    })
+    // Pin 集数 to the top — the rest keeps Java's natural order.
+    .sort(([a], [b]) => (a === "sortHint" ? -1 : b === "sortHint" ? 1 : 0));
 
   const hasPromptField = typeof data.prompt === "string";
   const hasSeedanceAction =
@@ -587,11 +625,11 @@ function DraftDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Width scales with content: narrow for single-entity drafts (role /
-          scene / prop), wide for storyboard drafts that carry a multi-column
-          rows table. max-w-5xl keeps the table readable without pushing the
-          sidebar panels off-screen. */}
-      <DialogContent className="max-w-5xl">
+      {/* Base DialogContent applies `sm:max-w-sm` (384px) which wins over an
+          un-prefixed `max-w-*`, so we MUST use the sm: prefix here. Cap at
+          680px — fits single-entity drafts comfortably and lets storyboard
+          tables scroll horizontally rather than push the chat sidebar. */}
+      <DialogContent className="sm:max-w-[min(92vw,680px)]">
         <DialogHeader>
           <DialogTitle>{title || "—"}</DialogTitle>
           <DialogDescription className="sr-only">草稿详情</DialogDescription>

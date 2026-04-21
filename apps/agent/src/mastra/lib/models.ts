@@ -13,9 +13,10 @@
  *   new Agent({ model: defaultRouterModel(), ... })
  */
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createAlibaba } from "@ai-sdk/alibaba";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createAzure } from "@ai-sdk/azure";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
+import { hardenRouterModel } from "./model-hardening";
 
 /**
  * Env var reader that treats empty/whitespace strings as missing. Crucial
@@ -48,20 +49,71 @@ export function createDeepSeekModel(modelId: DeepSeekModelId = "deepseek-chat"):
   return provider.chatModel(modelId);
 }
 
-// ─── Alibaba DashScope ────────────────────────────────────────────────
+// ─── Alibaba DashScope (Qwen, via OpenAI-compatible endpoint) ────────
 
 type AlibabaModelId = "qwen3-max" | "qwen-plus" | "qwen-turbo" | "qwen-max" | string;
 
-export function createAlibabaModel(modelId: AlibabaModelId = "qwen3-max"): LanguageModelV3 {
-  const alibabaKey = process.env.ALIBABA_API_KEY?.trim();
-  const dashscopeKey = process.env.DASHSCOPE_API_KEY?.trim();
-  const apiKey = alibabaKey || dashscopeKey;
+/**
+ * Qwen via DashScope's OpenAI-compatible endpoint
+ * (`/compatible-mode/v1`). We explicitly use `createOpenAICompatible`
+ * rather than `@ai-sdk/alibaba` because the latter serialises chat
+ * messages in DashScope's **native** shape (`{input:{messages:[...]}}`),
+ * which the compat endpoint rejects with 400 `"messages[i].content is
+ * required"`. The compat endpoint expects OpenAI-format bodies
+ * (`{messages:[{role,content}]}`), so we bypass the native SDK and hit
+ * the compat URL like any other OpenAI-alike provider.
+ *
+ * Used primarily on `prod-cn` (fizzstudio.fizzspace.cn) where router
+ * traffic stays in-country — lower latency, compliance-friendly, and
+ * decoupled from Claude's US-side outages.
+ */
+export function createAlibabaModel(modelId: AlibabaModelId = "qwen-max"): LanguageModelV3 {
+  const apiKey = (process.env.ALIBABA_API_KEY || process.env.DASHSCOPE_API_KEY)?.trim();
   if (!apiKey) {
     throw new Error("ALIBABA_API_KEY (or DASHSCOPE_API_KEY) is not set.");
   }
-  const provider = createAlibaba({
-    apiKey,
+  const provider = createOpenAICompatible({
+    name: "alibaba",
     baseURL: envOrDefault("ALIBABA_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    apiKey,
+  });
+  return provider.chatModel(modelId);
+}
+
+// ─── Anthropic (Claude) ──────────────────────────────────────────────
+
+/**
+ * Claude model IDs. Use a string union for the common current ones but
+ * allow arbitrary strings — Anthropic ships new snapshots frequently and
+ * we don't want a compile error when someone sets STORYOS_ROUTER_MODEL
+ * to a new date-pinned snapshot like `claude-sonnet-4-5-20250929`.
+ */
+type AnthropicModelId =
+  | "claude-sonnet-4-5"
+  | "claude-opus-4-6"
+  | "claude-opus-4-7"
+  | "claude-haiku-4-5"
+  | (string & {});
+
+/**
+ * Anthropic direct (not via Replicate). Used for the supervisor where
+ * long-prompt instruction following and Chinese nuance matter. Personas
+ * stay on DeepSeek for cost (persona = high token volume, supervisor =
+ * low frequency), so Claude's $3/$15 per MTok pricing shows up only in
+ * the routing layer's small footprint.
+ */
+export function createAnthropicModel(
+  modelId: AnthropicModelId = "claude-sonnet-4-5"
+): LanguageModelV3 {
+  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      "ANTHROPIC_API_KEY is not set. Get one from https://console.anthropic.com/settings/keys."
+    );
+  }
+  const provider = createAnthropic({
+    apiKey,
+    baseURL: envOrDefault("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1"),
   });
   return provider(modelId);
 }
@@ -110,7 +162,8 @@ export function createAzureModel(deploymentName: string): LanguageModelV3 {
  * Supervisor / router model.
  *
  * Required env:
- *   STORYOS_ROUTER_PROVIDER  — "deepseek" | "alibaba" | "azure" (strict).
+ *   STORYOS_ROUTER_PROVIDER  — "deepseek" | "alibaba" | "anthropic" | "azure"
+ *                              (strict).
  * Optional env:
  *   STORYOS_ROUTER_MODEL     — per-provider model/deployment id, defaults
  *                              to a reasonable pick per provider.
@@ -118,9 +171,37 @@ export function createAzureModel(deploymentName: string): LanguageModelV3 {
  * No implicit provider fallback — if the chosen provider's API key is
  * missing, the create* factory throws instead of silently switching to
  * another provider (that would hide real misconfiguration).
+ *
+ * Recommended per-environment:
+ *   - staging / prod-com:  anthropic / claude-sonnet-4-5
+ *   - prod-cn:             alibaba / qwen-max (stays in-country, lower
+ *                          latency, decoupled from US-side outages)
+ * DeepSeek is strong on cost but weaker on long-prompt routing (drops
+ * steps, echoes button labels), so we keep it as a fallback, not primary.
+ *
+ * When the router resolves to **Anthropic or Alibaba**, we wrap it with
+ * `hardenRouterModel` — a four-layer middleware chain (request timeout +
+ * rate-limit queue + circuit breaker + DeepSeek fallback) that keeps
+ * the supervisor responsive under tier-limited / regional-outage
+ * scenarios. Both providers share the same stateful limiter / breaker
+ * (single running process → single set of quotas to track).
+ *
+ * DeepSeek as router passes through unwrapped — its gateway self-
+ * throttles, 500-concurrent loadtest was clean.
  */
 export function defaultRouterModel(): LanguageModelV3 {
-  return pickProviderModel("STORYOS_ROUTER_PROVIDER", "STORYOS_ROUTER_MODEL");
+  const provider = process.env.STORYOS_ROUTER_PROVIDER?.trim();
+  const base = pickProviderModel("STORYOS_ROUTER_PROVIDER", "STORYOS_ROUTER_MODEL");
+  if (provider !== "anthropic" && provider !== "alibaba") return base;
+  // Fallback target must exist *before* the first primary call so a
+  // mid-turn fallback doesn't crash on "DeepSeek not configured".
+  const fallback = createDeepSeekModel(
+    (process.env.STORYOS_ROUTER_FALLBACK_MODEL as
+      | "deepseek-chat"
+      | "deepseek-reasoner"
+      | undefined) ?? "deepseek-chat"
+  );
+  return hardenRouterModel(base, fallback);
 }
 
 /**
@@ -145,12 +226,17 @@ function pickProviderModel(providerEnv: string, modelEnv: string): LanguageModel
   const provider = process.env[providerEnv]?.trim();
   const model = process.env[modelEnv]?.trim();
   if (!provider) {
-    throw new Error(`${providerEnv} is not set. Set to one of: deepseek | alibaba | azure.`);
+    throw new Error(
+      `${providerEnv} is not set. Set to one of: deepseek | alibaba | anthropic | azure.`
+    );
   }
   if (provider === "azure") return createAzureModel(model || "gpt-4o");
   if (provider === "alibaba") return createAlibabaModel(model || "qwen3-max");
+  if (provider === "anthropic") return createAnthropicModel(model || "claude-sonnet-4-5");
   if (provider === "deepseek") {
     return createDeepSeekModel((model as DeepSeekModelId | undefined) || "deepseek-chat");
   }
-  throw new Error(`Unknown ${providerEnv}: "${provider}". Expected: deepseek | alibaba | azure.`);
+  throw new Error(
+    `Unknown ${providerEnv}: "${provider}". Expected: deepseek | alibaba | anthropic | azure.`
+  );
 }

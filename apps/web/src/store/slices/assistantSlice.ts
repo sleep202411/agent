@@ -95,8 +95,6 @@ function createEmptyConversation() {
     submittingToolCallId: null as string | null,
     /** Whether history has been loaded from server */
     historyLoaded: false,
-    /** Number of messages loaded from server history (for separator) */
-    historyMessageCount: 0,
     /** Conversation ID from server */
     conversationId: "" as string,
     /**
@@ -1258,8 +1256,6 @@ export const assistantSlice = createSlice({
         ...current,
         messages: nextMessages,
         historyLoaded: true,
-        historyMessageCount:
-          incomingEmpty && localHasContent ? current.historyMessageCount : messages.length,
         conversationId,
       };
     },

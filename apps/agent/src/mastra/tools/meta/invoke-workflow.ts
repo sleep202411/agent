@@ -9,6 +9,7 @@ import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
 import { getRedis } from "../../lib/redis-client";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { startWorkflow } from "../../workflows/engine";
+import { estimateWorkflowCost, getUserBalance } from "../../lib/billing";
 
 /**
  * Recursively resolve attachment references embedded in the tool inputData.
@@ -64,11 +65,18 @@ export const invokeWorkflow = createTool({
       runId: z.string(),
       workflowName: z.enum(WORKFLOW_NAMES),
       message: z.string(),
+      estimatedCost: z.number().int().nonnegative().optional(),
     }),
     z.object({
       error: z.literal("PROJECT_PARAMS_INCOMPLETE"),
       message: z.string(),
       missing: z.array(z.string()),
+    }),
+    z.object({
+      error: z.literal("INSUFFICIENT_CREDITS"),
+      message: z.string(),
+      needed: z.number(),
+      current: z.number(),
     }),
   ]),
   execute: async ({ workflowName, inputData }, execCtx) => {
@@ -97,6 +105,22 @@ export const invokeWorkflow = createTool({
       }
     }
 
+    // Credit preflight: estimate cost + check balance. Conservative reject
+    // so we don't fire LLM calls (real money) for users who can't pay.
+    // image phases / batch_create_asset estimate to 0 → always pass.
+    const estimated = estimateWorkflowCost(workflowName as WorkflowName, projectDetail);
+    if (estimated > 0) {
+      const balance = await getUserBalance(ctx);
+      if (balance < estimated) {
+        return {
+          error: "INSUFFICIENT_CREDITS" as const,
+          message: `预计消耗 ${estimated} 积分，当前余额 ${balance}。请充值后重试。`,
+          needed: estimated,
+          current: balance,
+        };
+      }
+    }
+
     const resolvedInput = await resolveAttachmentRefs(inputData);
     const resolvedObj =
       resolvedInput && typeof resolvedInput === "object" && !Array.isArray(resolvedInput)
@@ -106,9 +130,13 @@ export const invokeWorkflow = createTool({
     // Auto-inject `targetEpisodeCount` from project.chapterLength for workflows
     // that take episode count. Without this, LLM omission → schema default of
     // 10 → user's ProjectParamsForm pick (e.g. 12) gets silently overridden.
-    // Only for main_flow / episode_phase; other workflows don't use this field.
-    // LLM-provided value still wins if present.
-    const needsEpisodeCount = workflowName === "main_flow" || workflowName === "episode_phase";
+    // Applies to any flow that plans/slices episodes. LLM-provided value wins.
+    const needsEpisodeCount =
+      workflowName === "main_flow" ||
+      workflowName === "episode_phase" ||
+      workflowName === "parse_script" ||
+      workflowName === "script_to_storyboard_flow" ||
+      workflowName === "script_import_flow";
     const chapterLength = projectDetail?.chapterLength;
     const injectedEpisodeCount =
       needsEpisodeCount &&
@@ -137,6 +165,7 @@ export const invokeWorkflow = createTool({
     return {
       runId,
       workflowName: workflowName as WorkflowName,
+      estimatedCost: estimated,
       message: `OK. runId=${runId}. 立即结束 turn——不要再调任何工具（list_active_workflows / explain_current_state / show_drafts 等一律不要），不要再写任何文字。`,
     };
   },
