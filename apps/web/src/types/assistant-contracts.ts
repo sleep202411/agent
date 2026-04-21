@@ -125,6 +125,14 @@ export interface AssistantWorkspaceSelection {
    * server → x-storyos-context → StoryosContext.shotsPerEpisode.
    */
   shotsPerEpisode?: number | null;
+  /**
+   * Target number of episodes the user wants. Same client-side-only
+   * persistence as shotsPerEpisode — Java has no column yet, so we re-send
+   * on every submit and mirror in localStorage. Used by supervisor to
+   * plumb into parse_script / episode_phase / main_flow / script_*_flow
+   * inputData.
+   */
+  targetEpisodeCount?: number | null;
   videoPromptStyle?: "default" | "seedance";
 }
 

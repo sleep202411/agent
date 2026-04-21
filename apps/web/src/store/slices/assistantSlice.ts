@@ -463,6 +463,22 @@ function buildWorkspaceContext(state: RootState, projectId: string): AssistantWo
       }
     } catch {}
   }
+  // targetEpisodeCount — same localStorage-only story as shotsPerEpisode.
+  // Prefer the Redux projectDetail mirror (populated on form submit), fall
+  // back to localStorage for reloads where Redux was cleared.
+  let targetEpisodeCount: number | undefined =
+    typeof detail?.targetEpisodeCount === "number" && detail.targetEpisodeCount > 0
+      ? detail.targetEpisodeCount
+      : undefined;
+  if (targetEpisodeCount === undefined && typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(`fizzos:episode-count:${projectId}`);
+      if (raw) {
+        const n = Number(raw);
+        if (Number.isFinite(n) && n >= 1) targetEpisodeCount = n;
+      }
+    } catch {}
+  }
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
@@ -472,6 +488,7 @@ function buildWorkspaceContext(state: RootState, projectId: string): AssistantWo
     dialogLanguage: dialogLanguage ?? undefined,
     stylePainting: detail?.stylePainting ?? undefined,
     shotsPerEpisode,
+    targetEpisodeCount,
     videoPromptStyle,
   };
 }

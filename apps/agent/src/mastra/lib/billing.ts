@@ -173,15 +173,22 @@ export async function deductCredits(ctx: StoryosContext, args: DeductArgs): Prom
 // upper bound so users don't hit insufficient mid-run.
 
 /**
- * Rough per-workflow cost estimate, in credits. Passing the project
- * detail lets us size by episode count; without it we fall back to a
- * "typical 10-episode project" assumption.
+ * Rough per-workflow cost estimate, in credits. Caller passes the user's
+ * chosen target episode count (from ctx.targetEpisodeCount) so estimation
+ * matches what the workflow will actually slice; without it we fall back
+ * to "typical 10-episode project" assumption. Project detail is still
+ * accepted for historic callers / future per-style surcharges.
  */
 export function estimateWorkflowCost(
   name: WorkflowName,
-  detail: ProjectParamsDetail | null
+  detail: ProjectParamsDetail | null,
+  targetEpisodeCount?: number | null
 ): number {
-  const n = Math.max(1, detail?.chapterLength ?? 10);
+  const n = Math.max(
+    1,
+    typeof targetEpisodeCount === "number" && targetEpisodeCount > 0 ? targetEpisodeCount : 10
+  );
+  void detail; // Reserved for future per-style/per-duration surcharges.
   switch (name) {
     case "main_flow":
       // Novel → full pipeline. Assume #roles ≈ #scenes ≈ n (good for

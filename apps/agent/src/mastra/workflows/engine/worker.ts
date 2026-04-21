@@ -163,6 +163,9 @@ function buildRequestContext(ctx: StoryosContext, runId: string): RequestContext
   if (typeof ctx.shotsPerEpisode === "number") {
     rc.set("shotsPerEpisode", ctx.shotsPerEpisode);
   }
+  if (typeof ctx.targetEpisodeCount === "number") {
+    rc.set("targetEpisodeCount", ctx.targetEpisodeCount);
+  }
   rc.set("runId", runId); // So steps can call reportProgress(runId, ...)
   return rc;
 }
