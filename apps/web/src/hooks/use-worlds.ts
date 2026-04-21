@@ -33,7 +33,7 @@ export const worldKeys = {
 
 // ============ API Functions ============
 
-type WorldListType = "own" | "created";
+export type WorldListType = "own" | "created";
 
 const WORLD_LIST_URLS: Record<WorldListType, string> = {
   own: "/api/user/world/query/world/ownproject",
