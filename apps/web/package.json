@@ -47,6 +47,7 @@
     "react-hook-form": "^7.72.0",
     "react-i18next": "^16.5.1",
     "react-markdown": "^10.1.0",
+    "react-player": "^3.4.0",
     "react-redux": "^9.2.0",
     "remark-gfm": "^4.0.1",
     "remotion": "^4.0.443",

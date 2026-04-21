@@ -1,7 +1,21 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ImageCell, MediaCell } from "@/app/projects/_components/storyboard/cells";
+import { IconPencil } from "@tabler/icons-react";
+import {
+  StoryboardCardImageActions,
+  StoryboardCardVideoActions,
+} from "@/app/projects/_components/storyboard-card-action-row";
+import { CardImageSlot, CardVideoSlot } from "@/app/projects/_components/storyboard-card-slots";
+import { StoryboardCardFieldDialog } from "@/app/projects/_components/storyboard-card-field-dialog";
+import { SelectInlineField } from "@/app/projects/_components/storyboard-card-select-field";
+import {
+  buildMentionItems,
+  renderMentionPreviewHtml,
+} from "@/app/projects/_components/storyboard/cells";
+import { persistValueList } from "@/app/projects/_components/storyboard/cells/cell-utils";
+import { WorldAssetSelectDialog } from "@/app/projects/_components/storyboard/dialogs/world-asset-select-dialog";
+import type { Asset } from "@/src/store/slices/projectSlice";
 import { useTranslations } from "@/src/i18n/i18n";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 import { useAppSelector } from "@/src/store";
@@ -33,6 +47,11 @@ export function StoryboardCardView() {
   const t = useTranslations("storyboard");
   const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
   const rows = useAppSelector((s) => selectCurrentInstance(s).rows);
+  const characters = useAppSelector((s) => selectCurrentInstance(s).characters);
+  const scenes = useAppSelector((s) => selectCurrentInstance(s).scenes);
+  const props = useAppSelector((s) => selectCurrentInstance(s).props);
+
+  const mentionItems = buildMentionItems(characters, scenes, props);
 
   const [styleDict, setStyleDict] = useState<StyleDict>({});
   useEffect(() => {
@@ -60,13 +79,23 @@ export function StoryboardCardView() {
     .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
 
   // Partition columns into the three slots. Image / video get their own
-  // slots; everything else is merged into "其他信息". shot_no is dropped
-  // because the card title already reads "分镜脚本 NN".
+  // slots; text-ish columns merge into "其他信息". Media types we can't
+  // show meaningfully inline (lip_sync / sound / music) and shot_no
+  // (already carried in the card title) are filtered out — users edit
+  // them in list view.
   const imageColumn = visibleColumns.find((c) => c.resolvedType === "image");
   const videoColumn = visibleColumns.find((c) => c.resolvedType === "video");
-  const otherColumns = visibleColumns.filter(
-    (c) => c.resolvedType !== "image" && c.resolvedType !== "video" && c.resolvedType !== "shot_no"
-  );
+  const otherColumns = visibleColumns.filter((c) => {
+    const type = c.resolvedType;
+    return (
+      type !== "image" &&
+      type !== "video" &&
+      type !== "shot_no" &&
+      type !== "lip_sync" &&
+      type !== "sound_path" &&
+      type !== "music"
+    );
+  });
 
   if (rows.length === 0) {
     return (
@@ -78,7 +107,7 @@ export function StoryboardCardView() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="flex flex-col gap-4 px-4 py-4">
+      <div className="flex flex-col gap-4">
         {rows.map((row, index) => (
           <StoryboardCard
             key={row.shotId ?? index}
@@ -88,6 +117,7 @@ export function StoryboardCardView() {
             videoColumn={videoColumn}
             otherColumns={otherColumns}
             styleDict={styleDict}
+            mentionItems={mentionItems}
           />
         ))}
       </div>
@@ -102,6 +132,7 @@ function StoryboardCard({
   videoColumn,
   otherColumns,
   styleDict,
+  mentionItems,
 }: {
   row: ShotRow;
   index: number;
@@ -109,31 +140,44 @@ function StoryboardCard({
   videoColumn: ShotColumn | undefined;
   otherColumns: ShotColumn[];
   styleDict: StyleDict;
+  mentionItems: ReturnType<typeof buildMentionItems>;
 }) {
   const shotId = String(row.shotId ?? "");
   const title = `分镜脚本${String(index + 1).padStart(2, "0")}`;
 
+  // Which 其他信息 field is open in the edit dialog. Null = no dialog.
+  // Only one field edits at a time — dialog closes on outside click /
+  // Esc / explicit 关闭 button (all handled by the Dialog primitive).
+  const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
+  const editingColumn =
+    editingColumnId !== null
+      ? otherColumns.find((c) => String(c.id ?? "") === editingColumnId)
+      : undefined;
+
   return (
     <div
       data-storyboard-shot-id={shotId}
-      className="flex h-[240px] flex-col rounded-lg border border-border/60 bg-card p-4"
+      className="flex flex-col rounded-lg border border-border/60 bg-muted/40 p-4"
     >
       <div className="mb-3 flex shrink-0 items-center justify-between">
         <span className="text-[14px] font-medium text-foreground/90">{title}</span>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[220px_220px_1fr]">
+      {/* Row height is driven by 分镜图 / 分镜视频 (slot + buttons stacked).
+          其他信息 is forced not to push the row taller by absolute-positioning
+          its list inside a relative wrapper — the wrapper contributes ~0
+          natural height, so the row height = max(media-col, 0) = media-col.
+          Change slot / button sizes and the card re-flows automatically. */}
+      <div className="grid gap-4 md:grid-cols-[220px_220px_1fr]">
         <CardSlot label="分镜图">
           {imageColumn ? (
-            <div className="h-[140px] overflow-hidden rounded-md border border-border/40">
-              <ImageCell
-                cell={findCell(row, imageColumn)}
+            <>
+              <CardImageSlot cell={findCell(row, imageColumn)} />
+              <StoryboardCardImageActions
                 shotId={shotId}
                 shotColumnId={String(imageColumn.id ?? "")}
-                row={row}
-                column={imageColumn}
               />
-            </div>
+            </>
           ) : (
             <EmptySlot />
           )}
@@ -141,16 +185,13 @@ function StoryboardCard({
 
         <CardSlot label="分镜视频">
           {videoColumn ? (
-            <div className="h-[140px] overflow-hidden rounded-md border border-border/40">
-              <MediaCell
-                cell={findCell(row, videoColumn)}
+            <>
+              <CardVideoSlot cell={findCell(row, videoColumn)} />
+              <StoryboardCardVideoActions
                 shotId={shotId}
                 shotColumnId={String(videoColumn.id ?? "")}
-                type="video"
-                row={row}
-                column={videoColumn}
               />
-            </div>
+            </>
           ) : (
             <EmptySlot />
           )}
@@ -158,20 +199,79 @@ function StoryboardCard({
 
         <CardSlot label="其他信息">
           {otherColumns.length > 0 ? (
-            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-              {otherColumns.map((col) => (
-                <InlineField
-                  key={col.id ?? col.presetColumnKey}
-                  label={getColumnLabel(col)}
-                  value={getCellDisplayText(findCell(row, col), col, styleDict)}
-                />
-              ))}
+            <div className="relative flex-1">
+              <div className="absolute inset-0 space-y-1 overflow-y-auto pr-1">
+                {otherColumns.map((col) => {
+                  const cell = findCell(row, col);
+                  const key = col.id ?? col.presetColumnKey;
+                  const label = getColumnLabel(col);
+
+                  // Scene column: click → WorldAssetSelectDialog directly,
+                  // same as clicking the scene cell in the list view.
+                  // Skips the generic wrapper dialog.
+                  if (col.resolvedType === "scene") {
+                    return (
+                      <SceneInlineField
+                        key={key}
+                        label={label}
+                        row={row}
+                        shotColumnId={String(col.id ?? "")}
+                        cell={cell}
+                      />
+                    );
+                  }
+
+                  // Select column: click → inline popover with the option
+                  // list; avoids the dialog-inside-dialog stacking the
+                  // generic wrapper would create by nesting SelectCell.
+                  if (col.resolvedType === "select") {
+                    return (
+                      <SelectInlineField
+                        key={key}
+                        label={label}
+                        row={row}
+                        column={col}
+                        cell={cell}
+                        resolvedValue={getCellDisplayText(cell, col, styleDict)}
+                      />
+                    );
+                  }
+
+                  // Default path: richtext/dialogue render with mention
+                  // pills, everything else as plain text; click opens the
+                  // generic field editor dialog.
+                  const isRichText =
+                    col.resolvedType === "richtext" || col.resolvedType === "dialogue";
+                  const rawRichText = cell?.richText?.content ?? cell?.value ?? "";
+                  const html =
+                    isRichText && rawRichText
+                      ? renderMentionPreviewHtml(String(rawRichText))
+                      : undefined;
+                  return (
+                    <InlineField
+                      key={key}
+                      label={label}
+                      value={getCellDisplayText(cell, col, styleDict)}
+                      html={html}
+                      onClick={() => setEditingColumnId(String(col.id ?? ""))}
+                    />
+                  );
+                })}
+              </div>
             </div>
           ) : (
             <EmptySlot />
           )}
         </CardSlot>
       </div>
+
+      <StoryboardCardFieldDialog
+        open={!!editingColumn}
+        onClose={() => setEditingColumnId(null)}
+        row={row}
+        column={editingColumn}
+        mentionItems={mentionItems}
+      />
     </div>
   );
 }
@@ -180,7 +280,7 @@ function StoryboardCard({
 
 function CardSlot({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-col gap-1.5">
+    <div className="flex min-h-0 flex-col gap-3">
       <div className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </div>
@@ -204,12 +304,94 @@ function EmptySlot() {
 // users drop into list view (or click the row's action buttons once wired)
 // to edit.
 
-function InlineField({ label, value }: { label: string; value: string }) {
+/**
+ * Scene-typed 其他信息 row. Mirrors the list-view SceneReferenceCell's
+ * click handler: click the line → directly opens the
+ * WorldAssetSelectDialog for scenes (no intermediate wrapper dialog).
+ * Persist on select goes through the same `persistValueList` path so
+ * switching back to list view shows consistent state.
+ */
+function SceneInlineField({
+  label,
+  row,
+  shotColumnId,
+  cell,
+}: {
+  label: string;
+  row: ShotRow;
+  shotColumnId: string;
+  cell: ShotValue | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const scenes = useAppSelector((s) => selectCurrentInstance(s).scenes);
+  const selected = (cell?.scenes as Asset[] | undefined)?.[0];
+  const selectedId = selected?.id ? String(selected.id) : undefined;
+  const shotId = String(row.shotId ?? "");
+
+  const handleConfirm = (item: Asset | null) => {
+    const normalized = item ? { ...item } : null;
+    void persistValueList(shotId, shotColumnId, normalized?.id ? [String(normalized.id)] : [], {
+      scenes: normalized ? [normalized] : [],
+    });
+    setOpen(false);
+  };
+
   return (
-    <div className="flex items-start gap-2 text-[13px] leading-relaxed">
+    <>
+      <InlineField
+        label={label}
+        value={String(selected?.name ?? "")}
+        onClick={() => setOpen(true)}
+      />
+      <WorldAssetSelectDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="选择场景"
+        kind="scene"
+        items={scenes}
+        selectedId={selectedId}
+        onConfirm={handleConfirm}
+      />
+    </>
+  );
+}
+
+function InlineField({
+  label,
+  value,
+  html,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  /**
+   * Pre-rendered HTML for rich-text / dialogue cells (includes mention
+   * pills). Produced upstream by `renderMentionPreviewHtml` which
+   * escapes text + whitelists `<mention>` → `<span>` pill markup, so
+   * using dangerouslySetInnerHTML here is bounded and safe.
+   */
+  html?: string;
+  onClick?: () => void;
+}) {
+  const hasValue = Boolean(html) || Boolean(value);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full cursor-pointer items-start gap-2 rounded px-1 py-0.5 text-left text-[13px] leading-relaxed transition-colors hover:bg-muted/40"
+    >
       <span className="shrink-0 text-muted-foreground">{label}:</span>
-      <span className="flex-1 text-foreground/90">{value || "—"}</span>
-    </div>
+      {html ? (
+        <span className="flex-1 text-foreground/90" dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <span
+          className={hasValue ? "flex-1 text-foreground/90" : "flex-1 text-muted-foreground/60"}
+        >
+          {hasValue ? value : "暂无"}
+        </span>
+      )}
+      <IconPencil className="mt-0.5 size-3 shrink-0 text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-100" />
+    </button>
   );
 }
 
