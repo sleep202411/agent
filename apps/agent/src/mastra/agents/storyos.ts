@@ -1,8 +1,11 @@
 import { Agent } from "@mastra/core/agent";
 import {
+  addShot,
   analyzeBrief,
+  batchUpdateStoryboardRows,
   cancelWorkflowTool,
   deleteEpisode,
+  deleteShot,
   evaluateDrafts,
   explainCurrentState,
   exportScripts,
@@ -101,6 +104,9 @@ export const storyosAgent = new Agent({
     update_episode: updateEpisode,
     delete_episode: deleteEpisode,
     update_storyboard_row: updateStoryboardRow,
+    batch_update_storyboard_rows: batchUpdateStoryboardRows,
+    delete_shot: deleteShot,
+    add_shot: addShot,
     export_scripts: exportScripts,
     // Direct-call persona consultations (light tasks — single-turn reply,
     // no DB write, no HITL). See tools/personas/ask-tools.ts.
