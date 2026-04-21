@@ -97,13 +97,13 @@ export function ReferenceImageUploader({
         onChange={(event) => void handleAdd(event.target.files?.[0] ?? undefined)}
       />
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex gap-3 overflow-x-auto pb-2">
         {paths.map((path, index) => {
           const src = ossUrl(path);
           return (
             <div
               key={`${path}_${index}`}
-              className="group relative h-[105px] w-[140px] overflow-hidden rounded-md"
+              className="group relative h-[105px] w-[140px] shrink-0 overflow-hidden rounded-md"
             >
               <img
                 src={src}
@@ -123,7 +123,7 @@ export function ReferenceImageUploader({
         })}
 
         {uploading && localPreviewUrl ? (
-          <div className="relative h-[105px] w-[140px] overflow-hidden rounded-md">
+          <div className="relative h-[105px] w-[140px] shrink-0 overflow-hidden rounded-md">
             <img src={localPreviewUrl} alt="" className="h-full w-full object-cover opacity-60" />
             <div className="absolute inset-0 flex items-center justify-center bg-black/45">
               <IconLoader2 className="size-5 animate-spin text-white" />
@@ -135,7 +135,7 @@ export function ReferenceImageUploader({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="flex h-[105px] w-[140px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
+            className="flex h-[105px] w-[140px] shrink-0 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
           >
             <IconCirclePlus className="size-5" />
             <span className="text-xs">{addLabel || tc("addReferenceImage")}</span>

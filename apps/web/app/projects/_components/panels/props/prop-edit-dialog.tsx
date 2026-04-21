@@ -2,15 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { IconLoader2, IconTrash } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -139,104 +144,140 @@ export function PropEditDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 p-0 sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>{t("editProp")}</DialogTitle>
-        </DialogHeader>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      {/* Same two-column bottom-sheet shell as Character/Scene —
+          identity fields on the left, visual assets (prop images,
+          three-view, reference) on the right. Image rows inside the
+          right column scroll horizontally. */}
+      <SheetContent
+        side="bottom"
+        className="mx-auto h-[90vh] w-full max-w-[1080px] overflow-hidden p-0"
+      >
+        <SheetHeader>
+          <SheetTitle>{t("editProp")}</SheetTitle>
+        </SheetHeader>
 
-        <div className="max-h-[60vh] overflow-y-auto p-4">
-          <FieldGroup>
-            <Field data-invalid={Boolean(errors.name)}>
-              <FieldLabel htmlFor="prop-name">{t("propName")}</FieldLabel>
-              <Input
-                id="prop-name"
-                value={form.name}
-                maxLength={20}
-                onChange={(e) => setField("name", e.target.value)}
-                placeholder={t("propNamePlaceholder")}
-                aria-invalid={Boolean(errors.name)}
-              />
-              {errors.name && <FieldError>{errors.name}</FieldError>}
-            </Field>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="grid h-full grid-rows-[minmax(0,1fr)] gap-6 overflow-hidden p-4 md:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+            {/* ─── Left: identity + prompt ─── */}
+            <FieldGroup className="overflow-y-auto pr-1">
+              <Field data-invalid={Boolean(errors.name)}>
+                <FieldLabel htmlFor="prop-name" required>
+                  {t("propName")}
+                </FieldLabel>
+                <Input
+                  id="prop-name"
+                  value={form.name}
+                  maxLength={20}
+                  onChange={(e) => setField("name", e.target.value)}
+                  placeholder={t("propNamePlaceholder")}
+                  aria-invalid={Boolean(errors.name)}
+                />
+                {errors.name && <FieldError>{errors.name}</FieldError>}
+              </Field>
 
-            <Field>
-              <FieldLabel htmlFor="prop-desc">{t("propDescription")}</FieldLabel>
-              <Textarea
-                id="prop-desc"
-                value={form.description}
-                maxLength={300}
-                rows={3}
-                onChange={(e) => setField("description", e.target.value)}
-                placeholder={t("propDescriptionPlaceholder")}
-                className="resize-none"
-              />
-            </Field>
+              <Field>
+                <FieldLabel htmlFor="prop-desc">{t("propDescription")}</FieldLabel>
+                <Textarea
+                  id="prop-desc"
+                  value={form.description}
+                  maxLength={300}
+                  rows={5}
+                  onChange={(e) => setField("description", e.target.value)}
+                  placeholder={t("propDescriptionPlaceholder")}
+                  className="resize-none"
+                />
+              </Field>
 
-            <Field>
-              <FieldLabel htmlFor="prop-prompt">{tc("prompt")}</FieldLabel>
-              <Textarea
-                id="prop-prompt"
-                value={form.prompt}
-                maxLength={500}
-                rows={3}
-                onChange={(e) => setField("prompt", e.target.value)}
-                placeholder={tc("promptPlaceholder")}
-                className="resize-none"
-              />
-            </Field>
+              <Field>
+                <FieldLabel htmlFor="prop-prompt">{tc("prompt")}</FieldLabel>
+                <Textarea
+                  id="prop-prompt"
+                  value={form.prompt}
+                  maxLength={500}
+                  rows={4}
+                  onChange={(e) => setField("prompt", e.target.value)}
+                  placeholder={tc("promptPlaceholder")}
+                  className="resize-none"
+                />
+              </Field>
+            </FieldGroup>
 
-            <Field>
-              <FieldLabel>{t("propImages")}</FieldLabel>
-              <PropImageSection
-                propId={String(prop?.id ?? "")}
-                images={form.propImgPath}
-                prompt={form.prompt || form.description || ""}
-                threeViewImagePath={form.threeViewsImagePath}
-                referenceImagePaths={form.referenceImgPath}
-                onImagesChange={(v) => setField("propImgPath", v)}
-                onThreeViewChange={(v) => setField("threeViewsImagePath", v)}
-              />
-            </Field>
+            {/* ─── Right: prop images + three-view + reference ─── */}
+            <div className="flex min-h-0 flex-col gap-5 overflow-y-auto pr-1">
+              <Field>
+                <FieldLabel>{t("propImages")}</FieldLabel>
+                <PropImageSection
+                  propId={String(prop?.id ?? "")}
+                  images={form.propImgPath}
+                  prompt={form.prompt || form.description || ""}
+                  threeViewImagePath={form.threeViewsImagePath}
+                  referenceImagePaths={form.referenceImgPath}
+                  onImagesChange={(v) => setField("propImgPath", v)}
+                  onThreeViewChange={(v) => setField("threeViewsImagePath", v)}
+                />
+              </Field>
 
-            <Field>
-              <FieldLabel>{t("referenceImages")}</FieldLabel>
-              <ReferenceImageUploader
-                paths={form.referenceImgPath}
-                onChange={(v) => setField("referenceImgPath", v)}
-                addLabel={tc("addReferenceImage")}
-              />
-            </Field>
-          </FieldGroup>
+              <Field>
+                <FieldLabel>{t("referenceImages")}</FieldLabel>
+                <ReferenceImageUploader
+                  paths={form.referenceImgPath}
+                  onChange={(v) => setField("referenceImgPath", v)}
+                  addLabel={tc("addReferenceImage")}
+                />
+              </Field>
+            </div>
+          </div>
         </div>
 
-        <DialogFooter className="border-t p-4">
-          {prop?.id && (
-            <Button
-              type="button"
-              variant="soft"
-              color="destructive"
-              onClick={() => void handleDelete()}
-              disabled={deleting}
-              className="mr-auto"
-            >
-              {deleting ? (
-                <IconLoader2 className="size-3.5 animate-spin" />
-              ) : (
-                <IconTrash className="size-3.5" />
-              )}
-              {tc("delete")}
-            </Button>
-          )}
+        <SheetFooter>
+          {prop?.id ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="soft"
+                  color="destructive"
+                  disabled={deleting}
+                  className="mr-auto"
+                >
+                  {deleting ? (
+                    <IconLoader2 className="size-4 animate-spin" />
+                  ) : (
+                    <IconTrash className="size-4" />
+                  )}
+                  {tc("delete")}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>删除道具</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    确定要删除「{form.name || t("unnamedProp")}」吗？此操作无法撤销。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
+                  <AlertDialogAction color="destructive" onClick={() => void handleDelete()}>
+                    {tc("delete")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
           <Button type="button" variant="outline" color="muted" onClick={() => onOpenChange(false)}>
             {tc("cancel")}
           </Button>
           <Button onClick={() => void handleSave()} disabled={saving}>
-            {saving && <IconLoader2 className="size-3.5 animate-spin" />}
+            {saving ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconDeviceFloppy className="size-4" />
+            )}
             {tc("save")}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

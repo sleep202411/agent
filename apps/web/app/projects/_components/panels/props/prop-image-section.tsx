@@ -224,14 +224,14 @@ export function PropImageSection({
       />
 
       <div className="space-y-3">
-        {/* 道具图：3列 16:9 */}
-        <div className="grid grid-cols-3 gap-2">
+        {/* 道具图：横向滚动，每张 16:9，w-48 便于整排看齐 */}
+        <div className="flex gap-2 overflow-x-auto pb-2">
           {images.map((path, index) => {
             const src = ossUrl(path);
             return (
               <div
                 key={`${path}_${index}`}
-                className="group relative aspect-video overflow-hidden rounded-lg bg-muted"
+                className="group relative aspect-video w-48 shrink-0 overflow-hidden rounded-lg bg-muted"
               >
                 <img src={src} alt="" className="h-full w-full object-cover" />
                 {loadingIndex === index ? (
@@ -292,7 +292,7 @@ export function PropImageSection({
           })}
 
           {uploading && localPreviewUrl ? (
-            <div className="relative aspect-video overflow-hidden rounded-lg bg-muted">
+            <div className="relative aspect-video w-48 shrink-0 overflow-hidden rounded-lg bg-muted">
               <img src={localPreviewUrl} alt="" className="h-full w-full object-cover opacity-60" />
               <div className="absolute inset-0 flex items-center justify-center bg-black/45">
                 <IconLoader2 className="size-5 animate-spin text-white" />
@@ -301,7 +301,7 @@ export function PropImageSection({
           ) : null}
 
           {!uploading && images.length < MAX_IMAGES ? (
-            <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/10">
+            <div className="flex aspect-video w-48 shrink-0 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/10">
               <Button size="sm" variant="soft" color="muted" onClick={() => setPickerOpen(true)}>
                 <IconUpload className="size-3.5" />
                 {tc("upload")}
