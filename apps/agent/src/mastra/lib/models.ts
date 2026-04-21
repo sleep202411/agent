@@ -17,6 +17,7 @@ import { createAlibaba } from "@ai-sdk/alibaba";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createAzure } from "@ai-sdk/azure";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
+import { hardenAnthropicModel } from "./model-hardening";
 
 /**
  * Env var reader that treats empty/whitespace strings as missing. Crucial
@@ -163,9 +164,27 @@ export function createAzureModel(deploymentName: string): LanguageModelV3 {
  * tool-use stability and long-prompt instruction following on our
  * 500-line supervisor prompt. DeepSeek cheaper but has known
  * weaknesses (jumps steps, echoes button labels as prose).
+ *
+ * When the router is Anthropic, the returned model is wrapped with
+ * `hardenAnthropicModel` — a three-layer middleware chain (rate-limit
+ * queue → circuit breaker → DeepSeek fallback) that keeps the supervisor
+ * responsive under Tier-limited burst load. Other providers pass through
+ * unwrapped; DeepSeek self-throttles at the gateway (500-concurrent
+ * loadtest was clean).
  */
 export function defaultRouterModel(): LanguageModelV3 {
-  return pickProviderModel("STORYOS_ROUTER_PROVIDER", "STORYOS_ROUTER_MODEL");
+  const provider = process.env.STORYOS_ROUTER_PROVIDER?.trim();
+  const base = pickProviderModel("STORYOS_ROUTER_PROVIDER", "STORYOS_ROUTER_MODEL");
+  if (provider !== "anthropic") return base;
+  // Fallback target must exist *before* the first Claude call so a
+  // mid-turn fallback doesn't crash on "DeepSeek not configured".
+  const fallback = createDeepSeekModel(
+    (process.env.STORYOS_ROUTER_FALLBACK_MODEL as
+      | "deepseek-chat"
+      | "deepseek-reasoner"
+      | undefined) ?? "deepseek-chat"
+  );
+  return hardenAnthropicModel(base, fallback);
 }
 
 /**
