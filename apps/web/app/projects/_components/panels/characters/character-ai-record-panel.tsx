@@ -10,7 +10,7 @@ import type { AssetRecord } from "@/src/types/workspace";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import { submitImageTask, retryImageTask } from "@/src/lib/ai-image-queue";
 import { removeTask, type Task } from "@/src/store/slices/taskSlice";
-import { selectCharacterAiTasks } from "@/src/store/selectors/character-ai-selectors";
+import { selectCharacterAiTasks } from "@/src/store/selectors/asset-ai-selectors";
 import { useAppDispatch, useAppSelector } from "@/src/store";
 import { getRecordPath, normalizeStoragePath, ROLE_RECORD_COLUMN_ID } from "./character-utils";
 
