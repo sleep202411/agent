@@ -182,11 +182,14 @@ export const addShot = createTool({
           if (!sceneId) {
             failedFields.push({ key: "scene", reason: "failed to resolve or create scene" });
           } else {
+            // SCENE column is multi-value on Java; scalar `value` is
+            // silently dropped. Match the frontend persistValueList shape.
             await javaRequest(ctx, "/api/user/shotValue/input", {
               data: {
                 shotId,
                 shotColumnId: sceneColumnId,
-                value: sceneId,
+                value: "",
+                values: [sceneId],
                 presetColumnKey: "scene",
                 sceneId,
                 sceneName: patch.scene.trim(),

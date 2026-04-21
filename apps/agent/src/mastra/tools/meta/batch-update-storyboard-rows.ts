@@ -263,11 +263,14 @@ export const batchUpdateStoryboardRows = createTool({
           failedFields.push({ key: "scene", reason: "failed to resolve or create scene" });
         } else {
           try {
+            // SCENE column is multi-value on Java; scalar `value` is
+            // silently dropped. Match persistValueList shape.
             await javaRequest(ctx, "/api/user/shotValue/input", {
               data: {
                 shotId,
                 shotColumnId: sceneColumnId,
-                value: resolvedSceneId,
+                value: "",
+                values: [resolvedSceneId],
                 presetColumnKey: "scene",
                 sceneId: resolvedSceneId,
                 sceneName: patch.scene.trim(),
