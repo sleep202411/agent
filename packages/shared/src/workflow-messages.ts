@@ -71,10 +71,31 @@ export const WorkflowDraftGroupSchema = z.object({
 });
 export type WorkflowDraftGroup = z.infer<typeof WorkflowDraftGroupSchema>;
 
+/**
+ * Hint to the HITL card about what clicking 满意 will *next* trigger +
+ * how much it will cost. Optional — terminal phases (like storyboard)
+ * omit it and the UI falls back to a generic "完成" label.
+ */
+export const WorkflowNextActionSchema = z.object({
+  workflowName: WorkflowNameEnum,
+  /** Conservative upper-bound estimate in credits, same semantics as preflight. */
+  estimatedCost: z.number().int().nonnegative(),
+});
+export type WorkflowNextAction = z.infer<typeof WorkflowNextActionSchema>;
+
 export const WorkflowSuspendedOutputSchema = BaseWorkflowOutput.extend({
   /** Usually a single group per suspension, but typed as array for future. */
   draftGroups: z.array(WorkflowDraftGroupSchema),
   totalDraftCount: z.number().int().nonnegative(),
+  /**
+   * Credits this phase will deduct when the user resolves the HITL
+   * (whether 满意 or 不满意 — generation cost is already incurred).
+   * Omitted (or 0) means the phase is free (image phases,
+   * batch_create_asset) — UI skips the "(X 分)" suffix.
+   */
+  estimatedCost: z.number().int().nonnegative().optional(),
+  /** What happens if user clicks 满意. Absent on terminal phases. */
+  nextAction: WorkflowNextActionSchema.optional(),
 });
 export type WorkflowSuspendedOutput = z.infer<typeof WorkflowSuspendedOutputSchema>;
 

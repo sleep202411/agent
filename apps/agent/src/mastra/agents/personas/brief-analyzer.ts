@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultRouterModel } from "../../lib/models";
+import { defaultPersonaModel } from "../../lib/models";
 
 /**
  * Light-weight persona agent. Runs ONE structured-output call to extract
@@ -33,6 +33,11 @@ export const briefAnalyzerInstructions = `你是 FizzSpace StoryOS 的**创作�
 - **suggestedParams.dialogLanguage**：推荐对白语言代号，"zh-CN" / "zh-HK" / "en-US"。用素材本身的语言推断，古风/中式现代 → zh-CN，港澳台语境 → zh-HK，英文素材 → en-US。
 - **suggestedParams.aspectRatioType**：推荐画幅 id："_16_9"（横屏/正剧）、"_9_16"（竖屏/短剧）、"_1_1"（方形/MV）、"_4_3"（怀旧）、"_21_9"（电影感）。短剧默认 \`_9_16\`，正剧默认 \`_16_9\`。
 - **suggestedParams.reasoning**：一句话解释**为什么推荐这组参数**（会展示给用户），≤ 60 字。
+- **inputType**：素材的体裁，用来决定下游走哪条 flow。三选一：
+  - \`"script"\` — **已成型的剧本**。判据（满足任意两条即可）：明显的场景头（如 \`内景/外景/白天/晚上\` 或 \`INT./EXT. ... - DAY/NIGHT\`），大量"角色名：台词"格式的对白，大写或加粗的角色名，明确的"第 X 幕 / 第 X 场 / 第 X 章"切分标记。
+  - \`"novel"\` — 连续叙事文体（小说/长文），有段落有描述但没有剧本结构，正文不是对白为主。
+  - \`"synopsis"\` — 梗概/大纲/一两句主题，字数短（< 500 字），只讲大致故事骨架。
+- **detectedChapterCount**：如果 inputType = "script" 或 "novel"，估一下原文大致能切成多少个可独立成集的**章/场/幕**。没有明显切分标记就返回你建议的合理集数（通常等于 suggestedParams.targetEpisodeCount）。synopsis 返回 0。
 
 ## 画风 ID 参考（不全，但覆盖主要题材）
 
@@ -61,5 +66,12 @@ export const briefAnalyzerAgent = new Agent({
   description:
     "Extracts project meta (name/description/visual core) and param suggestions from a user's initial creative material. One-shot structured-output call.",
   instructions: briefAnalyzerInstructions,
-  model: () => defaultRouterModel(),
+  // Use persona model (default: DeepSeek) not router model (Anthropic/Claude).
+  // analyze_brief reads the full uploaded script/novel (~50KB of Chinese text)
+  // and produces a short structured summary — pure analysis, not routing
+  // decision. At ~17K input tokens per first-upload, routing this to Claude
+  // costs ~$0.05/call; DeepSeek does it for ~$0.005 with no meaningful
+  // quality loss on this task. Claude stays on supervisor (small token
+  // footprint, needs long-prompt instruction following).
+  model: () => defaultPersonaModel(),
 });

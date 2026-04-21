@@ -27,6 +27,7 @@ import { getContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
 import { stylePaintingHint } from "../../lib/style-painting";
+import { PRICES, deductCredits, estimateWorkflowCost, phaseDeductKey } from "../../lib/billing";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -304,6 +305,11 @@ const waitConfirmationStep = createStep({
           },
         ],
         totalDraftCount: items.length,
+        estimatedCost: items.length * PRICES.rolePerUnit,
+        nextAction: {
+          workflowName: "scene_phase",
+          estimatedCost: estimateWorkflowCost("scene_phase", null),
+        },
       });
       return await suspend({
         runId,
@@ -338,6 +344,16 @@ const applyDecisionStep = createStep({
     const ctx = getContext(requestContext);
     const draftClientRefIds = state.draftClientRefIds ?? [];
     const nameByRef = state.nameByRef ?? {};
+
+    // Charge for THIS phase's LLM generation regardless of approved/rejected —
+    // token cost was incurred at generate step. See lib/billing.ts.
+    if (draftClientRefIds.length > 0) {
+      await deductCredits(ctx, {
+        amount: draftClientRefIds.length * PRICES.rolePerUnit,
+        reason: `role_phase ${draftClientRefIds.length} drafts (approved=${inputData.approved})`,
+        idempotencyKey: phaseDeductKey(runId, "role_phase"),
+      });
+    }
 
     if (!inputData.approved) {
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);

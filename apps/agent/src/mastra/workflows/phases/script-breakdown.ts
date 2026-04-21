@@ -18,6 +18,7 @@ import { reportProgress, throwIfCancelled } from "../engine";
 import { putOutline, type StoryOutline } from "../../lib/outline";
 import { getContext } from "../../lib/workspace-client";
 import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
+import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -227,6 +228,14 @@ const analyzeStep = createStep({
         current: 1,
         total: 1,
         label: endLabel,
+      });
+      // Charge for the outline run — no HITL, so deduct once on success.
+      // Fixed price (not draft-count-based) because the product here is a
+      // single skeleton, not a collection of items.
+      await deductCredits(ctx, {
+        amount: PRICES.storyOutlineRun,
+        reason: `story_outline runId=${runId}`,
+        idempotencyKey: phaseDeductKey(runId, "story_outline"),
       });
       await publishWorkflowCompleted(ctx.projectId, runId, "story_outline", {
         committed: [{ serverId: ctx.projectId, title: "故事骨架" }],

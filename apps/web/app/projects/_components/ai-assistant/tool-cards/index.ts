@@ -3,3 +3,4 @@ export { ToolConfirmCard } from "./tool-confirm-card";
 export { ToolParamsCard } from "./tool-params-card";
 export { ToolProposalCard } from "./tool-proposal-card";
 export { ToolPersonaCard } from "./tool-persona-card";
+export { ToolExportScriptsCard } from "./tool-export-scripts-card";

@@ -11,12 +11,15 @@
 
 export type WorkflowName =
   | "main_flow"
+  | "script_to_storyboard_flow"
+  | "script_import_flow"
   | "role_design"
   | "scene_design"
   | "prop_design"
   | "batch_create_asset"
   | "script_edit"
   | "story_outline"
+  | "parse_script"
   | "role_phase"
   | "role_image_phase"
   | "scene_phase"
