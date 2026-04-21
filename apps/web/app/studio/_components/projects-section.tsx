@@ -30,8 +30,11 @@ import {
   type V1World,
   type V1WorldProduct,
   type WorldGroup,
+  type WorldListType,
 } from "@/src/hooks/use-worlds";
 import { useTranslations } from "@/src/i18n/i18n";
+import { cn } from "@/lib/utils";
+import { CreateWorldDialog } from "./create-world-dialog";
 
 const OSS_BASE = env.OSS_BASE_URL;
 
@@ -43,24 +46,38 @@ function ossUrl(path: string | null | undefined): string | null {
 
 export function ProjectsSection() {
   const tw = useTranslations("workspace");
-  const { groups, totalProducts, isLoading } = useWorldsWithProducts();
-  const [creating, setCreating] = useState(false);
+  const [listType, setListType] = useState<WorldListType>("own");
+  const { groups, totalProducts, isLoading } = useWorldsWithProducts(listType);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
 
-  const handleCreateProject = async () => {
-    if (creating) return;
-    setCreating(true);
-    setTimeout(() => setCreating(false), 1500);
-  };
+  const handleCreateWorld = () => setDialogOpen(true);
 
   return (
     <section className="mx-auto flex w-full max-w-7xl flex-col gap-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">{tw("myProjects")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {tw("projectCount", { count: totalProducts })}
-          </p>
+        <div className="flex items-end gap-6">
+          <div>
+            <h2 className="text-lg font-semibold">{tw("myProjects")}</h2>
+            <p className="text-sm text-muted-foreground">
+              {tw("projectCount", { count: totalProducts })}
+            </p>
+          </div>
+          {/* Mirrors the creatorCenter tabs in the legacy app: "own"
+              = /ownproject (worlds I participate in, incl. joined),
+              "created" = /myworld (worlds I created). */}
+          <div className="flex items-center gap-1 pb-1" role="tablist">
+            <TabButton
+              active={listType === "own"}
+              onClick={() => setListType("own")}
+              label={tw("worldsParticipating")}
+            />
+            <TabButton
+              active={listType === "created"}
+              onClick={() => setListType("created")}
+              label={tw("worldsCreated")}
+            />
+          </div>
         </div>
         <ToggleGroup
           type="single"
@@ -77,32 +94,48 @@ export function ProjectsSection() {
       </div>
 
       {viewMode === "flat" ? (
-        <FlatView
-          groups={groups}
-          loading={isLoading}
-          creating={creating}
-          onCreateProject={handleCreateProject}
-        />
+        <FlatView groups={groups} loading={isLoading} onCreateWorld={handleCreateWorld} />
       ) : (
-        <GroupedView
-          groups={groups}
-          loading={isLoading}
-          creating={creating}
-          onCreateProject={handleCreateProject}
-        />
+        <GroupedView groups={groups} loading={isLoading} onCreateWorld={handleCreateWorld} />
       )}
+
+      <CreateWorldDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </section>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-md px-2.5 py-1 text-sm font-medium transition-colors",
+        active ? "bg-muted text-foreground" : "text-muted-foreground/70 hover:text-foreground"
+      )}
+    >
+      {label}
+    </button>
   );
 }
 
 type ViewProps = {
   groups: WorldGroup[];
   loading: boolean;
-  creating: boolean;
-  onCreateProject: () => void;
+  onCreateWorld: () => void;
 };
 
-function FlatView({ groups, loading, creating, onCreateProject }: ViewProps) {
+function FlatView({ groups, loading, onCreateWorld }: ViewProps) {
   const allProducts = groups.flatMap((g) =>
     g.products.map((p) => ({
       product: p,
@@ -113,7 +146,7 @@ function FlatView({ groups, loading, creating, onCreateProject }: ViewProps) {
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      <CreateButton creating={creating} onClick={onCreateProject} />
+      <CreateButton onClick={onCreateWorld} />
       {loading && Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
       {!loading &&
         allProducts.map(({ product, world, isLastInWorld }) => (
@@ -129,7 +162,7 @@ function FlatView({ groups, loading, creating, onCreateProject }: ViewProps) {
   );
 }
 
-function GroupedView({ groups, loading, creating, onCreateProject }: ViewProps) {
+function GroupedView({ groups, loading, onCreateWorld }: ViewProps) {
   const tw = useTranslations("workspace");
   return (
     <div className="space-y-10">
@@ -174,14 +207,14 @@ function GroupedView({ groups, loading, creating, onCreateProject }: ViewProps) 
 
       {!loading && groups.length === 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <CreateButton creating={creating} onClick={onCreateProject} />
+          <CreateButton onClick={onCreateWorld} />
           <EmptyState />
         </div>
       )}
 
       {!loading && groups.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <CreateButton creating={creating} onClick={onCreateProject} />
+          <CreateButton onClick={onCreateWorld} />
         </div>
       )}
     </div>
@@ -337,30 +370,19 @@ function ProductCard({
   );
 }
 
-function CreateButton({ creating, onClick }: { creating: boolean; onClick: () => void }) {
+function CreateButton({ onClick }: { onClick: () => void }) {
   const tw = useTranslations("workspace");
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={creating}
-      className="group flex flex-col overflow-hidden rounded-xl border border-dashed border-border/70 bg-card text-left transition-all hover:border-primary/40 hover:bg-muted/40 disabled:opacity-70"
+      className="group overflow-hidden rounded-xl border border-dashed border-border/70 bg-card transition-all hover:border-primary/40 hover:bg-muted/40"
     >
-      <div className="flex aspect-[16/9] w-full items-center justify-center bg-muted/30">
-        {creating ? (
-          <div className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <IconLoader2 className="size-5 animate-spin" />
-          </div>
-        ) : (
-          <div className="flex size-10 items-center justify-center rounded-full bg-foreground text-background">
-            <IconPlus className="size-5" />
-          </div>
-        )}
-      </div>
-      <div className="flex items-center p-3">
-        <span className="text-sm font-medium">
-          {creating ? tw("creating") : tw("createProject")}
-        </span>
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-muted/30">
+        <div className="flex size-10 items-center justify-center rounded-full bg-foreground text-background">
+          <IconPlus className="size-5" />
+        </div>
+        <span className="text-sm font-medium">{tw("createWorld")}</span>
       </div>
     </button>
   );
