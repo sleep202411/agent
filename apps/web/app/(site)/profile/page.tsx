@@ -13,6 +13,8 @@ import {
 } from "@/src/hooks/use-my-projects";
 import { updateProject, type Project } from "@/src/services/project";
 import { env } from "@/src/env";
+import { useKycAuthStatus } from "@/src/hooks/use-kyc";
+import { KycGateDialog } from "@/app/_components/kyc-gate-dialog";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
 import { PublishWorkDialog } from "./publish-work-dialog";
@@ -121,10 +123,24 @@ function MyIPsTab() {
 function PersonalWorksTab() {
   const t = useTranslations("profile");
   const { data: works, isLoading } = useMyPersonalWorks();
+  const { data: kycStatus } = useKycAuthStatus();
   const [publishOpen, setPublishOpen] = useState(false);
+  const [kycGateOpen, setKycGateOpen] = useState(false);
   const [editWork, setEditWork] = useState<import("@/src/services/project").PersonalWork | null>(
     null
   );
+
+  // Publish card is the only KYC-gated action on this page. Editing an
+  // existing work doesn't re-check — backend enforces its own rules on
+  // updates.
+  const requestPublish = (work: import("@/src/services/project").PersonalWork | null) => {
+    if (kycStatus?.needAuth) {
+      setKycGateOpen(true);
+      return;
+    }
+    setEditWork(work);
+    setPublishOpen(true);
+  };
 
   if (isLoading) {
     return (
@@ -140,10 +156,7 @@ function PersonalWorksTab() {
         {/* Publish card */}
         <button
           type="button"
-          onClick={() => {
-            setEditWork(null);
-            setPublishOpen(true);
-          }}
+          onClick={() => requestPublish(null)}
           className="overflow-hidden rounded-xl border border-dashed border-border bg-card text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
         >
           <div className="flex aspect-video items-center justify-center bg-muted/30">
@@ -214,6 +227,7 @@ function PersonalWorksTab() {
         }}
         editWork={editWork}
       />
+      <KycGateDialog open={kycGateOpen} onOpenChange={setKycGateOpen} />
     </>
   );
 }
