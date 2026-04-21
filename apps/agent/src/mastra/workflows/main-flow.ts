@@ -171,10 +171,23 @@ const toScriptPhaseInput = createStep({
 const toStoryboardPhaseInput = createStep({
   id: "to_storyboard_phase_input",
   inputSchema: ScriptPhaseOutputSchema,
-  outputSchema: z.object({ projectId: z.string() }),
-  execute: async ({ getInitData }) => {
+  // Scope storyboard to the episodes JUST committed by episode_phase so
+  // any stale episodes lingering in the project from earlier runs are
+  // ignored.
+  outputSchema: z.object({
+    projectId: z.string(),
+    onlyEpisodeIds: z.array(z.string()).optional(),
+  }),
+  execute: async ({ getInitData, getStepResult }) => {
     const init = getInitData<z.infer<typeof MainFlowInputSchema>>();
-    return { projectId: init.projectId };
+    const episodeResult = getStepResult(episodePhaseWorkflow) as
+      | z.infer<typeof EpisodePhaseOutputSchema>
+      | undefined;
+    const ids = episodeResult?.committed.map((c) => c.serverId).filter((id) => id.length > 0) ?? [];
+    return {
+      projectId: init.projectId,
+      onlyEpisodeIds: ids.length > 0 ? ids : undefined,
+    };
   },
 });
 

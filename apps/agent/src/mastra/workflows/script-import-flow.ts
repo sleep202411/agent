@@ -152,12 +152,26 @@ const toPropImagePhaseInput = createStep({
 
 const toStoryboardPhaseInput = createStep({
   id: "to_storyboard_phase_input",
-  // Previous step = prop_image_phase; we just need projectId from init.
+  // Previous step = prop_image_phase. We pull the JUST-committed episode ids
+  // from parse_script's result and hand them to storyboard_phase as
+  // `onlyEpisodeIds`, so any stale episodes lingering in the project from
+  // prior runs are ignored — storyboards only for what we produced this run.
   inputSchema: z.unknown(),
-  outputSchema: z.object({ projectId: z.string() }),
-  execute: async ({ getInitData }) => {
+  outputSchema: z.object({
+    projectId: z.string(),
+    onlyEpisodeIds: z.array(z.string()).optional(),
+  }),
+  execute: async ({ getInitData, getStepResult }) => {
     const init = getInitData<z.infer<typeof ScriptImportFlowInputSchema>>();
-    return { projectId: init.projectId };
+    const parseResult = getStepResult(parseScriptWorkflow) as
+      | z.infer<typeof ParseScriptOutputSchema>
+      | undefined;
+    const onlyEpisodeIds =
+      parseResult?.committed.map((c) => c.serverId).filter((id) => id.length > 0) ?? [];
+    return {
+      projectId: init.projectId,
+      onlyEpisodeIds: onlyEpisodeIds.length > 0 ? onlyEpisodeIds : undefined,
+    };
   },
 });
 

@@ -64,10 +64,20 @@ const toParseScriptInput = createStep({
 const toStoryboardPhaseInput = createStep({
   id: "to_storyboard_phase_input",
   inputSchema: ParseScriptOutputSchema,
-  outputSchema: z.object({ projectId: z.string() }),
-  execute: async ({ getInitData }) => {
+  // Scope storyboard to the episodes JUST committed by parse_script — a
+  // project with stale episodes from earlier runs would otherwise have
+  // storyboard_phase process N_new + N_stale episodes.
+  outputSchema: z.object({
+    projectId: z.string(),
+    onlyEpisodeIds: z.array(z.string()).optional(),
+  }),
+  execute: async ({ inputData, getInitData }) => {
     const init = getInitData<z.infer<typeof ScriptToStoryboardInputSchema>>();
-    return { projectId: init.projectId };
+    const ids = inputData.committed.map((c) => c.serverId).filter((id) => id.length > 0);
+    return {
+      projectId: init.projectId,
+      onlyEpisodeIds: ids.length > 0 ? ids : undefined,
+    };
   },
 });
 
