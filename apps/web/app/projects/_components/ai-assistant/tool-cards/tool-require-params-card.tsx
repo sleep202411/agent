@@ -19,11 +19,21 @@ interface ToolRequireParamsCardProps {
    * the supervisor sees `{confirmed: true, autoConfirmed: true}` and keeps
    * going. User submissions go through the `confirmProjectParamsFromForm`
    * thunk directly — no tool-result round-trip needed, because Nest is
-   * responsible for the Java save and marker injection.
+   * responsible for the Java save and short-circuit dispatch.
    */
   onAutoConfirmed: () => void;
   /** Supervisor's analyze_brief recommendations. Forwarded to the form. */
   suggested?: ProjectParamsSuggestion;
+  /**
+   * Workflow to auto-start after the user confirms params. Supervisor sets
+   * this on the tool call when it already knows the target (e.g. user
+   * clearly asked for main_flow). Forwarded verbatim to Nest so the
+   * server-side short-circuit can dispatch without a second LLM turn.
+   */
+  onConfirmWorkflow?: {
+    workflowName: string;
+    inputData?: Record<string, unknown>;
+  };
 }
 
 /**
@@ -38,6 +48,7 @@ export function ToolRequireParamsCard({
   toolCallId,
   onAutoConfirmed,
   suggested,
+  onConfirmWorkflow,
 }: ToolRequireParamsCardProps) {
   const t = useTranslations("ai");
   const dispatch = useAppDispatch();
@@ -66,7 +77,10 @@ export function ToolRequireParamsCard({
           confirmProjectParamsFromForm({
             projectId,
             toolCallId,
-            params,
+            params: {
+              ...params,
+              ...(onConfirmWorkflow ? { onConfirmWorkflow } : {}),
+            },
             userLabel: t("paramsConfirmBubble"),
           })
         );

@@ -14,6 +14,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { resolveCharacterIdsByNames, resolveSceneIdByName } from "../../lib/storyboard-ids";
+import { publishEntityEvent } from "../../lib/entity-events";
 
 /** Hard cap on shots per call. Beyond this, the supervisor should
  *  suggest a workflow instead (see storyos prompt: threshold trigger). */
@@ -293,6 +294,15 @@ export const batchUpdateStoryboardRows = createTool({
     const totalUpdated = perShot.filter((p) => p.updatedFields.length > 0).length;
     const totalFailed = perShot.filter((p) => p.failedFields.length > 0).length;
     const ok = totalFailed === 0 && totalUpdated > 0;
+
+    if (totalUpdated > 0) {
+      await publishEntityEvent(ctx, {
+        entity: "storyboard",
+        action: "batch_updated",
+        episodeId,
+        source: "batch_update_storyboard_rows",
+      });
+    }
 
     return {
       ok,

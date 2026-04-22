@@ -107,6 +107,17 @@ export const WorkflowNextStepSchema = z.object({
   labelKey: z.string(),
   /** Optional synthetic user prompt to post alongside the button click. */
   prompt: z.string().optional(),
+  /**
+   * UI styling hint. `primary` renders as the filled accent button (default
+   * action, e.g. "生成场景图"); everything else renders as secondary
+   * (e.g. "跳过，去道具"). First entry is `primary` by default if unspecified.
+   */
+  variant: z.enum(["primary", "secondary"]).optional(),
+  /**
+   * Credits this next step will cost. Omit or 0 = free. Rendered inline
+   * with the label, e.g. "生成场景图 (15 积分)".
+   */
+  estimatedCost: z.number().int().nonnegative().optional(),
 });
 export type WorkflowNextStep = z.infer<typeof WorkflowNextStepSchema>;
 
@@ -130,8 +141,12 @@ export const WorkflowCompletedOutputSchema = BaseWorkflowOutput.extend({
    * different; the client dispatches on workflowName to interpret.
    */
   result: z.record(z.string(), z.unknown()).optional(),
-  /** Deterministic follow-up — when set, the UI shows a big "继续·xxx" button. */
-  nextStep: WorkflowNextStepSchema.optional(),
+  /**
+   * User's next-step options. One → single "继续·xxx" button. Two+ → options
+   * laid out as primary/secondary actions (e.g. 场景提交后：生成场景图 vs
+   * 跳过去道具). Empty/omitted → terminal, no continuation UI.
+   */
+  nextSteps: z.array(WorkflowNextStepSchema).optional(),
   /**
    * Hint the UI to render this completion as a compact one-line chip
    * (like a tool indicator) instead of the full card. Set true for

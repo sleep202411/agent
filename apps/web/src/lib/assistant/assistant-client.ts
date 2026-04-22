@@ -98,6 +98,17 @@ export interface ConfirmProjectParamsPayload {
    * there yet), kept in localStorage + threaded into storyboard_phase input.
    */
   shotsPerEpisode?: number;
+  /**
+   * Workflow to auto-start on the server once params are saved. Supervisor
+   * sets this on the require_project_params tool call when it already
+   * knows the target workflow; the form card reads it from the tool
+   * input and forwards verbatim. Server short-circuits dispatch so we
+   * skip a second LLM turn.
+   */
+  onConfirmWorkflow?: {
+    workflowName: string;
+    inputData?: Record<string, unknown>;
+  };
 }
 
 export interface SubmitMessageOptions {

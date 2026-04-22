@@ -2,8 +2,10 @@ import { Agent } from "@mastra/core/agent";
 import {
   addShot,
   analyzeBrief,
+  applyPhaseDrafts,
   batchUpdateStoryboardRows,
   cancelWorkflowTool,
+  configureParams,
   deleteEpisode,
   deleteShot,
   evaluateDrafts,
@@ -16,7 +18,6 @@ import {
   markProjectParamsUpdated,
   queryContext,
   requireProjectParams,
-  resumeWorkflowTool,
   saveProjectMeta,
   showDrafts,
   showOptions,
@@ -73,11 +74,19 @@ export const storyosAgent = new Agent({
     cancel_workflow: cancelWorkflowTool,
     list_active_workflows: listActiveWorkflows,
     explain_current_state: explainCurrentState,
-    // HITL resume — called on <CONFIRM_WORKFLOW> marker in user message.
-    resume_workflow: resumeWorkflowTool,
-    // Preflight UI gate — checks the 4 core project params are set before
-    // any generative workflow. Frontend renders the form.
+    // HITL commit/discard — every HITL phase (scene/role/prop/episode/
+    // script/storyboard) emits drafts and ends. User confirm/revise goes
+    // through this tool; Nest button short-circuit also calls it via
+    // /workflow/:runId/confirm → phase-specific apply helper.
+    apply_phase_drafts: applyPhaseDrafts,
+    // Preflight UI gate — legacy Java-backed param form. Kept registered
+    // for back-compat but the prompt now drives `configure_params` instead.
     require_project_params: requireProjectParams,
+    // New pattern: generation-time params collected via a generic multi-
+    // field form, values live only in conversation context — no Java write,
+    // no workspaceContext plumbing. Supervisor passes the collected values
+    // into subsequent invoke_workflow inputData.
+    configure_params: configureParams,
     // Generic "user picks from a list" HITL. Supervisor calls it when intent
     // is legitimately ambiguous (not when the supervisor just wants to avoid
     // committing). See storyos.ts prompt for when-to-call rules.

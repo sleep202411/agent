@@ -250,7 +250,7 @@ function formatAcceptLabel(
   }
   const currentCost = output.estimatedCost ?? 0;
   if (currentCost > 0) {
-    return `完成 · ${currentCost} 积分`;
+    return `满意 · ${currentCost} 积分`;
   }
   return t("workflowActionAccept");
 }
@@ -270,7 +270,7 @@ function formatAcceptUserLabel(
     const nextLabel = t(WORKFLOW_LABEL_KEYS[nextAction.workflowName] ?? "workflowActionAccept");
     return `继续 ${nextLabel}`;
   }
-  if ((output.estimatedCost ?? 0) > 0) return "完成";
+  if ((output.estimatedCost ?? 0) > 0) return "满意";
   return t("workflowUserSatisfied");
 }
 
@@ -460,15 +460,14 @@ export function WorkflowCompletedCard({
   const failedCount = output.failed?.length ?? 0;
   const partial = failedCount > 0;
 
-  const handleContinue = () => {
+  const handlePickNext = (next: NonNullable<typeof output.nextSteps>[number]) => {
     if (dispatchedRef.current) return;
-    if (!projectId || !output.nextStep) return;
+    if (!projectId) return;
     if (!isActive) {
       toast.info(t("workflowOptionsNoReselect"));
       return;
     }
     dispatchedRef.current = true;
-    const next = output.nextStep;
     void dispatch(
       startWorkflowFromButton({
         projectId,
@@ -506,10 +505,9 @@ export function WorkflowCompletedCard({
     }
   };
 
-  // Compact chip form — used for low-signal terminal states that would
-  // otherwise duplicate the card right after (e.g. role/scene/prop_phase
-  // commit, which auto-chains into the image phase and is visually better
-  // served as a one-liner alongside the image card).
+  // Compact chip form — used for low-signal terminal states (deprecated
+  // after the parent-workflow deletion; still rendered if any legacy
+  // workflow emits it so existing messages in chat history don't break).
   if (output.compact) {
     return (
       <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
@@ -555,16 +553,26 @@ export function WorkflowCompletedCard({
       {output.workflowName === "story_outline" && output.result ? (
         <StoryOutlineResult result={output.result} t={t} />
       ) : null}
-      {output.nextStep && (
+      {output.nextSteps && output.nextSteps.length > 0 && (
         <div className="mt-3 flex flex-col gap-2">
-          <ActionButton
-            variant="primary"
-            onClick={handleContinue}
-            disabled={!projectId}
-            icon={<IconSparkles className="size-4" />}
-          >
-            {t(output.nextStep.labelKey)}
-          </ActionButton>
+          {output.nextSteps.map((next, i) => {
+            const v = next.variant ?? (i === 0 ? "primary" : "secondary");
+            const costSuffix =
+              typeof next.estimatedCost === "number" && next.estimatedCost > 0
+                ? ` (${next.estimatedCost} 积分)`
+                : "";
+            return (
+              <ActionButton
+                key={`${next.workflowName}-${i}`}
+                variant={v}
+                onClick={() => handlePickNext(next)}
+                disabled={!projectId}
+                icon={v === "primary" ? <IconSparkles className="size-4" /> : undefined}
+              >
+                {`${t(next.labelKey)}${costSuffix}`}
+              </ActionButton>
+            );
+          })}
           <ActionButton variant="secondary" onClick={handleRevise} disabled={!projectId}>
             {t("workflowActionRevise")}
           </ActionButton>

@@ -14,8 +14,75 @@ import { HTTPException } from "hono/http-exception";
 import { ConfirmRequestSchema } from "@repo/shared/workflow";
 import { getDraft, listDrafts, patchDraft } from "../lib/drafts";
 import { cancelWorkflow, resumeWorkflow, startWorkflow } from "../workflows/engine";
+import { getMeta } from "../workflows/engine/state";
+import { getRedis } from "../lib/redis-client";
 import { WORKFLOW_NAMES, type WorkflowName } from "../lib/redis-keys";
 import type { StoryosContext } from "../lib/workspace-client";
+import { generateProjectCover } from "../tools/meta/generate-project-cover";
+import { applySceneDrafts } from "../workflows/phases/scene-phase";
+import { applyRoleDrafts } from "../workflows/phases/role-phase";
+import { applyPropDrafts } from "../workflows/phases/prop-phase";
+import { applyEpisodeDrafts } from "../workflows/phases/episode-phase";
+import { applyScriptDrafts } from "../workflows/phases/script-phase";
+import { applyStoryboardDrafts } from "../workflows/phases/storyboard-phase";
+
+/**
+ * Resolve attachment refs in workflow inputData: any `*Ref` field whose
+ * value is `att_xxx` gets swapped for the cached text under the bare
+ * field name (e.g. `textRef` → `text`). Mirrors the logic in
+ * `invoke_workflow` tool so the `/workflow/start` endpoint (used by
+ * Nest's CONFIRM_WORKFLOW / PROJECT_PARAMS_CONFIRMED short-circuits)
+ * treats attachment refs consistently.
+ */
+async function resolveAttachmentRefs(value: unknown): Promise<unknown> {
+  if (Array.isArray(value)) {
+    return Promise.all(value.map(resolveAttachmentRefs));
+  }
+  if (value === null || typeof value !== "object") return value;
+  const src = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const redis = getRedis();
+  for (const [key, v] of Object.entries(src)) {
+    if (key.endsWith("Ref") && key.length > 3 && typeof v === "string" && v.startsWith("att_")) {
+      const raw = await redis.get(`attachment:${v}`);
+      if (!raw) throw new Error(`Attachment ref not found or expired: ${v}`);
+      const parsed = JSON.parse(raw) as { text?: string };
+      if (typeof parsed.text !== "string") {
+        throw new Error(`Attachment ${v} has no text field`);
+      }
+      out[key.slice(0, -"Ref".length)] = parsed.text;
+    } else {
+      out[key] = await resolveAttachmentRefs(v);
+    }
+  }
+  return out;
+}
+
+/**
+ * Inject context-derived fields (projectId / worldId / episodeId /
+ * targetEpisodeCount) into inputData unless caller already provided them.
+ * Mirrors `invoke_workflow` tool's auto-injection so /workflow/start
+ * produces inputData that passes phase workflow schemas (which require
+ * these IDs).
+ */
+function injectContextDefaults(
+  workflowName: WorkflowName,
+  inputData: Record<string, unknown>,
+  ctx: StoryosContext
+): Record<string, unknown> {
+  const needsEpisodeCount = workflowName === "episode_phase" || workflowName === "parse_script";
+  return {
+    projectId: ctx.projectId,
+    ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
+    ...(ctx.episodeId ? { episodeId: ctx.episodeId } : {}),
+    ...(needsEpisodeCount &&
+    typeof ctx.targetEpisodeCount === "number" &&
+    ctx.targetEpisodeCount > 0
+      ? { targetEpisodeCount: ctx.targetEpisodeCount }
+      : {}),
+    ...inputData,
+  };
+}
 
 function requireContext(c: import("hono").Context): StoryosContext {
   const rc = c.get("requestContext");
@@ -57,12 +124,34 @@ export const workflowRoutes = [
           message: `invalid workflowName; expected one of ${WORKFLOW_NAMES.join(", ")}`,
         });
       }
+      const workflowName = body.workflowName as WorkflowName;
+
+      // Mirror invoke_workflow tool's pre-flight: swap attachment refs in
+      // inputData + auto-inject projectId/worldId/episodeId/targetEpisodeCount
+      // from the context so phase schemas validate. Without this, frontend
+      // button / PROJECT_PARAMS_CONFIRMED short-circuits that pass only
+      // {textRef: "att_xxx"} would fail schema validation for parse_script
+      // (projectId, text required).
+      let rawInputData: Record<string, unknown> = {};
+      if (body.inputData && typeof body.inputData === "object" && !Array.isArray(body.inputData)) {
+        rawInputData = body.inputData as Record<string, unknown>;
+      }
+      let resolvedInputData: Record<string, unknown>;
+      try {
+        resolvedInputData = (await resolveAttachmentRefs(rawInputData)) as Record<string, unknown>;
+      } catch (err) {
+        throw new HTTPException(400, {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+      const finalInputData = injectContextDefaults(workflowName, resolvedInputData, ctx);
+
       const { runId } = await startWorkflow({
-        workflowName: body.workflowName as WorkflowName,
-        inputData: body.inputData ?? {},
+        workflowName,
+        inputData: finalInputData,
         ctx,
       });
-      return c.json({ runId, workflowName: body.workflowName });
+      return c.json({ runId, workflowName });
     },
   }),
 
@@ -77,15 +166,48 @@ export const workflowRoutes = [
   }),
 
   // ─── POST /workflow/:runId/confirm ────────────────────────────────
-  // HITL approval button. The request body tells us what the user decided;
-  // we repackage it as a resume payload and enqueue a resume job. The
-  // workflow's post-HITL step reads drafts and commits via BatchWriter.
+  // HITL approval button. Routes based on which phase the run belongs to:
+  //   - Post-Stage-C phases (scene_phase, …) → call the phase's apply
+  //     helper directly; the Mastra run has already ended after emitting
+  //     drafts, there's nothing to resume.
+  //   - Legacy phases still using Mastra suspend → enqueue a resume job
+  //     that runs applyDecisionStep inside the workflow.
   registerApiRoute("/workflow/:runId/confirm", {
     method: "POST",
     handler: async (c) => {
       const ctx = requireContext(c);
       const runId = c.req.param("runId");
       const body = ConfirmRequestSchema.parse(await c.req.json());
+
+      const meta = await getMeta(runId);
+      const applyArgs = {
+        ctx,
+        runId,
+        approved: body.approved,
+        feedback: body.feedback,
+        acceptedClientRefIds: body.acceptedClientRefIds,
+      };
+      switch (meta?.workflowName) {
+        case "scene_phase":
+          await applySceneDrafts(applyArgs);
+          return c.json({ ok: true });
+        case "role_phase":
+          await applyRoleDrafts(applyArgs);
+          return c.json({ ok: true });
+        case "prop_phase":
+          await applyPropDrafts(applyArgs);
+          return c.json({ ok: true });
+        case "episode_phase":
+          await applyEpisodeDrafts(applyArgs);
+          return c.json({ ok: true });
+        case "script_phase":
+          await applyScriptDrafts(applyArgs);
+          return c.json({ ok: true });
+        case "storyboard_phase":
+          await applyStoryboardDrafts(applyArgs);
+          return c.json({ ok: true });
+      }
+
       await resumeWorkflow({
         runId,
         resumeData: {
@@ -96,6 +218,40 @@ export const workflowRoutes = [
         ctx,
       });
       return c.json({ ok: true });
+    },
+  }),
+
+  // ─── POST /project/cover/generate ─────────────────────────────────
+  // Thin HTTP wrapper over the generate_project_cover tool, so Nest's
+  // PROJECT_PARAMS_CONFIRMED short-circuit can trigger cover generation
+  // without going through a supervisor LLM turn. Tool is idempotent
+  // (returns skipped:true when project already has imagePath), so
+  // Nest calling this as fire-and-forget is safe.
+  registerApiRoute("/project/cover/generate", {
+    method: "POST",
+    handler: async (c) => {
+      const rc = c.get("requestContext");
+      if (!rc) {
+        throw new HTTPException(401, { message: "missing requestContext" });
+      }
+      const body = (await c.req.json().catch(() => ({}))) as { textRef?: string };
+      const exec = generateProjectCover.execute;
+      if (!exec) {
+        throw new HTTPException(500, { message: "generate_project_cover has no execute fn" });
+      }
+      try {
+        // Cast: Mastra's tool.execute signature expects the full tool context,
+        // but all the cover tool uses from it is `requestContext`. Passing
+        // just that keeps this route self-contained.
+        const result = await (exec as (i: unknown, e: unknown) => Promise<unknown>)(
+          { textRef: body.textRef },
+          { requestContext: rc }
+        );
+        return c.json(result ?? { ok: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new HTTPException(500, { message: `cover generation failed: ${msg}` });
+      }
     },
   }),
 

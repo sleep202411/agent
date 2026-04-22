@@ -17,6 +17,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { resolveCharacterIdsByNames, resolveSceneIdByName } from "../../lib/storyboard-ids";
+import { publishEntityEvent } from "../../lib/entity-events";
 
 /**
  * Which shot column keys the LLM is allowed to patch. Keep in sync with
@@ -262,6 +263,14 @@ export const updateStoryboardRow = createTool({
     }
 
     const ok = failedFields.length === 0 && updatedFields.length > 0;
+    if (updatedFields.length > 0) {
+      await publishEntityEvent(ctx, {
+        entity: "storyboard",
+        action: "updated",
+        episodeId,
+        source: "update_storyboard_row",
+      });
+    }
     return {
       ok,
       message: ok

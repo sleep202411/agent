@@ -134,10 +134,13 @@ const waitAllStep = createStep({
       await publishWorkflowCompleted(ctx.projectId, runId, "prop_image_phase", {
         committed: [],
         summary: "没有可生成参考图的道具。",
-        nextStep: {
-          workflowName: "episode_phase",
-          labelKey: "workflowNextContinueToEpisodes",
-        },
+        nextSteps: [
+          {
+            workflowName: "episode_phase",
+            labelKey: "workflowNextContinueToEpisodes",
+            variant: "primary",
+          },
+        ],
       });
       return {
         outcome: "no_props" as const,
@@ -198,10 +201,13 @@ const waitAllStep = createStep({
             serverId: assetIds[i] ?? `prop-${i}`,
           })),
           summary: message,
-          nextStep: {
-            workflowName: "episode_phase",
-            labelKey: "workflowNextContinueToEpisodes",
-          },
+          nextSteps: [
+            {
+              workflowName: "episode_phase",
+              labelKey: "workflowNextContinueToEpisodes",
+              variant: "primary",
+            },
+          ],
         });
         return {
           outcome,
@@ -221,10 +227,13 @@ const waitAllStep = createStep({
         serverId: assetIds[i] ?? `prop-${i}`,
       })),
       summary: message,
-      nextStep: {
-        workflowName: "episode_phase",
-        labelKey: "workflowNextContinueToEpisodes",
-      },
+      nextSteps: [
+        {
+          workflowName: "episode_phase",
+          labelKey: "workflowNextContinueToEpisodes",
+          variant: "primary",
+        },
+      ],
     });
     return {
       outcome: "timeout" as const,

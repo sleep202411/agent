@@ -10,6 +10,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { getContext, javaRequest } from "../../lib/workspace-client";
+import { publishEntityEvent } from "../../lib/entity-events";
 
 export const deleteShot = createTool({
   id: "delete_shot",
@@ -69,6 +70,12 @@ export const deleteShot = createTool({
     const shotId = String(target.shotId);
     try {
       await javaRequest(ctx, `/api/user/shot/delete/${encodeURIComponent(shotId)}`);
+      await publishEntityEvent(ctx, {
+        entity: "storyboard",
+        action: "updated",
+        episodeId,
+        source: "delete_shot",
+      });
       return {
         ok: true,
         message: `已删除第 ${shotNo} 镜`,
