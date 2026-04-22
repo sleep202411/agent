@@ -14,22 +14,23 @@
  * over max for cost — the transformation is short and structural.
  */
 import { registerApiRoute } from "@mastra/core/server";
-import { generateText } from "ai";
+import { generateText, type LanguageModel } from "ai";
 import { z } from "zod";
-import { createAlibabaModel } from "../lib/models";
+import { createAlibabaModel, defaultPersonaModel } from "../lib/models";
 
 const ExpandRequestSchema = z.object({
   shotNumber: z.number().int().positive().optional(),
   durationSec: z.number().positive().optional(),
   currentPrompt: z.string().optional(),
-  movement: z.string().optional(),
-  stylePainting: z.string().optional(),
   sceneName: z.string().optional(),
   characters: z.array(z.string()).optional(),
-  dialogue: z.string().optional(),
-  subtitle: z.string().optional(),
-  action: z.string().optional(),
-  extraFields: z.record(z.string(), z.string()).optional(),
+  /**
+   * Free-form column label → plain text dict harvested from the
+   * storyboard row. Covers preset fields (对白 / 运镜 / 画风 / 景别 / 视角
+   * / 描述 / 字幕 …) as well as any custom columns the user added. The
+   * LLM sees these as labelled hints.
+   */
+  fields: z.record(z.string(), z.string()).optional(),
 });
 
 type ExpandRequest = z.infer<typeof ExpandRequestSchema>;
@@ -55,21 +56,38 @@ function buildUserMessage(input: ExpandRequest): string {
   if (input.currentPrompt?.trim()) {
     lines.push(`当前视频提示词（可能很粗略）：${input.currentPrompt.trim()}`);
   }
-  if (input.action?.trim()) lines.push(`动作/剧情要点：${input.action.trim()}`);
-  if (input.dialogue?.trim()) lines.push(`对白：${input.dialogue.trim()}`);
-  if (input.subtitle?.trim() && input.subtitle.trim() !== input.dialogue?.trim()) {
-    lines.push(`字幕：${input.subtitle.trim()}`);
-  }
-  if (input.movement?.trim()) lines.push(`运镜参考：${input.movement.trim()}`);
-  if (input.stylePainting?.trim()) lines.push(`画风：${input.stylePainting.trim()}`);
-  if (input.extraFields) {
-    for (const [key, value] of Object.entries(input.extraFields)) {
-      const v = value?.trim();
-      if (v) lines.push(`${key}：${v}`);
+
+  // Generic columns — whatever the user put in the row (对白 / 运镜 /
+  // 画风 / 情绪 / …). Keep their column labels so Qwen sees the intent.
+  if (input.fields) {
+    const entries = Object.entries(input.fields)
+      .map(([k, v]) => [k.trim(), typeof v === "string" ? v.trim() : ""] as const)
+      .filter(([k, v]) => k && v);
+    if (entries.length > 0) {
+      lines.push("", "分镜行其他字段：");
+      for (const [key, value] of entries) {
+        lines.push(`- ${key}：${value}`);
+      }
     }
   }
+
   lines.push("", "请只输出扩写后的多镜头提示词正文，不要加任何说明。");
   return lines.join("\n");
+}
+
+/**
+ * Prefer Qwen via DashScope (the product ask), but fall back to whatever
+ * STORYOS_PERSONA_PROVIDER is configured as if the Alibaba key isn't
+ * wired up on this deployment. Keeps the feature usable in dev-env's
+ * that only have DeepSeek configured, without silently changing
+ * behaviour when Qwen *is* available.
+ */
+function resolveVideoPromptModel(): LanguageModel {
+  const alibabaKey = (process.env.ALIBABA_API_KEY || process.env.DASHSCOPE_API_KEY)?.trim();
+  if (alibabaKey) {
+    return createAlibabaModel(process.env.VIDEO_PROMPT_MODEL?.trim() || "qwen-plus");
+  }
+  return defaultPersonaModel();
 }
 
 export const videoPromptRoutes = [
@@ -88,19 +106,26 @@ export const videoPromptRoutes = [
         return c.json({ error: "invalid input", issues: parsed.error.issues }, 400);
       }
 
-      const model = createAlibabaModel(process.env.VIDEO_PROMPT_MODEL?.trim() || "qwen-plus");
-      const { text } = await generateText({
-        model,
-        system: SYSTEM_PROMPT,
-        prompt: buildUserMessage(parsed.data),
-        temperature: 0.6,
-      });
+      try {
+        const model = resolveVideoPromptModel();
+        const { text } = await generateText({
+          model,
+          system: SYSTEM_PROMPT,
+          prompt: buildUserMessage(parsed.data),
+          temperature: 0.6,
+        });
 
-      const cleaned = text.trim();
-      if (!cleaned) {
-        return c.json({ error: "empty response from model" }, 502);
+        const cleaned = text.trim();
+        if (!cleaned) {
+          return c.json({ error: "empty response from model" }, 502);
+        }
+        return c.json({ prompt: cleaned });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // eslint-disable-next-line no-console
+        console.error("[video-prompt/expand] LLM call failed:", message);
+        return c.json({ error: `expand failed: ${message}` }, 500);
       }
-      return c.json({ prompt: cleaned });
     },
   }),
 ];

@@ -1,13 +1,18 @@
 /**
- * Video-prompt expansion client — collects row fields relevant to the
- * video generation (dialogue, movement, style, etc.), posts them to
- * `/aurora/video-prompt/expand` (Nest → Mastra → Qwen), and returns the
- * LLM-rewritten multi-shot prompt in the "第一镜头/第二镜头" format the
- * video dialog feeds to the video model.
+ * Video-prompt expansion client — serialises the entire current
+ * storyboard row (every visible, non-media column the user has typed
+ * into) and posts it to `/aurora/video-prompt/expand` (Nest → Mastra →
+ * Qwen). Returns the LLM-rewritten multi-shot prompt in the
+ * "第一镜头/第二镜头" format the video dialog feeds to the video model.
  *
- * Scene/character cells render as mention HTML in the row; we extract
- * just the display text here so the LLM sees clean names instead of
- * `<mention id="…">`.
+ * We deliberately don't whitelist preset keys: users can add custom
+ * columns (动作、情绪、镜头注释…) and those should influence the
+ * expanded prompt too. Everything text-bearing is emitted as
+ * "<columnName>: <plainText>" for the backend prompt to merge.
+ *
+ * Media columns (image / video / audio) get a "<columnName>: (已上传 N 张图)"
+ * hint instead of the raw paths so Qwen knows they exist without us
+ * dumping CDN URLs into the LLM context.
  */
 
 import { stripAllTags } from "@/app/projects/_components/storyboard/cells/cell-utils";
@@ -17,26 +22,37 @@ export interface ExpandVideoPromptRequest {
   shotNumber?: number;
   durationSec?: number;
   currentPrompt?: string;
-  movement?: string;
-  stylePainting?: string;
   sceneName?: string;
   characters?: string[];
-  dialogue?: string;
-  subtitle?: string;
-  action?: string;
-  extraFields?: Record<string, string>;
+  /**
+   * Free-form "<column label>: <plain text>" map harvested from the row.
+   * Keys are column display names (falling back to presetColumnKey) so
+   * the LLM sees human-readable headings like "运镜"、"对白"、"画风".
+   */
+  fields?: Record<string, string>;
 }
 
-const RELEVANT_PRESET_KEYS = new Set([
-  "video_prompt",
-  "movement",
-  "style_planting",
-  "dialogue",
-  "subtitle",
-  "description",
+/**
+ * Column types that we already surface via structured fields (scene /
+ * character) or that don't carry narrative signal (media paths) — skip
+ * them when building the generic `fields` map to avoid duplication /
+ * noise.
+ */
+const EXCLUDED_COLUMN_TYPES = new Set(["SCENE", "CHARACTER", "IMAGE", "VIDEO", "AUDIO", "MUSIC"]);
+
+const EXCLUDED_PRESET_KEYS = new Set([
+  "scene",
+  "character",
+  "image_path",
+  "video_path",
+  "video_path_lip_sync",
+  "sound_path",
+  "music",
+  "status",
+  "shot_no",
+  // Already surfaced via structured fields below:
   "duration",
-  "shot_size",
-  "perspective",
+  "video_prompt",
 ]);
 
 function cellPlainText(cell: ShotValue | undefined): string {
@@ -54,6 +70,12 @@ function cellPlainText(cell: ShotValue | undefined): string {
   return stripAllTags(raw).trim();
 }
 
+function columnLabel(column: ShotColumn | undefined, fallback: string): string {
+  const name = typeof column?.columnName === "string" ? column.columnName.trim() : "";
+  if (name) return name;
+  return fallback;
+}
+
 export function buildExpandPayload(
   row: ShotRow,
   columns: ShotColumn[],
@@ -63,56 +85,59 @@ export function buildExpandPayload(
   const out: ExpandVideoPromptRequest = {};
   if (typeof shotNumber === "number") out.shotNumber = shotNumber;
 
-  const byPreset = new Map<string, ShotValue>();
+  const columnById = new Map<string, ShotColumn>();
+  for (const col of columns) {
+    const id = col.id ? String(col.id) : "";
+    if (id) columnById.set(id, col);
+  }
+
+  // Structured extracts (duration / scene / character / video_prompt) that
+  // the backend prompt template treats as first-class slots.
   for (const cell of shotValues) {
     const preset = cell.presetColumnKey;
-    if (preset) byPreset.set(preset, cell);
+
+    if (preset === "scene") {
+      const scene = (cell.scenes as Asset[] | undefined)?.[0];
+      if (scene?.name) out.sceneName = String(scene.name);
+      continue;
+    }
+    if (preset === "character") {
+      const chars = (cell.characters as Asset[] | undefined) ?? [];
+      const names = chars.map((c) => String(c?.name ?? "").trim()).filter(Boolean);
+      if (names.length) out.characters = names;
+      continue;
+    }
+    if (preset === "video_prompt") {
+      const text = cellPlainText(cell);
+      if (text) out.currentPrompt = text;
+      continue;
+    }
+    if (preset === "duration") {
+      const raw = cellPlainText(cell);
+      const n = Number(raw.replace(/[^\d.]/g, ""));
+      if (Number.isFinite(n) && n > 0) out.durationSec = n;
+      continue;
+    }
   }
 
-  // Scene / character are relation cells — pull names out of the nested
-  // asset objects rather than the mention HTML that cellPlainText would
-  // produce.
-  const sceneCell = byPreset.get("scene");
-  const scene = (sceneCell?.scenes as Asset[] | undefined)?.[0];
-  if (scene?.name) out.sceneName = String(scene.name);
+  // Generic pass: every remaining text-bearing column ends up in `fields`
+  // keyed by the column display name, so custom columns contribute too.
+  const fields: Record<string, string> = {};
+  for (const cell of shotValues) {
+    const preset = cell.presetColumnKey ?? "";
+    if (EXCLUDED_PRESET_KEYS.has(preset)) continue;
 
-  const characterCell = byPreset.get("character");
-  const characters = (characterCell?.characters as Asset[] | undefined) ?? [];
-  const characterNames = characters.map((c) => String(c?.name ?? "").trim()).filter(Boolean);
-  if (characterNames.length) out.characters = characterNames;
+    const column = cell.shotColumnId ? columnById.get(String(cell.shotColumnId)) : undefined;
+    const columnType = column?.columnType?.toUpperCase() ?? "";
+    if (EXCLUDED_COLUMN_TYPES.has(columnType)) continue;
 
-  out.currentPrompt = cellPlainText(byPreset.get("video_prompt"));
-  out.movement = cellPlainText(byPreset.get("movement"));
-  out.stylePainting = cellPlainText(byPreset.get("style_planting"));
-  out.dialogue = cellPlainText(byPreset.get("dialogue"));
-  out.subtitle = cellPlainText(byPreset.get("subtitle"));
-  out.action = cellPlainText(byPreset.get("description"));
-
-  const durationRaw = cellPlainText(byPreset.get("duration"));
-  const durationNumber = Number(durationRaw.replace(/[^\d.]/g, ""));
-  if (Number.isFinite(durationNumber) && durationNumber > 0) {
-    out.durationSec = durationNumber;
-  }
-
-  // Surface any other text-bearing preset cell the dialog knows about
-  // (shot_size / perspective) as free-form hints — the backend template
-  // merges them into the "其他" section without needing a schema update.
-  const extras: Record<string, string> = {};
-  for (const preset of ["shot_size", "perspective"]) {
-    if (!RELEVANT_PRESET_KEYS.has(preset)) continue;
-    const text = cellPlainText(byPreset.get(preset));
+    const text = cellPlainText(cell);
     if (!text) continue;
-    const label = preset === "shot_size" ? "景别" : preset === "perspective" ? "视角" : preset;
-    extras[label] = text;
-  }
-  if (Object.keys(extras).length) out.extraFields = extras;
 
-  // Strip keys that came back empty so the Zod schema upstream doesn't
-  // receive empty strings that add noise to the prompt.
-  for (const key of Object.keys(out) as (keyof ExpandVideoPromptRequest)[]) {
-    const v = out[key];
-    if (typeof v === "string" && !v) delete out[key];
+    const label = columnLabel(column, preset || String(cell.shotColumnId ?? "field"));
+    if (!fields[label]) fields[label] = text;
   }
+  if (Object.keys(fields).length) out.fields = fields;
 
   return out;
 }
