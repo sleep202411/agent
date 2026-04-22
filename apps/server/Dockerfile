@@ -34,6 +34,12 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=pruner /app/out/json/ .
 RUN npm ci --ignore-scripts --omit=dev
 
+# Copy @repo/shared's built dist — the node_modules workspace symlink
+# points at /app/packages/shared, which was pruned to json-only, so
+# without this the server crashes at startup with
+# `Cannot find module '@repo/shared/dist/entity-events.js'`.
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+
 # Copy compiled output
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 
