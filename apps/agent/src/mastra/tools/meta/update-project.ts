@@ -14,6 +14,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { getContext, javaRequest } from "../../lib/workspace-client";
+import { publishEntityEvent } from "../../lib/entity-events";
 
 export const updateProject = createTool({
   id: "update_project",
@@ -51,6 +52,12 @@ export const updateProject = createTool({
     if (name) parts.push(`名称改为「${name}」`);
     if (description) parts.push("描述已更新");
     if (imagePath) parts.push("封面已更新");
+    await publishEntityEvent(ctx, {
+      entity: "project",
+      action: "updated",
+      id: ctx.projectId,
+      source: "update_project",
+    });
     return { ok: true, message: `项目${parts.join("、")}` };
   },
 });

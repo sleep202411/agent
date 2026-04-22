@@ -347,7 +347,7 @@ async function uploadAttachmentFile(
 
 // ─── Async: refresh project detail ──────────────────────
 
-async function refreshProjectDetail(dispatch: AppDispatch, projectId: string) {
+export async function refreshProjectDetail(dispatch: AppDispatch, projectId: string) {
   try {
     const detail = await backendApi.post<ProjectDetail>(`/api/user/project/detail/${projectId}`);
     dispatch(setProjectDetail(detail));

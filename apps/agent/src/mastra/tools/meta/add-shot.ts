@@ -13,6 +13,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { resolveCharacterIdsByNames, resolveSceneIdByName } from "../../lib/storyboard-ids";
+import { publishEntityEvent } from "../../lib/entity-events";
 
 type CreateShotResponse = { id?: string | number } | string | number | null;
 
@@ -208,6 +209,12 @@ export const addShot = createTool({
     }
 
     const ok = failedFields.length === 0;
+    await publishEntityEvent(ctx, {
+      entity: "storyboard",
+      action: "updated",
+      episodeId,
+      source: "add_shot",
+    });
     return {
       ok,
       message: ok
