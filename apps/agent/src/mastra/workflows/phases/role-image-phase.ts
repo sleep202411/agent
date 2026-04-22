@@ -154,10 +154,13 @@ const waitAllStep = createStep({
       await publishWorkflowCompleted(ctx.projectId, runId, "role_image_phase", {
         committed: [],
         summary: "没有可生成主图的角色。",
-        nextStep: {
-          workflowName: "scene_phase",
-          labelKey: "workflowNextContinueToScenes",
-        },
+        nextSteps: [
+          {
+            workflowName: "scene_phase",
+            labelKey: "workflowNextContinueToScenes",
+            variant: "primary",
+          },
+        ],
       });
       return {
         outcome: "no_roles" as const,
@@ -218,10 +221,13 @@ const waitAllStep = createStep({
             serverId: assetIds[i] ?? `role-${i}`,
           })),
           summary: message,
-          nextStep: {
-            workflowName: "scene_phase",
-            labelKey: "workflowNextContinueToScenes",
-          },
+          nextSteps: [
+            {
+              workflowName: "scene_phase",
+              labelKey: "workflowNextContinueToScenes",
+              variant: "primary",
+            },
+          ],
         });
         return {
           outcome,
@@ -242,10 +248,13 @@ const waitAllStep = createStep({
         serverId: assetIds[i] ?? `role-${i}`,
       })),
       summary: message,
-      nextStep: {
-        workflowName: "scene_phase",
-        labelKey: "workflowNextContinueToScenes",
-      },
+      nextSteps: [
+        {
+          workflowName: "scene_phase",
+          labelKey: "workflowNextContinueToScenes",
+          variant: "primary",
+        },
+      ],
     });
     return {
       outcome: "timeout" as const,

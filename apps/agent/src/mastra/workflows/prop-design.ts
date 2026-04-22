@@ -360,10 +360,13 @@ const applyDecisionStep = createStep({
       committed: committed.map((c) => ({ serverId: c.serverId })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      nextStep: {
-        workflowName: "prop_image_phase",
-        labelKey: "workflowNextContinueToPropImages",
-      },
+      nextSteps: [
+        {
+          workflowName: "prop_image_phase",
+          labelKey: "workflowNextContinueToPropImages",
+          variant: "primary",
+        },
+      ],
     });
 
     return {

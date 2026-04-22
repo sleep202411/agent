@@ -405,10 +405,13 @@ const applyDecisionStep = createStep({
       committed: committed.map((c) => ({ serverId: c.serverId })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      nextStep: {
-        workflowName: "role_image_phase",
-        labelKey: "workflowNextContinueToRoleImages",
-      },
+      nextSteps: [
+        {
+          workflowName: "role_image_phase",
+          labelKey: "workflowNextContinueToRoleImages",
+          variant: "primary",
+        },
+      ],
     });
 
     return {

@@ -1,6 +1,6 @@
 /**
- * episode_phase — plan N episodes via the episode-planner persona, HITL,
- * then batch upsert to Java.
+ * episode_phase — plan N episodes via the episode-planner persona, emit
+ * drafts for review, and end. Commit via `applyEpisodeDrafts()`.
  *
  * Reads from the project skeleton (Redis outline:{projectId}, written by
  * story_outline) for storySummary + cast roster + chapter structure +
@@ -22,7 +22,7 @@ import {
   putDraft,
 } from "../../lib/drafts";
 import { reportProgress, throwIfCancelled } from "../engine";
-import { getContext, javaRequest } from "../../lib/workspace-client";
+import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
 import { getOutline, type StoryOutline } from "../../lib/outline";
 import {
   publishWorkflowCompleted,
@@ -30,7 +30,7 @@ import {
   publishWorkflowProgress,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
-import { PRICES, deductCredits, estimateWorkflowCost, phaseDeductKey } from "../../lib/billing";
+import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -48,7 +48,13 @@ export const EpisodePhaseInputSchema = z.object({
   feedback: z.string().optional(),
 });
 
-/** Internal — resolved from skeleton before planStep runs. */
+export const EpisodePhaseOutputSchema = z.object({
+  runId: z.string(),
+  draftCount: z.number(),
+  message: z.string(),
+});
+
+/** Internal — resolved from skeleton before plan runs. */
 const ResolvedPlanInputSchema = z.object({
   projectId: z.string(),
   storySummary: z.string(),
@@ -69,34 +75,22 @@ const ResolvedPlanInputSchema = z.object({
   feedback: z.string().optional(),
 });
 
-export const EpisodePhaseOutputSchema = z.object({
-  outcome: z.enum(["committed", "rejected", "partial_failure"]),
-  committed: z.array(
-    z.object({ clientRefId: z.string(), serverId: z.string(), title: z.string() })
-  ),
-  failed: z.array(z.object({ clientRefId: z.string(), title: z.string(), reason: z.string() })),
-  message: z.string(),
+const PlannedSchema = z.object({
+  episodes: z.array(EpisodePlan),
+  projectId: z.string(),
 });
 
-const StateSchema = z.object({
-  plannedEpisodes: z.array(EpisodePlan).default([]),
-  draftClientRefIds: z.array(z.string()).default([]),
-  titleByRef: z.record(z.string(), z.string()).default({}),
-});
+// Draft payload shape stored in Redis — consumed by applyEpisodeDrafts.
+interface EpisodeDraftData {
+  title: string;
+  introduction: string;
+  frontPrompt: string;
+  behindPrompt: string;
+  sortHint: number;
+  projectId: string;
+}
 
-const ResumeSchema = z.object({
-  approved: z.boolean(),
-  feedback: z.string().optional(),
-  acceptedClientRefIds: z.array(z.string()).optional(),
-});
-
-const SuspendSchema = z.object({
-  runId: z.string(),
-  episodeCount: z.number(),
-  phase: z.literal("episode"),
-});
-
-// ─── Step 0: resolve inputs (direct or from skeleton) ────────────────
+// ─── Step 0: resolve inputs from skeleton ─────────────────────────────
 
 const resolveInputStep = createStep({
   id: "resolve_input",
@@ -134,9 +128,8 @@ const resolveInputStep = createStep({
 const planStep = createStep({
   id: "plan",
   inputSchema: ResolvedPlanInputSchema,
-  outputSchema: z.object({ done: z.literal(true) }),
-  stateSchema: StateSchema,
-  execute: async ({ inputData, setState, state, mastra, requestContext }) => {
+  outputSchema: PlannedSchema,
+  execute: async ({ inputData, mastra, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
     await throwIfCancelled(runId);
@@ -173,7 +166,6 @@ const planStep = createStep({
       throw new Error("episode-planner produced no episodes");
     }
 
-    setState({ ...state, plannedEpisodes: episodes });
     const doneLabel = `规划 ${episodes.length} 集大纲完成`;
     await reportProgress(runId, {
       stepId: "episode_phase.plan",
@@ -186,7 +178,7 @@ const planStep = createStep({
       total: inputData.targetEpisodeCount,
       label: doneLabel,
     });
-    return { done: true as const };
+    return { episodes, projectId: inputData.projectId };
   },
 });
 
@@ -228,293 +220,82 @@ function buildPrompt(input: z.infer<typeof ResolvedPlanInputSchema>): string {
   return parts.join("\n");
 }
 
-// ─── Step 2: collect drafts ───────────────────────────────────────────
+// ─── Step 2: collect drafts into Redis ────────────────────────────────
 
 const collectDraftsStep = createStep({
   id: "collect_drafts",
-  inputSchema: z.object({ done: z.literal(true) }),
+  inputSchema: PlannedSchema,
   outputSchema: z.object({ draftCount: z.number() }),
-  stateSchema: StateSchema,
-  execute: async ({ state, setState, requestContext }) => {
+  execute: async ({ inputData, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
     await throwIfCancelled(runId);
 
-    const planned = state.plannedEpisodes ?? [];
-    const draftClientRefIds: string[] = [];
-    const titleByRef: Record<string, string> = {};
     let i = 0;
-    for (const ep of planned) {
+    for (const ep of inputData.episodes) {
       const clientRefId = randomUUID();
-      // Store the full planned shape — commit step will send to Java.
-      await putDraft(runId, "episode", clientRefId, {
+      const data: EpisodeDraftData = {
         title: ep.title,
         introduction: ep.introduction,
         frontPrompt: ep.frontPrompt ?? "",
         behindPrompt: ep.behindPrompt ?? "",
         sortHint: i,
-      });
-      draftClientRefIds.push(clientRefId);
-      titleByRef[clientRefId] = ep.title;
+        projectId: inputData.projectId,
+      };
+      await putDraft(runId, "episode", clientRefId, data);
       i += 1;
       await reportProgress(runId, {
         stepId: "episode_phase.collect",
         current: i,
-        total: planned.length,
-        label: `已收集 ${i}/${planned.length} 集草稿`,
+        total: inputData.episodes.length,
+        label: `已收集 ${i}/${inputData.episodes.length} 集草稿`,
       });
     }
-    setState({ ...state, draftClientRefIds, titleByRef });
-    return { draftCount: draftClientRefIds.length };
+    return { draftCount: i };
   },
 });
 
-// ─── Step 3: HITL ─────────────────────────────────────────────────────
+// ─── Step 3: emit awaiting-review + end ───────────────────────────────
 
-const waitConfirmationStep = createStep({
-  id: "wait_confirmation",
+const emitReviewStep = createStep({
+  id: "emit_review",
   inputSchema: z.object({ draftCount: z.number() }),
-  outputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
-  stateSchema: StateSchema,
-  resumeSchema: ResumeSchema,
-  suspendSchema: SuspendSchema,
-  execute: async ({ inputData, resumeData, suspend, requestContext }) => {
-    const runId = requestContext?.get("runId") as string | undefined;
-    if (!runId) throw new Error("runId missing");
-    const ctx = getContext(requestContext);
-
-    if (!resumeData) {
-      await reportProgress(runId, {
-        stepId: "episode_phase.confirm",
-        current: inputData.draftCount,
-        total: inputData.draftCount,
-        label: `${inputData.draftCount} 集大纲已生成，等待确认`,
-      });
-      const drafts = await listDrafts<{
-        title: string;
-        introduction: string;
-        frontPrompt: string;
-        behindPrompt: string;
-        sortHint: number;
-      }>(runId, { entityType: "episode", statuses: ["pending"] });
-      await publishWorkflowSuspended(ctx.projectId, runId, "episode_phase", {
-        draftGroups: [
-          {
-            entityType: "episode",
-            count: drafts.length,
-            items: drafts.map((d) => ({
-              clientRefId: d.clientRefId,
-              data: d.data as unknown as Record<string, unknown>,
-            })),
-          },
-        ],
-        totalDraftCount: drafts.length,
-        estimatedCost: drafts.length * PRICES.episodePerUnit,
-        nextAction: {
-          workflowName: "script_phase",
-          estimatedCost: drafts.length * PRICES.scriptPerEpisode,
-        },
-      });
-      return await suspend({
-        runId,
-        episodeCount: inputData.draftCount,
-        phase: "episode" as const,
-      });
-    }
-    return resumeData;
-  },
-});
-
-// ─── Step 4: commit ───────────────────────────────────────────────────
-
-const SORT_GAP = 1024;
-
-const applyDecisionStep = createStep({
-  id: "apply_decision",
-  inputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
   outputSchema: EpisodePhaseOutputSchema,
-  stateSchema: StateSchema,
-  execute: async ({ inputData, state, requestContext, getInitData }) => {
+  execute: async ({ inputData, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
-    await throwIfCancelled(runId);
-
     const ctx = getContext(requestContext);
-    const rawInput = getInitData<z.infer<typeof EpisodePhaseInputSchema>>();
-    // projectId is auto-injected by invoke_workflow; fall back to ctx if
-    // some legacy caller passed nothing.
-    const projectId = rawInput.projectId || ctx.projectId;
-    const draftClientRefIds = state.draftClientRefIds ?? [];
-    const titleByRef = state.titleByRef ?? {};
 
-    // Charge regardless of approved/rejected — LLM cost incurred at gen.
-    if (draftClientRefIds.length > 0) {
-      await deductCredits(ctx, {
-        amount: draftClientRefIds.length * PRICES.episodePerUnit,
-        reason: `episode_phase ${draftClientRefIds.length} drafts (approved=${inputData.approved})`,
-        idempotencyKey: phaseDeductKey(runId, "episode_phase"),
-      });
-    }
-
-    if (!inputData.approved) {
-      for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
-      await publishWorkflowFailed(ctx.projectId, runId, "episode_phase", {
-        terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
-        retryable: false,
-      });
-      return {
-        outcome: "rejected" as const,
-        committed: [],
-        failed: [],
-        message: inputData.feedback
-          ? `分集阶段未通过。反馈：${inputData.feedback}`
-          : "分集阶段未通过。",
-      };
-    }
-
-    const accepted = new Set(inputData.acceptedClientRefIds ?? draftClientRefIds);
-    const drafts = await listDrafts<{
-      title: string;
-      introduction: string;
-      frontPrompt: string;
-      behindPrompt: string;
-      sortHint: number;
-    }>(runId, { entityType: "episode", statuses: ["pending"] });
-    const accepts = drafts
-      .filter((d) => accepted.has(d.clientRefId))
-      .sort((a, b) => a.data.sortHint - b.data.sortHint);
-
-    for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
-    const startLabel = `入库 ${accepts.length} 集…`;
     await reportProgress(runId, {
-      stepId: "episode_phase.commit",
-      current: 0,
-      total: accepts.length,
-      label: startLabel,
-    });
-    await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "committing", {
-      current: 0,
-      total: accepts.length,
-      label: startLabel,
+      stepId: "episode_phase.review",
+      current: inputData.draftCount,
+      total: inputData.draftCount,
+      label: `${inputData.draftCount} 集大纲已生成，等待确认`,
     });
 
-    // Java's batch/updateOrAdd/episode expects one payload with `datas` array.
-    const datas = accepts.map((d, idx) => ({
-      title: d.data.title,
-      introduction: d.data.introduction,
-      frontPrompt: d.data.frontPrompt,
-      behindPrompt: d.data.behindPrompt,
-      projectId,
-      sort: (idx + 1) * SORT_GAP,
-    }));
-
-    const committed: z.infer<typeof EpisodePhaseOutputSchema>["committed"] = [];
-    const failed: z.infer<typeof EpisodePhaseOutputSchema>["failed"] = [];
-
-    try {
-      await javaRequest<unknown>(ctx, "/api/user/world/batch/updateOrAdd/episode", {
-        data: { datas },
-        timeoutMs: 120_000,
-      });
-      // Java doesn't return ids; re-list and match by sort.
-      const listed = await javaRequest<{ list?: Array<{ id: string | number; sort?: number }> }>(
-        ctx,
-        "/api/user/world/list/episode",
-        { data: { productId: projectId, page: 1, pageSize: 999 } }
-      );
-      const bySort = new Map(
-        (listed.list ?? []).map((ep) => [Number(ep.sort ?? 0), String(ep.id)])
-      );
-      for (let i = 0; i < accepts.length; i++) {
-        const d = accepts[i];
-        const sortKey = (i + 1) * SORT_GAP;
-        const serverId = bySort.get(sortKey);
-        if (serverId) {
-          await markDraftCommitted(runId, d.clientRefId, serverId);
-          committed.push({
+    const drafts = await listDrafts<EpisodeDraftData>(runId, {
+      entityType: "episode",
+      statuses: ["pending"],
+    });
+    await publishWorkflowSuspended(ctx.projectId, runId, "episode_phase", {
+      draftGroups: [
+        {
+          entityType: "episode",
+          count: drafts.length,
+          items: drafts.map((d) => ({
             clientRefId: d.clientRefId,
-            serverId,
-            title: titleByRef[d.clientRefId] ?? d.data.title,
-          });
-        } else {
-          await markDraftFailed(runId, d.clientRefId, "Java write succeeded but id lookup missed");
-          failed.push({
-            clientRefId: d.clientRefId,
-            title: titleByRef[d.clientRefId] ?? d.data.title,
-            reason: "id lookup missed",
-          });
-        }
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      for (const d of accepts) {
-        await markDraftFailed(runId, d.clientRefId, message);
-        failed.push({
-          clientRefId: d.clientRefId,
-          title: titleByRef[d.clientRefId] ?? d.data.title,
-          reason: message,
-        });
-      }
-    }
-
-    const outcome: z.infer<typeof EpisodePhaseOutputSchema>["outcome"] =
-      failed.length === 0
-        ? "committed"
-        : committed.length === 0
-          ? "partial_failure"
-          : "partial_failure";
-
-    if (failed.length === 0) await deleteAllDrafts(runId);
-
-    const endLabel = `分集入库：成功 ${committed.length} / 失败 ${failed.length}`;
-    await reportProgress(runId, {
-      stepId: "episode_phase.commit",
-      current: committed.length,
-      total: accepts.length,
-      label: endLabel,
-    });
-    await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "committing", {
-      current: committed.length,
-      total: accepts.length,
-      label: endLabel,
-    });
-
-    const summaryText =
-      outcome === "committed"
-        ? `已入库 ${committed.length} 集，进入下一阶段。`
-        : `入库有失败：${failed.length} / ${accepts.length}`;
-
-    const inMainFlow = requestContext?.get("inMainFlow") === true;
-    await publishWorkflowCompleted(ctx.projectId, runId, "episode_phase", {
-      committed: committed.map((c) => ({ serverId: c.serverId, title: c.title })),
-      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-      summary: summaryText,
-      // Inside main_flow: compact chip (pipeline auto-advances to
-      // script_phase). Standalone: full card with "继续·写剧本" button.
-      ...(inMainFlow
-        ? { compact: true as const }
-        : {
-            nextStep: {
-              workflowName: "script_phase" as const,
-              labelKey: "workflowNextContinueToScripts",
-            },
-          }),
+            data: d.data as unknown as Record<string, unknown>,
+          })),
+        },
+      ],
+      totalDraftCount: drafts.length,
+      estimatedCost: drafts.length * PRICES.episodePerUnit,
     });
 
     return {
-      outcome,
-      committed,
-      failed,
-      message: summaryText,
+      runId,
+      draftCount: inputData.draftCount,
+      message: `已生成 ${inputData.draftCount} 集大纲草稿，等待确认。`,
     };
   },
 });
@@ -523,16 +304,185 @@ const applyDecisionStep = createStep({
 
 export const episodePhaseWorkflow = createWorkflow({
   id: "episode_phase",
-  description: "分集阶段：从故事骨架 / caller 提供的主线 → 规划分集 → HITL → 入库 episode。",
+  description:
+    "分集阶段：从骨架规划 N 集大纲 → 草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库。",
   inputSchema: EpisodePhaseInputSchema,
   outputSchema: EpisodePhaseOutputSchema,
-  stateSchema: StateSchema,
 })
   .then(resolveInputStep)
   .then(planStep)
   .then(collectDraftsStep)
-  .then(waitConfirmationStep)
-  .then(applyDecisionStep)
+  .then(emitReviewStep)
   .commit();
 
-export type EpisodePhaseOutput = z.infer<typeof EpisodePhaseOutputSchema>;
+// ─── Apply helper ──────────────────────────────────────────────────────
+
+const SORT_GAP = 1024;
+
+export interface ApplyEpisodeDraftsOptions {
+  ctx: StoryosContext;
+  runId: string;
+  approved: boolean;
+  feedback?: string;
+  acceptedClientRefIds?: string[];
+}
+
+export interface ApplyEpisodeDraftsResult {
+  outcome: "committed" | "partial_failure" | "rejected";
+  committedCount: number;
+  failedCount: number;
+  message: string;
+}
+
+export async function applyEpisodeDrafts(
+  opts: ApplyEpisodeDraftsOptions
+): Promise<ApplyEpisodeDraftsResult> {
+  const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  await throwIfCancelled(runId);
+
+  const pending = await listDrafts<EpisodeDraftData>(runId, {
+    entityType: "episode",
+    statuses: ["pending"],
+  });
+  const titleByRef: Record<string, string> = {};
+  for (const d of pending) titleByRef[d.clientRefId] = d.data.title;
+  const pendingRefIds = pending.map((d) => d.clientRefId);
+  // Project id comes from the drafts themselves (caller may not pass it).
+  const projectId = pending[0]?.data.projectId ?? ctx.projectId;
+
+  if (pendingRefIds.length > 0) {
+    await deductCredits(ctx, {
+      amount: pendingRefIds.length * PRICES.episodePerUnit,
+      reason: `episode_phase ${pendingRefIds.length} drafts (approved=${approved})`,
+      idempotencyKey: phaseDeductKey(runId, "episode_phase"),
+    });
+  }
+
+  if (!approved) {
+    for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
+    await publishWorkflowFailed(ctx.projectId, runId, "episode_phase", {
+      terminalStatus: "cancelled",
+      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      retryable: false,
+    });
+    return {
+      outcome: "rejected",
+      committedCount: 0,
+      failedCount: 0,
+      message: feedback ? `分集阶段未通过。反馈：${feedback}` : "分集阶段未通过。",
+    };
+  }
+
+  const accepted = new Set(acceptedClientRefIds ?? pendingRefIds);
+  const accepts = pending
+    .filter((d) => accepted.has(d.clientRefId))
+    .sort((a, b) => a.data.sortHint - b.data.sortHint);
+
+  for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
+
+  const startLabel = `入库 ${accepts.length} 集…`;
+  await reportProgress(runId, {
+    stepId: "episode_phase.commit",
+    current: 0,
+    total: accepts.length,
+    label: startLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "committing", {
+    current: 0,
+    total: accepts.length,
+    label: startLabel,
+  });
+
+  const datas = accepts.map((d, idx) => ({
+    title: d.data.title,
+    introduction: d.data.introduction,
+    frontPrompt: d.data.frontPrompt,
+    behindPrompt: d.data.behindPrompt,
+    projectId,
+    sort: (idx + 1) * SORT_GAP,
+  }));
+
+  const committed: Array<{ serverId: string; title: string }> = [];
+  const failed: Array<{ clientRefId: string; reason: string }> = [];
+
+  try {
+    await javaRequest<unknown>(ctx, "/api/user/world/batch/updateOrAdd/episode", {
+      data: { datas },
+      timeoutMs: 120_000,
+    });
+    const listed = await javaRequest<{ list?: Array<{ id: string | number; sort?: number }> }>(
+      ctx,
+      "/api/user/world/list/episode",
+      { data: { productId: projectId, page: 1, pageSize: 999 } }
+    );
+    const bySort = new Map((listed.list ?? []).map((ep) => [Number(ep.sort ?? 0), String(ep.id)]));
+    for (let i = 0; i < accepts.length; i++) {
+      const d = accepts[i];
+      const sortKey = (i + 1) * SORT_GAP;
+      const serverId = bySort.get(sortKey);
+      if (serverId) {
+        await markDraftCommitted(runId, d.clientRefId, serverId);
+        committed.push({
+          serverId,
+          title: titleByRef[d.clientRefId] ?? d.data.title,
+        });
+      } else {
+        await markDraftFailed(runId, d.clientRefId, "Java write succeeded but id lookup missed");
+        failed.push({
+          clientRefId: d.clientRefId,
+          reason: "id lookup missed",
+        });
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    for (const d of accepts) {
+      await markDraftFailed(runId, d.clientRefId, message);
+      failed.push({
+        clientRefId: d.clientRefId,
+        reason: message,
+      });
+    }
+  }
+
+  const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
+  if (failed.length === 0) await deleteAllDrafts(runId);
+
+  const endLabel = `分集入库：成功 ${committed.length} / 失败 ${failed.length}`;
+  await reportProgress(runId, {
+    stepId: "episode_phase.commit",
+    current: committed.length,
+    total: accepts.length,
+    label: endLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "episode_phase", "committing", {
+    current: committed.length,
+    total: accepts.length,
+    label: endLabel,
+  });
+
+  const summaryText =
+    outcome === "committed"
+      ? `已入库 ${committed.length} 集，进入下一阶段。`
+      : `入库有失败：${failed.length} / ${accepts.length}`;
+
+  await publishWorkflowCompleted(ctx.projectId, runId, "episode_phase", {
+    committed: committed.map((c) => ({ serverId: c.serverId, title: c.title })),
+    failed,
+    summary: summaryText,
+    nextSteps: [
+      {
+        workflowName: "script_phase",
+        labelKey: "workflowNextContinueToScripts",
+        variant: "primary",
+      },
+    ],
+  });
+
+  return {
+    outcome,
+    committedCount: committed.length,
+    failedCount: failed.length,
+    message: summaryText,
+  };
+}

@@ -86,9 +86,7 @@ export async function getUserBalance(ctx: StoryosContext): Promise<number> {
   }
 }
 
-// ─── Deduction (stubbed) ───────────────────────────────────────────────
-
-const BILLING_DEDUCT_STUBBED = true;
+// ─── Deduction ─────────────────────────────────────────────────────────
 
 export interface DeductResult {
   success: boolean;
@@ -99,6 +97,7 @@ export interface DeductResult {
 
 export interface DeductArgs {
   amount: number;
+  /** Human-readable reason; maps to Java's `input` field. */
   reason: string;
   /**
    * Stable within-a-run key so a retried call doesn't double-charge.
@@ -109,55 +108,64 @@ export interface DeductArgs {
 }
 
 /**
- * Deducts `amount` credits from the active user. Returns success/failure
- * without throwing — the caller's contract is "log and continue on miss".
+ * Deducts `amount` credits from the active user against Java's
+ * `POST /api/ai/chat/credits/deduct` endpoint. Returns success/failure
+ * without throwing — the caller's contract is "log and continue on miss",
+ * because generation cost has already been incurred by the time we get here.
  *
- * While stubbed (BILLING_DEDUCT_STUBBED = true) this only logs; flip the
- * flag once Java's endpoint is ready and replace the body with the real
- * javaRequest call.
+ * Fields on the Java side:
+ *   - model: fixed "STORY_OS" (marks this deduct as coming from storyos)
+ *   - input: our `reason` string
+ *   - amount: credits to deduct
+ *   - worldId: pulled from requestContext (required)
+ *   - idempotencyKey: for retry safety
  */
 export async function deductCredits(ctx: StoryosContext, args: DeductArgs): Promise<DeductResult> {
   if (args.amount <= 0) return { success: true, remainingBalance: undefined };
 
-  if (BILLING_DEDUCT_STUBBED) {
-    console.log(
-      `[billing:stub] deduct userId=${ctx.userId} amount=${args.amount} reason="${args.reason}" key=${args.idempotencyKey}`
+  // Java endpoint needs worldId. Missing it means the workflow is running
+  // in a project without a world — shouldn't happen for generative phases,
+  // but don't block generation on the deduct call: log + no-op.
+  if (!ctx.worldId) {
+    console.warn(
+      `[billing] deduct skipped (no worldId) userId=${ctx.userId} amount=${args.amount} reason="${args.reason}"`
     );
-    return { success: true };
+    return { success: false, error: "missing worldId" };
   }
 
-  // Real implementation — enable after Java endpoint ships.
   try {
-    const resp = await javaRequest<{
-      success?: boolean;
-      remainingBalance?: number;
-      error?: string;
-      currentBalance?: number;
-    }>(ctx, "/api/user/credits/deduct", {
-      method: "POST",
-      data: {
-        userId: ctx.userId,
-        amount: args.amount,
-        reason: args.reason,
-        idempotencyKey: args.idempotencyKey,
-      },
-    });
-    if (resp.error === "INSUFFICIENT") {
-      console.warn(
-        `[billing] deduct INSUFFICIENT userId=${ctx.userId} needed=${args.amount} balance=${resp.currentBalance} reason="${args.reason}"`
-      );
-      return {
-        success: false,
-        insufficient: true,
-        remainingBalance: resp.currentBalance,
-      };
-    }
+    const resp = await javaRequest<{ remainingBalance?: number } | null>(
+      ctx,
+      "/api/ai/chat/credits/deduct",
+      {
+        method: "POST",
+        data: {
+          model: "STORY_OS",
+          input: args.reason,
+          amount: args.amount,
+          worldId: Number(ctx.worldId),
+          idempotencyKey: args.idempotencyKey,
+        },
+      }
+    );
+    // javaRequest already threw on non-success. We only land here when
+    // the deduct went through; balance may or may not be returned.
     return {
-      success: resp.success === true,
-      remainingBalance: resp.remainingBalance,
+      success: true,
+      remainingBalance: resp?.remainingBalance,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    // Best-effort heuristic — Java signals insufficient credits via a
+    // specific code in the message. Keep the check loose so we still
+    // classify correctly if the exact wording shifts.
+    const insufficient = /insufficient|不足|余额/i.test(msg);
+    if (insufficient) {
+      console.warn(
+        `[billing] deduct INSUFFICIENT userId=${ctx.userId} needed=${args.amount} reason="${args.reason}": ${msg}`
+      );
+      return { success: false, insufficient: true, error: msg };
+    }
     console.warn(
       `[billing] deduct failed userId=${ctx.userId} amount=${args.amount} reason="${args.reason}": ${msg}`
     );
@@ -190,35 +198,6 @@ export function estimateWorkflowCost(
   );
   void detail; // Reserved for future per-style/per-duration surcharges.
   switch (name) {
-    case "main_flow":
-      // Novel → full pipeline. Assume #roles ≈ #scenes ≈ n (good for
-      // dramas with rotating locations) and #props ≈ n/2. Storyboard is
-      // the heavyweight (15 × n) so it dominates the estimate.
-      return (
-        PRICES.storyOutlineRun +
-        n * PRICES.rolePerUnit +
-        n * PRICES.scenePerUnit +
-        Math.ceil(n / 2) * PRICES.propPerUnit +
-        n * PRICES.episodePerUnit +
-        n * PRICES.scriptPerEpisode +
-        n * PRICES.storyboardPerEpisode
-      );
-    case "script_to_storyboard_flow":
-      // Parse + storyboard only. No roles/scenes/props/scripts.
-      return n * PRICES.parseScriptPerEpisode + n * PRICES.storyboardPerEpisode;
-    case "script_import_flow":
-      // Full pipeline for uploaded scripts. Skips episode_phase (parse
-      // covers it) + script_phase (script is verbatim). Keeps story_outline
-      // (needed for cast/settings/props rosters), role/scene/prop phases,
-      // and storyboard. Same #roles/#scenes/#props assumptions as main_flow.
-      return (
-        PRICES.storyOutlineRun +
-        n * PRICES.parseScriptPerEpisode +
-        n * PRICES.rolePerUnit +
-        n * PRICES.scenePerUnit +
-        Math.ceil(n / 2) * PRICES.propPerUnit +
-        n * PRICES.storyboardPerEpisode
-      );
     case "parse_script":
       return n * PRICES.parseScriptPerEpisode;
     case "story_outline":

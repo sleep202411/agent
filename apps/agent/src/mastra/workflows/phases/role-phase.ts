@@ -1,13 +1,8 @@
 /**
- * role_phase — produce a committed character list from the project skeleton.
+ * role_phase — produce role drafts and end.
  *
- * Loads the Redis-cached story outline (written by story_outline workflow),
- * calls the roleDesigner Agent to elaborate each cast roster entry into a
- * full character design, then draft → HITL → batch commit to Java.
- *
- * Distinct from `role_design`, which invents characters from a short outline
- * string with no upstream material. `role_phase` always reads the skeleton
- * so its output is consistent with the rest of the pipeline.
+ * Post-Stage-C: generate drafts → publish workflow_suspended event → END.
+ * No Mastra suspend/resume. Commit via `applyRoleDrafts()`.
  */
 import { randomUUID } from "node:crypto";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -22,12 +17,12 @@ import {
   markDraftFailed,
   putDraft,
 } from "../../lib/drafts";
-import { reportProgress, startWorkflow, throwIfCancelled } from "../engine";
-import { getContext } from "../../lib/workspace-client";
+import { reportProgress, throwIfCancelled } from "../engine";
+import { getContext, type StoryosContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
 import { stylePaintingHint } from "../../lib/style-painting";
-import { PRICES, deductCredits, estimateWorkflowCost, phaseDeductKey } from "../../lib/billing";
+import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -57,39 +52,17 @@ export const RolePhaseInputSchema = z.object({
 });
 
 export const RolePhaseOutputSchema = z.object({
-  outcome: z.enum(["committed", "rejected", "partial_failure"]),
-  committed: z.array(z.object({ clientRefId: z.string(), serverId: z.string(), name: z.string() })),
-  failed: z.array(z.object({ clientRefId: z.string(), name: z.string(), reason: z.string() })),
+  runId: z.string(),
+  draftCount: z.number(),
   message: z.string(),
 });
 
-const StateSchema = z.object({
-  draftClientRefIds: z.array(z.string()).default([]),
-  /** Map from clientRefId → character name for error reporting. */
-  nameByRef: z.record(z.string(), z.string()).default({}),
-});
-
-const ResumeSchema = z.object({
-  approved: z.boolean(),
-  feedback: z.string().optional(),
-  acceptedClientRefIds: z.array(z.string()).optional(),
-});
-
-const SuspendSchema = z.object({
-  runId: z.string(),
-  characterCount: z.number(),
-  phase: z.literal("role"),
-});
-
-// ─── Step 0: resolve characters (from input or from skeleton) ────────
-
-/**
- * Shape that downstream steps expect — always has a concrete characters[].
- */
 const ResolvedInputSchema = z.object({
   worldId: z.string().min(1),
   characters: z.array(CharacterSchema).min(1),
 });
+
+// ─── Step 0: resolve characters from skeleton ────────────────────────
 
 function buildElaboratePrompt(
   skeleton: StoryOutline,
@@ -166,8 +139,6 @@ const resolveInputStep = createStep({
         total: cast.length,
         label,
       });
-      // Emit / update the single "planning" progress card — streams like
-      // AI text until the phase transitions at suspend.
       await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "planning", {
         current: i,
         total: cast.length,
@@ -190,7 +161,7 @@ const resolveInputStep = createStep({
         throw new Error(`roleDesigner returned no design for ${entry.name}`);
       }
       characters.push({
-        name: entry.name, // force skeleton name (the agent may have drifted)
+        name: entry.name,
         role: entry.role,
         appearance: designed.appearance,
         personality: designed.personality,
@@ -213,20 +184,17 @@ const resolveInputStep = createStep({
   },
 });
 
-// ─── Step 1: collect drafts ───────────────────────────────────────────
+// ─── Step 1: collect drafts into Redis ────────────────────────────────
 
 const collectDraftsStep = createStep({
   id: "collect_drafts",
   inputSchema: ResolvedInputSchema,
   outputSchema: z.object({ draftCount: z.number() }),
-  stateSchema: StateSchema,
-  execute: async ({ inputData, setState, requestContext }) => {
+  execute: async ({ inputData, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
     await throwIfCancelled(runId);
 
-    const draftClientRefIds: string[] = [];
-    const nameByRef: Record<string, string> = {};
     let i = 0;
     for (const c of inputData.characters) {
       const clientRefId = randomUUID();
@@ -236,9 +204,6 @@ const collectDraftsStep = createStep({
         description: [`定位：${c.role}`, `外观：${c.appearance}`, `性格：${c.personality}`].join(
           "\n"
         ),
-        // Use the dedicated image-gen prompt (visual-token optimized) rather
-        // than reusing `appearance` (which reads human but may lack style /
-        // lighting / composition tokens needed for consistent images).
         prompt: c.prompt,
         roleImgPath: [],
         referenceImgPath: [],
@@ -247,8 +212,6 @@ const collectDraftsStep = createStep({
         voiceId: "",
       };
       await putDraft(runId, "role", clientRefId, data);
-      draftClientRefIds.push(clientRefId);
-      nameByRef[clientRefId] = c.name;
       i += 1;
       await reportProgress(runId, {
         stepId: "role_phase.collect",
@@ -257,237 +220,51 @@ const collectDraftsStep = createStep({
         label: `已收集 ${i}/${inputData.characters.length} 个角色草稿`,
       });
     }
-    setState({ draftClientRefIds, nameByRef });
-    return { draftCount: draftClientRefIds.length };
+    return { draftCount: i };
   },
 });
 
-// ─── Step 2: HITL gate ────────────────────────────────────────────────
+// ─── Step 2: emit awaiting-review event + end ─────────────────────────
 
-const waitConfirmationStep = createStep({
-  id: "wait_confirmation",
+const emitReviewStep = createStep({
+  id: "emit_review",
   inputSchema: z.object({ draftCount: z.number() }),
-  outputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
-  stateSchema: StateSchema,
-  resumeSchema: ResumeSchema,
-  suspendSchema: SuspendSchema,
-  execute: async ({ inputData, resumeData, suspend, requestContext }) => {
-    const runId = requestContext?.get("runId") as string | undefined;
-    if (!runId) throw new Error("runId missing");
-    const ctx = getContext(requestContext);
-
-    if (!resumeData) {
-      await reportProgress(runId, {
-        stepId: "role_phase.confirm",
-        current: inputData.draftCount,
-        total: inputData.draftCount,
-        label: `已生成 ${inputData.draftCount} 个角色，等待确认后进入下一阶段`,
-      });
-      // Build the draft-preview group for the suspended card.
-      const drafts = await listDrafts<RoleCreateData>(runId, {
-        entityType: "role",
-        statuses: ["pending"],
-      });
-      const items = drafts.map((d) => ({
-        clientRefId: d.clientRefId,
-        data: d.data as unknown as Record<string, unknown>,
-      }));
-      await publishWorkflowSuspended(ctx.projectId, runId, "role_phase", {
-        draftGroups: [
-          {
-            entityType: "role",
-            count: items.length,
-            items,
-          },
-        ],
-        totalDraftCount: items.length,
-        estimatedCost: items.length * PRICES.rolePerUnit,
-        nextAction: {
-          workflowName: "scene_phase",
-          estimatedCost: estimateWorkflowCost("scene_phase", null),
-        },
-      });
-      return await suspend({
-        runId,
-        characterCount: inputData.draftCount,
-        phase: "role" as const,
-      });
-    }
-    return {
-      approved: resumeData.approved,
-      feedback: resumeData.feedback,
-      acceptedClientRefIds: resumeData.acceptedClientRefIds,
-    };
-  },
-});
-
-// ─── Step 3: commit or reject ─────────────────────────────────────────
-
-const applyDecisionStep = createStep({
-  id: "apply_decision",
-  inputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
   outputSchema: RolePhaseOutputSchema,
-  stateSchema: StateSchema,
-  execute: async ({ inputData, state, requestContext }) => {
+  execute: async ({ inputData, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
-    await throwIfCancelled(runId);
-
     const ctx = getContext(requestContext);
-    const draftClientRefIds = state.draftClientRefIds ?? [];
-    const nameByRef = state.nameByRef ?? {};
 
-    // Charge for THIS phase's LLM generation regardless of approved/rejected —
-    // token cost was incurred at generate step. See lib/billing.ts.
-    if (draftClientRefIds.length > 0) {
-      await deductCredits(ctx, {
-        amount: draftClientRefIds.length * PRICES.rolePerUnit,
-        reason: `role_phase ${draftClientRefIds.length} drafts (approved=${inputData.approved})`,
-        idempotencyKey: phaseDeductKey(runId, "role_phase"),
-      });
-    }
+    await reportProgress(runId, {
+      stepId: "role_phase.review",
+      current: inputData.draftCount,
+      total: inputData.draftCount,
+      label: `已生成 ${inputData.draftCount} 个角色，等待确认后进入下一阶段`,
+    });
 
-    if (!inputData.approved) {
-      for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
-      await publishWorkflowFailed(ctx.projectId, runId, "role_phase", {
-        terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
-        retryable: false,
-      });
-      return {
-        outcome: "rejected" as const,
-        committed: [],
-        failed: [],
-        message: inputData.feedback
-          ? `角色阶段未通过。反馈：${inputData.feedback}`
-          : "角色阶段未通过。",
-      };
-    }
-
-    const accepted = new Set(inputData.acceptedClientRefIds ?? draftClientRefIds);
     const drafts = await listDrafts<RoleCreateData>(runId, {
       entityType: "role",
       statuses: ["pending"],
     });
-    const items = drafts
-      .filter((d) => accepted.has(d.clientRefId))
-      .map((d) => ({ clientRefId: d.clientRefId, data: d.data }));
-
-    for (const it of items) await markDraftCommitting(runId, it.clientRefId);
-
-    const startLabel = `入库 ${items.length} 个角色…`;
-    await reportProgress(runId, {
-      stepId: "role_phase.commit",
-      current: 0,
-      total: items.length,
-      label: startLabel,
+    await publishWorkflowSuspended(ctx.projectId, runId, "role_phase", {
+      draftGroups: [
+        {
+          entityType: "role",
+          count: drafts.length,
+          items: drafts.map((d) => ({
+            clientRefId: d.clientRefId,
+            data: d.data as unknown as Record<string, unknown>,
+          })),
+        },
+      ],
+      totalDraftCount: drafts.length,
+      estimatedCost: drafts.length * PRICES.rolePerUnit,
     });
-    await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "committing", {
-      current: 0,
-      total: items.length,
-      label: startLabel,
-    });
-
-    const results = await batchUpsertRoles(ctx, items, { concurrency: 1 });
-
-    const committed: RolePhaseOutput["committed"] = [];
-    const failed: RolePhaseOutput["failed"] = [];
-    for (const r of results) {
-      const name = nameByRef[r.clientRefId] ?? "(unknown)";
-      if (r.status === "created" || r.status === "unchanged") {
-        await markDraftCommitted(runId, r.clientRefId, r.serverId!);
-        committed.push({ clientRefId: r.clientRefId, serverId: r.serverId!, name });
-      } else {
-        await markDraftFailed(runId, r.clientRefId, r.error ?? "unknown");
-        failed.push({ clientRefId: r.clientRefId, name, reason: r.error ?? "unknown" });
-      }
-    }
-
-    const summary = summarizeBatch(results);
-    const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
-
-    if (outcome === "committed") await deleteAllDrafts(runId);
-
-    const endLabel = `角色入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
-    await reportProgress(runId, {
-      stepId: "role_phase.commit",
-      current: committed.length,
-      total: items.length,
-      label: endLabel,
-    });
-    await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "committing", {
-      current: committed.length,
-      total: items.length,
-      label: endLabel,
-    });
-
-    // Image generation is NOT dispatched here anymore — it's a separate
-    // workflow (`role_image_phase`) so the user can review / tweak the
-    // committed role text before image jobs start. See apps/agent/src/
-    // mastra/workflows/phases/role-image-phase.ts.
-
-    const summaryText =
-      outcome === "committed"
-        ? `已入库 ${committed.length} 个角色，进入下一阶段。`
-        : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
-
-    const inMainFlow = requestContext?.get("inMainFlow") === true;
-    await publishWorkflowCompleted(ctx.projectId, runId, "role_phase", {
-      committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
-      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-      summary: summaryText,
-      // Inside main_flow: a compact chip (pipeline auto-advances to the
-      // image phase via .then(), the button would be stale before the
-      // user could read it). Standalone: a full card with a "继续·出图"
-      // button so the user can pick up where they left off.
-      ...(inMainFlow
-        ? { compact: true as const }
-        : {
-            nextStep: {
-              workflowName: "role_image_phase" as const,
-              labelKey: "workflowNextContinueToRoleImages",
-            },
-          }),
-    });
-
-    // Auto-chain: text-phase commit is done, kick off the image phase
-    // for whatever got committed. Partial failure is fine — image phase
-    // generates for what's in the DB and surfaces its own failures; a true
-    // hard failure would throw before this point and the user gets the
-    // retry button on the workflow_failed card instead.
-    //
-    // Skip the auto-chain when running INSIDE main_flow — main_flow's
-    // .then(roleImagePhaseWorkflow) step already runs the image phase
-    // next, and a standalone startWorkflow() here would spawn a SECOND
-    // parallel image run (duplicate cards, duplicate Java dispatch).
-    if (!inMainFlow) {
-      try {
-        await startWorkflow({
-          workflowName: "role_image_phase",
-          inputData: {},
-          ctx,
-        });
-      } catch (err) {
-        console.warn(
-          `[role_phase] auto-chain role_image_phase failed:`,
-          err instanceof Error ? err.message : String(err)
-        );
-      }
-    }
 
     return {
-      outcome,
-      committed,
-      failed,
-      message: summaryText,
+      runId,
+      draftCount: inputData.draftCount,
+      message: `已生成 ${inputData.draftCount} 个角色草稿，等待确认。`,
     };
   },
 });
@@ -497,15 +274,148 @@ const applyDecisionStep = createStep({
 export const rolePhaseWorkflow = createWorkflow({
   id: "role_phase",
   description:
-    "角色阶段：从故事骨架（或 caller 提供的 characters 列表）扩展出完整角色设计，草稿 → HITL → 入库。",
+    "角色阶段：从故事骨架扩展 → 角色草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库，不走 Mastra resume。",
   inputSchema: RolePhaseInputSchema,
   outputSchema: RolePhaseOutputSchema,
-  stateSchema: StateSchema,
 })
   .then(resolveInputStep)
   .then(collectDraftsStep)
-  .then(waitConfirmationStep)
-  .then(applyDecisionStep)
+  .then(emitReviewStep)
   .commit();
 
-export type RolePhaseOutput = z.infer<typeof RolePhaseOutputSchema>;
+// ─── Apply helper (called from apply_phase_drafts tool + Nest /confirm) ─
+
+export interface ApplyRoleDraftsOptions {
+  ctx: StoryosContext;
+  runId: string;
+  approved: boolean;
+  feedback?: string;
+  acceptedClientRefIds?: string[];
+}
+
+export interface ApplyRoleDraftsResult {
+  outcome: "committed" | "partial_failure" | "rejected";
+  committedCount: number;
+  failedCount: number;
+  message: string;
+}
+
+export async function applyRoleDrafts(
+  opts: ApplyRoleDraftsOptions
+): Promise<ApplyRoleDraftsResult> {
+  const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  await throwIfCancelled(runId);
+
+  const pending = await listDrafts<RoleCreateData>(runId, {
+    entityType: "role",
+    statuses: ["pending"],
+  });
+  const nameByRef: Record<string, string> = {};
+  for (const d of pending) nameByRef[d.clientRefId] = d.data.name;
+  const pendingRefIds = pending.map((d) => d.clientRefId);
+
+  if (pendingRefIds.length > 0) {
+    await deductCredits(ctx, {
+      amount: pendingRefIds.length * PRICES.rolePerUnit,
+      reason: `role_phase ${pendingRefIds.length} drafts (approved=${approved})`,
+      idempotencyKey: phaseDeductKey(runId, "role_phase"),
+    });
+  }
+
+  if (!approved) {
+    for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
+    await publishWorkflowFailed(ctx.projectId, runId, "role_phase", {
+      terminalStatus: "cancelled",
+      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      retryable: false,
+    });
+    return {
+      outcome: "rejected",
+      committedCount: 0,
+      failedCount: 0,
+      message: feedback ? `角色阶段未通过。反馈：${feedback}` : "角色阶段未通过。",
+    };
+  }
+
+  const accepted = new Set(acceptedClientRefIds ?? pendingRefIds);
+  const items = pending
+    .filter((d) => accepted.has(d.clientRefId))
+    .map((d) => ({ clientRefId: d.clientRefId, data: d.data }));
+
+  for (const it of items) await markDraftCommitting(runId, it.clientRefId);
+
+  const startLabel = `入库 ${items.length} 个角色…`;
+  await reportProgress(runId, {
+    stepId: "role_phase.commit",
+    current: 0,
+    total: items.length,
+    label: startLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "committing", {
+    current: 0,
+    total: items.length,
+    label: startLabel,
+  });
+
+  const results = await batchUpsertRoles(ctx, items, { concurrency: 1 });
+
+  const committed: Array<{ serverId: string; name: string }> = [];
+  const failed: Array<{ clientRefId: string; name: string; reason: string }> = [];
+  for (const r of results) {
+    const name = nameByRef[r.clientRefId] ?? "(unknown)";
+    if (r.status === "created" || r.status === "unchanged") {
+      await markDraftCommitted(runId, r.clientRefId, r.serverId!);
+      committed.push({ serverId: r.serverId!, name });
+    } else {
+      await markDraftFailed(runId, r.clientRefId, r.error ?? "unknown");
+      failed.push({ clientRefId: r.clientRefId, name, reason: r.error ?? "unknown" });
+    }
+  }
+
+  const summary = summarizeBatch(results);
+  const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
+  if (outcome === "committed") await deleteAllDrafts(runId);
+
+  const endLabel = `角色入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  await reportProgress(runId, {
+    stepId: "role_phase.commit",
+    current: committed.length,
+    total: items.length,
+    label: endLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "committing", {
+    current: committed.length,
+    total: items.length,
+    label: endLabel,
+  });
+
+  const summaryText =
+    outcome === "committed"
+      ? `已入库 ${committed.length} 个角色，进入下一阶段。`
+      : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+
+  await publishWorkflowCompleted(ctx.projectId, runId, "role_phase", {
+    committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
+    failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+    summary: summaryText,
+    nextSteps: [
+      {
+        workflowName: "role_image_phase",
+        labelKey: "workflowNextContinueToRoleImages",
+        variant: "primary",
+      },
+      {
+        workflowName: "scene_phase",
+        labelKey: "workflowNextSkipToScenes",
+        variant: "secondary",
+      },
+    ],
+  });
+
+  return {
+    outcome,
+    committedCount: committed.length,
+    failedCount: failed.length,
+    message: summaryText,
+  };
+}

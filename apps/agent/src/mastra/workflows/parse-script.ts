@@ -275,6 +275,11 @@ const waitConfirmationStep = createStep({
         entityType: "episode",
         statuses: ["pending"],
       });
+      // No nextAction — after approval parse_script's completion emits a
+      // 2-option nextSteps card (完整资产 vs 直接分镜) for the user to pick
+      // downstream. The suspended card button should just be "完成 · N 积分"
+      // (approve current drafts + commit), not "继续 xxx" which misleads
+      // into thinking the next phase runs immediately.
       await publishWorkflowSuspended(ctx.projectId, runId, "parse_script", {
         draftGroups: [
           {
@@ -288,10 +293,6 @@ const waitConfirmationStep = createStep({
         ],
         totalDraftCount: drafts.length,
         estimatedCost: drafts.length * PRICES.parseScriptPerEpisode,
-        nextAction: {
-          workflowName: "storyboard_phase",
-          estimatedCost: drafts.length * PRICES.storyboardPerEpisode,
-        },
       });
       return await suspend({
         runId,
@@ -518,19 +519,27 @@ const applyDecisionStep = createStep({
         ? `已入库 ${committed.length} 集（含剧本正文），可以直接进入分镜阶段。`
         : `入库有失败：${failed.length} / ${accepts.length}。`;
 
-    const inMainFlow = requestContext?.get("inMainFlow") === true;
+    // After parse_script, user picks the downstream path:
+    //   - 完整资产（角色 → 场景 → 道具 → 分镜）via story_outline
+    //   - 直接出分镜（跳过角色/场景/道具 assets）via storyboard_phase
+    // Replaces the former script_import_flow / script_to_storyboard_flow
+    // parent workflows — LLM or button decides which branch.
     await publishWorkflowCompleted(ctx.projectId, runId, "parse_script", {
       committed: committed.map((c) => ({ serverId: c.serverId, title: c.title })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
       summary: summaryText,
-      ...(inMainFlow
-        ? { compact: true as const }
-        : {
-            nextStep: {
-              workflowName: "storyboard_phase" as const,
-              labelKey: "workflowNextContinueToStoryboard",
-            },
-          }),
+      nextSteps: [
+        {
+          workflowName: "story_outline",
+          labelKey: "workflowNextContinueToFullAssets",
+          variant: "primary",
+        },
+        {
+          workflowName: "storyboard_phase",
+          labelKey: "workflowNextContinueToStoryboard",
+          variant: "secondary",
+        },
+      ],
     });
 
     return {

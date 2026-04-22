@@ -95,8 +95,15 @@ function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): s
       const values = data.values as Record<string, unknown> | undefined;
       if (!values) return t("toolResultParams");
       const labelMap = (data._labelMap as Record<string, string>) ?? {};
+      const displayValues = (data._displayValues as Record<string, string>) ?? {};
       const entries = Object.entries(values)
-        .map(([k, v]) => `${labelMap[k] || k}: ${v}`)
+        .map(([k, v]) => {
+          // Prefer the display label (e.g. "Cartoon Style") over the raw
+          // value (e.g. "2" — dictionary id). Falls back to raw when the
+          // field didn't produce a display label (plain number inputs).
+          const displayValue = displayValues[k] ?? String(v);
+          return `${labelMap[k] || k}: ${displayValue}`;
+        })
         .join("，");
       return entries;
     }
@@ -354,11 +361,19 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 // render nothing — no decision was made, don't clutter.
                 if (toolName === "require_project_params") {
                   const state = part.state;
-                  // Extract optional suggestedParams from the tool input —
-                  // supervisor passes these after running analyze_brief so
-                  // the form can prefill + show a recommendation banner.
+                  // Extract tool-call inputs forwarded by the supervisor:
+                  //  - suggestedParams: analyze_brief recommendations (prefill)
+                  //  - onConfirmWorkflow: which workflow to auto-start after
+                  //    the form is confirmed (lets Nest short-circuit, no
+                  //    second LLM turn)
                   const input = part.input as
-                    | { suggestedParams?: Record<string, unknown> }
+                    | {
+                        suggestedParams?: Record<string, unknown>;
+                        onConfirmWorkflow?: {
+                          workflowName?: string;
+                          inputData?: Record<string, unknown>;
+                        };
+                      }
                     | undefined;
                   const suggested = input?.suggestedParams as
                     | {
@@ -370,6 +385,15 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                         reasoning?: string;
                       }
                     | undefined;
+                  const onConfirmWorkflow =
+                    input?.onConfirmWorkflow &&
+                    typeof input.onConfirmWorkflow.workflowName === "string" &&
+                    input.onConfirmWorkflow.workflowName.length > 0
+                      ? {
+                          workflowName: input.onConfirmWorkflow.workflowName,
+                          inputData: input.onConfirmWorkflow.inputData ?? {},
+                        }
+                      : undefined;
                   if (state === "output-available" || state === "approval-responded") {
                     const out = part.output as { autoConfirmed?: boolean } | undefined;
                     if (out?.autoConfirmed) return null;
@@ -390,6 +414,7 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                         key={`${message.id}-${part.toolCallId}-params-form`}
                         toolCallId={part.toolCallId}
                         suggested={suggested}
+                        onConfirmWorkflow={onConfirmWorkflow}
                         onAutoConfirmed={() => {
                           onApplyToolResult?.({
                             toolCallId: part.toolCallId,

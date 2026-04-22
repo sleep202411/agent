@@ -16,7 +16,7 @@ import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import { reportProgress, throwIfCancelled } from "../engine";
 import { putOutline, type StoryOutline } from "../../lib/outline";
-import { getContext } from "../../lib/workspace-client";
+import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
 import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 
@@ -141,11 +141,66 @@ const BreakdownShape = z.object({
 });
 
 export const ScriptBreakdownInputSchema = z.object({
-  /** Raw text to analyze — novel chapters, outline, draft script, etc. */
-  text: z.string().min(1, "text is required"),
+  /**
+   * Raw text to analyze — novel chapters, outline, draft script, etc.
+   * Optional: if omitted, story_outline falls back to concatenating
+   * already-committed episode scripts from Java (the post-parse_script
+   * "走完整资产" path, where user already has episodes in DB and just
+   * wants skeleton extracted from them).
+   */
+  text: z.string().optional(),
   /** Optional user hint to steer tone / genre ("爱情喜剧" / "悬疑惊悚" etc.) */
   styleHint: z.string().optional(),
 });
+
+/** Pulls committed episode scripts from Java and concats them into the
+ *  raw text story_outline needs. Used when caller didn't pass `text`
+ *  (post parse_script flow). */
+async function loadTextFromCommittedEpisodes(ctx: StoryosContext): Promise<string> {
+  type Ep = { id: string | number; title?: string; sort?: number };
+  const listed = await javaRequest<{ list?: Ep[] }>(ctx, "/api/user/world/list/episode", {
+    data: { productId: ctx.projectId, page: 1, pageSize: 999 },
+  });
+  const episodes = (listed.list ?? [])
+    .filter((ep) => ep.id != null)
+    .sort((a, b) => Number(a.sort ?? 0) - Number(b.sort ?? 0));
+  if (episodes.length === 0) return "";
+  const parts = await Promise.all(
+    episodes.map(async (ep, i) => {
+      try {
+        const res = await javaRequest<{ content?: string; script?: string }>(
+          ctx,
+          `/api/user/project/scripts/episode/detail/${encodeURIComponent(String(ep.id))}`
+        );
+        const raw = res.content ?? res.script ?? "";
+        const plain = htmlToPlainText(raw);
+        if (!plain.trim()) return "";
+        const header = `## 第 ${i + 1} 集 ${ep.title ?? ""}`.trim();
+        return `${header}\n\n${plain}`;
+      } catch {
+        return "";
+      }
+    })
+  );
+  return parts.filter(Boolean).join("\n\n---\n\n");
+}
+
+function htmlToPlainText(html: string): string {
+  if (!html) return "";
+  return html
+    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 export const ScriptBreakdownOutputSchema = BreakdownShape;
 
@@ -174,10 +229,29 @@ const analyzeStep = createStep({
       });
     }
 
+    // Resolve the text to analyze: LLM-supplied first, fall back to
+    // committed-episode scripts (post parse_script "走完整资产" path).
+    let effectiveText = inputData.text?.trim() ?? "";
+    if (!effectiveText) {
+      effectiveText = await loadTextFromCommittedEpisodes(ctx);
+      if (!effectiveText) {
+        throw new Error(
+          "story_outline: no text provided and no committed episodes to source from — run parse_script first or pass `text` explicitly"
+        );
+      }
+      // eslint-disable-next-line no-console
+      console.log(
+        `[script_breakdown] sourced ${effectiveText.length} chars from committed episodes for project ${ctx.projectId}`
+      );
+    }
+
     const storyEditor = mastra?.getAgent("storyEditor");
     if (!storyEditor) throw new Error("storyEditor agent not registered");
 
-    const prompt = buildStoryEditorPrompt(inputData);
+    const prompt = buildStoryEditorPrompt({
+      text: effectiveText,
+      styleHint: inputData.styleHint,
+    });
 
     // eslint-disable-next-line no-console
     console.log(`[script_breakdown] storyEditor prompt length: ${prompt.length} chars`);
@@ -237,17 +311,19 @@ const analyzeStep = createStep({
         reason: `story_outline runId=${runId}`,
         idempotencyKey: phaseDeductKey(runId, "story_outline"),
       });
+      // story_outline has no HITL — outline is a deterministic skeleton.
+      // User picks the next step explicitly (full flow starts with role
+      // phase; "just outline" users stop here).
       await publishWorkflowCompleted(ctx.projectId, runId, "story_outline", {
         committed: [{ serverId: ctx.projectId, title: "故事骨架" }],
         summary: endLabel,
-        // Render as a compact one-line chip. story_outline has no HITL —
-        // main_flow auto-chains straight into role_phase — so a big card
-        // with a nextStep button would just be stale decoration (the
-        // "繼續·設計角色" button would be a no-op by the time user sees
-        // it). The structured skeleton is available on subsequent cards
-        // (role_phase / episode_phase) via Redis, no need to duplicate
-        // it here.
-        compact: true,
+        nextSteps: [
+          {
+            workflowName: "role_phase",
+            labelKey: "workflowNextContinueToRoles",
+            variant: "primary",
+          },
+        ],
       });
     }
 

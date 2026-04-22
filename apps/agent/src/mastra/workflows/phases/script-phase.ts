@@ -1,11 +1,7 @@
 /**
  * script_phase — for each episode, the scriptwriter persona produces a full
- * shootable script. Progress reported per-episode; one HITL gate at the end
- * lets the user confirm the whole batch before committing.
- *
- * This is the workflow's first truly long task. 20 episodes × ~15s/episode
- * ≈ 5 minutes. The worker process holds the run; if it restarts mid-way,
- * completed episodes are in state and already-written drafts stay in Redis.
+ * shootable script. Emits drafts for review, then ends. Commit via
+ * `applyScriptDrafts()`.
  */
 import { randomUUID } from "node:crypto";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -20,7 +16,7 @@ import {
   putDraft,
 } from "../../lib/drafts";
 import { reportProgress, throwIfCancelled } from "../engine";
-import { getContext, javaRequest } from "../../lib/workspace-client";
+import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
 import { getOutline } from "../../lib/outline";
 import {
   publishWorkflowCompleted,
@@ -35,8 +31,6 @@ import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 const EpisodeRef = z.object({
   episodeId: z.string().min(1),
   title: z.string().min(1),
-  // Java's list/episode response sometimes omits introduction; allow empty
-  // and fall back to storySummary when composing the prompt.
   introduction: z.string().default(""),
 });
 
@@ -60,46 +54,25 @@ const ResolvedGenerateInputSchema = z.object({
 });
 
 export const ScriptPhaseOutputSchema = z.object({
-  outcome: z.enum(["committed", "rejected", "partial_failure"]),
-  committed: z.array(z.object({ episodeId: z.string(), title: z.string(), chars: z.number() })),
-  failed: z.array(z.object({ episodeId: z.string(), title: z.string(), reason: z.string() })),
+  runId: z.string(),
+  draftCount: z.number(),
   message: z.string(),
 });
 
-const StateSchema = z.object({
-  generated: z
-    .array(
-      z.object({
-        clientRefId: z.string(),
-        episodeId: z.string(),
-        title: z.string(),
-        content: z.string(),
-      })
-    )
-    .default([]),
-});
+interface ScriptDraftData {
+  episodeId: string;
+  title: string;
+  content: string;
+  projectId: string;
+}
 
-const ResumeSchema = z.object({
-  approved: z.boolean(),
-  feedback: z.string().optional(),
-  acceptedClientRefIds: z.array(z.string()).optional(),
-});
-
-const SuspendSchema = z.object({
-  runId: z.string(),
-  episodeCount: z.number(),
-  totalChars: z.number(),
-  phase: z.literal("script"),
-});
-
-// ─── Step 0: resolve inputs (from skeleton + Java episodes) ───────────
+// ─── Step 0: resolve inputs ────────────────────────────────────────────
 
 const resolveInputStep = createStep({
   id: "resolve_input",
   inputSchema: ScriptPhaseInputSchema,
   outputSchema: ResolvedGenerateInputSchema,
   execute: async ({ inputData, requestContext }) => {
-    // requestContext is authoritative for projectId — LLM's guess may be wrong.
     const ctx = getContext(requestContext);
     const projectId = ctx.projectId;
     const record = await getOutline(projectId);
@@ -110,7 +83,6 @@ const resolveInputStep = createStep({
     }
     const skeleton = record.outline;
 
-    // Fetch committed episodes from Java — they must already be in DB.
     const listed = await javaRequest<{
       list?: Array<{
         id: string | number;
@@ -139,8 +111,6 @@ const resolveInputStep = createStep({
       );
     }
 
-    // Use committed roles from Java for personality hints (falls back to
-    // skeleton cast arcs if Java doesn't have description fields).
     const listedRoles = await javaRequest<{
       list?: Array<{
         id?: string | number;
@@ -177,26 +147,23 @@ const resolveInputStep = createStep({
 
 // ─── Step 1: generate scripts per episode ─────────────────────────────
 
+const GEN_CONCURRENCY = 4;
+
 const generateStep = createStep({
   id: "generate",
   inputSchema: ResolvedGenerateInputSchema,
   outputSchema: z.object({ generatedCount: z.number(), totalChars: z.number() }),
-  stateSchema: StateSchema,
-  execute: async ({ inputData, setState, mastra, requestContext }) => {
+  execute: async ({ inputData, mastra, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
 
     const scriptwriter = mastra?.getAgent("scriptwriter");
     if (!scriptwriter) throw new Error("scriptwriter agent not registered");
 
-    // Pull the project's dialogue language so every episode's script lands
-    // in the same language — prevents the "半角色中文、半角色英文" drift you
-    // get when locale and dialogLanguage disagree.
     const ctx = getContext(requestContext);
     const dialogLanguage = ctx.dialogLanguage;
 
     const total = inputData.episodes.length;
-    const generated: z.infer<typeof StateSchema>["generated"] = [];
     let totalChars = 0;
     let completed = 0;
     const castBlock = buildCastBlock(inputData.characters);
@@ -214,11 +181,6 @@ const generateStep = createStep({
       label: startLabel,
     });
 
-    // Parallel generation — the scriptwriter call is I/O-bound on DeepSeek.
-    // Sequential used to take ~15s × N episodes; at concurrency 4 the batch
-    // wraps up roughly 4× faster and still stays well inside DeepSeek's
-    // per-project RPM budget. Keep the ceiling low so one bad project can't
-    // starve sibling workers in the BullMQ pool.
     const CONCURRENCY = Math.min(GEN_CONCURRENCY, total);
     let cursor = 0;
 
@@ -246,22 +208,15 @@ const generateStep = createStep({
       const obj = response.object as { content?: string } | undefined;
       const content = (obj?.content ?? response.text ?? "").trim();
 
-      if (!content) {
-        // Mark as generated with empty content; commit step fails it loudly.
-        generated.push({
-          clientRefId: randomUUID(),
-          episodeId: ep.episodeId,
-          title: ep.title,
-          content: "",
-        });
-      } else {
+      if (content) {
         const clientRefId = randomUUID();
-        await putDraft(runId, "script", clientRefId, {
+        const data: ScriptDraftData = {
           episodeId: ep.episodeId,
           title: ep.title,
           content,
-        });
-        generated.push({ clientRefId, episodeId: ep.episodeId, title: ep.title, content });
+          projectId: inputData.projectId,
+        };
+        await putDraft(runId, "script", clientRefId, data);
         totalChars += content.length;
       }
 
@@ -290,17 +245,13 @@ const generateStep = createStep({
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-    setState({ generated });
-    return { generatedCount: generated.length, totalChars };
+    const committedDrafts = await listDrafts(runId, {
+      entityType: "script",
+      statuses: ["pending"],
+    });
+    return { generatedCount: committedDrafts.length, totalChars };
   },
 });
-
-/**
- * Max parallel LLM calls during script generation. Kept modest (4) so we
- * stay under DeepSeek's per-key RPM and don't starve sibling workers that
- * share the same BullMQ pool.
- */
-const GEN_CONCURRENCY = 4;
 
 function buildCastBlock(
   characters: { name: string; role: string; personality?: string }[]
@@ -312,13 +263,6 @@ function buildCastBlock(
   return `\n角色清单（对白和动作要符合各自性格）：\n${lines.join("\n")}\n`;
 }
 
-/**
- * Convert a plain-text script (with `\n` line breaks between segments) into
- * the HTML shape Tiptap expects — one `<p>` per non-empty line. If the LLM
- * emitted everything on a single line we still render as one paragraph; but
- * the prompt now explicitly tells it to use line breaks, so this should
- * produce a proper multi-paragraph layout.
- */
 function scriptToTiptapHtml(text: string): string {
   if (!text) return "";
   const escaped = (s: string): string =>
@@ -387,216 +331,47 @@ function buildPrompt(args: {
     .join("\n");
 }
 
-// ─── Step 2: HITL ─────────────────────────────────────────────────────
+// ─── Step 2: emit awaiting-review + end ───────────────────────────────
 
-const waitConfirmationStep = createStep({
-  id: "wait_confirmation",
+const emitReviewStep = createStep({
+  id: "emit_review",
   inputSchema: z.object({ generatedCount: z.number(), totalChars: z.number() }),
-  outputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
-  stateSchema: StateSchema,
-  resumeSchema: ResumeSchema,
-  suspendSchema: SuspendSchema,
-  execute: async ({ inputData, resumeData, suspend, requestContext }) => {
-    const runId = requestContext?.get("runId") as string | undefined;
-    if (!runId) throw new Error("runId missing");
-    const ctx = getContext(requestContext);
-
-    if (!resumeData) {
-      await reportProgress(runId, {
-        stepId: "script_phase.confirm",
-        current: inputData.generatedCount,
-        total: inputData.generatedCount,
-        label: `已生成 ${inputData.generatedCount} 集剧本（${inputData.totalChars} 字），等待确认`,
-      });
-      const drafts = await listDrafts<{ episodeId: string; title: string; content: string }>(
-        runId,
-        { entityType: "script", statuses: ["pending"] }
-      );
-      await publishWorkflowSuspended(ctx.projectId, runId, "script_phase", {
-        draftGroups: [
-          {
-            entityType: "script",
-            count: drafts.length,
-            items: drafts.map((d) => ({
-              clientRefId: d.clientRefId,
-              data: d.data as unknown as Record<string, unknown>,
-            })),
-          },
-        ],
-        totalDraftCount: drafts.length,
-        estimatedCost: drafts.length * PRICES.scriptPerEpisode,
-        nextAction: {
-          workflowName: "storyboard_phase",
-          estimatedCost: drafts.length * PRICES.storyboardPerEpisode,
-        },
-      });
-      return await suspend({
-        runId,
-        episodeCount: inputData.generatedCount,
-        totalChars: inputData.totalChars,
-        phase: "script" as const,
-      });
-    }
-    return resumeData;
-  },
-});
-
-// ─── Step 3: commit via batchSaveScripts ──────────────────────────────
-
-const applyDecisionStep = createStep({
-  id: "apply_decision",
-  inputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
   outputSchema: ScriptPhaseOutputSchema,
-  stateSchema: StateSchema,
-  execute: async ({ inputData, state, requestContext, getInitData }) => {
+  execute: async ({ inputData, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
-    await throwIfCancelled(runId);
-
     const ctx = getContext(requestContext);
-    const rawInput = getInitData<z.infer<typeof ScriptPhaseInputSchema>>();
-    const projectId = rawInput.projectId || ctx.projectId;
-    const generated = state.generated ?? [];
 
-    // Charge regardless of approved/rejected — LLM cost incurred at gen.
-    if (generated.length > 0) {
-      await deductCredits(ctx, {
-        amount: generated.length * PRICES.scriptPerEpisode,
-        reason: `script_phase ${generated.length} drafts (approved=${inputData.approved})`,
-        idempotencyKey: phaseDeductKey(runId, "script_phase"),
-      });
-    }
+    await reportProgress(runId, {
+      stepId: "script_phase.review",
+      current: inputData.generatedCount,
+      total: inputData.generatedCount,
+      label: `已生成 ${inputData.generatedCount} 集剧本（${inputData.totalChars} 字），等待确认`,
+    });
 
-    if (!inputData.approved) {
-      for (const g of generated) await markDraftDiscarded(runId, g.clientRefId);
-      await publishWorkflowFailed(ctx.projectId, runId, "script_phase", {
-        terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
-        retryable: false,
-      });
-      return {
-        outcome: "rejected" as const,
-        committed: [],
-        failed: [],
-        message: inputData.feedback
-          ? `剧本阶段未通过。反馈：${inputData.feedback}`
-          : "剧本阶段未通过。",
-      };
-    }
-
-    const accepted = inputData.acceptedClientRefIds
-      ? new Set(inputData.acceptedClientRefIds)
-      : null;
-    const drafts = await listDrafts<{ episodeId: string; title: string; content: string }>(runId, {
+    const drafts = await listDrafts<ScriptDraftData>(runId, {
       entityType: "script",
       statuses: ["pending"],
     });
-    const accepts = drafts.filter((d) => !accepted || accepted.has(d.clientRefId));
-
-    for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
-
-    const startLabel = `批量保存 ${accepts.length} 集剧本…`;
-    await reportProgress(runId, {
-      stepId: "script_phase.commit",
-      current: 0,
-      total: accepts.length,
-      label: startLabel,
-    });
-    await publishWorkflowProgress(ctx.projectId, runId, "script_phase", "committing", {
-      current: 0,
-      total: accepts.length,
-      label: startLabel,
-    });
-
-    const committed: z.infer<typeof ScriptPhaseOutputSchema>["committed"] = [];
-    const failed: z.infer<typeof ScriptPhaseOutputSchema>["failed"] = [];
-
-    const episodeIds = accepts.map((d) => d.data.episodeId);
-    // Java's script store is rendered by the frontend's Tiptap editor, which
-    // expects HTML paragraphs — raw "\n" gets collapsed into one run-on
-    // paragraph. Convert plain text into <p>...</p> blocks before save so
-    // the user sees each segment on its own line. Mirrors the logic from
-    // the pre-Mastra `textToHtml` helper in script-agent.tools.ts.
-    const contents = accepts.map((d) => scriptToTiptapHtml(d.data.content));
-
-    try {
-      await javaRequest<unknown>(ctx, "/api/user/project/scripts/episode/batch/createOrUpdate", {
-        data: { projectId, episodeIds, contents },
-        timeoutMs: 300_000,
-      });
-      for (const d of accepts) {
-        await markDraftCommitted(runId, d.clientRefId, d.data.episodeId);
-        committed.push({
-          episodeId: d.data.episodeId,
-          title: d.data.title,
-          chars: d.data.content.length,
-        });
-      }
-      await deleteAllDrafts(runId);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      // Java's batch endpoint is all-or-nothing — mark everything as failed.
-      for (const d of accepts) {
-        await markDraftFailed(runId, d.clientRefId, message);
-        failed.push({
-          episodeId: d.data.episodeId,
-          title: d.data.title,
-          reason: message,
-        });
-      }
-    }
-
-    const outcome: z.infer<typeof ScriptPhaseOutputSchema>["outcome"] =
-      failed.length === 0 ? "committed" : "partial_failure";
-
-    const endLabel = `剧本保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
-    await reportProgress(runId, {
-      stepId: "script_phase.commit",
-      current: committed.length,
-      total: accepts.length,
-      label: endLabel,
-    });
-    await publishWorkflowProgress(ctx.projectId, runId, "script_phase", "committing", {
-      current: committed.length,
-      total: accepts.length,
-      label: endLabel,
-    });
-
-    const summaryText =
-      outcome === "committed"
-        ? `已保存 ${committed.length} 集剧本，进入下一阶段。`
-        : `保存失败：${failed.length} / ${accepts.length}。剧本草稿保留在 Redis 供重试。`;
-
-    const inMainFlow = requestContext?.get("inMainFlow") === true;
-    await publishWorkflowCompleted(ctx.projectId, runId, "script_phase", {
-      committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
-      failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
-      summary: summaryText,
-      // Inside main_flow: compact chip (pipeline auto-advances to
-      // storyboard_phase). Standalone: full card with "继续·生成分镜".
-      ...(inMainFlow
-        ? { compact: true as const }
-        : {
-            nextStep: {
-              workflowName: "storyboard_phase" as const,
-              labelKey: "workflowNextContinueToStoryboard",
-            },
-          }),
+    await publishWorkflowSuspended(ctx.projectId, runId, "script_phase", {
+      draftGroups: [
+        {
+          entityType: "script",
+          count: drafts.length,
+          items: drafts.map((d) => ({
+            clientRefId: d.clientRefId,
+            data: d.data as unknown as Record<string, unknown>,
+          })),
+        },
+      ],
+      totalDraftCount: drafts.length,
+      estimatedCost: drafts.length * PRICES.scriptPerEpisode,
     });
 
     return {
-      outcome,
-      committed,
-      failed,
-      message: summaryText,
+      runId,
+      draftCount: inputData.generatedCount,
+      message: `已生成 ${inputData.generatedCount} 集剧本草稿，等待确认。`,
     };
   },
 });
@@ -606,15 +381,155 @@ const applyDecisionStep = createStep({
 export const scriptPhaseWorkflow = createWorkflow({
   id: "script_phase",
   description:
-    "剧本阶段：按集调用编剧 → 长任务生成剧本 → HITL → 批量保存。支持 fromProjectOutline 自动读骨架 + 已入库分集。",
+    "剧本阶段：按集调用编剧生成剧本 → 草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 批量保存。",
   inputSchema: ScriptPhaseInputSchema,
   outputSchema: ScriptPhaseOutputSchema,
-  stateSchema: StateSchema,
 })
   .then(resolveInputStep)
   .then(generateStep)
-  .then(waitConfirmationStep)
-  .then(applyDecisionStep)
+  .then(emitReviewStep)
   .commit();
 
-export type ScriptPhaseOutput = z.infer<typeof ScriptPhaseOutputSchema>;
+// ─── Apply helper ──────────────────────────────────────────────────────
+
+export interface ApplyScriptDraftsOptions {
+  ctx: StoryosContext;
+  runId: string;
+  approved: boolean;
+  feedback?: string;
+  acceptedClientRefIds?: string[];
+}
+
+export interface ApplyScriptDraftsResult {
+  outcome: "committed" | "partial_failure" | "rejected";
+  committedCount: number;
+  failedCount: number;
+  message: string;
+}
+
+export async function applyScriptDrafts(
+  opts: ApplyScriptDraftsOptions
+): Promise<ApplyScriptDraftsResult> {
+  const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  await throwIfCancelled(runId);
+
+  const pending = await listDrafts<ScriptDraftData>(runId, {
+    entityType: "script",
+    statuses: ["pending"],
+  });
+  const pendingRefIds = pending.map((d) => d.clientRefId);
+  const projectId = pending[0]?.data.projectId ?? ctx.projectId;
+
+  if (pendingRefIds.length > 0) {
+    await deductCredits(ctx, {
+      amount: pendingRefIds.length * PRICES.scriptPerEpisode,
+      reason: `script_phase ${pendingRefIds.length} drafts (approved=${approved})`,
+      idempotencyKey: phaseDeductKey(runId, "script_phase"),
+    });
+  }
+
+  if (!approved) {
+    for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
+    await publishWorkflowFailed(ctx.projectId, runId, "script_phase", {
+      terminalStatus: "cancelled",
+      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      retryable: false,
+    });
+    return {
+      outcome: "rejected",
+      committedCount: 0,
+      failedCount: 0,
+      message: feedback ? `剧本阶段未通过。反馈：${feedback}` : "剧本阶段未通过。",
+    };
+  }
+
+  const accepted = acceptedClientRefIds ? new Set(acceptedClientRefIds) : null;
+  const accepts = pending.filter((d) => !accepted || accepted.has(d.clientRefId));
+
+  for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
+
+  const startLabel = `批量保存 ${accepts.length} 集剧本…`;
+  await reportProgress(runId, {
+    stepId: "script_phase.commit",
+    current: 0,
+    total: accepts.length,
+    label: startLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "script_phase", "committing", {
+    current: 0,
+    total: accepts.length,
+    label: startLabel,
+  });
+
+  const committed: Array<{ episodeId: string; title: string; chars: number }> = [];
+  const failed: Array<{ episodeId: string; title: string; reason: string }> = [];
+
+  const episodeIds = accepts.map((d) => d.data.episodeId);
+  const contents = accepts.map((d) => scriptToTiptapHtml(d.data.content));
+
+  try {
+    await javaRequest<unknown>(ctx, "/api/user/project/scripts/episode/batch/createOrUpdate", {
+      data: { projectId, episodeIds, contents },
+      timeoutMs: 300_000,
+    });
+    for (const d of accepts) {
+      await markDraftCommitted(runId, d.clientRefId, d.data.episodeId);
+      committed.push({
+        episodeId: d.data.episodeId,
+        title: d.data.title,
+        chars: d.data.content.length,
+      });
+    }
+    await deleteAllDrafts(runId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    for (const d of accepts) {
+      await markDraftFailed(runId, d.clientRefId, message);
+      failed.push({
+        episodeId: d.data.episodeId,
+        title: d.data.title,
+        reason: message,
+      });
+    }
+  }
+
+  const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
+
+  const endLabel = `剧本保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  await reportProgress(runId, {
+    stepId: "script_phase.commit",
+    current: committed.length,
+    total: accepts.length,
+    label: endLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "script_phase", "committing", {
+    current: committed.length,
+    total: accepts.length,
+    label: endLabel,
+  });
+
+  const summaryText =
+    outcome === "committed"
+      ? `已保存 ${committed.length} 集剧本，进入下一阶段。`
+      : `保存失败：${failed.length} / ${accepts.length}。剧本草稿保留在 Redis 供重试。`;
+
+  await publishWorkflowCompleted(ctx.projectId, runId, "script_phase", {
+    committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
+    failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
+    summary: summaryText,
+    nextSteps: [
+      {
+        workflowName: "storyboard_phase",
+        labelKey: "workflowNextContinueToStoryboard",
+        variant: "primary",
+      },
+    ],
+  });
+
+  return {
+    outcome,
+    committedCount: committed.length,
+    failedCount: failed.length,
+    message: summaryText,
+  };
+}

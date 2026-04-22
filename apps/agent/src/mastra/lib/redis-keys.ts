@@ -27,19 +27,15 @@ export const ENTITY_TYPES = ["film", "episode", "role", "scene", "prop", "script
 export type EntityType = (typeof ENTITY_TYPES)[number];
 
 export const WORKFLOW_NAMES = [
-  // Main pipelines — chain phases with HITL gates between each.
-  "main_flow",
-  // 用户已上传完整剧本 + 只要分镜的最小路径 flow。
-  "script_to_storyboard_flow",
-  // 用户已上传完整剧本 + 完整资产管线（角色/场景/道具图 + 分镜），但不 rewrite 剧本。
-  "script_import_flow",
   // Single-phase workflows usable on their own.
   "role_design",
   "scene_design",
   "prop_design",
   "batch_create_asset",
   "script_edit",
-  // Phase workflows (also reachable as main_flow / script_to_storyboard_flow sub-steps).
+  // Phase workflows — each is a standalone short-lived run. Cross-phase
+  // progression is driven by the completion card's nextSteps options
+  // (user clicks) or LLM natural-language orchestration.
   "story_outline",
   "parse_script",
   "role_phase",
