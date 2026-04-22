@@ -115,12 +115,10 @@ function MultimodalToolbarSelects({
   formData,
   onUpdate,
   models,
-  onModelChosen,
 }: {
   formData: { model: string; size: string; videoLength: string; [k: string]: unknown };
   onUpdate: (updates: Record<string, unknown>) => void;
   models: AiModel[];
-  onModelChosen?: (modelId: string) => void;
 }) {
   const selectedModel = formData.model;
   const entry = useMemo(() => models.find((m) => m.id === selectedModel), [models, selectedModel]);
@@ -150,9 +148,8 @@ function MultimodalToolbarSelects({
         }
       }
       onUpdate(defaults);
-      onModelChosen?.(newModel);
     },
-    [models, onUpdate, onModelChosen]
+    [models, onUpdate]
   );
 
   // Schema-driven fields
@@ -440,16 +437,19 @@ export function AiVideoGeneratorDialog({
     [modeModels]
   );
 
-  const maybeWarnSeedance = useCallback(
-    (modelId: string) => {
-      if (typeof window === "undefined") return;
-      if (window.localStorage.getItem("seedance2-ref-warning-dismissed") === "1") return;
-      const matched = modeModels.find((m) => m.id === modelId);
-      const name = String(matched?.name ?? modelId).toLowerCase();
-      if (/seedance[\s\-_]*2/.test(name)) setSeedanceAlertOpen(true);
-    },
-    [modeModels]
-  );
+  // Watch the active video model (covers manual picker change, mode-switch
+  // auto-select, multimodal auto-default, dialog-reopen) and raise the
+  // Seedance-2.0 alert once per device. Dismissal is persisted in
+  // localStorage so the effect no-ops on future renders.
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem("seedance2-ref-warning-dismissed") === "1") return;
+    if (!model) return;
+    const matched = modeModels.find((m) => m.id === model);
+    const name = String(matched?.name ?? model).toLowerCase();
+    if (/seedance[\s\-_]*2/.test(name)) setSeedanceAlertOpen(true);
+  }, [model, modeModels, open]);
 
   const cost = useMemo(
     () => calcModelCost(currentModel, { size, videoLength, count }),
@@ -1191,17 +1191,13 @@ export function AiVideoGeneratorDialog({
                     formData={formData}
                     onUpdate={(updates) => dispatch(updateVideoForm({ key, updates }))}
                     models={modeModels}
-                    onModelChosen={maybeWarnSeedance}
                   />
                 ) : (
                   <>
                     <ToolbarSelect
                       value={model}
                       options={modelOptions}
-                      onChange={(v) => {
-                        dispatch(updateVideoForm({ key, updates: { model: v } }));
-                        maybeWarnSeedance(v);
-                      }}
+                      onChange={(v) => dispatch(updateVideoForm({ key, updates: { model: v } }))}
                     />
                     <ToolbarSelect
                       value={size}
