@@ -18,6 +18,7 @@ import { scriptSplitterAgent } from "./agents/personas/script-splitter";
 import { workflowRoutes } from "./routes/workflow";
 import { assetsRoutes } from "./routes/assets";
 import { adminRoutes } from "./routes/admin";
+import { videoPromptRoutes } from "./routes/video-prompt";
 import { logStartupSelfCheck } from "./lib/startup-self-check";
 import { roleDesignWorkflow } from "./workflows/role-design";
 import { sceneDesignWorkflow } from "./workflows/scene-design";
@@ -148,11 +149,13 @@ export const mastra = new Mastra({
       { path: "/drafts/*", handler: populateRequestContext },
       { path: "/chat/*", handler: populateRequestContext },
       { path: "/assets/*", handler: populateRequestContext },
+      { path: "/video-prompt/*", handler: populateRequestContext },
     ],
     apiRoutes: [
       ...workflowRoutes,
       ...assetsRoutes,
       ...adminRoutes,
+      ...videoPromptRoutes,
       // AI SDK v5–compatible chat stream. Consumed by apps/web's
       // `readUIMessageStream()` via the NestJS proxy at
       // /assistant/submit-message-to-agent.

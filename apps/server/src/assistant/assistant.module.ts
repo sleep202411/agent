@@ -4,6 +4,7 @@ import { WorkspaceService } from './workspace.service';
 import { MastraProxyController } from './mastra-proxy.controller';
 import { AssetsProxyController } from './assets-proxy.controller';
 import { DictionariesController } from './dictionaries.controller';
+import { VideoPromptController } from './video-prompt.controller';
 import { MessageStoreService } from './chat/message-store.service';
 import { ChatEventsGateway } from './chat/chat-events.gateway';
 import { EntityEventsGateway } from './chat/entity-events.gateway';
@@ -22,6 +23,7 @@ import { DraftsProxyController } from './workflow/drafts-proxy.controller';
     ChatController,
     WorkflowProxyController,
     DraftsProxyController,
+    VideoPromptController,
   ],
   providers: [
     WorkspaceService,

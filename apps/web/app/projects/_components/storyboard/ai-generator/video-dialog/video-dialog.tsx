@@ -14,12 +14,14 @@ import {
   IconEye,
   IconFileText,
   IconLayoutGrid,
+  IconLoader2,
   IconMaximize,
   IconMicrophone,
   IconStar,
   IconTrash,
   IconUserCircle,
   IconWalk,
+  IconWand,
   IconZoomIn,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -66,6 +68,7 @@ import {
   loadServerTasks,
   pollServerTasks,
 } from "@/src/store/slices/taskSlice";
+import { buildExpandPayload, expandVideoPrompt } from "./expand-video-prompt";
 
 import type {
   AiVideoGeneratorDialogProps,
@@ -242,6 +245,14 @@ export function AiVideoGeneratorDialog({
   const selectResults = useMemo(() => makeSelectAllVideoResults(), []);
   const allResults = useAppSelector((s) => selectResults(s, shotId, shotColumnId));
 
+  // Row + columns are read from the current project instance so the
+  // "扩写镜头" button can assemble the structured expand-prompt payload
+  // without the parent having to pass them through as props.
+  const rows = useAppSelector((s) => selectCurrentInstance(s).rows);
+  const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
+  const shotRow = useMemo(() => rows.find((r) => r.shotId === shotId), [rows, shotId]);
+  const [isExpandingPrompt, setIsExpandingPrompt] = useState(false);
+
   // Destructure instance state
   const {
     uploadMode,
@@ -256,6 +267,26 @@ export function AiVideoGeneratorDialog({
   } = instance;
 
   const { prompt, prefixPrompt, suffixPrompt, model, size, videoLength, count } = formData;
+
+  const handleExpandPrompt = useCallback(async () => {
+    if (isExpandingPrompt) return;
+    if (!shotRow) {
+      toast.error(t("expandPromptNoRow"));
+      return;
+    }
+    setIsExpandingPrompt(true);
+    try {
+      const payload = buildExpandPayload(shotRow, columns, shotNumber);
+      const expanded = await expandVideoPrompt(payload);
+      dispatch(updateVideoForm({ key, updates: { prompt: expanded } }));
+      toast.success(t("expandPromptSuccess"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`${t("expandPromptFailed")}: ${msg}`);
+    } finally {
+      setIsExpandingPrompt(false);
+    }
+  }, [columns, dispatch, isExpandingPrompt, key, shotNumber, shotRow, t]);
 
   const {
     referenceImages,
@@ -1001,8 +1032,8 @@ export function AiVideoGeneratorDialog({
             ) : null}
 
             <div className="px-4 pt-2">
-              <div className="flex items-center">
-                <div className="mr-2 h-4 w-0.5 rounded-full bg-primary/40" />
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-0.5 rounded-full bg-primary/40" />
                 <input
                   type="text"
                   value={prefixPrompt}
@@ -1014,6 +1045,20 @@ export function AiVideoGeneratorDialog({
                   placeholder={t("prefixPromptPlaceholder")}
                   className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
                 />
+                <button
+                  type="button"
+                  onClick={() => void handleExpandPrompt()}
+                  disabled={isExpandingPrompt || !shotRow}
+                  title={t("expandPromptTooltip")}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isExpandingPrompt ? (
+                    <IconLoader2 className="size-3 animate-spin" />
+                  ) : (
+                    <IconWand className="size-3" />
+                  )}
+                  {t("expandPromptButton")}
+                </button>
               </div>
             </div>
 
