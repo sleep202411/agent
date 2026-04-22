@@ -98,15 +98,6 @@ function createEmptyConversation() {
     /** Conversation ID from server */
     conversationId: "" as string,
     /**
-     * Workflow chip the user picked from the composer (e.g. "main_flow",
-     * "storyboard_phase"). Shown in the composer as a styled pill above
-     * the input — `sendUserMessage` prepends a `[[workflow:<id>]]` marker
-     * to the outgoing text so the supervisor's prompt treats it as an
-     * explicit workflow trigger (skips the usual confirmation step).
-     * Cleared after send.
-     */
-    selectedWorkflowChip: null as string | null,
-    /**
      * In-flight generative workflow for this project. Set by ToolWorkflowCard
      * when it sees the workflow enter queued/running, cleared on terminal
      * state. Used to swap the chat composer into a "工作中 + 停止" pill —
@@ -670,20 +661,9 @@ export const sendUserMessage = createAsyncThunk<
       current.draftInput.trim() || (uploadedAttachments.length > 0 ? "请结合附件继续分析。" : "");
     if (!typedText && uploadedAttachments.length === 0) return;
 
-    // If a workflow chip is selected, prepend a `[[workflow:<id>]]` marker
-    // that the supervisor prompt treats as the explicit "UI trigger"
-    // path — skips the two-step confirmation because clicking the chip
-    // already counts as the user's confirmation. The pill itself is
-    // rendered above the composer, so users see the chip, not the raw
-    // marker. Clear the chip after the message is committed so it
-    // doesn't stick around for the next send.
-    const workflowChip = current.selectedWorkflowChip;
-    const text = workflowChip ? `[[workflow:${workflowChip}]] ${typedText}` : typedText;
-
-    const userMessage = buildUserMessage(text, uploadedAttachments);
+    const userMessage = buildUserMessage(typedText, uploadedAttachments);
 
     dispatch(commitUserMessage({ projectId, userMessage }));
-    if (workflowChip) dispatch(setSelectedWorkflowChip({ projectId, chipId: null }));
 
     const abortController = createProjectAbortController(projectId);
 
@@ -1030,15 +1010,6 @@ export const assistantSlice = createSlice({
       state.projects[projectId] = { ...current, draftInput: draft };
     },
 
-    setSelectedWorkflowChip: (
-      state,
-      action: PayloadAction<{ projectId: string; chipId: string | null }>
-    ) => {
-      const { projectId, chipId } = action.payload;
-      const current = state.projects[projectId] ?? createEmptyConversation();
-      state.projects[projectId] = { ...current, selectedWorkflowChip: chipId };
-    },
-
     pushAttachment: (
       state,
       action: PayloadAction<{ projectId: string; attachment: AssistantAttachment }>
@@ -1360,7 +1331,6 @@ export const {
   setAgentType,
   setVideoPromptStyle,
   setDraft,
-  setSelectedWorkflowChip,
   pushAttachment,
   updateAttachment,
   removeAttachment,
