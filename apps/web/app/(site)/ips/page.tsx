@@ -297,6 +297,18 @@ export default function IPPlazaPage() {
             </div>
           )}
         </section>
+      ) : projects.length === 0 ? (
+        <section className="mx-auto max-w-screen-2xl px-8 pt-8">
+          <SearchBar search={search} setSearch={setSearch} onCreate={() => setCreateOpen(true)} />
+          <div className="py-24 text-center text-muted-foreground">
+            <IconSparkles className="mx-auto mb-3 size-12 opacity-30" />
+            <p className="text-sm">{t("noResults")}</p>
+            <Button className="mt-5" onClick={() => setCreateOpen(true)}>
+              <IconBolt className="size-4" />
+              {t("createIP")}
+            </Button>
+          </div>
+        </section>
       ) : (
         <>
           {featured ? <FeaturedHero project={featured} categories={categories} /> : null}
