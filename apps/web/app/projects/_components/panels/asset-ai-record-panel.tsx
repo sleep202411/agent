@@ -60,6 +60,10 @@ type Props = {
   prompt: string;
   /** Optional model id forwarded to the generate endpoint. */
   model?: string;
+  /** Optional model-specific size (e.g. "1024x1024"). Pass-through to the endpoint. */
+  size?: string;
+  /** How many parallel generations to fire per click (default 1). */
+  count?: number;
   referenceImageUrl?: string;
   /**
    * Paths currently considered "selected" by the caller — renders a
@@ -75,7 +79,18 @@ type Props = {
 
 export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
   function AssetAiRecordPanel(
-    { assetId, columnKey, prompt, model, referenceImageUrl, selectedPaths, onSelect, onPreview },
+    {
+      assetId,
+      columnKey,
+      prompt,
+      model,
+      size,
+      count,
+      referenceImageUrl,
+      selectedPaths,
+      onSelect,
+      onPreview,
+    },
     ref
   ) {
     const tc = useTranslations("common");
@@ -146,15 +161,20 @@ export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
         toast.warning(tc("enterPrompt"));
         return;
       }
-      submitImageTask({
-        shotId: assetId,
-        shotColumnId: columnKey,
-        prompt: trimmed,
-        model: model || undefined,
-        referenceImageUrl: referenceImageUrl ? buildOssUrl(referenceImageUrl) : undefined,
-        watermark: false,
-      });
-    }, [assetId, columnKey, model, prompt, referenceImageUrl, tc]);
+      const batch = Math.max(1, Math.floor(count ?? 1));
+      const refUrl = referenceImageUrl ? buildOssUrl(referenceImageUrl) : undefined;
+      for (let i = 0; i < batch; i += 1) {
+        submitImageTask({
+          shotId: assetId,
+          shotColumnId: columnKey,
+          prompt: trimmed,
+          model: model || undefined,
+          size: size || undefined,
+          referenceImageUrl: refUrl,
+          watermark: false,
+        });
+      }
+    }, [assetId, columnKey, count, model, prompt, referenceImageUrl, size, tc]);
 
     useImperativeHandle(ref, () => ({ generate }), [generate]);
 

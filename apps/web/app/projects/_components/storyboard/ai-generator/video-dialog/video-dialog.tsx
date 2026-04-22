@@ -14,16 +14,27 @@ import {
   IconEye,
   IconFileText,
   IconLayoutGrid,
+  IconLoader2,
   IconMaximize,
   IconMicrophone,
   IconStar,
   IconTrash,
   IconUserCircle,
   IconWalk,
+  IconWand,
   IconZoomIn,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { RichMentionEditor } from "@/app/projects/_components/storyboard/editor/rich-mention-editor";
@@ -66,6 +77,7 @@ import {
   loadServerTasks,
   pollServerTasks,
 } from "@/src/store/slices/taskSlice";
+import { buildExpandPayload, expandVideoPrompt } from "./expand-video-prompt";
 
 import type {
   AiVideoGeneratorDialogProps,
@@ -242,6 +254,20 @@ export function AiVideoGeneratorDialog({
   const selectResults = useMemo(() => makeSelectAllVideoResults(), []);
   const allResults = useAppSelector((s) => selectResults(s, shotId, shotColumnId));
 
+  // Row + columns are read from the current project instance so the
+  // "扩写镜头" button can assemble the structured expand-prompt payload
+  // without the parent having to pass them through as props.
+  const rows = useAppSelector((s) => selectCurrentInstance(s).rows);
+  const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
+  const shotRow = useMemo(() => rows.find((r) => r.shotId === shotId), [rows, shotId]);
+  const [isExpandingPrompt, setIsExpandingPrompt] = useState(false);
+
+  // Seedance-2.0 forbids non-Seedream-generated photorealistic reference
+  // images. Warn the user the first time they pick it per device; the
+  // dismissal is sticky in localStorage (key below) so the alert never
+  // reappears on the same machine.
+  const [seedanceAlertOpen, setSeedanceAlertOpen] = useState(false);
+
   // Destructure instance state
   const {
     uploadMode,
@@ -256,6 +282,33 @@ export function AiVideoGeneratorDialog({
   } = instance;
 
   const { prompt, prefixPrompt, suffixPrompt, model, size, videoLength, count } = formData;
+
+  const dismissSeedanceAlert = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("seedance2-ref-warning-dismissed", "1");
+    }
+    setSeedanceAlertOpen(false);
+  }, []);
+
+  const handleExpandPrompt = useCallback(async () => {
+    if (isExpandingPrompt) return;
+    if (!shotRow) {
+      toast.error(t("expandPromptNoRow"));
+      return;
+    }
+    setIsExpandingPrompt(true);
+    try {
+      const payload = buildExpandPayload(shotRow, columns, shotNumber);
+      const expanded = await expandVideoPrompt(payload);
+      dispatch(updateVideoForm({ key, updates: { prompt: expanded } }));
+      toast.success(t("expandPromptSuccess"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`${t("expandPromptFailed")}: ${msg}`);
+    } finally {
+      setIsExpandingPrompt(false);
+    }
+  }, [columns, dispatch, isExpandingPrompt, key, shotNumber, shotRow, t]);
 
   const {
     referenceImages,
@@ -383,6 +436,20 @@ export function AiVideoGeneratorDialog({
     () => modeModels.map((m) => ({ label: m.name, value: m.id })),
     [modeModels]
   );
+
+  // Watch the active video model (covers manual picker change, mode-switch
+  // auto-select, multimodal auto-default, dialog-reopen) and raise the
+  // Seedance-2.0 alert once per device. Dismissal is persisted in
+  // localStorage so the effect no-ops on future renders.
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem("seedance2-ref-warning-dismissed") === "1") return;
+    if (!model) return;
+    const matched = modeModels.find((m) => m.id === model);
+    const name = String(matched?.name ?? model).toLowerCase();
+    if (/seedance[\s\-_]*2/.test(name)) setSeedanceAlertOpen(true);
+  }, [model, modeModels, open]);
 
   const cost = useMemo(
     () => calcModelCost(currentModel, { size, videoLength, count }),
@@ -1001,8 +1068,8 @@ export function AiVideoGeneratorDialog({
             ) : null}
 
             <div className="px-4 pt-2">
-              <div className="flex items-center">
-                <div className="mr-2 h-4 w-0.5 rounded-full bg-primary/40" />
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-0.5 rounded-full bg-primary/40" />
                 <input
                   type="text"
                   value={prefixPrompt}
@@ -1014,6 +1081,20 @@ export function AiVideoGeneratorDialog({
                   placeholder={t("prefixPromptPlaceholder")}
                   className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
                 />
+                <button
+                  type="button"
+                  onClick={() => void handleExpandPrompt()}
+                  disabled={isExpandingPrompt || !shotRow}
+                  title={t("expandPromptTooltip")}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isExpandingPrompt ? (
+                    <IconLoader2 className="size-3 animate-spin" />
+                  ) : (
+                    <IconWand className="size-3" />
+                  )}
+                  {t("expandPromptButton")}
+                </button>
               </div>
             </div>
 
@@ -1194,6 +1275,28 @@ export function AiVideoGeneratorDialog({
         name={previewItem?.storagePath?.split("/").pop()}
         link={previewUrl}
       />
+
+      <AlertDialog
+        open={seedanceAlertOpen}
+        onOpenChange={(next) => {
+          // Closing via overlay / Esc behaves the same as clicking "我知道了"
+          // (persist dismissal) — the warning is informational, no
+          // reason to keep nagging on the same device.
+          if (!next) dismissSeedanceAlert();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("seedanceWarningTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("seedanceWarningDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={dismissSeedanceAlert}>
+              {t("seedanceWarningConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

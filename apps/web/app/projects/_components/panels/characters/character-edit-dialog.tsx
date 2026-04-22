@@ -42,6 +42,7 @@ import { useAiModels, useRawAiModels } from "@/src/hooks/use-ai-models";
 import { applySeedanceTemplate } from "@/src/lib/seedance";
 import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import { ModelPicker } from "@/components/ui/schema-field/model-picker";
+import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
 import { GenerateButton } from "@/components/ui/generate-button";
 import {
   normalizeStoragePath,
@@ -115,10 +116,22 @@ export function CharacterEditDialog({
   const voiceModels = cachedVoiceModels as RawAiModel[];
   const { models: imageModels } = useAiModels("/api/ai/image/generate/basic");
   const [imageModelId, setImageModelId] = useState("");
+  const [imageSize, setImageSize] = useState("");
+  const [imageCount, setImageCount] = useState(1);
   const selectedImageModel = useMemo(
     () => imageModels.find((model) => model.id === imageModelId),
     [imageModels, imageModelId]
   );
+  const sizeField = selectedImageModel?.inputSchema?.properties?.size;
+  const sizeOptions = useMemo(() => {
+    if (!sizeField?.enum) return [];
+    const labels = sizeField["x-enum-labels"] ?? {};
+    return sizeField.enum.map((v) => ({
+      label: labels[String(v)] ?? String(v),
+      value: String(v),
+    }));
+  }, [sizeField]);
+  const imageCost = (selectedImageModel?.cost ?? 0) * (imageCount || 1);
   const [voices, setVoices] = useState<Record<string, VoiceOptionItem[]>>({});
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
@@ -138,6 +151,16 @@ export function CharacterEditDialog({
     const preferred = imageModels.find((model) => model.isDefault) ?? imageModels[0];
     if (preferred) setImageModelId(preferred.id);
   }, [imageModels, imageModelId]);
+
+  // Reset size to the model's default whenever the selected model changes or
+  // the current size isn't in the new model's enum.
+  useEffect(() => {
+    if (!selectedImageModel) return;
+    const enumValues = sizeField?.enum?.map(String) ?? [];
+    if (imageSize && enumValues.includes(imageSize)) return;
+    const next = sizeField?.default != null ? String(sizeField.default) : (enumValues[0] ?? "");
+    if (next !== imageSize) setImageSize(next);
+  }, [selectedImageModel, sizeField, imageSize]);
 
   // Voice models are now read from preloaded cache via useRawAiModels
 
@@ -519,6 +542,8 @@ export function CharacterEditDialog({
                         columnKey="-1"
                         prompt={formData.prompt || formData.description}
                         model={imageModelId}
+                        size={imageSize}
+                        count={imageCount}
                         referenceImageUrl={formData.referenceImgPath[0] ?? roleImagePath}
                         selectedPaths={roleImagePath ? [roleImagePath] : undefined}
                         onSelect={(path) =>
@@ -575,7 +600,7 @@ export function CharacterEditDialog({
                     Pinned to the bottom of the right column via flex
                     ordering. Writing to formData.prompt is shared with
                     the 全局提示图 generator on the left. */}
-                <div className="shrink-0 flex flex-col gap-2 rounded-xl border border-border/40 bg-muted p-4 transition-colors focus-within:border-primary/30">
+                <div className="shrink-0 flex flex-col gap-2 rounded-xl border border-border/40 bg-muted transition-colors focus-within:border-primary/30">
                   <Textarea
                     value={formData.prompt}
                     onChange={(event) => updateForm({ prompt: event.target.value })}
@@ -584,10 +609,10 @@ export function CharacterEditDialog({
                     // ~200 chars and gets appended to whatever base prompt
                     // the user already has. 500 would silently clip the tail.
                     maxLength={1000}
-                    rows={3}
-                    className="min-h-0 resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
+                    rows={6}
+                    className="h-32 p-4 resize-none border-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
                   />
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between p-2">
                     <div className="flex items-center gap-2">
                       <ModelPicker
                         models={imageModels}
@@ -601,10 +626,26 @@ export function CharacterEditDialog({
                         // background keeps contrast high.
                         contentClassName="bg-popover backdrop-blur-none backdrop-saturate-100 border-border"
                       />
+                      {sizeOptions.length > 0 ? (
+                        <ToolbarSelect
+                          options={sizeOptions}
+                          value={imageSize}
+                          onChange={setImageSize}
+                        />
+                      ) : null}
+                      <ToolbarSelect
+                        options={[
+                          { label: "1x", value: "1" },
+                          { label: "2x", value: "2" },
+                          { label: "4x", value: "4" },
+                        ]}
+                        value={String(imageCount)}
+                        onChange={(v) => setImageCount(Number(v) || 1)}
+                      />
                     </div>
                     <GenerateButton
                       onClick={() => aiPanelRef.current?.generate()}
-                      cost={selectedImageModel?.cost}
+                      cost={imageCost}
                       className={
                         !formData.id || !formData.prompt?.trim()
                           ? "pointer-events-none opacity-50"

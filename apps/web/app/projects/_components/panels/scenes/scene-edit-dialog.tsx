@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
 import { ModelPicker } from "@/components/ui/schema-field/model-picker";
+import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
 import { GenerateButton } from "@/components/ui/generate-button";
 import { backendApi } from "@/src/lib/api";
 import { toast } from "sonner";
@@ -91,10 +92,22 @@ export function SceneEditDialog({
 
   const { models: imageModels } = useAiModels("/api/ai/image/generate/basic");
   const [imageModelId, setImageModelId] = useState("");
+  const [imageSize, setImageSize] = useState("");
+  const [imageCount, setImageCount] = useState(1);
   const selectedImageModel = useMemo(
     () => imageModels.find((model) => model.id === imageModelId),
     [imageModels, imageModelId]
   );
+  const sizeField = selectedImageModel?.inputSchema?.properties?.size;
+  const sizeOptions = useMemo(() => {
+    if (!sizeField?.enum) return [];
+    const labels = sizeField["x-enum-labels"] ?? {};
+    return sizeField.enum.map((v) => ({
+      label: labels[String(v)] ?? String(v),
+      value: String(v),
+    }));
+  }, [sizeField]);
+  const imageCost = (selectedImageModel?.cost ?? 0) * (imageCount || 1);
 
   // Default-select first model once the list loads.
   useEffect(() => {
@@ -103,6 +116,16 @@ export function SceneEditDialog({
     const preferred = imageModels.find((model) => model.isDefault) ?? imageModels[0];
     if (preferred) setImageModelId(preferred.id);
   }, [imageModels, imageModelId]);
+
+  // Reset size to the model's default whenever the selected model changes or
+  // the current size isn't in the new model's enum.
+  useEffect(() => {
+    if (!selectedImageModel) return;
+    const enumValues = sizeField?.enum?.map(String) ?? [];
+    if (imageSize && enumValues.includes(imageSize)) return;
+    const next = sizeField?.default != null ? String(sizeField.default) : (enumValues[0] ?? "");
+    if (next !== imageSize) setImageSize(next);
+  }, [selectedImageModel, sizeField, imageSize]);
 
   const form = useForm<SceneFormValues>({
     resolver: zodResolver(sceneSchema),
@@ -292,6 +315,8 @@ export function SceneEditDialog({
                           columnKey={SCENE_COLUMN_KEY}
                           prompt={composerPrompt}
                           model={imageModelId}
+                          size={imageSize}
+                          count={imageCount}
                           referenceImageUrl={form.watch("referenceImgPath")[0] ?? sceneImages[0]}
                           selectedPaths={sceneImages}
                           onSelect={handleSelectFromGallery}
@@ -321,16 +346,34 @@ export function SceneEditDialog({
                           className="min-h-0 resize-none border-0 bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
                         />
                         <div className="flex items-center justify-between">
-                          <ModelPicker
-                            models={imageModels}
-                            value={imageModelId}
-                            onChange={setImageModelId}
-                            compact
-                            contentClassName="bg-popover backdrop-blur-none backdrop-saturate-100 border-border"
-                          />
+                          <div className="flex items-center gap-2">
+                            <ModelPicker
+                              models={imageModels}
+                              value={imageModelId}
+                              onChange={setImageModelId}
+                              compact
+                              contentClassName="bg-popover backdrop-blur-none backdrop-saturate-100 border-border"
+                            />
+                            {sizeOptions.length > 0 ? (
+                              <ToolbarSelect
+                                options={sizeOptions}
+                                value={imageSize}
+                                onChange={setImageSize}
+                              />
+                            ) : null}
+                            <ToolbarSelect
+                              options={[
+                                { label: "1x", value: "1" },
+                                { label: "2x", value: "2" },
+                                { label: "4x", value: "4" },
+                              ]}
+                              value={String(imageCount)}
+                              onChange={(v) => setImageCount(Number(v) || 1)}
+                            />
+                          </div>
                           <GenerateButton
                             onClick={() => aiPanelRef.current?.generate()}
-                            cost={selectedImageModel?.cost}
+                            cost={imageCost}
                             className={
                               !sceneId || !composerPrompt.trim()
                                 ? "pointer-events-none opacity-50"
