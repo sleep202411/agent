@@ -217,7 +217,8 @@
     "creators": "Talent Market",
     "news": "News",
     "workbench": "Workbench",
-    "getStarted": "Get Started"
+    "getStarted": "Get Started",
+    "language": "Language"
   },
   "auth": {
     "welcomeBack": "Welcome Back",
@@ -363,7 +364,13 @@
     "detailProducer": "Producer",
     "detailViewProfile": "View Profile",
     "detailProjects": "projects",
-    "detailManage": "Manage"
+    "detailManage": "Manage",
+    "moreInfo": "More Info",
+    "rowTrending": "Trending Now",
+    "rowRecent": "New Releases",
+    "searchResultsFor": "Search results for",
+    "scrollLeft": "Scroll left",
+    "scrollRight": "Scroll right"
   },
   "ipEdit": {
     "pageTitle": "IP Management",

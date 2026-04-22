@@ -217,7 +217,8 @@
     "creators": "人才集市",
     "news": "新闻",
     "workbench": "工作台",
-    "getStarted": "免费开始"
+    "getStarted": "免费开始",
+    "language": "语言"
   },
   "auth": {
     "welcomeBack": "欢迎回来",
@@ -363,7 +364,13 @@
     "detailProducer": "制片人",
     "detailViewProfile": "查看主页",
     "detailProjects": "个项目",
-    "detailManage": "管理"
+    "detailManage": "管理",
+    "moreInfo": "了解更多",
+    "rowTrending": "热门 IP",
+    "rowRecent": "最新上架",
+    "searchResultsFor": "搜索结果",
+    "scrollLeft": "向左滚动",
+    "scrollRight": "向右滚动"
   },
   "ipEdit": {
     "pageTitle": "IP 管理",
