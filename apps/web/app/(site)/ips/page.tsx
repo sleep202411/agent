@@ -1,22 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+/**
+ * /ips — IP Plaza. Netflix-style catalog layout: full-bleed hero
+ * featuring the first IP, then horizontal scrolling rows grouped by
+ * signal (trending / recent / by-category). Search collapses the rows
+ * into a single filtered grid.
+ *
+ * Hero uses `-mt-14` to bleed under the fixed GlobalNav; the layout
+ * adds `pt-14` so every OTHER page has safe top padding — this page
+ * opts out for the cover-under-nav visual.
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  IconSparkles,
-  IconSearch,
-  IconTrendingUp,
-  IconEye,
-  IconHeart,
-  IconPlayerPlay,
   IconBolt,
-  IconCoin,
-  IconChartBar,
+  IconChevronLeft,
+  IconChevronRight,
+  IconInfoCircle,
+  IconPlayerPlayFilled,
+  IconSearch,
+  IconSparkles,
+  IconTrendingUp,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
 import {
   searchIPProjects,
@@ -26,107 +34,188 @@ import {
   type CategoryMap,
 } from "@/src/lib/api/ip-api";
 
-// ─── Stage config ───────────────────────────────────
+// ─── Featured Hero ────────────────────────────────────
 
-const MOCK_CATEGORIES = [
-  { value: "1", label: "AIGC影视" },
-  { value: "2", label: "热血动漫" },
-  { value: "3", label: "AI纪录片" },
-  { value: "4", label: "文化传统" },
-  { value: "5", label: "经典动画" },
-  { value: "6", label: "AI经典改编" },
-  { value: "7", label: "末日来临" },
-  { value: "8", label: "爱情故事" },
-  { value: "9", label: "AI科幻" },
-];
+function FeaturedHero({ project, categories }: { project: IPProject; categories: CategoryMap }) {
+  const t = useTranslations("ip");
+  const banner = ipImageUrl(project.bannerLink);
+  const cat = categories[String(project.typeId)] ?? "";
 
-const STAGE_FILTERS = [
-  { value: "all", labelKey: "stageAll" },
-  { value: "investment", labelKey: "stageInvestment" },
-  { value: "presale", labelKey: "stagePresale" },
-  { value: "producing", labelKey: "stageProducing" },
-  { value: "released", labelKey: "stageReleased" },
-] as const;
+  return (
+    <section className="relative -mt-14 h-[72vh] min-h-[520px] w-full overflow-hidden">
+      {banner ? (
+        <img src={banner} alt={project.name} className="absolute inset-0 size-full object-cover" />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-background" />
+      )}
+      {/* Gradient overlays — left-to-right for copy readability, bottom-up for page continuity */}
+      <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-background to-transparent" />
 
-// ─── IP Card ────────────────────────────────────────
+      <div className="relative z-10 mx-auto flex h-full max-w-screen-2xl items-end px-8 pb-20 pt-24">
+        <div className="max-w-2xl">
+          <div className="mb-4 flex items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 font-semibold text-primary">
+              <IconTrendingUp className="size-3" />
+              {t("featured")}
+            </span>
+            {cat ? (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span className="text-muted-foreground">{cat}</span>
+              </>
+            ) : null}
+          </div>
+          <h1 className="mb-4 text-4xl font-black leading-tight text-foreground drop-shadow-lg md:text-6xl">
+            {project.name}
+          </h1>
+          <p className="mb-6 line-clamp-3 max-w-xl text-sm leading-relaxed text-muted-foreground md:text-base">
+            {project.description}
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button asChild size="lg">
+              <Link href={`/ips/${project.id}`}>
+                <IconPlayerPlayFilled className="size-5" />
+                {t("viewDetails")}
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link href={`/ips/${project.id}`}>
+                <IconInfoCircle className="size-5" />
+                {t("moreInfo")}
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-function IPCard({ project, categories }: { project: IPProject; categories: CategoryMap }) {
+// ─── Row Card ─────────────────────────────────────────
+
+/**
+ * Portrait 2:3 card used inside horizontal rows. Scales up on hover to
+ * bring attention. Title chip at the bottom uses the same gradient
+ * treatment as the old square cards so the visual language stays
+ * consistent across the site.
+ */
+function RowCard({ project, categories }: { project: IPProject; categories: CategoryMap }) {
   const cover = ipImageUrl(project.bannerLink);
-  const avatar = ipImageUrl(project.ownerAvatar);
   const cat = categories[String(project.typeId)] ?? "";
 
   return (
     <Link
       href={`/ips/${project.id}`}
-      className="group block overflow-hidden rounded-2xl border border-border bg-card transition-all hover:border-border/60 hover:shadow-lg hover:shadow-black/10"
+      className="group relative block w-44 shrink-0 overflow-hidden rounded-lg bg-secondary transition-transform duration-300 hover:z-10 hover:scale-[1.06] md:w-52"
     >
-      <div className="relative h-44 overflow-hidden">
+      <div className="aspect-[2/3] w-full overflow-hidden">
         {cover ? (
-          <img
-            src={cover}
-            alt={project.name}
-            className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
+          <img src={cover} alt={project.name} className="size-full object-cover" loading="lazy" />
         ) : (
-          <div className="flex size-full items-center justify-center bg-secondary">
-            <IconSparkles className="size-8 text-muted-foreground/20" />
+          <div className="flex size-full items-center justify-center">
+            <IconSparkles className="size-10 text-muted-foreground/30" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-        {/* Category badge */}
-        {cat && (
-          <div className="absolute left-3 top-3">
-            <span className="rounded-full border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
-              {cat}
-            </span>
-          </div>
-        )}
-        {/* Video badge */}
-        {project.videoLink && (
-          <div className="absolute right-3 top-3">
-            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-              <IconPlayerPlay className="size-3" /> Trailer
-            </span>
-          </div>
-        )}
-        {/* Title overlay */}
-        <div className="absolute inset-x-3 bottom-3">
-          <h3 className="text-base font-bold leading-tight text-white transition-colors group-hover:text-primary">
-            {project.name}
-          </h3>
-        </div>
       </div>
-      <div className="p-4">
-        <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-          {project.description}
-        </p>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            {avatar ? (
-              <img src={avatar} alt="" className="size-5 rounded-full object-cover" />
-            ) : (
-              <div className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                {(project.ownerName || "?")[0]}
-              </div>
-            )}
-            <span className="font-medium text-foreground">{project.ownerName || "Anonymous"}</span>
-          </div>
-          <span className="text-[10px]">{new Date(project.createTime).toLocaleDateString()}</span>
-        </div>
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3 pt-12">
+        <h3 className="mb-0.5 line-clamp-1 text-sm font-bold text-white">{project.name}</h3>
+        {cat ? <span className="text-[10px] text-white/70">{cat}</span> : null}
       </div>
     </Link>
   );
 }
 
-// ─── Page ───────────────────────────────────────────
+// ─── Horizontal Row ───────────────────────────────────
+
+function Row({
+  title,
+  projects,
+  categories,
+}: {
+  title: string;
+  projects: IPProject[];
+  categories: CategoryMap;
+}) {
+  const t = useTranslations("ip");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(true);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      setCanLeft(el.scrollLeft > 4);
+      setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [projects.length]);
+
+  const scroll = (dir: "left" | "right") => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const amount = el.clientWidth * 0.85 * (dir === "left" ? -1 : 1);
+    el.scrollBy({ left: amount, behavior: "smooth" });
+  };
+
+  if (!projects.length) return null;
+
+  return (
+    <section className="group/row relative mb-8">
+      <div className="mb-3 flex items-center justify-between px-8">
+        <h2 className="text-lg font-bold text-foreground md:text-xl">{title}</h2>
+      </div>
+      <div className="relative">
+        {canLeft ? (
+          <button
+            type="button"
+            aria-label={t("scrollLeft")}
+            onClick={() => scroll("left")}
+            className="absolute left-0 top-0 z-10 hidden h-full w-12 items-center justify-center bg-gradient-to-r from-background/90 to-transparent text-foreground/80 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100 md:flex"
+          >
+            <IconChevronLeft className="size-6" />
+          </button>
+        ) : null}
+        <div
+          ref={scrollRef}
+          className="flex gap-3 overflow-x-auto scroll-smooth px-8 pb-2 [&::-webkit-scrollbar]:hidden"
+          style={{ scrollbarWidth: "none" }}
+        >
+          {projects.map((p) => (
+            <RowCard key={p.id} project={p} categories={categories} />
+          ))}
+        </div>
+        {canRight ? (
+          <button
+            type="button"
+            aria-label={t("scrollRight")}
+            onClick={() => scroll("right")}
+            className="absolute right-0 top-0 z-10 hidden h-full w-12 items-center justify-center bg-gradient-to-l from-background/90 to-transparent text-foreground/80 opacity-0 transition-opacity hover:text-foreground group-hover/row:opacity-100 md:flex"
+          >
+            <IconChevronRight className="size-6" />
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────
 
 export default function IPPlazaPage() {
   const t = useTranslations("ip");
-  const [search, setSearch] = useState("");
-  const [stageFilter, setStageFilter] = useState("all");
   const [projects, setProjects] = useState<IPProject[]>([]);
-  const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<CategoryMap>({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
@@ -137,224 +226,135 @@ export default function IPPlazaPage() {
 
   useEffect(() => {
     setLoading(true);
-    void searchIPProjects({ page: 1, pageSize: 50 })
+    void searchIPProjects({ page: 1, pageSize: 100 })
       .then((res) => setProjects(res.list))
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => {
-    return projects.filter((p) => {
-      if (search) {
-        const q = search.toLowerCase();
-        if (!p.name.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q))
-          return false;
-      }
-      return true;
-    });
+  const featured = projects[0];
+
+  const trending = useMemo(() => projects.slice(0, 15), [projects]);
+
+  const recent = useMemo(() => {
+    return [...projects]
+      .sort((a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime())
+      .slice(0, 15);
+  }, [projects]);
+
+  /**
+   * Group projects by typeId. Only keep buckets with ≥ 3 items so we
+   * don't render sparsely populated rows. Sort by bucket size desc so
+   * the most representative categories surface first.
+   */
+  const byCategory = useMemo(() => {
+    const map = new Map<string, IPProject[]>();
+    for (const p of projects) {
+      const key = String(p.typeId);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    }
+    return [...map.entries()]
+      .filter(([, arr]) => arr.length >= 3)
+      .sort(([, a], [, b]) => b.length - a.length)
+      .map(([typeId, arr]) => ({
+        typeId,
+        label: categories[typeId] ?? "",
+        projects: arr.slice(0, 15),
+      }))
+      .filter((row) => row.label);
+  }, [projects, categories]);
+
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return null;
+    return projects.filter(
+      (p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
+    );
   }, [projects, search]);
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* ── Hero ── */}
-      <div className="relative overflow-hidden border-b border-border">
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 15% 50%, hsl(42 95% 55% / 0.08) 0%, transparent 55%), radial-gradient(circle at 85% 20%, hsl(0 85% 52% / 0.06) 0%, transparent 50%)",
-          }}
-        />
-        <div className="relative mx-auto max-w-screen-2xl px-6 pb-8 pt-10">
-          <div className="mb-8 flex flex-col justify-between gap-6 md:flex-row md:items-start">
-            <div className="max-w-xl">
-              <div className="mb-3 flex items-center gap-2">
-                <IconSparkles className="size-4 text-primary" />
-                <span className="text-xs font-semibold uppercase tracking-widest text-primary">
-                  IP Plaza
-                </span>
-                <span className="text-xs text-muted-foreground">·</span>
-                <span className="text-xs text-muted-foreground">{t("heroSubtitle")}</span>
-              </div>
-              <h1 className="mb-3 text-3xl font-black leading-tight text-foreground md:text-4xl">
-                {t("heroTitle1")}
-                <br />
-                <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-                  {t("heroTitle2")}
-                </span>
-              </h1>
-              <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
-                {t("heroDesc")}
-              </p>
-              <div className="mt-4 flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <div className="size-1.5 animate-pulse rounded-full bg-amber-400" />
-                  <span>
-                    <strong className="text-foreground">{projects.length}</strong> {t("ips")}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <IconTrendingUp className="size-3 text-primary" />
-                  <span>{t("newThisWeek")}</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={() => setCreateOpen(true)}>
-                <IconBolt className="size-4" /> {t("createIP")}
-              </Button>
-            </div>
-          </div>
-          {/* Search */}
-          <div className="relative max-w-2xl">
-            <IconSearch className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t("searchPlaceholder")}
-              className="h-11 pl-11"
-            />
-          </div>
+    <div className="min-h-screen bg-background pb-24">
+      {loading ? (
+        <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
+          {t("loading")}
         </div>
-      </div>
-
-      {/* ── Main ── */}
-      <div className="mx-auto max-w-screen-2xl px-6 py-6">
-        <div className="flex gap-6">
-          {/* Left: filters + grid */}
-          <div className="min-w-0 flex-1">
-            {/* Stage filter */}
-            <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              {STAGE_FILTERS.map((s) => (
-                <button
-                  key={s.value}
-                  type="button"
-                  onClick={() => setStageFilter(s.value)}
-                  className={cn(
-                    "rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-all",
-                    stageFilter === s.value
-                      ? "border-primary/40 bg-card text-foreground shadow"
-                      : "border-border bg-secondary text-muted-foreground hover:border-border/80 hover:text-foreground"
-                  )}
-                >
-                  {t(s.labelKey)}
-                </button>
+      ) : searchResults ? (
+        <section className="mx-auto max-w-screen-2xl px-8 pt-8">
+          <SearchBar search={search} setSearch={setSearch} onCreate={() => setCreateOpen(true)} />
+          <h2 className="mb-4 mt-6 text-lg font-bold">
+            {t("searchResultsFor")} &ldquo;{search}&rdquo; · {searchResults.length}
+          </h2>
+          {searchResults.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {searchResults.map((p) => (
+                <RowCard key={p.id} project={p} categories={categories} />
               ))}
             </div>
-
-            {/* Count */}
-            <div className="mb-4 flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {t("total")}{" "}
-                <span className="font-semibold text-foreground">{filtered.length}</span> {t("ips")}
-              </span>
+          ) : (
+            <div className="py-20 text-center text-muted-foreground">
+              <IconSparkles className="mx-auto mb-3 size-10 opacity-30" />
+              <p className="text-sm">{t("noResults")}</p>
             </div>
+          )}
+        </section>
+      ) : (
+        <>
+          {featured ? <FeaturedHero project={featured} categories={categories} /> : null}
 
-            {/* Grid */}
-            {loading ? (
-              <div className="py-20 text-center text-sm text-muted-foreground">{t("loading")}</div>
-            ) : filtered.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {filtered.map((p) => (
-                  <IPCard key={p.id} project={p} categories={categories} />
-                ))}
-              </div>
-            ) : (
-              <div className="py-20 text-center text-muted-foreground">
-                <IconSparkles className="mx-auto mb-3 size-10 opacity-30" />
-                <p className="text-sm">{t("noResults")}</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStageFilter("all");
-                    setSearch("");
-                  }}
-                  className="mt-3 text-xs text-primary hover:underline"
-                >
-                  {t("clearFilters")}
-                </button>
-              </div>
-            )}
+          <div className="mx-auto max-w-screen-2xl pt-4">
+            <div className="mb-6 px-8">
+              <SearchBar
+                search={search}
+                setSearch={setSearch}
+                onCreate={() => setCreateOpen(true)}
+              />
+            </div>
+            <Row title={t("rowTrending")} projects={trending} categories={categories} />
+            <Row title={t("rowRecent")} projects={recent} categories={categories} />
+            {byCategory.map((row) => (
+              <Row
+                key={row.typeId}
+                title={row.label}
+                projects={row.projects}
+                categories={categories}
+              />
+            ))}
           </div>
-
-          {/* Right: sidebar */}
-          <div className="hidden w-64 shrink-0 space-y-4 xl:block">
-            {/* How to Participate */}
-            <div className="rounded-xl border border-border bg-card p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <IconCoin className="size-4 text-primary" />
-                <span className="text-sm font-semibold">{t("howToParticipate")}</span>
-              </div>
-              <div className="space-y-3">
-                <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-3">
-                  <div className="mb-1 text-xs font-semibold text-amber-400">
-                    🏦 {t("investorSub")}
-                  </div>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {t("investorSubDesc")}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-blue-400/20 bg-blue-400/5 p-3">
-                  <div className="mb-1 text-xs font-semibold text-blue-400">
-                    🎟 {t("audiencePreorder")}
-                  </div>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {t("audiencePreorderDesc")}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Trending */}
-            <div className="rounded-xl border border-border bg-card p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <IconChartBar className="size-4 text-primary" />
-                <span className="text-sm font-semibold">{t("onTrending")}</span>
-              </div>
-              <div className="space-y-2.5">
-                {projects.slice(0, 5).map((p, i) => (
-                  <Link key={p.id} href={`/ips/${p.id}`} className="flex items-center gap-2.5">
-                    <span
-                      className={cn(
-                        "flex size-5 shrink-0 items-center justify-center rounded text-xs font-black",
-                        i === 0 ? "bg-amber-400 text-black" : "bg-secondary text-muted-foreground"
-                      )}
-                    >
-                      {i + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium text-foreground">{p.name}</div>
-                      <span className="text-[10px] text-muted-foreground">
-                        {categories[String(p.typeId)] ?? ""}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-
-            {/* CTA */}
-            <div className="rounded-xl border border-border bg-card p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <IconBolt className="size-4 text-primary" />
-                <span className="text-sm font-semibold">{t("iHaveAnIP")}</span>
-              </div>
-              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-                {t("iHaveAnIPDesc")}
-              </p>
-              <Button
-                variant="soft"
-                size="sm"
-                className="w-full"
-                onClick={() => setCreateOpen(true)}
-              >
-                {t("publishNow")}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
 
       <CreateIPDialog open={createOpen} onOpenChange={setCreateOpen} />
+    </div>
+  );
+}
+
+// ─── Search Bar ───────────────────────────────────────
+
+function SearchBar({
+  search,
+  setSearch,
+  onCreate,
+}: {
+  search: string;
+  setSearch: (v: string) => void;
+  onCreate: () => void;
+}) {
+  const t = useTranslations("ip");
+  return (
+    <div className="flex items-center gap-3">
+      <div className="relative w-full max-w-md">
+        <IconSearch className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t("searchPlaceholder")}
+          className="h-10 border-border/60 bg-secondary/60 pl-10"
+        />
+      </div>
+      <Button onClick={onCreate}>
+        <IconBolt className="size-4" />
+        {t("createIP")}
+      </Button>
     </div>
   );
 }

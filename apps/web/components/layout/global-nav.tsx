@@ -82,14 +82,14 @@ export function GlobalNav() {
 
   if (!mounted) {
     return (
-      <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-14 items-center" style={{ maxWidth: 1400 }} />
       </header>
     );
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+    <header className="fixed inset-x-0 top-0 z-50 backdrop-blur-xl">
       <div className="mx-auto flex h-14 items-center justify-between px-6">
         {/* Logo + Nav */}
         <div className="flex items-center gap-8">

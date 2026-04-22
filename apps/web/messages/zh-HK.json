@@ -363,7 +363,13 @@
     "detailProducer": "製片人",
     "detailViewProfile": "查看主頁",
     "detailProjects": "個專案",
-    "detailManage": "管理"
+    "detailManage": "管理",
+    "moreInfo": "了解更多",
+    "rowTrending": "熱門 IP",
+    "rowRecent": "最新上架",
+    "searchResultsFor": "搜尋結果",
+    "scrollLeft": "向左捲動",
+    "scrollRight": "向右捲動"
   },
   "ipEdit": {
     "pageTitle": "IP 管理",

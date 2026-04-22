@@ -363,7 +363,13 @@
     "detailProducer": "Producer",
     "detailViewProfile": "View Profile",
     "detailProjects": "projects",
-    "detailManage": "Manage"
+    "detailManage": "Manage",
+    "moreInfo": "More Info",
+    "rowTrending": "Trending Now",
+    "rowRecent": "New Releases",
+    "searchResultsFor": "Search results for",
+    "scrollLeft": "Scroll left",
+    "scrollRight": "Scroll right"
   },
   "ipEdit": {
     "pageTitle": "IP Management",
