@@ -7,7 +7,7 @@ import {
   PROJECT_TYPES,
   SUGGESTED_TAGS,
   type IPCreateForm,
-} from "@/app/(site)/ip/_components/ip-mock";
+} from "@/app/(site)/ips/_components/ip-mock";
 
 interface Props {
   form: IPCreateForm;

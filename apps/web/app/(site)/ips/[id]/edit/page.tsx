@@ -32,7 +32,7 @@ import {
   TARGET_EPISODES_OPTIONS,
   PRESET_REWARDS,
   type IPRewardTier,
-} from "@/app/(site)/ip/_components/ip-mock";
+} from "@/app/(site)/ips/_components/ip-mock";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 
 // ─── Tabs ────────────────────────────────────────────

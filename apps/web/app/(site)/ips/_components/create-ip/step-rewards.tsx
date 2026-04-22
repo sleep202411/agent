@@ -8,7 +8,7 @@ import {
   PRESET_REWARDS,
   type IPCreateForm,
   type IPRewardTier,
-} from "@/app/(site)/ip/_components/ip-mock";
+} from "@/app/(site)/ips/_components/ip-mock";
 
 interface Props {
   form: IPCreateForm;

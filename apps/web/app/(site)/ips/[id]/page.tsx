@@ -25,8 +25,8 @@ import {
   PLAN_STATUS_CLASS,
   MOCK_IP_DETAIL,
   type IPDetail,
-} from "@/app/(site)/ip/_components/ip-mock";
-import { FundingSidebar } from "@/app/(site)/ip/_components/ip-detail-panels";
+} from "@/app/(site)/ips/_components/ip-mock";
+import { FundingSidebar } from "@/app/(site)/ips/_components/ip-detail-panels";
 import { env } from "@/src/env";
 import {
   useProjectDetail,

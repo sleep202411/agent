@@ -17,7 +17,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { CreateIPDialog } from "@/app/(site)/ip/_components/create-ip-dialog";
+import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
 import {
   searchIPProjects,
   getCategories,
