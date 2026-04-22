@@ -27,7 +27,7 @@ import { z } from "zod";
 export const showOptions = createTool({
   id: "show_options",
   description:
-    '让用户从一组选项里挑一个（或多个），仅在用户意图确实模糊、且不同选项有实质不同的成本/结果时才调。用户措辞明确（"只要分镜" / "完整流程"）就跳过这个工具直接 invoke_workflow。典型场景：上传剧本后要不要做完整角色/场景资产、多个 workflow 分叉。返回 {selectedIds: [...]}; single-select 时数组只有 1 个元素。',
+    '让用户从一组选项里挑一个（或多个）。用在用户意图**涉及多个已知实体但没锁定目标**的场景：比如"某一集加分镜"没说哪集（options=episode 列表）、"跳到那个角色"有多个候选（options=role 列表），或 workflow 分叉有不同成本/结果（完整流程 vs 只出分镜）。**千万不要用文字反问"请告诉我是哪个"**——卡片就是干这个的。用户措辞明确（"只要分镜" / 唯一匹配的"第 2 集"）就跳过，直接调对应原子工具 / invoke_workflow。返回 {selectedIds: [...]}; single-select 时数组只有 1 个元素。',
   inputSchema: z.object({
     title: z.string().describe("标题，5-15 字。例：'想怎么处理这份剧本？'"),
     description: z.string().optional().describe("副标题说明一句话（≤ 50 字），解释为什么要选"),

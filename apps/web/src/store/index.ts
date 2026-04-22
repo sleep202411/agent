@@ -1,5 +1,5 @@
 import { configureStore } from "@reduxjs/toolkit";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch, useSelector, useStore } from "react-redux";
 import { taskSlice } from "./slices/taskSlice";
 import { authSlice } from "./slices/authSlice";
 import { projectSlice } from "./slices/projectSlice";
@@ -37,3 +37,4 @@ export type AppDispatch = typeof store.dispatch;
 
 export const useAppDispatch = useDispatch.withTypes<AppDispatch>();
 export const useAppSelector = useSelector.withTypes<RootState>();
+export const useAppStore = useStore.withTypes<typeof store>();

@@ -14,7 +14,6 @@ import {
   IconPhoto,
   IconSparkles,
   IconUsers,
-  IconWand,
 } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -37,14 +36,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { applySeedanceTemplate, getSeedanceTemplate } from "@/src/lib/seedance";
 
 // ─── Display labels ────────────────────────────────────
 
 export const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
-  main_flow: "workflowMainFlow",
-  script_to_storyboard_flow: "workflowScriptToStoryboardFlow",
-  script_import_flow: "workflowScriptImportFlow",
   role_design: "workflowRoleDesign",
   scene_design: "workflowSceneDesign",
   prop_design: "workflowPropDesign",
@@ -70,9 +65,6 @@ interface WorkflowPersona {
 }
 
 export const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
-  main_flow: { name: "创作总监", icon: IconSparkles },
-  script_to_storyboard_flow: { name: "创作总监", icon: IconSparkles },
-  script_import_flow: { name: "创作总监", icon: IconSparkles },
   story_outline: { name: "剧本统筹", icon: IconBook },
   parse_script: { name: "剧本统筹", icon: IconBook },
   role_design: { name: "角色设计师", icon: IconUsers },
@@ -527,11 +519,6 @@ function DraftCard({ draft, onClick }: { draft: Draft; onClick: () => void }) {
   );
 }
 
-function buildSeedancePrompt(draft: Draft): string {
-  const base = String(((draft.data ?? {}) as Record<string, unknown>).prompt ?? "");
-  return applySeedanceTemplate(base, draft.entityType);
-}
-
 function DraftDetailDialog({
   draft,
   open,
@@ -569,9 +556,6 @@ function DraftDetailDialog({
     // Pin 集数 to the top — the rest keeps Java's natural order.
     .sort(([a], [b]) => (a === "sortHint" ? -1 : b === "sortHint" ? 1 : 0));
 
-  const hasPromptField = typeof data.prompt === "string";
-  const hasSeedanceAction =
-    !!draft && hasPromptField && getSeedanceTemplate(draft.entityType) !== null;
   const originalPrompt = String(data.prompt ?? "");
 
   const [editedPrompt, setEditedPrompt] = useState(originalPrompt);
@@ -584,15 +568,6 @@ function DraftDetailDialog({
   }, [draft?.clientRefId, open]);
 
   const hasChanges = editedPrompt !== originalPrompt;
-
-  const handleSeedance = () => {
-    if (!draft) return;
-    setEditedPrompt(buildSeedancePrompt(draft));
-  };
-
-  const handleReset = () => {
-    setEditedPrompt(originalPrompt);
-  };
 
   const handleCancel = () => {
     onOpenChange(false);
@@ -644,31 +619,6 @@ function DraftDetailDialog({
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {labelForDraftField(key)}
                   </div>
-                  {isPromptRow && (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        color="muted"
-                        size="xs"
-                        onClick={handleReset}
-                        disabled={!hasChanges || saving}
-                      >
-                        重置
-                      </Button>
-                      {hasSeedanceAction && (
-                        <Button
-                          variant="outline"
-                          color="muted"
-                          size="xs"
-                          onClick={handleSeedance}
-                          disabled={saving}
-                        >
-                          <IconWand />
-                          生成 Seedance 2.0 提示词
-                        </Button>
-                      )}
-                    </div>
-                  )}
                 </div>
                 {isPromptRow ? (
                   <textarea

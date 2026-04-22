@@ -6,6 +6,8 @@ import { AssetsProxyController } from './assets-proxy.controller';
 import { DictionariesController } from './dictionaries.controller';
 import { MessageStoreService } from './chat/message-store.service';
 import { ChatEventsGateway } from './chat/chat-events.gateway';
+import { EntityEventsGateway } from './chat/entity-events.gateway';
+import { EntityEventsService } from './chat/entity-events.service';
 import { AgentStreamService } from './chat/agent-stream.service';
 import { ChatController } from './chat/chat.controller';
 import { WorkflowProxyController } from './workflow/workflow-proxy.controller';
@@ -25,7 +27,10 @@ import { DraftsProxyController } from './workflow/drafts-proxy.controller';
     WorkspaceService,
     MessageStoreService,
     ChatEventsGateway,
+    EntityEventsGateway,
+    EntityEventsService,
     AgentStreamService,
   ],
+  exports: [EntityEventsService],
 })
 export class AssistantModule {}

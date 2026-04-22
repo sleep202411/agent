@@ -208,9 +208,32 @@ export interface AssistantConfigureParamsResult {
  * stylePainting / dialogLanguage) aren't all set. Frontend renders
  * ProjectParamsForm; submit → confirmed:true, supervisor continues.
  */
+/** @see `apps/agent/src/mastra/tools/meta/require-params.ts` for the source-of-truth schema. */
+export interface SuggestedProjectParams {
+  stylePainting?: string;
+  chapterLength?: number;
+  targetEpisodeCount?: number;
+  dialogLanguage?: string;
+  aspectRatioType?: string;
+  reasoning?: string;
+}
+
+/**
+ * Workflow the supervisor wants to auto-start once the form is submitted.
+ * Frontend stashes this with the form state, forwards it verbatim with
+ * confirmProjectParams so Nest can short-circuit dispatch (bypass a second
+ * LLM turn).
+ */
+export interface OnConfirmWorkflow {
+  workflowName: string;
+  inputData?: Record<string, unknown>;
+}
+
 export interface AssistantRequireProjectParamsInput {
   /** Optional short explanation the LLM can pass — not rendered, just logged. */
   reason?: string;
+  suggestedParams?: SuggestedProjectParams;
+  onConfirmWorkflow?: OnConfirmWorkflow;
 }
 
 export interface AssistantRequireProjectParamsResult {

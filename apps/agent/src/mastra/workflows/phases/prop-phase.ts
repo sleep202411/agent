@@ -1,13 +1,11 @@
 /**
- * prop_phase — produce a committed prop list from the project skeleton.
+ * prop_phase — produce prop drafts and end.
  *
- * Mirror of role_phase / scene_phase. Uses the `props` roster from the story
- * outline (added in script-breakdown BreakdownShape). Each entry gets
- * elaborated by propDesigner into a full prop spec → draft → HITL → commit
- * to Java's worldprop table.
+ * Post-Stage-C: generate drafts → publish workflow_suspended event → END.
+ * No Mastra suspend/resume. Commit via `applyPropDrafts()`.
  *
- * If the outline has no props roster (older outlines may not, schema is
- * optional), this workflow exits cleanly with `no_props`.
+ * Special case: if the story outline has no props roster, the phase emits
+ * a "no_props" completion (no review needed) and ends immediately.
  */
 import { randomUUID } from "node:crypto";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
@@ -22,11 +20,11 @@ import {
   markDraftFailed,
   putDraft,
 } from "../../lib/drafts";
-import { reportProgress, startWorkflow, throwIfCancelled } from "../engine";
-import { getContext } from "../../lib/workspace-client";
+import { reportProgress, throwIfCancelled } from "../engine";
+import { getContext, type StoryosContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
-import { PRICES, deductCredits, estimateWorkflowCost, phaseDeductKey } from "../../lib/billing";
+import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -61,27 +59,9 @@ export const PropPhaseInputSchema = z.object({
 });
 
 export const PropPhaseOutputSchema = z.object({
-  outcome: z.enum(["committed", "rejected", "partial_failure", "no_props"]),
-  committed: z.array(z.object({ clientRefId: z.string(), serverId: z.string(), name: z.string() })),
-  failed: z.array(z.object({ clientRefId: z.string(), name: z.string(), reason: z.string() })),
-  message: z.string(),
-});
-
-const StateSchema = z.object({
-  draftClientRefIds: z.array(z.string()).default([]),
-  nameByRef: z.record(z.string(), z.string()).default({}),
-});
-
-const ResumeSchema = z.object({
-  approved: z.boolean(),
-  feedback: z.string().optional(),
-  acceptedClientRefIds: z.array(z.string()).optional(),
-});
-
-const SuspendSchema = z.object({
   runId: z.string(),
-  propCount: z.number(),
-  phase: z.literal("prop"),
+  draftCount: z.number(),
+  message: z.string(),
 });
 
 const ResolvedInputSchema = z.object({
@@ -150,7 +130,6 @@ const resolveInputStep = createStep({
 
     const propsRoster = record.outline.props ?? [];
     if (propsRoster.length === 0) {
-      // Not an error — story may not warrant any story-relevant props.
       return { worldId: inputData.worldId, props: [] };
     }
 
@@ -201,20 +180,17 @@ const resolveInputStep = createStep({
   },
 });
 
-// ─── Step 1: collect drafts ───────────────────────────────────────────
+// ─── Step 1: collect drafts into Redis ────────────────────────────────
 
 const collectDraftsStep = createStep({
   id: "collect_drafts",
   inputSchema: ResolvedInputSchema,
   outputSchema: z.object({ draftCount: z.number() }),
-  stateSchema: StateSchema,
-  execute: async ({ inputData, setState, requestContext }) => {
+  execute: async ({ inputData, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
     await throwIfCancelled(runId);
 
-    const draftClientRefIds: string[] = [];
-    const nameByRef: Record<string, string> = {};
     let i = 0;
     for (const p of inputData.props) {
       const clientRefId = randomUUID();
@@ -235,8 +211,6 @@ const collectDraftsStep = createStep({
         prompt: imagePrompt,
       };
       await putDraft(runId, "prop", clientRefId, data);
-      draftClientRefIds.push(clientRefId);
-      nameByRef[clientRefId] = p.name;
       i += 1;
       await reportProgress(runId, {
         stepId: "prop_phase.collect",
@@ -245,258 +219,72 @@ const collectDraftsStep = createStep({
         label: `已收集 ${i}/${inputData.props.length} 个道具草稿`,
       });
     }
-    setState({ draftClientRefIds, nameByRef });
-    return { draftCount: draftClientRefIds.length };
+    return { draftCount: i };
   },
 });
 
-// ─── Step 2: HITL gate ────────────────────────────────────────────────
+// ─── Step 2: emit awaiting-review event (or no-props completion) ──────
 
-const waitConfirmationStep = createStep({
-  id: "wait_confirmation",
+const emitReviewStep = createStep({
+  id: "emit_review",
   inputSchema: z.object({ draftCount: z.number() }),
-  outputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
-  stateSchema: StateSchema,
-  resumeSchema: ResumeSchema,
-  suspendSchema: SuspendSchema,
-  execute: async ({ inputData, resumeData, suspend, requestContext }) => {
-    const runId = requestContext?.get("runId") as string | undefined;
-    if (!runId) throw new Error("runId missing");
-    const ctx = getContext(requestContext);
-
-    // Fast-path: zero props in the outline roster — don't bother suspending.
-    if (inputData.draftCount === 0) {
-      return { approved: true, feedback: undefined, acceptedClientRefIds: [] };
-    }
-
-    if (!resumeData) {
-      await reportProgress(runId, {
-        stepId: "prop_phase.confirm",
-        current: inputData.draftCount,
-        total: inputData.draftCount,
-        label: `已生成 ${inputData.draftCount} 个道具，等待确认后进入下一阶段`,
-      });
-      const drafts = await listDrafts<PropCreateData>(runId, {
-        entityType: "prop",
-        statuses: ["pending"],
-      });
-      await publishWorkflowSuspended(ctx.projectId, runId, "prop_phase", {
-        draftGroups: [
-          {
-            entityType: "prop",
-            count: drafts.length,
-            items: drafts.map((d) => ({
-              clientRefId: d.clientRefId,
-              data: d.data as unknown as Record<string, unknown>,
-            })),
-          },
-        ],
-        totalDraftCount: drafts.length,
-        estimatedCost: drafts.length * PRICES.propPerUnit,
-        nextAction: {
-          workflowName: "episode_phase",
-          estimatedCost: estimateWorkflowCost("episode_phase", null),
-        },
-      });
-      return await suspend({
-        runId,
-        propCount: inputData.draftCount,
-        phase: "prop" as const,
-      });
-    }
-    return {
-      approved: resumeData.approved,
-      feedback: resumeData.feedback,
-      acceptedClientRefIds: resumeData.acceptedClientRefIds,
-    };
-  },
-});
-
-// ─── Step 3: commit or reject ─────────────────────────────────────────
-
-const applyDecisionStep = createStep({
-  id: "apply_decision",
-  inputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
   outputSchema: PropPhaseOutputSchema,
-  stateSchema: StateSchema,
-  execute: async ({ inputData, state, requestContext }) => {
+  execute: async ({ inputData, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
-    await throwIfCancelled(runId);
-
     const ctx = getContext(requestContext);
-    const draftClientRefIds = state.draftClientRefIds ?? [];
-    const nameByRef = state.nameByRef ?? {};
 
-    // Charge regardless of approved/rejected — LLM cost was incurred at
-    // generate step. See lib/billing.ts.
-    if (draftClientRefIds.length > 0) {
-      await deductCredits(ctx, {
-        amount: draftClientRefIds.length * PRICES.propPerUnit,
-        reason: `prop_phase ${draftClientRefIds.length} drafts (approved=${inputData.approved})`,
-        idempotencyKey: phaseDeductKey(runId, "prop_phase"),
-      });
-    }
-
-    // Zero-props short-circuit from waitConfirmationStep. Even with no
-    // props to commit, auto-chain to prop_image_phase so the user gets a
-    // uniform flow (the image phase will itself emit "no_props" and move
-    // on quickly).
-    if (draftClientRefIds.length === 0) {
+    // No props in outline → immediately publish a completion (no review
+    // needed, no drafts to approve) and move user toward episode phase.
+    if (inputData.draftCount === 0) {
       await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
         committed: [],
         summary: "本故事骨架里没有需要单独设计的道具，已跳过。",
-        compact: true,
+        nextSteps: [
+          {
+            workflowName: "episode_phase",
+            labelKey: "workflowNextContinueToEpisodes",
+            variant: "primary",
+          },
+        ],
       });
-      const inMainFlow = requestContext?.get("inMainFlow") === true;
-      if (!inMainFlow) {
-        try {
-          await startWorkflow({
-            workflowName: "prop_image_phase",
-            inputData: {},
-            ctx,
-          });
-        } catch (err) {
-          console.warn(
-            `[prop_phase] auto-chain prop_image_phase failed (no_props path):`,
-            err instanceof Error ? err.message : String(err)
-          );
-        }
-      }
       return {
-        outcome: "no_props" as const,
-        committed: [],
-        failed: [],
+        runId,
+        draftCount: 0,
         message: "本故事骨架里没有需要单独设计的道具，已跳过。",
       };
     }
 
-    if (!inputData.approved) {
-      for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
-      await publishWorkflowFailed(ctx.projectId, runId, "prop_phase", {
-        terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
-        retryable: false,
-      });
-      return {
-        outcome: "rejected" as const,
-        committed: [],
-        failed: [],
-        message: inputData.feedback
-          ? `道具阶段未通过。反馈：${inputData.feedback}`
-          : "道具阶段未通过。",
-      };
-    }
+    await reportProgress(runId, {
+      stepId: "prop_phase.review",
+      current: inputData.draftCount,
+      total: inputData.draftCount,
+      label: `已生成 ${inputData.draftCount} 个道具，等待确认后进入下一阶段`,
+    });
 
-    const accepted = new Set(inputData.acceptedClientRefIds ?? draftClientRefIds);
     const drafts = await listDrafts<PropCreateData>(runId, {
       entityType: "prop",
       statuses: ["pending"],
     });
-    const items = drafts
-      .filter((d) => accepted.has(d.clientRefId))
-      .map((d) => ({ clientRefId: d.clientRefId, data: d.data }));
-
-    for (const it of items) await markDraftCommitting(runId, it.clientRefId);
-
-    const startLabel = `入库 ${items.length} 个道具…`;
-    await reportProgress(runId, {
-      stepId: "prop_phase.commit",
-      current: 0,
-      total: items.length,
-      label: startLabel,
+    await publishWorkflowSuspended(ctx.projectId, runId, "prop_phase", {
+      draftGroups: [
+        {
+          entityType: "prop",
+          count: drafts.length,
+          items: drafts.map((d) => ({
+            clientRefId: d.clientRefId,
+            data: d.data as unknown as Record<string, unknown>,
+          })),
+        },
+      ],
+      totalDraftCount: drafts.length,
+      estimatedCost: drafts.length * PRICES.propPerUnit,
     });
-    await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "committing", {
-      current: 0,
-      total: items.length,
-      label: startLabel,
-    });
-
-    const results = await batchUpsertProps(ctx, items, { concurrency: 1 });
-
-    const committed: PropPhaseOutput["committed"] = [];
-    const failed: PropPhaseOutput["failed"] = [];
-    for (const r of results) {
-      const name = nameByRef[r.clientRefId] ?? "(unknown)";
-      if (r.status === "created" || r.status === "unchanged") {
-        await markDraftCommitted(runId, r.clientRefId, r.serverId!);
-        committed.push({ clientRefId: r.clientRefId, serverId: r.serverId!, name });
-      } else {
-        await markDraftFailed(runId, r.clientRefId, r.error ?? "unknown");
-        failed.push({ clientRefId: r.clientRefId, name, reason: r.error ?? "unknown" });
-      }
-    }
-
-    const summary = summarizeBatch(results);
-    const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
-
-    if (outcome === "committed") await deleteAllDrafts(runId);
-
-    const endLabel = `道具入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
-    await reportProgress(runId, {
-      stepId: "prop_phase.commit",
-      current: committed.length,
-      total: items.length,
-      label: endLabel,
-    });
-    await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "committing", {
-      current: committed.length,
-      total: items.length,
-      label: endLabel,
-    });
-
-    const summaryText =
-      outcome === "committed"
-        ? `已入库 ${committed.length} 个道具，进入下一阶段。`
-        : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
-
-    const inMainFlow = requestContext?.get("inMainFlow") === true;
-    await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
-      committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
-      failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-      summary: summaryText,
-      // Inside main_flow: compact chip (pipeline auto-advances). Standalone:
-      // full card with "继续·出图" button (see role-phase for rationale).
-      ...(inMainFlow
-        ? { compact: true as const }
-        : {
-            nextStep: {
-              workflowName: "prop_image_phase" as const,
-              labelKey: "workflowNextContinueToPropImages",
-            },
-          }),
-    });
-
-    // Auto-chain regardless of partial_failure — see role-phase comment.
-    // Skip when running inside main_flow (see role-phase for details).
-    if (!inMainFlow) {
-      try {
-        await startWorkflow({
-          workflowName: "prop_image_phase",
-          inputData: {},
-          ctx,
-        });
-      } catch (err) {
-        console.warn(
-          `[prop_phase] auto-chain prop_image_phase failed:`,
-          err instanceof Error ? err.message : String(err)
-        );
-      }
-    }
 
     return {
-      outcome,
-      committed,
-      failed,
-      message: summaryText,
+      runId,
+      draftCount: inputData.draftCount,
+      message: `已生成 ${inputData.draftCount} 个道具草稿，等待确认。`,
     };
   },
 });
@@ -506,15 +294,148 @@ const applyDecisionStep = createStep({
 export const propPhaseWorkflow = createWorkflow({
   id: "prop_phase",
   description:
-    "道具阶段：从故事骨架 props 名册扩展出完整道具设计，草稿 → HITL → 入库。空名册时直接跳过。",
+    "道具阶段：从故事骨架 props 名册扩展 → 道具草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库。",
   inputSchema: PropPhaseInputSchema,
   outputSchema: PropPhaseOutputSchema,
-  stateSchema: StateSchema,
 })
   .then(resolveInputStep)
   .then(collectDraftsStep)
-  .then(waitConfirmationStep)
-  .then(applyDecisionStep)
+  .then(emitReviewStep)
   .commit();
 
-export type PropPhaseOutput = z.infer<typeof PropPhaseOutputSchema>;
+// ─── Apply helper ──────────────────────────────────────────────────────
+
+export interface ApplyPropDraftsOptions {
+  ctx: StoryosContext;
+  runId: string;
+  approved: boolean;
+  feedback?: string;
+  acceptedClientRefIds?: string[];
+}
+
+export interface ApplyPropDraftsResult {
+  outcome: "committed" | "partial_failure" | "rejected";
+  committedCount: number;
+  failedCount: number;
+  message: string;
+}
+
+export async function applyPropDrafts(
+  opts: ApplyPropDraftsOptions
+): Promise<ApplyPropDraftsResult> {
+  const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  await throwIfCancelled(runId);
+
+  const pending = await listDrafts<PropCreateData>(runId, {
+    entityType: "prop",
+    statuses: ["pending"],
+  });
+  const nameByRef: Record<string, string> = {};
+  for (const d of pending) nameByRef[d.clientRefId] = d.data.name;
+  const pendingRefIds = pending.map((d) => d.clientRefId);
+
+  if (pendingRefIds.length > 0) {
+    await deductCredits(ctx, {
+      amount: pendingRefIds.length * PRICES.propPerUnit,
+      reason: `prop_phase ${pendingRefIds.length} drafts (approved=${approved})`,
+      idempotencyKey: phaseDeductKey(runId, "prop_phase"),
+    });
+  }
+
+  if (!approved) {
+    for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
+    await publishWorkflowFailed(ctx.projectId, runId, "prop_phase", {
+      terminalStatus: "cancelled",
+      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      retryable: false,
+    });
+    return {
+      outcome: "rejected",
+      committedCount: 0,
+      failedCount: 0,
+      message: feedback ? `道具阶段未通过。反馈：${feedback}` : "道具阶段未通过。",
+    };
+  }
+
+  const accepted = new Set(acceptedClientRefIds ?? pendingRefIds);
+  const items = pending
+    .filter((d) => accepted.has(d.clientRefId))
+    .map((d) => ({ clientRefId: d.clientRefId, data: d.data }));
+
+  for (const it of items) await markDraftCommitting(runId, it.clientRefId);
+
+  const startLabel = `入库 ${items.length} 个道具…`;
+  await reportProgress(runId, {
+    stepId: "prop_phase.commit",
+    current: 0,
+    total: items.length,
+    label: startLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "committing", {
+    current: 0,
+    total: items.length,
+    label: startLabel,
+  });
+
+  const results = await batchUpsertProps(ctx, items, { concurrency: 1 });
+
+  const committed: Array<{ serverId: string; name: string }> = [];
+  const failed: Array<{ clientRefId: string; name: string; reason: string }> = [];
+  for (const r of results) {
+    const name = nameByRef[r.clientRefId] ?? "(unknown)";
+    if (r.status === "created" || r.status === "unchanged") {
+      await markDraftCommitted(runId, r.clientRefId, r.serverId!);
+      committed.push({ serverId: r.serverId!, name });
+    } else {
+      await markDraftFailed(runId, r.clientRefId, r.error ?? "unknown");
+      failed.push({ clientRefId: r.clientRefId, name, reason: r.error ?? "unknown" });
+    }
+  }
+
+  const summary = summarizeBatch(results);
+  const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
+  if (outcome === "committed") await deleteAllDrafts(runId);
+
+  const endLabel = `道具入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  await reportProgress(runId, {
+    stepId: "prop_phase.commit",
+    current: committed.length,
+    total: items.length,
+    label: endLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "committing", {
+    current: committed.length,
+    total: items.length,
+    label: endLabel,
+  });
+
+  const summaryText =
+    outcome === "committed"
+      ? `已入库 ${committed.length} 个道具，进入下一阶段。`
+      : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+
+  await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
+    committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
+    failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+    summary: summaryText,
+    nextSteps: [
+      {
+        workflowName: "prop_image_phase",
+        labelKey: "workflowNextContinueToPropImages",
+        variant: "primary",
+      },
+      {
+        workflowName: "episode_phase",
+        labelKey: "workflowNextSkipToEpisodes",
+        variant: "secondary",
+      },
+    ],
+  });
+
+  return {
+    outcome,
+    committedCount: committed.length,
+    failedCount: failed.length,
+    message: summaryText,
+  };
+}

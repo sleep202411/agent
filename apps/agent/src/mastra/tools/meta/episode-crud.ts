@@ -9,6 +9,7 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { getContext, javaRequest } from "../../lib/workspace-client";
+import { publishEntityEvent } from "../../lib/entity-events";
 
 // ─── update_episode ────────────────────────────────────────────────────
 
@@ -58,6 +59,13 @@ export const updateEpisode = createTool({
         ...(behindPrompt !== undefined ? { behindPrompt } : {}),
       },
     });
+    await publishEntityEvent(ctx, {
+      entity: "episode",
+      action: "updated",
+      id: episodeId,
+      episodeId,
+      source: "update_episode",
+    });
     return {
       ok: true,
       message: `已更新集「${String(current.title ?? episodeId)}」`,
@@ -81,6 +89,13 @@ export const deleteEpisode = createTool({
   execute: async ({ episodeId }, execCtx) => {
     const ctx = getContext(execCtx?.requestContext);
     await javaRequest(ctx, `/api/user/world/delete/episode?id=${encodeURIComponent(episodeId)}`);
+    await publishEntityEvent(ctx, {
+      entity: "episode",
+      action: "deleted",
+      id: episodeId,
+      episodeId,
+      source: "delete_episode",
+    });
     return { ok: true, message: `已删除集 ${episodeId}` };
   },
 });

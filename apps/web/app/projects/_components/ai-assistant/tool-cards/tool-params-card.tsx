@@ -13,13 +13,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
+import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
+
+export interface ParamFieldOption {
+  label: string;
+  value: string;
+}
 
 interface ParamField {
   key: string;
   label: string;
   type: "number" | "text" | "select";
   value: string | number;
-  options?: string[];
+  /**
+   * Select options as `{label, value}`. For key === "stylePainting" the
+   * card overrides whatever LLM supplied with the real Java dictionary
+   * (`/aurora/dictionaries/painting-styles`) on mount, so style IDs stay
+   * in sync with the backend.
+   */
+  options?: ParamFieldOption[];
   suffix?: string;
   min?: number;
   max?: number;
@@ -29,7 +41,17 @@ interface ToolParamsCardProps {
   title: string;
   description?: string;
   fields: ParamField[];
-  onSubmit: (values: Record<string, string | number>) => void;
+  /**
+   * `values` carries the raw submission (dictionary IDs for select fields).
+   * `displayLabels` maps each key to the human-readable label (option.label
+   * for selects, raw value for inputs). Callers use displayLabels for UI
+   * rendering (tool result summary) while passing `values` to the agent /
+   * downstream workflows.
+   */
+  onSubmit: (
+    values: Record<string, string | number>,
+    displayLabels: Record<string, string>
+  ) => void;
   onDismiss?: () => void;
   disabled?: boolean;
 }
@@ -47,17 +69,76 @@ export function ToolParamsCard({
     Object.fromEntries(fields.map((f) => [f.key, f.value]))
   );
 
-  const totalSteps = fields.length;
-  const currentField = fields[step];
+  // Auto-load Java dictionaries for fields that need them so the options
+  // stay in sync with backend (LLM can't know dynamic style IDs; the
+  // `stylePainting` field is the main one — the picked value is a real
+  // style ID downstream `stylePaintingHint` can look up).
+  const [dictOptions, setDictOptions] = useState<Record<string, ParamFieldOption[]>>({});
+  useEffect(() => {
+    const needsStyleDict = fields.some((f) => f.key === "stylePainting");
+    if (!needsStyleDict) return;
+    let cancelled = false;
+    void fetchProjectDictionaries()
+      .then((dicts) => {
+        if (cancelled) return;
+        const styleOpts: ParamFieldOption[] = dicts.styleOptions.map((s) => ({
+          label: s.info || s.id,
+          value: s.id,
+        }));
+        if (styleOpts.length > 0) {
+          setDictOptions((prev) => ({ ...prev, stylePainting: styleOpts }));
+        }
+      })
+      .catch((err) => {
+        // Soft-fail — LLM's fallback options still render.
+        // eslint-disable-next-line no-console
+        console.warn("[ToolParamsCard] load style dictionary failed:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fields]);
+
+  // Merge dictionary-supplied options into the field spec (override LLM's
+  // placeholder when dict loaded successfully).
+  const resolvedFields: ParamField[] = fields.map((f) =>
+    dictOptions[f.key] ? { ...f, options: dictOptions[f.key] } : f
+  );
+
+  const totalSteps = resolvedFields.length;
+  const currentField = resolvedFields[step];
   const isLastStep = step === totalSteps - 1;
 
   const updateValue = (key: string, value: string | number) => {
     setValues((prev) => ({ ...prev, [key]: value }));
   };
 
+  /**
+   * Build a map of {fieldKey: humanReadableLabel} from the current values.
+   * For select fields, looks up the matching option.label (so e.g.
+   * stylePainting=2 displays as "Cartoon Style" in the tool-result
+   * summary). For input fields, just stringifies the value.
+   */
+  const buildDisplayLabels = (
+    finalValues: Record<string, string | number>
+  ): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const f of resolvedFields) {
+      const v = finalValues[f.key];
+      if (v === undefined || v === null || v === "") continue;
+      if (f.type === "select" && f.options) {
+        const matched = f.options.find((o) => String(o.value) === String(v));
+        out[f.key] = matched?.label ?? String(v);
+      } else {
+        out[f.key] = String(v);
+      }
+    }
+    return out;
+  };
+
   const handleNext = () => {
     if (isLastStep) {
-      onSubmit(values);
+      onSubmit(values, buildDisplayLabels(values));
     } else {
       setStep((s) => s + 1);
     }
@@ -128,7 +209,8 @@ export function ToolParamsCard({
               updateValue(currentField.key, val);
               // Auto-advance on select
               if (isLastStep) {
-                onSubmit({ ...values, [currentField.key]: val });
+                const finalValues = { ...values, [currentField.key]: val };
+                onSubmit(finalValues, buildDisplayLabels(finalValues));
               } else {
                 setStep((s) => s + 1);
               }
@@ -260,7 +342,7 @@ function SelectStep({
   const t = useTranslations("ai");
   const options = field.options ?? [];
   const [focusIndex, setFocusIndex] = useState(() => {
-    const idx = options.indexOf(value);
+    const idx = options.findIndex((o) => o.value === value);
     return idx >= 0 ? idx : 0;
   });
   const [customInput, setCustomInput] = useState("");
@@ -284,7 +366,7 @@ function SelectStep({
           if (isCustomFocused) break;
           e.preventDefault();
           if (focusIndex < options.length) {
-            onSelect(options[focusIndex]);
+            onSelect(options[focusIndex].value);
           } else {
             customInputRef.current?.focus();
           }
@@ -300,18 +382,21 @@ function SelectStep({
 
   return (
     <div>
-      <div className="py-1">
+      {/* Scrollable options list — cap height so long dictionaries (18+
+          painting styles etc.) don't blow the card past viewport. Custom
+          "其他..." input stays pinned outside the scroll region below. */}
+      <div className="max-h-[320px] overflow-y-auto py-1">
         {options.map((opt, index) => (
           <button
-            key={opt}
+            key={opt.value}
             type="button"
             disabled={disabled}
-            onClick={() => onSelect(opt)}
+            onClick={() => onSelect(opt.value)}
             onMouseEnter={() => setFocusIndex(index)}
             className={cn(
               "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-all active:scale-[0.99]",
               focusIndex === index ? "bg-white/8" : "hover:bg-white/6",
-              value === opt && "bg-primary/10"
+              value === opt.value && "bg-primary/10"
             )}
           >
             <span
@@ -324,11 +409,13 @@ function SelectStep({
             >
               {index + 1}
             </span>
-            <span className="text-[13px]">{opt}</span>
+            <span className="text-[13px]">{opt.label}</span>
           </button>
         ))}
+      </div>
 
-        {/* Custom input */}
+      <div className="py-1">
+        {/* Custom input — stays visible regardless of options list scroll */}
         <div
           className={cn(
             "mt-0.5 flex items-center gap-3 rounded-lg px-2.5 py-2 transition-all",

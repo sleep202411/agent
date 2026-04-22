@@ -19,7 +19,7 @@ import {
   putDraft,
 } from "../../lib/drafts";
 import { reportProgress, throwIfCancelled } from "../engine";
-import { getContext, javaRequest } from "../../lib/workspace-client";
+import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
 import { resolveSceneIdByName } from "../../lib/storyboard-ids";
 import {
   publishWorkflowCompleted,
@@ -118,45 +118,16 @@ const ResolvedGenerateInputSchema = z.object({
 });
 
 export const StoryboardPhaseOutputSchema = z.object({
-  outcome: z.enum(["committed", "rejected", "partial_failure"]),
-  committed: z.array(z.object({ episodeId: z.string(), title: z.string(), shotCount: z.number() })),
-  failed: z.array(z.object({ episodeId: z.string(), title: z.string(), reason: z.string() })),
+  runId: z.string(),
+  draftCount: z.number(),
   message: z.string(),
 });
 
-/**
- * Per-episode storyboard accumulated during generateStep. `rows` defaults
- * to `[]` so a partial entry persisted by a previous run (e.g. Mastra
- * saved state after one episode had been added to `generated` but before
- * its rows were populated) still parses cleanly on the next start. An
- * empty `rows` just means "nothing to commit for this episode" — the
- * commit step's summarize already handles that outcome.
- */
-const StateSchema = z.object({
-  generated: z
-    .array(
-      z.object({
-        clientRefId: z.string(),
-        episodeId: z.string(),
-        title: z.string(),
-        rows: z.array(StoryboardRow).default([]),
-      })
-    )
-    .default([]),
-});
-
-const ResumeSchema = z.object({
-  approved: z.boolean(),
-  feedback: z.string().optional(),
-  acceptedClientRefIds: z.array(z.string()).optional(),
-});
-
-const SuspendSchema = z.object({
-  runId: z.string(),
-  episodeCount: z.number(),
-  totalShots: z.number(),
-  phase: z.literal("storyboard"),
-});
+interface StoryboardDraftData {
+  episodeId: string;
+  title: string;
+  rows: z.infer<typeof StoryboardRow>[];
+}
 
 // ─── Step 0: resolve inputs — pull committed episodes + scripts ──────
 
@@ -257,8 +228,7 @@ const generateStep = createStep({
   id: "generate",
   inputSchema: ResolvedGenerateInputSchema,
   outputSchema: z.object({ episodeCount: z.number(), totalShots: z.number() }),
-  stateSchema: StateSchema,
-  execute: async ({ inputData, setState, mastra, requestContext }) => {
+  execute: async ({ inputData, mastra, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
 
@@ -280,7 +250,12 @@ const generateStep = createStep({
 
     // Per-index slots preserve input order in the final `generated` array
     // regardless of which worker finishes when.
-    type GeneratedEntry = z.infer<typeof StateSchema>["generated"][number];
+    type GeneratedEntry = {
+      clientRefId: string;
+      episodeId: string;
+      title: string;
+      rows: z.infer<typeof StoryboardRow>[];
+    };
     const generatedByIndex: Array<GeneratedEntry | null> = new Array(total).fill(null);
     const errorsByIndex: Array<string | null> = new Array(total).fill(null);
 
@@ -403,7 +378,6 @@ const generateStep = createStep({
     const generated = generatedByIndex.filter((g): g is GeneratedEntry => g !== null);
     const totalShots = generated.reduce((sum, g) => sum + g.rows.length, 0);
 
-    setState({ generated });
     return { episodeCount: generated.length, totalShots };
   },
 });
@@ -504,59 +478,49 @@ function buildPrompt(
   ].join("\n");
 }
 
-// ─── Step 2: HITL ─────────────────────────────────────────────────────
+// ─── Step 2: emit awaiting-review + end ───────────────────────────────
 
-const waitConfirmationStep = createStep({
-  id: "wait_confirmation",
+const emitReviewStep = createStep({
+  id: "emit_review",
   inputSchema: z.object({ episodeCount: z.number(), totalShots: z.number() }),
-  outputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
-  stateSchema: StateSchema,
-  resumeSchema: ResumeSchema,
-  suspendSchema: SuspendSchema,
-  execute: async ({ inputData, resumeData, suspend, requestContext }) => {
+  outputSchema: StoryboardPhaseOutputSchema,
+  execute: async ({ inputData, requestContext }) => {
     const runId = requestContext?.get("runId") as string | undefined;
     if (!runId) throw new Error("runId missing");
     const ctx = getContext(requestContext);
 
-    if (!resumeData) {
-      await reportProgress(runId, {
-        stepId: "storyboard_phase.confirm",
-        current: inputData.episodeCount,
-        total: inputData.episodeCount,
-        label: `${inputData.episodeCount} 集分镜（${inputData.totalShots} 个镜头）已就绪，等待确认`,
-      });
-      const drafts = await listDrafts<{
-        episodeId: string;
-        title: string;
-        rows: z.infer<typeof StoryboardRow>[];
-      }>(runId, { entityType: "shot", statuses: ["pending"] });
-      await publishWorkflowSuspended(ctx.projectId, runId, "storyboard_phase", {
-        draftGroups: [
-          {
-            entityType: "shot",
-            count: drafts.length,
-            items: drafts.map((d) => ({
-              clientRefId: d.clientRefId,
-              data: d.data as unknown as Record<string, unknown>,
-            })),
-          },
-        ],
-        totalDraftCount: drafts.length,
-        estimatedCost: drafts.length * PRICES.storyboardPerEpisode,
-        // Terminal phase — no nextAction; UI falls back to "完成" label.
-      });
-      return await suspend({
-        runId,
-        episodeCount: inputData.episodeCount,
-        totalShots: inputData.totalShots,
-        phase: "storyboard" as const,
-      });
-    }
-    return resumeData;
+    await reportProgress(runId, {
+      stepId: "storyboard_phase.review",
+      current: inputData.episodeCount,
+      total: inputData.episodeCount,
+      label: `${inputData.episodeCount} 集分镜（${inputData.totalShots} 个镜头）已就绪，等待确认`,
+    });
+
+    const drafts = await listDrafts<StoryboardDraftData>(runId, {
+      entityType: "shot",
+      statuses: ["pending"],
+    });
+    await publishWorkflowSuspended(ctx.projectId, runId, "storyboard_phase", {
+      draftGroups: [
+        {
+          entityType: "shot",
+          count: drafts.length,
+          items: drafts.map((d) => ({
+            clientRefId: d.clientRefId,
+            data: d.data as unknown as Record<string, unknown>,
+          })),
+        },
+      ],
+      totalDraftCount: drafts.length,
+      estimatedCost: drafts.length * PRICES.storyboardPerEpisode,
+      // Terminal phase — no nextAction; UI falls back to "完成" label.
+    });
+
+    return {
+      runId,
+      draftCount: drafts.length,
+      message: `已生成 ${inputData.episodeCount} 集分镜草稿，等待确认。`,
+    };
   },
 });
 
@@ -814,229 +778,213 @@ const STORYBOARD_HEADERS = [
   "duration",
 ] as const;
 
-const applyDecisionStep = createStep({
-  id: "apply_decision",
-  inputSchema: z.object({
-    approved: z.boolean(),
-    feedback: z.string().optional(),
-    acceptedClientRefIds: z.array(z.string()).optional(),
-  }),
-  outputSchema: StoryboardPhaseOutputSchema,
-  stateSchema: StateSchema,
-  execute: async ({ inputData, state, requestContext }) => {
-    const runId = requestContext?.get("runId") as string | undefined;
-    if (!runId) throw new Error("runId missing");
-    await throwIfCancelled(runId);
-
-    const ctx = getContext(requestContext);
-    const stylePainting = ctx.stylePainting ?? "";
-    const generated = state.generated ?? [];
-
-    // Charge regardless of approved/rejected — LLM cost incurred at gen.
-    if (generated.length > 0) {
-      await deductCredits(ctx, {
-        amount: generated.length * PRICES.storyboardPerEpisode,
-        reason: `storyboard_phase ${generated.length} drafts (approved=${inputData.approved})`,
-        idempotencyKey: phaseDeductKey(runId, "storyboard_phase"),
-      });
-    }
-
-    if (!inputData.approved) {
-      for (const g of generated) await markDraftDiscarded(runId, g.clientRefId);
-      await publishWorkflowFailed(ctx.projectId, runId, "storyboard_phase", {
-        terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
-        retryable: false,
-      });
-      return {
-        outcome: "rejected" as const,
-        committed: [],
-        failed: [],
-        message: inputData.feedback
-          ? `分镜阶段未通过。反馈：${inputData.feedback}`
-          : "分镜阶段未通过。",
-      };
-    }
-
-    // Load worldrole + worldscene rosters so we can replace plain names in
-    // description / image_prompt / video_prompt with Tiptap <mention> tags —
-    // matches the legacy script-agent.tools.ts linkification pass so the
-    // frontend renders them as clickable chips with thumbnails.
-    const mentionMap = await buildMentionMap(ctx);
-
-    // Scene name → worldscene id cache, shared across all episodes in this
-    // run. Pre-seed from the roster so we only hit Java for new names.
-    const sceneIdCache = new Map<string, string>();
-    for (const [key, entry] of mentionMap.entries()) {
-      if (entry.type === "scene" && entry.id) sceneIdCache.set(key, entry.id);
-    }
-
-    const accepted = inputData.acceptedClientRefIds
-      ? new Set(inputData.acceptedClientRefIds)
-      : null;
-    const drafts = await listDrafts<{
-      episodeId: string;
-      title: string;
-      rows: z.infer<typeof StoryboardRow>[];
-    }>(runId, { entityType: "shot", statuses: ["pending"] });
-    const accepts = drafts.filter((d) => !accepted || accepted.has(d.clientRefId));
-
-    for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
-
-    await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
-      current: 0,
-      total: accepts.length,
-      label: `开始保存 ${accepts.length} 集分镜…`,
-    });
-
-    const committed: z.infer<typeof StoryboardPhaseOutputSchema>["committed"] = [];
-    const failed: z.infer<typeof StoryboardPhaseOutputSchema>["failed"] = [];
-
-    let i = 0;
-    for (const d of accepts) {
-      await throwIfCancelled(runId);
-      const label = `保存分镜：${i + 1}/${accepts.length} — ${d.data.title}`;
-      await reportProgress(runId, {
-        stepId: "storyboard_phase.commit",
-        current: i,
-        total: accepts.length,
-        label,
-      });
-      await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
-        current: i,
-        total: accepts.length,
-        label,
-      });
-
-      const rows2d = d.data.rows.map((r, idx) => {
-        // Map StoryboardRow → snake_case columns Java expects. Auto-assign
-        // shot_no from index (LLM may skip or duplicate). scene column gets
-        // plain name here; backfillSceneColumn overwrites it with the
-        // worldscene id + metadata after save. description / image_prompt /
-        // video_prompt get mention injection for inline chip rendering.
-        const shotNo = r.shot_no && r.shot_no.trim() ? r.shot_no : String(idx + 1);
-        // scene / description are `optional` at the schema level (LLM
-        // sometimes drops them) but generateStep's filter has already
-        // guaranteed both exist here — `?? ""` is just to satisfy TS.
-        return [
-          shotNo,
-          r.scene ?? "",
-          injectMentions(mentionMap, r.description ?? ""),
-          injectMentions(mentionMap, r.image_prompt),
-          injectMentions(mentionMap, r.video_prompt ?? ""),
-          stylePainting, // style_planting — project-level style per-row
-          r.movement,
-          r.dialogue ?? "",
-          r.shot_size,
-          r.perspective,
-          r.duration != null ? String(r.duration) : "",
-        ];
-      });
-
-      try {
-        await javaRequest<unknown>(ctx, "/api/ai/chat/save/storyboard", {
-          data: {
-            episodeId: d.data.episodeId,
-            datas: [STORYBOARD_HEADERS, ...rows2d],
-            autoload: true,
-          },
-          timeoutMs: 300_000,
-        });
-
-        // Backfill scene column with worldscene ids. The save/storyboard
-        // call above leaves scene cells as plain text; the UI needs
-        // `shotValue.value = sceneId` with preset metadata. Soft-failing —
-        // shots are already persisted, missing scene links just degrade UX.
-        try {
-          const sceneBackfill = await backfillSceneColumn(
-            ctx,
-            d.data.episodeId,
-            d.data.rows,
-            sceneIdCache
-          );
-          if (sceneBackfill.failed > 0) {
-            console.warn(
-              `[storyboard_phase] scene backfill ep ${d.data.episodeId}: ok=${sceneBackfill.ok} failed=${sceneBackfill.failed} skipped=${sceneBackfill.skipped}`
-            );
-          }
-        } catch (err) {
-          console.warn(
-            `[storyboard_phase] scene backfill error ep ${d.data.episodeId}:`,
-            err instanceof Error ? err.message : String(err)
-          );
-        }
-
-        await markDraftCommitted(runId, d.clientRefId, d.data.episodeId);
-        committed.push({
-          episodeId: d.data.episodeId,
-          title: d.data.title,
-          shotCount: d.data.rows.length,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        await markDraftFailed(runId, d.clientRefId, message);
-        failed.push({
-          episodeId: d.data.episodeId,
-          title: d.data.title,
-          reason: message,
-        });
-      }
-      i += 1;
-    }
-
-    const outcome: z.infer<typeof StoryboardPhaseOutputSchema>["outcome"] =
-      failed.length === 0 ? "committed" : "partial_failure";
-
-    if (failed.length === 0) await deleteAllDrafts(runId);
-
-    const endLabel = `分镜保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
-    await reportProgress(runId, {
-      stepId: "storyboard_phase.commit",
-      current: committed.length,
-      total: accepts.length,
-      label: endLabel,
-    });
-    await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
-      current: committed.length,
-      total: accepts.length,
-      label: endLabel,
-    });
-
-    const summaryText =
-      outcome === "committed"
-        ? `已保存 ${committed.length} 集分镜，主流程结束。`
-        : `保存有失败：${failed.length} / ${accepts.length}。`;
-
-    // Terminal workflow — no nextStep (storyboard is the end of the chain).
-    await publishWorkflowCompleted(ctx.projectId, runId, "storyboard_phase", {
-      committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
-      failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
-      summary: summaryText,
-    });
-
-    return {
-      outcome,
-      committed,
-      failed,
-      message: summaryText,
-    };
-  },
-});
-
 // ─── Compose ──────────────────────────────────────────────────────────
 
 export const storyboardPhaseWorkflow = createWorkflow({
   id: "storyboard_phase",
   description:
-    "分镜阶段：每集调分镜师出镜头 → HITL → 批量入库。支持 fromProjectOutline 自动读已入库剧集/剧本。",
+    "分镜阶段：每集调分镜师出镜头 → 草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库。",
   inputSchema: StoryboardPhaseInputSchema,
   outputSchema: StoryboardPhaseOutputSchema,
-  stateSchema: StateSchema,
 })
   .then(resolveInputStep)
   .then(generateStep)
-  .then(waitConfirmationStep)
-  .then(applyDecisionStep)
+  .then(emitReviewStep)
   .commit();
 
 export type StoryboardPhaseOutput = z.infer<typeof StoryboardPhaseOutputSchema>;
+
+// ─── Apply helper ──────────────────────────────────────────────────────
+
+export interface ApplyStoryboardDraftsOptions {
+  ctx: StoryosContext;
+  runId: string;
+  approved: boolean;
+  feedback?: string;
+  acceptedClientRefIds?: string[];
+}
+
+export interface ApplyStoryboardDraftsResult {
+  outcome: "committed" | "partial_failure" | "rejected";
+  committedCount: number;
+  failedCount: number;
+  message: string;
+}
+
+export async function applyStoryboardDrafts(
+  opts: ApplyStoryboardDraftsOptions
+): Promise<ApplyStoryboardDraftsResult> {
+  const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  await throwIfCancelled(runId);
+
+  const stylePainting = ctx.stylePainting ?? "";
+
+  const pending = await listDrafts<StoryboardDraftData>(runId, {
+    entityType: "shot",
+    statuses: ["pending"],
+  });
+  const pendingRefIds = pending.map((d) => d.clientRefId);
+
+  if (pendingRefIds.length > 0) {
+    await deductCredits(ctx, {
+      amount: pendingRefIds.length * PRICES.storyboardPerEpisode,
+      reason: `storyboard_phase ${pendingRefIds.length} drafts (approved=${approved})`,
+      idempotencyKey: phaseDeductKey(runId, "storyboard_phase"),
+    });
+  }
+
+  if (!approved) {
+    for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
+    await publishWorkflowFailed(ctx.projectId, runId, "storyboard_phase", {
+      terminalStatus: "cancelled",
+      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      retryable: false,
+    });
+    return {
+      outcome: "rejected",
+      committedCount: 0,
+      failedCount: 0,
+      message: feedback ? `分镜阶段未通过。反馈：${feedback}` : "分镜阶段未通过。",
+    };
+  }
+
+  // Load worldrole + worldscene rosters so we can replace plain names in
+  // description / image_prompt / video_prompt with Tiptap <mention> tags.
+  const mentionMap = await buildMentionMap(ctx);
+
+  // Scene name → worldscene id cache, shared across all episodes.
+  const sceneIdCache = new Map<string, string>();
+  for (const [key, entry] of mentionMap.entries()) {
+    if (entry.type === "scene" && entry.id) sceneIdCache.set(key, entry.id);
+  }
+
+  const accepted = acceptedClientRefIds ? new Set(acceptedClientRefIds) : null;
+  const accepts = pending.filter((d) => !accepted || accepted.has(d.clientRefId));
+
+  for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
+
+  await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
+    current: 0,
+    total: accepts.length,
+    label: `开始保存 ${accepts.length} 集分镜…`,
+  });
+
+  const committed: Array<{ episodeId: string; title: string; shotCount: number }> = [];
+  const failed: Array<{ episodeId: string; title: string; reason: string }> = [];
+
+  let i = 0;
+  for (const d of accepts) {
+    await throwIfCancelled(runId);
+    const label = `保存分镜：${i + 1}/${accepts.length} — ${d.data.title}`;
+    await reportProgress(runId, {
+      stepId: "storyboard_phase.commit",
+      current: i,
+      total: accepts.length,
+      label,
+    });
+    await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
+      current: i,
+      total: accepts.length,
+      label,
+    });
+
+    const rows2d = d.data.rows.map((r, idx) => {
+      const shotNo = r.shot_no && r.shot_no.trim() ? r.shot_no : String(idx + 1);
+      return [
+        shotNo,
+        r.scene ?? "",
+        injectMentions(mentionMap, r.description ?? ""),
+        injectMentions(mentionMap, r.image_prompt),
+        injectMentions(mentionMap, r.video_prompt ?? ""),
+        stylePainting,
+        r.movement,
+        r.dialogue ?? "",
+        r.shot_size,
+        r.perspective,
+        r.duration != null ? String(r.duration) : "",
+      ];
+    });
+
+    try {
+      await javaRequest<unknown>(ctx, "/api/ai/chat/save/storyboard", {
+        data: {
+          episodeId: d.data.episodeId,
+          datas: [STORYBOARD_HEADERS, ...rows2d],
+          autoload: true,
+        },
+        timeoutMs: 300_000,
+      });
+
+      // Backfill scene column with worldscene ids (soft-failing).
+      try {
+        const sceneBackfill = await backfillSceneColumn(
+          ctx,
+          d.data.episodeId,
+          d.data.rows,
+          sceneIdCache
+        );
+        if (sceneBackfill.failed > 0) {
+          console.warn(
+            `[storyboard_phase] scene backfill ep ${d.data.episodeId}: ok=${sceneBackfill.ok} failed=${sceneBackfill.failed} skipped=${sceneBackfill.skipped}`
+          );
+        }
+      } catch (err) {
+        console.warn(
+          `[storyboard_phase] scene backfill error ep ${d.data.episodeId}:`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+
+      await markDraftCommitted(runId, d.clientRefId, d.data.episodeId);
+      committed.push({
+        episodeId: d.data.episodeId,
+        title: d.data.title,
+        shotCount: d.data.rows.length,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await markDraftFailed(runId, d.clientRefId, message);
+      failed.push({
+        episodeId: d.data.episodeId,
+        title: d.data.title,
+        reason: message,
+      });
+    }
+    i += 1;
+  }
+
+  const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
+  if (failed.length === 0) await deleteAllDrafts(runId);
+
+  const endLabel = `分镜保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  await reportProgress(runId, {
+    stepId: "storyboard_phase.commit",
+    current: committed.length,
+    total: accepts.length,
+    label: endLabel,
+  });
+  await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
+    current: committed.length,
+    total: accepts.length,
+    label: endLabel,
+  });
+
+  const summaryText =
+    outcome === "committed"
+      ? `已保存 ${committed.length} 集分镜，主流程结束。`
+      : `保存有失败：${failed.length} / ${accepts.length}。`;
+
+  // Terminal workflow — no nextSteps (storyboard is the end of the chain).
+  await publishWorkflowCompleted(ctx.projectId, runId, "storyboard_phase", {
+    committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
+    failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
+    summary: summaryText,
+  });
+
+  return {
+    outcome,
+    committedCount: committed.length,
+    failedCount: failed.length,
+    message: summaryText,
+  };
+}

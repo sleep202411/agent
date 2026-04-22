@@ -1,13 +1,8 @@
 import { createTool } from "@mastra/core/tools";
-import {
-  getMissingProjectParams,
-  isGenerativeWorkflow,
-  type ProjectParamsDetail,
-} from "@repo/shared/project-params";
 import { z } from "zod";
 import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
 import { getRedis } from "../../lib/redis-client";
-import { getContext, javaRequest } from "../../lib/workspace-client";
+import { getContext, type StoryosContext } from "../../lib/workspace-client";
 import { startWorkflow } from "../../workflows/engine";
 import { estimateWorkflowCost, getUserBalance } from "../../lib/billing";
 
@@ -68,11 +63,6 @@ export const invokeWorkflow = createTool({
       estimatedCost: z.number().int().nonnegative().optional(),
     }),
     z.object({
-      error: z.literal("PROJECT_PARAMS_INCOMPLETE"),
-      message: z.string(),
-      missing: z.array(z.string()),
-    }),
-    z.object({
       error: z.literal("INSUFFICIENT_CREDITS"),
       message: z.string(),
       needed: z.number(),
@@ -80,37 +70,28 @@ export const invokeWorkflow = createTool({
     }),
   ]),
   execute: async ({ workflowName, inputData }, execCtx) => {
-    const ctx = getContext(execCtx?.requestContext);
+    const baseCtx = getContext(execCtx?.requestContext);
 
-    // Preflight: generative workflows require project params to be set. The
-    // supervisor prompt tells the LLM to call `require_project_params` first,
-    // but we don't rely on that — the LLM sometimes skips it. Hard-block here
-    // so a missing-param case always surfaces as a structured error.
-    // Fetched detail is also reused for the cost estimate below (avoids a
-    // second Java round-trip).
-    let projectDetail: ProjectParamsDetail | null = null;
-    if (isGenerativeWorkflow(workflowName as WorkflowName)) {
-      projectDetail = await javaRequest<ProjectParamsDetail>(
-        ctx,
-        `/api/user/project/detail/${ctx.projectId}`
-      ).catch(() => null);
-      const missing = getMissingProjectParams(projectDetail);
-      if (missing.length > 0) {
-        return {
-          error: "PROJECT_PARAMS_INCOMPLETE" as const,
-          message:
-            "项目核心参数未齐（影片尺寸/单集时长/画风）。请立即调用 require_project_params 让用户补齐，收到 {confirmed:true} 后用相同的 workflowName 和 inputData 重新 invoke_workflow。",
-          missing,
-        };
-      }
-    }
+    const resolvedInput = await resolveAttachmentRefs(inputData);
+    const resolvedObj =
+      resolvedInput && typeof resolvedInput === "object" && !Array.isArray(resolvedInput)
+        ? (resolvedInput as Record<string, unknown>)
+        : {};
 
-    // Credit preflight: estimate cost + check balance. Conservative reject
-    // so we don't fire LLM calls (real money) for users who can't pay.
-    // image phases / batch_create_asset estimate to 0 → always pass.
+    // Post-configure_params model: LLM collects generation-time settings
+    // (targetEpisodeCount / chapterLength / shotsPerEpisode / stylePainting /
+    // dialogLanguage) via `configure_params` tool, remembers via its own
+    // chat history, passes them into each `invoke_workflow` call's inputData.
+    // Lift them OUT of inputData into the request context so existing phase
+    // workflows reading `ctx.stylePainting` etc. continue to work unchanged.
+    const genParamOverrides = extractGenParamOverrides(resolvedObj);
+    const ctx: StoryosContext = { ...baseCtx, ...genParamOverrides };
+
+    // Credit preflight: estimate cost + check balance. Uses ctx (with
+    // overrides) so LLM-declared targetEpisodeCount lands in the estimate.
     const estimated = estimateWorkflowCost(
       workflowName as WorkflowName,
-      projectDetail,
+      null,
       ctx.targetEpisodeCount ?? null
     );
     if (estimated > 0) {
@@ -125,23 +106,9 @@ export const invokeWorkflow = createTool({
       }
     }
 
-    const resolvedInput = await resolveAttachmentRefs(inputData);
-    const resolvedObj =
-      resolvedInput && typeof resolvedInput === "object" && !Array.isArray(resolvedInput)
-        ? (resolvedInput as Record<string, unknown>)
-        : {};
-
-    // Auto-inject `targetEpisodeCount` from the user's ProjectParamsForm pick
-    // (plumbed via workspaceContext → x-storyos-context → ctx.targetEpisodeCount)
-    // for workflows that plan/slice episodes. Without this, LLM omission →
-    // schema default of 10 → user's pick (e.g. 12) gets silently overridden.
-    // LLM-provided value in the tool call still wins.
-    const needsEpisodeCount =
-      workflowName === "main_flow" ||
-      workflowName === "episode_phase" ||
-      workflowName === "parse_script" ||
-      workflowName === "script_to_storyboard_flow" ||
-      workflowName === "script_import_flow";
+    // Auto-inject targetEpisodeCount for phases that plan/slice episodes
+    // if LLM omitted it but ctx has a value (from configure_params).
+    const needsEpisodeCount = workflowName === "episode_phase" || workflowName === "parse_script";
     const injectedEpisodeCount =
       needsEpisodeCount &&
       !("targetEpisodeCount" in resolvedObj) &&
@@ -174,3 +141,40 @@ export const invokeWorkflow = createTool({
     };
   },
 });
+
+/**
+ * Peel the 5 generation-time config values out of the inputData the LLM
+ * passed, so we can override the request context before dispatch. Each
+ * field is optional — LLM may omit if it's reusing the value set in an
+ * earlier `configure_params` call but didn't carry it forward, in which
+ * case the ctx's existing value (from prior overrides) wins.
+ */
+function extractGenParamOverrides(
+  input: Record<string, unknown>
+): Partial<
+  Pick<
+    StoryosContext,
+    "targetEpisodeCount" | "shotsPerEpisode" | "stylePainting" | "dialogLanguage"
+  >
+> {
+  const out: Partial<StoryosContext> = {};
+  const tec = input.targetEpisodeCount;
+  if (typeof tec === "number" && Number.isFinite(tec) && tec > 0) {
+    out.targetEpisodeCount = tec;
+  } else if (typeof tec === "string" && tec.trim()) {
+    const n = Number(tec);
+    if (Number.isFinite(n) && n > 0) out.targetEpisodeCount = n;
+  }
+  const spe = input.shotsPerEpisode;
+  if (typeof spe === "number" && Number.isFinite(spe) && spe > 0) {
+    out.shotsPerEpisode = spe;
+  } else if (typeof spe === "string" && spe.trim()) {
+    const n = Number(spe);
+    if (Number.isFinite(n) && n > 0) out.shotsPerEpisode = n;
+  }
+  const sp = input.stylePainting;
+  if (typeof sp === "string" && sp.trim()) out.stylePainting = sp;
+  const dl = input.dialogLanguage;
+  if (typeof dl === "string" && dl.trim()) out.dialogLanguage = dl;
+  return out;
+}

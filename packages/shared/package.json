@@ -25,6 +25,10 @@
     "./project-params": {
       "types": "./dist/project-params.d.ts",
       "default": "./dist/project-params.js"
+    },
+    "./entity-events": {
+      "types": "./dist/entity-events.d.ts",
+      "default": "./dist/entity-events.js"
     }
   },
   "scripts": {
