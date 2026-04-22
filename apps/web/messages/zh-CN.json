@@ -217,7 +217,8 @@
     "creators": "人才集市",
     "news": "新闻",
     "workbench": "工作台",
-    "getStarted": "免费开始"
+    "getStarted": "免费开始",
+    "language": "语言"
   },
   "auth": {
     "welcomeBack": "欢迎回来",

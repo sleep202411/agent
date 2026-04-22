@@ -217,7 +217,8 @@
     "creators": "Talent Market",
     "news": "News",
     "workbench": "Workbench",
-    "getStarted": "Get Started"
+    "getStarted": "Get Started",
+    "language": "Language"
   },
   "auth": {
     "welcomeBack": "Welcome Back",
