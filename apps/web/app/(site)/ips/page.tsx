@@ -36,57 +36,127 @@ import {
 
 // ─── Featured Hero ────────────────────────────────────
 
-function FeaturedHero({ project, categories }: { project: IPProject; categories: CategoryMap }) {
+/**
+ * Fanned hero — up to 3 recommended IP cards spread like a hand of
+ * cards. The middle card is "active" by default; hovering any card
+ * brings it forward and promotes its copy block below. Mobile drops
+ * the fan for a single stacked card since the rotation crammed at
+ * <768px looks noisy.
+ */
+function FannedHero({ projects, categories }: { projects: IPProject[]; categories: CategoryMap }) {
   const t = useTranslations("ip");
-  const banner = ipImageUrl(project.bannerLink);
-  const cat = categories[String(project.typeId)] ?? "";
+  const picks = projects.slice(0, 3);
+  const defaultActive = Math.min(1, picks.length - 1); // center when 3, else first
+  const [hovered, setHovered] = useState<number | null>(null);
+  const active = hovered ?? defaultActive;
+  const activeProject = picks[active] ?? picks[0];
+  const activeCategory = categories[String(activeProject?.typeId)] ?? "";
+  const activeBanner = ipImageUrl(activeProject?.bannerLink);
+
+  if (picks.length === 0) return null;
 
   return (
-    <section className="relative -mt-14 h-[72vh] min-h-[520px] w-full overflow-hidden">
-      {banner ? (
-        <img src={banner} alt={project.name} className="absolute inset-0 size-full object-cover" />
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-background" />
-      )}
-      {/* Gradient overlays — left-to-right for copy readability, bottom-up for page continuity */}
-      <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-background to-transparent" />
+    <section className="relative -mt-14 overflow-hidden pb-16 pt-24">
+      {/* Ambient backdrop: blurred active banner + gradient wash. */}
+      {activeBanner ? (
+        <img
+          key={activeProject.id}
+          src={activeBanner}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 size-full scale-110 object-cover opacity-20 blur-3xl transition-opacity duration-700"
+        />
+      ) : null}
+      <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/75 to-background" />
 
-      <div className="relative z-10 mx-auto flex h-full max-w-screen-2xl items-end px-8 pb-20 pt-24">
-        <div className="max-w-2xl">
-          <div className="mb-4 flex items-center gap-2 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 font-semibold text-primary">
-              <IconTrendingUp className="size-3" />
-              {t("featured")}
-            </span>
-            {cat ? (
-              <>
-                <span className="text-muted-foreground/60">·</span>
-                <span className="text-muted-foreground">{cat}</span>
-              </>
-            ) : null}
+      <div className="relative mx-auto max-w-6xl px-6">
+        <div className="mb-8 text-center">
+          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary">
+            <IconTrendingUp className="size-3" />
+            {t("featured")}
           </div>
-          <h1 className="mb-4 text-4xl font-black leading-tight text-foreground drop-shadow-lg md:text-6xl">
-            {project.name}
+          <h1 className="text-2xl font-black leading-tight text-foreground md:text-4xl">
+            {t("featuredProjects")}
           </h1>
-          <p className="mb-6 line-clamp-3 max-w-xl text-sm leading-relaxed text-muted-foreground md:text-base">
-            {project.description}
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button asChild size="lg">
-              <Link href={`/ips/${project.id}`}>
-                <IconPlayerPlayFilled className="size-5" />
-                {t("viewDetails")}
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="lg">
-              <Link href={`/ips/${project.id}`}>
-                <IconInfoCircle className="size-5" />
-                {t("moreInfo")}
-              </Link>
-            </Button>
-          </div>
         </div>
+
+        {/* Fan of cards (desktop) / stack of one (mobile). */}
+        <div className="relative mx-auto h-[400px] w-full md:h-[440px]">
+          {picks.map((p, i) => {
+            const offset = i - (picks.length - 1) / 2; // symmetric around 0
+            const rotate = offset * 9;
+            const translateX = offset * 170;
+            const translateY = Math.abs(offset) * 14;
+            const isActive = active === i;
+            const banner = ipImageUrl(p.bannerLink);
+
+            return (
+              <Link
+                key={p.id}
+                href={`/ips/${p.id}`}
+                onMouseEnter={() => setHovered(i)}
+                onFocus={() => setHovered(i)}
+                onMouseLeave={() => setHovered(null)}
+                onBlur={() => setHovered(null)}
+                className="absolute left-1/2 top-0 block size-full max-w-[260px] origin-bottom transition-transform duration-500 ease-out md:top-2"
+                style={{
+                  transform: `translateX(calc(-50% + ${translateX}px)) translateY(${translateY}px) rotate(${rotate}deg) ${
+                    isActive ? "scale(1.05)" : "scale(1)"
+                  }`,
+                  zIndex: isActive ? 30 : 20 - Math.abs(offset) * 2,
+                }}
+              >
+                <div
+                  className={`relative h-full w-full overflow-hidden rounded-2xl border bg-secondary shadow-2xl transition-all duration-500 ${
+                    isActive
+                      ? "border-primary/40 shadow-primary/20"
+                      : "border-border/50 shadow-black/40"
+                  }`}
+                >
+                  {banner ? (
+                    <img src={banner} alt={p.name} className="size-full object-cover" />
+                  ) : (
+                    <div className="flex size-full items-center justify-center">
+                      <IconSparkles className="size-10 text-muted-foreground/30" />
+                    </div>
+                  )}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/60 to-transparent p-4 pt-12">
+                    <h3 className="line-clamp-1 text-base font-bold text-white">{p.name}</h3>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Active card's copy + CTAs. */}
+        {activeProject ? (
+          <div className="mx-auto mt-10 max-w-2xl text-center">
+            {activeCategory ? (
+              <div className="mb-2 text-xs text-muted-foreground">{activeCategory}</div>
+            ) : null}
+            <h2 className="mb-2 text-xl font-bold text-foreground md:text-2xl">
+              {activeProject.name}
+            </h2>
+            <p className="mb-5 line-clamp-2 text-sm text-muted-foreground">
+              {activeProject.description}
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Button asChild size="lg">
+                <Link href={`/ips/${activeProject.id}`}>
+                  <IconPlayerPlayFilled className="size-5" />
+                  {t("viewDetails")}
+                </Link>
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href={`/ips/${activeProject.id}`}>
+                  <IconInfoCircle className="size-5" />
+                  {t("moreInfo")}
+                </Link>
+              </Button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -231,7 +301,7 @@ export default function IPPlazaPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const featured = projects[0];
+  const featuredPicks = useMemo(() => projects.slice(0, 3), [projects]);
 
   const trending = useMemo(() => projects.slice(0, 15), [projects]);
 
@@ -311,7 +381,9 @@ export default function IPPlazaPage() {
         </section>
       ) : (
         <>
-          {featured ? <FeaturedHero project={featured} categories={categories} /> : null}
+          {featuredPicks.length > 0 ? (
+            <FannedHero projects={featuredPicks} categories={categories} />
+          ) : null}
 
           <div className="mx-auto max-w-screen-2xl pt-4">
             <div className="mb-6 px-8">
