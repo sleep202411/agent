@@ -1538,6 +1538,14 @@
     "personaError": "請求失敗",
     "personaCollapse": "收起",
     "personaExpand": "展開",
+    "configureParamsSubmitted": "✓ 已設置創作參數",
+    "configureParamsKey": {
+      "targetEpisodeCount": "劇集數",
+      "chapterLength": "單集時長",
+      "shotsPerEpisode": "每集分鏡數",
+      "stylePainting": "畫風",
+      "dialogLanguage": "對白語言"
+    },
     "personas": {
       "scriptwriter": "編劇",
       "characterDesigner": "角色設計師",
@@ -1582,7 +1590,6 @@
     "workflowResultCast": "{count} 位角色",
     "workflowResultSettings": "{count} 個場景",
     "workflowReviseHint": "如果有具體的修改意見，可以直接告訴我。",
-    "workflowOptionsNoReselect": "選項暫不支持重選哦",
     "workflowUserSatisfied": "滿意",
     "workflowUserRequestedRevision": "按此修改",
     "workflowUserCancelled": "取消該任務",

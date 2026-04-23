@@ -77,6 +77,41 @@ function ExportDownloadButton({ content, filename }: { content: string; filename
 
 type TFunc = (key: string, params?: Record<string, string | number | Date>) => string;
 
+// Canonical configure_params keys → i18n key under "ai.configureParamsKey".
+// Kept client-side so supervisor can keep seeing the stable English key
+// names regardless of user locale.
+const CONFIGURE_PARAM_LABEL_KEY: Record<string, string> = {
+  targetEpisodeCount: "configureParamsKey.targetEpisodeCount",
+  chapterLength: "configureParamsKey.chapterLength",
+  shotsPerEpisode: "configureParamsKey.shotsPerEpisode",
+  stylePainting: "configureParamsKey.stylePainting",
+  dialogLanguage: "configureParamsKey.dialogLanguage",
+};
+
+function formatConfigureParamsForDisplay(
+  text: string,
+  t: TFunc
+): Array<{ key: string; label: string; value: string }> {
+  const prefix = "Params set: ";
+  if (!text.startsWith(prefix)) return [];
+  const jsonPart = text.slice(prefix.length).trim();
+  let parsed: Record<string, unknown>;
+  try {
+    const raw = JSON.parse(jsonPart);
+    if (!raw || typeof raw !== "object") return [];
+    parsed = raw as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+  return Object.entries(parsed).map(([key, rawValue]) => {
+    const labelKey = CONFIGURE_PARAM_LABEL_KEY[key];
+    // Fall back to the raw key name when the param wasn't anticipated —
+    // still more readable than hiding it.
+    const label = labelKey ? t(labelKey) : key;
+    return { key, label, value: String(rawValue ?? "") };
+  });
+}
+
 function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): string | null {
   const data = output as Record<string, unknown>;
   if (!data) return null;
@@ -91,21 +126,12 @@ function formatToolResultSummary(toolName: string, output: unknown, t: TFunc): s
       return data.confirmed ? t("toolResultConfirmed") : t("toolResultCancelled");
     }
     case "configure_params": {
+      // Confirmed form submits now dispatch a separate user message with
+      // the JSON values (see submitConfigureParams thunk); no summary
+      // bubble here to avoid duplicate rendering. Only the dismiss path
+      // still surfaces a "skipped" marker.
       if (!data.confirmed) return t("toolResultSkipped");
-      const values = data.values as Record<string, unknown> | undefined;
-      if (!values) return t("toolResultParams");
-      const labelMap = (data._labelMap as Record<string, string>) ?? {};
-      const displayValues = (data._displayValues as Record<string, string>) ?? {};
-      const entries = Object.entries(values)
-        .map(([k, v]) => {
-          // Prefer the display label (e.g. "Cartoon Style") over the raw
-          // value (e.g. "2" — dictionary id). Falls back to raw when the
-          // field didn't produce a display label (plain number inputs).
-          const displayValue = displayValues[k] ?? String(v);
-          return `${labelMap[k] || k}: ${displayValue}`;
-        })
-        .join("，");
-      return entries;
+      return null;
     }
     default:
       return null;
@@ -137,6 +163,7 @@ import {
 import { isAskPersonaTool } from "@/src/lib/assistant/personas";
 import { extractSuggestedActions } from "@/src/lib/assistant/suggested-action";
 import { SuggestedActionButtons } from "./suggested-action-buttons";
+import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Compact tool indicator ───────────────────────────
 
@@ -258,6 +285,31 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
           <div className="space-y-3">
             {message.parts.map((part, index) => {
               if (part.type === "text") {
+                // Canonical user message `Params set: {JSON}` — parse the
+                // JSON and render a localized key:value list. The raw
+                // canonical text stays in Redux + is what's sent to the
+                // LLM; we only transform the display layer.
+                if (message.role === "user" && part.text.startsWith("Params set: ")) {
+                  const entries = formatConfigureParamsForDisplay(part.text, t);
+                  return (
+                    <div
+                      key={`${message.id}-text-${index}`}
+                      className="text-[13px] leading-relaxed"
+                    >
+                      <div className="font-medium">{t("configureParamsSubmitted")}</div>
+                      {entries.length > 0 && (
+                        <div className="mt-1 space-y-0.5 text-[12px] text-foreground/80">
+                          {entries.map((line) => (
+                            <div key={line.key}>
+                              <span className="opacity-70">{line.label}：</span>
+                              <span>{line.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
                 // Strip any trailing ```json {"actions":[...]} ``` block
                 // from the rendered markdown; if present, render the
                 // action buttons inline. No cross-part coordination —
@@ -493,6 +545,62 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                       isActive={!!isLastAssistant}
                     />
                   );
+                }
+
+                // apply_phase_drafts — the NL path's analog to the
+                // direct-button confirm endpoint. The tool's output carries
+                // `completion` / `failure` payloads (same shape as the
+                // workflow_completed / workflow_failed side-channel messages
+                // the button path emits). We render those inline as parts of
+                // supervisor's own message so the card + any follow-up text
+                // stay in one bubble instead of fragmenting into a sibling
+                // message. Side-channel emission is disabled for this path
+                // in the tool impl (see apply-phase-drafts.ts).
+                if (toolName === "apply_phase_drafts") {
+                  if (part.state !== "output-available" || !part.output) {
+                    return (
+                      <ToolIndicator
+                        key={`${message.id}-${part.toolCallId}-apply-progress`}
+                        toolName={toolName}
+                        part={part}
+                      />
+                    );
+                  }
+                  const out = part.output as {
+                    completion?: WorkflowCompletedOutput | null;
+                    failure?: WorkflowFailedOutput | null;
+                  };
+                  if (out.completion) {
+                    const synth: AssistantToolInvocation = {
+                      type: "tool-workflow_completed",
+                      toolCallId: part.toolCallId,
+                      state: "output-available",
+                      output: out.completion,
+                    };
+                    return (
+                      <WorkflowCompletedCard
+                        key={`${message.id}-${part.toolCallId}-apply-completed`}
+                        part={synth}
+                        isActive={!!isLastAssistant}
+                      />
+                    );
+                  }
+                  if (out.failure) {
+                    const synth: AssistantToolInvocation = {
+                      type: "tool-workflow_failed",
+                      toolCallId: part.toolCallId,
+                      state: "output-available",
+                      output: out.failure,
+                    };
+                    return (
+                      <WorkflowFailedCard
+                        key={`${message.id}-${part.toolCallId}-apply-failed`}
+                        part={synth}
+                        isActive={!!isLastAssistant}
+                      />
+                    );
+                  }
+                  return null;
                 }
 
                 // invoke_workflow / resume_workflow — the actual workflow

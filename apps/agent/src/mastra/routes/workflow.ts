@@ -186,26 +186,36 @@ export const workflowRoutes = [
         approved: body.approved,
         feedback: body.feedback,
         acceptedClientRefIds: body.acceptedClientRefIds,
+        emitLifecycleMessage: body.emitLifecycleMessage ?? true,
       };
+      // Return completion / failure payload so callers that pass
+      // emitLifecycleMessage=false (Nest's confirmWorkflow short-circuit)
+      // can embed it into their own synthetic assistant message.
       switch (meta?.workflowName) {
-        case "scene_phase":
-          await applySceneDrafts(applyArgs);
-          return c.json({ ok: true });
-        case "role_phase":
-          await applyRoleDrafts(applyArgs);
-          return c.json({ ok: true });
-        case "prop_phase":
-          await applyPropDrafts(applyArgs);
-          return c.json({ ok: true });
-        case "episode_phase":
-          await applyEpisodeDrafts(applyArgs);
-          return c.json({ ok: true });
-        case "script_phase":
-          await applyScriptDrafts(applyArgs);
-          return c.json({ ok: true });
-        case "storyboard_phase":
-          await applyStoryboardDrafts(applyArgs);
-          return c.json({ ok: true });
+        case "scene_phase": {
+          const r = await applySceneDrafts(applyArgs);
+          return c.json({ ok: true, completion: r.completion, failure: r.failure });
+        }
+        case "role_phase": {
+          const r = await applyRoleDrafts(applyArgs);
+          return c.json({ ok: true, completion: r.completion, failure: r.failure });
+        }
+        case "prop_phase": {
+          const r = await applyPropDrafts(applyArgs);
+          return c.json({ ok: true, completion: r.completion, failure: r.failure });
+        }
+        case "episode_phase": {
+          const r = await applyEpisodeDrafts(applyArgs);
+          return c.json({ ok: true, completion: r.completion, failure: r.failure });
+        }
+        case "script_phase": {
+          const r = await applyScriptDrafts(applyArgs);
+          return c.json({ ok: true, completion: r.completion, failure: r.failure });
+        }
+        case "storyboard_phase": {
+          const r = await applyStoryboardDrafts(applyArgs);
+          return c.json({ ok: true, completion: r.completion, failure: r.failure });
+        }
       }
 
       await resumeWorkflow({

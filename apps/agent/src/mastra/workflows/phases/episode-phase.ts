@@ -10,6 +10,7 @@
  * {title, introduction, frontPrompt, behindPrompt, sort, projectId} entries.
  */
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 import {
@@ -30,7 +31,9 @@ import {
   publishWorkflowProgress,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
+import { publishEntityEvent } from "../../lib/entity-events";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
+import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -151,19 +154,47 @@ const planStep = createStep({
     const planner = mastra?.getAgent("episodePlanner");
     if (!planner) throw new Error("episode-planner agent not registered");
 
-    const prompt = buildPrompt(inputData);
-    const response = await planner.generate(prompt, {
-      structuredOutput: {
-        schema: z.object({ episodes: z.array(EpisodePlan) }),
-        errorStrategy: "warn",
-      },
-    });
-    const episodes = (
-      (response.object as { episodes?: z.infer<typeof EpisodePlan>[] } | undefined)?.episodes ?? []
-    ).slice(0, inputData.targetEpisodeCount);
+    // Two-attempt loop with raw-response dump on failure. DeepSeek's
+    // structured-output reliability is flaky on this schema (10+ nested
+    // episodes), so `errorStrategy: "warn"` used to silently produce an
+    // empty array and the step threw with no diagnostic. Now we retry once
+    // with an extra JSON-only nudge, and if it still returns empty we
+    // dump the raw model text to /tmp for post-mortem before throwing.
+    const basePrompt = buildPrompt(inputData);
+    const retryPrompt = `${basePrompt}\n\n**重要**：只输出一个合法 JSON 对象，形如 \`{"episodes":[{"title":"...","introduction":"..."}, ...]}\`，不要任何解释、Markdown、前缀。episodes 长度必须严格等于目标集数。`;
+    let episodes: z.infer<typeof EpisodePlan>[] = [];
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const response = await planner.generate(attempt === 1 ? basePrompt : retryPrompt, {
+        structuredOutput: {
+          schema: z.object({ episodes: z.array(EpisodePlan) }),
+          errorStrategy: "warn",
+        },
+      });
+      const parsed =
+        (response.object as { episodes?: z.infer<typeof EpisodePlan>[] } | undefined)?.episodes ??
+        [];
+      if (parsed.length > 0) {
+        episodes = parsed.slice(0, inputData.targetEpisodeCount);
+        break;
+      }
+      try {
+        const rawText = typeof response.text === "string" ? response.text : "";
+        const rawObj =
+          response.object !== undefined ? JSON.stringify(response.object, null, 2) : "(undefined)";
+        const dumpPath = `/tmp/episode-planner-${runId}-attempt${attempt}.txt`;
+        await writeFile(dumpPath, `--- text ---\n${rawText}\n\n--- object ---\n${rawObj}\n`);
+        console.warn(
+          `[episode_phase] attempt ${attempt} produced 0 episodes; raw dumped to ${dumpPath}`
+        );
+      } catch {
+        // non-fatal: dump best-effort
+      }
+    }
 
     if (episodes.length === 0) {
-      throw new Error("episode-planner produced no episodes");
+      throw new Error(
+        `episode-planner produced no episodes (2 attempts; raw responses in /tmp/episode-planner-${runId}-attempt*.txt)`
+      );
     }
 
     const doneLabel = `规划 ${episodes.length} 集大纲完成`;
@@ -325,6 +356,8 @@ export interface ApplyEpisodeDraftsOptions {
   approved: boolean;
   feedback?: string;
   acceptedClientRefIds?: string[];
+  /** See role-phase.applyRoleDrafts for rationale. */
+  emitLifecycleMessage?: boolean;
 }
 
 export interface ApplyEpisodeDraftsResult {
@@ -332,12 +365,15 @@ export interface ApplyEpisodeDraftsResult {
   committedCount: number;
   failedCount: number;
   message: string;
+  completion: WorkflowCompletedOutput | null;
+  failure: WorkflowFailedOutput | null;
 }
 
 export async function applyEpisodeDrafts(
   opts: ApplyEpisodeDraftsOptions
 ): Promise<ApplyEpisodeDraftsResult> {
   const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  const emitLifecycleMessage = opts.emitLifecycleMessage ?? true;
   await throwIfCancelled(runId);
 
   const pending = await listDrafts<EpisodeDraftData>(runId, {
@@ -360,16 +396,27 @@ export async function applyEpisodeDrafts(
 
   if (!approved) {
     for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
-    await publishWorkflowFailed(ctx.projectId, runId, "episode_phase", {
+    const failurePayload: WorkflowFailedOutput = {
+      runId,
+      workflowName: "episode_phase",
       terminalStatus: "cancelled",
       error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
       retryable: false,
-    });
+    };
+    if (emitLifecycleMessage) {
+      await publishWorkflowFailed(ctx.projectId, runId, "episode_phase", {
+        terminalStatus: failurePayload.terminalStatus,
+        error: failurePayload.error,
+        retryable: failurePayload.retryable,
+      });
+    }
     return {
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
       message: feedback ? `分集阶段未通过。反馈：${feedback}` : "分集阶段未通过。",
+      completion: null,
+      failure: failurePayload,
     };
   }
 
@@ -448,6 +495,14 @@ export async function applyEpisodeDrafts(
   const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
   if (failed.length === 0) await deleteAllDrafts(runId);
 
+  if (committed.length > 0) {
+    await publishEntityEvent(ctx, {
+      entity: "episode",
+      action: "batch_created",
+      source: "episode_phase",
+    });
+  }
+
   const endLabel = `分集入库：成功 ${committed.length} / 失败 ${failed.length}`;
   await reportProgress(runId, {
     stepId: "episode_phase.commit",
@@ -466,7 +521,9 @@ export async function applyEpisodeDrafts(
       ? `已入库 ${committed.length} 集，进入下一阶段。`
       : `入库有失败：${failed.length} / ${accepts.length}`;
 
-  await publishWorkflowCompleted(ctx.projectId, runId, "episode_phase", {
+  const completionPayload: WorkflowCompletedOutput = {
+    runId,
+    workflowName: "episode_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.title })),
     failed,
     summary: summaryText,
@@ -475,14 +532,29 @@ export async function applyEpisodeDrafts(
         workflowName: "script_phase",
         labelKey: "workflowNextContinueToScripts",
         variant: "primary",
+        // Scope script generation to the episodes we just committed.
+        // Without this, script_phase fetches EVERY episode in the project
+        // from Java and writes scripts for all of them — wrong after any
+        // earlier episode_phase run left behind episodes.
+        inputData: { episodeIds: committed.map((c) => c.serverId) },
       },
     ],
-  });
+  };
+  if (emitLifecycleMessage) {
+    await publishWorkflowCompleted(ctx.projectId, runId, "episode_phase", {
+      committed: completionPayload.committed,
+      failed: completionPayload.failed,
+      summary: completionPayload.summary,
+      nextSteps: completionPayload.nextSteps,
+    });
+  }
 
   return {
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
     message: summaryText,
+    completion: completionPayload,
+    failure: null,
   };
 }

@@ -68,7 +68,11 @@ export const storyosInstructions = `你是 FizzSpace StoryOS 的 supervisor。�
 ]
 \`\`\`
 
-configure_params 提交后**走你**（不是后端短路径），读 values 后**立刻** invoke_workflow，不要追问不要寒暄。
+configure_params 提交后，前端会把 values 作为**一条独立的 user message**推给你，格式固定为（英文 canonical，跨 locale 不变）：
+
+\`Params set: {"targetEpisodeCount":12,"chapterLength":5,"shotsPerEpisode":25,"stylePainting":"Japanese Anime Style","dialogLanguage":"zh-CN"}\`
+
+冒号后面就是严格 JSON，你**直接 parse 拿 values**，**立刻** invoke_workflow 把这五个字段透传进 inputData，不要追问不要寒暄。同一轮 tool-call 还会收到 \`configure_params\` 的 \`{confirmed: true}\` 结果（不含 values），那只是 HITL 关门信号，values **必须**从那条 \`Params set:\` user message 拿。
 
 （旧的 \`require_project_params\` 工具注册着但**别调** —— 跟会话级参数的新模型违背）
 
@@ -95,7 +99,7 @@ configure_params({ fields: [上面 5 字段] })
 
 有某 phase suspended 等确认，用户发了新消息：
 
-- 用户明确**满意 / 继续 / ok** → \`apply_phase_drafts(runId, phase, approved=true)\`，回一句"收到"即可
+- 用户明确**满意 / 继续 / ok** → \`apply_phase_drafts(runId, phase, approved=true)\`。工具的 output 就是带"下一步"按钮的 completion 卡片（和卡片属于同一条消息），**不要再用 text 重复总结**"已入库 N 个 / 进入下一阶段"，卡片已经说了；可以不说话，或者补一句很短的衔接（≤20 字）
 - 用户明确**取消 / 算了 / 不做了** → \`cancel_workflow(runId)\`，"已取消"，不劝留
 - 用户对**当前 suspended phase 的内容**提修改意见（"太严肃 / 角色太相似 / 重做"）→ 两步连跑：
   1. \`apply_phase_drafts(runId, phase, approved=false, feedback=<用户原话>)\`

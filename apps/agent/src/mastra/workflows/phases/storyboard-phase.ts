@@ -27,7 +27,9 @@ import {
   publishWorkflowProgress,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
+import { publishEntityEvent } from "../../lib/entity-events";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
+import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -802,6 +804,8 @@ export interface ApplyStoryboardDraftsOptions {
   approved: boolean;
   feedback?: string;
   acceptedClientRefIds?: string[];
+  /** See role-phase.applyRoleDrafts for rationale. */
+  emitLifecycleMessage?: boolean;
 }
 
 export interface ApplyStoryboardDraftsResult {
@@ -809,12 +813,15 @@ export interface ApplyStoryboardDraftsResult {
   committedCount: number;
   failedCount: number;
   message: string;
+  completion: WorkflowCompletedOutput | null;
+  failure: WorkflowFailedOutput | null;
 }
 
 export async function applyStoryboardDrafts(
   opts: ApplyStoryboardDraftsOptions
 ): Promise<ApplyStoryboardDraftsResult> {
   const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  const emitLifecycleMessage = opts.emitLifecycleMessage ?? true;
   await throwIfCancelled(runId);
 
   const stylePainting = ctx.stylePainting ?? "";
@@ -835,16 +842,27 @@ export async function applyStoryboardDrafts(
 
   if (!approved) {
     for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
-    await publishWorkflowFailed(ctx.projectId, runId, "storyboard_phase", {
+    const failurePayload: WorkflowFailedOutput = {
+      runId,
+      workflowName: "storyboard_phase",
       terminalStatus: "cancelled",
       error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
       retryable: false,
-    });
+    };
+    if (emitLifecycleMessage) {
+      await publishWorkflowFailed(ctx.projectId, runId, "storyboard_phase", {
+        terminalStatus: failurePayload.terminalStatus,
+        error: failurePayload.error,
+        retryable: failurePayload.retryable,
+      });
+    }
     return {
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
       message: feedback ? `分镜阶段未通过。反馈：${feedback}` : "分镜阶段未通过。",
+      completion: null,
+      failure: failurePayload,
     };
   }
 
@@ -956,6 +974,14 @@ export async function applyStoryboardDrafts(
   const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
   if (failed.length === 0) await deleteAllDrafts(runId);
 
+  if (committed.length > 0) {
+    await publishEntityEvent(ctx, {
+      entity: "storyboard",
+      action: "batch_created",
+      source: "storyboard_phase",
+    });
+  }
+
   const endLabel = `分镜保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
   await reportProgress(runId, {
     stepId: "storyboard_phase.commit",
@@ -975,16 +1001,27 @@ export async function applyStoryboardDrafts(
       : `保存有失败：${failed.length} / ${accepts.length}。`;
 
   // Terminal workflow — no nextSteps (storyboard is the end of the chain).
-  await publishWorkflowCompleted(ctx.projectId, runId, "storyboard_phase", {
+  const completionPayload: WorkflowCompletedOutput = {
+    runId,
+    workflowName: "storyboard_phase",
     committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
     failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
     summary: summaryText,
-  });
+  };
+  if (emitLifecycleMessage) {
+    await publishWorkflowCompleted(ctx.projectId, runId, "storyboard_phase", {
+      committed: completionPayload.committed,
+      failed: completionPayload.failed,
+      summary: completionPayload.summary,
+    });
+  }
 
   return {
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
     message: summaryText,
+    completion: completionPayload,
+    failure: null,
   };
 }

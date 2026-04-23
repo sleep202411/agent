@@ -329,11 +329,7 @@ export function WorkflowSuspendedCard({
 
   const handleAccept = async () => {
     if (dispatchedRef.current) return;
-    if (!projectId) return;
-    if (!isActive) {
-      toast.info(t("workflowOptionsNoReselect"));
-      return;
-    }
+    if (!projectId || !isActive) return;
     dispatchedRef.current = true;
     setActionBusy("accept");
     setActionError(null);
@@ -366,11 +362,7 @@ export function WorkflowSuspendedCard({
    * workflow (resume_workflow with approved=false) via its own tool-call.
    */
   const handleRevise = () => {
-    if (!projectId) return;
-    if (!isActive) {
-      toast.info(t("workflowOptionsNoReselect"));
-      return;
-    }
+    if (!projectId || !isActive) return;
     const text = t("workflowActionRevise");
     dispatch(setDraft({ projectId, draft: text }));
     if (typeof window !== "undefined") {
@@ -410,7 +402,7 @@ export function WorkflowSuspendedCard({
         <ActionButton
           variant="primary"
           onClick={handleAccept}
-          disabled={actionBusy !== null}
+          disabled={actionBusy !== null || !isActive}
           busy={actionBusy === "accept"}
         >
           {formatAcceptLabel(output, t)}
@@ -418,7 +410,7 @@ export function WorkflowSuspendedCard({
         <ActionButton
           variant="secondary"
           onClick={handleRevise}
-          disabled={actionBusy !== null}
+          disabled={actionBusy !== null || !isActive}
           busy={actionBusy === "revise"}
         >
           {t("workflowActionRevise")}
@@ -462,22 +454,24 @@ export function WorkflowCompletedCard({
 
   const handlePickNext = (next: NonNullable<typeof output.nextSteps>[number]) => {
     if (dispatchedRef.current) return;
-    if (!projectId) return;
-    if (!isActive) {
-      toast.info(t("workflowOptionsNoReselect"));
-      return;
-    }
+    if (!projectId || !isActive) return;
     dispatchedRef.current = true;
+    const defaults = buildInputData(next.workflowName, {
+      projectId,
+      worldId,
+      targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
+    });
+    // next.inputData (set by the previous workflow's completion payload)
+    // takes precedence so a phase can scope the next step — e.g.
+    // episode_phase passes `{ episodeIds: [...] }` so script_phase only
+    // covers the batch it just committed.
+    const merged = { ...defaults, ...(next.inputData ?? {}) };
     void dispatch(
       startWorkflowFromButton({
         projectId,
         userLabel: t(next.labelKey),
         workflowName: next.workflowName,
-        inputData: buildInputData(next.workflowName, {
-          projectId,
-          worldId,
-          targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
-        }),
+        inputData: merged,
       })
     );
   };
@@ -489,11 +483,7 @@ export function WorkflowCompletedCard({
    * listens to; plain `setDraft` alone won't update the contenteditable.
    */
   const handleRevise = () => {
-    if (!projectId) return;
-    if (!isActive) {
-      toast.info(t("workflowOptionsNoReselect"));
-      return;
-    }
+    if (!projectId || !isActive) return;
     const text = t("workflowActionRevise");
     dispatch(setDraft({ projectId, draft: text }));
     if (typeof window !== "undefined") {
@@ -566,14 +556,18 @@ export function WorkflowCompletedCard({
                 key={`${next.workflowName}-${i}`}
                 variant={v}
                 onClick={() => handlePickNext(next)}
-                disabled={!projectId}
+                disabled={!projectId || !isActive}
                 icon={v === "primary" ? <IconSparkles className="size-4" /> : undefined}
               >
                 {`${t(next.labelKey)}${costSuffix}`}
               </ActionButton>
             );
           })}
-          <ActionButton variant="secondary" onClick={handleRevise} disabled={!projectId}>
+          <ActionButton
+            variant="secondary"
+            onClick={handleRevise}
+            disabled={!projectId || !isActive}
+          >
             {t("workflowActionRevise")}
           </ActionButton>
           <div className="mt-0.5 text-[11px] text-muted-foreground">{t("workflowReviseHint")}</div>
@@ -616,11 +610,7 @@ export function WorkflowFailedCard({
   const workflowLabelText = t(WORKFLOW_LABEL_KEYS[output.workflowName] ?? "workflowGeneric");
 
   const handleRetry = () => {
-    if (!projectId || !output.workflowName) return;
-    if (!isActive) {
-      toast.info(t("workflowOptionsNoReselect"));
-      return;
-    }
+    if (!projectId || !output.workflowName || !isActive) return;
     void dispatch(
       startWorkflowFromButton({
         projectId,
@@ -670,7 +660,7 @@ export function WorkflowFailedCard({
           <ActionButton
             variant="secondary"
             onClick={handleRetry}
-            disabled={!projectId}
+            disabled={!projectId || !isActive}
             icon={<IconRefresh className="size-4" />}
           >
             {t("workflowActionRetry")}

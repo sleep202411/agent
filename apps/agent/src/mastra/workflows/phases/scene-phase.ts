@@ -32,6 +32,8 @@ import {
   publishWorkflowProgress,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
+import { publishEntityEvent } from "../../lib/entity-events";
+import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -307,6 +309,8 @@ export interface ApplySceneDraftsOptions {
   approved: boolean;
   feedback?: string;
   acceptedClientRefIds?: string[];
+  /** See role-phase.applyRoleDrafts for rationale. */
+  emitLifecycleMessage?: boolean;
 }
 
 export interface ApplySceneDraftsResult {
@@ -314,6 +318,8 @@ export interface ApplySceneDraftsResult {
   committedCount: number;
   failedCount: number;
   message: string;
+  completion: WorkflowCompletedOutput | null;
+  failure: WorkflowFailedOutput | null;
 }
 
 /**
@@ -326,6 +332,7 @@ export async function applySceneDrafts(
   opts: ApplySceneDraftsOptions
 ): Promise<ApplySceneDraftsResult> {
   const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  const emitLifecycleMessage = opts.emitLifecycleMessage ?? true;
   await throwIfCancelled(runId);
 
   const pending = await listDrafts<SceneCreateData>(runId, {
@@ -348,16 +355,27 @@ export async function applySceneDrafts(
 
   if (!approved) {
     for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
-    await publishWorkflowFailed(ctx.projectId, runId, "scene_phase", {
+    const failurePayload: WorkflowFailedOutput = {
+      runId,
+      workflowName: "scene_phase",
       terminalStatus: "cancelled",
       error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
       retryable: false,
-    });
+    };
+    if (emitLifecycleMessage) {
+      await publishWorkflowFailed(ctx.projectId, runId, "scene_phase", {
+        terminalStatus: failurePayload.terminalStatus,
+        error: failurePayload.error,
+        retryable: failurePayload.retryable,
+      });
+    }
     return {
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
       message: feedback ? `场景阶段未通过。反馈：${feedback}` : "场景阶段未通过。",
+      completion: null,
+      failure: failurePayload,
     };
   }
 
@@ -400,6 +418,14 @@ export async function applySceneDrafts(
   const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
   if (outcome === "committed") await deleteAllDrafts(runId);
 
+  if (committed.length > 0) {
+    await publishEntityEvent(ctx, {
+      entity: "scene",
+      action: "batch_created",
+      source: "scene_phase",
+    });
+  }
+
   const endLabel = `场景入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
   await reportProgress(runId, {
     stepId: "scene_phase.commit",
@@ -418,7 +444,9 @@ export async function applySceneDrafts(
       ? `已入库 ${committed.length} 个场景，进入下一阶段。`
       : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
 
-  await publishWorkflowCompleted(ctx.projectId, runId, "scene_phase", {
+  const completionPayload: WorkflowCompletedOutput = {
+    runId,
+    workflowName: "scene_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
     failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
     summary: summaryText,
@@ -434,12 +462,22 @@ export async function applySceneDrafts(
         variant: "secondary",
       },
     ],
-  });
+  };
+  if (emitLifecycleMessage) {
+    await publishWorkflowCompleted(ctx.projectId, runId, "scene_phase", {
+      committed: completionPayload.committed,
+      failed: completionPayload.failed,
+      summary: completionPayload.summary,
+      nextSteps: completionPayload.nextSteps,
+    });
+  }
 
   return {
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
     message: summaryText,
+    completion: completionPayload,
+    failure: null,
   };
 }

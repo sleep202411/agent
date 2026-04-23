@@ -24,7 +24,9 @@ import {
   publishWorkflowProgress,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
+import { publishEntityEvent } from "../../lib/entity-events";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
+import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -38,6 +40,15 @@ export const ScriptPhaseInputSchema = z.object({
   projectId: z.string().min(1),
   /** User feedback from revise round — sent to scriptwriter as guidance. */
   feedback: z.string().optional(),
+  /**
+   * Episode ids to write scripts for. When omitted, script_phase falls back
+   * to "every committed episode in the project" — fine for clean projects
+   * but wrong after multiple episode_phase runs accumulate history. The
+   * episode_phase completion card sets this to just-committed ids so
+   * Continue·Generate scripts only covers THIS batch, not every past
+   * episode in Java.
+   */
+  episodeIds: z.array(z.string()).optional(),
 });
 
 /** Internal — resolved from skeleton + Java committed data. */
@@ -93,11 +104,7 @@ const resolveInputStep = createStep({
     }>(ctx, "/api/user/world/list/episode", {
       data: { productId: projectId, page: 1, pageSize: 999 },
     });
-    // eslint-disable-next-line no-console
-    console.log(
-      `[script_phase] list/episode returned ${(listed.list ?? []).length} rows for project ${projectId}`
-    );
-    const episodes = (listed.list ?? [])
+    const allEpisodes = (listed.list ?? [])
       .filter((ep) => ep.title)
       .sort((a, b) => Number(a.sort ?? 0) - Number(b.sort ?? 0))
       .map((ep) => ({
@@ -105,9 +112,24 @@ const resolveInputStep = createStep({
         title: String(ep.title),
         introduction: String(ep.introduction ?? ""),
       }));
+    // Narrow to the caller-specified episode ids when present (this is how
+    // the episode_phase Continue button scopes the batch). Fall back to
+    // "all episodes" only when no ids were passed (useful for manual
+    // workflow-level invocations / reruns / script regen).
+    const requestedIds = new Set(inputData.episodeIds ?? []);
+    const episodes =
+      requestedIds.size > 0
+        ? allEpisodes.filter((ep) => requestedIds.has(ep.episodeId))
+        : allEpisodes;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[script_phase] project=${projectId} episodes total=${allEpisodes.length} requested=${requestedIds.size || "all"} writing=${episodes.length}`
+    );
     if (episodes.length === 0) {
       throw new Error(
-        `script_phase: no committed episodes found for project ${projectId}. Run episode_phase first.`
+        requestedIds.size > 0
+          ? `script_phase: none of the requested episode ids (${inputData.episodeIds?.join(", ")}) match Java's episode list for project ${projectId}.`
+          : `script_phase: no committed episodes found for project ${projectId}. Run episode_phase first.`
       );
     }
 
@@ -306,7 +328,7 @@ function buildPrompt(args: {
   const langLabel = dialogLanguageLabel(dialogLanguage);
 
   return [
-    `请为第 ${index}/${total} 集写完整的可拍摄剧本。`,
+    `请为第 ${index}/${total} 集写完整的可拍摄短剧剧本。`,
     meta,
     "",
     "故事主线：",
@@ -316,16 +338,15 @@ function buildPrompt(args: {
     episode.introduction ? "本集大纲：" + episode.introduction : "",
     "",
     "要求：",
-    `- **全部台词与旁白用${langLabel}**（场景标题、动作描写可保持中文框架，对白严格按此语言）`,
-    "- 格式按拍摄本风格，**每个原子段落独占一行（用 \\n 真实换行分隔）**，不要把整集挤成一大段",
-    '  - 场景标题独占一行："场景 N: 地点 - 时间"',
-    '  - 每句角色台词独占一行："角色：台词内容"',
-    "  - 每个动作 / 表情 / 环境描写独占一行",
-    '  - 旁白 / 画外音独占一行，用"（旁白）"或"V.O."前缀',
-    "- 长度：300-800 字；不要灌水，密度高",
-    "- 结尾留一个钩子（未解之谜 / 反转信号 / 情绪张力）",
+    `- **全部台词与旁白用${langLabel}**（画面描述、音效提示可用中文框架；对白严格按此语言）`,
+    `- 按 persona 里"时间码拍摄本格式"严格输出：首行集标题，之后按 \`0:00-0:15\` 等时码分段，每段内\`【画面】\` / \`【音效/环境】\` / 角色台词 各独占一行`,
+    "- 总时长 1-3 分钟，通常切 4-8 个时间段，每段 10-30 秒对应 30-150 字",
+    "- 第 1 段 15 秒必须锚定场景 + 抛钩子；末段强 cliffhanger",
+    "- 每集至少 1 个标志性画面（特写 / 对视 / 道具慢镜）",
+    "- 音效拟声词用大写（TINKS / RUSTLES / KNOCKS 等），营造氛围",
+    "- 台词必须有潜台词 + 推动剧情/揭示角色/制造冲突（三不沾删掉）",
     "",
-    "以 JSON 返回，字段 content 是完整剧本文本（里面必须包含真实换行，用 \\n 连接各行）。",
+    '以 JSON 返回：\`{"content": "...剧本全文，真实换行用 \\\\n..."}\`。不要 Markdown 代码块、不要前言。',
   ]
     .filter(Boolean)
     .join("\n");
@@ -398,6 +419,8 @@ export interface ApplyScriptDraftsOptions {
   approved: boolean;
   feedback?: string;
   acceptedClientRefIds?: string[];
+  /** See role-phase.applyRoleDrafts for rationale. */
+  emitLifecycleMessage?: boolean;
 }
 
 export interface ApplyScriptDraftsResult {
@@ -405,12 +428,15 @@ export interface ApplyScriptDraftsResult {
   committedCount: number;
   failedCount: number;
   message: string;
+  completion: WorkflowCompletedOutput | null;
+  failure: WorkflowFailedOutput | null;
 }
 
 export async function applyScriptDrafts(
   opts: ApplyScriptDraftsOptions
 ): Promise<ApplyScriptDraftsResult> {
   const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  const emitLifecycleMessage = opts.emitLifecycleMessage ?? true;
   await throwIfCancelled(runId);
 
   const pending = await listDrafts<ScriptDraftData>(runId, {
@@ -430,16 +456,27 @@ export async function applyScriptDrafts(
 
   if (!approved) {
     for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
-    await publishWorkflowFailed(ctx.projectId, runId, "script_phase", {
+    const failurePayload: WorkflowFailedOutput = {
+      runId,
+      workflowName: "script_phase",
       terminalStatus: "cancelled",
       error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
       retryable: false,
-    });
+    };
+    if (emitLifecycleMessage) {
+      await publishWorkflowFailed(ctx.projectId, runId, "script_phase", {
+        terminalStatus: failurePayload.terminalStatus,
+        error: failurePayload.error,
+        retryable: failurePayload.retryable,
+      });
+    }
     return {
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
       message: feedback ? `剧本阶段未通过。反馈：${feedback}` : "剧本阶段未通过。",
+      completion: null,
+      failure: failurePayload,
     };
   }
 
@@ -495,6 +532,14 @@ export async function applyScriptDrafts(
 
   const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
 
+  if (committed.length > 0) {
+    await publishEntityEvent(ctx, {
+      entity: "script",
+      action: "batch_created",
+      source: "script_phase",
+    });
+  }
+
   const endLabel = `剧本保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
   await reportProgress(runId, {
     stepId: "script_phase.commit",
@@ -508,12 +553,48 @@ export async function applyScriptDrafts(
     label: endLabel,
   });
 
-  const summaryText =
-    outcome === "committed"
-      ? `已保存 ${committed.length} 集剧本，进入下一阶段。`
-      : `保存失败：${failed.length} / ${accepts.length}。剧本草稿保留在 Redis 供重试。`;
+  // Total failure (0 committed, all failed) = the phase failed, not just
+  // "partial done". Emitting a completion card with a misleading "Continue
+  // to storyboard" next-step would invite the user to proceed on top of
+  // zero data. Route through the failed-card path instead so the user
+  // gets a Retry affordance and no false "continue" option.
+  const totalFailure = committed.length === 0 && failed.length > 0;
 
-  await publishWorkflowCompleted(ctx.projectId, runId, "script_phase", {
+  const summaryText = totalFailure
+    ? `保存失败：${failed.length} / ${accepts.length}。剧本草稿保留在 Redis，可重试。`
+    : outcome === "committed"
+      ? `已保存 ${committed.length} 集剧本，进入下一阶段。`
+      : `部分成功：${committed.length} / ${accepts.length} 已保存，${failed.length} 失败。剧本草稿保留在 Redis。`;
+
+  if (totalFailure) {
+    const firstReason = failed[0]?.reason ?? "Java 批量写入全部失败";
+    const failurePayload: WorkflowFailedOutput = {
+      runId,
+      workflowName: "script_phase",
+      terminalStatus: "failed",
+      error: `${summaryText}（首条失败原因：${firstReason}）`,
+      retryable: true,
+    };
+    if (emitLifecycleMessage) {
+      await publishWorkflowFailed(ctx.projectId, runId, "script_phase", {
+        terminalStatus: failurePayload.terminalStatus,
+        error: failurePayload.error,
+        retryable: failurePayload.retryable,
+      });
+    }
+    return {
+      outcome,
+      committedCount: 0,
+      failedCount: failed.length,
+      message: summaryText,
+      completion: null,
+      failure: failurePayload,
+    };
+  }
+
+  const completionPayload: WorkflowCompletedOutput = {
+    runId,
+    workflowName: "script_phase",
     committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
     failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
     summary: summaryText,
@@ -524,12 +605,22 @@ export async function applyScriptDrafts(
         variant: "primary",
       },
     ],
-  });
+  };
+  if (emitLifecycleMessage) {
+    await publishWorkflowCompleted(ctx.projectId, runId, "script_phase", {
+      committed: completionPayload.committed,
+      failed: completionPayload.failed,
+      summary: completionPayload.summary,
+      nextSteps: completionPayload.nextSteps,
+    });
+  }
 
   return {
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
     message: summaryText,
+    completion: completionPayload,
+    failure: null,
   };
 }

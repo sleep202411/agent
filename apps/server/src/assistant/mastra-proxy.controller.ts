@@ -698,6 +698,8 @@ export class MastraProxyController {
     if (cookie) resumeHeaders.cookie = cookie;
 
     const resumeUrl = `${this.mastraUrl}/workflow/${encodeURIComponent(confirmWorkflow.runId)}/confirm`;
+    let completionPayload: unknown = null;
+    let failurePayload: unknown = null;
     try {
       const resp = await fetch(resumeUrl, {
         method: 'POST',
@@ -705,6 +707,11 @@ export class MastraProxyController {
         body: JSON.stringify({
           approved: confirmWorkflow.approved,
           feedback: confirmWorkflow.feedback,
+          // Tell the agent NOT to side-channel-emit workflow_completed /
+          // workflow_failed: we'll embed the returned payload into our own
+          // synthetic message below so the card + any follow-up text live
+          // in one bubble, matching the NL path's apply_phase_drafts tool.
+          emitLifecycleMessage: false,
         }),
       });
       if (!resp.ok) {
@@ -717,6 +724,12 @@ export class MastraProxyController {
           HttpStatus.BAD_GATEWAY,
         );
       }
+      const data = (await resp.json().catch(() => ({}))) as {
+        completion?: unknown;
+        failure?: unknown;
+      };
+      completionPayload = data.completion ?? null;
+      failurePayload = data.failure ?? null;
     } catch (err) {
       if (err instanceof HttpException) throw err;
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -727,24 +740,48 @@ export class MastraProxyController {
       );
     }
 
-    // Canned ack — mirrors what the supervisor would have said per the
-    // HITL confirm section of the prompt. Approved path is intentionally
-    // non-committal about next steps (frontend NEXT_STEPS buttons own the
-    // continuation decision).
-    const ackText = confirmWorkflow.approved
-      ? '导演，满意收到。团队正在把这轮结果固化到项目里。'
-      : confirmWorkflow.feedback
+    // Synthetic assistant message — a `tool-apply_phase_drafts` part whose
+    // output carries the `completion` / `failure` payload the agent just
+    // returned. Frontend renders this part with the same WorkflowCompleted
+    // / WorkflowFailed card used elsewhere (see message-bubble.tsx's
+    // apply_phase_drafts branch). Follow-up text, if we still want one
+    // for the revise case, rides in the SAME message's parts array so
+    // card + text never fragment into sibling bubbles.
+    const toolCallId = `apply-${confirmWorkflow.runId}`;
+    const toolPart = {
+      type: 'tool-apply_phase_drafts',
+      toolCallId,
+      state: 'output-available',
+      input: {
+        runId: confirmWorkflow.runId,
+        approved: confirmWorkflow.approved,
+        feedback: confirmWorkflow.feedback,
+      },
+      output: {
+        outcome: confirmWorkflow.approved ? 'committed' : 'rejected',
+        completion: completionPayload,
+        failure: failurePayload,
+      },
+    };
+    // Approved path: card (with summary + next-step buttons) IS the reply
+    // — no follow-up text. Revise path: surface the user's feedback so
+    // they know the handoff landed, but keep it tight.
+    const parts: unknown[] = [toolPart];
+    if (!confirmWorkflow.approved) {
+      const ackText = confirmWorkflow.feedback
         ? `了解，团队会按"${confirmWorkflow.feedback}"的方向再过一遍，稍后请您再看一眼。`
         : '了解，团队会按您的反馈再过一遍，稍后请您再看一眼。';
+      parts.push({ type: 'text', text: ackText, state: 'done' });
+    }
     const ackId = randomUUID();
     await this.store.addMessage(projectId, {
       id: ackId,
       role: 'assistant',
-      parts: [{ type: 'text', text: ackText, state: 'done' }],
+      parts,
     } as StoredMessage);
 
     this.logger.log(
-      `confirmWorkflow short-circuit runId=${confirmWorkflow.runId} approved=${confirmWorkflow.approved} project=${projectId}`,
+      `confirmWorkflow short-circuit runId=${confirmWorkflow.runId} approved=${confirmWorkflow.approved} project=${projectId} synthMsgId=${ackId} completionPresent=${!!completionPayload} failurePresent=${!!failurePayload}`,
     );
 
     // Flip agent_state to 'idle' so the web client's WS listener fires

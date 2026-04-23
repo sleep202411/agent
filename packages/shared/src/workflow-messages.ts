@@ -118,6 +118,15 @@ export const WorkflowNextStepSchema = z.object({
    * with the label, e.g. "生成场景图 (15 积分)".
    */
   estimatedCost: z.number().int().nonnegative().optional(),
+  /**
+   * Extra inputData to merge into the next workflow invocation. Callers
+   * use this to scope the next step to just-committed records (e.g.
+   * episode_phase completion passes `episodeIds: [...]` so script_phase
+   * only writes scripts for THIS batch, not every historical episode in
+   * the project). Frontend merges this over its generic `buildInputData`
+   * result; fields conflict → this wins.
+   */
+  inputData: z.record(z.string(), z.unknown()).optional(),
 });
 export type WorkflowNextStep = z.infer<typeof WorkflowNextStepSchema>;
 

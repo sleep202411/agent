@@ -33,7 +33,7 @@ const PhaseNameEnum = z.enum([
 export const applyPhaseDrafts = createTool({
   id: "apply_phase_drafts",
   description:
-    '提交或丢弃某个 HITL phase 的 drafts。用在用户对 suspended phase 的内容表态时：明确"满意/继续" → approved=true 入库并通过 completion card 问"下一步"；"重做/改成 X" → approved=false + feedback，丢弃草稿，然后你**必须立即** invoke_workflow 同一 phase 带上 feedback 重跑。runId 从最近的 workflow_suspended 事件或 list_active_workflows 拿。',
+    '提交或丢弃某个 HITL phase 的 drafts。用在用户对 suspended phase 的内容表态时：明确"满意/继续" → approved=true 入库并通过 completion card 问"下一步"；"重做/改成 X" → approved=false + feedback，丢弃草稿，然后你**必须立即** invoke_workflow 同一 phase 带上 feedback 重跑。runId 从最近的 workflow_suspended 事件或 list_active_workflows 拿。**注意：这个工具的 output 本身就渲染为 completion 卡片（包含下一步按钮），不要再用 text 重复总结 —— 直接结束 turn。',
   inputSchema: z.object({
     runId: z.string().min(1),
     phase: PhaseNameEnum,
@@ -51,6 +51,17 @@ export const applyPhaseDrafts = createTool({
     committedCount: z.number(),
     failedCount: z.number(),
     message: z.string(),
+    /**
+     * Completion card payload when approved=true (shape is the shared
+     * WorkflowCompletedOutput — kept loose here because @repo/shared uses a
+     * different zod version than this tool's createTool() call). Frontend
+     * renders it inline inside the supervisor's message, so the card and
+     * any follow-up text live in one bubble rather than fragmenting into
+     * two messages.
+     */
+    completion: z.record(z.string(), z.unknown()).nullable(),
+    /** Failure card payload when approved=false (WorkflowFailedOutput shape). */
+    failure: z.record(z.string(), z.unknown()).nullable(),
   }),
   execute: async (input, execCtx) => {
     const ctx = getContext(execCtx?.requestContext);
@@ -60,6 +71,9 @@ export const applyPhaseDrafts = createTool({
       approved: input.approved,
       feedback: input.feedback,
       acceptedClientRefIds: input.acceptedClientRefIds,
+      // NL path owns the card via tool output — tell the phase helper not
+      // to also fire a side-channel workflow_completed/failed message.
+      emitLifecycleMessage: false,
     };
     switch (input.phase) {
       case "scene_phase":

@@ -1538,6 +1538,14 @@
     "personaError": "Request failed",
     "personaCollapse": "Collapse",
     "personaExpand": "Expand",
+    "configureParamsSubmitted": "✓ Creation params updated",
+    "configureParamsKey": {
+      "targetEpisodeCount": "Episodes",
+      "chapterLength": "Episode length",
+      "shotsPerEpisode": "Shots per episode",
+      "stylePainting": "Style",
+      "dialogLanguage": "Dialogue language"
+    },
     "personas": {
       "scriptwriter": "Scriptwriter",
       "characterDesigner": "Character Designer",
@@ -1582,7 +1590,6 @@
     "workflowResultCast": "{count} characters",
     "workflowResultSettings": "{count} settings",
     "workflowReviseHint": "Share specific edit notes any time in the input below.",
-    "workflowOptionsNoReselect": "Choices from past turns can't be reselected.",
     "workflowUserSatisfied": "Looks good",
     "workflowUserRequestedRevision": "Revise as follows",
     "workflowUserCancelled": "Cancelled this task",

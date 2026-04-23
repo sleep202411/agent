@@ -709,6 +709,80 @@ export const sendUserMessage = createAsyncThunk<
 // this one takes an explicit text so the chat-composer state is left
 // alone.
 
+/**
+ * User filled the configure_params form. Atomically does three things
+ * in one round-trip to the agent:
+ *   1. Closes the HITL tool call (commitToolResult with `confirmed: true`)
+ *      so the supervisor's tool-call advances visually.
+ *   2. Commits a user message with the values — canonical English
+ *      `Params set: {...JSON...}` so the supervisor prompt keyword-match
+ *      works regardless of user locale.
+ *   3. Submits the updated message list to the agent — ONCE. Earlier
+ *      split dispatch (separate onToolResult + submitConfigureParams)
+ *      caused duplicate submits → two workflow runs.
+ */
+export const submitConfigureParams = createAsyncThunk<
+  void,
+  { projectId: string; toolCallId: string; values: Record<string, unknown> },
+  { state: RootState; dispatch: AppDispatch }
+>(
+  "assistant/submitConfigureParams",
+  async ({ projectId, toolCallId, values }, { dispatch, getState }) => {
+    abortProjectStream(projectId);
+    dispatch(ensureProject(projectId));
+
+    const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
+    const messagesWithToolClosed = current.messages.map((message) =>
+      message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === toolCallId)
+        ? cloneMessageWithToolResult(message, {
+            toolCallId,
+            toolName: "configure_params",
+            output: { confirmed: true },
+          })
+        : message
+    );
+    dispatch(
+      commitToolResult({
+        projectId,
+        messages: messagesWithToolClosed,
+        toolCallId,
+      })
+    );
+
+    const userMessage: AssistantMessage = {
+      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          text: `Params set: ${JSON.stringify(values)}`,
+          state: "done",
+        },
+      ],
+    };
+    dispatch(commitUserMessage({ projectId, userMessage }));
+
+    const abortController = createProjectAbortController(projectId);
+
+    try {
+      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
+      const workspaceContext = buildWorkspaceContext(getState(), projectId);
+
+      await submitMessageToAgent({
+        projectId,
+        messages: nextMessages,
+        workspaceContext,
+        signal: abortController.signal,
+      });
+    } catch (err) {
+      if (abortController.signal.aborted) return;
+      const errMsg = err instanceof Error ? err.message : "Failed to submit params";
+      dispatch(streamError({ projectId, error: errMsg }));
+      toast.error(errMsg);
+    }
+  }
+);
+
 export const applyPersonaAction = createAsyncThunk<
   void,
   { projectId: string; label: string },

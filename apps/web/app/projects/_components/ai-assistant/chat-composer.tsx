@@ -4,7 +4,11 @@ import { useState } from "react";
 import { IconLoader2, IconPlayerStopFilled } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
-import { clearActiveWorkflow, sendUserMessage } from "@/src/store/slices/assistantSlice";
+import {
+  clearActiveWorkflow,
+  sendUserMessage,
+  submitConfigureParams,
+} from "@/src/store/slices/assistantSlice";
 import { cn } from "@/lib/utils";
 import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
 import type {
@@ -75,8 +79,14 @@ export function ChatComposer({
   const workingPillVisible =
     !!activeWorkflow && (activeWorkflow.status === "queued" || activeWorkflow.status === "running");
 
-  const toolCard = activePendingTool ? renderToolCard(activePendingTool, onToolResult) : null;
   const dispatch = useAppDispatch();
+  const handleSubmitConfigureParams = (toolCallId: string, values: Record<string, unknown>) => {
+    if (!projectId) return;
+    void dispatch(submitConfigureParams({ projectId, toolCallId, values }));
+  };
+  const toolCard = activePendingTool
+    ? renderToolCard(activePendingTool, onToolResult, handleSubmitConfigureParams)
+    : null;
 
   const handleSend = () => {
     if (!projectId) return;
@@ -141,7 +151,8 @@ export function ChatComposer({
 
 function renderToolCard(
   tool: ActivePendingTool,
-  onToolResult?: (result: AssistantToolResult) => void
+  onToolResult?: (result: AssistantToolResult) => void,
+  onSubmitConfigureParams?: (toolCallId: string, values: Record<string, unknown>) => void
 ) {
   const { toolName, toolCallId, part } = tool;
   const input = part.input as Record<string, unknown> | undefined;
@@ -228,23 +239,13 @@ function renderToolCard(
             max: f.max,
             suffix: f.suffix,
           }))}
-          onSubmit={(values, displayLabels) => {
-            // labelMap: key → field label ("stylePainting" → "画风")
-            // displayLabels: key → human-readable value ("2" → "Cartoon Style").
-            // Both flow into the tool result summary rendered as a user-
-            // side bubble. `values` (raw IDs) still flows to the agent for
-            // downstream workflow consumption.
-            const labelMap = Object.fromEntries(data.fields.map((f) => [f.key, f.label]));
-            onToolResult?.({
-              toolCallId,
-              toolName: "configure_params",
-              output: {
-                confirmed: true,
-                values,
-                _labelMap: labelMap,
-                _displayValues: displayLabels,
-              },
-            });
+          onSubmit={(values) => {
+            // Single atomic dispatch: closes the HITL tool, commits a
+            // user message `Params set: {JSON}`, and submits ONCE to the
+            // agent. Don't also call onToolResult here — applyToolResult
+            // itself submits to the agent, which would duplicate the
+            // request and spawn parallel workflow runs.
+            onSubmitConfigureParams?.(toolCallId, values);
           }}
           onDismiss={() => {
             onToolResult?.({

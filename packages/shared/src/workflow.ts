@@ -39,5 +39,15 @@ export const ConfirmRequestSchema = z.object({
    * all pending drafts for the run. Useful when user hand-picks some roles.
    */
   acceptedClientRefIds: z.array(z.string()).optional(),
+  /**
+   * When true (default), the agent publishes a side-channel
+   * `workflow_completed` / `workflow_failed` chat message — legacy
+   * behavior for callers without a host message to attach to. Set false
+   * from Nest's `confirmWorkflow` short-circuit: Nest owns the assistant
+   * message and embeds the returned `completion` / `failure` payload as
+   * a `tool-apply_phase_drafts` part, so card + follow-up text live in
+   * one bubble instead of fragmenting into a sibling message.
+   */
+  emitLifecycleMessage: z.boolean().optional(),
 });
 export type ConfirmRequest = z.infer<typeof ConfirmRequestSchema>;

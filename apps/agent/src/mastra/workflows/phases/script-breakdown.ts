@@ -317,6 +317,21 @@ const analyzeStep = createStep({
       await publishWorkflowCompleted(ctx.projectId, runId, "story_outline", {
         committed: [{ serverId: ctx.projectId, title: "故事骨架" }],
         summary: endLabel,
+        // Attach the structured skeleton so the completed card can show
+        // chapter titles / cast / settings inline — users were seeing
+        // just "5 章 · 5 角色 · 5 场景" with no way to glimpse the actual
+        // content.
+        result: {
+          storySummary: result.storySummary,
+          genre: result.genre,
+          tone: result.tone,
+          structure: result.structure.map((c) => ({ title: c.title, summary: c.summary })),
+          cast: result.cast.map((c) => ({ name: c.name, role: c.role })),
+          settings: (result.settings ?? []).map((s) => ({
+            name: s.name,
+            typeHint: s.typeHint,
+          })),
+        },
         nextSteps: [
           {
             workflowName: "role_phase",
@@ -345,7 +360,7 @@ function buildStoryEditorPrompt(input: z.infer<typeof ScriptBreakdownInputSchema
     "1. structure 必须覆盖全文，章节划分合理（短篇 3-5 章，中篇 5-15 章，长篇按原文分章）。",
     "2. cast 里**只列角色名册**（name + role + 一句话 arc），不要写外貌/性格/台词——这是角色设计师下一步的活。",
     "3. settings 同理，只列场地名册 + typeHint，不要写氛围/光线/陈设。",
-    "4. props 列剧情里**明确出现且值得设计**的关键道具名册 + typeHint（如'父亲的旧手表'、'亡妻的照片'、'证物袋'）。不要列泛用日常物（桌椅杯盘）。可以为空数组。",
+    "4. props 列剧情里**明确出现且被角色互动的物件**名册 + typeHint。包括但不限于：身份象征物（玉佩、官印、令牌、头冠）、关键证物（信件、画像、手札、照片）、触发物（穿越钥匙、契约、戒指、古董）、武器或工具、信物（定情物、家传物）、反复出现的道具（烟斗、折扇、药瓶）。只要剧情提到且推动情节/区分角色/承载情感，就应当列入（用户会在下一步审查）。只排除纯背景陈设（桌椅杯盘、一次性食物饮品）。**通常至少 3-8 个；返回空数组仅限于极简抽象叙事、纯对话独幕剧或类似场景**。",
     "5. threads.main 要提炼贯穿全文的核心线索，subs 列出交织的支线。",
   ].join("\n");
 }

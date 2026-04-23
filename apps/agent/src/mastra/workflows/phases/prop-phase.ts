@@ -31,6 +31,8 @@ import {
   publishWorkflowProgress,
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
+import { publishEntityEvent } from "../../lib/entity-events";
+import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -311,6 +313,8 @@ export interface ApplyPropDraftsOptions {
   approved: boolean;
   feedback?: string;
   acceptedClientRefIds?: string[];
+  /** See role-phase.applyRoleDrafts for rationale. */
+  emitLifecycleMessage?: boolean;
 }
 
 export interface ApplyPropDraftsResult {
@@ -318,12 +322,15 @@ export interface ApplyPropDraftsResult {
   committedCount: number;
   failedCount: number;
   message: string;
+  completion: WorkflowCompletedOutput | null;
+  failure: WorkflowFailedOutput | null;
 }
 
 export async function applyPropDrafts(
   opts: ApplyPropDraftsOptions
 ): Promise<ApplyPropDraftsResult> {
   const { ctx, runId, approved, feedback, acceptedClientRefIds } = opts;
+  const emitLifecycleMessage = opts.emitLifecycleMessage ?? true;
   await throwIfCancelled(runId);
 
   const pending = await listDrafts<PropCreateData>(runId, {
@@ -344,16 +351,27 @@ export async function applyPropDrafts(
 
   if (!approved) {
     for (const id of pendingRefIds) await markDraftDiscarded(runId, id);
-    await publishWorkflowFailed(ctx.projectId, runId, "prop_phase", {
+    const failurePayload: WorkflowFailedOutput = {
+      runId,
+      workflowName: "prop_phase",
       terminalStatus: "cancelled",
       error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
       retryable: false,
-    });
+    };
+    if (emitLifecycleMessage) {
+      await publishWorkflowFailed(ctx.projectId, runId, "prop_phase", {
+        terminalStatus: failurePayload.terminalStatus,
+        error: failurePayload.error,
+        retryable: failurePayload.retryable,
+      });
+    }
     return {
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
       message: feedback ? `道具阶段未通过。反馈：${feedback}` : "道具阶段未通过。",
+      completion: null,
+      failure: failurePayload,
     };
   }
 
@@ -396,6 +414,14 @@ export async function applyPropDrafts(
   const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
   if (outcome === "committed") await deleteAllDrafts(runId);
 
+  if (committed.length > 0) {
+    await publishEntityEvent(ctx, {
+      entity: "prop",
+      action: "batch_created",
+      source: "prop_phase",
+    });
+  }
+
   const endLabel = `道具入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
   await reportProgress(runId, {
     stepId: "prop_phase.commit",
@@ -414,7 +440,9 @@ export async function applyPropDrafts(
       ? `已入库 ${committed.length} 个道具，进入下一阶段。`
       : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
 
-  await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
+  const completionPayload: WorkflowCompletedOutput = {
+    runId,
+    workflowName: "prop_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
     failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
     summary: summaryText,
@@ -430,12 +458,22 @@ export async function applyPropDrafts(
         variant: "secondary",
       },
     ],
-  });
+  };
+  if (emitLifecycleMessage) {
+    await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
+      committed: completionPayload.committed,
+      failed: completionPayload.failed,
+      summary: completionPayload.summary,
+      nextSteps: completionPayload.nextSteps,
+    });
+  }
 
   return {
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
     message: summaryText,
+    completion: completionPayload,
+    failure: null,
   };
 }
