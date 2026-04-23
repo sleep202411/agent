@@ -21,6 +21,7 @@ import { IMAGE_QUEUE_NAME, type AssetImageJobData, type AssetImageJobName } from
 import { buildConnection } from "./queue";
 import { generateAssetImageViaJava, updateAssetImagePath } from "../../lib/java-image-gen";
 import { setAssetImageStatus } from "../../lib/asset-image-status";
+import { publishEntityEvent } from "../../lib/entity-events";
 import type { StoryosContext } from "../../lib/workspace-client";
 
 const LOG_PREFIX = "[image-worker]";
@@ -160,6 +161,31 @@ async function handleImageJob(job: Job<AssetImageJobData, unknown, AssetImageJob
     status: "ready",
     imageUrl: ossPath,
   });
+
+  // 4. Notify clients: the asset's imgPath just changed in Java. Without
+  // this, the sidebar / asset-library tile keeps showing the old state
+  // until the user manually reloads; the asset-image-status hash + its
+  // Redis publish cover the "image is being generated" channel but no
+  // longer cover the "persisted to Java" moment. Map the BullMQ job's
+  // asset-type ("role" | "scene" | "prop") onto the entity-events enum
+  // ("character" | "scene" | "prop"). Soft-failing — a WS publish issue
+  // shouldn't turn a successful generate into a failed job.
+  const entityType =
+    assetType === "role" ? ("character" as const) : (assetType as "scene" | "prop");
+  try {
+    await publishEntityEvent(ctx, {
+      entity: entityType,
+      action: "updated",
+      id: assetId,
+      source: "image_worker",
+    });
+  } catch (err) {
+    logJob("warn", "entity_event_failed", {
+      ...baseCtx,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   logJob("info", "ready", {
     ...baseCtx,
     totalDurationMs: Date.now() - started,

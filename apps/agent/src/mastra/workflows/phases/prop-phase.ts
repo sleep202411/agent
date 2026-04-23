@@ -242,6 +242,9 @@ const emitReviewStep = createStep({
       await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
         committed: [],
         summary: "本故事骨架里没有需要单独设计的道具，已跳过。",
+        // Nothing was generated → nothing to revise. Hiding the Revise
+        // button prevents confusing "what would I revise?" clicks.
+        revisable: false,
         nextSteps: [
           {
             workflowName: "episode_phase",

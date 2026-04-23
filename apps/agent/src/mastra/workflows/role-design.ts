@@ -33,6 +33,7 @@ import { reportProgress, throwIfCancelled } from "./engine";
 import { getContext } from "../lib/workspace-client";
 import { summarizeBatch } from "../lib/batch-writer";
 import { stylePaintingHint } from "../lib/style-painting";
+import { robustStructuredGenerate } from "../lib/robust-generate";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -113,18 +114,15 @@ const planRolesStep = createStep({
     const designer = mastra?.getAgent("roleDesigner");
     if (!designer) throw new Error("roleDesigner agent not registered");
 
-    const prompt = buildPlanPrompt(inputData, stylePainting);
-
-    // Ask the persona to produce a structured list of roles.
-    const response = await designer.generate(prompt, {
-      structuredOutput: {
-        schema: z.object({ roles: z.array(PlannedRole) }),
-        errorStrategy: "warn",
-      },
-      // requestContext is inherited from the workflow run
+    const designerSchema = z.object({ roles: z.array(PlannedRole) });
+    const { object: designed } = await robustStructuredGenerate({
+      agent: designer,
+      prompt: buildPlanPrompt(inputData, stylePainting),
+      schema: designerSchema,
+      tag: `role-designer-${runId ?? "nr"}`,
+      isEmpty: (obj) => !obj?.roles || obj.roles.length === 0,
     });
-
-    const plannedRoles = ((response.object as { roles?: PlannedRole[] } | undefined)?.roles ?? [])
+    const plannedRoles = designed.roles
       .slice(0, inputData.roleCount)
       .filter((r) => r.name && r.role);
 

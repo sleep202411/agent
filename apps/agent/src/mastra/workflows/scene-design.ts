@@ -30,6 +30,7 @@ import { reportProgress, throwIfCancelled } from "./engine";
 import { getContext } from "../lib/workspace-client";
 import { summarizeBatch } from "../lib/batch-writer";
 import { stylePaintingHint } from "../lib/style-painting";
+import { robustStructuredGenerate } from "../lib/robust-generate";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -132,16 +133,15 @@ const planScenesStep = createStep({
     const designer = mastra?.getAgent("sceneDesigner");
     if (!designer) throw new Error("sceneDesigner agent not registered");
 
-    const response = await designer.generate(buildPlanPrompt(inputData, stylePainting), {
-      structuredOutput: {
-        schema: z.object({ scenes: z.array(PlannedScene) }),
-        errorStrategy: "warn",
-      },
+    const designerSchema = z.object({ scenes: z.array(PlannedScene) });
+    const { object: designed } = await robustStructuredGenerate({
+      agent: designer,
+      prompt: buildPlanPrompt(inputData, stylePainting),
+      schema: designerSchema,
+      tag: `scene-designer-${runId ?? "nr"}`,
+      isEmpty: (obj) => !obj?.scenes || obj.scenes.length === 0,
     });
-
-    const plannedScenes = (
-      (response.object as { scenes?: PlannedScene[] } | undefined)?.scenes ?? []
-    )
+    const plannedScenes = designed.scenes
       .slice(0, inputData.sceneCount)
       .filter((s) => s.name && s.setting);
 

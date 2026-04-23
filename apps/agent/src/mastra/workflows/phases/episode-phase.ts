@@ -10,9 +10,9 @@
  * {title, introduction, frontPrompt, behindPrompt, sort, projectId} entries.
  */
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
+import { robustStructuredGenerate } from "../../lib/robust-generate";
 import {
   deleteAllDrafts,
   listDrafts,
@@ -154,48 +154,19 @@ const planStep = createStep({
     const planner = mastra?.getAgent("episodePlanner");
     if (!planner) throw new Error("episode-planner agent not registered");
 
-    // Two-attempt loop with raw-response dump on failure. DeepSeek's
-    // structured-output reliability is flaky on this schema (10+ nested
-    // episodes), so `errorStrategy: "warn"` used to silently produce an
-    // empty array and the step threw with no diagnostic. Now we retry once
-    // with an extra JSON-only nudge, and if it still returns empty we
-    // dump the raw model text to /tmp for post-mortem before throwing.
-    const basePrompt = buildPrompt(inputData);
-    const retryPrompt = `${basePrompt}\n\n**重要**：只输出一个合法 JSON 对象，形如 \`{"episodes":[{"title":"...","introduction":"..."}, ...]}\`，不要任何解释、Markdown、前缀。episodes 长度必须严格等于目标集数。`;
-    let episodes: z.infer<typeof EpisodePlan>[] = [];
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const response = await planner.generate(attempt === 1 ? basePrompt : retryPrompt, {
-        structuredOutput: {
-          schema: z.object({ episodes: z.array(EpisodePlan) }),
-          errorStrategy: "warn",
-        },
-      });
-      const parsed =
-        (response.object as { episodes?: z.infer<typeof EpisodePlan>[] } | undefined)?.episodes ??
-        [];
-      if (parsed.length > 0) {
-        episodes = parsed.slice(0, inputData.targetEpisodeCount);
-        break;
-      }
-      try {
-        const rawText = typeof response.text === "string" ? response.text : "";
-        const rawObj =
-          response.object !== undefined ? JSON.stringify(response.object, null, 2) : "(undefined)";
-        const dumpPath = `/tmp/episode-planner-${runId}-attempt${attempt}.txt`;
-        await writeFile(dumpPath, `--- text ---\n${rawText}\n\n--- object ---\n${rawObj}\n`);
-        console.warn(
-          `[episode_phase] attempt ${attempt} produced 0 episodes; raw dumped to ${dumpPath}`
-        );
-      } catch {
-        // non-fatal: dump best-effort
-      }
-    }
-
-    if (episodes.length === 0) {
-      throw new Error(
-        `episode-planner produced no episodes (2 attempts; raw responses in /tmp/episode-planner-${runId}-attempt*.txt)`
-      );
-    }
+    // Robust 2-try + raw-dump pattern — DeepSeek occasionally returns a
+    // bare array instead of the `{episodes: [...]}` wrapper, which makes
+    // Mastra's structuredOutput parse fail silently. The helper retries
+    // with a strict JSON-only postfix and dumps raw on failure.
+    const plannerSchema = z.object({ episodes: z.array(EpisodePlan) });
+    const { object: plannerOutput } = await robustStructuredGenerate({
+      agent: planner,
+      prompt: buildPrompt(inputData),
+      schema: plannerSchema,
+      tag: `episode-planner-${runId}`,
+      isEmpty: (obj) => !obj?.episodes || obj.episodes.length === 0,
+    });
+    const episodes = plannerOutput.episodes.slice(0, inputData.targetEpisodeCount);
 
     const doneLabel = `规划 ${episodes.length} 集大纲完成`;
     await reportProgress(runId, {

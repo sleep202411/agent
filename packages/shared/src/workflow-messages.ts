@@ -165,6 +165,13 @@ export const WorkflowCompletedOutputSchema = BaseWorkflowOutput.extend({
    * the image-phase progress card.
    */
   compact: z.boolean().optional(),
+  /**
+   * When false, suppress the "I want to revise" button. Used for
+   * auto-skip terminal states where there's nothing to revise (e.g.
+   * prop_phase with zero props in the outline). Defaults to true when
+   * omitted to preserve the revise affordance on normal completions.
+   */
+  revisable: z.boolean().optional(),
 });
 export type WorkflowCompletedOutput = z.infer<typeof WorkflowCompletedOutputSchema>;
 

@@ -23,6 +23,7 @@ import { reportProgress, throwIfCancelled } from "./engine";
 import { getContext } from "../lib/workspace-client";
 import { summarizeBatch } from "../lib/batch-writer";
 import { stylePaintingHint } from "../lib/style-painting";
+import { robustStructuredGenerate } from "../lib/robust-generate";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -128,14 +129,15 @@ const planPropsStep = createStep({
     const designer = mastra?.getAgent("propDesigner");
     if (!designer) throw new Error("propDesigner agent not registered");
 
-    const response = await designer.generate(buildPlanPrompt(inputData, stylePainting), {
-      structuredOutput: {
-        schema: z.object({ props: z.array(PlannedProp) }),
-        errorStrategy: "warn",
-      },
+    const designerSchema = z.object({ props: z.array(PlannedProp) });
+    const { object: designed } = await robustStructuredGenerate({
+      agent: designer,
+      prompt: buildPlanPrompt(inputData, stylePainting),
+      schema: designerSchema,
+      tag: `prop-designer-${runId ?? "nr"}`,
+      isEmpty: (obj) => !obj?.props || obj.props.length === 0,
     });
-
-    const plannedProps = ((response.object as { props?: PlannedProp[] } | undefined)?.props ?? [])
+    const plannedProps = designed.props
       .slice(0, inputData.propCount)
       .filter((p) => p.name && p.material);
 

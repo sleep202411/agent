@@ -563,14 +563,20 @@ export function WorkflowCompletedCard({
               </ActionButton>
             );
           })}
-          <ActionButton
-            variant="secondary"
-            onClick={handleRevise}
-            disabled={!projectId || !isActive}
-          >
-            {t("workflowActionRevise")}
-          </ActionButton>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">{t("workflowReviseHint")}</div>
+          {output.revisable !== false && (
+            <>
+              <ActionButton
+                variant="secondary"
+                onClick={handleRevise}
+                disabled={!projectId || !isActive}
+              >
+                {t("workflowActionRevise")}
+              </ActionButton>
+              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                {t("workflowReviseHint")}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
