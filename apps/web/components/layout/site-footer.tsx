@@ -1,3 +1,43 @@
+import Link from "next/link";
+
+type FooterLink = { label: string; href: string };
+type FooterCol = { title: string; links: FooterLink[] };
+
+const COLUMNS: FooterCol[] = [
+  {
+    title: "Story Plaza",
+    links: [
+      { label: "Home", href: "#" },
+      { label: "Video List", href: "#" },
+      { label: "Publish Video", href: "#" },
+    ],
+  },
+  {
+    title: "Project Center",
+    links: [
+      { label: "Project List", href: "#" },
+      { label: "My Projects", href: "#" },
+      { label: "Create Project", href: "#" },
+    ],
+  },
+  {
+    title: "Profile",
+    links: [
+      { label: "User Info", href: "#" },
+      { label: "Portfolio", href: "#" },
+      { label: "Account Settings", href: "#" },
+    ],
+  },
+  {
+    title: "Other",
+    links: [
+      { label: "Privacy Policy", href: "/privacy-policy" },
+      { label: "Terms of Service", href: "/terms-of-service" },
+      { label: "Refund Policy", href: "/refund-policy" },
+    ],
+  },
+];
+
 export function SiteFooter() {
   return (
     <footer className="mt-20 border-t border-border pb-10">
@@ -21,26 +61,18 @@ export function SiteFooter() {
             </p>
           </div>
           <div className="grid flex-1 grid-cols-2 gap-8 lg:grid-cols-4">
-            {[
-              { title: "Story Plaza", links: ["Home", "Video List", "Publish Video"] },
-              {
-                title: "Project Center",
-                links: ["Project List", "My Projects", "Create Project"],
-              },
-              { title: "Profile", links: ["User Info", "Portfolio", "Account Settings"] },
-              { title: "Other", links: ["Privacy Policy", "Terms of Service", "Refund Policy"] },
-            ].map((col) => (
+            {COLUMNS.map((col) => (
               <div key={col.title}>
                 <h4 className="mb-4 text-sm font-bold text-foreground">{col.title}</h4>
                 <ul className="flex flex-col gap-2.5">
                   {col.links.map((link) => (
-                    <li key={link}>
-                      <a
-                        href="#"
+                    <li key={link.label}>
+                      <Link
+                        href={link.href}
                         className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                       >
-                        {link}
-                      </a>
+                        {link.label}
+                      </Link>
                     </li>
                   ))}
                 </ul>
