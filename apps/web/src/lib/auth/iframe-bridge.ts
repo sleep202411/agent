@@ -77,18 +77,56 @@ export function isEmbeddedMode(): boolean {
   return false;
 }
 
+const PARENT_ORIGIN_STORAGE_KEY = "fizzdragon:auth:parentOrigin";
+
 /**
- * Pick the target origin for postMessage: `document.referrer`'s origin
- * if it matches the allow-list, else the first whitelisted value of
- * `NEXT_PUBLIC_PARENT_ORIGIN`. Returns `null` when neither is trusted
- * — the caller must abort (never use `*` with a token payload).
+ * On the very first iframe page load, `document.referrer` holds the
+ * parent window's URL — that's our best signal for "who embedded us."
+ * Once the user navigates inside the iframe (e.g. reset-password →
+ * login), referrer switches to the previous iframe page and the parent
+ * origin is no longer discoverable from it. So stash it in
+ * sessionStorage on first sight and reuse it across in-iframe nav.
+ */
+function cacheParentOriginFromReferrer(): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (sessionStorage.getItem(PARENT_ORIGIN_STORAGE_KEY)) return;
+    const referrerOrigin = safeOrigin(document.referrer);
+    if (referrerOrigin && ALLOWED_PARENT_ORIGINS.includes(referrerOrigin)) {
+      sessionStorage.setItem(PARENT_ORIGIN_STORAGE_KEY, referrerOrigin);
+    }
+  } catch {
+    /* sessionStorage unavailable (privacy mode, etc.) — fall through to resolveParentOrigin */
+  }
+}
+
+if (typeof window !== "undefined") cacheParentOriginFromReferrer();
+
+/**
+ * Pick the target origin for postMessage. Checks, in order:
+ *   1. sessionStorage cache (written on first iframe page load, so
+ *      it survives internal navigations)
+ *   2. `document.referrer` origin (works on the first page load)
+ *   3. `NEXT_PUBLIC_PARENT_ORIGIN` from env (last-resort, useful when
+ *      referrer-policy strips the referrer entirely)
+ * Returns `null` when none of those yields a trusted origin — the
+ * caller must abort (never use `*` with a token payload).
  */
 export function resolveParentOrigin(): string | null {
   if (typeof window === "undefined") return null;
+
+  try {
+    const cached = sessionStorage.getItem(PARENT_ORIGIN_STORAGE_KEY);
+    if (cached && ALLOWED_PARENT_ORIGINS.includes(cached)) return cached;
+  } catch {
+    /* sessionStorage unavailable — skip cache step */
+  }
+
   const referrerOrigin = safeOrigin(document.referrer);
   if (referrerOrigin && ALLOWED_PARENT_ORIGINS.includes(referrerOrigin)) {
     return referrerOrigin;
   }
+
   const envMatch = ENV_PARENT_ORIGINS.find((o) => ALLOWED_PARENT_ORIGINS.includes(o));
   return envMatch ?? null;
 }
