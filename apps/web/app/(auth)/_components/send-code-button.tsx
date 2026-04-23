@@ -26,7 +26,7 @@ export function SendCodeButton({ onSend, disabled }: Props) {
       color="muted"
       disabled={disabled || isBusy}
       onClick={() => void trigger()}
-      className="h-9 shrink-0"
+      className="h-12 shrink-0 rounded-xl px-5 text-sm"
     >
       {sending ? <IconLoader2 className="size-4 animate-spin" /> : null}
       {remaining > 0 ? t("sendCodeCountdown", { seconds: remaining }) : t("sendCode")}

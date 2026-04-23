@@ -6,21 +6,28 @@ import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field, FieldLabel, FieldGroup, FieldError } from "@/components/ui/field";
+import { Field, FieldGroup, FieldError } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
 import { ApiRequestError } from "@/src/lib/api";
-import { emailLogin } from "@/src/lib/auth/api";
-import { AuthSection } from "../_components/auth-section";
+import { emailLogin, phoneLogin } from "@/src/lib/auth/api";
+import {
+  AuthSection,
+  AUTH_INPUT_CLASS,
+  AUTH_SUBMIT_CLASS,
+  isPhoneIdentifier,
+} from "../_components/auth-section";
+import { PasswordInput } from "../_components/password-input";
 import { handleAuthSuccess } from "../_components/post-auth";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const canSubmit = email.trim().length > 0 && password.length > 0 && !submitting;
+  const trimmedId = identifier.trim();
+  const canSubmit = trimmedId.length > 0 && password.length > 0 && !submitting;
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -28,7 +35,9 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await emailLogin({ email: email.trim(), pwd: password });
+      const result = isPhoneIdentifier(trimmedId)
+        ? await phoneLogin({ phone: trimmedId, pwd: password })
+        : await emailLogin({ email: trimmedId, pwd: password });
       toast.success(t("loginSuccess"));
       handleAuthSuccess("login", result);
     } catch (err) {
@@ -40,45 +49,24 @@ export default function LoginPage() {
   };
 
   return (
-    <AuthSection
-      title={t("welcomeBack")}
-      subtitle={t("loginSubtitle")}
-      footer={
-        <>
-          {t("noAccount")}{" "}
-          <Link href="/register" className="text-primary hover:underline">
-            {t("goRegister")}
-          </Link>
-        </>
-      }
-    >
+    <AuthSection title={t("welcomeBack")} subtitle={t("loginSubtitle")}>
       <form onSubmit={onSubmit} noValidate>
         <FieldGroup>
           <Field>
-            <FieldLabel htmlFor="email">{t("emailLabel")}</FieldLabel>
             <Input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t("emailPlaceholder")}
+              id="identifier"
+              type="text"
+              autoComplete="username"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder={t("identifierPlaceholder")}
+              className={AUTH_INPUT_CLASS}
               required
             />
           </Field>
           <Field>
-            <div className="flex items-center justify-between">
-              <FieldLabel htmlFor="password">{t("passwordLabel")}</FieldLabel>
-              <Link
-                href="/forgot-password"
-                className="text-xs text-muted-foreground hover:text-primary"
-              >
-                {t("forgotPassword")}
-              </Link>
-            </div>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -87,12 +75,29 @@ export default function LoginPage() {
             />
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
-          <Button type="submit" disabled={!canSubmit} className="w-full">
+          <Button type="submit" disabled={!canSubmit} className={AUTH_SUBMIT_CLASS}>
             {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {t("login")}
           </Button>
         </FieldGroup>
       </form>
+
+      <div className="mt-6 space-y-2 text-sm">
+        <div>
+          <Link
+            href="/forgot-password"
+            className="font-semibold text-foreground hover:text-primary"
+          >
+            {t("forgotPassword")}
+          </Link>
+        </div>
+        <div className="text-muted-foreground">
+          {t("noAccount")}{" "}
+          <Link href="/register" className="font-semibold text-foreground hover:text-primary">
+            {t("goRegister")}
+          </Link>
+        </div>
+      </div>
     </AuthSection>
   );
 }
