@@ -6,18 +6,14 @@ import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field, FieldGroup, FieldError } from "@/components/ui/field";
+import { Field, FieldGroup, FieldError, FieldLabel } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailRegister, phoneRegister, sendEmailCode, sendPhoneCode } from "@/src/lib/auth/api";
-import {
-  AuthSection,
-  AUTH_INPUT_CLASS,
-  AUTH_SUBMIT_CLASS,
-  isPhoneIdentifier,
-} from "../_components/auth-section";
+import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
 import { PasswordInput } from "../_components/password-input";
 import { SendCodeButton } from "../_components/send-code-button";
+import { AgreementCheckbox } from "../_components/agreement-checkbox";
 import { handleAuthSuccess } from "../_components/post-auth";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -34,6 +30,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [recommendationCode, setRecommendationCode] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -70,6 +67,10 @@ export default function RegisterPage() {
       setError(t("passwordMismatch"));
       return;
     }
+    if (!agreed) {
+      toast.warning(t("agreementRequired"));
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
@@ -101,6 +102,7 @@ export default function RegisterPage() {
       <form onSubmit={onSubmit} noValidate>
         <FieldGroup>
           <Field>
+            <FieldLabel htmlFor="identifier">{t("identifierPlaceholder")}</FieldLabel>
             <Input
               id="identifier"
               type="text"
@@ -108,11 +110,11 @@ export default function RegisterPage() {
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder={t("identifierPlaceholder")}
-              className={AUTH_INPUT_CLASS}
               required
             />
           </Field>
           <Field>
+            <FieldLabel htmlFor="code">{t("codeLabel")}</FieldLabel>
             <div className="flex items-center gap-2">
               <Input
                 id="code"
@@ -121,13 +123,13 @@ export default function RegisterPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder={t("codePlaceholder")}
-                className={AUTH_INPUT_CLASS}
                 required
               />
               <SendCodeButton onSend={handleSendCode} disabled={!idOk} />
             </div>
           </Field>
           <Field>
+            <FieldLabel htmlFor="password">{t("passwordLabel")}</FieldLabel>
             <PasswordInput
               id="password"
               autoComplete="new-password"
@@ -139,6 +141,7 @@ export default function RegisterPage() {
             />
           </Field>
           <Field>
+            <FieldLabel htmlFor="confirm-password">{t("confirmPasswordPlaceholder")}</FieldLabel>
             <PasswordInput
               id="confirm-password"
               autoComplete="new-password"
@@ -153,17 +156,18 @@ export default function RegisterPage() {
             ) : null}
           </Field>
           <Field>
+            <FieldLabel htmlFor="invite">{t("inviteCodeLabel")}</FieldLabel>
             <Input
               id="invite"
               value={recommendationCode}
               onChange={(e) => setRecommendationCode(e.target.value)}
               placeholder={t("inviteCodePlaceholder")}
-              className={AUTH_INPUT_CLASS}
             />
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
-          <Button type="submit" disabled={!canSubmit} className={AUTH_SUBMIT_CLASS}>
-            {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
+          <AgreementCheckbox checked={agreed} onCheckedChange={setAgreed} />
+          <Button type="submit" disabled={!canSubmit} className="w-full">
+            {submitting ? <IconLoader2 className="size-3 animate-spin" /> : null}
             {t("register")}
           </Button>
         </FieldGroup>

@@ -52,13 +52,41 @@ export interface AuthResult {
 function toAuthResult(data: unknown): AuthResult {
   const d = (data ?? {}) as Record<string, unknown>;
   const tokenInfo = (d.tokenInfo ?? {}) as { tokenName?: string; tokenValue?: string };
-  const user = (d.user ?? d.userInfo ?? undefined) as LoggedInUser | undefined;
-  return {
-    tokenValue: tokenInfo.tokenValue,
-    tokenName: tokenInfo.tokenName ?? "satoken",
-    user,
-    raw: d,
-  };
+  const tokenName = tokenInfo.tokenName ?? "satoken";
+
+  // Java's response body isn't consistent across endpoints — accept the
+  // shapes we've seen in the wild, plus fall back to reading Set-Cookie
+  // (matches what `fizzdragon-web/pages/studio/studio.vue` does with
+  // `getCookieValue('satoken')` after the browser stores the cookie).
+  const tokenValue =
+    tokenInfo.tokenValue ||
+    stringField(d, "token") ||
+    stringField(d, "satoken") ||
+    stringField(d, tokenName) ||
+    readCookie(tokenName);
+
+  // Likewise for the user object: sometimes wrapped in `user` / `userInfo`,
+  // sometimes the envelope's `data` field IS the user itself.
+  const user = (d.user ?? d.userInfo ?? (looksLikeUser(d) ? d : undefined)) as
+    | LoggedInUser
+    | undefined;
+
+  return { tokenValue, tokenName, user, raw: d };
+}
+
+function stringField(d: Record<string, unknown>, key: string): string | undefined {
+  const v = d[key];
+  return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+function readCookie(name: string): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  const match = document.cookie.match(new RegExp("(?:^|;\\s*)" + name + "=([^;]+)"));
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+function looksLikeUser(d: Record<string, unknown>): boolean {
+  return "userId" in d || "id" in d || "phone" in d || "email" in d || "nickname" in d;
 }
 
 export async function emailLogin(params: { email: string; pwd: string }): Promise<AuthResult> {

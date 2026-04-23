@@ -3,17 +3,10 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Shared layout for auth pages — Storytale-inspired:
- *   - small square logo at the top
- *   - big bold headline
- *   - muted supporting line
- *   - form
- *   - optional footer (auxiliary link row, usually a "sign up" / "sign in"
- *     switch)
- *
- * No card chrome — the form sits on the page background so the
- * surrounding layout (imagery / marketing) can carry any visual
- * treatment without fighting this column.
+ * Left-column shell for the two-pane auth layout. Logo at top, big
+ * headline, muted subtitle, form, aux link row. No custom input
+ * styling — the inner form uses stock shadcn `Field` + `Input` +
+ * `Button` so it stays in lockstep with the rest of the design system.
  */
 export function AuthSection({
   title,
@@ -29,11 +22,7 @@ export function AuthSection({
   className?: string;
 }) {
   return (
-    <div className={cn("w-full max-w-md", className)}>
-      {/* Width is auto — only pin the height so the logo renders at its
-          natural aspect ratio. Using a plain <img> (not next/image)
-          because the source is a non-square wordmark and next/image
-          requires explicit dimensions. */}
+    <div className={cn("mx-auto w-full max-w-md", className)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/logo.png" alt="FizzDragon" className="mb-10 h-10 w-auto" />
 
@@ -49,18 +38,6 @@ export function AuthSection({
   );
 }
 
-/** Shared input styling for the auth forms — roomy but lightly rounded. */
-export const AUTH_INPUT_CLASS =
-  "h-12 rounded-xl border-border/60 bg-background px-4 text-sm placeholder:text-muted-foreground/60 focus-visible:border-primary focus-visible:ring-0";
-
-/** Full-width primary submit button matching the input's corner radius. */
-export const AUTH_SUBMIT_CLASS = "h-12 w-full rounded-xl text-sm font-semibold";
-
-/**
- * Phone-number regex the auth forms use to decide whether an identifier
- * should be routed through the phone-auth endpoint instead of the email
- * one. Matches China mainland mobile numbers (11 digits starting with 1).
- */
 export const CN_PHONE_PATTERN = /^1\d{10}$/;
 
 export function isPhoneIdentifier(value: string): boolean {

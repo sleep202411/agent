@@ -6,23 +6,20 @@ import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field, FieldGroup, FieldError } from "@/components/ui/field";
+import { Field, FieldGroup, FieldError, FieldLabel } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailLogin, phoneLogin } from "@/src/lib/auth/api";
-import {
-  AuthSection,
-  AUTH_INPUT_CLASS,
-  AUTH_SUBMIT_CLASS,
-  isPhoneIdentifier,
-} from "../_components/auth-section";
+import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
 import { PasswordInput } from "../_components/password-input";
+import { AgreementCheckbox } from "../_components/agreement-checkbox";
 import { handleAuthSuccess } from "../_components/post-auth";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -32,6 +29,10 @@ export default function LoginPage() {
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSubmit) return;
+    if (!agreed) {
+      toast.warning(t("agreementRequired"));
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
@@ -53,6 +54,7 @@ export default function LoginPage() {
       <form onSubmit={onSubmit} noValidate>
         <FieldGroup>
           <Field>
+            <FieldLabel htmlFor="identifier">{t("identifierPlaceholder")}</FieldLabel>
             <Input
               id="identifier"
               type="text"
@@ -60,11 +62,11 @@ export default function LoginPage() {
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder={t("identifierPlaceholder")}
-              className={AUTH_INPUT_CLASS}
               required
             />
           </Field>
           <Field>
+            <FieldLabel htmlFor="password">{t("passwordLabel")}</FieldLabel>
             <PasswordInput
               id="password"
               autoComplete="current-password"
@@ -75,8 +77,9 @@ export default function LoginPage() {
             />
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
-          <Button type="submit" disabled={!canSubmit} className={AUTH_SUBMIT_CLASS}>
-            {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
+          <AgreementCheckbox checked={agreed} onCheckedChange={setAgreed} />
+          <Button type="submit" disabled={!canSubmit} className="w-full">
+            {submitting ? <IconLoader2 className="size-3 animate-spin" /> : null}
             {t("login")}
           </Button>
         </FieldGroup>

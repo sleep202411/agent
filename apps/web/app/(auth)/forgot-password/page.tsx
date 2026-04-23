@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field, FieldGroup, FieldError } from "@/components/ui/field";
+import { Field, FieldGroup, FieldError, FieldLabel } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
 import { ApiRequestError } from "@/src/lib/api";
 import {
@@ -15,12 +15,7 @@ import {
   sendEmailCode,
   sendPhoneCode,
 } from "@/src/lib/auth/api";
-import {
-  AuthSection,
-  AUTH_INPUT_CLASS,
-  AUTH_SUBMIT_CLASS,
-  isPhoneIdentifier,
-} from "../_components/auth-section";
+import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
 import { PasswordInput } from "../_components/password-input";
 import { SendCodeButton } from "../_components/send-code-button";
 import { handleAuthSuccess } from "../_components/post-auth";
@@ -95,6 +90,7 @@ export default function ForgotPasswordPage() {
       <form onSubmit={onSubmit} noValidate>
         <FieldGroup>
           <Field>
+            <FieldLabel htmlFor="identifier">{t("identifierPlaceholder")}</FieldLabel>
             <Input
               id="identifier"
               type="text"
@@ -102,11 +98,11 @@ export default function ForgotPasswordPage() {
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder={t("identifierPlaceholder")}
-              className={AUTH_INPUT_CLASS}
               required
             />
           </Field>
           <Field>
+            <FieldLabel htmlFor="code">{t("codeLabel")}</FieldLabel>
             <div className="flex items-center gap-2">
               <Input
                 id="code"
@@ -115,13 +111,13 @@ export default function ForgotPasswordPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder={t("codePlaceholder")}
-                className={AUTH_INPUT_CLASS}
                 required
               />
               <SendCodeButton onSend={handleSendCode} disabled={!idOk} />
             </div>
           </Field>
           <Field>
+            <FieldLabel htmlFor="password">{t("newPasswordLabel")}</FieldLabel>
             <PasswordInput
               id="password"
               autoComplete="new-password"
@@ -133,6 +129,7 @@ export default function ForgotPasswordPage() {
             />
           </Field>
           <Field>
+            <FieldLabel htmlFor="confirm-password">{t("confirmPasswordPlaceholder")}</FieldLabel>
             <PasswordInput
               id="confirm-password"
               autoComplete="new-password"
@@ -147,8 +144,8 @@ export default function ForgotPasswordPage() {
             ) : null}
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
-          <Button type="submit" disabled={!canSubmit} className={AUTH_SUBMIT_CLASS}>
-            {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
+          <Button type="submit" disabled={!canSubmit} className="w-full">
+            {submitting ? <IconLoader2 className="size-3 animate-spin" /> : null}
             {t("resetPasswordSubmit")}
           </Button>
         </FieldGroup>

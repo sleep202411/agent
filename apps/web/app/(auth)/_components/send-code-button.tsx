@@ -12,8 +12,8 @@ interface Props {
 }
 
 /**
- * Send-code button with built-in 60s cooldown. Visually matches the
- * adjacent Input height so it reads as part of the same row.
+ * Send-code button with built-in 60s cooldown. Uses stock shadcn
+ * Button styling so it matches the form's visual rhythm.
  */
 export function SendCodeButton({ onSend, disabled }: Props) {
   const t = useTranslations("auth");
@@ -26,9 +26,9 @@ export function SendCodeButton({ onSend, disabled }: Props) {
       color="muted"
       disabled={disabled || isBusy}
       onClick={() => void trigger()}
-      className="h-12 shrink-0 rounded-xl px-5 text-sm"
+      className="shrink-0"
     >
-      {sending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+      {sending ? <IconLoader2 className="size-3 animate-spin" /> : null}
       {remaining > 0 ? t("sendCodeCountdown", { seconds: remaining }) : t("sendCode")}
     </Button>
   );

@@ -27,15 +27,43 @@ export interface AuthSuccessMessage {
 
 /**
  * Whitelisted parent origins the iframe is allowed to postMessage to.
- * Locked to the three SITE_REGION-specific domains; any other origin
- * would indicate either a misconfigured embed or an attacker trying to
- * phish a token out of the iframe.
+ * Any other origin would mean either a misconfigured embed or an
+ * attacker trying to phish a token out of the iframe.
+ *
+ * Composed from:
+ *   - known prod/staging hosts (www + apex for the .com site, the .cn
+ *     domestic site, the test.* staging site)
+ *   - `NEXT_PUBLIC_PARENT_ORIGIN` (build-time, trusted — lets staging
+ *     or preview deploys widen the list without code changes)
+ *   - localhost in non-prod (uni-app `-p h5` defaults to port 8080;
+ *     covers http and 127.0.0.1 too so either hostname works)
  */
-export const ALLOWED_PARENT_ORIGINS = [
+const STATIC_PARENT_ORIGINS = [
   "https://fizzdragon.com",
+  "https://www.fizzdragon.com",
   "https://fizzdragon.fizzspace.cn",
+  "https://www.fizzdragon.fizzspace.cn",
   "https://test.fizzdragon.com",
 ];
+
+const DEV_PARENT_ORIGINS =
+  process.env.NODE_ENV === "production"
+    ? []
+    : [
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+      ];
+
+const ENV_PARENT_ORIGINS = (process.env.NEXT_PUBLIC_PARENT_ORIGIN ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+export const ALLOWED_PARENT_ORIGINS = Array.from(
+  new Set([...STATIC_PARENT_ORIGINS, ...ENV_PARENT_ORIGINS, ...DEV_PARENT_ORIGINS])
+);
 
 export function isEmbeddedMode(): boolean {
   if (typeof window === "undefined") return false;
@@ -50,10 +78,10 @@ export function isEmbeddedMode(): boolean {
 }
 
 /**
- * Pick the target origin for postMessage: prefer `document.referrer`'s
- * origin if it matches the allow-list, else fall back to the build-time
- * `NEXT_PUBLIC_PARENT_ORIGIN`. Returns `null` when neither is trusted —
- * the caller should abort (never use `*` with a token payload).
+ * Pick the target origin for postMessage: `document.referrer`'s origin
+ * if it matches the allow-list, else the first whitelisted value of
+ * `NEXT_PUBLIC_PARENT_ORIGIN`. Returns `null` when neither is trusted
+ * — the caller must abort (never use `*` with a token payload).
  */
 export function resolveParentOrigin(): string | null {
   if (typeof window === "undefined") return null;
@@ -61,11 +89,8 @@ export function resolveParentOrigin(): string | null {
   if (referrerOrigin && ALLOWED_PARENT_ORIGINS.includes(referrerOrigin)) {
     return referrerOrigin;
   }
-  const envOrigin = process.env.NEXT_PUBLIC_PARENT_ORIGIN?.trim();
-  if (envOrigin && ALLOWED_PARENT_ORIGINS.includes(envOrigin)) {
-    return envOrigin;
-  }
-  return null;
+  const envMatch = ENV_PARENT_ORIGINS.find((o) => ALLOWED_PARENT_ORIGINS.includes(o));
+  return envMatch ?? null;
 }
 
 function safeOrigin(url: string | null | undefined): string | null {
@@ -85,15 +110,20 @@ function safeOrigin(url: string | null | undefined): string | null {
 export function postAuthSuccess(action: AuthAction, result: AuthResult): boolean {
   if (typeof window === "undefined") return false;
   if (!isEmbeddedMode()) return false;
-  if (!result.tokenValue) return false;
+
+  if (!result.tokenValue) {
+    // eslint-disable-next-line no-console
+    console.warn("[auth-iframe] no tokenValue on AuthResult — aborting post", result);
+    return false;
+  }
 
   const targetOrigin = resolveParentOrigin();
   if (!targetOrigin) {
     // eslint-disable-next-line no-console
-    console.warn(
-      "[auth-iframe] refusing to postMessage auth payload — no whitelisted parent origin",
-      { referrer: document.referrer, env: process.env.NEXT_PUBLIC_PARENT_ORIGIN }
-    );
+    console.warn("[auth-iframe] no whitelisted parent origin — aborting post", {
+      referrer: document.referrer,
+      env: process.env.NEXT_PUBLIC_PARENT_ORIGIN,
+    });
     return false;
   }
 
