@@ -77,6 +77,7 @@ import {
   loadServerTasks,
   pollServerTasks,
 } from "@/src/store/slices/taskSlice";
+import { stripAllTags } from "@/app/projects/_components/storyboard/cells/cell-utils";
 import { buildExpandPayload, expandVideoPrompt } from "./expand-video-prompt";
 
 import type {
@@ -299,6 +300,12 @@ export function AiVideoGeneratorDialog({
     setIsExpandingPrompt(true);
     try {
       const payload = buildExpandPayload(shotRow, columns, shotNumber);
+      // The textarea binds to redux `formData.prompt`, which isn't
+      // written back to the row cell until the user submits. Override
+      // with what the user is actually typing right now — otherwise
+      // expand would see the stale cell value.
+      const typed = stripAllTags(prompt).trim();
+      payload.currentPrompt = typed || undefined;
       const expanded = await expandVideoPrompt(payload);
       dispatch(updateVideoForm({ key, updates: { prompt: expanded } }));
       toast.success(t("expandPromptSuccess"));
@@ -308,7 +315,7 @@ export function AiVideoGeneratorDialog({
     } finally {
       setIsExpandingPrompt(false);
     }
-  }, [columns, dispatch, isExpandingPrompt, key, shotNumber, shotRow, t]);
+  }, [columns, dispatch, isExpandingPrompt, key, prompt, shotNumber, shotRow, t]);
 
   const {
     referenceImages,
