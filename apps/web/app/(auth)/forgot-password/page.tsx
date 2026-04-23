@@ -10,7 +10,7 @@ import { Field, FieldLabel, FieldGroup, FieldError } from "@/components/ui/field
 import { useTranslations } from "@/src/i18n/i18n";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailResetPassword, sendEmailCode } from "@/src/lib/auth/api";
-import { AuthCard } from "../_components/auth-card";
+import { AuthSection } from "../_components/auth-section";
 import { SendCodeButton } from "../_components/send-code-button";
 import { handleAuthSuccess } from "../_components/post-auth";
 
@@ -66,7 +66,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <AuthCard
+    <AuthSection
       title={t("resetPasswordTitle")}
       subtitle={t("resetPasswordSubtitle")}
       footer={
@@ -127,6 +127,6 @@ export default function ForgotPasswordPage() {
           </Button>
         </FieldGroup>
       </form>
-    </AuthCard>
+    </AuthSection>
   );
 }
