@@ -56,7 +56,7 @@ export function ProjectsSection() {
   const handleCreateWorld = () => setDialogOpen(true);
 
   return (
-    <section className="mx-auto flex w-full max-w-7xl flex-col gap-4">
+    <section className="flex w-full flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-end gap-6">
           <div>
@@ -147,7 +147,7 @@ function FlatView({ groups, loading, onCreateWorld }: ViewProps) {
   );
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
       <CreateButton onClick={onCreateWorld} />
       {loading && Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
       {!loading &&
@@ -169,7 +169,7 @@ function GroupedView({ groups, loading, onCreateWorld }: ViewProps) {
   return (
     <div className="space-y-10">
       {loading && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {Array.from({ length: 3 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
@@ -194,7 +194,7 @@ function GroupedView({ groups, loading, onCreateWorld }: ViewProps) {
                 </p>
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {products.map((p) => (
                 <ProductCard
                   key={p.id}
@@ -208,14 +208,14 @@ function GroupedView({ groups, loading, onCreateWorld }: ViewProps) {
         ))}
 
       {!loading && groups.length === 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           <CreateButton onClick={onCreateWorld} />
           <EmptyState />
         </div>
       )}
 
       {!loading && groups.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           <CreateButton onClick={onCreateWorld} />
         </div>
       )}
