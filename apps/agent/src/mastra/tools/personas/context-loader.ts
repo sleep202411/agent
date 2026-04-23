@@ -142,6 +142,54 @@ export async function loadEpisodes(
   }
 }
 
+/**
+ * Fetch an episode's storyboard — shot list with id + scene + description
+ * preview. So storyboarder can answer "how many shots already?" /
+ * "what's the last one about?" without hallucinating a zero. Each row
+ * includes shotId so supervisor can use it when composing update_*
+ * tool calls.
+ */
+export async function loadStoryboard(
+  ctx: StoryosContext,
+  episodeId: string,
+  opts: { max?: number; maxCharsPerRow?: number } = {}
+): Promise<string> {
+  const max = opts.max ?? 50;
+  const maxCharsPerRow = opts.maxCharsPerRow ?? 80;
+  type ShotValue = { presetColumnKey?: string; value?: string };
+  type Shot = { shotId?: string | number; shotValues?: ShotValue[] };
+  try {
+    const resp = await javaRequest<{ list?: Shot[] }>(ctx, "/api/user/shot/queryPage", {
+      data: {
+        storyBoardId: episodeId,
+        page: 1,
+        pageSize: 999,
+        shotIds: [],
+        presetColumnKeys: [],
+      },
+    });
+    const shots = (resp?.list ?? []).slice(0, max);
+    if (shots.length === 0) return "";
+    return shots
+      .map((shot, i) => {
+        const values = shot.shotValues ?? [];
+        const get = (key: string) =>
+          String(values.find((v) => v.presetColumnKey === key)?.value ?? "").trim();
+        const shotNo = get("shot_no") || String(i + 1);
+        const scene = get("scene");
+        const desc = get("description");
+        const id = shot.shotId != null ? String(shot.shotId) : "?";
+        const preview = desc ? `：${desc.slice(0, maxCharsPerRow)}` : "";
+        const sceneTag = scene ? `【${scene}】` : "";
+        return `- 第 ${shotNo} 镜 (id ${id})${sceneTag}${preview}`;
+      })
+      .join("\n");
+  } catch (err) {
+    console.warn("[context-loader] loadStoryboard failed", err);
+    return "";
+  }
+}
+
 /** Compose project-level summary — lightweight, safe to inject into prompts. */
 export async function loadProjectSummary(ctx: StoryosContext): Promise<string> {
   try {

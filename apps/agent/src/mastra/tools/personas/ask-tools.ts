@@ -23,6 +23,7 @@ import {
   loadProps,
   loadRoles,
   loadScenes,
+  loadStoryboard,
 } from "./context-loader";
 import { askPersona, PersonaReplyFieldsSchema, type AskPersonaResult } from "./ask-persona";
 import { getContext, type StoryosContext } from "../../lib/workspace-client";
@@ -45,7 +46,8 @@ const ReplySchema = z.object({
 // ─── Shared scope schemas ──────────────────────────────────────────────
 
 const ScopeSchema = z.object({
-  /** Focus on a specific episode's script when relevant. */
+  /** Focus on a specific episode's script when relevant. Also required for
+   *  includeStoryboard (storyboard is per-episode). */
   episodeId: z.string().optional(),
   /** Whether to include the character list. Default true when character-related. */
   includeRoles: z.boolean().optional(),
@@ -57,6 +59,9 @@ const ScopeSchema = z.object({
   includeProject: z.boolean().optional(),
   /** Whether to include the episode list (no scripts). */
   includeEpisodes: z.boolean().optional(),
+  /** Whether to include the episode's storyboard shot list (id + scene +
+   *  description preview). Requires episodeId; storyboarder's default. */
+  includeStoryboard: z.boolean().optional(),
 });
 
 type Scope = z.infer<typeof ScopeSchema>;
@@ -94,6 +99,10 @@ async function collectContext(
   if (eff.episodeId) {
     const body = await loadEpisodeScript(ctx, eff.episodeId);
     if (body) blocks.push({ heading: `第 ${eff.episodeId} 集现有剧本`, body });
+  }
+  if (eff.includeStoryboard && eff.episodeId) {
+    const body = await loadStoryboard(ctx, eff.episodeId);
+    if (body) blocks.push({ heading: `第 ${eff.episodeId} 集现有分镜`, body });
   }
 
   return blocks;
@@ -196,8 +205,8 @@ export const askStoryboardDesigner = makeAskTool({
   toolId: "ask_storyboard_designer",
   agentId: "storyboarder",
   description:
-    "让分镜设计师讨论某场戏的镜头语言、提建议、点评现有分镜。只返回文字回复，不落库。适用：单场戏出 3-5 个镜头建议、评估现有分镜可拍性、讨论运镜。批量生成某集分镜请用 invoke_workflow('storyboard_phase')。",
-  defaultScope: { includeProject: true, includeScenes: true },
+    "让分镜设计师设计 / 讨论 / 微调单条或少量分镜，或点评现有分镜。只返回结构化回复，不落库。**必须在 scope.episodeId 里指定目标集**，否则 persona 拿不到现有分镜上下文、容易胡说 \"0 条分镜\"；supervisor 调用前用 query_context 拿到 activeEpisode.id 再传进来。批量生成整集分镜请用 invoke_workflow('storyboard_phase')。",
+  defaultScope: { includeProject: true, includeScenes: true, includeStoryboard: true },
 });
 
 export const askEpisodePlanner = makeAskTool({
