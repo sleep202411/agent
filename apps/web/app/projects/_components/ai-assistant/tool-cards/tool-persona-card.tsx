@@ -105,7 +105,7 @@ function PersonaCard({
             pillClass
           )}
         >
-          <span className="text-sm leading-none">{persona.icon}</span>
+          <persona.icon className="size-3.5" />
           {displayName}
         </span>
 

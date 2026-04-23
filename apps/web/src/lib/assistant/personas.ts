@@ -11,6 +11,16 @@
  * corresponding `ask_<name>` tool exists in
  * `apps/agent/src/mastra/tools/personas/ask-tools.ts`.
  */
+import {
+  IconBuildingStore,
+  IconCamera,
+  IconLayoutList,
+  IconPalette,
+  IconPencil,
+  IconUsers,
+  type Icon,
+} from "@tabler/icons-react";
+
 export type AssistantPersonaKey =
   | "scriptwriter"
   | "characterDesigner"
@@ -23,29 +33,51 @@ export interface AssistantPersonaMeta {
   key: AssistantPersonaKey;
   /** i18n key under the `ai.personas` namespace. */
   nameKey: string;
-  /** Short emoji glyph for compact indicators. Replace with an icon set later. */
-  icon: string;
+  /** Tabler icon component — rendered as <Icon className="..." />. Aligned with
+   *  `WORKFLOW_PERSONA` in `tool-cards/workflow-shared.tsx` so the same role
+   *  shows the same glyph across both card types. */
+  icon: Icon;
   /** Accent tone used for bubbles / badges. */
   tone: "violet" | "amber" | "teal" | "rose" | "sky" | "lime";
 }
 
 export const ASSISTANT_PERSONAS: Record<AssistantPersonaKey, AssistantPersonaMeta> = {
-  scriptwriter: { key: "scriptwriter", nameKey: "scriptwriter", icon: "✍️", tone: "violet" },
+  scriptwriter: {
+    key: "scriptwriter",
+    nameKey: "scriptwriter",
+    icon: IconPencil,
+    tone: "violet",
+  },
   characterDesigner: {
     key: "characterDesigner",
     nameKey: "characterDesigner",
-    icon: "🎭",
+    icon: IconUsers,
     tone: "amber",
   },
-  sceneDesigner: { key: "sceneDesigner", nameKey: "sceneDesigner", icon: "🏞️", tone: "teal" },
-  artDirector: { key: "artDirector", nameKey: "artDirector", icon: "🎨", tone: "rose" },
+  sceneDesigner: {
+    key: "sceneDesigner",
+    nameKey: "sceneDesigner",
+    icon: IconBuildingStore,
+    tone: "teal",
+  },
+  artDirector: {
+    key: "artDirector",
+    nameKey: "artDirector",
+    icon: IconPalette,
+    tone: "rose",
+  },
   storyboardDesigner: {
     key: "storyboardDesigner",
     nameKey: "storyboardDesigner",
-    icon: "🎬",
+    icon: IconCamera,
     tone: "sky",
   },
-  episodePlanner: { key: "episodePlanner", nameKey: "episodePlanner", icon: "📖", tone: "lime" },
+  episodePlanner: {
+    key: "episodePlanner",
+    nameKey: "episodePlanner",
+    icon: IconLayoutList,
+    tone: "lime",
+  },
 };
 
 const TOOL_TO_PERSONA: Record<string, AssistantPersonaKey> = {
