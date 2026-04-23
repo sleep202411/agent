@@ -35,6 +35,8 @@ import {
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { CreateWorldDialog } from "./create-world-dialog";
+import { ProjectEditorDialog } from "@/app/projects/_components/project-editor-dialog";
+import type { ProjectOptionItem } from "@/src/types/workspace";
 
 const OSS_BASE = env.OSS_BASE_URL;
 
@@ -237,6 +239,32 @@ function ProductCard({
   const description = product.description?.trim() || tw("noDescription");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<ProjectOptionItem | null>(null);
+  const [loadingEdit, setLoadingEdit] = useState(false);
+
+  // Opens the same ProjectEditorDialog used on the project detail page.
+  // The V1WorldProduct list item here only carries {id, name, imagePath,
+  // description, worldId}, but the dialog's form needs the richer
+  // ProjectDetail (type, episode, chapterLength, stylePainting,
+  // aspectRatioType) — otherwise required fields appear empty and the
+  // validator blocks save. Fetch the full detail first.
+  const handleEdit = async () => {
+    if (loadingEdit) return;
+    setLoadingEdit(true);
+    try {
+      const detail = await backendApi.post<ProjectOptionItem>(
+        `/api/user/project/detail/${product.id}`
+      );
+      setEditingProject(detail);
+      setEditorOpen(true);
+    } catch (err) {
+      console.error("[ProductCard] load project detail failed", err);
+      toast.error(err instanceof Error ? err.message : tw("projectLoadFailed"));
+    } finally {
+      setLoadingEdit(false);
+    }
+  };
 
   const handleLinkClick = (e: React.MouseEvent) => {
     // 嵌入到 parent iframe 时，改走 postMessage 让 parent 在自己那边跳
@@ -325,6 +353,16 @@ function ProductCard({
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem
+              disabled={loadingEdit}
+              onSelect={(e) => {
+                e.preventDefault();
+                void handleEdit();
+              }}
+            >
+              {loadingEdit && <IconLoader2 className="mr-1.5 size-3.5 animate-spin" />}
+              {tw("projectMenuEdit")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
               variant="destructive"
               onSelect={(e) => {
                 e.preventDefault();
@@ -366,6 +404,21 @@ function ProductCard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ProjectEditorDialog
+        open={editorOpen}
+        worldId={product.worldId}
+        project={editingProject}
+        onOpenChange={(next) => {
+          setEditorOpen(next);
+          if (!next) setEditingProject(null);
+        }}
+        onSaved={() => {
+          // Refresh this world's product list so name / cover / description
+          // updates appear without a page reload.
+          void queryClient.invalidateQueries({ queryKey: worldKeys.products(product.worldId) });
+        }}
+      />
     </div>
   );
 }
