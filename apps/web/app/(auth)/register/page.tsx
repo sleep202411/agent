@@ -7,7 +7,9 @@ import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldError, FieldLabel } from "@/components/ui/field";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailRegister, phoneRegister, sendEmailCode, sendPhoneCode } from "@/src/lib/auth/api";
 import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
@@ -25,6 +27,7 @@ function identifierOk(value: string): boolean {
 
 export default function RegisterPage() {
   const t = useTranslations("auth");
+  const locale = useLocale() as Locale;
   const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -175,7 +178,10 @@ export default function RegisterPage() {
 
       <div className="mt-6 text-sm text-muted-foreground">
         {t("hasAccount")}{" "}
-        <Link href="/login" className="font-semibold text-foreground hover:text-primary">
+        <Link
+          href={localizePath("/login", locale)}
+          className="font-semibold text-foreground hover:text-primary"
+        >
           {t("goLogin")}
         </Link>
       </div>

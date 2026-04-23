@@ -7,6 +7,7 @@ import {
   postAuthSuccess,
 } from "@/src/lib/auth/iframe-bridge";
 import type { AuthResult } from "@/src/lib/auth/api";
+import { localeFromPathname, localizePath } from "@/src/i18n/locale-url";
 
 /**
  * Decide what happens after a successful auth action.
@@ -25,7 +26,10 @@ export function handleAuthSuccess(action: AuthAction, result: AuthResult): void 
     return;
   }
 
-  const fallback = action === "login" ? "/studio/projects" : "/login";
+  // Derive locale from current URL (not browser pref) so that a user who
+  // landed on /en-US/login stays in en-US after auth.
+  const locale = localeFromPathname(window.location.pathname);
+  const fallback = localizePath(action === "login" ? "/studio/projects" : "/login", locale);
   const redirect = readRedirectParam();
   window.location.assign(resolveRedirectTarget(redirect) ?? fallback);
 }

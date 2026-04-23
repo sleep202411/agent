@@ -7,7 +7,9 @@ import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldGroup, FieldError, FieldLabel } from "@/components/ui/field";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailLogin, phoneLogin } from "@/src/lib/auth/api";
 import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
@@ -17,6 +19,7 @@ import { handleAuthSuccess } from "../_components/post-auth";
 
 export default function LoginPage() {
   const t = useTranslations("auth");
+  const locale = useLocale() as Locale;
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
@@ -88,7 +91,7 @@ export default function LoginPage() {
       <div className="mt-6 space-y-2 text-sm">
         <div>
           <Link
-            href="/forgot-password"
+            href={localizePath("/forgot-password", locale)}
             className="font-semibold text-foreground hover:text-primary"
           >
             {t("forgotPassword")}
@@ -96,7 +99,10 @@ export default function LoginPage() {
         </div>
         <div className="text-muted-foreground">
           {t("noAccount")}{" "}
-          <Link href="/register" className="font-semibold text-foreground hover:text-primary">
+          <Link
+            href={localizePath("/register", locale)}
+            className="font-semibold text-foreground hover:text-primary"
+          >
             {t("goRegister")}
           </Link>
         </div>
