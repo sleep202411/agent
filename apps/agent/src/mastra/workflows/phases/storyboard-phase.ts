@@ -609,13 +609,18 @@ function escapeRegex(s: string): string {
 /**
  * Replace every known role/scene name in `text` with a Tiptap <mention>
  * tag. Sort names longest-first so "王五七" beats "王五" beats "王".
+ *
+ * Also consume any leading `@` so the storyboarder LLM's `@苏晚晴`
+ * shorthand doesn't end up as `@<mention>苏晚晴</mention>` — Tiptap's
+ * mention node component adds the `@` visual itself, so a raw leading
+ * `@` produces a `@@` duplicate on render.
  */
 function injectMentions(map: MentionMap, text: string): string {
   if (!text) return "";
   const sorted = [...map.values()].sort((a, b) => b.name.length - a.name.length);
   let result = text;
   for (const entry of sorted) {
-    const re = new RegExp(escapeRegex(entry.name), "g");
+    const re = new RegExp(`@?${escapeRegex(entry.name)}`, "g");
     result = result.replace(re, buildMentionTag(entry));
   }
   return result;

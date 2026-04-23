@@ -6,6 +6,7 @@ import { saveAs } from "file-saver";
 import { IconDownload, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "@/src/i18n/i18n";
 import type { AssistantToolInvocation } from "@/src/lib/assistant/assistant-types";
 
 /**
@@ -32,12 +33,13 @@ interface ToolExportScriptsCardProps {
 
 export function ToolExportScriptsCard({ part }: ToolExportScriptsCardProps) {
   const [downloading, setDownloading] = useState(false);
+  const t = useTranslations("ai");
 
   const handleDownload = useCallback(async () => {
     if (part.state !== "output-available") return;
     const out = part.output as ExportScriptsOutput;
     if (!out.episodes || out.episodes.length === 0) {
-      toast.error("没有可导出的剧本");
+      toast.error(t("exportScriptsNone"));
       return;
     }
     setDownloading(true);
@@ -62,7 +64,13 @@ export function ToolExportScriptsCard({ part }: ToolExportScriptsCardProps) {
         if (!ep.content) {
           paragraphs.push(
             new Paragraph({
-              children: [new TextRun({ text: "（空）", italics: true, color: "999999" })],
+              children: [
+                new TextRun({
+                  text: t("exportScriptsEmptySection"),
+                  italics: true,
+                  color: "999999",
+                }),
+              ],
             })
           );
           continue;
@@ -76,19 +84,19 @@ export function ToolExportScriptsCard({ part }: ToolExportScriptsCardProps) {
       });
       const blob = await Packer.toBlob(doc);
       saveAs(blob, out.filename || `${projectName}-all-scripts.docx`);
-      toast.success("剧本已下载");
+      toast.success(t("exportScriptsDownloaded"));
     } catch (err) {
       console.error("[export_scripts] download failed:", err);
-      toast.error("下载失败");
+      toast.error(t("exportScriptsDownloadFailed"));
     } finally {
       setDownloading(false);
     }
-  }, [part]);
+  }, [part, t]);
 
   if (part.state === "output-error") {
     return (
       <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-[13px] text-destructive">
-        导出失败：{part.errorText ?? "unknown"}
+        {t("exportScriptsFailed", { reason: part.errorText ?? "unknown" })}
       </div>
     );
   }
@@ -97,7 +105,7 @@ export function ToolExportScriptsCard({ part }: ToolExportScriptsCardProps) {
     return (
       <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
         <IconLoader2 className="size-3 animate-spin text-muted-foreground/50" />
-        <span className="font-medium">正在打包剧本…</span>
+        <span className="font-medium">{t("exportScriptsPacking")}</span>
       </div>
     );
   }
@@ -106,7 +114,7 @@ export function ToolExportScriptsCard({ part }: ToolExportScriptsCardProps) {
   if (!out.ok || !out.episodes || out.episodes.length === 0) {
     return (
       <div className="rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-[13px] text-muted-foreground">
-        {out.message || "没有可导出的剧本"}
+        {out.message || t("exportScriptsNone")}
       </div>
     );
   }
@@ -116,10 +124,16 @@ export function ToolExportScriptsCard({ part }: ToolExportScriptsCardProps) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-col">
           <span className="text-[13px] font-medium">
-            {out.projectName ?? "剧本"} · 已准备好 {out.episodeCount} 集
+            {t("exportScriptsReady", {
+              name: out.projectName ?? t("exportScriptsDefaultName"),
+              count: out.episodeCount ?? 0,
+            })}
           </span>
           <span className="text-[12px] text-muted-foreground">
-            约 {(out.totalChars ?? 0).toLocaleString()} 字 · {out.filename}
+            {t("exportScriptsMeta", {
+              chars: (out.totalChars ?? 0).toLocaleString(),
+              filename: out.filename ?? "",
+            })}
           </span>
         </div>
         <Button
@@ -133,7 +147,7 @@ export function ToolExportScriptsCard({ part }: ToolExportScriptsCardProps) {
           ) : (
             <IconDownload className="size-3.5" />
           )}
-          <span>下载 .docx</span>
+          <span>{t("exportScriptsDownloadButton")}</span>
         </Button>
       </div>
     </div>

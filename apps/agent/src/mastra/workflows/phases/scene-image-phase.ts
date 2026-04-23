@@ -12,6 +12,30 @@ import { getImageQueue, buildImageJobId } from "../engine/image-queue";
 import { getProjectAssetImageStatus, setAssetImageStatus } from "../../lib/asset-image-status";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
+import { getOutline } from "../../lib/outline";
+import type { WorkflowNextStep } from "@repo/shared";
+
+/**
+ * Decide the natural "Continue" next step out of scene_image_phase. When
+ * the outline has no props, sending the user to prop_phase just shows
+ * them an auto-skip "no props" card — noise. Prefer episode_phase in
+ * that case so the Continue button actually moves the project forward.
+ */
+async function nextAfterSceneImages(projectId: string): Promise<WorkflowNextStep> {
+  const record = await getOutline(projectId);
+  const hasProps = (record?.outline.props?.length ?? 0) > 0;
+  return hasProps
+    ? {
+        workflowName: "prop_phase",
+        labelKey: "workflowNextContinueToProps",
+        variant: "primary",
+      }
+    : {
+        workflowName: "episode_phase",
+        labelKey: "workflowNextContinueToEpisodes",
+        variant: "primary",
+      };
+}
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_TIMEOUT_MS = 5 * 60_000;
@@ -145,13 +169,7 @@ const waitAllStep = createStep({
       await publishWorkflowCompleted(ctx.projectId, runId, "scene_image_phase", {
         committed: [],
         summary: "没有可生成参考图的场景。",
-        nextSteps: [
-          {
-            workflowName: "prop_phase",
-            labelKey: "workflowNextContinueToProps",
-            variant: "primary",
-          },
-        ],
+        nextSteps: [await nextAfterSceneImages(ctx.projectId)],
       });
       return {
         outcome: "no_scenes" as const,
@@ -212,13 +230,7 @@ const waitAllStep = createStep({
             serverId: assetIds[i] ?? `scene-${i}`,
           })),
           summary: message,
-          nextSteps: [
-            {
-              workflowName: "prop_phase",
-              labelKey: "workflowNextContinueToProps",
-              variant: "primary",
-            },
-          ],
+          nextSteps: [await nextAfterSceneImages(ctx.projectId)],
         });
         return {
           outcome,
@@ -238,13 +250,7 @@ const waitAllStep = createStep({
         serverId: assetIds[i] ?? `scene-${i}`,
       })),
       summary: message,
-      nextSteps: [
-        {
-          workflowName: "prop_phase",
-          labelKey: "workflowNextContinueToProps",
-          variant: "primary",
-        },
-      ],
+      nextSteps: [await nextAfterSceneImages(ctx.projectId)],
     });
     return {
       outcome: "timeout" as const,

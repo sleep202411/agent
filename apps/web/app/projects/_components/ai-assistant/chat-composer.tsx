@@ -275,6 +275,7 @@ function WorkingPill({
   label: string;
 }) {
   const dispatch = useAppDispatch();
+  const t = useTranslations("ai");
   const [stopping, setStopping] = useState(false);
   const handleStop = async () => {
     if (!projectId || stopping) return;
@@ -306,7 +307,7 @@ function WorkingPill({
           type="button"
           onClick={handleStop}
           disabled={stopping}
-          title="停止"
+          title={t("composerStopButton")}
           className={cn(
             "ml-1 flex size-7 shrink-0 items-center justify-center rounded-full",
             "bg-background/80 text-foreground/70 transition-colors hover:bg-background disabled:opacity-50"

@@ -238,19 +238,22 @@ export function WorkflowProgressCard({
  */
 function formatAcceptLabel(
   output: Partial<WorkflowSuspendedOutput>,
-  t: (key: string) => string
+  t: (key: string, params?: Record<string, string | number | Date>) => string
 ): string {
   const nextAction = output.nextAction;
   if (nextAction) {
     const nextLabel = t(WORKFLOW_LABEL_KEYS[nextAction.workflowName] ?? "workflowActionAccept");
     if (nextAction.estimatedCost > 0) {
-      return `继续 ${nextLabel} (${nextAction.estimatedCost} 积分)`;
+      return t("workflowContinueWithCost", {
+        next: nextLabel,
+        cost: nextAction.estimatedCost,
+      });
     }
-    return `继续 ${nextLabel}`;
+    return t("workflowContinueNext", { next: nextLabel });
   }
   const currentCost = output.estimatedCost ?? 0;
   if (currentCost > 0) {
-    return `满意 · ${currentCost} 积分`;
+    return t("workflowApproveWithCost", { cost: currentCost });
   }
   return t("workflowActionAccept");
 }
@@ -263,14 +266,13 @@ function formatAcceptLabel(
  */
 function formatAcceptUserLabel(
   output: Partial<WorkflowSuspendedOutput>,
-  t: (key: string) => string
+  t: (key: string, params?: Record<string, string | number | Date>) => string
 ): string {
   const nextAction = output.nextAction;
   if (nextAction) {
     const nextLabel = t(WORKFLOW_LABEL_KEYS[nextAction.workflowName] ?? "workflowActionAccept");
-    return `继续 ${nextLabel}`;
+    return t("workflowContinueNext", { next: nextLabel });
   }
-  if ((output.estimatedCost ?? 0) > 0) return "满意";
   return t("workflowUserSatisfied");
 }
 
@@ -505,8 +507,11 @@ export function WorkflowCompletedCard({
         <span className="font-medium">
           {output.summary ??
             (partial
-              ? `已入库 ${committedCount} 项，失败 ${failedCount} 项`
-              : `已入库 ${committedCount} 项`)}
+              ? t("workflowCommittedSummaryWithFailures", {
+                  count: committedCount,
+                  failed: failedCount,
+                })
+              : t("workflowCommittedSummary", { count: committedCount }))}
         </span>
       </div>
     );
@@ -533,8 +538,11 @@ export function WorkflowCompletedCard({
         <span>
           {output.summary ??
             (partial
-              ? `已入库 ${committedCount} 项，失败 ${failedCount} 项。`
-              : `已入库 ${committedCount} 项。`)}
+              ? t("workflowCommittedSummaryWithFailures", {
+                  count: committedCount,
+                  failed: failedCount,
+                })
+              : t("workflowCommittedSummary", { count: committedCount }))}
         </span>
       </div>
       {/* Workflow-specific structured result panel (章节/角色/场景 for
@@ -549,7 +557,7 @@ export function WorkflowCompletedCard({
             const v = next.variant ?? (i === 0 ? "primary" : "secondary");
             const costSuffix =
               typeof next.estimatedCost === "number" && next.estimatedCost > 0
-                ? ` (${next.estimatedCost} 积分)`
+                ? ` ${t("workflowCreditSuffix", { cost: next.estimatedCost })}`
                 : "";
             return (
               <ActionButton
@@ -620,7 +628,7 @@ export function WorkflowFailedCard({
     void dispatch(
       startWorkflowFromButton({
         projectId,
-        userLabel: `重试「${workflowLabelText}」`,
+        userLabel: t("workflowRetryLabel", { name: workflowLabelText }),
         workflowName: output.workflowName,
         inputData: buildInputData(output.workflowName, {
           projectId,

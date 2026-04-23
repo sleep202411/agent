@@ -444,6 +444,14 @@ export async function applySceneDrafts(
       ? `已入库 ${committed.length} 个场景，进入下一阶段。`
       : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
 
+  // Only offer the "skip to props" secondary when the outline actually has
+  // prop entries. Story_outline frequently returns props=[] for stories
+  // without explicit item mentions — clicking the button in that state
+  // just lands the user on a "no-props auto-skip" card, which wastes a
+  // click and erodes trust in the button meaning. Fallback to the next
+  // natural step (episodes) when there's nothing to design in props.
+  const outlineRecord = await getOutline(ctx.projectId);
+  const hasProps = (outlineRecord?.outline.props?.length ?? 0) > 0;
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "scene_phase",
@@ -457,11 +465,17 @@ export async function applySceneDrafts(
         variant: "primary",
         inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
       },
-      {
-        workflowName: "prop_phase",
-        labelKey: "workflowNextSkipToProps",
-        variant: "secondary",
-      },
+      hasProps
+        ? {
+            workflowName: "prop_phase" as const,
+            labelKey: "workflowNextSkipToProps",
+            variant: "secondary" as const,
+          }
+        : {
+            workflowName: "episode_phase" as const,
+            labelKey: "workflowNextSkipToEpisodes",
+            variant: "secondary" as const,
+          },
     ],
   };
   if (emitLifecycleMessage) {

@@ -649,7 +649,7 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   return (
                     <ToolCompletionCard
                       key={`${message.id}-${part.toolCallId}-brief`}
-                      label={`✓ 已分析《${name}》`}
+                      label={t("toolBriefAnalyzed", { name })}
                     />
                   );
                 }
@@ -664,7 +664,7 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   return (
                     <ToolCompletionCard
                       key={`${message.id}-${part.toolCallId}-meta`}
-                      label={`✓ 已设置项目信息（${out.setFields.join(" / ")}）`}
+                      label={t("toolMetaUpdated", { fields: out.setFields.join(" / ") })}
                     />
                   );
                 }

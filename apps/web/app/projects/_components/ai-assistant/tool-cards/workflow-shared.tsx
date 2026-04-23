@@ -36,6 +36,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "@/src/i18n/i18n";
 
 // ─── Display labels ────────────────────────────────────
 
@@ -59,28 +60,30 @@ export const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
 };
 
 interface WorkflowPersona {
-  name: string;
+  /** i18n key under `ai.personas.*` — resolved at render time so the
+   *  sidebar/chat card adapt to the user's locale. */
+  nameKey: string;
   /** Tabler icon component — shown next to the persona name. */
   icon: Icon;
 }
 
 export const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
-  story_outline: { name: "剧本统筹", icon: IconBook },
-  parse_script: { name: "剧本统筹", icon: IconBook },
-  role_design: { name: "角色设计师", icon: IconUsers },
-  scene_design: { name: "场景设计师", icon: IconBuildingStore },
-  prop_design: { name: "道具设计师", icon: IconPackage },
-  role_phase: { name: "角色设计师", icon: IconUsers },
-  role_image_phase: { name: "角色设计师", icon: IconPhoto },
-  scene_phase: { name: "场景设计师", icon: IconBuildingStore },
-  scene_image_phase: { name: "场景设计师", icon: IconPhoto },
-  prop_phase: { name: "道具设计师", icon: IconPackage },
-  prop_image_phase: { name: "道具设计师", icon: IconPhoto },
-  episode_phase: { name: "剧集规划师", icon: IconLayoutList },
-  script_phase: { name: "编剧", icon: IconPencil },
-  storyboard_phase: { name: "分镜师", icon: IconCamera },
-  batch_create_asset: { name: "资产录入", icon: IconPackage },
-  script_edit: { name: "编剧", icon: IconPencil },
+  story_outline: { nameKey: "personas.storyOutliner", icon: IconBook },
+  parse_script: { nameKey: "personas.storyOutliner", icon: IconBook },
+  role_design: { nameKey: "personas.characterDesigner", icon: IconUsers },
+  scene_design: { nameKey: "personas.sceneDesigner", icon: IconBuildingStore },
+  prop_design: { nameKey: "personas.propDesigner", icon: IconPackage },
+  role_phase: { nameKey: "personas.characterDesigner", icon: IconUsers },
+  role_image_phase: { nameKey: "personas.characterDesigner", icon: IconPhoto },
+  scene_phase: { nameKey: "personas.sceneDesigner", icon: IconBuildingStore },
+  scene_image_phase: { nameKey: "personas.sceneDesigner", icon: IconPhoto },
+  prop_phase: { nameKey: "personas.propDesigner", icon: IconPackage },
+  prop_image_phase: { nameKey: "personas.propDesigner", icon: IconPhoto },
+  episode_phase: { nameKey: "personas.episodePlanner", icon: IconLayoutList },
+  script_phase: { nameKey: "personas.scriptwriter", icon: IconPencil },
+  storyboard_phase: { nameKey: "personas.storyboardDesigner", icon: IconCamera },
+  batch_create_asset: { nameKey: "personas.assetImporter", icon: IconPackage },
+  script_edit: { nameKey: "personas.scriptwriter", icon: IconPencil },
 };
 
 function groupDraftsByType(drafts: Draft[]): Record<string, Draft[]> {
@@ -97,11 +100,12 @@ function groupDraftsByType(drafts: Draft[]): Record<string, Draft[]> {
 // ─── Sub-components ────────────────────────────────────
 
 export function PersonaPill({ persona }: { persona: WorkflowPersona }) {
+  const t = useTranslations("ai");
   const Icon = persona.icon;
   return (
     <div className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground/80">
       <Icon className="size-3.5 text-muted-foreground" />
-      <span>{persona.name}</span>
+      <span>{t(persona.nameKey)}</span>
     </div>
   );
 }
@@ -201,7 +205,7 @@ export function StoryOutlineResult({
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              aria-label="展开全部"
+              aria-label={t("draftTableExpandAll")}
               className="absolute right-2 bottom-2 flex size-7 items-center justify-center rounded-full border border-border/60 bg-card shadow-md transition-colors hover:bg-muted"
             >
               <IconChevronDown className="size-4" />
@@ -214,7 +218,7 @@ export function StoryOutlineResult({
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            aria-label="收起"
+            aria-label={t("draftTableCollapseAll")}
             className="flex size-7 items-center justify-center rounded-full border border-border/60 bg-card transition-colors hover:bg-muted"
           >
             <IconChevronUp className="size-4" />
@@ -373,9 +377,10 @@ function renderCellValue(v: unknown): string {
 }
 
 function DraftFieldTable({ rows }: { rows: Record<string, unknown>[] }) {
+  const t = useTranslations("ai");
   const columns = collectRowColumns(rows);
   if (columns.length === 0) {
-    return <div className="text-[12px] text-muted-foreground">空表格</div>;
+    return <div className="text-[12px] text-muted-foreground">{t("draftTableEmpty")}</div>;
   }
   return (
     <div className="rounded-md border border-border/60">
@@ -466,7 +471,7 @@ function DraftGroup({
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              aria-label="展开全部"
+              aria-label={t("draftTableExpandAll")}
               className="absolute right-2 bottom-2 flex size-7 items-center justify-center rounded-full border border-border/60 bg-card shadow-md transition-colors hover:bg-muted"
             >
               <IconChevronDown className="size-4" />
@@ -478,7 +483,7 @@ function DraftGroup({
             <button
               type="button"
               onClick={() => setExpanded(false)}
-              aria-label="收起"
+              aria-label={t("draftTableCollapseAll")}
               className="flex size-7 items-center justify-center rounded-full border border-border/60 bg-card transition-colors hover:bg-muted"
             >
               <IconChevronUp className="size-4" />
@@ -531,6 +536,7 @@ function DraftDetailDialog({
   onDraftUpdated?: (next: Draft) => void;
 }) {
   const projectId = useAppSelector((s) => s.project.currentProjectId);
+  const t = useTranslations("ai");
 
   const data = (draft?.data ?? {}) as Record<string, unknown>;
   const { title } = draft ? draftPreview(draft) : { title: "" };
@@ -580,7 +586,7 @@ function DraftDetailDialog({
       return;
     }
     if (!projectId) {
-      toast.error("项目 ID 缺失，无法保存");
+      toast.error(t("draftTableProjectIdMissing"));
       return;
     }
     setSaving(true);
@@ -588,11 +594,13 @@ function DraftDetailDialog({
       const updated = await updateDraftData(draft.runId, draft.clientRefId, projectId, {
         prompt: editedPrompt,
       });
-      toast.success("已保存");
+      toast.success(t("draftTableSaved"));
       onDraftUpdated?.(updated);
       onOpenChange(false);
     } catch (err) {
-      toast.error(`保存失败：${err instanceof Error ? err.message : String(err)}`);
+      toast.error(
+        t("draftTableSaveFailed", { reason: err instanceof Error ? err.message : String(err) })
+      );
     } finally {
       setSaving(false);
     }
@@ -607,7 +615,7 @@ function DraftDetailDialog({
       <DialogContent className="sm:max-w-[min(92vw,680px)]">
         <DialogHeader>
           <DialogTitle>{title || "—"}</DialogTitle>
-          <DialogDescription className="sr-only">草稿详情</DialogDescription>
+          <DialogDescription className="sr-only">{t("draftTableDescription")}</DialogDescription>
         </DialogHeader>
 
         <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto p-4">
@@ -638,17 +646,17 @@ function DraftDetailDialog({
             );
           })}
           {entries.length === 0 && (
-            <div className="text-[12px] text-muted-foreground">此草稿暂无可展示字段。</div>
+            <div className="text-[12px] text-muted-foreground">{t("draftTableNoFields")}</div>
           )}
         </div>
 
         <DialogFooter className="flex gap-2 border-t border-border p-4">
           <Button variant="outline" color="muted" onClick={handleCancel} disabled={saving}>
-            取消
+            {t("draftTableCancel")}
           </Button>
           <Button variant="solid" color="primary" onClick={handleSave} disabled={saving}>
             {saving && <IconLoader2 className="animate-spin" />}
-            {saving ? "保存中…" : "保存"}
+            {saving ? t("draftTableSaving") : t("draftTableSave")}
           </Button>
         </DialogFooter>
       </DialogContent>

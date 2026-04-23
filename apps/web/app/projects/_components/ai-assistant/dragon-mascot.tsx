@@ -1,5 +1,8 @@
+"use client";
+
 import { DragonIcon } from "./dragon-icon";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "@/src/i18n/i18n";
 
 interface DragonMascotProps {
   active?: boolean;
@@ -12,6 +15,8 @@ export function DragonMascot({
   onClick,
   rightOffset = "1.5rem",
 }: DragonMascotProps) {
+  const t = useTranslations("ai");
+  const label = t("dragonMascotLabel");
   return (
     <button
       type="button"
@@ -20,7 +25,7 @@ export function DragonMascot({
         "group fixed bottom-6 z-[80] flex flex-col items-center gap-1 px-2 py-3 transition-all duration-300"
       )}
       style={{ right: rightOffset }}
-      aria-label="打开 AI 助手"
+      aria-label={t("dragonMascotOpen")}
     >
       <div
         className={cn(
@@ -46,7 +51,7 @@ export function DragonMascot({
           active ? "text-[#E63946]" : "group-hover:text-[#E63946]"
         )}
       >
-        AI 助手
+        {label}
       </span>
     </button>
   );
