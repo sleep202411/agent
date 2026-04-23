@@ -46,11 +46,16 @@ export function SceneCreateDialog({
     }
     setCreating(true);
     try {
-      const result = await backendApi.post<Asset>("/api/user/world/create/worldscene", {
+      // Java's /create/worldscene returns the new id as a bare string in
+      // `data` (matches /create/worldprop and /create/worldrole). The
+      // previous `<Asset>` cast spread a string into the created-scene
+      // object, leaving `id` undefined — which made the edit sheet's
+      // Generate button disabled (it gates on `sceneId`).
+      const id = await backendApi.post<string>("/api/user/world/create/worldscene", {
         data: { name: name.trim(), worldId },
       });
       onOpenChange(false);
-      onCreated({ ...result, name: name.trim() });
+      onCreated({ id: String(id), name: name.trim() } as Asset);
     } catch (err) {
       console.error("[CreateScene] 创建失败:", err);
     } finally {

@@ -167,11 +167,14 @@ export function SceneEditDialog({
         });
         store.dispatch(updateScene({ id: scene.id, data: values }));
       } else {
-        const result = await backendApi.post<Asset>("/api/user/world/create/worldscene", {
+        // Java returns the new id as a bare string — matches
+        // /create/worldprop and /create/worldrole. Reading .id off it
+        // would be undefined and quietly skip the dispatch.
+        const createdId = await backendApi.post<string>("/api/user/world/create/worldscene", {
           data,
         });
-        if (result?.id) {
-          store.dispatch(addScene({ ...result, ...values }));
+        if (createdId) {
+          store.dispatch(addScene({ id: String(createdId), ...values } as Asset));
         }
       }
       toast.success(tc("saveSuccess"));

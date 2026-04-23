@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { IconCirclePlus, IconLoader2, IconX } from "@tabler/icons-react";
-import { toast } from "sonner";
+import { useCallback, useState } from "react";
+import { IconCirclePlus, IconX } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
-import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
+import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { env } from "@/src/env";
 
 const OSS_BASE = env.OSS_BASE_URL;
@@ -16,6 +15,13 @@ function ossUrl(path?: string): string {
   return `${OSS_BASE}/${path}`;
 }
 
+/**
+ * Renders a row of reference-image thumbnails + an "add" tile. Adding
+ * now goes through the shared AssetPickerDialog (upload tab + existing
+ * workspace assets) instead of a bare `<input type="file">`, so users
+ * can reuse images they've already generated/uploaded without
+ * re-uploading.
+ */
 export function ReferenceImageUploader({
   paths,
   onChange,
@@ -28,57 +34,8 @@ export function ReferenceImageUploader({
   maxCount?: number;
 }) {
   const tc = useTranslations("common");
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [localPreviewUrl, setLocalPreviewUrl] = useState("");
-
-  useEffect(() => {
-    return () => {
-      if (localPreviewUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(localPreviewUrl);
-      }
-    };
-  }, [localPreviewUrl]);
-
-  const handleAdd = useCallback(
-    async (file?: File) => {
-      if (!file) return;
-      if (!file.type.startsWith("image/")) {
-        toast.warning(tc("selectImageFile"));
-        return;
-      }
-      if (paths.length >= maxCount) {
-        toast.warning(tc("maxReferenceImages", { max: maxCount }));
-        return;
-      }
-      const blobUrl = URL.createObjectURL(file);
-      setLocalPreviewUrl(blobUrl);
-      setUploading(true);
-      try {
-        const uploaded = await uploadWorkspaceFile(file, {
-          uploadType: "PROJECT",
-          sourceType: "LOCAL",
-        });
-        const uploadedPath = uploaded.path;
-        onChange([...paths, uploadedPath].slice(0, maxCount));
-        toast.success(tc("uploadSuccess"));
-      } catch (error) {
-        console.error("[ReferenceImageUploader] 上传失败:", error);
-        toast.error(tc("uploadFailed"));
-      } finally {
-        setUploading(false);
-        if (blobUrl.startsWith("blob:")) {
-          URL.revokeObjectURL(blobUrl);
-        }
-        setLocalPreviewUrl("");
-        if (inputRef.current) {
-          inputRef.current.value = "";
-        }
-      }
-    },
-    [maxCount, onChange, paths]
-  );
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const removeAt = useCallback(
     (index: number) => {
@@ -87,23 +44,26 @@ export function ReferenceImageUploader({
     [onChange, paths]
   );
 
+  const handleSelect = useCallback(
+    (picked: string[]) => {
+      const next = [...paths, ...picked].slice(0, maxCount);
+      onChange(next);
+      setPickerOpen(false);
+    },
+    [maxCount, onChange, paths]
+  );
+
+  const canAdd = paths.length < maxCount;
+
   return (
     <>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(event) => void handleAdd(event.target.files?.[0] ?? undefined)}
-      />
-
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div className="flex flex-wrap gap-3 pb-2">
         {paths.map((path, index) => {
           const src = ossUrl(path);
           return (
             <div
               key={`${path}_${index}`}
-              className="group relative h-[105px] w-[140px] shrink-0 overflow-hidden rounded-md"
+              className="group relative h-[105px] w-[140px] overflow-hidden rounded-md"
             >
               <img
                 src={src}
@@ -122,26 +82,25 @@ export function ReferenceImageUploader({
           );
         })}
 
-        {uploading && localPreviewUrl ? (
-          <div className="relative h-[105px] w-[140px] shrink-0 overflow-hidden rounded-md">
-            <img src={localPreviewUrl} alt="" className="h-full w-full object-cover opacity-60" />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-              <IconLoader2 className="size-5 animate-spin text-white" />
-            </div>
-          </div>
-        ) : null}
-
-        {!uploading && paths.length < maxCount ? (
+        {canAdd ? (
           <button
             type="button"
-            onClick={() => inputRef.current?.click()}
-            className="flex h-[105px] w-[140px] shrink-0 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
+            onClick={() => setPickerOpen(true)}
+            className="flex h-[105px] w-[140px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
           >
             <IconCirclePlus className="size-5" />
             <span className="text-xs">{addLabel || tc("addReferenceImage")}</span>
           </button>
         ) : null}
       </div>
+
+      <AssetPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        assetType="img"
+        multiple
+        onSelect={handleSelect}
+      />
 
       <MediaPreviewModal
         open={Boolean(previewUrl)}
