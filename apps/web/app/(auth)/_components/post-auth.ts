@@ -12,24 +12,36 @@ import { localeFromPathname, localizePath } from "@/src/i18n/locale-url";
 /**
  * Decide what happens after a successful auth action.
  *
- * - Embedded (iframe host = fizzdragon-web): postMessage the token to
- *   the parent and stop. The host owns the "close iframe / redirect"
- *   decision.
- * - Standalone: navigate to the `redirect` query param if present +
- *   safe, otherwise fall back to the studio shell.
+ * - register / reset: the user doesn't have a session yet (or we want
+ *   them to re-confirm the password), so always bounce to /login —
+ *   same URL shell whether embedded or standalone. We carry forward
+ *   the `?embed=1` / `?redirect=...` search params so the login page
+ *   downstream still knows how to finish the flow.
+ * - login + embedded: postMessage the token to the parent and stop.
+ *   The host owns the "close iframe / redirect" decision.
+ * - login + standalone: navigate to the `redirect` query param if
+ *   present + safe, otherwise fall back to the studio shell.
  */
 export function handleAuthSuccess(action: AuthAction, result: AuthResult): void {
   if (typeof window === "undefined") return;
+
+  // Derive locale from current URL (not browser pref) so that a user who
+  // landed on /en-US/login stays in en-US after auth.
+  const locale = localeFromPathname(window.location.pathname);
+
+  if (action !== "login") {
+    const base = localizePath("/login", locale);
+    const query = window.location.search; // "" or "?..." — preserves embed + redirect
+    window.location.assign(`${base}${query}`);
+    return;
+  }
 
   if (isEmbeddedMode()) {
     postAuthSuccess(action, result);
     return;
   }
 
-  // Derive locale from current URL (not browser pref) so that a user who
-  // landed on /en-US/login stays in en-US after auth.
-  const locale = localeFromPathname(window.location.pathname);
-  const fallback = localizePath(action === "login" ? "/studio/projects" : "/login", locale);
+  const fallback = localizePath("/studio/projects", locale);
   const redirect = readRedirectParam();
   window.location.assign(resolveRedirectTarget(redirect) ?? fallback);
 }
