@@ -135,19 +135,27 @@ import {
   type AssistantToolResult,
 } from "@/src/lib/assistant/assistant-types";
 import { isAskPersonaTool } from "@/src/lib/assistant/personas";
+import { extractSuggestedActions } from "@/src/lib/assistant/suggested-action";
+import { SuggestedActionButtons } from "./suggested-action-buttons";
 
 // ─── Compact tool indicator ───────────────────────────
 
 function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantToolInvocation }) {
   const displayName = getAssistantToolDisplayName(toolName);
-  const isDone = part.state === "output-available";
-  const isError = part.state === "output-error" || part.state === "output-denied";
-  const isLoading = !isDone && !isError;
+  const rawDone = part.state === "output-available";
+  // Mastra routes input-validation failures (and other app-level errors)
+  // back to the LLM as a **successful** tool result with `output.error=true`
+  // so the model can retry. For the UI we want those to read as errors,
+  // not green-check successes — otherwise a retry sequence looks like
+  // the tool ran N times instead of N-1 failed attempts + 1 success.
+  const output = rawDone ? (part.output as Record<string, unknown> | undefined) : undefined;
+  const outputErrored = output?.error === true;
+  const isError = part.state === "output-error" || part.state === "output-denied" || outputErrored;
+  const isLoading = !rawDone && part.state !== "output-error" && part.state !== "output-denied";
 
   // Extract a short entity label from output (e.g. episode title, character name)
   let entityLabel: string | null = null;
-  if (isDone || isError) {
-    const output = part.output as Record<string, unknown> | undefined;
+  if (rawDone) {
     const msg = output?.message as string | undefined;
     if (msg && msg.length < 60) entityLabel = msg;
   }
@@ -236,7 +244,7 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
             // on the list's space-y-4 for inter-message spacing — extra
             // py-2 here just stacks 16px of whitespace between every
             // chip / card, which looks loose for small compact chips.
-            message.role === "user" ? "rounded-xl bg-muted px-3 py-2" : "w-full px-2"
+            message.role === "user" ? "rounded-xl bg-muted px-3 py-2" : "w-full px-0"
           )}
         >
           {message.metadata?.attachments?.length ? (
@@ -250,16 +258,30 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
           <div className="space-y-3">
             {message.parts.map((part, index) => {
               if (part.type === "text") {
+                // Strip any trailing ```json {"actions":[...]} ``` block
+                // from the rendered markdown; if present, render the
+                // action buttons inline. No cross-part coordination —
+                // each emission stands alone; supervisor owns dedupe +
+                // label uniqueness.
+                const { cleanText, suggestedActions } = extractSuggestedActions(part.text);
                 return (
                   <div
                     key={`${message.id}-text-${index}`}
                     className="max-w-none text-[13px] leading-relaxed"
                   >
                     <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                      {part.text}
+                      {cleanText}
                     </Markdown>
                     {part.state === "streaming" && (
                       <span className="inline-block h-4 w-0.5 animate-pulse bg-foreground/60" />
+                    )}
+                    {suggestedActions.length > 0 && (
+                      <div className="mt-2">
+                        <SuggestedActionButtons
+                          actions={suggestedActions}
+                          disabled={!isLastAssistant}
+                        />
+                      </div>
                     )}
                   </div>
                 );

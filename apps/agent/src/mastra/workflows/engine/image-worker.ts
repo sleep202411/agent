@@ -19,9 +19,9 @@
 import { Worker, type Job } from "bullmq";
 import { IMAGE_QUEUE_NAME, type AssetImageJobData, type AssetImageJobName } from "./image-queue";
 import { buildConnection } from "./queue";
-import { generateAssetImageViaJava } from "../../lib/java-image-gen";
+import { generateAssetImageViaJava, updateAssetImagePath } from "../../lib/java-image-gen";
 import { setAssetImageStatus } from "../../lib/asset-image-status";
-import { javaRequest, type StoryosContext } from "../../lib/workspace-client";
+import type { StoryosContext } from "../../lib/workspace-client";
 
 const LOG_PREFIX = "[image-worker]";
 
@@ -131,7 +131,7 @@ async function handleImageJob(job: Job<AssetImageJobData, unknown, AssetImageJob
   // 2. Persist to Java.
   const updateStart = Date.now();
   try {
-    await updateAssetImage(ctx, assetType, assetId, assetName, ossPath);
+    await updateAssetImagePath(ctx, assetType, assetId, assetName, ossPath);
     logJob("info", "java_update_success", {
       ...baseCtx,
       durationMs: Date.now() - updateStart,
@@ -165,60 +165,6 @@ async function handleImageJob(job: Job<AssetImageJobData, unknown, AssetImageJob
     totalDurationMs: Date.now() - started,
     ossPath,
   });
-}
-
-async function updateAssetImage(
-  ctx: StoryosContext,
-  assetType: "role" | "scene" | "prop",
-  assetId: string,
-  assetName: string,
-  ossPath: string
-): Promise<void> {
-  // Java's update endpoints do a **full-record replace**, not a patch —
-  // omitted fields get blanked. If we only sent {id, name, imgPath} the
-  // description / prompt / reference arrays all get wiped on the first
-  // image generation. Read the existing record back first and echo every
-  // field we want to preserve alongside the new imgPath.
-  const endpoint = `/api/user/world/update/world${assetType}`;
-  const listEndpoint = `/api/user/world/list/world${assetType}`;
-  const imgField =
-    assetType === "role" ? "roleImgPath" : assetType === "scene" ? "sceneImgPath" : "propImgPath";
-
-  type RawAsset = {
-    id?: string | number;
-    name?: string;
-    description?: string;
-    prompt?: string;
-    roleImgPath?: string[];
-    sceneImgPath?: string[];
-    propImgPath?: string[];
-    referenceImgPath?: string[];
-    referenceImgDescription?: string[];
-    model?: string;
-    voiceId?: string;
-  };
-  const listed = await javaRequest<{ list?: RawAsset[] }>(ctx, listEndpoint, {
-    data: { worldId: ctx.worldId ?? "", page: 1, pageSize: 999 },
-  }).catch<{ list?: RawAsset[] }>(() => ({ list: [] }));
-  const existing = (listed.list ?? []).find((a) => String(a.id ?? "") === String(assetId));
-
-  const body: Record<string, unknown> = {
-    id: assetId,
-    name: existing?.name ?? assetName,
-    description: existing?.description ?? "",
-    prompt: existing?.prompt ?? "",
-    [imgField]: [ossPath],
-  };
-  // Role has extra fields (reference images, model, voice) that also need to
-  // survive the round-trip.
-  if (assetType === "role") {
-    body.referenceImgPath = existing?.referenceImgPath ?? [];
-    body.referenceImgDescription = existing?.referenceImgDescription ?? [];
-    body.model = existing?.model ?? "";
-    body.voiceId = existing?.voiceId ?? "";
-  }
-
-  await javaRequest<unknown>(ctx, endpoint, { data: body });
 }
 
 function classifyFailure(err: unknown): "failed_config" | "failed_policy" | "failed_server" {

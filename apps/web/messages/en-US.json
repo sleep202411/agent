@@ -1532,6 +1532,8 @@
     "executing": "Executing",
     "newConversation": "New Conversation",
     "personaTask": "Task",
+    "personaActionApplied": "Applied",
+    "personaActionCost": "~{cost} credits",
     "personaConsulting": "Consulting…",
     "personaError": "Request failed",
     "personaCollapse": "Collapse",
@@ -1540,6 +1542,7 @@
       "scriptwriter": "Scriptwriter",
       "characterDesigner": "Character Designer",
       "sceneDesigner": "Scene Designer",
+      "propDesigner": "Prop Designer",
       "artDirector": "Art Director",
       "storyboardDesigner": "Storyboard Designer",
       "episodePlanner": "Episode Planner"

@@ -3,8 +3,14 @@ import {
   addShot,
   analyzeBrief,
   applyPhaseDrafts,
+  batchCreateCharacter,
+  batchCreateProp,
+  batchCreateScene,
   batchUpdateStoryboardRows,
   cancelWorkflowTool,
+  generateCharacterImage,
+  generatePropImage,
+  generateSceneImage,
   configureParams,
   deleteEpisode,
   deleteShot,
@@ -29,6 +35,7 @@ import {
   askArtDirector,
   askCharacterDesigner,
   askEpisodePlanner,
+  askPropDesigner,
   askSceneDesigner,
   askScriptwriter,
   askStoryboardDesigner,
@@ -116,12 +123,27 @@ export const storyosAgent = new Agent({
     batch_update_storyboard_rows: batchUpdateStoryboardRows,
     delete_shot: deleteShot,
     add_shot: addShot,
+    // Direct-commit batch creates — no draft gate, no HITL. Supervisor
+    // calls these when user has already confirmed (e.g. clicked the
+    // "仅保存" generative-UI button). For "propose → user reviews" flows
+    // use invoke_workflow: role_design / scene_design / prop_design.
+    batch_create_character: batchCreateCharacter,
+    batch_create_scene: batchCreateScene,
+    batch_create_prop: batchCreateProp,
+    // Atomic single-image generation — synchronous 5-30s blocking call
+    // per asset. Typical use: supervisor calls batch_create_character,
+    // then pipelines N of these for each returned id. For bulk regenerates
+    // over a full world, prefer invoke_workflow: role_image_phase / etc.
+    generate_character_image: generateCharacterImage,
+    generate_scene_image: generateSceneImage,
+    generate_prop_image: generatePropImage,
     export_scripts: exportScripts,
     // Direct-call persona consultations (light tasks — single-turn reply,
     // no DB write, no HITL). See tools/personas/ask-tools.ts.
     ask_scriptwriter: askScriptwriter,
     ask_character_designer: askCharacterDesigner,
     ask_scene_designer: askSceneDesigner,
+    ask_prop_designer: askPropDesigner,
     ask_art_director: askArtDirector,
     ask_storyboard_designer: askStoryboardDesigner,
     ask_episode_planner: askEpisodePlanner,

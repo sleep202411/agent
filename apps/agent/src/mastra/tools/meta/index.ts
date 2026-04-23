@@ -27,6 +27,12 @@ export { updateStoryboardRow } from "./update-storyboard-row";
 export { batchUpdateStoryboardRows } from "./batch-update-storyboard-rows";
 export { deleteShot } from "./delete-shot";
 export { addShot } from "./add-shot";
+export { batchCreateCharacter, batchCreateScene, batchCreateProp } from "./batch-create-assets";
+export {
+  generateCharacterImage,
+  generateSceneImage,
+  generatePropImage,
+} from "./generate-asset-image";
 export { exportScripts } from "./export-scripts";
 // Generic client-side HITL picker — supervisor calls it when the user's
 // intent is genuinely ambiguous and the options have material trade-offs.

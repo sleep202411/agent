@@ -20,7 +20,10 @@ interface AskPersonaInput {
 
 interface AskPersonaOutput {
   persona?: string;
-  reply?: string;
+  /** Markdown prose for the user. */
+  summary?: string;
+  /** Structured fields for supervisor — not rendered here. */
+  fields?: { name: string; description: string; prompt: string } | null;
   tookMs?: number;
   contextBytes?: number;
   error?: string;
@@ -53,7 +56,7 @@ export function ToolPersonaCard({ toolName, part }: ToolPersonaCardProps) {
       part.state !== "output-denied");
 
   const hasError = Boolean(output?.error) || part.state === "output-error";
-  const reply = output?.reply ?? "";
+  const summary = output?.summary ?? "";
   const task = input?.task ?? "";
 
   return (
@@ -62,7 +65,7 @@ export function ToolPersonaCard({ toolName, part }: ToolPersonaCardProps) {
       isConsulting={isConsulting}
       hasError={hasError}
       task={task}
-      reply={reply}
+      summary={summary}
       error={output?.error ?? part.errorText}
       tookMs={output?.tookMs}
       t={t}
@@ -75,7 +78,7 @@ interface PersonaCardInnerProps {
   isConsulting: boolean;
   hasError: boolean;
   task: string;
-  reply: string;
+  summary: string;
   error?: string;
   tookMs?: number;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -86,7 +89,7 @@ function PersonaCard({
   isConsulting,
   hasError,
   task,
-  reply,
+  summary,
   error,
   tookMs,
   t,
@@ -151,10 +154,10 @@ function PersonaCard({
 
       {hasError && error && <div className="mt-2 text-[12px] text-destructive/80">{error}</div>}
 
-      {!hasError && reply && expanded && (
+      {!hasError && summary && expanded && (
         <div className="mt-2 border-t border-border/40 pt-2 text-[13px] leading-relaxed text-foreground/90">
           <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-            {reply}
+            {summary}
           </Markdown>
         </div>
       )}

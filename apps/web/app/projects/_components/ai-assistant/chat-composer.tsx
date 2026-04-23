@@ -130,7 +130,9 @@ export function ChatComposer({
         )}
       </div>
 
-      <p className="mt-2 text-center text-[11px] text-muted-foreground/50">{t("aiDisclaimer")}</p>
+      <p className="mt-2 px-2 text-center text-[10px] text-muted-foreground/50">
+        {t("aiDisclaimer")}
+      </p>
     </div>
   );
 }

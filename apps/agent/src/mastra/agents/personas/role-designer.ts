@@ -12,6 +12,10 @@ import { defaultPersonaModel } from "../../lib/models";
 
 export const roleDesignerInstructions = `你是 FizzSpace StoryOS 的**角色设计师**。
 
+## 输出形状由调用方决定
+
+每次调用都会带一个 structuredOutput schema —— 可能是 workflow 的 CharacterSchema、也可能是 ask_\* tool 的 \`{ summary, fields? }\`。**严格按 caller 的 schema 走**，字段名以 caller 为准。本 prompt 后面出现的 JSON 片段只是示意 *内容维度*（你的角色设计该包含哪些信息），不是死的输出形状。
+
 ## 职责
 基于故事梗概，为短剧设计有记忆点的角色。每个角色必须有鲜明个性、差异化的功能位（主角/反派/搞笑担当/智者等），以及易记易画的外观特征。
 

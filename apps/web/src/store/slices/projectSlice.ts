@@ -715,6 +715,16 @@ export interface ProjectInstanceState {
   propsVersion: number;
   assetsVersion: number;
 
+  // Last version the user has "seen" — sidebar shows a red dot when
+  // `xVersion > xSeenVersion`. Bumped to match the live version when the
+  // user opens (or is viewing) the corresponding panel. Only tracked for
+  // asset types that have a sidebar menu item.
+  episodesSeenVersion: number;
+  worldSeenVersion: number;
+  charactersSeenVersion: number;
+  scenesSeenVersion: number;
+  propsSeenVersion: number;
+
   // AI Image Form (merged from aiImageFormSlice)
   aiImageForm: AiImageFormNestedState;
 
@@ -772,6 +782,12 @@ export function createDefaultProjectInstance(): ProjectInstanceState {
     scenesVersion: 0,
     propsVersion: 0,
     assetsVersion: 0,
+
+    episodesSeenVersion: 0,
+    worldSeenVersion: 0,
+    charactersSeenVersion: 0,
+    scenesSeenVersion: 0,
+    propsSeenVersion: 0,
 
     aiImageForm: createDefaultAiImageForm(),
     aiVideoForm: createDefaultAiVideoForm(),
@@ -1511,6 +1527,34 @@ export const projectSlice = createSlice({
       const inst = getInstance(state);
       if (inst) inst.assetsVersion += 1;
     },
+    // Sidebar red-dot: mark the current live version of an asset type as
+    // "seen" by the user (dot disappears). Dispatched when the user opens
+    // the corresponding panel or is already viewing it when a WS update
+    // arrives.
+    markAssetSeen: (
+      state,
+      action: PayloadAction<"episodes" | "world" | "characters" | "scenes" | "props">
+    ) => {
+      const inst = getInstance(state);
+      if (!inst) return;
+      switch (action.payload) {
+        case "episodes":
+          inst.episodesSeenVersion = inst.episodesVersion;
+          break;
+        case "world":
+          inst.worldSeenVersion = inst.worldVersion;
+          break;
+        case "characters":
+          inst.charactersSeenVersion = inst.charactersVersion;
+          break;
+        case "scenes":
+          inst.scenesSeenVersion = inst.scenesVersion;
+          break;
+        case "props":
+          inst.propsSeenVersion = inst.propsVersion;
+          break;
+      }
+    },
     // Reset
     reset: (state) => {
       const id = state.currentProjectId;
@@ -1913,6 +1957,7 @@ export const {
   touchScenes,
   touchProps,
   touchAssets,
+  markAssetSeen,
   reset,
   // AI Image Form actions
   setImageModelsLoaded,

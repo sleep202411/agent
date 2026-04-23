@@ -24,14 +24,19 @@ import {
   loadRoles,
   loadScenes,
 } from "./context-loader";
-import { askPersona, type AskPersonaResult } from "./ask-persona";
+import { askPersona, PersonaReplyFieldsSchema, type AskPersonaResult } from "./ask-persona";
 import { getContext, type StoryosContext } from "../../lib/workspace-client";
 
 // ─── Shared output schema ──────────────────────────────────────────────
+//
+// Contract: persona always returns `{ summary, fields }` (see ask-persona.ts).
+// `fields` is nullable on the wire because the LLM call can fail — in that
+// case supervisor sees the `error` field set and skips the tool-call step.
 
 const ReplySchema = z.object({
   persona: z.string(),
-  reply: z.string(),
+  summary: z.string(),
+  fields: PersonaReplyFieldsSchema.nullable(),
   tookMs: z.number(),
   contextBytes: z.number(),
   error: z.string().optional(),
@@ -122,7 +127,8 @@ function makeAskTool(cfg: AskToolConfig) {
       } catch (err) {
         return {
           persona: cfg.agentId,
-          reply: "",
+          summary: "",
+          fields: null,
           tookMs: 0,
           contextBytes: 0,
           error: err instanceof Error ? err.message : String(err),
@@ -164,6 +170,14 @@ export const askSceneDesigner = makeAskTool({
   description:
     "让场景设计师设计/讨论/微调某个场景（环境、光线、氛围、道具）。只返回文字回复，不落库。适用：单场景快速草图、现有场景改细节、配合剧本场次做环境补充。",
   defaultScope: { includeProject: true, includeScenes: true, includeRoles: true },
+});
+
+export const askPropDesigner = makeAskTool({
+  toolId: "ask_prop_designer",
+  agentId: "propDesigner",
+  description:
+    "让道具设计师设计/讨论单个道具（剧情道具、角色信物、时代物件）。只返回文字/结构化回复，不落库。适用：设计一个新道具的外观+材质+年代、讨论某个道具如何承担剧情功能、给现有道具补视觉细节。批量设计一批道具请用 invoke_workflow('prop_design')。道具类任务**不要**调 ask_scene_designer —— scene 设计的是环境，prop 设计的是离散的故事物件。",
+  defaultScope: { includeProject: true, includeRoles: true, includeProps: true },
 });
 
 export const askArtDirector = makeAskTool({

@@ -15,6 +15,7 @@ import {
   IconBuildingStore,
   IconCamera,
   IconLayoutList,
+  IconMask,
   IconPalette,
   IconPencil,
   IconUsers,
@@ -25,6 +26,7 @@ export type AssistantPersonaKey =
   | "scriptwriter"
   | "characterDesigner"
   | "sceneDesigner"
+  | "propDesigner"
   | "artDirector"
   | "storyboardDesigner"
   | "episodePlanner";
@@ -38,7 +40,7 @@ export interface AssistantPersonaMeta {
    *  shows the same glyph across both card types. */
   icon: Icon;
   /** Accent tone used for bubbles / badges. */
-  tone: "violet" | "amber" | "teal" | "rose" | "sky" | "lime";
+  tone: "violet" | "amber" | "teal" | "rose" | "sky" | "lime" | "orange";
 }
 
 export const ASSISTANT_PERSONAS: Record<AssistantPersonaKey, AssistantPersonaMeta> = {
@@ -59,6 +61,12 @@ export const ASSISTANT_PERSONAS: Record<AssistantPersonaKey, AssistantPersonaMet
     nameKey: "sceneDesigner",
     icon: IconBuildingStore,
     tone: "teal",
+  },
+  propDesigner: {
+    key: "propDesigner",
+    nameKey: "propDesigner",
+    icon: IconMask,
+    tone: "orange",
   },
   artDirector: {
     key: "artDirector",
@@ -84,6 +92,7 @@ const TOOL_TO_PERSONA: Record<string, AssistantPersonaKey> = {
   ask_scriptwriter: "scriptwriter",
   ask_character_designer: "characterDesigner",
   ask_scene_designer: "sceneDesigner",
+  ask_prop_designer: "propDesigner",
   ask_art_director: "artDirector",
   ask_storyboard_designer: "storyboardDesigner",
   ask_episode_planner: "episodePlanner",
@@ -111,4 +120,5 @@ export const PERSONA_TONE_CLASSES: Record<AssistantPersonaMeta["tone"], string> 
   rose: "bg-rose-500/10 text-rose-300 border-rose-400/30",
   sky: "bg-sky-500/10 text-sky-300 border-sky-400/30",
   lime: "bg-lime-500/10 text-lime-300 border-lime-400/30",
+  orange: "bg-orange-500/10 text-orange-300 border-orange-400/30",
 };

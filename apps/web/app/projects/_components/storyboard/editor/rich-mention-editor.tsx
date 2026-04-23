@@ -72,7 +72,9 @@ export function RichMentionEditor({
     <div
       className={cn(
         minHeight ? "[&_[contenteditable]]:min-h-[var(--rich-mention-editor-min-height)]" : "",
-        maxHeight ? "[&_[contenteditable]]:max-h-[var(--rich-mention-editor-max-height)]" : "",
+        maxHeight
+          ? "[&_[contenteditable]]:max-h-[var(--rich-mention-editor-max-height)] [&_[contenteditable]]:overflow-y-auto"
+          : "",
         className
       )}
       style={style}

@@ -695,6 +695,55 @@ export const sendUserMessage = createAsyncThunk<
   }
 );
 
+// ─── Apply a persona's suggestedAction (button path) ───
+//
+// The persona's reply may include a structured `suggestedAction` (see
+// `ask-persona.ts`). When the user clicks the "apply" button on a
+// tool-persona-card, we post a visible user message like "应用上面的
+// 方案：<label>" and let the supervisor match it against the most
+// recent ask_* tool result (whose output.suggestedAction carries
+// `{tool, input}`) — supervisor then invokes the referenced tool
+// directly per the rule in storyos.ts.
+//
+// Separate from sendUserMessage because that one reads from draftInput;
+// this one takes an explicit text so the chat-composer state is left
+// alone.
+
+export const applyPersonaAction = createAsyncThunk<
+  void,
+  { projectId: string; label: string },
+  { state: RootState; dispatch: AppDispatch }
+>("assistant/applyPersonaAction", async ({ projectId, label }, { dispatch, getState }) => {
+  abortProjectStream(projectId);
+  dispatch(ensureProject(projectId));
+
+  const userMessage: AssistantMessage = {
+    id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    role: "user",
+    parts: [{ type: "text", text: `应用上面的方案：${label}`, state: "done" }],
+  };
+  dispatch(commitUserMessage({ projectId, userMessage }));
+
+  const abortController = createProjectAbortController(projectId);
+
+  try {
+    const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
+    const workspaceContext = buildWorkspaceContext(getState(), projectId);
+
+    await submitMessageToAgent({
+      projectId,
+      messages: nextMessages,
+      workspaceContext,
+      signal: abortController.signal,
+    });
+  } catch (err) {
+    if (abortController.signal.aborted) return;
+    const errMsg = err instanceof Error ? err.message : "应用方案失败";
+    dispatch(streamError({ projectId, error: errMsg }));
+    toast.error(errMsg);
+  }
+});
+
 // ─── Workflow dispatch via supervisor (button path) ─────
 //
 // Unified with the freeform chat path (oii-style). Button clicks post a user

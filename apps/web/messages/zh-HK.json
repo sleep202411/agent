@@ -1532,6 +1532,8 @@
     "executing": "執行中",
     "newConversation": "新對話",
     "personaTask": "問題",
+    "personaActionApplied": "已套用",
+    "personaActionCost": "約 {cost} 積分",
     "personaConsulting": "諮詢中…",
     "personaError": "請求失敗",
     "personaCollapse": "收起",
@@ -1540,6 +1542,7 @@
       "scriptwriter": "編劇",
       "characterDesigner": "角色設計師",
       "sceneDesigner": "場景設計師",
+      "propDesigner": "道具設計師",
       "artDirector": "藝術總監",
       "storyboardDesigner": "分鏡設計師",
       "episodePlanner": "劇集結構師"

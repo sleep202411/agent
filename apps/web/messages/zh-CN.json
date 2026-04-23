@@ -1532,6 +1532,8 @@
     "executing": "执行中",
     "newConversation": "新对话",
     "personaTask": "问题",
+    "personaActionApplied": "已应用",
+    "personaActionCost": "约 {cost} 积分",
     "personaConsulting": "咨询中…",
     "personaError": "请求失败",
     "personaCollapse": "收起",
@@ -1540,6 +1542,7 @@
       "scriptwriter": "编剧",
       "characterDesigner": "角色设计师",
       "sceneDesigner": "场景设计师",
+      "propDesigner": "道具设计师",
       "artDirector": "艺术总监",
       "storyboardDesigner": "分镜设计师",
       "episodePlanner": "剧集结构师"
