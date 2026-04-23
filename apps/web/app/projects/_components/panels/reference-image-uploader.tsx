@@ -57,13 +57,13 @@ export function ReferenceImageUploader({
 
   return (
     <>
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div className="flex flex-wrap gap-3 pb-2">
         {paths.map((path, index) => {
           const src = ossUrl(path);
           return (
             <div
               key={`${path}_${index}`}
-              className="group relative h-[105px] w-[140px] shrink-0 overflow-hidden rounded-md"
+              className="group relative h-[105px] w-[140px] overflow-hidden rounded-md"
             >
               <img
                 src={src}
@@ -86,7 +86,7 @@ export function ReferenceImageUploader({
           <button
             type="button"
             onClick={() => setPickerOpen(true)}
-            className="flex h-[105px] w-[140px] shrink-0 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
+            className="flex h-[105px] w-[140px] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
           >
             <IconCirclePlus className="size-5" />
             <span className="text-xs">{addLabel || tc("addReferenceImage")}</span>
