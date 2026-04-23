@@ -538,6 +538,10 @@ const applyDecisionStep = createStep({
           workflowName: "storyboard_phase",
           labelKey: "workflowNextContinueToStoryboard",
           variant: "secondary",
+          // Only storyboard the episodes we just imported, not every
+          // episode with a script in the project (there may be older
+          // imports / generated scripts the user isn't asking to redo).
+          inputData: { onlyEpisodeIds: committed.map((c) => c.serverId) },
         },
       ],
     });

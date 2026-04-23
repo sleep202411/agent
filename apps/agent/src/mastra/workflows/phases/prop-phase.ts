@@ -451,6 +451,7 @@ export async function applyPropDrafts(
         workflowName: "prop_image_phase",
         labelKey: "workflowNextContinueToPropImages",
         variant: "primary",
+        inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
       },
       {
         workflowName: "episode_phase",

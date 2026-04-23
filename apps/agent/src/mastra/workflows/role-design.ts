@@ -410,6 +410,7 @@ const applyDecisionStep = createStep({
           workflowName: "role_image_phase",
           labelKey: "workflowNextContinueToRoleImages",
           variant: "primary",
+          inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
         },
       ],
     });

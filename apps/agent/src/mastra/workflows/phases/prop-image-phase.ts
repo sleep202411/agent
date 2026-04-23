@@ -17,6 +17,8 @@ const POLL_TIMEOUT_MS = 5 * 60_000;
 
 export const PropImagePhaseInputSchema = z.object({
   feedback: z.string().optional(),
+  /** See role-image-phase.onlyAssetIds — scopes run to a specific batch. */
+  onlyAssetIds: z.array(z.string()).optional(),
 });
 
 export const PropImagePhaseOutputSchema = z.object({
@@ -35,7 +37,7 @@ const dispatchStep = createStep({
   id: "dispatch",
   inputSchema: PropImagePhaseInputSchema,
   outputSchema: DispatchedSchema,
-  execute: async ({ requestContext }) => {
+  execute: async ({ inputData, requestContext }) => {
     const ctx = getContext(requestContext);
     const runId = (requestContext?.get("runId") as string | undefined) ?? "";
 
@@ -59,9 +61,13 @@ const dispatchStep = createStep({
       prompt?: string;
       propImgPath?: string[];
     };
-    const props: ResolvedProp[] = (listed.list ?? []).filter(
+    const allProps: ResolvedProp[] = (listed.list ?? []).filter(
       (p): p is ResolvedProp => p.id != null && typeof p.name === "string"
     );
+
+    const requestedIds = new Set(inputData.onlyAssetIds ?? []);
+    const props =
+      requestedIds.size > 0 ? allProps.filter((p) => requestedIds.has(String(p.id))) : allProps;
 
     if (props.length === 0) {
       return { assetIds: [] };

@@ -603,6 +603,11 @@ export async function applyScriptDrafts(
         workflowName: "storyboard_phase",
         labelKey: "workflowNextContinueToStoryboard",
         variant: "primary",
+        // Scope storyboard generation to the episodes we just wrote scripts
+        // for. Without this, storyboard_phase walks every episode with a
+        // committed script in Java — including historical ones from earlier
+        // runs the user isn't asking to redo.
+        inputData: { onlyEpisodeIds: committed.map((c) => c.episodeId) },
       },
     ],
   };

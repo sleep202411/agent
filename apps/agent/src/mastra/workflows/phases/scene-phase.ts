@@ -455,6 +455,7 @@ export async function applySceneDrafts(
         workflowName: "scene_image_phase",
         labelKey: "workflowNextContinueToSceneImages",
         variant: "primary",
+        inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
       },
       {
         workflowName: "prop_phase",

@@ -18,6 +18,8 @@ const POLL_TIMEOUT_MS = 5 * 60_000;
 
 export const SceneImagePhaseInputSchema = z.object({
   feedback: z.string().optional(),
+  /** See role-image-phase.onlyAssetIds — scopes run to a specific batch. */
+  onlyAssetIds: z.array(z.string()).optional(),
 });
 
 export const SceneImagePhaseOutputSchema = z.object({
@@ -36,7 +38,7 @@ const dispatchStep = createStep({
   id: "dispatch",
   inputSchema: SceneImagePhaseInputSchema,
   outputSchema: DispatchedSchema,
-  execute: async ({ requestContext }) => {
+  execute: async ({ inputData, requestContext }) => {
     const ctx = getContext(requestContext);
     const runId = (requestContext?.get("runId") as string | undefined) ?? "";
 
@@ -64,9 +66,13 @@ const dispatchStep = createStep({
       prompt?: string;
       sceneImgPath?: string[];
     };
-    const scenes: ResolvedScene[] = (listed.list ?? []).filter(
+    const allScenes: ResolvedScene[] = (listed.list ?? []).filter(
       (s): s is ResolvedScene => s.id != null && typeof s.name === "string"
     );
+
+    const requestedIds = new Set(inputData.onlyAssetIds ?? []);
+    const scenes =
+      requestedIds.size > 0 ? allScenes.filter((s) => requestedIds.has(String(s.id))) : allScenes;
 
     if (scenes.length === 0) {
       return { assetIds: [] };

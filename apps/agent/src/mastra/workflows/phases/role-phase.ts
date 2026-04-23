@@ -438,6 +438,9 @@ export async function applyRoleDrafts(
         workflowName: "role_image_phase",
         labelKey: "workflowNextContinueToRoleImages",
         variant: "primary",
+        // Scope image generation to the roles we just committed, not
+        // every role historically missing an imgPath.
+        inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
       },
       {
         workflowName: "scene_phase",

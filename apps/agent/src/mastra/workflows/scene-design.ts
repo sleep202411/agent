@@ -378,6 +378,7 @@ const applyDecisionStep = createStep({
           workflowName: "scene_image_phase",
           labelKey: "workflowNextContinueToSceneImages",
           variant: "primary",
+          inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
         },
       ],
     });

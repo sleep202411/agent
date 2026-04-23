@@ -31,6 +31,17 @@ const POLL_TIMEOUT_MS = 5 * 60_000;
 export const RoleImagePhaseInputSchema = z.object({
   /** Accept but ignore — schema kept for parity with other phases. */
   feedback: z.string().optional(),
+  /**
+   * Asset ids to scope this image-generation run to. When set, only roles
+   * whose id is in the list are dispatched — historical roles that happen
+   * to be missing images get left alone. When omitted, fall back to "every
+   * role in the world without an imgPath" (the pre-scoping default, still
+   * useful for manual reruns that want to patch everything missing).
+   *
+   * role_phase completion card passes this with the ids it just committed
+   * so the Continue button only images THIS batch.
+   */
+  onlyAssetIds: z.array(z.string()).optional(),
 });
 
 export const RoleImagePhaseOutputSchema = z.object({
@@ -51,7 +62,7 @@ const dispatchStep = createStep({
   id: "dispatch",
   inputSchema: RoleImagePhaseInputSchema,
   outputSchema: DispatchedSchema,
-  execute: async ({ requestContext }) => {
+  execute: async ({ inputData, requestContext }) => {
     const ctx = getContext(requestContext);
     const runId = (requestContext?.get("runId") as string | undefined) ?? "";
 
@@ -75,9 +86,17 @@ const dispatchStep = createStep({
       prompt?: string;
       roleImgPath?: string[];
     };
-    const roles: ResolvedRole[] = (listed.list ?? []).filter(
+    const allRoles: ResolvedRole[] = (listed.list ?? []).filter(
       (r): r is ResolvedRole => r.id != null && typeof r.name === "string"
     );
+
+    // Narrow to caller-scoped ids when provided (role_phase Continue button
+    // sets these to just-committed role ids). Falls back to "all roles"
+    // only when no ids were passed — matches the manual-rerun intent of
+    // "patch every role missing an image".
+    const requestedIds = new Set(inputData.onlyAssetIds ?? []);
+    const roles =
+      requestedIds.size > 0 ? allRoles.filter((r) => requestedIds.has(String(r.id))) : allRoles;
 
     if (roles.length === 0) {
       return { assetIds: [] };
