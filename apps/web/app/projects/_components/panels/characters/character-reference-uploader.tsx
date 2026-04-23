@@ -1,14 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { IconCirclePlus, IconLoader2, IconX } from "@tabler/icons-react";
+import { useCallback, useState } from "react";
+import { IconCirclePlus, IconX } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
-import { uploadProjectImage } from "@/src/lib/uploads/workspace-upload";
+import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 
+/**
+ * Character reference images + per-image description. Picking goes
+ * through the shared AssetPickerDialog (img, multiple) so users can
+ * reuse existing workspace assets; new selections append to the paths
+ * list with empty descriptions.
+ */
 export function CharacterReferenceUploader({
   paths,
   descriptions,
@@ -19,47 +24,15 @@ export function CharacterReferenceUploader({
   onChange: (nextPaths: string[], nextDescriptions: string[]) => void;
 }) {
   const t = useTranslations("character");
-  const tc = useTranslations("common");
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [localPreviewUrl, setLocalPreviewUrl] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  useEffect(() => {
-    return () => {
-      if (localPreviewUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(localPreviewUrl);
-      }
-    };
-  }, [localPreviewUrl]);
-
-  const handleAdd = useCallback(
-    async (file?: File) => {
-      if (!file) return;
-      if (!file.type.startsWith("image/")) {
-        toast.warning(tc("selectImageFile"));
-        return;
-      }
-      const blobUrl = URL.createObjectURL(file);
-      setLocalPreviewUrl(blobUrl);
-      setUploading(true);
-      try {
-        const uploadedPath = await uploadProjectImage(file);
-        onChange([...paths, uploadedPath], [...descriptions, ""]);
-        toast.success(tc("uploadSuccess"));
-      } catch (error) {
-        console.error("[CharacterReferenceUploader] 上传失败:", error);
-        toast.error(tc("uploadFailed"));
-      } finally {
-        setUploading(false);
-        if (blobUrl.startsWith("blob:")) {
-          URL.revokeObjectURL(blobUrl);
-        }
-        setLocalPreviewUrl("");
-        if (inputRef.current) {
-          inputRef.current.value = "";
-        }
-      }
+  const handleSelect = useCallback(
+    (picked: string[]) => {
+      const nextPaths = [...paths, ...picked];
+      const nextDescriptions = [...descriptions, ...picked.map(() => "")];
+      onChange(nextPaths, nextDescriptions);
+      setPickerOpen(false);
     },
     [descriptions, onChange, paths]
   );
@@ -85,14 +58,6 @@ export function CharacterReferenceUploader({
 
   return (
     <>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(event) => void handleAdd(event.target.files?.[0] ?? undefined)}
-      />
-
       <div className="flex flex-wrap gap-3">
         {paths.map((path, index) => {
           const src = buildOssUrl(path);
@@ -124,25 +89,22 @@ export function CharacterReferenceUploader({
           );
         })}
 
-        {uploading && localPreviewUrl ? (
-          <div className="relative h-[105px] w-[140px] overflow-hidden rounded-md">
-            <img src={localPreviewUrl} alt="" className="h-full w-full object-cover opacity-60" />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-              <IconLoader2 className="size-5 animate-spin text-white" />
-            </div>
-          </div>
-        ) : null}
-
-        {!uploading ? (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="flex h-[105px] w-[140px] items-center justify-center rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
-          >
-            <IconCirclePlus className="size-5" />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          className="flex h-[105px] w-[140px] items-center justify-center rounded-md border border-dashed border-primary bg-primary/10 text-primary transition-colors hover:bg-primary/15"
+        >
+          <IconCirclePlus className="size-5" />
+        </button>
       </div>
+
+      <AssetPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        assetType="img"
+        multiple
+        onSelect={handleSelect}
+      />
 
       <MediaPreviewModal
         open={Boolean(previewUrl)}

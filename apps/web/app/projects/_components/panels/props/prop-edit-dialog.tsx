@@ -159,9 +159,14 @@ export function PropEditDialog({
         });
         store.dispatch(updateProp({ id: prop.id, data: { ...form } }));
       } else {
-        const result = await backendApi.post<Asset>("/api/user/world/create/worldprop", { data });
-        if (result?.id) {
-          store.dispatch(addProp({ ...result, ...form }));
+        // Java returns the new id as a bare string in `data`. Don't
+        // cast to Asset and read `.id` — it'll be undefined and the
+        // store.dispatch below would silently skip.
+        const createdId = await backendApi.post<string>("/api/user/world/create/worldprop", {
+          data,
+        });
+        if (createdId) {
+          store.dispatch(addProp({ id: String(createdId), ...form } as Asset));
         }
       }
       toast.success(tc("saveSuccess"));
