@@ -2459,5 +2459,26 @@
     "manage": "管理",
     "gateTitle": "實名認證",
     "gateDescription": "您還未完成實名認證，完成後才能進行此操作。"
+  },
+  "invite": {
+    "loading": "載入中…",
+    "title": "項目邀請",
+    "projectName": "項目名稱",
+    "desc": "您收到了加入此項目的邀請，點擊接受後將發送申請給項目管理員。",
+    "accept": "申請加入",
+    "refresh": "刷新狀態",
+    "checking": "檢查中…",
+    "decline": "暫不加入",
+    "errorTitle": "邀請無效",
+    "invalidCode": "邀請連結無效或已過期",
+    "error": "獲取邀請資訊失敗",
+    "backHome": "返回首頁",
+    "alreadyJoinedTitle": "已加入項目",
+    "alreadyJoinedDesc": "您已經是「{projectName}」的成員",
+    "enterProject": "進入項目",
+    "applySuccessTitle": "申請已發送",
+    "applySuccessDesc": "請等待項目管理員審批",
+    "applyFailed": "申請失敗，請稍後重試",
+    "notApproved": "暫未通過審批"
   }
 }

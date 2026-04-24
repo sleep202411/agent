@@ -2459,5 +2459,26 @@
     "manage": "管理",
     "gateTitle": "实名认证",
     "gateDescription": "您还未完成实名认证，完成后才能进行此操作。"
+  },
+  "invite": {
+    "loading": "加载中…",
+    "title": "项目邀请",
+    "projectName": "项目名称",
+    "desc": "您收到了加入此项目的邀请，点击接受后将发送申请给项目管理员。",
+    "accept": "申请加入",
+    "refresh": "刷新状态",
+    "checking": "检查中…",
+    "decline": "暂不加入",
+    "errorTitle": "邀请无效",
+    "invalidCode": "邀请链接无效或已过期",
+    "error": "获取邀请信息失败",
+    "backHome": "返回首页",
+    "alreadyJoinedTitle": "已加入项目",
+    "alreadyJoinedDesc": "您已经是「{projectName}」的成员",
+    "enterProject": "进入项目",
+    "applySuccessTitle": "申请已发送",
+    "applySuccessDesc": "请等待项目管理员审批",
+    "applyFailed": "申请失败，请稍后重试",
+    "notApproved": "暂未通过审批"
   }
 }

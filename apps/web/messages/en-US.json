@@ -2459,5 +2459,26 @@
     "manage": "Manage",
     "gateTitle": "Identity Verification Required",
     "gateDescription": "You must complete identity verification before continuing."
+  },
+  "invite": {
+    "loading": "Loading…",
+    "title": "Project Invitation",
+    "projectName": "Project",
+    "desc": "You've been invited to join this project. Click Accept to send your application to the admin.",
+    "accept": "Accept invite",
+    "refresh": "Refresh status",
+    "checking": "Checking…",
+    "decline": "Decline",
+    "errorTitle": "Invite invalid",
+    "invalidCode": "This invitation link is invalid or has expired.",
+    "error": "Failed to load invitation details.",
+    "backHome": "Back to Home",
+    "alreadyJoinedTitle": "Already a member",
+    "alreadyJoinedDesc": "You are already a member of \"{projectName}\".",
+    "enterProject": "Enter Project",
+    "applySuccessTitle": "Application sent",
+    "applySuccessDesc": "Waiting for admin approval.",
+    "applyFailed": "Application failed. Please try again.",
+    "notApproved": "Not approved yet."
   }
 }
