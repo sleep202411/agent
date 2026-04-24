@@ -2480,5 +2480,9 @@
     "applySuccessDesc": "Waiting for admin approval.",
     "applyFailed": "Application failed. Please try again.",
     "notApproved": "Not approved yet."
+  },
+  "about": {
+    "version": "Version v{version}",
+    "tagline": "A liquidity market that powers efficient trade and growth for creative content worldwide."
   }
 }

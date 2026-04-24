@@ -2480,5 +2480,9 @@
     "applySuccessDesc": "請等待項目管理員審批",
     "applyFailed": "申請失敗，請稍後重試",
     "notApproved": "暫未通過審批"
+  },
+  "about": {
+    "version": "版本 v{version}",
+    "tagline": "一個為全球創意內容提供高效交易與賦能的流動性市場。"
   }
 }

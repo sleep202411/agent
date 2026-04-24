@@ -2480,5 +2480,9 @@
     "applySuccessDesc": "请等待项目管理员审批",
     "applyFailed": "申请失败，请稍后重试",
     "notApproved": "暂未通过审批"
+  },
+  "about": {
+    "version": "版本 v{version}",
+    "tagline": "一个为全球创意内容提供高效交易与赋能的流动性市场。"
   }
 }
