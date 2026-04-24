@@ -478,7 +478,13 @@ export function AiAudioGeneratorDialog({
                   dispatch(updateAudioForm({ shotId, colId: shotColumnId, updates: { count: v } }))
                 }
                 cost={voiceModelCost * formData.count}
-                isGenerating={isGenerating}
+                // Queue-based design: submitting a task is effectively
+                // instant (addTask dispatch), and the processor runs
+                // up to MAX_CONCURRENT in parallel. Leaving the button
+                // clickable lets the user keep queueing more batches —
+                // disabling it while any previous task is still pending
+                // would make the UI feel stuck for no good reason.
+                isGenerating={false}
                 onSubmit={handleGenerate}
                 characters={instProj.characters}
               />

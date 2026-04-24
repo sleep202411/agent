@@ -747,7 +747,10 @@ export function AiLipSyncGeneratorDialog({
                 onSelectAudio={setReferenceAudio}
                 onGenerateAudio={() => void handleGenerateAudio()}
                 onRetryAudio={(item) => void handleRetryAudio(item)}
-                isGenerating={isGenerating}
+                // Queue-based: a submit is ~instant. Keep the button
+                // clickable so the user can keep queueing more batches
+                // without waiting for in-flight tasks to drain.
+                isGenerating={false}
                 audioColumnId={audioColumnId}
               />
             </div>
@@ -776,7 +779,10 @@ export function AiLipSyncGeneratorDialog({
                 onGenerateVideo={() => void handleGenerateVideo()}
                 onRetryVideo={(item) => void handleRetryVideo(item)}
                 onOpenPicker={setPickerTarget}
-                isGenerating={isGenerating}
+                // Same queue reasoning as above — Generate Lip Sync
+                // stays clickable; submission is a cheap Redux dispatch
+                // and the lip-sync queue caps concurrency itself.
+                isGenerating={false}
                 shotNumber={shotNumber}
                 shotId={shotId}
               />
