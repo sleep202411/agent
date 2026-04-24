@@ -18,6 +18,7 @@ import {
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
 import { getOutline } from "../../lib/outline";
+import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/language";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -347,6 +348,7 @@ function buildPrompt(args: {
     "- 台词必须有潜台词 + 推动剧情/揭示角色/制造冲突（三不沾删掉）",
     "",
     '以 JSON 返回：\`{"content": "...剧本全文，真实换行用 \\\\n..."}\`。不要 Markdown 代码块、不要前言。',
+    contentLanguageInstruction(resolveContentLanguage(dialogLanguage)),
   ]
     .filter(Boolean)
     .join("\n");
@@ -560,19 +562,32 @@ export async function applyScriptDrafts(
   // gets a Retry affordance and no false "continue" option.
   const totalFailure = committed.length === 0 && failed.length > 0;
 
-  const summaryText = totalFailure
-    ? `保存失败：${failed.length} / ${accepts.length}。剧本草稿保留在 Redis，可重试。`
+  const summaryKey = totalFailure
+    ? "scriptPhaseSummaryTotalFailure"
     : outcome === "committed"
-      ? `已保存 ${committed.length} 集剧本，进入下一阶段。`
-      : `部分成功：${committed.length} / ${accepts.length} 已保存，${failed.length} 失败。剧本草稿保留在 Redis。`;
+      ? "scriptPhaseSummaryCommitted"
+      : "scriptPhaseSummaryPartial";
+  const summaryParams = {
+    count: committed.length,
+    failed: failed.length,
+    total: accepts.length,
+  };
+  const logMessage = totalFailure
+    ? `total failure: ${failed.length}/${accepts.length}`
+    : outcome === "committed"
+      ? `committed ${committed.length} scripts`
+      : `partial: ${committed.length}/${accepts.length}, ${failed.length} failed`;
 
   if (totalFailure) {
-    const firstReason = failed[0]?.reason ?? "Java 批量写入全部失败";
+    const firstReason = failed[0]?.reason ?? "Java batch write failed entirely";
     const failurePayload: WorkflowFailedOutput = {
       runId,
       workflowName: "script_phase",
       terminalStatus: "failed",
-      error: `${summaryText}（首条失败原因：${firstReason}）`,
+      // User-facing error is rendered by the workflow failure card, which
+      // also has its own locale-aware rendering; we just pass a compact
+      // English log-style string here.
+      error: `${logMessage} (first reason: ${firstReason})`,
       retryable: true,
     };
     if (emitLifecycleMessage) {
@@ -586,7 +601,7 @@ export async function applyScriptDrafts(
       outcome,
       committedCount: 0,
       failedCount: failed.length,
-      message: summaryText,
+      message: logMessage,
       completion: null,
       failure: failurePayload,
     };
@@ -597,7 +612,8 @@ export async function applyScriptDrafts(
     workflowName: "script_phase",
     committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
     failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
-    summary: summaryText,
+    summaryKey,
+    summaryParams,
     nextSteps: [
       {
         workflowName: "storyboard_phase",
@@ -615,7 +631,8 @@ export async function applyScriptDrafts(
     await publishWorkflowCompleted(ctx.projectId, runId, "script_phase", {
       committed: completionPayload.committed,
       failed: completionPayload.failed,
-      summary: completionPayload.summary,
+      summaryKey: completionPayload.summaryKey,
+      summaryParams: completionPayload.summaryParams,
       nextSteps: completionPayload.nextSteps,
     });
   }
@@ -624,7 +641,7 @@ export async function applyScriptDrafts(
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
-    message: summaryText,
+    message: logMessage,
     completion: completionPayload,
     failure: null,
   };

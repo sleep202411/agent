@@ -456,7 +456,7 @@ export function TimelineView() {
         });
         const nextShotId = resolveShotValueId(result);
         if (!nextShotId) {
-          throw new Error("创建镜头失败");
+          throw new Error("Failed to create shot");
         }
 
         const nextRows = [...rows];

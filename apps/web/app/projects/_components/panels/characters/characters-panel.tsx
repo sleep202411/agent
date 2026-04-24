@@ -99,7 +99,7 @@ export function CharactersPanel({ onClose }: { onClose: () => void }) {
         hasMoreRef.current = nextHasMore;
       } catch (error) {
         console.error("[CharactersPanel] 加载角色失败:", error);
-        toast.error("加载角色失败");
+        toast.error("Failed to load characters");
       } finally {
         setLoading(false);
         setLoadingMore(false);

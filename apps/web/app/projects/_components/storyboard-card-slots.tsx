@@ -19,7 +19,7 @@ import type { ShotValue } from "@/src/store/slices/projectSlice";
 export function CardImageSlot({ cell }: { cell: ShotValue | undefined }) {
   const path = getPreferredFilePath(cell);
   if (!path) {
-    return <EmptySlot icon={<IconPhoto className="size-6" />} label="暂无分镜图" />;
+    return <EmptySlot icon={<IconPhoto className="size-6" />} label="No storyboard image" />;
   }
   const src = ossUrl(path);
   return (
@@ -35,7 +35,7 @@ export function CardVideoSlot({ cell }: { cell: ShotValue | undefined }) {
   const path = getPreferredFilePath(cell);
 
   if (!path) {
-    return <EmptySlot icon={<IconVideo className="size-6" />} label="暂无分镜视频" />;
+    return <EmptySlot icon={<IconVideo className="size-6" />} label="No storyboard video" />;
   }
 
   const src = ossUrl(path);

@@ -328,11 +328,11 @@ async function uploadAttachmentFile(
         attachmentId,
         updates: {
           status: "error",
-          error: error instanceof Error ? error.message : "上传失败",
+          error: error instanceof Error ? error.message : "Upload failed",
         },
       })
     );
-    toast.error(error instanceof Error ? error.message : "上传失败");
+    toast.error(error instanceof Error ? error.message : "Upload failed");
   }
 }
 
@@ -630,7 +630,7 @@ export const newConversation = createAsyncThunk<
     dispatch(resetProjectConversation(projectId));
   } catch (error) {
     console.warn("[assistant] Failed to clear conversation:", error);
-    toast.error("清空对话失败，请重试");
+    toast.error("Failed to clear conversation. Please retry.");
   }
 });
 
@@ -650,7 +650,7 @@ export const sendUserMessage = createAsyncThunk<
       (attachment) => attachment.status === "uploading"
     );
     if (hasUploading) {
-      toast.warning("请等待附件上传完成后再发送");
+      toast.warning("Please wait for attachment uploads to finish before sending.");
       return;
     }
 
@@ -658,7 +658,8 @@ export const sendUserMessage = createAsyncThunk<
       (attachment) => attachment.status === "uploaded" && attachment.url
     );
     const typedText =
-      current.draftInput.trim() || (uploadedAttachments.length > 0 ? "请结合附件继续分析。" : "");
+      current.draftInput.trim() ||
+      (uploadedAttachments.length > 0 ? "Please continue the analysis using the attachments." : "");
     if (!typedText && uploadedAttachments.length === 0) return;
 
     const userMessage = buildUserMessage(typedText, uploadedAttachments);
@@ -682,7 +683,7 @@ export const sendUserMessage = createAsyncThunk<
       // finalizeTurnOnIdle when agent_state flips to "idle".
     } catch (error) {
       if (abortController.signal.aborted) return;
-      const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+      const errMsg = error instanceof Error ? error.message : "AI request failed";
       dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
     }
@@ -794,7 +795,7 @@ export const applyPersonaAction = createAsyncThunk<
   const userMessage: AssistantMessage = {
     id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     role: "user",
-    parts: [{ type: "text", text: `应用上面的方案：${label}`, state: "done" }],
+    parts: [{ type: "text", text: `Apply proposal: ${label}`, state: "done" }],
   };
   dispatch(commitUserMessage({ projectId, userMessage }));
 
@@ -812,7 +813,7 @@ export const applyPersonaAction = createAsyncThunk<
     });
   } catch (err) {
     if (abortController.signal.aborted) return;
-    const errMsg = err instanceof Error ? err.message : "应用方案失败";
+    const errMsg = err instanceof Error ? err.message : "Failed to apply proposal";
     dispatch(streamError({ projectId, error: errMsg }));
     toast.error(errMsg);
   }
@@ -884,7 +885,7 @@ export const startWorkflowFromButton = createAsyncThunk<
       });
     } catch (err) {
       if (abortController.signal.aborted) return;
-      const errMsg = err instanceof Error ? err.message : "派发 workflow 失败";
+      const errMsg = err instanceof Error ? err.message : "Failed to dispatch workflow";
       dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
     }
@@ -937,7 +938,7 @@ export const confirmWorkflowFromButton = createAsyncThunk<
       });
     } catch (err) {
       if (abortController.signal.aborted) return;
-      const errMsg = err instanceof Error ? err.message : "确认 workflow 失败";
+      const errMsg = err instanceof Error ? err.message : "Failed to confirm workflow";
       dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
     }
@@ -1022,7 +1023,7 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
       });
     } catch (err) {
       if (abortController.signal.aborted) return;
-      const errMsg = err instanceof Error ? err.message : "保存项目参数失败";
+      const errMsg = err instanceof Error ? err.message : "Failed to save project settings";
       dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
     }
@@ -1075,7 +1076,7 @@ export const applyToolResult = createAsyncThunk<
     });
   } catch (error) {
     if (abortController.signal.aborted) return;
-    const errMsg = error instanceof Error ? error.message : "AI 请求失败";
+    const errMsg = error instanceof Error ? error.message : "AI request failed";
     dispatch(streamError({ projectId, error: errMsg }));
     toast.error(errMsg);
   }
@@ -1360,7 +1361,7 @@ export const assistantSlice = createSlice({
           {
             id: crypto.randomUUID(),
             role: "assistant",
-            parts: [{ type: "text", text: `请求失败：${error}`, state: "done" }],
+            parts: [{ type: "text", text: `Request failed: ${error}`, state: "done" }],
           },
         ],
         sending: false,

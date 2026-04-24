@@ -29,6 +29,7 @@ import {
 } from "../../lib/workflow-messages";
 import { publishEntityEvent } from "../../lib/entity-events";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
+import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/language";
 import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
@@ -477,6 +478,7 @@ function buildPrompt(
     "- **duration** — 该镜头秒数，2-8",
     "",
     shotRangeLine,
+    contentLanguageInstruction(resolveContentLanguage(dialogLanguage)),
   ].join("\n");
 }
 
@@ -1000,10 +1002,19 @@ export async function applyStoryboardDrafts(
     label: endLabel,
   });
 
-  const summaryText =
+  // Locale-agnostic summary: emit a key + params so the frontend renders
+  // in the user's locale. `message` on the tool return stays a plain-English
+  // log string (server logs / metrics only, never shown to the user).
+  const summaryKey =
+    outcome === "committed" ? "storyboardPhaseSummaryCommitted" : "storyboardPhaseSummaryPartial";
+  const summaryParams =
     outcome === "committed"
-      ? `已保存 ${committed.length} 集分镜，主流程结束。`
-      : `保存有失败：${failed.length} / ${accepts.length}。`;
+      ? { count: committed.length }
+      : { failed: failed.length, total: accepts.length };
+  const logMessage =
+    outcome === "committed"
+      ? `committed ${committed.length} episodes' storyboards`
+      : `partial failure: ${failed.length}/${accepts.length}`;
 
   // Terminal workflow — no nextSteps (storyboard is the end of the chain).
   const completionPayload: WorkflowCompletedOutput = {
@@ -1011,13 +1022,15 @@ export async function applyStoryboardDrafts(
     workflowName: "storyboard_phase",
     committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
     failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
-    summary: summaryText,
+    summaryKey,
+    summaryParams,
   };
   if (emitLifecycleMessage) {
     await publishWorkflowCompleted(ctx.projectId, runId, "storyboard_phase", {
       committed: completionPayload.committed,
       failed: completionPayload.failed,
-      summary: completionPayload.summary,
+      summaryKey: completionPayload.summaryKey,
+      summaryParams: completionPayload.summaryParams,
     });
   }
 
@@ -1025,7 +1038,7 @@ export async function applyStoryboardDrafts(
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
-    message: summaryText,
+    message: logMessage,
     completion: completionPayload,
     failure: null,
   };

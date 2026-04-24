@@ -604,7 +604,7 @@ export async function persistTextCell(
     }
   } catch (error) {
     console.error("[StoryboardCells] 保存单元格失败:", error);
-    toast.error("保存失败");
+    toast.error("Save failed");
     store.dispatch(touchStoryboard());
   }
 }
@@ -632,7 +632,7 @@ export async function persistValueList(
     }
   } catch (error) {
     console.error("[StoryboardCells] 保存素材失败:", error);
-    toast.error("保存失败");
+    toast.error("Save failed");
     store.dispatch(touchStoryboard());
   }
 }

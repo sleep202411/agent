@@ -41,7 +41,7 @@ export function SceneCreateDialog({
     if (!worldId) {
       // Previously silent-returned with no UI feedback — surface the
       // missing-worldId case so users understand why nothing happens.
-      toast.error("缺少世界 ID");
+      toast.error("Missing world ID");
       return;
     }
     setCreating(true);

@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils";
 import type { MentionItem, MentionType } from "./mention-node";
 
 const typeLabels: Record<MentionType, string> = {
-  character: "角色",
-  scene: "场景",
-  prop: "道具",
-  reference: "参考",
+  character: "Character",
+  scene: "Scene",
+  prop: "Prop",
+  reference: "Reference",
 };
 
 const typeColors: Record<MentionType, string> = {
@@ -64,7 +64,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
     if (items.length === 0) {
       return (
         <div className="rounded-lg border border-border bg-popover p-3 shadow-md">
-          <p className="text-xs text-muted-foreground">无匹配结果</p>
+          <p className="text-xs text-muted-foreground">No matches</p>
         </div>
       );
     }
@@ -82,7 +82,7 @@ export const MentionList = forwardRef<MentionListRef, MentionListProps>(
     return (
       <div className="max-h-60 w-56 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-md">
         <p className="px-2 py-1 text-[10px] text-muted-foreground">
-          方向鍵選擇，Enter/Tab 確認，Esc 關閉
+          Arrow keys to navigate · Enter/Tab to confirm · Esc to close
         </p>
         {Object.entries(grouped).map(([type, groupItems]) => (
           <div key={type}>

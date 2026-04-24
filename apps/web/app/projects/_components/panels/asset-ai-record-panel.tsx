@@ -153,7 +153,7 @@ export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
 
     const generate = useCallback(() => {
       if (!assetId) {
-        toast.warning("请先保存");
+        toast.warning("Please save first.");
         return;
       }
       const trimmed = (prompt ?? "").trim();
@@ -212,7 +212,7 @@ export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
     return (
       <div className="space-y-2">
         {isLoadingHistory ? (
-          <div className="text-[11px] text-muted-foreground/60">加载中…</div>
+          <div className="text-[11px] text-muted-foreground/60">Loading…</div>
         ) : null}
 
         <div className="grid grid-cols-5 gap-2">
@@ -267,12 +267,12 @@ export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
                   "relative aspect-square overflow-hidden rounded-md border-2 transition-colors",
                   isSelected ? "border-primary" : "border-transparent hover:border-primary/40"
                 )}
-                title={isSelected ? "已加入（双击查看大图）" : "点击加入"}
+                title={isSelected ? "Added (double-click to preview)" : "Click to add"}
               >
                 <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
                 {isSelected && (
                   <div className="absolute inset-x-0 bottom-0 bg-primary/80 py-0.5 text-center text-[10px] font-medium text-white">
-                    当前
+                    Current
                   </div>
                 )}
               </button>
@@ -282,7 +282,7 @@ export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
 
         {items.length === 0 && !isLoadingHistory && (
           <p className="text-[11px] text-muted-foreground/60">
-            还没生成过图片，下面输入提示词点「生成」。
+            No images yet. Enter a prompt below and hit Generate.
           </p>
         )}
       </div>

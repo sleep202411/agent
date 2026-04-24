@@ -422,17 +422,25 @@ export async function applyRoleDrafts(
     label: endLabel,
   });
 
-  const summaryText =
+  const summaryKey =
+    outcome === "committed" ? "rolePhaseSummaryCommitted" : "rolePhaseSummaryPartial";
+  const summaryParams = {
+    count: committed.length,
+    failed: failed.length,
+    total: items.length,
+  };
+  const logMessage =
     outcome === "committed"
-      ? `已入库 ${committed.length} 个角色，进入下一阶段。`
-      : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+      ? `committed ${committed.length} roles`
+      : `partial failure: ${committed.length} ok, ${failed.length} failed`;
 
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "role_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
     failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-    summary: summaryText,
+    summaryKey,
+    summaryParams,
     nextSteps: [
       {
         workflowName: "role_image_phase",
@@ -453,7 +461,8 @@ export async function applyRoleDrafts(
     await publishWorkflowCompleted(ctx.projectId, runId, "role_phase", {
       committed: completionPayload.committed,
       failed: completionPayload.failed,
-      summary: completionPayload.summary,
+      summaryKey: completionPayload.summaryKey,
+      summaryParams: completionPayload.summaryParams,
       nextSteps: completionPayload.nextSteps,
     });
   }
@@ -462,7 +471,7 @@ export async function applyRoleDrafts(
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
-    message: summaryText,
+    message: logMessage,
     completion: completionPayload,
     failure: null,
   };

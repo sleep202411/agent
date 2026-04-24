@@ -115,7 +115,7 @@ export function StoryboardCardFieldDialog({
       >
         <DialogHeader>
           <DialogTitle>{label}</DialogTitle>
-          <DialogDescription className="sr-only">编辑分镜字段</DialogDescription>
+          <DialogDescription className="sr-only">Edit storyboard field</DialogDescription>
         </DialogHeader>
         <div className={isRichText ? "min-h-[320px] p-4" : "min-h-[120px] p-4"}>{editor}</div>
       </DialogContent>

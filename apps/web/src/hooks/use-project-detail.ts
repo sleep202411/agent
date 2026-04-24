@@ -73,7 +73,7 @@ export function useProjectDetail() {
         if (detailWorldId) store.dispatch(setWorldId(String(detailWorldId)));
       })
       .catch((err) => {
-        store.dispatch(setError(err.message ?? "加载失败"));
+        store.dispatch(setError(err.message ?? "Load failed"));
       });
   }, [id, urlWorldId, urlEpisodeId]);
 
@@ -102,7 +102,7 @@ export function useProjectDetail() {
         store.dispatch(setEpisodes(data?.list ?? []));
       })
       .catch((err) => {
-        store.dispatch(setError(err.message ?? "加载剧集失败"));
+        store.dispatch(setError(err.message ?? "Failed to load episodes"));
         store.dispatch(setEpisodesLoading(false));
       });
   }, [id, episodesVersion]);

@@ -96,7 +96,7 @@ async function executeTask(taskId: string) {
     const output: TaskOutput = { url, storagePath };
     store.dispatch(completeTask({ taskId, output }));
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "角色溶图生成失败";
+    const msg = err instanceof Error ? err.message : "Character fusion generation failed";
     store.dispatch(failTask({ taskId, error: msg }));
   }
 }

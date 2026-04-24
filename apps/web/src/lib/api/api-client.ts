@@ -124,7 +124,11 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     response = await fetch(url, { ...init, signal: controller.signal });
   } catch (error) {
     const isTimeout = error instanceof DOMException && error.name === "AbortError";
-    throw new ApiRequestError("NETWORK_ERROR", isTimeout ? "请求超时" : "网络连接失败", 0);
+    throw new ApiRequestError(
+      "NETWORK_ERROR",
+      isTimeout ? "Request timed out" : "Network connection failed",
+      0
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -149,7 +153,11 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
   if (!isSuccess) {
-    throw new ApiRequestError(body.code ?? "UNKNOWN", body.msg || body.message || "请求失败", 200);
+    throw new ApiRequestError(
+      body.code ?? "UNKNOWN",
+      body.msg || body.message || "Request failed",
+      200
+    );
   }
 
   // Different endpoints return data in different fields
@@ -202,7 +210,11 @@ async function upload<T>(
     });
   } catch (error) {
     const isTimeout = error instanceof DOMException && error.name === "AbortError";
-    throw new ApiRequestError("NETWORK_ERROR", isTimeout ? "请求超时" : "网络连接失败", 0);
+    throw new ApiRequestError(
+      "NETWORK_ERROR",
+      isTimeout ? "Request timed out" : "Network connection failed",
+      0
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -218,7 +230,11 @@ async function upload<T>(
   const body = await response.json();
   const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
   if (!isSuccess) {
-    throw new ApiRequestError(body.code ?? "UNKNOWN", body.msg || body.message || "上传失败", 200);
+    throw new ApiRequestError(
+      body.code ?? "UNKNOWN",
+      body.msg || body.message || "Upload failed",
+      200
+    );
   }
 
   return (body.data ?? body.info ?? body.path ?? body) as T;

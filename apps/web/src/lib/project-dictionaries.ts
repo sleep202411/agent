@@ -50,7 +50,7 @@ async function _fetchProjectDictionaries(): Promise<ProjectDictionaries> {
     styleOptionsResult.status === "rejected" &&
     sizeMetaResult.status === "rejected"
   ) {
-    throw new Error("项目字典全部加载失败");
+    throw new Error("Failed to load all project dictionaries");
   }
 
   return {

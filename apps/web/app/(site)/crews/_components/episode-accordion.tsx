@@ -264,7 +264,7 @@ function EpisodeDetail({ ep }: { ep: EpisodeData }) {
             },
             {
               labelKey: "colLastUpdated",
-              value: ep.isCurrent ? "2小时前" : (ep.membersList[0]?.updated ?? "-"),
+              value: ep.isCurrent ? "2h ago" : (ep.membersList[0]?.updated ?? "-"),
               color: "text-foreground",
             },
           ].map((s) => (

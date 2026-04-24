@@ -70,7 +70,7 @@ export function StoryboardToolbar() {
       });
       const shotId = resolveShotId(result);
       if (!shotId) {
-        throw new Error("创建镜头失败");
+        throw new Error("Failed to create shot");
       }
 
       setRows([...rows, { shotId, shotValues: [] }]);

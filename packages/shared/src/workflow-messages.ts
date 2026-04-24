@@ -144,6 +144,14 @@ export const WorkflowCompletedOutputSchema = BaseWorkflowOutput.extend({
   /** Short human-readable summary (matches old workflow output `message`). */
   summary: z.string().optional(),
   /**
+   * Preferred over `summary` when set: an i18n key that the frontend resolves
+   * against the active locale. Pair with `summaryParams` for `{count}` /
+   * `{failed}` placeholder interpolation. Lets the agent emit locale-agnostic
+   * payloads instead of pre-translated Chinese strings.
+   */
+  summaryKey: z.string().optional(),
+  summaryParams: z.record(z.string(), z.unknown()).optional(),
+  /**
    * Workflow-specific structured result — shape varies by workflowName.
    * Used to render inline summary panels (e.g. story_outline's chapter /
    * cast / settings list). Loose typing because each workflow's shape is

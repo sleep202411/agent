@@ -33,6 +33,7 @@ import {
 } from "../../lib/workflow-messages";
 import { publishEntityEvent } from "../../lib/entity-events";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
+import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/language";
 import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
@@ -76,6 +77,8 @@ const ResolvedPlanInputSchema = z.object({
     )
     .optional(),
   feedback: z.string().optional(),
+  /** Output language for episode titles / introductions. */
+  contentLanguage: z.string().optional(),
 });
 
 const PlannedSchema = z.object({
@@ -122,6 +125,7 @@ const resolveInputStep = createStep({
         keyEvents: ch.keyEvents,
       })),
       feedback: inputData.feedback,
+      contentLanguage: ctx.dialogLanguage,
     };
   },
 });
@@ -218,6 +222,7 @@ function buildPrompt(input: z.infer<typeof ResolvedPlanInputSchema>): string {
     feedbackBlock,
     "",
     `请输出严格 ${input.targetEpisodeCount} 集的分集大纲，JSON 数组 episodes 返回。每集 introduction 控制在 80-200 字。`,
+    contentLanguageInstruction(resolveContentLanguage(input.contentLanguage)),
   ].filter(Boolean);
   return parts.join("\n");
 }
@@ -487,17 +492,25 @@ export async function applyEpisodeDrafts(
     label: endLabel,
   });
 
-  const summaryText =
+  const summaryKey =
+    outcome === "committed" ? "episodePhaseSummaryCommitted" : "episodePhaseSummaryPartial";
+  const summaryParams = {
+    count: committed.length,
+    failed: failed.length,
+    total: accepts.length,
+  };
+  const logMessage =
     outcome === "committed"
-      ? `已入库 ${committed.length} 集，进入下一阶段。`
-      : `入库有失败：${failed.length} / ${accepts.length}`;
+      ? `committed ${committed.length} episodes`
+      : `partial failure: ${failed.length}/${accepts.length}`;
 
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "episode_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.title })),
     failed,
-    summary: summaryText,
+    summaryKey,
+    summaryParams,
     nextSteps: [
       {
         workflowName: "script_phase",
@@ -515,7 +528,8 @@ export async function applyEpisodeDrafts(
     await publishWorkflowCompleted(ctx.projectId, runId, "episode_phase", {
       committed: completionPayload.committed,
       failed: completionPayload.failed,
-      summary: completionPayload.summary,
+      summaryKey: completionPayload.summaryKey,
+      summaryParams: completionPayload.summaryParams,
       nextSteps: completionPayload.nextSteps,
     });
   }
@@ -524,7 +538,7 @@ export async function applyEpisodeDrafts(
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
-    message: summaryText,
+    message: logMessage,
     completion: completionPayload,
     failure: null,
   };

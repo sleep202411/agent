@@ -139,7 +139,7 @@ const waitAllStep = createStep({
     if (assetIds.length === 0) {
       await publishWorkflowCompleted(ctx.projectId, runId, "prop_image_phase", {
         committed: [],
-        summary: "没有可生成参考图的道具。",
+        summaryKey: "propImagePhaseSummaryEmpty",
         nextSteps: [
           {
             workflowName: "episode_phase",

@@ -55,9 +55,9 @@ const UI_ENTITY: Record<AssetKind, EntityType> = {
 };
 
 const ASSET_LABEL: Record<AssetKind, string> = {
-  role: "角色",
-  scene: "场景",
-  prop: "道具",
+  role: "characters",
+  scene: "scenes",
+  prop: "props",
 };
 
 function buildRoleData(worldId: string, item: Item): RoleCreateData {
@@ -169,8 +169,8 @@ async function runBatch(
     failed,
     message:
       failed.length === 0
-        ? `已入库 ${created.length} 个${label}。`
-        : `成功 ${created.length}，失败 ${failed.length}：${failed.map((f) => `${f.name}（${f.reason}）`).join("；")}`,
+        ? `Saved ${created.length} ${label}.`
+        : `Saved ${created.length}, failed ${failed.length}: ${failed.map((f) => `${f.name} (${f.reason})`).join("; ")}`,
   };
 }
 

@@ -263,7 +263,6 @@ export function PropEditDialog({
                   <Textarea
                     id="prop-desc"
                     value={form.description}
-                    maxLength={300}
                     rows={4}
                     onChange={(e) => setField("description", e.target.value)}
                     placeholder={t("propDescriptionPlaceholder")}
@@ -301,7 +300,7 @@ export function PropEditDialog({
                       />
                     ) : (
                       <p className="rounded-md border border-dashed border-border/40 p-3 text-[11px] text-muted-foreground/60">
-                        保存后才能生成 AI 道具图
+                        Save first to enable AI prop image generation
                       </p>
                     )}
                   </div>
@@ -378,9 +377,9 @@ export function PropEditDialog({
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>删除道具</AlertDialogTitle>
+                    <AlertDialogTitle>Delete prop</AlertDialogTitle>
                     <AlertDialogDescription>
-                      确定要删除「{form.name || t("unnamedProp")}」吗？此操作无法撤销。
+                      Delete "{form.name || t("unnamedProp")}"? This cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

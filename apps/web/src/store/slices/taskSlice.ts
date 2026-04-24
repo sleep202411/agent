@@ -276,7 +276,7 @@ function serverRecordToTask(record: ServerTaskRecord): Task {
   } else if (rawStatus === 0) {
     // Failed — remark contains the error reason
     status = "failed";
-    error = record.remark || "生成失败";
+    error = record.remark || "Generation failed";
   }
   // rawStatus === 2 or undefined → running
 

@@ -92,7 +92,7 @@ function useCellCallbacks(shotId: string, shotColumnId: string) {
         const nextId = resolveShotValueId(result);
         updateFilesState(nextFiles, nextId || undefined);
       } catch {
-        toast.error("保存失败");
+        toast.error("Save failed");
       }
     },
     [files, preferredPath, shotColumnId, shotId, updateFilesState]

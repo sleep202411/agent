@@ -514,10 +514,20 @@ const applyDecisionStep = createStep({
       label: endLabel,
     });
 
-    const summaryText =
+    // Emit a locale-agnostic i18n key + params for the UI. The internal
+    // `message` on the tool return stays a plain English log string — it
+    // only ends up in server logs / worker metrics, never rendered to the
+    // user.
+    const summaryKey =
+      outcome === "committed" ? "parseScriptSummaryCommitted" : "parseScriptSummaryPartial";
+    const summaryParams =
       outcome === "committed"
-        ? `已入库 ${committed.length} 集（含剧本正文），可以直接进入分镜阶段。`
-        : `入库有失败：${failed.length} / ${accepts.length}。`;
+        ? { count: committed.length }
+        : { failed: failed.length, total: accepts.length };
+    const logMessage =
+      outcome === "committed"
+        ? `committed ${committed.length} episodes`
+        : `partial failure: ${failed.length}/${accepts.length}`;
 
     // After parse_script, user picks the downstream path:
     //   - 完整资产（角色 → 场景 → 道具 → 分镜）via story_outline
@@ -527,7 +537,8 @@ const applyDecisionStep = createStep({
     await publishWorkflowCompleted(ctx.projectId, runId, "parse_script", {
       committed: committed.map((c) => ({ serverId: c.serverId, title: c.title })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-      summary: summaryText,
+      summaryKey,
+      summaryParams,
       nextSteps: [
         {
           workflowName: "story_outline",
@@ -550,7 +561,7 @@ const applyDecisionStep = createStep({
       outcome,
       committed,
       failed,
-      message: summaryText,
+      message: logMessage,
     };
   },
 });

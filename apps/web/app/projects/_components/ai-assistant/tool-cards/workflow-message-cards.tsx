@@ -505,13 +505,18 @@ export function WorkflowCompletedCard({
       <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
         <IconCheck className="size-3 shrink-0 text-green-500/70" />
         <span className="font-medium">
-          {output.summary ??
-            (partial
-              ? t("workflowCommittedSummaryWithFailures", {
-                  count: committedCount,
-                  failed: failedCount,
-                })
-              : t("workflowCommittedSummary", { count: committedCount }))}
+          {output.summaryKey
+            ? t(
+                output.summaryKey,
+                (output.summaryParams ?? {}) as Record<string, string | number | Date>
+              )
+            : (output.summary ??
+              (partial
+                ? t("workflowCommittedSummaryWithFailures", {
+                    count: committedCount,
+                    failed: failedCount,
+                  })
+                : t("workflowCommittedSummary", { count: committedCount })))}
         </span>
       </div>
     );
@@ -536,13 +541,18 @@ export function WorkflowCompletedCard({
       <div className="mt-2 flex items-start gap-1.5 text-[12.5px] text-foreground/85">
         <IconCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
         <span>
-          {output.summary ??
-            (partial
-              ? t("workflowCommittedSummaryWithFailures", {
-                  count: committedCount,
-                  failed: failedCount,
-                })
-              : t("workflowCommittedSummary", { count: committedCount }))}
+          {output.summaryKey
+            ? t(
+                output.summaryKey,
+                (output.summaryParams ?? {}) as Record<string, string | number | Date>
+              )
+            : (output.summary ??
+              (partial
+                ? t("workflowCommittedSummaryWithFailures", {
+                    count: committedCount,
+                    failed: failedCount,
+                  })
+                : t("workflowCommittedSummary", { count: committedCount })))}
         </span>
       </div>
       {/* Workflow-specific structured result panel (章节/角色/场景 for

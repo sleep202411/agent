@@ -241,7 +241,7 @@ const emitReviewStep = createStep({
     if (inputData.draftCount === 0) {
       await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
         committed: [],
-        summary: "本故事骨架里没有需要单独设计的道具，已跳过。",
+        summaryKey: "propPhaseSummaryEmpty",
         // Nothing was generated → nothing to revise. Hiding the Revise
         // button prevents confusing "what would I revise?" clicks.
         revisable: false,
@@ -438,17 +438,25 @@ export async function applyPropDrafts(
     label: endLabel,
   });
 
-  const summaryText =
+  const summaryKey =
+    outcome === "committed" ? "propPhaseSummaryCommitted" : "propPhaseSummaryPartial";
+  const summaryParams = {
+    count: committed.length,
+    failed: failed.length,
+    total: accepts.length,
+  };
+  const logMessage =
     outcome === "committed"
-      ? `已入库 ${committed.length} 个道具，进入下一阶段。`
-      : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+      ? `committed ${committed.length} props`
+      : `partial failure: ${committed.length} ok, ${failed.length} failed`;
 
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "prop_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
     failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-    summary: summaryText,
+    summaryKey,
+    summaryParams,
     nextSteps: [
       {
         workflowName: "prop_image_phase",
@@ -467,7 +475,8 @@ export async function applyPropDrafts(
     await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {
       committed: completionPayload.committed,
       failed: completionPayload.failed,
-      summary: completionPayload.summary,
+      summaryKey: completionPayload.summaryKey,
+      summaryParams: completionPayload.summaryParams,
       nextSteps: completionPayload.nextSteps,
     });
   }
@@ -476,7 +485,7 @@ export async function applyPropDrafts(
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
-    message: summaryText,
+    message: logMessage,
     completion: completionPayload,
     failure: null,
   };

@@ -353,15 +353,23 @@ const applyDecisionStep = createStep({
       label: endLabel,
     });
 
-    const summaryText =
+    const summaryKey =
+      outcome === "committed" ? "propDesignSummaryCommitted" : "propDesignSummaryPartial";
+    const summaryParams = {
+      count: committed.length,
+      failed: failed.length,
+      total: items.length,
+    };
+    const logMessage =
       outcome === "committed"
-        ? `已成功入库 ${committed.length} 个道具。`
-        : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+        ? `committed ${committed.length} props`
+        : `partial failure: ${committed.length} ok, ${failed.length} failed`;
 
     await publishWorkflowCompleted(ctx.projectId, runId, "prop_design", {
       committed: committed.map((c) => ({ serverId: c.serverId })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-      summary: summaryText,
+      summaryKey,
+      summaryParams,
       nextSteps: [
         {
           workflowName: "prop_image_phase",
@@ -376,7 +384,7 @@ const applyDecisionStep = createStep({
       outcome,
       committed,
       failed,
-      message: summaryText,
+      message: logMessage,
     };
   },
 });

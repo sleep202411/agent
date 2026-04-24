@@ -386,7 +386,7 @@ export class AgentStreamService {
           parts: [
             {
               type: 'text',
-              text: '让我再整理一下思路，麻烦稍后再试一下。',
+              text: 'Let me reorganize my thoughts — please try again in a moment.',
             },
           ],
         };
@@ -428,7 +428,7 @@ export class AgentStreamService {
           parts: [
             {
               type: 'text',
-              text: '让我再整理一下思路，麻烦稍后再试一下。',
+              text: 'Let me reorganize my thoughts — please try again in a moment.',
             },
           ],
         };

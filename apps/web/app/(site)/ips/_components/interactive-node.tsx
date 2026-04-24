@@ -50,7 +50,7 @@ function VideoNodeComponent({ data, selected }: NodeProps<VideoNodeData>) {
         {/* Video preview placeholder */}
         <div className="mb-2 flex aspect-video items-center justify-center rounded-lg bg-secondary/80">
           {data.videoUrl ? (
-            <span className="text-[10px] text-green-400">已上传</span>
+            <span className="text-[10px] text-green-400">Uploaded</span>
           ) : (
             <IconVideo className="size-5 text-muted-foreground/30" />
           )}

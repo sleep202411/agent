@@ -30,13 +30,13 @@ interface MentionInfo {
 export function buildReferenceMap(
   referenceItems: ReferenceItem[],
   promptMentions: MentionInfo[],
-  refPrefix: string | Partial<Record<"image" | "video" | "audio", string>> = "参考图"
+  refPrefix: string | Partial<Record<"image" | "video" | "audio", string>> = "Ref"
 ): ReferenceMap {
   const map: ReferenceMap = new Map();
 
   const resolvePrefix = (kind: "image" | "video" | "audio"): string => {
     if (typeof refPrefix === "string") return refPrefix;
-    return refPrefix[kind] ?? refPrefix.image ?? "参考图";
+    return refPrefix[kind] ?? refPrefix.image ?? "Ref";
   };
 
   const getKind = (item: ReferenceItem): "image" | "video" | "audio" =>

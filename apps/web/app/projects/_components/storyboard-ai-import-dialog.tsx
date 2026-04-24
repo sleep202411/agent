@@ -41,14 +41,14 @@ async function formatStoryboardExcel(file: File): Promise<string[][]> {
     });
   } catch (error) {
     const isTimeout = error instanceof DOMException && error.name === "AbortError";
-    throw new Error(isTimeout ? "请求超时" : "网络连接失败");
+    throw new Error(isTimeout ? "Request timed out" : "Network connection failed");
   } finally {
     clearTimeout(timer);
   }
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const body = await response.json();
   const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
-  if (!isSuccess) throw new Error(body.msg || body.message || "请求失败");
+  if (!isSuccess) throw new Error(body.msg || body.message || "Request failed");
   return (body.data ?? null) as string[][];
 }
 

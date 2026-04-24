@@ -394,15 +394,23 @@ const applyDecisionStep = createStep({
       label: endLabel,
     });
 
-    const summaryText =
+    const summaryKey =
+      outcome === "committed" ? "roleDesignSummaryCommitted" : "roleDesignSummaryPartial";
+    const summaryParams = {
+      count: committed.length,
+      failed: failed.length,
+      total: items.length,
+    };
+    const logMessage =
       outcome === "committed"
-        ? `已成功入库 ${committed.length} 个角色。`
-        : `入库完成但有失败：成功 ${committed.length}，失败 ${failed.length}。失败的草稿保留在 Redis 供重试。`;
+        ? `committed ${committed.length} roles`
+        : `partial: ${committed.length} ok, ${failed.length} failed, drafts kept for retry`;
 
     await publishWorkflowCompleted(ctx.projectId, runId, "role_design", {
       committed: committed.map((c) => ({ serverId: c.serverId })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-      summary: summaryText,
+      summaryKey,
+      summaryParams,
       nextSteps: [
         {
           workflowName: "role_image_phase",
@@ -417,7 +425,7 @@ const applyDecisionStep = createStep({
       outcome,
       committed,
       failed,
-      message: summaryText,
+      message: logMessage,
     };
   },
 });

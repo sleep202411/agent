@@ -20,6 +20,8 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { getRedis } from "../../lib/redis-client";
+import { robustStructuredGenerate } from "../../lib/robust-generate";
+import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/language";
 
 const ProjectMetaShape = z.object({
   name: z.string().min(1).max(40),
@@ -74,13 +76,29 @@ async function resolveText(input: { text?: string; textRef?: string }): Promise<
   throw new Error("analyze_brief: must supply `text` or `textRef`");
 }
 
-function buildPrompt(text: string): string {
+/**
+ * Rough CJK-ratio heuristic to pick a default content language when the
+ * caller (supervisor pre-`configure_params`) doesn't supply one. Sampled on
+ * the first 2KB — good enough for mixed docs where the intro is the
+ * signal. Never returns anything other than "zh-CN" / "en-US"; callers
+ * still layer `resolveContentLanguage` above this so an explicit override
+ * (dialogLanguage etc) wins.
+ */
+function detectLangFromText(text: string): "zh-CN" | "en-US" {
+  const sample = text.slice(0, 2048);
+  if (sample.length === 0) return "en-US";
+  const cjkCount = (sample.match(/[\u4e00-\u9fff]/g) ?? []).length;
+  return cjkCount / sample.length >= 0.3 ? "zh-CN" : "en-US";
+}
+
+function buildPrompt(text: string, contentLang: string): string {
   return [
     "下面是用户提供的原始创作素材（可能是小说片段、梗概、一句话主题等）。",
     "请按你 system prompt 规定的 JSON 结构返回简报。",
     "",
     "原始素材：",
     text,
+    contentLanguageInstruction(contentLang),
   ].join("\n");
 }
 
@@ -97,28 +115,51 @@ export const analyzeBrief = createTool({
       .string()
       .optional()
       .describe('Attachment ref "att_xxx" — resolved from Redis before analysis.'),
+    contentLanguage: z
+      .string()
+      .optional()
+      .describe(
+        'Output language for generated content (e.g. "en-US", "zh-CN", "zh-HK"). Resolved by the supervisor from project dialogLanguage / user locale. Defaults to English.'
+      ),
   }),
   outputSchema: BriefShape,
-  execute: async ({ text, textRef }, execCtx) => {
+  execute: async ({ text, textRef, contentLanguage }, execCtx) => {
     const resolvedText = await resolveText({ text, textRef });
+    // analyze_brief runs before configure_params, so the supervisor often
+    // can't supply a contentLanguage yet. Heuristic: sample the first ~2KB
+    // of the material; ≥ 30% CJK → zh-CN, else en-US. This only kicks in
+    // when the caller omitted contentLanguage.
+    const detected = detectLangFromText(resolvedText);
+    const lang = resolveContentLanguage(contentLanguage, detected);
 
     const analyst = execCtx?.mastra?.getAgent("briefAnalyzer");
     if (!analyst) throw new Error("briefAnalyzer agent not registered");
 
-    const response = await analyst.generate(buildPrompt(resolvedText), {
-      structuredOutput: { schema: BriefShape, errorStrategy: "warn" },
-    });
-    const brief = response.object as AnalyzeBriefOutput | undefined;
-
-    if (!brief) {
+    try {
+      const { object, attempt } = await robustStructuredGenerate<AnalyzeBriefOutput>({
+        agent: analyst,
+        prompt: buildPrompt(resolvedText, lang),
+        schema: BriefShape,
+        tag: `analyze-brief-${Date.now()}`,
+        // Default isEmpty (null/undefined/empty-array) covers the common
+        // "Mastra couldn't parse the response" case; malformed objects
+        // are already rejected by Zod and surface as undefined.
+      });
+      if (attempt > 1) {
+        // eslint-disable-next-line no-console
+        console.info(`[analyze_brief] recovered structured output on attempt ${attempt}`);
+      }
+      return object;
+    } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(
-        "[analyze_brief] briefAnalyzer returned no structured output; raw text head:",
-        typeof response.text === "string" ? response.text.slice(0, 200) : "(none)"
+        `[analyze_brief] both attempts failed — falling back to defaults: ${
+          err instanceof Error ? err.message : String(err)
+        }`
       );
-      // Fall back to a minimal default so the supervisor can still
-      // proceed — downstream won't silent-save a default name, and the
-      // params form will just show hardcoded defaults.
+      // Minimal defaults so the supervisor can still proceed to
+      // require_project_params with hardcoded form defaults. Downstream
+      // won't silent-save a default name because projectMeta is empty.
       return {
         projectMeta: { name: "", description: "", core: "" },
         suggestedParams: {
@@ -134,7 +175,5 @@ export const analyzeBrief = createTool({
         detectedChapterCount: 0,
       };
     }
-
-    return brief;
   },
 });

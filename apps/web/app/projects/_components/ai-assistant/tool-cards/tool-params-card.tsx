@@ -15,6 +15,44 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 
+/**
+ * Frontend-owned i18n mapping for the 5 canonical param keys the supervisor
+ * emits via `configure_params`. When a field's `key` matches here, we render
+ * `t(labelKey)` instead of the LLM-supplied `label` — the LLM-side prompt can
+ * then stay in English for consistency but users see their own locale. Keys
+ * not in this map fall through to the raw `field.label` (future-proof for
+ * new ad-hoc fields the supervisor invents).
+ */
+const FIELD_LABEL_I18N: Record<string, string> = {
+  targetEpisodeCount: "paramTargetEpisodeCount",
+  chapterLength: "paramChapterLength",
+  shotsPerEpisode: "paramShotsPerEpisode",
+  stylePainting: "paramStylePainting",
+  dialogLanguage: "paramDialogLanguage",
+};
+
+/** Same idea for option labels: only need it for LLM-placeholder options
+ *  (dialogLanguage); `stylePainting` options are overridden at runtime by
+ *  Java dictionary, and ad-hoc fields stay on the LLM label.  */
+const OPTION_LABEL_I18N: Record<string, Record<string, string>> = {
+  dialogLanguage: {
+    "zh-CN": "paramsDialogLanguageSimplifiedChinese",
+    "zh-HK": "paramsDialogLanguageTraditionalChinese",
+    "en-US": "paramsDialogLanguageEnglish",
+  },
+};
+
+/** Suffix i18n: LLM-side prompt uses "集" / "分钟" / "镜" literally; we detect
+ *  those and swap for locale strings. Anything else passes through.  */
+const SUFFIX_I18N: Record<string, string> = {
+  集: "paramSuffixEpisodes",
+  episodes: "paramSuffixEpisodes",
+  分钟: "paramSuffixMinutes",
+  min: "paramSuffixMinutes",
+  镜: "paramSuffixShots",
+  shots: "paramSuffixShots",
+};
+
 export interface ParamFieldOption {
   label: string;
   value: string;
@@ -64,10 +102,26 @@ export function ToolParamsCard({
   onDismiss,
   disabled = false,
 }: ToolParamsCardProps) {
+  const t = useTranslations("ai");
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<Record<string, string | number>>(() =>
     Object.fromEntries(fields.map((f) => [f.key, f.value]))
   );
+
+  const labelFor = (field: ParamField) => {
+    const key = FIELD_LABEL_I18N[field.key];
+    return key ? t(key) : field.label;
+  };
+  const suffixFor = (field: ParamField) => {
+    if (!field.suffix) return undefined;
+    const key = SUFFIX_I18N[field.suffix];
+    return key ? t(key) : field.suffix;
+  };
+  const optionLabelFor = (fieldKey: string, opt: ParamFieldOption) => {
+    const map = OPTION_LABEL_I18N[fieldKey];
+    const key = map?.[opt.value];
+    return key ? t(key) : opt.label;
+  };
 
   // Auto-load Java dictionaries for fields that need them so the options
   // stay in sync with backend (LLM can't know dynamic style IDs; the
@@ -128,7 +182,7 @@ export function ToolParamsCard({
       if (v === undefined || v === null || v === "") continue;
       if (f.type === "select" && f.options) {
         const matched = f.options.find((o) => String(o.value) === String(v));
-        out[f.key] = matched?.label ?? String(v);
+        out[f.key] = matched ? optionLabelFor(f.key, matched) : String(v);
       } else {
         out[f.key] = String(v);
       }
@@ -154,10 +208,10 @@ export function ToolParamsCard({
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold">
-            {currentField?.label ?? title}
-            {currentField?.suffix && (
+            {currentField ? labelFor(currentField) : title}
+            {currentField && suffixFor(currentField) && (
               <span className="ml-1 text-[11px] font-normal text-muted-foreground/60">
-                ({currentField.suffix})
+                ({suffixFor(currentField)})
               </span>
             )}
           </div>
@@ -267,7 +321,9 @@ function InputStep({
     <div>
       <div className="py-2">
         <Field>
-          <FieldLabel>{field.label}</FieldLabel>
+          <FieldLabel>
+            {FIELD_LABEL_I18N[field.key] ? t(FIELD_LABEL_I18N[field.key]) : field.label}
+          </FieldLabel>
           <Input
             ref={inputRef}
             type={field.type === "number" ? "number" : "text"}
@@ -409,7 +465,11 @@ function SelectStep({
             >
               {index + 1}
             </span>
-            <span className="text-[13px]">{opt.label}</span>
+            <span className="text-[13px]">
+              {OPTION_LABEL_I18N[field.key]?.[opt.value]
+                ? t(OPTION_LABEL_I18N[field.key]![opt.value])
+                : opt.label}
+            </span>
           </button>
         ))}
       </div>

@@ -57,7 +57,7 @@ function useSceneSchema() {
           .string()
           .min(1, t("sceneNameRequired"))
           .max(20, t("sceneNameMaxLength", { max: 20 })),
-        description: z.string().max(300),
+        description: z.string(),
         prompt: z.string().max(500),
         sceneImgPath: z.array(z.string()),
         referenceImgPath: z.array(z.string()),
@@ -288,7 +288,6 @@ export function SceneEditDialog({
                           {...field}
                           id={field.name}
                           aria-invalid={fieldState.invalid}
-                          maxLength={300}
                           rows={4}
                           placeholder={t("sceneDescriptionPlaceholder")}
                         />
@@ -327,7 +326,7 @@ export function SceneEditDialog({
                         />
                       ) : (
                         <p className="rounded-md border border-dashed border-border/40 p-3 text-[11px] text-muted-foreground/60">
-                          保存后才能生成 AI 场景图
+                          Save first to enable AI scene image generation
                         </p>
                       )}
                     </div>
@@ -412,9 +411,9 @@ export function SceneEditDialog({
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>删除场景</AlertDialogTitle>
+                      <AlertDialogTitle>Delete scene</AlertDialogTitle>
                       <AlertDialogDescription>
-                        确定要删除「{form.watch("name") || "未命名场景"}」吗？此操作无法撤销。
+                        Delete "{form.watch("name") || "Untitled scene"}"? This cannot be undone.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

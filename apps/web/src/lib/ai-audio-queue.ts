@@ -95,7 +95,7 @@ async function executeTask(taskId: string) {
 
     const storagePath = parseAudioPath(response);
     if (!storagePath) {
-      throw new Error("未获取到音频结果");
+      throw new Error("No audio result returned");
     }
 
     const ossBase = env.OSS_BASE_URL;
@@ -104,7 +104,7 @@ async function executeTask(taskId: string) {
     const output: TaskOutput = { url, storagePath };
     store.dispatch(completeTask({ taskId, output }));
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "音频生成失败";
+    const msg = err instanceof Error ? err.message : "Audio generation failed";
     store.dispatch(failTask({ taskId, error: msg }));
   }
 }

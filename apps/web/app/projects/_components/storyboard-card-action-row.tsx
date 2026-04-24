@@ -2,6 +2,7 @@
 
 import { IconPhoto, IconSparkles, IconVideo } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "@/src/i18n/i18n";
 import {
   useAiImageTrigger,
   useAiVideoTrigger,
@@ -27,17 +28,18 @@ export function StoryboardCardImageActions({
   shotId: string;
   shotColumnId: string;
 }) {
+  const t = useTranslations("storyboard");
   const picker = useImageAssetPicker({ shotId, shotColumnId });
   const aiTrigger = useAiImageTrigger({ shotId, shotColumnId });
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
       <Button size="sm" variant="outline" color="muted" onClick={picker.open}>
         <IconPhoto className="size-3.5" />
-        选择图片
+        {t("selectImage")}
       </Button>
       <Button size="sm" variant="outline" color="muted" onClick={aiTrigger}>
         <IconSparkles className="size-3.5" />
-        AI 生图
+        {t("aiGenerateImage")}
       </Button>
       {picker.element}
     </div>
@@ -51,17 +53,18 @@ export function StoryboardCardVideoActions({
   shotId: string;
   shotColumnId: string;
 }) {
+  const t = useTranslations("storyboard");
   const picker = useVideoAssetPicker({ shotId, shotColumnId });
   const aiTrigger = useAiVideoTrigger({ shotId, shotColumnId });
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
       <Button size="sm" variant="outline" color="muted" onClick={picker.open}>
         <IconVideo className="size-3.5" />
-        选择视频
+        {t("selectVideo")}
       </Button>
       <Button size="sm" variant="outline" color="muted" onClick={aiTrigger}>
         <IconSparkles className="size-3.5" />
-        AI 生视频
+        {t("aiGenerateVideo")}
       </Button>
       {picker.element}
     </div>

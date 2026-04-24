@@ -216,7 +216,7 @@ export function parseVideoGenerateResult(result: unknown) {
     }
   }
 
-  throw new Error("未获取到生成结果");
+  throw new Error("No generation result returned");
 }
 
 export function toHistoryItem(record: AssetRecord): VideoResultItem {

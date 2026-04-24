@@ -378,7 +378,7 @@ export function CharacterEditDialog({
                       </>
                     ) : (
                       <div className="flex h-full items-center justify-center text-xs text-center text-muted-foreground/60">
-                        从右侧「AI 生图」中选一张
+                        Pick one from "AI Generate" on the right
                       </div>
                     )}
                   </div>
@@ -391,7 +391,7 @@ export function CharacterEditDialog({
                     the rotating portrait list. */}
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="text-[11px] text-muted-foreground/80">全局提示图</div>
+                    <div className="text-[11px] text-muted-foreground/80">Global reference</div>
                     <Button
                       type="button"
                       size="xs"
@@ -405,7 +405,7 @@ export function CharacterEditDialog({
                       ) : (
                         <IconWand className="size-3" />
                       )}
-                      生成全局提示图
+                      Generate global reference
                     </Button>
                   </div>
                   <div className="group relative h-[160px] overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
@@ -433,7 +433,7 @@ export function CharacterEditDialog({
                       </>
                     ) : (
                       <div className="flex h-full items-center justify-center text-xs text-muted-foreground/60">
-                        点右上「生成全局提示图」
+                        Click "Generate global reference" above
                       </div>
                     )}
                   </div>
@@ -455,7 +455,6 @@ export function CharacterEditDialog({
                     value={formData.description}
                     onChange={(event) => updateForm({ description: event.target.value })}
                     placeholder={t("characterDescriptionPlaceholder")}
-                    maxLength={300}
                     rows={5}
                   />
                 </Field>
@@ -553,7 +552,7 @@ export function CharacterEditDialog({
                       />
                     ) : (
                       <p className="rounded-md border border-dashed border-border/40 p-3 text-[11px] text-muted-foreground/60">
-                        保存后才能生成 AI 角色图
+                        Save first to enable AI character image generation
                       </p>
                     )}
                   </div>

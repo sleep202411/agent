@@ -168,7 +168,7 @@ const waitAllStep = createStep({
     if (assetIds.length === 0) {
       await publishWorkflowCompleted(ctx.projectId, runId, "scene_image_phase", {
         committed: [],
-        summary: "没有可生成参考图的场景。",
+        summaryKey: "sceneImagePhaseSummaryEmpty",
         nextSteps: [await nextAfterSceneImages(ctx.projectId)],
       });
       return {

@@ -33,7 +33,7 @@ async function v1FormData<T>(path: string, formData: FormData, timeout = 600_000
     });
   } catch (error) {
     const isTimeout = error instanceof DOMException && error.name === "AbortError";
-    throw new Error(isTimeout ? "请求超时" : "网络连接失败");
+    throw new Error(isTimeout ? "Request timed out" : "Network connection failed");
   } finally {
     clearTimeout(timer);
   }
@@ -45,7 +45,7 @@ async function v1FormData<T>(path: string, formData: FormData, timeout = 600_000
   const body = (await response.json()) as RawV1Body<T>;
   const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
   if (!isSuccess) {
-    throw new Error(body.msg || body.message || "请求失败");
+    throw new Error(body.msg || body.message || "Request failed");
   }
 
   return (body.data ?? null) as T;

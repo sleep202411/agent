@@ -454,7 +454,7 @@ export function AiLipSyncGeneratorDialog({
         timeout: 360_000,
       });
       const nextPath = parseMediaResultPath(result);
-      if (!nextPath) throw new Error("未获取到音频结果");
+      if (!nextPath) throw new Error("No audio result returned");
 
       setReferenceAudio(nextPath);
       setAudioQueue((current) => current.filter((item) => item.id !== queueId));
@@ -488,7 +488,7 @@ export function AiLipSyncGeneratorDialog({
         timeout: 360_000,
       });
       const nextPath = parseMediaResultPath(result);
-      if (!nextPath) throw new Error("未获取到音频结果");
+      if (!nextPath) throw new Error("No audio result returned");
       setReferenceAudio(nextPath);
       setAudioQueue((current) => current.filter((q) => q.id !== item.id));
       setAudioHistory((current) => [
@@ -534,11 +534,11 @@ export function AiLipSyncGeneratorDialog({
         timeout: 360_000,
       });
       const nextPath = parseMediaResultPath(result);
-      if (!nextPath) throw new Error("未获取到对口型结果");
+      if (!nextPath) throw new Error("No lip-sync result returned");
 
       setVideoQueue((current) => current.filter((item) => item.id !== queueId));
       setVideoHistory((current) => [
-        { id: nextPath, path: nextPath, name: `对口型_${Date.now()}` },
+        { id: nextPath, path: nextPath, name: `LipSync_${Date.now()}` },
         ...current.filter((item) => item.path !== nextPath),
       ]);
       setCurrentPreviewPath(nextPath);
@@ -577,11 +577,11 @@ export function AiLipSyncGeneratorDialog({
         timeout: 360_000,
       });
       const nextPath = parseMediaResultPath(result);
-      if (!nextPath) throw new Error("未获取到对口型结果");
+      if (!nextPath) throw new Error("No lip-sync result returned");
 
       setVideoQueue((current) => current.filter((q) => q.id !== item.id));
       setVideoHistory((current) => [
-        { id: nextPath, path: nextPath, name: `对口型_${Date.now()}` },
+        { id: nextPath, path: nextPath, name: `LipSync_${Date.now()}` },
         ...current.filter((r) => r.path !== nextPath),
       ]);
       setCurrentPreviewPath(nextPath);

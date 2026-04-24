@@ -159,7 +159,7 @@ export function SceneImageSection({
             ? result.replace(`${OSS_BASE}/`, "")
             : String(result ?? "");
         if (!nextPath) {
-          throw new Error("未生成有效图片");
+          throw new Error("No valid image generated");
         }
         const nextImages = [...images];
         nextImages[index] = nextPath;
@@ -196,7 +196,7 @@ export function SceneImageSection({
           ? result.replace(`${OSS_BASE}/`, "")
           : String(result ?? "");
       if (!nextPath) {
-        throw new Error("未生成有效全景图");
+        throw new Error("No valid panorama generated");
       }
       onPanoramaChange(nextPath);
       toast.success(tc("panoramaSuccess"));

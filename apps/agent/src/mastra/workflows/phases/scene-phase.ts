@@ -439,10 +439,17 @@ export async function applySceneDrafts(
     label: endLabel,
   });
 
-  const summaryText =
+  const summaryKey =
+    outcome === "committed" ? "scenePhaseSummaryCommitted" : "scenePhaseSummaryPartial";
+  const summaryParams = {
+    count: committed.length,
+    failed: failed.length,
+    total: accepts.length,
+  };
+  const logMessage =
     outcome === "committed"
-      ? `已入库 ${committed.length} 个场景，进入下一阶段。`
-      : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+      ? `committed ${committed.length} scenes`
+      : `partial failure: ${committed.length} ok, ${failed.length} failed`;
 
   // Only offer the "skip to props" secondary when the outline actually has
   // prop entries. Story_outline frequently returns props=[] for stories
@@ -457,7 +464,8 @@ export async function applySceneDrafts(
     workflowName: "scene_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
     failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-    summary: summaryText,
+    summaryKey,
+    summaryParams,
     nextSteps: [
       {
         workflowName: "scene_image_phase",
@@ -482,7 +490,8 @@ export async function applySceneDrafts(
     await publishWorkflowCompleted(ctx.projectId, runId, "scene_phase", {
       committed: completionPayload.committed,
       failed: completionPayload.failed,
-      summary: completionPayload.summary,
+      summaryKey: completionPayload.summaryKey,
+      summaryParams: completionPayload.summaryParams,
       nextSteps: completionPayload.nextSteps,
     });
   }
@@ -491,7 +500,7 @@ export async function applySceneDrafts(
     outcome,
     committedCount: committed.length,
     failedCount: failed.length,
-    message: summaryText,
+    message: logMessage,
     completion: completionPayload,
     failure: null,
   };

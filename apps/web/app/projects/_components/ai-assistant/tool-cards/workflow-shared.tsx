@@ -259,51 +259,52 @@ function draftPreview(draft: Draft): { title: string; detail?: string } {
 
 // Internal plumbing fields we never want to surface to the user in the
 // detail dialog. `sortHint` is handled specially (see below) — for
-// episodes it's rendered as "集数" with a 1-based value; for other
-// entity types (role/scene/prop) it's plumbing and stays hidden.
+// episodes it's rendered with a 1-based value; for other entity types
+// (role/scene/prop) it's plumbing and stays hidden.
 const HIDDEN_DRAFT_FIELDS = new Set<string>([]);
 
-// Chinese labels for common draft.data fields so the detail dialog reads
-// naturally. Unknown keys fall back to the raw key name so we never hide
-// data the user might care about.
+// Human-readable labels for common draft.data fields so the detail dialog
+// reads naturally. Kept English-only for now (consistent with "English-
+// first when i18n isn't wired yet") — unknown keys fall back to the raw
+// key name so we never hide data the user might care about.
 const DRAFT_FIELD_LABELS: Record<string, string> = {
-  sortHint: "集数",
-  name: "名称",
-  title: "标题",
-  roleName: "角色名",
-  sceneName: "场景名",
-  propName: "道具名",
-  description: "描述",
-  introduction: "简介",
-  intro: "简介",
-  summary: "摘要",
-  prompt: "图像提示词",
-  aliases: "别名",
-  positioning: "定位",
-  appearance: "外观",
-  personality: "性格",
-  background: "背景",
-  voiceId: "音色",
-  model: "模型",
-  category: "类型",
-  timeOfDay: "时间",
-  setting: "环境",
-  keyElements: "视觉锚点",
-  lighting: "光线",
-  atmosphere: "氛围",
-  era: "年代",
-  material: "材质",
-  significance: "剧情意义",
-  shot_no: "镜号",
-  scene: "场景",
-  image_prompt: "图像提示词",
-  video_prompt: "视频提示词",
-  movement: "运镜",
-  shot_size: "景别",
-  perspective: "视角",
-  duration: "时长",
-  dialogue: "对白",
-  worldId: "世界 ID",
+  sortHint: "Episode #",
+  name: "Name",
+  title: "Title",
+  roleName: "Character",
+  sceneName: "Scene",
+  propName: "Prop",
+  description: "Description",
+  introduction: "Synopsis",
+  intro: "Synopsis",
+  summary: "Summary",
+  prompt: "Image Prompt",
+  aliases: "Aliases",
+  positioning: "Role",
+  appearance: "Appearance",
+  personality: "Personality",
+  background: "Background",
+  voiceId: "Voice",
+  model: "Model",
+  category: "Category",
+  timeOfDay: "Time of day",
+  setting: "Setting",
+  keyElements: "Key elements",
+  lighting: "Lighting",
+  atmosphere: "Atmosphere",
+  era: "Era",
+  material: "Material",
+  significance: "Significance",
+  shot_no: "Shot #",
+  scene: "Scene",
+  image_prompt: "Image Prompt",
+  video_prompt: "Video Prompt",
+  movement: "Camera move",
+  shot_size: "Shot size",
+  perspective: "Angle",
+  duration: "Duration",
+  dialogue: "Dialogue",
+  worldId: "World ID",
 };
 
 function labelForDraftField(key: string): string {

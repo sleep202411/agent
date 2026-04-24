@@ -19,6 +19,7 @@ import { putOutline, type StoryOutline } from "../../lib/outline";
 import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
 import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
+import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/language";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -151,6 +152,13 @@ export const ScriptBreakdownInputSchema = z.object({
   text: z.string().optional(),
   /** Optional user hint to steer tone / genre ("爱情喜剧" / "悬疑惊悚" etc.) */
   styleHint: z.string().optional(),
+  /**
+   * Output language for the generated skeleton (chapter titles, cast
+   * name-hints, settings names, thread summaries). Resolved by the
+   * supervisor from project dialogLanguage / user locale; defaults to
+   * English when omitted.
+   */
+  contentLanguage: z.string().optional(),
 });
 
 /** Pulls committed episode scripts from Java and concats them into the
@@ -251,6 +259,7 @@ const analyzeStep = createStep({
     const prompt = buildStoryEditorPrompt({
       text: effectiveText,
       styleHint: inputData.styleHint,
+      contentLanguage: resolveContentLanguage(inputData.contentLanguage, ctx.dialogLanguage),
     });
 
     // eslint-disable-next-line no-console
@@ -346,7 +355,11 @@ const analyzeStep = createStep({
   },
 });
 
-function buildStoryEditorPrompt(input: z.infer<typeof ScriptBreakdownInputSchema>): string {
+function buildStoryEditorPrompt(input: {
+  text?: string;
+  styleHint?: string;
+  contentLanguage: string;
+}): string {
   const styleBlock = input.styleHint ? `\n\n用户想要的风格提示：${input.styleHint}\n` : "";
   return [
     "请对以下原始素材做**剧本统筹级的骨架拆解**。只产出结构 / 线索 / 名册，**不要**做角色和场景的详细设计。严格按约定的 JSON schema 返回。",
@@ -362,6 +375,7 @@ function buildStoryEditorPrompt(input: z.infer<typeof ScriptBreakdownInputSchema
     "3. settings 同理，只列场地名册 + typeHint，不要写氛围/光线/陈设。",
     "4. props 列剧情里**明确出现且被角色互动的物件**名册 + typeHint。包括但不限于：身份象征物（玉佩、官印、令牌、头冠）、关键证物（信件、画像、手札、照片）、触发物（穿越钥匙、契约、戒指、古董）、武器或工具、信物（定情物、家传物）、反复出现的道具（烟斗、折扇、药瓶）。只要剧情提到且推动情节/区分角色/承载情感，就应当列入（用户会在下一步审查）。只排除纯背景陈设（桌椅杯盘、一次性食物饮品）。**通常至少 3-8 个；返回空数组仅限于极简抽象叙事、纯对话独幕剧或类似场景**。",
     "5. threads.main 要提炼贯穿全文的核心线索，subs 列出交织的支线。",
+    contentLanguageInstruction(input.contentLanguage),
   ].join("\n");
 }
 

@@ -89,7 +89,7 @@ export function SelectInlineField({
           <span
             className={hasValue ? "flex-1 text-foreground/90" : "flex-1 text-muted-foreground/60"}
           >
-            {hasValue ? current : "暂无"}
+            {hasValue ? current : "None"}
           </span>
           <IconPencil className="mt-0.5 size-3 shrink-0 text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-100" />
         </button>
@@ -106,7 +106,7 @@ export function SelectInlineField({
               }
               if (e.key === "Escape") setOpen(false);
             }}
-            placeholder="搜索或输入"
+            placeholder="Search or enter"
             className="w-full rounded-md border border-border bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-muted-foreground focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
           />
         </div>
@@ -126,7 +126,7 @@ export function SelectInlineField({
             </button>
           ))}
           {filteredOptions.length === 0 && !inputValue.trim() && (
-            <div className="px-2 py-3 text-center text-xs text-muted-foreground">暂无选项</div>
+            <div className="px-2 py-3 text-center text-xs text-muted-foreground">No options</div>
           )}
         </div>
         {hasValue && (
@@ -137,7 +137,7 @@ export function SelectInlineField({
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
             >
               <IconX className="size-3" />
-              <span>清除</span>
+              <span>Clear</span>
             </button>
           </div>
         )}

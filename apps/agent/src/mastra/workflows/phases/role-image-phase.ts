@@ -172,7 +172,7 @@ const waitAllStep = createStep({
     if (assetIds.length === 0) {
       await publishWorkflowCompleted(ctx.projectId, runId, "role_image_phase", {
         committed: [],
-        summary: "没有可生成主图的角色。",
+        summaryKey: "roleImagePhaseSummaryEmpty",
         nextSteps: [
           {
             workflowName: "scene_phase",

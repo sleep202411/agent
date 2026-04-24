@@ -364,15 +364,23 @@ const applyDecisionStep = createStep({
       label: endLabel,
     });
 
-    const summaryText =
+    const summaryKey =
+      outcome === "committed" ? "sceneDesignSummaryCommitted" : "sceneDesignSummaryPartial";
+    const summaryParams = {
+      count: committed.length,
+      failed: failed.length,
+      total: items.length,
+    };
+    const logMessage =
       outcome === "committed"
-        ? `已成功入库 ${committed.length} 个场景。`
-        : `入库有失败：成功 ${committed.length}，失败 ${failed.length}。`;
+        ? `committed ${committed.length} scenes`
+        : `partial failure: ${committed.length} ok, ${failed.length} failed`;
 
     await publishWorkflowCompleted(ctx.projectId, runId, "scene_design", {
       committed: committed.map((c) => ({ serverId: c.serverId })),
       failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
-      summary: summaryText,
+      summaryKey,
+      summaryParams,
       nextSteps: [
         {
           workflowName: "scene_image_phase",
@@ -387,7 +395,7 @@ const applyDecisionStep = createStep({
       outcome,
       committed,
       failed,
-      message: summaryText,
+      message: logMessage,
     };
   },
 });
