@@ -64,7 +64,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <EntityEventsSession>{children}</EntityEventsSession>
-          <Toaster />
+          <Toaster position="top-center" />
         </TooltipProvider>
       </QueryClientProvider>
     </StoreProvider>
