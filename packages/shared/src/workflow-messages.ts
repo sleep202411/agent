@@ -10,10 +10,10 @@
  *                  called as the phase advances, so the card streams like
  *                  ordinary AI text until the phase ends
  *   - suspended  — fires when the workflow hits a HITL gate; contains the
- *                  draft summary + invites user action (滿意 / 修改)
+ *                  draft summary + invites user action (Accept / Revise)
  *   - completed  — fires once on terminal success; carries the commit
  *                  result and an optional nextStep hint so the client can
- *                  surface a "继续·xxx" button
+ *                  surface a "Continue · xxx" button
  *   - failed     — fires on terminal failure or cancellation; retryable flag
  *                  + classification drive the UI
  *
@@ -41,7 +41,7 @@ export const WorkflowProgressOutputSchema = BaseWorkflowOutput.extend({
   phase: WorkflowMacroPhase,
   current: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
-  /** Step-level label, e.g. "角色设计师正在扩展「迈克」…". */
+  /** Step-level label, e.g. `Character Designer is elaborating "Mike"…`. */
   label: z.string().optional(),
   /** Accumulated persona narration bullets shown as a list under the bar. */
   narrateLines: z.array(z.string()).optional(),
@@ -72,9 +72,9 @@ export const WorkflowDraftGroupSchema = z.object({
 export type WorkflowDraftGroup = z.infer<typeof WorkflowDraftGroupSchema>;
 
 /**
- * Hint to the HITL card about what clicking 满意 will *next* trigger +
+ * Hint to the HITL card about what clicking Accept will *next* trigger +
  * how much it will cost. Optional — terminal phases (like storyboard)
- * omit it and the UI falls back to a generic "完成" label.
+ * omit it and the UI falls back to a generic "Done" label.
  */
 export const WorkflowNextActionSchema = z.object({
   workflowName: WorkflowNameEnum,
@@ -89,12 +89,12 @@ export const WorkflowSuspendedOutputSchema = BaseWorkflowOutput.extend({
   totalDraftCount: z.number().int().nonnegative(),
   /**
    * Credits this phase will deduct when the user resolves the HITL
-   * (whether 满意 or 不满意 — generation cost is already incurred).
+   * (whether Accept or Reject — generation cost is already incurred).
    * Omitted (or 0) means the phase is free (image phases,
-   * batch_create_asset) — UI skips the "(X 分)" suffix.
+   * batch_create_asset) — UI skips the "(X credits)" suffix.
    */
   estimatedCost: z.number().int().nonnegative().optional(),
-  /** What happens if user clicks 满意. Absent on terminal phases. */
+  /** What happens if user clicks Accept. Absent on terminal phases. */
   nextAction: WorkflowNextActionSchema.optional(),
 });
 export type WorkflowSuspendedOutput = z.infer<typeof WorkflowSuspendedOutputSchema>;
@@ -109,13 +109,14 @@ export const WorkflowNextStepSchema = z.object({
   prompt: z.string().optional(),
   /**
    * UI styling hint. `primary` renders as the filled accent button (default
-   * action, e.g. "生成场景图"); everything else renders as secondary
-   * (e.g. "跳过，去道具"). First entry is `primary` by default if unspecified.
+   * action, e.g. "Generate scene images"); everything else renders as
+   * secondary (e.g. "Skip — go to props"). First entry is `primary` by
+   * default if unspecified.
    */
   variant: z.enum(["primary", "secondary"]).optional(),
   /**
    * Credits this next step will cost. Omit or 0 = free. Rendered inline
-   * with the label, e.g. "生成场景图 (15 积分)".
+   * with the label, e.g. "Generate scene images (15 credits)".
    */
   estimatedCost: z.number().int().nonnegative().optional(),
   /**
@@ -159,9 +160,10 @@ export const WorkflowCompletedOutputSchema = BaseWorkflowOutput.extend({
    */
   result: z.record(z.string(), z.unknown()).optional(),
   /**
-   * User's next-step options. One → single "继续·xxx" button. Two+ → options
-   * laid out as primary/secondary actions (e.g. 场景提交后：生成场景图 vs
-   * 跳过去道具). Empty/omitted → terminal, no continuation UI.
+   * User's next-step options. One → single "Continue · xxx" button. Two+ →
+   * options laid out as primary/secondary actions (e.g. after scenes
+   * commit: "Generate scene images" vs "Skip — go to props").
+   * Empty/omitted → terminal, no continuation UI.
    */
   nextSteps: z.array(WorkflowNextStepSchema).optional(),
   /**
@@ -169,7 +171,7 @@ export const WorkflowCompletedOutputSchema = BaseWorkflowOutput.extend({
    * (like a tool indicator) instead of the full card. Set true for
    * low-signal terminal states — e.g. role/scene/prop_phase commit
    * that auto-chains to the image phase, so the user sees a small
-   * "✓ 已入库 10 个角色" line instead of a duplicate big card next to
+   * "✓ Committed 10 characters" line instead of a duplicate big card next to
    * the image-phase progress card.
    */
   compact: z.boolean().optional(),
