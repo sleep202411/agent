@@ -18,7 +18,7 @@ export const AI_MODEL_PATHS = {
   videoOutpaint: "/api/ai/task/video/generate/videooutpainting",
   // Audio
   voice: "/api/ai/voice/synthesize",
-  lipSync: "/api/ai/task/video/lip/sync",
+  lipSync: "/api/ai/video/lip/sync",
   audio: "/api/ai/audio/generate/basic",
   music: "/api/ai/voice/music",
   // Chat

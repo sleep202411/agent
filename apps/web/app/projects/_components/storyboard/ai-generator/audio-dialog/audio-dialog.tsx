@@ -18,6 +18,7 @@ import {
   type ShotRow,
 } from "@/src/store/slices/projectSlice";
 import { submitAudioTask, retryAudioTask } from "@/src/lib/ai-audio-queue";
+import { persistDialogueText } from "@/app/projects/_components/storyboard/cells/cell-utils";
 import { useRawAiModels } from "@/src/hooks/use-ai-models";
 import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import {
@@ -96,6 +97,10 @@ export function AiAudioGeneratorDialog({
   const progressRafRef = useRef<number | null>(null);
   const initializedRef = useRef(false);
   const previousGeneratingRef = useRef(false);
+  // Snapshot of the seeded prompt so we only write back to the dialogue
+  // cell when the user actually edited it — see persistDialogueText call
+  // site for why blind writes clobber structured dialogue.
+  const initialPromptRef = useRef<string>("");
 
   // ─── Derived state ────────────────────────────────────
   const isGenerating = useMemo(
@@ -213,26 +218,35 @@ export function AiAudioGeneratorDialog({
           })) ?? {};
         setVoiceGroups(groups);
 
-        if (preferredVoiceId) {
-          const matchedGroup = Object.entries(groups).find(([, voices]) =>
-            voices.some((v) => String(v.voiceId ?? "") === String(preferredVoiceId))
+        // Resolve the active language + chosen voice in one pass:
+        //   1. If preferredVoiceId is given and still exists, keep it.
+        //   2. Otherwise fall back to the first voice of the first language
+        //      group so the UI always shows a concrete default instead of
+        //      "Select Voice" forever. (The old code left voiceId empty in
+        //      the no-preferred branch and relied on backend character-
+        //      voice auto-match, which was invisible to users.)
+        const firstLang = Object.keys(groups)[0] ?? "";
+        const matchedGroup = preferredVoiceId
+          ? Object.entries(groups).find(([, voices]) =>
+              voices.some((v) => String(v.voiceId ?? "") === String(preferredVoiceId))
+            )
+          : undefined;
+        const matched = matchedGroup?.[1]?.find(
+          (v) => String(v.voiceId ?? "") === String(preferredVoiceId)
+        );
+
+        setActiveVoiceLang(matchedGroup?.[0] ?? firstLang);
+
+        const chosen = matched ?? (firstLang ? groups[firstLang]?.[0] : undefined);
+        if (chosen?.voiceId) {
+          dispatch(
+            updateAudioForm({
+              shotId,
+              colId: shotColumnId,
+              updates: { voiceId: String(chosen.voiceId) },
+            })
           );
-          setActiveVoiceLang(matchedGroup?.[0] ?? Object.keys(groups)[0] ?? "");
-          const matched = matchedGroup?.[1]?.find(
-            (v) => String(v.voiceId ?? "") === String(preferredVoiceId)
-          );
-          if (matched) {
-            dispatch(
-              updateAudioForm({
-                shotId,
-                colId: shotColumnId,
-                updates: { voiceId: String(matched.voiceId) },
-              })
-            );
-          }
-          return;
         }
-        setActiveVoiceLang(Object.keys(groups)[0] ?? "");
       } catch {
         toast.error(t("loadVoicesFailed"));
       } finally {
@@ -273,6 +287,7 @@ export function AiAudioGeneratorDialog({
     const initialize = async () => {
       if (!initializedRef.current && voiceModels.length > 0) {
         const defaultPrompt = getDialogueTextFromShotValues(shotValues);
+        initialPromptRef.current = defaultPrompt;
         await dispatch(
           initAudioInstance({ shotId, colId: shotColumnId, opts: { defaultPrompt } })
         ).unwrap();
@@ -351,6 +366,14 @@ export function AiAudioGeneratorDialog({
     if (!prompt) {
       toast.warning(t("enterNarrationFirst"));
       return;
+    }
+    // Only write back if the user actually edited the prompt. The seed
+    // came through `stripDialogueRoleLines`, so blindly saving it would
+    // clobber the structured dialogue (`角色：...`, `台词：Alice：...`) and
+    // break voice auto-match on the next open.
+    if (prompt !== initialPromptRef.current.trim()) {
+      void persistDialogueText(shotId, prompt);
+      initialPromptRef.current = prompt;
     }
     for (let i = 0; i < formData.count; i++) {
       submitAudioTask({

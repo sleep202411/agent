@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAppSelector } from "@/src/store";
 import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
+import { makeSelectTasksByShot } from "@/src/store/slices/taskSlice";
+import { submitLipSyncTask, retryLipSyncTask } from "@/src/lib/ai-lipsync-queue";
+import { persistDialogueText } from "@/app/projects/_components/storyboard/cells/cell-utils";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import {
   Dialog,
@@ -72,7 +75,6 @@ export function AiLipSyncGeneratorDialog({
   const [referenceFace, setReferenceFace] = useState("");
   const [narrationText, setNarrationText] = useState("");
   const [videoHistory, setVideoHistory] = useState<VideoResultItem[]>([]);
-  const [videoQueue, setVideoQueue] = useState<VideoResultItem[]>([]);
   const [audioHistory, setAudioHistory] = useState<AudioResultItem[]>([]);
   const [audioQueue, setAudioQueue] = useState<AudioResultItem[]>([]);
   const [currentPreviewPath, setCurrentPreviewPath] = useState("");
@@ -86,6 +88,12 @@ export function AiLipSyncGeneratorDialog({
 
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
   const voicePreviewRef = useRef<HTMLAudioElement | null>(null);
+  // Gate the init effect so it runs exactly once per open cycle. Without
+  // this, any Redux update that bumps `row.shotValues` (e.g. the post-
+  // generate writeback from /ai/voice/synthesize) would re-fire the effect
+  // and clobber user-edited state — most visibly the narration textarea
+  // gets reset to the dialogue cell text mid-typing.
+  const initializedRef = useRef(false);
 
   // ─── Derived state ───────────────────────────────────
 
@@ -106,7 +114,48 @@ export function AiLipSyncGeneratorDialog({
     return col?.id ? String(col.id) : "";
   }, [audioCell, columns]);
 
-  const allVideoItems = useMemo(() => [...videoQueue, ...videoHistory], [videoHistory, videoQueue]);
+  // Lip-sync task queue lives in Redux (taskSlice) so it survives dialog
+  // close/reopen cycles. A generation started in one session shows up as
+  // "generating" when the user reopens the dialog, and the result lands
+  // automatically via the watcher effect below when the task completes.
+  // Factory-style createSelector: returns the same array reference when the
+  // filtered set is unchanged, so unrelated dispatches don't re-render the
+  // whole dialog. Same pattern as video-dialog.tsx.
+  const selectShotTasks = useMemo(() => makeSelectTasksByShot(), []);
+  const allTasks = useAppSelector((s) => selectShotTasks(s, shotId, shotColumnId));
+  const lipSyncTasks = useMemo(
+    () => allTasks.filter((task) => task.type === "lip_sync"),
+    [allTasks]
+  );
+  const videoQueue = useMemo<VideoResultItem[]>(
+    () =>
+      lipSyncTasks.map((task): VideoResultItem => {
+        const path = task.output?.storagePath ?? "";
+        let status: VideoResultItem["status"];
+        if (task.status === "failed") status = "failed";
+        else if (task.status === "pending" || task.status === "running") status = "generating";
+        return {
+          id: task.id,
+          path,
+          name: path ? `LipSync_${task.createdAt}` : undefined,
+          status,
+        };
+      }),
+    [lipSyncTasks]
+  );
+  // Dedupe by path so a completed task + its refetched history counterpart
+  // don't both render as separate cards after `loadVideoHistory` runs.
+  const allVideoItems = useMemo<VideoResultItem[]>(() => {
+    const seen = new Set<string>();
+    const merged: VideoResultItem[] = [];
+    for (const item of [...videoQueue, ...videoHistory]) {
+      const key = item.path || `id:${item.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+    }
+    return merged;
+  }, [videoHistory, videoQueue]);
   const allAudioItems = useMemo(() => [...audioQueue, ...audioHistory], [audioHistory, audioQueue]);
   const currentPreviewItem = useMemo(
     () => allVideoItems.find((item) => item.path === currentPreviewPath) ?? null,
@@ -123,6 +172,16 @@ export function AiLipSyncGeneratorDialog({
       audioQueue.some((item) => item.status === "generating"),
     [audioQueue, videoQueue]
   );
+  // Remember which completed tasks we've already notified the parent about,
+  // so re-renders don't re-fire onCollect. Using a Set<string> ref lives
+  // across renders without triggering one itself.
+  const notifiedTaskIdsRef = useRef<Set<string>>(new Set());
+  // Snapshot the narration text we seeded from the dialogue cell so that on
+  // Generate we only write back to the cell if the user actually edited it.
+  // The seed goes through `stripDialogueRoleLines`, which drops 角色：/台词：
+  // /旁白： structure — writing the stripped text back blindly would destroy
+  // speaker attribution and break `resolveDialogueVoicePreset` auto-match.
+  const initialNarrationRef = useRef<string>("");
   const lipSyncModelCost = Math.abs(
     Number(
       lipSyncModels.find((item) => String(item.serviceCode ?? "") === lipSyncModel)?.integralCost ??
@@ -175,15 +234,19 @@ export function AiLipSyncGeneratorDialog({
             params: { voiceType: modelCode },
           })) ?? {};
         setVoiceGroups(groups);
-        setActiveVoiceLang(Object.keys(groups)[0] ?? "");
-        if (preferredVoiceId) {
-          const matched = Object.values(groups)
-            .flat()
-            .find((item) => String(item.voiceId ?? "") === String(preferredVoiceId));
-          setVoiceId(matched?.voiceId ? String(matched.voiceId) : "");
-        } else {
-          setVoiceId("");
-        }
+        const firstLang = Object.keys(groups)[0] ?? "";
+        setActiveVoiceLang(firstLang);
+        // Prefer the caller-supplied voice (from dialogue cell preset).
+        // Fall back to the first voice in the first language group so the
+        // panel has a sensible default instead of "Select Voice" forever.
+        const matched = preferredVoiceId
+          ? Object.values(groups)
+              .flat()
+              .find((item) => String(item.voiceId ?? "") === String(preferredVoiceId))
+          : undefined;
+        const fallback = firstLang ? groups[firstLang]?.[0] : undefined;
+        const chosen = matched ?? fallback;
+        setVoiceId(chosen?.voiceId ? String(chosen.voiceId) : "");
       } catch (error) {
         console.error("[AiLipSyncGeneratorDialog] 加载音色失败:", error);
         toast.error(t("loadVoicesFailed"));
@@ -263,26 +326,38 @@ export function AiLipSyncGeneratorDialog({
 
   useEffect(() => {
     if (!open) {
+      initializedRef.current = false;
       stopAudioPreview();
       stopVoicePreview();
       return;
     }
 
+    // Skip if we've already initialized for this open cycle, or if the model
+    // lists haven't arrived yet (they load async via useRawAiModels, so the
+    // first fire typically has them empty — we'll get another fire once
+    // they populate).
+    if (initializedRef.current) return;
+    if (lipSyncModels.length === 0 || voiceModels.length === 0) return;
+
+    initializedRef.current = true;
+
     let active = true;
     const nextReferenceVideo = defaultReferenceVideo || getPreferredFilePath(baseVideoCell);
     const nextReferenceAudio = defaultReferenceAudio || getPreferredFilePath(audioCell);
 
-    setVideoQueue([]);
+    // Don't clear the lip-sync queue here — it's owned by Redux now and
+    // must survive dialog close/reopen. Only the local audio preview queue
+    // gets reset.
     setAudioQueue([]);
     setReferenceVideo(nextReferenceVideo);
     setReferenceAudio(nextReferenceAudio);
     setReferenceFace(defaultReferenceFace || "");
-    setNarrationText(getDialogueTextFromShotValues(shotValues));
+    const seededNarration = getDialogueTextFromShotValues(shotValues);
+    setNarrationText(seededNarration);
+    initialNarrationRef.current = seededNarration;
     setCurrentPreviewPath(preferredPath || "");
 
     const initialize = async () => {
-      if (lipSyncModels.length === 0 || voiceModels.length === 0) return;
-
       setLoadingLipSyncModels(true);
       setLoadingVoiceModels(true);
       try {
@@ -371,6 +446,86 @@ export function AiLipSyncGeneratorDialog({
     if (firstAvailable) setCurrentPreviewPath(firstAvailable);
   }, [allVideoItems, currentPreviewPath, open]);
 
+  // Seed the "already notified" set on open so tasks that were completed
+  // BEFORE this dialog session (e.g. finished while the dialog was closed,
+  // or persisted across a remount) don't re-trigger onCollect/preview side
+  // effects on mount. Only transitions that happen DURING this session fire.
+  useEffect(() => {
+    if (!open) {
+      notifiedTaskIdsRef.current = new Set();
+      return;
+    }
+    const seeded = new Set<string>();
+    for (const task of lipSyncTasks) {
+      if (task.status === "completed") seeded.add(task.id);
+    }
+    notifiedTaskIdsRef.current = seeded;
+    // Intentional: seed only when `open` flips. Changes to `lipSyncTasks`
+    // inside the same session are handled by the watcher below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Watch lip-sync task transitions and forward completions to the parent
+  // so the merged video path lands in the video_path_lip_sync cell and the
+  // preview updates. Keeping this centralized here (rather than inline in
+  // handleGenerateVideo) means a task completing AFTER dialog close+reopen
+  // within the same session also gets persisted.
+  useEffect(() => {
+    if (!open) return;
+    for (const task of lipSyncTasks) {
+      if (task.status !== "completed") continue;
+      if (notifiedTaskIdsRef.current.has(task.id)) continue;
+      const path = task.output?.storagePath;
+      if (!path) continue;
+      notifiedTaskIdsRef.current.add(task.id);
+      const payload = { id: path, storagePath: path, url: ossUrl(path) };
+      onCollect?.(payload);
+      if (!preferredPath && appliedPaths.length === 0) {
+        onSetPreferred?.(payload);
+      }
+      setCurrentPreviewPath(path);
+      onGenerateSuccess?.();
+      toast.success(tc("generateSuccess"));
+    }
+  }, [
+    lipSyncTasks,
+    open,
+    onCollect,
+    onSetPreferred,
+    onGenerateSuccess,
+    preferredPath,
+    appliedPaths,
+    tc,
+  ]);
+
+  // Surface failed-task error toasts once per failure so the user doesn't
+  // just see a silent red retry card. Uses the same notified-set trick.
+  const notifiedFailuresRef = useRef<Set<string>>(new Set());
+  // Mirror of the completion seed: on dialog open, treat already-failed
+  // tasks as "already toasted" so historical failures don't re-toast every
+  // reopen. Only NEW failure transitions during this session fire.
+  useEffect(() => {
+    if (!open) {
+      notifiedFailuresRef.current = new Set();
+      return;
+    }
+    const seeded = new Set<string>();
+    for (const task of lipSyncTasks) {
+      if (task.status === "failed") seeded.add(task.id);
+    }
+    notifiedFailuresRef.current = seeded;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    for (const task of lipSyncTasks) {
+      if (task.status !== "failed") continue;
+      if (notifiedFailuresRef.current.has(task.id)) continue;
+      notifiedFailuresRef.current.add(task.id);
+      toast.error(tc("generateFailed"));
+    }
+  }, [lipSyncTasks, open, tc]);
+
   // ─── Action handlers ─────────────────────────────────
 
   const handleVoiceModelChange = async (modelCode: string) => {
@@ -434,6 +589,16 @@ export function AiLipSyncGeneratorDialog({
     if (!audioColumnId) {
       toast.warning(t("noAudioColumn"));
       return;
+    }
+
+    // Only write back if the user actually edited the textarea. The seed
+    // came through `stripDialogueRoleLines`, so blindly saving it would
+    // clobber the structured dialogue (`角色：...`, `台词：Alice：...`) and
+    // break voice auto-match on the next open. Fire-and-forget — a cell-
+    // save failure shouldn't block voice synth.
+    if (prompt !== initialNarrationRef.current.trim()) {
+      void persistDialogueText(shotId, prompt);
+      initialNarrationRef.current = prompt;
     }
 
     const queueId = `audio_${Date.now()}`;
@@ -505,7 +670,7 @@ export function AiLipSyncGeneratorDialog({
     }
   };
 
-  const handleGenerateVideo = async () => {
+  const handleGenerateVideo = () => {
     if (!referenceVideo.trim()) {
       toast.warning(t("selectReferenceVideo"));
       return;
@@ -514,90 +679,26 @@ export function AiLipSyncGeneratorDialog({
       toast.warning(t("selectReferenceAudio"));
       return;
     }
-
-    const queueId = `lip_sync_${Date.now()}`;
-    setVideoQueue((current) => [{ id: queueId, path: "", status: "generating" }, ...current]);
-
-    try {
-      const result = await backendApi.post<Record<string, unknown>>("/api/ai/task/video/lip/sync", {
-        data: {
-          shotColumnId,
-          shotId,
-          model: lipSyncModel || undefined,
-          input: {
-            video_url: ossUrl(referenceVideo),
-            audio_url: ossUrl(referenceAudio),
-            ref_image_url: referenceFace ? ossUrl(referenceFace) : undefined,
-          },
-          parameters: { video_extension: true },
-        },
-        timeout: 360_000,
-      });
-      const nextPath = parseMediaResultPath(result);
-      if (!nextPath) throw new Error("No lip-sync result returned");
-
-      setVideoQueue((current) => current.filter((item) => item.id !== queueId));
-      setVideoHistory((current) => [
-        { id: nextPath, path: nextPath, name: `LipSync_${Date.now()}` },
-        ...current.filter((item) => item.path !== nextPath),
-      ]);
-      setCurrentPreviewPath(nextPath);
-      onCollect?.({ id: nextPath, storagePath: nextPath, url: ossUrl(nextPath) });
-      if (!preferredPath && appliedPaths.length === 0) {
-        onSetPreferred?.({ id: nextPath, storagePath: nextPath, url: ossUrl(nextPath) });
-      }
-      onGenerateSuccess?.();
-      toast.success(tc("generateSuccess"));
-    } catch (error) {
-      console.error("[AiLipSyncGeneratorDialog] 生成对口型失败:", error);
-      setVideoQueue((current) =>
-        current.map((item) => (item.id === queueId ? { ...item, status: "failed" } : item))
-      );
-      toast.error(tc("generateFailed"));
-    }
+    // Submit into the Redux-backed queue. The queue processor polls pending
+    // tasks, runs them against the long-polled /api/ai/video/lip/sync
+    // endpoint, and writes back status/output. The watcher effect below
+    // reacts to completion to fire onCollect/onSetPreferred and update the
+    // preview pane — same side effects the old inline code did, but now
+    // they survive dialog close/reopen.
+    submitLipSyncTask({
+      shotId,
+      shotColumnId,
+      model: lipSyncModel || undefined,
+      videoUrl: ossUrl(referenceVideo),
+      audioUrl: ossUrl(referenceAudio),
+      refImageUrl: referenceFace ? ossUrl(referenceFace) : undefined,
+    });
   };
 
-  const handleRetryVideo = async (item: VideoResultItem) => {
-    setVideoQueue((current) =>
-      current.map((q) => (q.id === item.id ? { ...q, status: "generating" } : q))
-    );
-    try {
-      const result = await backendApi.post<Record<string, unknown>>("/api/ai/task/video/lip/sync", {
-        data: {
-          shotColumnId,
-          shotId,
-          model: lipSyncModel || undefined,
-          input: {
-            video_url: ossUrl(referenceVideo),
-            audio_url: ossUrl(referenceAudio),
-            ref_image_url: referenceFace ? ossUrl(referenceFace) : undefined,
-          },
-          parameters: { video_extension: true },
-        },
-        timeout: 360_000,
-      });
-      const nextPath = parseMediaResultPath(result);
-      if (!nextPath) throw new Error("No lip-sync result returned");
-
-      setVideoQueue((current) => current.filter((q) => q.id !== item.id));
-      setVideoHistory((current) => [
-        { id: nextPath, path: nextPath, name: `LipSync_${Date.now()}` },
-        ...current.filter((r) => r.path !== nextPath),
-      ]);
-      setCurrentPreviewPath(nextPath);
-      onCollect?.({ id: nextPath, storagePath: nextPath, url: ossUrl(nextPath) });
-      if (!preferredPath && appliedPaths.length === 0) {
-        onSetPreferred?.({ id: nextPath, storagePath: nextPath, url: ossUrl(nextPath) });
-      }
-      onGenerateSuccess?.();
-      toast.success(tc("generateSuccess"));
-    } catch (error) {
-      console.error("[AiLipSyncGeneratorDialog] 重试对口型失败:", error);
-      setVideoQueue((current) =>
-        current.map((q) => (q.id === item.id ? { ...q, status: "failed" } : q))
-      );
-      toast.error(tc("generateFailed"));
-    }
+  const handleRetryVideo = (item: VideoResultItem) => {
+    // Retry the Redux task in place — status flips back to pending and the
+    // queue processor picks it up again with the same stored input.
+    retryLipSyncTask(item.id);
   };
 
   // ─── Render ──────────────────────────────────────────

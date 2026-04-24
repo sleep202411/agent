@@ -8,7 +8,7 @@ import { backendApi } from "@/src/lib/api";
 
 // ─── Types ──────────────────────────────────────────────
 
-export type TaskType = "image" | "video" | "audio" | "fusion";
+export type TaskType = "image" | "video" | "audio" | "fusion" | "lip_sync";
 
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 

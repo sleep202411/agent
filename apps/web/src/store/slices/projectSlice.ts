@@ -610,6 +610,20 @@ export interface AudioGenerateInput {
   voiceId?: string;
 }
 
+// ─── AI Lip-sync Input ────────────────────────────────
+
+export interface LipSyncGenerateInput {
+  shotId: string;
+  shotColumnId: string;
+  model?: string;
+  /** Resolved OSS URL (not storage path) — backend expects an absolute url. */
+  videoUrl: string;
+  /** Resolved OSS URL. */
+  audioUrl: string;
+  /** Optional reference face OSS URL. */
+  refImageUrl?: string;
+}
+
 export interface AiAudioFormData {
   prompt: string;
   model: string;

@@ -39,6 +39,7 @@ const TYPE_CONFIG: Record<
   video: { icon: IconVideo, labelKey: "taskVideo" },
   audio: { icon: IconMicrophone, labelKey: "taskAudio" },
   fusion: { icon: IconWand, labelKey: "taskFusion" },
+  lip_sync: { icon: IconVideo, labelKey: "taskLipSync" },
 };
 
 // ─── Task Item ─────────────────────────────────────────

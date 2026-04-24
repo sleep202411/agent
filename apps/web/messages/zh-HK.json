@@ -2014,6 +2014,7 @@
     "taskVideo": "生成影片",
     "taskAudio": "生成音訊",
     "taskFusion": "角色溶圖",
+    "taskLipSync": "對口型",
     "justNow": "剛剛",
     "minutesAgo": "{count} 分鐘前",
     "hoursAgo": "{count} 小時前",

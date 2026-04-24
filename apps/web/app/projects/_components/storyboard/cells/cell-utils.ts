@@ -609,6 +609,22 @@ export async function persistTextCell(
   }
 }
 
+/**
+ * Write text into the shot's dialogue cell (the column with
+ * `presetColumnKey === "dialogue"`). Used by the AI Voice and AI Lip Sync
+ * dialogs to push their narration/prompt textarea content back into the
+ * storyboard, so the three surfaces (storyboard cell, voice dialog,
+ * lip-sync dialog) stay in sync via Redux + `/api/user/shotValue/input`.
+ * No-ops silently when the project has no dialogue column — a plain-value
+ * write with a missing column id would 500 on the backend.
+ */
+export async function persistDialogueText(shotId: string, text: string): Promise<void> {
+  const columns = selectCurrentInstance(store.getState()).columns;
+  const dialogueColumn = columns.find((c) => c.presetColumnKey === "dialogue");
+  if (!dialogueColumn?.id) return;
+  await persistTextCell(shotId, String(dialogueColumn.id), text, { richText: true });
+}
+
 export async function persistValueList(
   shotId: string,
   shotColumnId: string,

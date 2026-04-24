@@ -2014,6 +2014,7 @@
     "taskVideo": "Generate Video",
     "taskAudio": "Generate Audio",
     "taskFusion": "Character Fusion",
+    "taskLipSync": "Lip Sync",
     "justNow": "Just now",
     "minutesAgo": "{count}m ago",
     "hoursAgo": "{count}h ago",
