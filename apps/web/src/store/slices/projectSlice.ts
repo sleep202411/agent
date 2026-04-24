@@ -402,6 +402,12 @@ function taskToResultItem(task: Task): ResultItem {
       id: task.id,
       url: task.output.url,
       storagePath: task.output.storagePath,
+      // Must set `status: "success"` explicitly — audio-dialog's
+      // `isGenerating` useMemo and audio-result-gallery's `isLoading`
+      // check `item.status !== "success"` to decide "still loading".
+      // Without this, completed tasks look stuck in generating forever
+      // (button stays disabled, spinner never clears).
+      status: "success",
       fromQueue: true,
     };
   }
