@@ -117,12 +117,12 @@ const planPropsStep = createStep({
         stepId: "plan_props",
         current: 0,
         total: inputData.propCount,
-        label: "道具设计师正在构思道具…",
+        label: "Prop designer is drafting props…",
       });
       await publishWorkflowProgress(ctx.projectId, runId, "prop_design", "planning", {
         current: 0,
         total: inputData.propCount,
-        label: "道具设计师正在构思道具…",
+        label: "Prop designer is drafting props…",
       });
     }
 
@@ -150,7 +150,7 @@ const planPropsStep = createStep({
       draftClientRefIds: state.draftClientRefIds ?? [],
     });
     if (runId) {
-      const doneLabel = `已设计 ${plannedProps.length} 个道具`;
+      const doneLabel = `Designed ${plannedProps.length} props`;
       await reportProgress(runId, {
         stepId: "plan_props",
         current: plannedProps.length,
@@ -207,7 +207,7 @@ const collectDraftsStep = createStep({
         stepId: "collect_drafts",
         current: i,
         total: plannedProps.length,
-        label: `已收集 ${i}/${plannedProps.length} 个道具草稿`,
+        label: `Collected ${i}/${plannedProps.length} prop drafts`,
       });
     }
 
@@ -239,7 +239,7 @@ const waitConfirmationStep = createStep({
         stepId: "wait_confirmation",
         current: inputData.draftCount,
         total: inputData.draftCount,
-        label: `${inputData.draftCount} 个道具草稿已生成，等待确认`,
+        label: `${inputData.draftCount} prop drafts generated — awaiting confirmation`,
       });
       const drafts = await listDrafts<PropCreateData>(runId, {
         entityType: "prop",
@@ -291,14 +291,18 @@ const applyDecisionStep = createStep({
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
       await publishWorkflowFailed(ctx.projectId, runId, "prop_design", {
         terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        error: inputData.feedback
+          ? `User requested changes: ${inputData.feedback}`
+          : "User rejected.",
         retryable: false,
       });
       return {
         outcome: "rejected" as const,
         committed: [],
         failed: [],
-        message: inputData.feedback ? `用户未通过。反馈：${inputData.feedback}` : "用户未通过。",
+        message: inputData.feedback
+          ? `User rejected. Feedback: ${inputData.feedback}`
+          : "User rejected.",
       };
     }
 
@@ -313,7 +317,7 @@ const applyDecisionStep = createStep({
 
     for (const item of items) await markDraftCommitting(runId, item.clientRefId);
 
-    const startLabel = `入库 ${items.length} 个道具到项目…`;
+    const startLabel = `Saving ${items.length} props to project…`;
     await reportProgress(runId, {
       stepId: "apply_decision",
       current: 0,
@@ -346,7 +350,7 @@ const applyDecisionStep = createStep({
 
     if (outcome === "committed") await deleteAllDrafts(runId);
 
-    const endLabel = `入库完成 — 成功 ${committed.length}，失败 ${failed.length}`;
+    const endLabel = `Commit done — ${committed.length} ok, ${failed.length} failed`;
     await publishWorkflowProgress(ctx.projectId, runId, "prop_design", "committing", {
       current: committed.length,
       total: items.length,

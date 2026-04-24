@@ -78,13 +78,13 @@ export const deleteShot = createTool({
       });
       return {
         ok: true,
-        message: `已删除第 ${shotNo} 镜`,
+        message: `Deleted shot ${shotNo}`,
         deletedShotId: shotId,
       };
     } catch (err) {
       return {
         ok: false,
-        message: `删除失败：${err instanceof Error ? err.message : String(err)}`,
+        message: `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
   },

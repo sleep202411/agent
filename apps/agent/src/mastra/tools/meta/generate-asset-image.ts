@@ -77,13 +77,13 @@ async function runGenerate(
     return {
       ok: true,
       path,
-      message: `已为${LABEL[kind]}「${input.name}」生成主图。`,
+      message: `Generated main image for ${LABEL[kind]} "${input.name}".`,
     };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
-      message: `${LABEL[kind]}「${input.name}」生图失败：${reason}`,
+      message: `Image generation failed for ${LABEL[kind]} "${input.name}": ${reason}`,
     };
   }
 }

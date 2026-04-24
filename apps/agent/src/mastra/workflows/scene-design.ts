@@ -121,12 +121,12 @@ const planScenesStep = createStep({
         stepId: "plan_scenes",
         current: 0,
         total: inputData.sceneCount,
-        label: "场景设计师正在构思场景…",
+        label: "Scene designer is drafting scenes…",
       });
       await publishWorkflowProgress(ctx.projectId, runId, "scene_design", "planning", {
         current: 0,
         total: inputData.sceneCount,
-        label: "场景设计师正在构思场景…",
+        label: "Scene designer is drafting scenes…",
       });
     }
 
@@ -154,7 +154,7 @@ const planScenesStep = createStep({
       draftClientRefIds: state.draftClientRefIds ?? [],
     });
     if (runId) {
-      const doneLabel = `已设计 ${plannedScenes.length} 个场景`;
+      const doneLabel = `Designed ${plannedScenes.length} scenes`;
       await reportProgress(runId, {
         stepId: "plan_scenes",
         current: plannedScenes.length,
@@ -218,7 +218,7 @@ const collectDraftsStep = createStep({
         stepId: "collect_drafts",
         current: i,
         total: plannedScenes.length,
-        label: `已收集 ${i}/${plannedScenes.length} 个场景草稿`,
+        label: `Collected ${i}/${plannedScenes.length} scene drafts`,
       });
     }
 
@@ -250,7 +250,7 @@ const waitConfirmationStep = createStep({
         stepId: "wait_confirmation",
         current: inputData.draftCount,
         total: inputData.draftCount,
-        label: `${inputData.draftCount} 个场景草稿已生成，等待确认`,
+        label: `${inputData.draftCount} scene drafts generated — awaiting confirmation`,
       });
       const drafts = await listDrafts<SceneCreateData>(runId, {
         entityType: "scene",
@@ -302,14 +302,18 @@ const applyDecisionStep = createStep({
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
       await publishWorkflowFailed(ctx.projectId, runId, "scene_design", {
         terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        error: inputData.feedback
+          ? `User requested changes: ${inputData.feedback}`
+          : "User rejected.",
         retryable: false,
       });
       return {
         outcome: "rejected" as const,
         committed: [],
         failed: [],
-        message: inputData.feedback ? `用户未通过。反馈：${inputData.feedback}` : "用户未通过。",
+        message: inputData.feedback
+          ? `User rejected. Feedback: ${inputData.feedback}`
+          : "User rejected.",
       };
     }
 
@@ -324,7 +328,7 @@ const applyDecisionStep = createStep({
 
     for (const item of items) await markDraftCommitting(runId, item.clientRefId);
 
-    const startLabel = `入库 ${items.length} 个场景到项目…`;
+    const startLabel = `Saving ${items.length} scenes to project…`;
     await reportProgress(runId, {
       stepId: "apply_decision",
       current: 0,
@@ -357,7 +361,7 @@ const applyDecisionStep = createStep({
 
     if (outcome === "committed") await deleteAllDrafts(runId);
 
-    const endLabel = `入库完成 — 成功 ${committed.length}，失败 ${failed.length}`;
+    const endLabel = `Commit done — ${committed.length} ok, ${failed.length} failed`;
     await publishWorkflowProgress(ctx.projectId, runId, "scene_design", "committing", {
       current: committed.length,
       total: items.length,

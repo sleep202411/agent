@@ -71,7 +71,7 @@ export const addShot = createTool({
     if (!shotId) {
       return {
         ok: false,
-        message: `创建 shot 失败：Java 未返回 id`,
+        message: `Failed to create shot: Java returned no id`,
         updatedFields: [],
         failedFields: [],
       };
@@ -84,7 +84,7 @@ export const addShot = createTool({
     if (!patch || Object.values(patch).every((v) => v === undefined || v === "")) {
       return {
         ok: true,
-        message: `已新增一镜（${shotId}）`,
+        message: `Added one shot (${shotId})`,
         shotId,
         updatedFields,
         failedFields,

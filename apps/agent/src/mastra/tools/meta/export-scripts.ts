@@ -107,7 +107,7 @@ export const exportScripts = createTool({
         episodeCount: 0,
         totalChars: 0,
         episodes: [],
-        message: "当前项目没有可导出的剧本。",
+        message: "This project has no scripts to export.",
       };
     }
 

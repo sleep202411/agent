@@ -1598,6 +1598,8 @@
     "parseScriptSummaryPartial": "入库有失败：{failed} / {total}。",
     "storyboardPhaseSummaryCommitted": "已保存 {count} 集分镜，主流程结束。",
     "storyboardPhaseSummaryPartial": "保存有失败：{failed} / {total}。",
+    "storyOutlineSummary": "骨架就绪：{chapters} 章 · {roles} 角色 · {scenes} 场景",
+    "storyOutlineCommittedTitle": "故事骨架",
     "scenePhaseSummaryCommitted": "已入库 {count} 个场景，进入下一阶段。",
     "scenePhaseSummaryPartial": "入库有失败：成功 {count}，失败 {failed}。",
     "propPhaseSummaryCommitted": "已入库 {count} 个道具，进入下一阶段。",

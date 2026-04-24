@@ -31,7 +31,7 @@ export const updateProject = createTool({
   }),
   execute: async ({ name, description, imagePath }, execCtx) => {
     if (!name && !description && !imagePath) {
-      return { ok: false, message: "至少提供一个字段：name / description / imagePath" };
+      return { ok: false, message: "Provide at least one field: name / description / imagePath" };
     }
     const ctx = getContext(execCtx?.requestContext);
     const current = await javaRequest<Record<string, unknown>>(
@@ -49,15 +49,15 @@ export const updateProject = createTool({
       },
     });
     const parts: string[] = [];
-    if (name) parts.push(`名称改为「${name}」`);
-    if (description) parts.push("描述已更新");
-    if (imagePath) parts.push("封面已更新");
+    if (name) parts.push(`renamed to "${name}"`);
+    if (description) parts.push("description updated");
+    if (imagePath) parts.push("cover updated");
     await publishEntityEvent(ctx, {
       entity: "project",
       action: "updated",
       id: ctx.projectId,
       source: "update_project",
     });
-    return { ok: true, message: `项目${parts.join("、")}` };
+    return { ok: true, message: `Project ${parts.join(", ")}` };
   },
 });

@@ -223,7 +223,7 @@ const analyzeStep = createStep({
     const ctx = getContext(requestContext);
     if (runId) {
       await throwIfCancelled(runId);
-      const startLabel = "剧本统筹正在拆解素材…";
+      const startLabel = "Story editor is breaking down the source material…";
       await reportProgress(runId, {
         stepId: "analyze",
         current: 0,
@@ -300,7 +300,13 @@ const analyzeStep = createStep({
     }
 
     if (runId) {
-      const endLabel = `骨架就绪：${result.structure.length} 章 · ${result.cast.length} 角色 · ${result.settings?.length ?? 0} 场景`;
+      // Progress label stays a plain (English) string — only shown in the
+      // transient progress bar. User-visible completion summary goes
+      // through summaryKey below.
+      const chaptersCount = result.structure.length;
+      const rolesCount = result.cast.length;
+      const scenesCount = result.settings?.length ?? 0;
+      const endLabel = `Outline ready: ${chaptersCount} chapters · ${rolesCount} characters · ${scenesCount} scenes`;
       await reportProgress(runId, {
         stepId: "analyze",
         current: 1,
@@ -324,8 +330,13 @@ const analyzeStep = createStep({
       // User picks the next step explicitly (full flow starts with role
       // phase; "just outline" users stop here).
       await publishWorkflowCompleted(ctx.projectId, runId, "story_outline", {
-        committed: [{ serverId: ctx.projectId, title: "故事骨架" }],
-        summary: endLabel,
+        committed: [{ serverId: ctx.projectId, title: "Story skeleton" }],
+        summaryKey: "storyOutlineSummary",
+        summaryParams: {
+          chapters: chaptersCount,
+          roles: rolesCount,
+          scenes: scenesCount,
+        },
         // Attach the structured skeleton so the completed card can show
         // chapter titles / cast / settings inline — users were seeing
         // just "5 章 · 5 角色 · 5 场景" with no way to glimpse the actual

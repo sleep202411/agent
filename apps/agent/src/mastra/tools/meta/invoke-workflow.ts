@@ -99,7 +99,7 @@ export const invokeWorkflow = createTool({
       if (balance < estimated) {
         return {
           error: "INSUFFICIENT_CREDITS" as const,
-          message: `预计消耗 ${estimated} 积分，当前余额 ${balance}。请充值后重试。`,
+          message: `Estimated cost ${estimated} credits, current balance ${balance}. Please top up and retry.`,
           needed: estimated,
           current: balance,
         };
@@ -137,7 +137,7 @@ export const invokeWorkflow = createTool({
       runId,
       workflowName: workflowName as WorkflowName,
       estimatedCost: estimated,
-      message: `OK. runId=${runId}. 立即结束 turn——不要再调任何工具（list_active_workflows / explain_current_state / show_drafts 等一律不要），不要再写任何文字。`,
+      message: `OK. runId=${runId}. End the turn immediately — do NOT call any more tools (list_active_workflows / explain_current_state / show_drafts / anything), do NOT write any more text.`,
     };
   },
 });

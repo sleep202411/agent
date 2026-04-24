@@ -14,6 +14,6 @@ export const cancelWorkflowTool = createTool({
   }),
   execute: async ({ runId }) => {
     await cancelWorkflow(runId);
-    return { runId, message: `已请求取消 workflow ${runId}。` };
+    return { runId, message: `Requested cancellation of workflow ${runId}.` };
   },
 });

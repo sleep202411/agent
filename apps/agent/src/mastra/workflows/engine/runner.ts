@@ -107,7 +107,7 @@ export async function cancelWorkflow(runId: string): Promise<void> {
   try {
     await publishWorkflowFailed(meta.workspaceId, runId, meta.workflowName, {
       terminalStatus: "cancelled",
-      error: "用户已取消",
+      error: "User cancelled",
       retryable: true,
     });
   } catch (err) {

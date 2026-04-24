@@ -41,7 +41,15 @@ const SuggestedParamsShape = z.object({
 const BriefShape = z.object({
   projectMeta: ProjectMetaShape,
   suggestedParams: SuggestedParamsShape,
-  themeSummary: z.string().min(1).max(200),
+  /**
+   * Optional 3-段叙述 seed. Not wired into any downstream consumer today;
+   * leaving the field so future persona prompts can opt into filling it.
+   * Kept optional so briefAnalyzer (which never mentions this key in its
+   * prompt) doesn't break Zod parsing when it omits the field — a silent
+   * `response.object === undefined` here cascades into both robust-generate
+   * attempts falling back to hardcoded defaults.
+   */
+  themeSummary: z.string().max(200).optional(),
   /**
    * Body type — drives whether we route to main_flow (novel/synopsis)
    * or script_to_storyboard_flow / script_import_flow (script).

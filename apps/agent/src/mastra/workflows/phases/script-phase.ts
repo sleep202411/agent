@@ -191,7 +191,7 @@ const generateStep = createStep({
     let completed = 0;
     const castBlock = buildCastBlock(inputData.characters);
 
-    const startLabel = `编剧开始逐集写剧本（共 ${total} 集）`;
+    const startLabel = `Scriptwriter drafting scripts (${total} episodes)`;
     await reportProgress(runId, {
       stepId: "script_phase.generate",
       current: 0,
@@ -244,7 +244,7 @@ const generateStep = createStep({
       }
 
       completed += 1;
-      const label = `已生成 ${completed}/${total} 集（${totalChars} 字）`;
+      const label = `Generated ${completed}/${total} episodes (${totalChars} chars)`;
       await reportProgress(runId, {
         stepId: "script_phase.generate",
         current: completed,
@@ -369,7 +369,7 @@ const emitReviewStep = createStep({
       stepId: "script_phase.review",
       current: inputData.generatedCount,
       total: inputData.generatedCount,
-      label: `已生成 ${inputData.generatedCount} 集剧本（${inputData.totalChars} 字），等待确认`,
+      label: `Scripts ready for review: ${inputData.generatedCount} episodes (${inputData.totalChars} chars)`,
     });
 
     const drafts = await listDrafts<ScriptDraftData>(runId, {
@@ -394,7 +394,7 @@ const emitReviewStep = createStep({
     return {
       runId,
       draftCount: inputData.generatedCount,
-      message: `已生成 ${inputData.generatedCount} 集剧本草稿，等待确认。`,
+      message: `Generated ${inputData.generatedCount} script drafts — awaiting review.`,
     };
   },
 });
@@ -404,7 +404,7 @@ const emitReviewStep = createStep({
 export const scriptPhaseWorkflow = createWorkflow({
   id: "script_phase",
   description:
-    "剧本阶段：按集调用编剧生成剧本 → 草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 批量保存。",
+    "Script phase: call scriptwriter per episode → stash drafts in Redis → await user confirmation. On accept, apply_phase_drafts batch-saves to Java.",
   inputSchema: ScriptPhaseInputSchema,
   outputSchema: ScriptPhaseOutputSchema,
 })
@@ -462,7 +462,7 @@ export async function applyScriptDrafts(
       runId,
       workflowName: "script_phase",
       terminalStatus: "cancelled",
-      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      error: feedback ? `User requested changes: ${feedback}` : "User rejected.",
       retryable: false,
     };
     if (emitLifecycleMessage) {
@@ -476,7 +476,7 @@ export async function applyScriptDrafts(
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
-      message: feedback ? `剧本阶段未通过。反馈：${feedback}` : "剧本阶段未通过。",
+      message: feedback ? `Script phase rejected. Feedback: ${feedback}` : "Script phase rejected.",
       completion: null,
       failure: failurePayload,
     };
@@ -487,7 +487,7 @@ export async function applyScriptDrafts(
 
   for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
 
-  const startLabel = `批量保存 ${accepts.length} 集剧本…`;
+  const startLabel = `Saving ${accepts.length} episode scripts…`;
   await reportProgress(runId, {
     stepId: "script_phase.commit",
     current: 0,
@@ -542,7 +542,7 @@ export async function applyScriptDrafts(
     });
   }
 
-  const endLabel = `剧本保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  const endLabel = `Scripts saved: ${committed.length} succeeded / ${failed.length} failed`;
   await reportProgress(runId, {
     stepId: "script_phase.commit",
     current: committed.length,

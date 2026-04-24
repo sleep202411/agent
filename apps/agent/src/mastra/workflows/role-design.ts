@@ -102,12 +102,12 @@ const planRolesStep = createStep({
         stepId: "plan_roles",
         current: 0,
         total: inputData.roleCount,
-        label: "设计师正在构思角色…",
+        label: "Character designer is drafting roles…",
       });
       await publishWorkflowProgress(ctx.projectId, runId, "role_design", "planning", {
         current: 0,
         total: inputData.roleCount,
-        label: "设计师正在构思角色…",
+        label: "Character designer is drafting roles…",
       });
     }
 
@@ -135,7 +135,7 @@ const planRolesStep = createStep({
       draftClientRefIds: state.draftClientRefIds ?? [],
     });
     if (runId) {
-      const doneLabel = `已设计 ${plannedRoles.length} 个角色`;
+      const doneLabel = `Designed ${plannedRoles.length} characters`;
       await reportProgress(runId, {
         stepId: "plan_roles",
         current: plannedRoles.length,
@@ -221,7 +221,7 @@ const collectDraftsStep = createStep({
         stepId: "collect_drafts",
         current: i,
         total: plannedRoles.length,
-        label: `已收集 ${i}/${plannedRoles.length} 个角色草稿`,
+        label: `Collected ${i}/${plannedRoles.length} character drafts`,
       });
     }
 
@@ -253,7 +253,7 @@ const waitConfirmationStep = createStep({
         stepId: "wait_confirmation",
         current: inputData.draftCount,
         total: inputData.draftCount,
-        label: `${inputData.draftCount} 个角色草稿已生成，等待确认`,
+        label: `${inputData.draftCount} character drafts generated — awaiting confirmation`,
       });
       const drafts = await listDrafts<RoleCreateData>(runId, {
         entityType: "role",
@@ -315,18 +315,22 @@ const applyDecisionStep = createStep({
         stepId: "apply_decision",
         current: 0,
         total: draftClientRefIds.length,
-        label: "用户选择重做 — 任务结束，可发起新的 role_design 并带上反馈",
+        label: "User chose to rework — task ended; invoke role_design again with feedback",
       });
       await publishWorkflowFailed(ctx.projectId, runId, "role_design", {
         terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        error: inputData.feedback
+          ? `User requested changes: ${inputData.feedback}`
+          : "User rejected.",
         retryable: false,
       });
       return {
         outcome: "rejected" as const,
         committed: [],
         failed: [],
-        message: inputData.feedback ? `用户未通过。反馈：${inputData.feedback}` : "用户未通过。",
+        message: inputData.feedback
+          ? `User rejected. Feedback: ${inputData.feedback}`
+          : "User rejected.",
       };
     }
 
@@ -345,7 +349,7 @@ const applyDecisionStep = createStep({
       await markDraftCommitting(runId, item.clientRefId);
     }
 
-    const commitStartLabel = `入库 ${items.length} 个角色到项目…`;
+    const commitStartLabel = `Saving ${items.length} characters to project…`;
     await reportProgress(runId, {
       stepId: "apply_decision",
       current: 0,
@@ -381,7 +385,7 @@ const applyDecisionStep = createStep({
       await deleteAllDrafts(runId);
     }
 
-    const endLabel = `入库完成 — 成功 ${committed.length}，失败 ${failed.length}`;
+    const endLabel = `Commit done — ${committed.length} ok, ${failed.length} failed`;
     await reportProgress(runId, {
       stepId: "apply_decision",
       current: committed.length,

@@ -77,7 +77,7 @@ export const updateStoryboardRow = createTool({
             ([, v]) => v !== undefined && v !== "" && (Array.isArray(v) ? v.length >= 0 : true)
           ),
         {
-          message: "patch 至少要提供一个字段",
+          message: "patch must include at least one field",
         }
       ),
   }),

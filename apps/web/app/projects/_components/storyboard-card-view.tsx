@@ -143,7 +143,7 @@ function StoryboardCard({
   mentionItems: ReturnType<typeof buildMentionItems>;
 }) {
   const shotId = String(row.shotId ?? "");
-  const title = `分镜脚本${String(index + 1).padStart(2, "0")}`;
+  const title = `Storyboard ${String(index + 1).padStart(2, "0")}`;
 
   // Which 其他信息 field is open in the edit dialog. Null = no dialog.
   // Only one field edits at a time — dialog closes on outside click /
@@ -169,7 +169,7 @@ function StoryboardCard({
           natural height, so the row height = max(media-col, 0) = media-col.
           Change slot / button sizes and the card re-flows automatically. */}
       <div className="grid gap-4 md:grid-cols-[220px_220px_1fr]">
-        <CardSlot label="分镜图">
+        <CardSlot label="Image">
           {imageColumn ? (
             <>
               <CardImageSlot cell={findCell(row, imageColumn)} />
@@ -183,7 +183,7 @@ function StoryboardCard({
           )}
         </CardSlot>
 
-        <CardSlot label="分镜视频">
+        <CardSlot label="Video">
           {videoColumn ? (
             <>
               <CardVideoSlot cell={findCell(row, videoColumn)} />
@@ -197,7 +197,7 @@ function StoryboardCard({
           )}
         </CardSlot>
 
-        <CardSlot label="其他信息">
+        <CardSlot label="Other">
           {otherColumns.length > 0 ? (
             <div className="relative flex-1">
               <div className="absolute inset-0 space-y-1 overflow-y-auto pr-1">
@@ -292,7 +292,7 @@ function CardSlot({ label, children }: { label: string; children: ReactNode }) {
 function EmptySlot() {
   return (
     <div className="flex h-[140px] items-center justify-center rounded-md border border-dashed border-border/40 text-xs text-muted-foreground">
-      暂无
+      None
     </div>
   );
 }
@@ -346,7 +346,7 @@ function SceneInlineField({
       <WorldAssetSelectDialog
         open={open}
         onOpenChange={setOpen}
-        title="选择场景"
+        title="Select Scene"
         kind="scene"
         items={scenes}
         selectedId={selectedId}
@@ -387,7 +387,7 @@ function InlineField({
         <span
           className={hasValue ? "flex-1 text-foreground/90" : "flex-1 text-muted-foreground/60"}
         >
-          {hasValue ? value : "暂无"}
+          {hasValue ? value : "None"}
         </span>
       )}
       <IconPencil className="mt-0.5 size-3 shrink-0 text-muted-foreground/40 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -456,7 +456,7 @@ function getCellDisplayText(
     case "sound_path":
     case "music": {
       const files = cell.files;
-      return Array.isArray(files) && files.length > 0 ? "已上传" : "";
+      return Array.isArray(files) && files.length > 0 ? "Uploaded" : "";
     }
     default:
       return cell.richText?.content

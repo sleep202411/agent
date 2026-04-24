@@ -116,7 +116,7 @@ const splitStep = createStep({
     const rawLines = inputData.text.replace(/\r\n/g, "\n").split("\n");
     const totalLines = rawLines.length;
 
-    const startLabel = `剧本切分师开始切分（共 ${totalLines} 行 → 目标 ${inputData.targetEpisodeCount} 集）`;
+    const startLabel = `Script splitter starting (${totalLines} lines → target ${inputData.targetEpisodeCount} episodes)`;
     await reportProgress(runId, {
       stepId: "parse_script.split",
       current: 0,
@@ -229,7 +229,7 @@ const splitStep = createStep({
 
     setState({ draftClientRefIds });
 
-    const doneLabel = `已切分为 ${stitched.length} 集草稿，等待确认`;
+    const doneLabel = `Split into ${stitched.length} episode drafts — awaiting confirmation`;
     await reportProgress(runId, {
       stepId: "parse_script.split",
       current: stitched.length,
@@ -269,7 +269,7 @@ const waitConfirmationStep = createStep({
         stepId: "parse_script.confirm",
         current: inputData.draftCount,
         total: inputData.draftCount,
-        label: `${inputData.draftCount} 集已切分，等待确认`,
+        label: `${inputData.draftCount} episodes split — awaiting confirmation`,
       });
       const drafts = await listDrafts<z.infer<typeof DraftShape>>(runId, {
         entityType: "episode",
@@ -352,14 +352,18 @@ const applyDecisionStep = createStep({
       for (const id of draftClientRefIds) await markDraftDiscarded(runId, id);
       await publishWorkflowFailed(ctx.projectId, runId, "parse_script", {
         terminalStatus: "cancelled",
-        error: inputData.feedback ? `用户要求修改：${inputData.feedback}` : "用户未通过。",
+        error: inputData.feedback
+          ? `User requested changes: ${inputData.feedback}`
+          : "User rejected.",
         retryable: false,
       });
       return {
         outcome: "rejected" as const,
         committed: [],
         failed: [],
-        message: inputData.feedback ? `切分未通过。反馈：${inputData.feedback}` : "切分未通过。",
+        message: inputData.feedback
+          ? `Parse rejected. Feedback: ${inputData.feedback}`
+          : "Parse rejected.",
       };
     }
 
@@ -375,7 +379,7 @@ const applyDecisionStep = createStep({
     for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
 
     // ── Phase A: batch upsert episode metadata ──
-    const episodeStartLabel = `入库 ${accepts.length} 集元信息…`;
+    const episodeStartLabel = `Saving metadata for ${accepts.length} episodes…`;
     await reportProgress(runId, {
       stepId: "parse_script.commit.episodes",
       current: 0,
@@ -449,7 +453,7 @@ const applyDecisionStep = createStep({
     // a serverId in Phase A) ──
     const toScript = accepts.filter((d) => serverIdByDraftRef.has(d.clientRefId));
     if (toScript.length > 0) {
-      const scriptStartLabel = `入库 ${toScript.length} 集剧本正文…`;
+      const scriptStartLabel = `Saving script body for ${toScript.length} episodes…`;
       await reportProgress(runId, {
         stepId: "parse_script.commit.scripts",
         current: 0,
@@ -501,7 +505,7 @@ const applyDecisionStep = createStep({
 
     if (failed.length === 0) await deleteAllDrafts(runId);
 
-    const endLabel = `切分入库：成功 ${committed.length} / 失败 ${failed.length}`;
+    const endLabel = `Split committed: ${committed.length} ok / ${failed.length} failed`;
     await reportProgress(runId, {
       stepId: "parse_script.commit",
       current: committed.length,

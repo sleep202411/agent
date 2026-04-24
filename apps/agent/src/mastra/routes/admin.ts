@@ -124,7 +124,7 @@ export const adminRoutes = [
           await clearCancel(meta.runId);
           await publishWorkflowFailed(meta.workspaceId, meta.runId, workflowName, {
             terminalStatus: "cancelled",
-            error: "清理过期挂起的 workflow（Stage C 迁移前遗留）",
+            error: "Cleanup: stale suspended workflow (pre Stage-C migration leftover)",
             retryable: false,
           });
           cancelled.push(meta.runId);

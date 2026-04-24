@@ -111,7 +111,7 @@ const collectDraftsStep = createStep({
         stepId: "collect_drafts",
         current: i,
         total: inputData.items.length,
-        label: `已收集 ${i}/${inputData.items.length} 个 ${inputData.assetType} 草稿`,
+        label: `Collected ${i}/${inputData.items.length} ${inputData.assetType} drafts`,
       });
     }
 
@@ -143,7 +143,7 @@ const waitConfirmationStep = createStep({
         stepId: "wait_confirmation",
         current: inputData.draftCount,
         total: inputData.draftCount,
-        label: `${inputData.draftCount} 个 ${inputData.assetType} 草稿已生成，等待确认`,
+        label: `${inputData.draftCount} ${inputData.assetType} drafts generated — awaiting confirmation`,
       });
       return await suspend({
         runId,
@@ -190,14 +190,16 @@ const applyDecisionStep = createStep({
         stepId: "apply_decision",
         current: 0,
         total: draftClientRefIds.length,
-        label: "用户取消入库",
+        label: "User cancelled commit",
       });
       return {
         outcome: "rejected" as const,
         assetType: inputData.assetType,
         committed: [],
         failed: [],
-        message: inputData.feedback ? `用户未通过。反馈：${inputData.feedback}` : "用户未通过。",
+        message: inputData.feedback
+          ? `User rejected. Feedback: ${inputData.feedback}`
+          : "User rejected.",
       };
     }
 
@@ -218,7 +220,7 @@ const applyDecisionStep = createStep({
       stepId: "apply_decision",
       current: 0,
       total: items.length,
-      label: `入库 ${items.length} 个 ${inputData.assetType}…`,
+      label: `Saving ${items.length} ${inputData.assetType}…`,
     });
 
     const results =
@@ -252,7 +254,7 @@ const applyDecisionStep = createStep({
       stepId: "apply_decision",
       current: committed.length,
       total: items.length,
-      label: `入库完成 — 成功 ${committed.length}，失败 ${failed.length}`,
+      label: `Commit done — ${committed.length} ok, ${failed.length} failed`,
     });
 
     return {

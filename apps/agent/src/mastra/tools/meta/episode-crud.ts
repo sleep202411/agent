@@ -37,7 +37,7 @@ export const updateEpisode = createTool({
     if (!title && !introduction && !frontPrompt && !behindPrompt) {
       return {
         ok: false,
-        message: "至少提供一个字段：title / introduction / frontPrompt / behindPrompt",
+        message: "Provide at least one field: title / introduction / frontPrompt / behindPrompt",
       };
     }
     const ctx = getContext(execCtx?.requestContext);
@@ -47,7 +47,7 @@ export const updateEpisode = createTool({
       data: { productId: ctx.projectId, page: 1, pageSize: 999 },
     });
     const current = (listed.list ?? []).find((ep) => String(ep.id) === episodeId);
-    if (!current) return { ok: false, message: `未找到 episode ${episodeId}` };
+    if (!current) return { ok: false, message: `Episode ${episodeId} not found` };
     await javaRequest(ctx, "/api/user/world/update/episode", {
       data: {
         ...current,
@@ -68,7 +68,7 @@ export const updateEpisode = createTool({
     });
     return {
       ok: true,
-      message: `已更新集「${String(current.title ?? episodeId)}」`,
+      message: `Updated episode "${String(current.title ?? episodeId)}"`,
     };
   },
 });
@@ -96,6 +96,6 @@ export const deleteEpisode = createTool({
       episodeId,
       source: "delete_episode",
     });
-    return { ok: true, message: `已删除集 ${episodeId}` };
+    return { ok: true, message: `Deleted episode ${episodeId}` };
   },
 });

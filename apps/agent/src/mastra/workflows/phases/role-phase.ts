@@ -134,7 +134,7 @@ const resolveInputStep = createStep({
     for (let i = 0; i < cast.length; i++) {
       const entry = cast[i];
       await throwIfCancelled(runId);
-      const label = `角色设计师正在扩展「${entry.name}」…`;
+      const label = `Character Designer is elaborating "${entry.name}"…`;
       await reportProgress(runId, {
         stepId: "role_phase.elaborate",
         current: i,
@@ -170,7 +170,7 @@ const resolveInputStep = createStep({
         prompt: designed.prompt,
       });
     }
-    const doneLabel = `角色设计完成：${cast.length} 位`;
+    const doneLabel = `Character design done: ${cast.length}`;
     await reportProgress(runId, {
       stepId: "role_phase.elaborate",
       current: cast.length,
@@ -219,7 +219,7 @@ const collectDraftsStep = createStep({
         stepId: "role_phase.collect",
         current: i,
         total: inputData.characters.length,
-        label: `已收集 ${i}/${inputData.characters.length} 个角色草稿`,
+        label: `Collected ${i}/${inputData.characters.length} character drafts`,
       });
     }
     return { draftCount: i };
@@ -241,7 +241,7 @@ const emitReviewStep = createStep({
       stepId: "role_phase.review",
       current: inputData.draftCount,
       total: inputData.draftCount,
-      label: `已生成 ${inputData.draftCount} 个角色，等待确认后进入下一阶段`,
+      label: `Generated ${inputData.draftCount} characters — awaiting confirmation before next phase`,
     });
 
     const drafts = await listDrafts<RoleCreateData>(runId, {
@@ -266,7 +266,7 @@ const emitReviewStep = createStep({
     return {
       runId,
       draftCount: inputData.draftCount,
-      message: `已生成 ${inputData.draftCount} 个角色草稿，等待确认。`,
+      message: `Generated ${inputData.draftCount} role drafts — awaiting review.`,
     };
   },
 });
@@ -342,7 +342,7 @@ export async function applyRoleDrafts(
       runId,
       workflowName: "role_phase",
       terminalStatus: "cancelled",
-      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      error: feedback ? `User requested changes: ${feedback}` : "User rejected.",
       retryable: false,
     };
     if (emitLifecycleMessage) {
@@ -356,7 +356,7 @@ export async function applyRoleDrafts(
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
-      message: feedback ? `角色阶段未通过。反馈：${feedback}` : "角色阶段未通过。",
+      message: feedback ? `Role phase rejected. Feedback: ${feedback}` : "Role phase rejected.",
       completion: null,
       failure: failurePayload,
     };
@@ -369,7 +369,7 @@ export async function applyRoleDrafts(
 
   for (const it of items) await markDraftCommitting(runId, it.clientRefId);
 
-  const startLabel = `入库 ${items.length} 个角色…`;
+  const startLabel = `Saving ${items.length} characters…`;
   await reportProgress(runId, {
     stepId: "role_phase.commit",
     current: 0,
@@ -409,7 +409,7 @@ export async function applyRoleDrafts(
     });
   }
 
-  const endLabel = `角色入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  const endLabel = `Characters committed: ${committed.length} ok / ${failed.length} failed`;
   await reportProgress(runId, {
     stepId: "role_phase.commit",
     current: committed.length,

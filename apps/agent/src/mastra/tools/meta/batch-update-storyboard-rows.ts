@@ -62,7 +62,7 @@ export const batchUpdateStoryboardRows = createTool({
         style_planting: z.string().optional(),
       })
       .refine((p) => Object.values(p).some((v) => v !== undefined && v !== ""), {
-        message: "patch 至少要提供一个字段",
+        message: "patch must include at least one field",
       }),
   }),
   outputSchema: z.object({

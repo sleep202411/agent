@@ -95,7 +95,7 @@ const fetchCurrentStep = createStep({
       stepId: "fetch_current",
       current: 0,
       total: 3,
-      label: "正在读取当前剧本…",
+      label: "Loading current script…",
     });
 
     const original = await fetchEpisodeScript(ctx, inputData.episodeId);
@@ -105,7 +105,7 @@ const fetchCurrentStep = createStep({
       stepId: "fetch_current",
       current: 1,
       total: 3,
-      label: `已读取剧本（${original.length} 字）`,
+      label: `Script loaded (${original.length} chars)`,
     });
     return { originalLength: original.length };
   },
@@ -132,7 +132,7 @@ const generateEditStep = createStep({
       stepId: "generate_edit",
       current: 1,
       total: 3,
-      label: "编剧正在改写剧本…",
+      label: "Scriptwriter is revising the script…",
     });
 
     const original = state.original ?? "";
@@ -157,7 +157,7 @@ const generateEditStep = createStep({
       stepId: "generate_edit",
       current: 2,
       total: 3,
-      label: `已生成修改版（${revised.length} 字）`,
+      label: `Revised version generated (${revised.length} chars)`,
     });
     return { revisedLength: revised.length };
   },
@@ -230,7 +230,7 @@ const waitConfirmationStep = createStep({
         stepId: "wait_confirmation",
         current: 2,
         total: 3,
-        label: "剧本修改草稿已生成，等待确认",
+        label: "Script revision draft ready for review",
       });
       return await suspend({
         runId,
@@ -274,14 +274,14 @@ const applyDecisionStep = createStep({
         stepId: "apply_decision",
         current: 0,
         total: 1,
-        label: "用户未通过，修改已丢弃",
+        label: "User rejected — revisions discarded",
       });
       return {
         outcome: "rejected" as const,
         episodeId: input.episodeId,
         message: inputData.feedback
-          ? `用户未通过。反馈：${inputData.feedback}`
-          : "用户未通过修改。",
+          ? `User rejected. Feedback: ${inputData.feedback}`
+          : "User rejected the revision.",
       };
     }
 
@@ -298,7 +298,7 @@ const applyDecisionStep = createStep({
       stepId: "apply_decision",
       current: 0,
       total: 1,
-      label: "正在保存到剧集…",
+      label: "Saving to episode…",
     });
 
     try {
@@ -310,7 +310,7 @@ const applyDecisionStep = createStep({
         outcome: "failed" as const,
         episodeId: input.episodeId,
         clientRefId: inputData.clientRefId,
-        message: `保存失败：${message}`,
+        message: `Save failed: ${message}`,
       };
     }
 
@@ -320,14 +320,14 @@ const applyDecisionStep = createStep({
       stepId: "apply_decision",
       current: 1,
       total: 1,
-      label: "已保存",
+      label: "Saved",
     });
 
     return {
       outcome: "committed" as const,
       episodeId: input.episodeId,
       clientRefId: inputData.clientRefId,
-      message: `已保存修改后的剧本到剧集 ${input.episodeId}。`,
+      message: `Saved revised script to episode ${input.episodeId}.`,
     };
   },
 });

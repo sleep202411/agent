@@ -1598,6 +1598,8 @@
     "parseScriptSummaryPartial": "Commit had failures: {failed} / {total}.",
     "storyboardPhaseSummaryCommitted": "Saved storyboards for {count} episodes. Main flow done.",
     "storyboardPhaseSummaryPartial": "Storyboard save had failures: {failed} / {total}.",
+    "storyOutlineSummary": "Outline ready: {chapters} chapters · {roles} characters · {scenes} scenes",
+    "storyOutlineCommittedTitle": "Story skeleton",
     "scenePhaseSummaryCommitted": "Saved {count} scenes. Moving to the next phase.",
     "scenePhaseSummaryPartial": "Save had failures: {count} succeeded, {failed} failed.",
     "propPhaseSummaryCommitted": "Saved {count} props. Moving to the next phase.",

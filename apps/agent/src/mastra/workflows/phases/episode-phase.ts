@@ -142,7 +142,7 @@ const planStep = createStep({
     await throwIfCancelled(runId);
     const ctx = getContext(requestContext);
 
-    const startLabel = "分集策划师正在规划分集…";
+    const startLabel = "Episode planner is drafting episodes…";
     await reportProgress(runId, {
       stepId: "episode_phase.plan",
       current: 0,
@@ -172,7 +172,7 @@ const planStep = createStep({
     });
     const episodes = plannerOutput.episodes.slice(0, inputData.targetEpisodeCount);
 
-    const doneLabel = `规划 ${episodes.length} 集大纲完成`;
+    const doneLabel = `${episodes.length} episode outlines planned`;
     await reportProgress(runId, {
       stepId: "episode_phase.plan",
       current: episodes.length,
@@ -255,7 +255,7 @@ const collectDraftsStep = createStep({
         stepId: "episode_phase.collect",
         current: i,
         total: inputData.episodes.length,
-        label: `已收集 ${i}/${inputData.episodes.length} 集草稿`,
+        label: `Collected ${i}/${inputData.episodes.length} episode drafts`,
       });
     }
     return { draftCount: i };
@@ -277,7 +277,7 @@ const emitReviewStep = createStep({
       stepId: "episode_phase.review",
       current: inputData.draftCount,
       total: inputData.draftCount,
-      label: `${inputData.draftCount} 集大纲已生成，等待确认`,
+      label: `${inputData.draftCount} episode outlines generated — awaiting confirmation`,
     });
 
     const drafts = await listDrafts<EpisodeDraftData>(runId, {
@@ -302,7 +302,7 @@ const emitReviewStep = createStep({
     return {
       runId,
       draftCount: inputData.draftCount,
-      message: `已生成 ${inputData.draftCount} 集大纲草稿，等待确认。`,
+      message: `Generated ${inputData.draftCount} episode outline drafts — awaiting review.`,
     };
   },
 });
@@ -376,7 +376,7 @@ export async function applyEpisodeDrafts(
       runId,
       workflowName: "episode_phase",
       terminalStatus: "cancelled",
-      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      error: feedback ? `User requested changes: ${feedback}` : "User rejected.",
       retryable: false,
     };
     if (emitLifecycleMessage) {
@@ -390,7 +390,9 @@ export async function applyEpisodeDrafts(
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
-      message: feedback ? `分集阶段未通过。反馈：${feedback}` : "分集阶段未通过。",
+      message: feedback
+        ? `Episode phase rejected. Feedback: ${feedback}`
+        : "Episode phase rejected.",
       completion: null,
       failure: failurePayload,
     };
@@ -403,7 +405,7 @@ export async function applyEpisodeDrafts(
 
   for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
 
-  const startLabel = `入库 ${accepts.length} 集…`;
+  const startLabel = `Saving ${accepts.length} episodes…`;
   await reportProgress(runId, {
     stepId: "episode_phase.commit",
     current: 0,
@@ -479,7 +481,7 @@ export async function applyEpisodeDrafts(
     });
   }
 
-  const endLabel = `分集入库：成功 ${committed.length} / 失败 ${failed.length}`;
+  const endLabel = `Episodes committed: ${committed.length} ok / ${failed.length} failed`;
   await reportProgress(runId, {
     stepId: "episode_phase.commit",
     current: committed.length,

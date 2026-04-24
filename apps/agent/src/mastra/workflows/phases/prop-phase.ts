@@ -139,7 +139,7 @@ const resolveInputStep = createStep({
     for (let i = 0; i < propsRoster.length; i++) {
       const entry = propsRoster[i];
       await throwIfCancelled(runId);
-      const label = `道具设计师正在扩展「${entry.name}」…`;
+      const label = `Prop Designer is elaborating "${entry.name}"…`;
       await reportProgress(runId, {
         stepId: "prop_phase.elaborate",
         current: i,
@@ -166,7 +166,7 @@ const resolveInputStep = createStep({
       }
       props.push({ ...designed, name: entry.name });
     }
-    const doneLabel = `道具设计完成：${props.length} 个`;
+    const doneLabel = `Prop design done: ${props.length}`;
     await reportProgress(runId, {
       stepId: "prop_phase.elaborate",
       current: props.length,
@@ -218,7 +218,7 @@ const collectDraftsStep = createStep({
         stepId: "prop_phase.collect",
         current: i,
         total: inputData.props.length,
-        label: `已收集 ${i}/${inputData.props.length} 个道具草稿`,
+        label: `Collected ${i}/${inputData.props.length} prop drafts`,
       });
     }
     return { draftCount: i };
@@ -256,7 +256,7 @@ const emitReviewStep = createStep({
       return {
         runId,
         draftCount: 0,
-        message: "本故事骨架里没有需要单独设计的道具，已跳过。",
+        message: "No props require dedicated design in this story outline — skipped.",
       };
     }
 
@@ -264,7 +264,7 @@ const emitReviewStep = createStep({
       stepId: "prop_phase.review",
       current: inputData.draftCount,
       total: inputData.draftCount,
-      label: `已生成 ${inputData.draftCount} 个道具，等待确认后进入下一阶段`,
+      label: `Generated ${inputData.draftCount} props — awaiting confirmation before next phase`,
     });
 
     const drafts = await listDrafts<PropCreateData>(runId, {
@@ -289,7 +289,7 @@ const emitReviewStep = createStep({
     return {
       runId,
       draftCount: inputData.draftCount,
-      message: `已生成 ${inputData.draftCount} 个道具草稿，等待确认。`,
+      message: `Generated ${inputData.draftCount} prop drafts — awaiting review.`,
     };
   },
 });
@@ -358,7 +358,7 @@ export async function applyPropDrafts(
       runId,
       workflowName: "prop_phase",
       terminalStatus: "cancelled",
-      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      error: feedback ? `User requested changes: ${feedback}` : "User rejected.",
       retryable: false,
     };
     if (emitLifecycleMessage) {
@@ -372,7 +372,7 @@ export async function applyPropDrafts(
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
-      message: feedback ? `道具阶段未通过。反馈：${feedback}` : "道具阶段未通过。",
+      message: feedback ? `Prop phase rejected. Feedback: ${feedback}` : "Prop phase rejected.",
       completion: null,
       failure: failurePayload,
     };
@@ -385,7 +385,7 @@ export async function applyPropDrafts(
 
   for (const it of items) await markDraftCommitting(runId, it.clientRefId);
 
-  const startLabel = `入库 ${items.length} 个道具…`;
+  const startLabel = `Saving ${items.length} props…`;
   await reportProgress(runId, {
     stepId: "prop_phase.commit",
     current: 0,
@@ -443,7 +443,7 @@ export async function applyPropDrafts(
   const summaryParams = {
     count: committed.length,
     failed: failed.length,
-    total: accepts.length,
+    total: items.length,
   };
   const logMessage =
     outcome === "committed"

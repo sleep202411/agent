@@ -141,7 +141,7 @@ const resolveInputStep = createStep({
     for (let i = 0; i < settings.length; i++) {
       const entry = settings[i];
       await throwIfCancelled(runId);
-      const label = `场景设计师正在扩展「${entry.name}」…`;
+      const label = `Scene Designer is elaborating "${entry.name}"…`;
       await reportProgress(runId, {
         stepId: "scene_phase.elaborate",
         current: i,
@@ -171,7 +171,7 @@ const resolveInputStep = createStep({
     if (scenes.length === 0) {
       throw new Error("scene_phase: sceneDesigner returned no designs for any setting");
     }
-    const doneLabel = `场景设计完成：${scenes.length} 个`;
+    const doneLabel = `Scene design done: ${scenes.length}`;
     await reportProgress(runId, {
       stepId: "scene_phase.elaborate",
       current: scenes.length,
@@ -232,7 +232,7 @@ const collectDraftsStep = createStep({
         stepId: "scene_phase.collect",
         current: i,
         total: inputData.scenes.length,
-        label: `已收集 ${i}/${inputData.scenes.length} 个场景草稿`,
+        label: `Collected ${i}/${inputData.scenes.length} scene drafts`,
       });
     }
     return { draftCount: i };
@@ -254,7 +254,7 @@ const emitReviewStep = createStep({
       stepId: "scene_phase.review",
       current: inputData.draftCount,
       total: inputData.draftCount,
-      label: `已生成 ${inputData.draftCount} 个场景，等待确认后进入下一阶段`,
+      label: `Generated ${inputData.draftCount} scenes — awaiting confirmation before next phase`,
     });
 
     const drafts = await listDrafts<SceneCreateData>(runId, {
@@ -282,7 +282,7 @@ const emitReviewStep = createStep({
     return {
       runId,
       draftCount: inputData.draftCount,
-      message: `已生成 ${inputData.draftCount} 个场景草稿，等待确认。`,
+      message: `Generated ${inputData.draftCount} scene drafts — awaiting review.`,
     };
   },
 });
@@ -359,7 +359,7 @@ export async function applySceneDrafts(
       runId,
       workflowName: "scene_phase",
       terminalStatus: "cancelled",
-      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      error: feedback ? `User requested changes: ${feedback}` : "User rejected.",
       retryable: false,
     };
     if (emitLifecycleMessage) {
@@ -373,7 +373,7 @@ export async function applySceneDrafts(
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
-      message: feedback ? `场景阶段未通过。反馈：${feedback}` : "场景阶段未通过。",
+      message: feedback ? `Scene phase rejected. Feedback: ${feedback}` : "Scene phase rejected.",
       completion: null,
       failure: failurePayload,
     };
@@ -386,7 +386,7 @@ export async function applySceneDrafts(
 
   for (const it of items) await markDraftCommitting(runId, it.clientRefId);
 
-  const startLabel = `入库 ${items.length} 个场景…`;
+  const startLabel = `Saving ${items.length} scenes…`;
   await reportProgress(runId, {
     stepId: "scene_phase.commit",
     current: 0,
@@ -426,7 +426,7 @@ export async function applySceneDrafts(
     });
   }
 
-  const endLabel = `场景入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  const endLabel = `Scenes committed: ${committed.length} ok / ${failed.length} failed`;
   await reportProgress(runId, {
     stepId: "scene_phase.commit",
     current: committed.length,
@@ -444,7 +444,7 @@ export async function applySceneDrafts(
   const summaryParams = {
     count: committed.length,
     failed: failed.length,
-    total: accepts.length,
+    total: items.length,
   };
   const logMessage =
     outcome === "committed"

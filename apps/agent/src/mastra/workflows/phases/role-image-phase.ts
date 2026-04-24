@@ -136,12 +136,12 @@ const dispatchStep = createStep({
       stepId: "dispatch",
       current: 0,
       total: dispatched.length,
-      label: `派发 ${dispatched.length} 张图任务`,
+      label: `Dispatched ${dispatched.length} image jobs`,
     });
     await publishWorkflowProgress(ctx.projectId, runId, "role_image_phase", "committing", {
       current: 0,
       total: dispatched.length,
-      label: `派发 ${dispatched.length} 张图任务`,
+      label: `Dispatched ${dispatched.length} image jobs`,
     });
 
     return { assetIds: dispatched };
@@ -186,7 +186,7 @@ const waitAllStep = createStep({
         totalCount: 0,
         readyCount: 0,
         failedCount: 0,
-        message: "没有可生成主图的角色。",
+        message: "No roles eligible for main image generation.",
       };
     }
 

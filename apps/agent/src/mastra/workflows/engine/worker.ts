@@ -109,7 +109,7 @@ async function finalizeCancelled(
   try {
     await publishWorkflowFailed(projectId, runId, workflowName, {
       terminalStatus: "cancelled",
-      error: "用户已取消",
+      error: "User cancelled",
       retryable: true,
     });
   } catch (err) {

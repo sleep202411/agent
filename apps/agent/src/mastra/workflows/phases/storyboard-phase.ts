@@ -265,7 +265,7 @@ const generateStep = createStep({
     let completedCount = 0;
     let cursor = 0;
 
-    const startLabel = `分镜师开始并行出分镜（共 ${total} 集，并发 ${concurrency}）`;
+    const startLabel = `Storyboarder starting parallel batch (${total} episodes, concurrency ${concurrency})`;
     await reportProgress(runId, {
       stepId: "storyboard_phase.generate",
       current: 0,
@@ -497,7 +497,7 @@ const emitReviewStep = createStep({
       stepId: "storyboard_phase.review",
       current: inputData.episodeCount,
       total: inputData.episodeCount,
-      label: `${inputData.episodeCount} 集分镜（${inputData.totalShots} 个镜头）已就绪，等待确认`,
+      label: `Storyboards ready for review: ${inputData.episodeCount} episodes (${inputData.totalShots} shots)`,
     });
 
     const drafts = await listDrafts<StoryboardDraftData>(runId, {
@@ -523,7 +523,7 @@ const emitReviewStep = createStep({
     return {
       runId,
       draftCount: drafts.length,
-      message: `已生成 ${inputData.episodeCount} 集分镜草稿，等待确认。`,
+      message: `Generated ${inputData.episodeCount} storyboard drafts — awaiting review.`,
     };
   },
 });
@@ -853,7 +853,7 @@ export async function applyStoryboardDrafts(
       runId,
       workflowName: "storyboard_phase",
       terminalStatus: "cancelled",
-      error: feedback ? `用户要求修改：${feedback}` : "用户未通过。",
+      error: feedback ? `User requested changes: ${feedback}` : "User rejected.",
       retryable: false,
     };
     if (emitLifecycleMessage) {
@@ -867,7 +867,9 @@ export async function applyStoryboardDrafts(
       outcome: "rejected",
       committedCount: 0,
       failedCount: 0,
-      message: feedback ? `分镜阶段未通过。反馈：${feedback}` : "分镜阶段未通过。",
+      message: feedback
+        ? `Storyboard phase rejected. Feedback: ${feedback}`
+        : "Storyboard phase rejected.",
       completion: null,
       failure: failurePayload,
     };
@@ -891,7 +893,7 @@ export async function applyStoryboardDrafts(
   await publishWorkflowProgress(ctx.projectId, runId, "storyboard_phase", "committing", {
     current: 0,
     total: accepts.length,
-    label: `开始保存 ${accepts.length} 集分镜…`,
+    label: `Saving ${accepts.length} storyboard episodes…`,
   });
 
   const committed: Array<{ episodeId: string; title: string; shotCount: number }> = [];
@@ -900,7 +902,7 @@ export async function applyStoryboardDrafts(
   let i = 0;
   for (const d of accepts) {
     await throwIfCancelled(runId);
-    const label = `保存分镜：${i + 1}/${accepts.length} — ${d.data.title}`;
+    const label = `Saving storyboard: ${i + 1}/${accepts.length} — ${d.data.title}`;
     await reportProgress(runId, {
       stepId: "storyboard_phase.commit",
       current: i,

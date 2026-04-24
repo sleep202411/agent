@@ -107,7 +107,7 @@ async function runBatch(
       ok: false,
       created: [],
       failed: items.map((it) => ({ name: it.name, reason: "worldId missing from context" })),
-      message: "当前项目缺少 worldId，无法入库。",
+      message: "This project is missing worldId — cannot commit assets.",
     };
   }
 
