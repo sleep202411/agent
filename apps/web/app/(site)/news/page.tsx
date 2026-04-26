@@ -1,95 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-// ─── Types ────────────────────────────────────────────
-
-interface NewsItem {
-  id: number;
-  type: string;
-  title: string;
-  info: string;
-  url: string;
-  picLink: string;
-  createTime: string;
-}
-
-interface NewsData {
-  "banner-Big": NewsItem[];
-  "banner-Small": NewsItem[];
-  footer: NewsItem[];
-  [key: string]: NewsItem[] | undefined;
-}
-
-// ─── Constants ────────────────────────────────────────
-
-const IMG_BASE = "https://banner.fizzspace.cn";
-const API_URL = "/newsapi/project/list/newsad";
-
-function imgUrl(picLink: string) {
-  if (!picLink) return "";
-  return `${IMG_BASE}/${picLink}`;
-}
-
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const hours = Math.floor(diff / 3600000);
-  if (hours < 1) return "Just now";
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-// ─── Data fetching ────────────────────────────────────
-
-function useNewsData() {
-  const [data, setData] = useState<NewsData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(API_URL)
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.code === 200 && res.data) setData(res.data);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  return { data, loading };
-}
-
-// ─── Helpers ──────────────────────────────────────────
-
-function parseSections(data: NewsData) {
-  const sections: { name: string; title: string; items: NewsItem[] }[] = [];
-  const seen = new Set<string>();
-
-  for (const key of Object.keys(data)) {
-    if (!key.startsWith("s-") || !key.endsWith("-Title")) continue;
-    const name = key.replace("s-", "").replace("-Title", "");
-    if (seen.has(name)) continue;
-    seen.add(name);
-
-    const titleItems = data[`s-${name}-Title`] ?? [];
-    const smallItems = data[`s-${name}-Small`] ?? [];
-    if (smallItems.length === 0) continue;
-
-    sections.push({
-      name,
-      title: titleItems[0]?.title ?? name,
-      items: smallItems.slice(0, 2),
-    });
-  }
-  return sections;
-}
+import Link from "next/link";
+import { imgUrl, timeAgo, parseSections, useNewsData, type NewsItem } from "./_hooks/use-news";
 
 // ─── Component ────────────────────────────────────────
 
 export default function NewsPage() {
-  const { data, loading } = useNewsData();
+  const { data, isLoading } = useNewsData();
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
@@ -103,7 +22,9 @@ export default function NewsPage() {
   const bannerSmall = data["banner-Small"] ?? [];
   const featured = bannerBig[0];
   const latestNews = bannerSmall.slice(0, 4);
-  const mustRead = [bannerBig[1], bannerBig[2], bannerBig[3], bannerSmall[4]].filter(Boolean);
+  const mustRead = [bannerBig[1], bannerBig[2], bannerBig[3], bannerSmall[4]].filter(
+    Boolean
+  ) as NewsItem[];
   const dualSections = parseSections(data);
 
   return (
@@ -111,10 +32,8 @@ export default function NewsPage() {
       <div className="mx-auto max-w-[1200px] px-5 py-8 md:px-8 md:py-10">
         {/* Featured Article */}
         {featured && (
-          <a
-            href={featured.url || "#"}
-            target={featured.url ? "_blank" : undefined}
-            rel="noreferrer"
+          <Link
+            href={`/news/${featured.id}`}
             className="group mb-12 flex flex-col gap-6 md:mb-16 md:flex-row md:gap-8"
           >
             <img
@@ -137,7 +56,7 @@ export default function NewsPage() {
                 {featured.info}
               </p>
             </div>
-          </a>
+          </Link>
         )}
 
         {/* Latest News */}
@@ -149,11 +68,9 @@ export default function NewsPage() {
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {latestNews.map((item) => (
-                <a
+                <Link
                   key={item.id}
-                  href={item.url || "#"}
-                  target={item.url ? "_blank" : undefined}
-                  rel="noreferrer"
+                  href={`/news/${item.id}`}
                   className="group flex flex-col transition-transform hover:-translate-y-1"
                 >
                   <img
@@ -176,7 +93,7 @@ export default function NewsPage() {
                       {item.info}
                     </p>
                   </div>
-                </a>
+                </Link>
               ))}
             </div>
           </>
@@ -191,10 +108,8 @@ export default function NewsPage() {
 
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.5fr_minmax(0,300px)]">
               {/* Col 1 */}
-              <a
-                href={mustRead[0].url || "#"}
-                target={mustRead[0].url ? "_blank" : undefined}
-                rel="noreferrer"
+              <Link
+                href={`/news/${mustRead[0].id}`}
                 className="group flex flex-col transition-transform hover:-translate-y-1 lg:self-start"
               >
                 <div className="aspect-square w-full shrink-0 overflow-hidden rounded-xl">
@@ -218,13 +133,11 @@ export default function NewsPage() {
                     {mustRead[0].info}
                   </p>
                 </div>
-              </a>
+              </Link>
 
               {/* Col 2 — overlay */}
-              <a
-                href={mustRead[1].url || "#"}
-                target={mustRead[1].url ? "_blank" : undefined}
-                rel="noreferrer"
+              <Link
+                href={`/news/${mustRead[1].id}`}
                 className="group relative self-start overflow-hidden rounded-xl transition-transform hover:-translate-y-1"
               >
                 <div className="aspect-square w-full">
@@ -247,16 +160,14 @@ export default function NewsPage() {
                     {mustRead[1].info}
                   </p>
                 </div>
-              </a>
+              </Link>
 
               {/* Col 3 — two stacked */}
               <div className="flex flex-col gap-4 sm:flex-row sm:gap-5 lg:flex-col lg:self-stretch">
                 {mustRead.slice(2, 4).map((item) => (
-                  <a
+                  <Link
                     key={item.id}
-                    href={item.url || "#"}
-                    target={item.url ? "_blank" : undefined}
-                    rel="noreferrer"
+                    href={`/news/${item.id}`}
                     className="group flex flex-1 flex-col transition-transform hover:-translate-y-1"
                   >
                     <div className="aspect-[5/2] w-full shrink-0 overflow-hidden rounded-xl">
@@ -281,7 +192,7 @@ export default function NewsPage() {
                         </p>
                       )}
                     </div>
-                  </a>
+                  </Link>
                 ))}
               </div>
             </div>
@@ -298,11 +209,9 @@ export default function NewsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-5">
                   {section.items.map((item) => (
-                    <a
+                    <Link
                       key={item.id}
-                      href={item.url || "#"}
-                      target={item.url ? "_blank" : undefined}
-                      rel="noreferrer"
+                      href={`/news/${item.id}`}
                       className="group flex flex-col transition-transform hover:-translate-y-1"
                     >
                       <div className="aspect-[4/3] w-full overflow-hidden rounded-xl">
@@ -327,7 +236,7 @@ export default function NewsPage() {
                           {item.info}
                         </p>
                       </div>
-                    </a>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -343,7 +252,7 @@ export default function NewsPage() {
                 Get First Update
               </p>
               <h2 className="text-xl font-bold leading-snug text-foreground md:text-2xl">
-                Get the news in front line by <span className="text-primary">subscribe</span> ✍🏼 our
+                Get the news in front line by <span className="text-primary">subscribe</span> our
                 latest updates
               </h2>
             </div>
