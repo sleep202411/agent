@@ -388,6 +388,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
   const isImageColumn = column.presetColumnKey === "image_path";
   const isVideoColumn = column.presetColumnKey === "video_path";
   const isImagePromptColumn = column.presetColumnKey === "image_prompt";
+  const isVideoPromptColumn = column.presetColumnKey === "video_prompt";
   const isDescriptionColumn = column.presetColumnKey === "description";
   const isDialogueColumn = column.presetColumnKey === "dialogue";
 
@@ -748,7 +749,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
         ) : (
           <>
             {headerTitle}
-            {(isImagePromptColumn || isDescriptionColumn) && (
+            {(isImagePromptColumn || isVideoPromptColumn || isDescriptionColumn) && (
               <Button
                 size="xs"
                 onClick={(event) => {
