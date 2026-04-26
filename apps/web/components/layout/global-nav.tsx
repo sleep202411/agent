@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useSyncExternalStore, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AuthDialog } from "@/components/layout/auth-dialog";
 import { UserMenu } from "@/components/layout/user-menu";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { fetchUser } from "@/src/store/slices/authSlice";
@@ -48,7 +47,6 @@ export function GlobalNav() {
     () => false
   );
 
-  const [showAuth, setShowAuth] = useState(false);
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.auth.user);
 
@@ -179,7 +177,7 @@ export function GlobalNav() {
           ) : (
             <button
               type="button"
-              onClick={() => setShowAuth(true)}
+              onClick={() => router.push(localizePath("/login", locale as Locale))}
               className="ml-1 rounded-full bg-foreground px-4 py-1.5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
             >
               {t("getStarted")}
@@ -187,8 +185,6 @@ export function GlobalNav() {
           )}
         </div>
       </div>
-
-      <AuthDialog open={showAuth} onOpenChange={setShowAuth} />
     </header>
   );
 }

@@ -1,8 +1,14 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/toolkit";
-import type { User } from "@/src/lib/auth";
-import { emailLogin as authEmailLogin, getCurrentUser, logout as authLogout } from "@/src/lib/auth";
+import { backendApi } from "@/src/lib/api";
+import { logout as apiLogout } from "@/src/lib/auth/api";
 
-// ─── State ──────────────────────────────────────────────
+export interface User {
+  id: string;
+  email: string;
+  nickname: string;
+  avatar?: string;
+  userLevel?: string;
+}
 
 interface AuthState {
   user: User | null;
@@ -14,24 +20,30 @@ const initialState: AuthState = {
   isLoading: true,
 };
 
-// ─── Thunks ─────────────────────────────────────────────
-
 export const fetchUser = createAsyncThunk("auth/fetchUser", async () => {
-  return getCurrentUser();
-});
-
-export const login = createAsyncThunk(
-  "auth/login",
-  async ({ email, pwd }: { email: string; pwd: string }) => {
-    return authEmailLogin(email, pwd);
+  try {
+    const info = await backendApi.get<Record<string, unknown> | null>("/user/query/user/info");
+    if (!info || typeof info !== "object") return null;
+    const id = info.userId ?? info.id;
+    if (id === undefined || id === null) return null;
+    return {
+      id: String(id),
+      email: typeof info.email === "string" ? info.email : "",
+      nickname:
+        (typeof info.nickName === "string" && info.nickName) ||
+        (typeof info.userName === "string" && info.userName) ||
+        "",
+      avatar: typeof info.headImg === "string" ? info.headImg : undefined,
+      userLevel: typeof info.userLevel === "string" ? info.userLevel : undefined,
+    } satisfies User;
+  } catch {
+    return null;
   }
-);
+});
 
 export const logout = createAsyncThunk("auth/logout", async () => {
-  await authLogout();
+  await apiLogout();
 });
-
-// ─── Slice ──────────────────────────────────────────────
 
 export const authSlice = createSlice({
   name: "auth",
@@ -56,10 +68,6 @@ export const authSlice = createSlice({
       })
       .addCase(fetchUser.rejected, (state) => {
         state.user = null;
-        state.isLoading = false;
-      })
-      .addCase(login.fulfilled, (state, action) => {
-        state.user = action.payload;
         state.isLoading = false;
       })
       .addCase(logout.fulfilled, (state) => {
