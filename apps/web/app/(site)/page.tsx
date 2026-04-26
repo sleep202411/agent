@@ -90,146 +90,152 @@ export default function HomePage() {
 
   return (
     <SmoothScroll>
-      <Hero />
-      <MadeWithFizz />
+      {/* Cancel the (site) layout's pt-16 so the cinematic hero stays
+          full-bleed under the translucent nav. */}
+      <div className="-mt-16">
+        <Hero />
+        <MadeWithFizz />
 
-      {/* ─── The Cast ─────────────────────────────────────────────────── */}
-      <section className="relative border-t border-border/40 px-6 py-32">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_50%_40%_at_50%_50%,hsl(var(--primary)/0.06),transparent_70%)]" />
-        <div className="mx-auto max-w-6xl">
-          <SectionHeader
-            eyebrow="Meet your crew"
-            title={
-              <>
-                You're not directing one AI.
-                <br />
-                <span className="text-muted-foreground">You're directing a crew.</span>
-              </>
-            }
-            subtitle="Eleven specialist agents, each tuned for one job, talking to each other through a supervisor that takes your direction."
-          />
+        {/* ─── The Cast ─────────────────────────────────────────────────── */}
+        <section className="relative border-t border-border/40 px-6 py-32">
+          <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_50%_40%_at_50%_50%,hsl(var(--primary)/0.06),transparent_70%)]" />
+          <div className="mx-auto max-w-6xl">
+            <SectionHeader
+              eyebrow="Meet your crew"
+              title={
+                <>
+                  You're not directing one AI.
+                  <br />
+                  <span className="text-muted-foreground">You're directing a crew.</span>
+                </>
+              }
+              subtitle="Eleven specialist agents, each tuned for one job, talking to each other through a supervisor that takes your direction."
+            />
 
-          <div className="mt-20 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {CAST.map((member, i) => (
-              <motion.div
-                key={member.name}
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-80px" }}
-                transition={{ duration: 0.4, ease: "easeOut", delay: i * 0.05 }}
-                className="group relative rounded-2xl border border-border/50 bg-gradient-to-br from-card/60 to-card/20 p-6 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-border"
-              >
-                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-foreground/10 to-foreground/[0.02] text-foreground/80">
-                  <IconWand className="size-4" />
-                </div>
-                <h3 className="mt-4 text-base font-semibold tracking-tight text-foreground">
-                  {member.name}
-                </h3>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{member.role}</p>
-              </motion.div>
-            ))}
+            <div className="mt-20 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {CAST.map((member, i) => (
+                <motion.div
+                  key={member.name}
+                  initial={{ opacity: 0, y: 16 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-80px" }}
+                  transition={{ duration: 0.4, ease: "easeOut", delay: i * 0.05 }}
+                  className="group relative rounded-2xl border border-border/50 bg-gradient-to-br from-card/60 to-card/20 p-6 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-border"
+                >
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-foreground/10 to-foreground/[0.02] text-foreground/80">
+                    <IconWand className="size-4" />
+                  </div>
+                  <h3 className="mt-4 text-base font-semibold tracking-tight text-foreground">
+                    {member.name}
+                  </h3>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    {member.role}
+                  </p>
+                </motion.div>
+              ))}
+            </div>
+
+            <p className="mt-10 text-center text-sm text-muted-foreground/70">
+              …plus Brief Analyzer, Script Splitter, Evaluator, and Story Editor working behind the
+              scenes.
+            </p>
           </div>
+        </section>
 
-          <p className="mt-10 text-center text-sm text-muted-foreground/70">
-            …plus Brief Analyzer, Script Splitter, Evaluator, and Story Editor working behind the
-            scenes.
-          </p>
-        </div>
-      </section>
+        {/* ─── Toolkit (bento) ──────────────────────────────────────────── */}
+        <section className="relative border-t border-border/40 px-6 py-32">
+          <div className="mx-auto max-w-6xl">
+            <SectionHeader
+              eyebrow="The studio"
+              title={
+                <>
+                  A studio that fits
+                  <br />
+                  <span className="text-muted-foreground">in your browser.</span>
+                </>
+              }
+              subtitle="Everything a creative team needs to ship — without needing a creative team."
+            />
 
-      {/* ─── Toolkit (bento) ──────────────────────────────────────────── */}
-      <section className="relative border-t border-border/40 px-6 py-32">
-        <div className="mx-auto max-w-6xl">
-          <SectionHeader
-            eyebrow="The studio"
-            title={
-              <>
-                A studio that fits
-                <br />
-                <span className="text-muted-foreground">in your browser.</span>
-              </>
-            }
-            subtitle="Everything a creative team needs to ship — without needing a creative team."
-          />
-
-          <div className="mt-20 grid auto-rows-[minmax(180px,auto)] grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {TOOLKIT.map((tile, i) => (
-              <motion.div
-                key={tile.title}
-                initial={{ opacity: 0, scale: 0.96 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true, margin: "-60px" }}
-                transition={{ duration: 0.5, ease: "easeOut", delay: i * 0.06 }}
-                className={`group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/70 to-card/20 p-7 backdrop-blur-sm transition-all hover:border-border ${tile.span}`}
-              >
-                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-foreground/10 to-foreground/[0.02] text-foreground/80">
-                  <tile.icon className="size-4" />
-                </div>
-                <h3 className="mt-4 text-lg font-semibold tracking-tight text-foreground">
-                  {tile.title}
-                </h3>
-                <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-                  {tile.body}
-                </p>
-              </motion.div>
-            ))}
+            <div className="mt-20 grid auto-rows-[minmax(180px,auto)] grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {TOOLKIT.map((tile, i) => (
+                <motion.div
+                  key={tile.title}
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true, margin: "-60px" }}
+                  transition={{ duration: 0.5, ease: "easeOut", delay: i * 0.06 }}
+                  className={`group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/70 to-card/20 p-7 backdrop-blur-sm transition-all hover:border-border ${tile.span}`}
+                >
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-foreground/10 to-foreground/[0.02] text-foreground/80">
+                    <tile.icon className="size-4" />
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold tracking-tight text-foreground">
+                    {tile.title}
+                  </h3>
+                  <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+                    {tile.body}
+                  </p>
+                </motion.div>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <StyleGallery />
-      <UseCases />
-      <Testimonials />
-      <FAQ />
+        <StyleGallery />
+        <UseCases />
+        <Testimonials />
+        <FAQ />
 
-      {/* ─── Final CTA ────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden border-t border-border/40 px-6 py-40">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_60%_50%_at_50%_50%,hsl(var(--primary)/0.18),transparent_75%)]" />
-        <div className="mx-auto max-w-3xl text-center">
-          <motion.h2
-            initial={{ opacity: 0, y: 16 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl md:text-6xl"
-          >
-            Ready to direct your first crew?
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}
-            className="mx-auto mt-5 max-w-xl text-balance text-base text-muted-foreground sm:text-lg"
-          >
-            Free to start. Bring your story, we'll bring the crew.
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-80px" }}
-            transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
-            className="mt-10 flex flex-wrap items-center justify-center gap-3"
-          >
-            <Button size="lg" asChild>
-              <Link href={localizePath("/login", locale)}>
-                Start creating
-                <IconArrowRight className="size-4" />
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" color="muted" asChild>
-              <Link href={localizePath("/ips", locale)}>
-                <IconBook2 className="size-4" />
-                Browse IPs
-              </Link>
-            </Button>
-          </motion.div>
-          <p className="mt-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground/60">
-            <IconClock className="size-3.5" />
-            About 5 minutes from idea to first frame.
-          </p>
-        </div>
-      </section>
+        {/* ─── Final CTA ────────────────────────────────────────────────── */}
+        <section className="relative overflow-hidden border-t border-border/40 px-6 py-40">
+          <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_60%_50%_at_50%_50%,hsl(var(--primary)/0.18),transparent_75%)]" />
+          <div className="mx-auto max-w-3xl text-center">
+            <motion.h2
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl md:text-6xl"
+            >
+              Ready to direct your first crew?
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}
+              className="mx-auto mt-5 max-w-xl text-balance text-base text-muted-foreground sm:text-lg"
+            >
+              Free to start. Bring your story, we'll bring the crew.
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
+              className="mt-10 flex flex-wrap items-center justify-center gap-3"
+            >
+              <Button size="lg" asChild>
+                <Link href={localizePath("/login", locale)}>
+                  Start creating
+                  <IconArrowRight className="size-4" />
+                </Link>
+              </Button>
+              <Button size="lg" variant="outline" color="muted" asChild>
+                <Link href={localizePath("/ips", locale)}>
+                  <IconBook2 className="size-4" />
+                  Browse IPs
+                </Link>
+              </Button>
+            </motion.div>
+            <p className="mt-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground/60">
+              <IconClock className="size-3.5" />
+              About 5 minutes from idea to first frame.
+            </p>
+          </div>
+        </section>
+      </div>
     </SmoothScroll>
   );
 }

@@ -5,7 +5,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   return (
     <>
       <GlobalNav />
-      <main>{children}</main>
+      <main className="pt-16">{children}</main>
       <SiteFooter />
     </>
   );

@@ -156,7 +156,9 @@ export default function IPPlazaPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* ── Hero ── */}
-      <div className="relative overflow-hidden border-b border-border">
+      {/* -mt-16 pulls the hero gradient up behind the translucent nav so
+          the very top of the viewport isn't a flat black band. */}
+      <div className="relative -mt-16 overflow-hidden border-b border-border pt-16">
         <div
           className="absolute inset-0"
           style={{

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -40,6 +40,16 @@ export function GlobalNav() {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.auth.user);
 
+  // Background fades in as the user scrolls past the first ~80px so the
+  // hero backdrop sits behind a fully transparent nav at rest.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   useEffect(() => {
     dispatch(fetchUser());
   }, [dispatch]);
@@ -77,23 +87,26 @@ export function GlobalNav() {
   };
 
   if (!mounted) {
-    return (
-      <header className="fixed inset-x-0 top-0 z-50 px-4 pt-4">
-        <div className="mx-auto h-14 w-fit min-w-45" />
-      </header>
-    );
+    return <header className="fixed inset-x-0 top-0 z-50 h-16" />;
   }
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-4">
-      <div className="flex h-14 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] pl-6 pr-2 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl backdrop-saturate-150">
-        {/* Logo (wordmark image — no extra text label, the image already has the brand name) */}
-        <Link href="/" className="mr-2 flex shrink-0 items-center">
+    <header
+      className={cn(
+        "fixed inset-x-0 top-0 z-50 transition-[background-color,backdrop-filter,border-color] duration-300 ease-out",
+        scrolled
+          ? "border-b border-white/5 bg-background/60 backdrop-blur-xl backdrop-saturate-150"
+          : "border-b border-transparent bg-transparent"
+      )}
+    >
+      <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-6">
+        {/* Logo */}
+        <Link href="/" className="flex shrink-0 items-center">
           <img src="/logo.png" alt="FizzDragon" className="h-6 w-auto object-contain" />
         </Link>
 
-        {/* Nav links — text only, generous spacing */}
-        <nav className="hidden items-center gap-8 px-4 lg:flex">
+        {/* Nav links */}
+        <nav className="ml-6 hidden flex-1 items-center gap-8 lg:flex">
           {navItems.map(({ href, label, target }) => (
             <Link
               key={href}
@@ -109,8 +122,8 @@ export function GlobalNav() {
           ))}
         </nav>
 
-        {/* Right cluster — theme / language / CTA, all rounded-full to match the pill */}
-        <div className="ml-2 flex items-center gap-1">
+        {/* Right cluster — theme / language / CTA */}
+        <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={toggleTheme}
