@@ -1,8 +1,8 @@
 /**
  * Locale helpers for Next.js.
  *
- * Default locale (zh-CN) has no URL prefix: /projects
- * Other locales get prefixed: /en-US/projects, /zh-HK/projects
+ * Default locale (en-US) has no URL prefix: /projects
+ * Other locales get prefixed: /zh-CN/projects, /zh-HK/projects
  *
  * URL-level rewriting is handled by `proxy.ts` at the network layer.
  * This module exposes helpers for client-side code that needs to know the

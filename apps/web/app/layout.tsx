@@ -18,7 +18,7 @@ export default async function RootLayout({
 }>) {
   // Locale is resolved by proxy.ts and attached to the request via x-locale header.
   const headerBag = await headers();
-  const locale = headerBag.get("x-locale") ?? "zh-CN";
+  const locale = headerBag.get("x-locale") ?? "en-US";
 
   return (
     <html lang={locale} suppressHydrationWarning className="h-full antialiased font-sans">

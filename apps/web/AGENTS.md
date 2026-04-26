@@ -26,8 +26,8 @@ Turbopack is the default bundler — no flags needed.
 
 ## Locale / i18n
 
-- Default locale **zh-CN** has **no URL prefix**: `/projects`, `/ip/123`.
-- Other locales use prefix: `/en-US/projects`, `/zh-HK/ip/123`.
+- Default locale **en-US** has **no URL prefix**: `/projects`, `/ip/123`.
+- Other locales use prefix: `/zh-CN/projects`, `/zh-HK/ip/123`.
 - `proxy.ts` strips the prefix internally (so pages route as if no prefix),
   and sets `x-locale` header for server components to read.
 - Translations: i18next + react-i18next. `useTranslations("ns")` + `useLocale()`.

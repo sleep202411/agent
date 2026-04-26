@@ -5,16 +5,16 @@
  * `locales` / `Locale` derivations stay consistent.
  */
 export const LOCALE_OPTIONS = [
+  { value: "en-US", label: "English" },
   { value: "zh-CN", label: "简体中文" },
   { value: "zh-HK", label: "繁體中文" },
-  { value: "en-US", label: "English" },
 ] as const;
 
 export const locales = LOCALE_OPTIONS.map((o) => o.value) as ReadonlyArray<
   (typeof LOCALE_OPTIONS)[number]["value"]
 >;
 export type Locale = (typeof LOCALE_OPTIONS)[number]["value"];
-export const defaultLocale: Locale = "zh-CN";
+export const defaultLocale: Locale = "en-US";
 
 export function isValidLocale(value: string): value is Locale {
   return (locales as readonly string[]).includes(value);

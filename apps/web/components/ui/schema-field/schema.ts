@@ -112,7 +112,7 @@ function parseMaxCount(raw: unknown): number {
   return nums.length > 0 ? Math.max(...nums) : 0;
 }
 
-export function normalizeAiModel(raw: RawAiModel, locale = "zh-CN"): AiModel {
+export function normalizeAiModel(raw: RawAiModel, locale = "en-US"): AiModel {
   const desc = parseDescription(raw.description);
   const sizes = Array.isArray(desc.size) ? desc.size : [];
   const videoLengths = Array.isArray(desc.videoLength) ? desc.videoLength : [];

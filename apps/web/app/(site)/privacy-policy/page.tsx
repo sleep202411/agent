@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default async function PrivacyPolicyPage() {
-  const locale = (await headers()).get("x-locale") ?? "zh-CN";
+  const locale = (await headers()).get("x-locale") ?? "en-US";
   const doc = content[locale] ?? content["en-US"];
   return <LegalDocument title={doc.title} subtitle={doc.subtitle} content={doc.body} />;
 }

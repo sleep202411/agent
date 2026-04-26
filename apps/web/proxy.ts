@@ -2,21 +2,21 @@
  * Locale rewrite proxy (Next.js 16).
  *
  * URL convention:
- * - zh-CN (default): no prefix — /crews, /ip/123
- * - en-US, zh-HK:    prefix — /en-US/crews, /zh-HK/ip/123
+ * - en-US (default): no prefix — /crews, /ip/123
+ * - zh-CN, zh-HK:    prefix — /zh-CN/crews, /zh-HK/ip/123
  *
  * Proxy action:
- * - Request for /en-US/crews → internally rewrite to /crews (so Next.js routes to app/crews/page.tsx),
+ * - Request for /zh-CN/crews → internally rewrite to /crews (so Next.js routes to app/crews/page.tsx),
  *   attach x-locale header, keep URL visible in browser
- * - Request for /crews (no prefix) → locale = default zh-CN, no rewrite, attach x-locale header
+ * - Request for /crews (no prefix) → locale = default en-US, no rewrite, attach x-locale header
  * - Paths that hit backend proxies (rewritten in next.config) are matched out via matcher
  */
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const LOCALES = ["en-US", "zh-HK", "zh-CN"] as const; // non-default locales that carry URL prefix
-const DEFAULT_LOCALE = "zh-CN";
+const LOCALES = ["en-US", "zh-HK", "zh-CN"] as const; // any locale prefix is recognised; default is stripped on input
+const DEFAULT_LOCALE = "en-US";
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
