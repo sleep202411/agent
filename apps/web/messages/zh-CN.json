@@ -2239,7 +2239,7 @@
     "creditsRechargeDesc": "选择积分套餐进行充值",
     "unlockMore": "解锁更多 AI 创作能力，提升你的制作效率",
     "billingPeriod": "按 {days} {unit}计费",
-    "disclaimer": "订阅即表示你同意我们的服务条款。套餐为一次性购买，有效期内不支持退款。积分权益将在支付成功后立即发放。本活动最终解释权归 FizzDragon 所有。",
+    "disclaimer": "订阅即表示您同意我们的服务条款。所有方案均为一次性购买，有效期内不提供退款。积分奖励将在付款后立即发放。FizzDragon 保留最终解释权。",
     "plans": {
       "basic": "Basic · 基础版",
       "standard": "Standard · 标准版",
@@ -2247,14 +2247,18 @@
     },
     "benefits": {
       "bonusCredits": "包含 {value} 积分",
-      "creditDiscount": "积分购买享 9 折",
-      "limitedAgent": "限量使用 StoryOS",
-      "unlimitedAgent": "无限制使用 StoryOS",
-      "freeCourses": "课程专属优惠",
-      "storyosMessages": "每轮对话 {count} 条消息",
-      "storyosRetention": "对话历史保留 {days} 天",
-      "storyosUnlimited": "无限制使用 AI 助手",
-      "storyosPriority": "优先处理任务队列"
+      "creditDiscount": "积分充值享 {discount} 折优惠",
+      "freeCourses": "专属课程权益",
+      "outputTitle": "预估创作产出",
+      "outputImagesVideos": "可生成约 {images} 张图片或 {videos} 个视频",
+      "outputTime": "约 {min}–{max} 分钟创作时长",
+      "outputAgents": "支持 {count} 次专业智能体拆解",
+      "storyosCore": "基础访问",
+      "storyosFull": "完整访问",
+      "storyosMessages": "每对话 {count} 条消息",
+      "storyosRetention": "{days} 天对话历史",
+      "storyosUnlimited": "无限使用 AI 助手",
+      "storyosPriority": "优先任务队列"
     }
   },
   "guide": {

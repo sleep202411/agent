@@ -44,6 +44,7 @@ export function UserMenu() {
     () => false
   );
 
+  const [menuOpen, setMenuOpen] = useState(false);
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const { data: credits } = useCredits();
@@ -65,7 +66,7 @@ export function UserMenu() {
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
@@ -140,7 +141,14 @@ export function UserMenu() {
               <span className="text-xs text-muted-foreground">{tc("creditsLeft")}</span>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" className="flex-1" onClick={() => setUpgradeOpen(true)}>
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setUpgradeOpen(true);
+                }}
+              >
                 <IconCrown className="size-3.5" />
                 {tc("upgrade")}
               </Button>
@@ -149,7 +157,10 @@ export function UserMenu() {
                 color="muted"
                 size="sm"
                 className="flex-1"
-                onClick={() => setRechargeOpen(true)}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setRechargeOpen(true);
+                }}
               >
                 <IconCoin className="size-3.5" />
                 {tc("rechargeCredits")}

@@ -2239,7 +2239,7 @@
     "creditsRechargeDesc": "選擇積分套餐進行充值",
     "unlockMore": "解鎖更多 AI 創作能力，提升你的製作效率",
     "billingPeriod": "按 {days} {unit}計費",
-    "disclaimer": "訂閱即表示你同意我們的服務條款。套餐為一次性購買，有效期內不支援退款。積分權益將在支付成功後立即發放。本活動最終解釋權歸 FizzDragon 所有。",
+    "disclaimer": "訂閱即表示您同意我們的服務條款。所有方案均為一次性購買，有效期內不提供退款。積分獎勵將在付款後立即發放。FizzDragon 保留最終解釋權。",
     "plans": {
       "basic": "Basic · 基礎版",
       "standard": "Standard · 標準版",
@@ -2247,14 +2247,18 @@
     },
     "benefits": {
       "bonusCredits": "包含 {value} 積分",
-      "creditDiscount": "積分購買享 9 折",
-      "limitedAgent": "限量使用 StoryOS",
-      "unlimitedAgent": "無限制使用 StoryOS",
-      "freeCourses": "課程專屬優惠",
-      "storyosMessages": "每輪對話 {count} 條訊息",
-      "storyosRetention": "對話歷史保留 {days} 天",
-      "storyosUnlimited": "無限制使用 AI 助手",
-      "storyosPriority": "優先處理任務隊列"
+      "creditDiscount": "積分充值享 {discount} 折優惠",
+      "freeCourses": "專屬課程權益",
+      "outputTitle": "預估創作產出",
+      "outputImagesVideos": "可生成約 {images} 張圖片或 {videos} 個影片",
+      "outputTime": "約 {min}–{max} 分鐘創作時長",
+      "outputAgents": "支援 {count} 次專業智能體拆解",
+      "storyosCore": "基礎存取",
+      "storyosFull": "完整存取",
+      "storyosMessages": "每對話 {count} 條訊息",
+      "storyosRetention": "{days} 天對話歷史",
+      "storyosUnlimited": "無限使用 AI 助手",
+      "storyosPriority": "優先任務佇列"
     }
   },
   "guide": {

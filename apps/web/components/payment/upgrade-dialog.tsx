@@ -26,8 +26,27 @@ interface VipPackage {
   durationDays: number;
   description?: string;
   rights?: string;
+  integralDiscountRate?: number;
   status: string | number;
   sortOrder: number;
+}
+
+interface ParsedRights {
+  score?: number;
+  integralDiscount?: number;
+}
+
+function parseRights(rights?: string): ParsedRights {
+  if (!rights) return {};
+  try {
+    const obj = JSON.parse(rights) as Record<string, unknown>;
+    const score = typeof obj.score === "number" ? obj.score : undefined;
+    const integralDiscount =
+      typeof obj.integral_discount === "number" ? obj.integral_discount : undefined;
+    return { score, integralDiscount };
+  } catch {
+    return {};
+  }
 }
 
 interface RechargeResult {
@@ -67,71 +86,96 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
   );
 
   type BenefitGroup = { title?: string; items: string[] };
-  const planConfig: Record<string, { name: string; benefits: BenefitGroup[] }> = {
+
+  const planNames: Record<string, string> = {
+    VIP1: t("plans.basic"),
+    VIP2: t("plans.standard"),
+    VIP3: t("plans.pro"),
+  };
+
+  const planExtras: Record<
+    string,
+    {
+      addCourse: boolean;
+      output: { images: number; videos: number; tmin: number; tmax: number; agents: number };
+      storyos: string[];
+    }
+  > = {
     VIP1: {
-      name: t("plans.basic"),
-      benefits: [
-        {
-          items: [t("benefits.bonusCredits", { value: 1000 }), t("benefits.creditDiscount")],
-        },
-        {
-          title: "StoryOS",
-          items: [
-            t("benefits.storyosMessages", { count: 100 }),
-            t("benefits.storyosRetention", { days: 15 }),
-          ],
-        },
+      addCourse: false,
+      output: { images: 100, videos: 30, tmin: 6, tmax: 7, agents: 180 },
+      storyos: [
+        t("benefits.storyosCore"),
+        t("benefits.storyosMessages", { count: 100 }),
+        t("benefits.storyosRetention", { days: 15 }),
       ],
     },
     VIP2: {
-      name: t("plans.standard"),
-      benefits: [
-        {
-          items: [
-            t("benefits.bonusCredits", { value: 2000 }),
-            t("benefits.creditDiscount"),
-            t("benefits.freeCourses"),
-          ],
-        },
-        {
-          title: "StoryOS",
-          items: [
-            t("benefits.storyosUnlimited"),
-            t("benefits.storyosMessages", { count: 200 }),
-            t("benefits.storyosRetention", { days: 15 }),
-          ],
-        },
+      addCourse: true,
+      output: { images: 200, videos: 60, tmin: 12, tmax: 14, agents: 360 },
+      storyos: [
+        t("benefits.storyosFull"),
+        t("benefits.storyosUnlimited"),
+        t("benefits.storyosMessages", { count: 200 }),
+        t("benefits.storyosRetention", { days: 15 }),
       ],
     },
     VIP3: {
-      name: t("plans.pro"),
-      benefits: [
-        {
-          items: [
-            t("benefits.bonusCredits", { value: 3000 }),
-            t("benefits.creditDiscount"),
-            t("benefits.freeCourses"),
-          ],
-        },
-        {
-          title: "StoryOS",
-          items: [
-            t("benefits.storyosUnlimited"),
-            t("benefits.storyosMessages", { count: 500 }),
-            t("benefits.storyosRetention", { days: 15 }),
-            t("benefits.storyosPriority"),
-          ],
-        },
+      addCourse: true,
+      output: { images: 300, videos: 120, tmin: 24, tmax: 28, agents: 720 },
+      storyos: [
+        t("benefits.storyosFull"),
+        t("benefits.storyosUnlimited"),
+        t("benefits.storyosMessages", { count: 500 }),
+        t("benefits.storyosRetention", { days: 15 }),
+        t("benefits.storyosPriority"),
       ],
     },
   };
 
-  const displayName = (name: string) => planConfig[name]?.name || name;
+  const displayName = (name: string) => planNames[name] || name;
   const displayPrice = (amount: number | string) => {
     const num = Number(amount);
     return siteConfig.region === "cn" ? (num / 100).toFixed(2) : num.toFixed(2);
   };
-  const getBenefits = (name: string) => planConfig[name]?.benefits || [];
+
+  const getBenefits = (pkg: VipPackage): BenefitGroup[] => {
+    const rights = parseRights(pkg.rights);
+    const score = rights.score ?? 0;
+    const discountRate = rights.integralDiscount ?? pkg.integralDiscountRate;
+    const showDiscount = typeof discountRate === "number" && discountRate > 0 && discountRate < 100;
+    const extras = planExtras[pkg.packageName];
+
+    const creditsItems = [t("benefits.bonusCredits", { value: score.toLocaleString() })];
+    if (showDiscount) {
+      creditsItems.push(
+        t("benefits.creditDiscount", {
+          percent: 100 - discountRate,
+          discount: discountRate / 10,
+        })
+      );
+    }
+    if (extras?.addCourse) {
+      creditsItems.push(t("benefits.freeCourses"));
+    }
+
+    const groups: BenefitGroup[] = [{ items: creditsItems }];
+    if (extras) {
+      groups.push({
+        title: t("benefits.outputTitle"),
+        items: [
+          t("benefits.outputImagesVideos", {
+            images: extras.output.images,
+            videos: extras.output.videos,
+          }),
+          t("benefits.outputTime", { min: extras.output.tmin, max: extras.output.tmax }),
+          t("benefits.outputAgents", { count: extras.output.agents }),
+        ],
+      });
+      groups.push({ title: "StoryOS", items: extras.storyos });
+    }
+    return groups;
+  };
   const currencySymbol = siteConfig.currencies.find((c) => c.code === currency)?.symbol ?? "$";
 
   const bestValueId = useMemo(() => {
@@ -285,19 +329,21 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
       <button
         type="button"
         onClick={() => onOpenChange(false)}
-        className="fixed right-6 top-6 z-20 flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="fixed right-3 top-3 z-20 flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:right-6 sm:top-6"
       >
         <IconX className="size-5" />
       </button>
 
       {/* Content */}
-      <div className="relative z-10 flex min-h-full flex-col items-center justify-center overflow-y-auto px-6 py-20">
+      <div className="absolute inset-0 z-10 flex flex-col items-center overflow-y-auto px-6 py-20 sm:px-8 sm:py-16">
         {/* Header */}
         <div className="mb-3 inline-flex items-center justify-center rounded-full bg-white/10 p-3">
           <IconCrown className="size-8 text-white" />
         </div>
-        <h1 className="mb-2 text-3xl font-bold">{t("upgrade")}</h1>
-        <p className="mb-6 text-center text-muted-foreground">{t("unlockMore")}</p>
+        <h1 className="mb-2 text-2xl font-bold sm:text-3xl">{t("upgrade")}</h1>
+        <p className="mb-6 max-w-md px-4 text-center text-sm text-muted-foreground sm:text-base">
+          {t("unlockMore")}
+        </p>
 
         {/* Currency switcher (only for global with multiple currencies) */}
         {siteConfig.currencies.length > 1 && (
@@ -327,11 +373,11 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                 <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
               </div>
             ) : (
-              <div className="grid w-full max-w-4xl auto-cols-fr grid-flow-col gap-5">
+              <div className="grid w-full max-w-4xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {packages.map((pkg) => {
                   const isSelected = selectedId === pkg.id;
                   const isBest = bestValueId === pkg.id;
-                  const benefits = getBenefits(pkg.packageName);
+                  const benefits = getBenefits(pkg);
                   return (
                     <div
                       key={pkg.id}
