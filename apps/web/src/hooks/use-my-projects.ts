@@ -6,17 +6,9 @@ import {
   createPersonalWork,
   uploadPersonalVideo,
   updatePersonalWork,
-  getProjectDetail,
-  getProjectVideoLink,
-  getProjectMembers,
-  getProjectJobs,
   getProjectProfits,
-  uploadProjectVideo,
-  updateProject,
   type Project,
   type PersonalWork,
-  type ProjectMember,
-  type ProjectJob,
   type ProfitInfo,
 } from "@/src/services/project";
 
@@ -24,7 +16,6 @@ export const myProjectKeys = {
   works: ["my", "works"] as const,
   projects: ["my", "projects"] as const,
   joined: ["my", "joined"] as const,
-  detail: (id: string) => ["project", "detail", id] as const,
 };
 
 export function useMyPersonalWorks() {
@@ -71,64 +62,10 @@ export function useMyJoinedProjects() {
   });
 }
 
-export function useProjectDetail(id: string) {
-  return useQuery<Project>({
-    queryKey: myProjectKeys.detail(id),
-    queryFn: () => getProjectDetail(id),
-    enabled: !!id,
-  });
-}
-
-export function useProjectVideoLink(id: string) {
-  return useQuery<string>({
-    queryKey: ["project", "video", id],
-    queryFn: () => getProjectVideoLink(id),
-    enabled: !!id,
-  });
-}
-
-export function useUploadProjectVideo() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ projectId, file }: { projectId: string; file: File }) =>
-      uploadProjectVideo(projectId, file),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["project", "video", variables.projectId] });
-    },
-  });
-}
-
-export function useProjectMembers(id: string) {
-  return useQuery<ProjectMember[]>({
-    queryKey: ["project", "members", id],
-    queryFn: () => getProjectMembers(id),
-    enabled: !!id,
-  });
-}
-
-export function useProjectJobs(id: string) {
-  return useQuery<ProjectJob[]>({
-    queryKey: ["project", "jobs", id],
-    queryFn: () => getProjectJobs(id),
-    enabled: !!id,
-  });
-}
-
 export function useProjectProfits(id: string) {
   return useQuery<ProfitInfo>({
     queryKey: ["project", "profits", id],
     queryFn: () => getProjectProfits(id),
     enabled: !!id,
-  });
-}
-
-export function useUpdateProject() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: updateProject,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: myProjectKeys.detail(String(variables.id)) });
-      queryClient.invalidateQueries({ queryKey: myProjectKeys.projects });
-    },
   });
 }

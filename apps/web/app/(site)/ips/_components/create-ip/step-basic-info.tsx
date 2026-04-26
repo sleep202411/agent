@@ -3,11 +3,7 @@
 import { IconUpload, IconX, IconInfoCircle } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import {
-  PROJECT_TYPES,
-  SUGGESTED_TAGS,
-  type IPCreateForm,
-} from "@/app/(site)/ips/_components/ip-mock";
+import { PROJECT_TYPES, SUGGESTED_TAGS, type IPCreateForm } from "../../_data/ip";
 
 interface Props {
   form: IPCreateForm;

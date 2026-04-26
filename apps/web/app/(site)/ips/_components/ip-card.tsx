@@ -3,7 +3,7 @@
 import { IconEye, IconHeart, IconPlayerPlay, IconAward } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { STAGE_CONFIG, type IPItem } from "./ip-mock";
+import { STAGE_CONFIG, type IPItem } from "../_data/ip";
 
 // ─── Sub-bars ────────────────────────────────────────
 

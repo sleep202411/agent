@@ -2,42 +2,32 @@
 
 /**
  * "Made with FizzDragon" — homepage content wall pulling the first 8
- * IPs from `searchIPProjects`. Skips rendering entirely if the list is
- * empty so the section doesn't ship with stub data.
+ * IPs via the homepage's local featured-ips fetcher. Skips rendering
+ * entirely if the list is empty so the section doesn't ship with stub
+ * data.
  */
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { IconArrowRight, IconSparkles } from "@tabler/icons-react";
-import { searchIPProjects, ipImageUrl, type IPProject } from "@/src/lib/api/ip-api";
+import { fetchFeaturedIPs, ipBannerUrl, type FeaturedIP } from "../_services/featured-ips";
 import { useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 
 export function MadeWithFizz() {
-  const [items, setItems] = useState<IPProject[] | null>(null);
-  const [error, setError] = useState(false);
+  const { data, isError, isLoading } = useQuery<FeaturedIP[]>({
+    queryKey: ["home", "featured-ips"],
+    queryFn: () => fetchFeaturedIPs(8),
+  });
+  const items = data ?? null;
   const locale = useLocale() as Locale;
 
-  useEffect(() => {
-    let cancelled = false;
-    searchIPProjects({ page: 1, pageSize: 8 })
-      .then((res) => {
-        if (!cancelled) setItems(res.list);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Don't render anything before the first response — no stub data, no
-  // placeholder skeleton, just collapse the section. We don't want a
-  // half-empty content wall to be the second thing visitors see.
-  if (error || (items !== null && items.length === 0)) return null;
+  // Don't render anything if the fetch fails or returns nothing — we
+  // don't want a half-empty content wall to be the second thing visitors
+  // see. Loading state shows a skeleton grid below.
+  if (isError || (items !== null && items.length === 0)) return null;
 
   return (
     <section className="relative border-t border-border/40 px-6 py-32">
@@ -64,7 +54,7 @@ export function MadeWithFizz() {
           </Link>
         </div>
 
-        {items === null ? (
+        {isLoading || items === null ? (
           <SkeletonGrid />
         ) : (
           <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -86,8 +76,8 @@ export function MadeWithFizz() {
   );
 }
 
-function Card({ project, locale }: { project: IPProject; locale: Locale }) {
-  const cover = ipImageUrl(project.bannerLink);
+function Card({ project, locale }: { project: FeaturedIP; locale: Locale }) {
+  const cover = ipBannerUrl(project.bannerLink);
   return (
     <Link
       href={localizePath(`/ips/${project.id}`, locale)}

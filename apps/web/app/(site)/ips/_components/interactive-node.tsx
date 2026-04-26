@@ -2,7 +2,7 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { IconPlayerPlay, IconFlag, IconFlagFilled, IconVideo } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import type { VideoNodeData } from "./interactive-mock";
+import type { VideoNodeData } from "../_data/interactive";
 
 function VideoNodeComponent({ data, selected }: NodeProps<VideoNodeData>) {
   return (

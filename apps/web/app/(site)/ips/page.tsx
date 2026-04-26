@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   IconSparkles,
@@ -19,12 +19,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
 import {
-  searchIPProjects,
-  getCategories,
   ipImageUrl,
+  useIPProjects,
+  useIPCategories,
   type IPProject,
   type CategoryMap,
-} from "@/src/lib/api/ip-api";
+} from "./_hooks/use-ip";
 
 // ─── Stage config ───────────────────────────────────
 
@@ -124,23 +124,12 @@ export default function IPPlazaPage() {
   const t = useTranslations("ip");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
-  const [projects, setProjects] = useState<IPProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [categories, setCategories] = useState<CategoryMap>({});
   const [createOpen, setCreateOpen] = useState(false);
 
-  useEffect(() => {
-    void getCategories()
-      .then(setCategories)
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    setLoading(true);
-    void searchIPProjects({ page: 1, pageSize: 50 })
-      .then((res) => setProjects(res.list))
-      .finally(() => setLoading(false));
-  }, []);
+  const { data: projectsData, isLoading: loading } = useIPProjects({ page: 1, pageSize: 50 });
+  const { data: categoriesData } = useIPCategories();
+  const projects = useMemo<IPProject[]>(() => projectsData?.list ?? [], [projectsData]);
+  const categories: CategoryMap = categoriesData ?? {};
 
   const filtered = useMemo(() => {
     return projects.filter((p) => {

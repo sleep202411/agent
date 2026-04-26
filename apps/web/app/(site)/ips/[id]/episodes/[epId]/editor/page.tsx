@@ -26,18 +26,19 @@ import {
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { VideoNodeMemo } from "@/app/(site)/ips/_components/interactive-node";
-import {
-  MOCK_NODES,
-  MOCK_EDGES,
-  type VideoNodeData,
-} from "@/app/(site)/ips/_components/interactive-mock";
+import type { VideoNode, VideoNodeData } from "@/app/(site)/ips/_data/interactive";
+import type { Edge } from "@xyflow/react";
+
+// Editor starts on a blank canvas; the graph is built up by the user.
+const INITIAL_NODES: VideoNode[] = [];
+const INITIAL_EDGES: Edge[] = [];
 
 const NODE_TYPES = { video: VideoNodeMemo };
 
 export default function InteractiveEditorPage({ id, epId }: { id: string; epId: string }) {
   const t = useTranslations("interactiveEditor");
-  const [nodes, setNodes, onNodesChange] = useNodesState(MOCK_NODES);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(MOCK_EDGES);
+  const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(INITIAL_EDGES);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 

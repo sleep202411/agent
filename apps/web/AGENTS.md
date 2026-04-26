@@ -48,6 +48,53 @@ Turbopack is the default bundler — no flags needed.
 - `/user/*`, `/project/*`, `/vedio/*` → Java Content (`JAVA_CONTENT_URL`)
 - `/newsapi/*` → `https://fizzdragon.com/content/*`
 
+## Feature colocation (work-in-progress convention)
+
+The IP feature (`app/(site)/ips/`) is the **reference implementation** of
+the project's chosen architecture: each feature owns its data layer.
+
+```
+app/(site)/ips/
+├── _hooks/
+│   └── use-ip.ts        ← types, fetchers, query keys, hook wrappers
+├── _data/
+│   ├── ip.ts            ← UI types and config constants for IP forms / cards
+│   └── interactive.ts   ← types for the interactive video graph editor
+├── _components/         ← React components only — no data, no mocks
+├── [id]/                ← detail / edit / episodes routes
+├── create/              ← creation flow
+└── page.tsx             ← IP Plaza listing
+```
+
+**What lives feature-private (under `app/(feature)/_*/`):**
+
+- Types and constants only the feature uses (`IPItem`, `IPDetail`,
+  `STAGE_CONFIG`, `PRESET_REWARDS`, …).
+- React Query hook wrappers and cache keys for endpoints the feature
+  consumes — even when the underlying service function is shared.
+- Fetchers for endpoints only the feature talks to.
+
+**What stays in `src/` (app-level shared infrastructure):**
+
+- `src/services/<domain>.ts` — transport-level service functions reused
+  across multiple features (e.g., `updateProject` is called by both
+  `(site)/ips/[id]/edit` and `(site)/profile`). The service stays
+  shared; each feature wraps it in its own hook.
+- `src/hooks/` — hooks for genuinely cross-cutting domains (auth, current
+  user, certification, KYC). Don't put a hook here unless two or more
+  features need it.
+- `src/lib/`, `src/i18n/`, `src/env.ts`, `src/store/` — universal app
+  plumbing.
+
+**The rule of thumb:** does a second feature already need this? If yes,
+shared. If no, feature-private — promote to `src/` later if a real second
+consumer appears, don't predict sharing in advance.
+
+**Older code under `src/hooks/` (e.g., `use-my-projects`, `use-episodes`,
+`use-worlds`) predates this convention.** Those will be migrated into
+their respective features over time. Until then expect a mix; for new
+work, follow the IP layout.
+
 ## Dev
 
 ```bash

@@ -12,7 +12,7 @@ import {
   IconStar,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import type { IPDetail } from "./ip-mock";
+import type { IPDetail } from "../_data/ip";
 
 // ─── Investment Panel ────────────────────────────────
 

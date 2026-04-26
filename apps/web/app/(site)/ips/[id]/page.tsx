@@ -23,9 +23,9 @@ import { IconLoader2 } from "@tabler/icons-react";
 import {
   STAGE_CONFIG,
   PLAN_STATUS_CLASS,
-  MOCK_IP_DETAIL,
+  EMPTY_IP_DETAIL,
   type IPDetail,
-} from "@/app/(site)/ips/_components/ip-mock";
+} from "@/app/(site)/ips/_data/ip";
 import { FundingSidebar } from "@/app/(site)/ips/_components/ip-detail-panels";
 import { env } from "@/src/env";
 import {
@@ -33,7 +33,7 @@ import {
   useProjectVideoLink,
   useProjectMembers,
   useProjectJobs,
-} from "@/src/hooks/use-my-projects";
+} from "@/app/(site)/ips/_hooks/use-ip";
 
 // ─── Section config ──────────────────────────────────
 
@@ -70,14 +70,14 @@ export default function IPDetailPage({ id }: { id: string }) {
   // Bridge API data to existing IPDetail mock structure (gradual migration)
   const ip: IPDetail = project
     ? ({
-        ...MOCK_IP_DETAIL,
+        ...EMPTY_IP_DETAIL,
         title: project.name ?? "",
         desc: project.description ?? "",
         cover: project.bannerLink
           ? project.bannerLink.startsWith("http")
             ? project.bannerLink
             : `${env.BANNER_BASE_URL}/${project.bannerLink}`
-          : MOCK_IP_DETAIL.cover,
+          : EMPTY_IP_DETAIL.cover,
         story: project.story ?? project.background ?? "",
         whyThisIP: project.whyThisIP ?? "",
         tags: (() => {
@@ -98,7 +98,7 @@ export default function IPDetailPage({ id }: { id: string }) {
           rating: 0,
         })),
       } as IPDetail)
-    : MOCK_IP_DETAIL;
+    : EMPTY_IP_DETAIL;
 
   const stage = STAGE_CONFIG[ip.stage];
   const StageIcon = STAGE_ICON[ip.stage];

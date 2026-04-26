@@ -26,13 +26,13 @@ import {
   useUpdateProject,
   useProjectVideoLink,
   useUploadProjectVideo,
-} from "@/src/hooks/use-my-projects";
+} from "@/app/(site)/ips/_hooks/use-ip";
 import {
   SUGGESTED_TAGS,
   TARGET_EPISODES_OPTIONS,
   PRESET_REWARDS,
   type IPRewardTier,
-} from "@/app/(site)/ips/_components/ip-mock";
+} from "@/app/(site)/ips/_data/ip";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 
 // ─── Tabs ────────────────────────────────────────────
