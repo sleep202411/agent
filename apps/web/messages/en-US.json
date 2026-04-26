@@ -2488,5 +2488,17 @@
   "about": {
     "version": "Version v{version}",
     "tagline": "A liquidity market that powers efficient trade and growth for creative content worldwide."
+  },
+  "home": {
+    "tagline": "Bring your stories to animated life.",
+    "subtitle": "Script → storyboard → render. AI agents handle the heavy lifting so you can focus on the story.",
+    "cta": "Start creating",
+    "secondaryCta": "See how it works",
+    "frames": {
+      "script": "Script",
+      "storyboard": "Storyboard",
+      "shot": "Shot",
+      "render": "Render"
+    }
   }
 }

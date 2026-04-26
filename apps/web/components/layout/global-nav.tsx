@@ -10,17 +10,7 @@ import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { useTheme } from "next-themes";
-import {
-  IconUsers,
-  IconLayoutDashboard,
-  IconDiamond,
-  IconMovie,
-  IconMoon,
-  IconSun,
-  IconLanguage,
-  IconNews,
-  IconCheck,
-} from "@tabler/icons-react";
+import { IconMoon, IconSun, IconLanguage, IconCheck } from "@tabler/icons-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,16 +49,11 @@ export function GlobalNav() {
   if (shouldHide) return null;
 
   const navItems = [
-    { href: "/ips", label: t("ipPlaza"), icon: IconDiamond },
-    { href: "/crews", label: t("studioHall"), icon: IconMovie },
-    { href: "/creators", label: t("creators"), icon: IconUsers },
-    {
-      href: "/studio/projects",
-      label: t("studio"),
-      icon: IconLayoutDashboard,
-      target: "_blank" as const,
-    },
-    { href: "/news", label: t("news"), icon: IconNews },
+    { href: "/ips", label: t("ipPlaza") },
+    { href: "/crews", label: t("studioHall") },
+    { href: "/creators", label: t("creators") },
+    { href: "/studio/projects", label: t("studio"), target: "_blank" as const },
+    { href: "/news", label: t("news") },
   ];
 
   const isActive = (href: string) => pathname.startsWith(href);
@@ -93,61 +78,54 @@ export function GlobalNav() {
 
   if (!mounted) {
     return (
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 items-center" style={{ maxWidth: 1400 }} />
+      <header className="fixed inset-x-0 top-0 z-50 px-4 pt-4">
+        <div className="mx-auto h-14 w-fit min-w-45" />
       </header>
     );
   }
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 backdrop-blur-xl">
-      <div className="mx-auto flex h-14 items-center justify-between px-6">
-        {/* Logo + Nav */}
-        <div className="flex items-center gap-8">
-          <Link href="/ips" className="flex items-center gap-2 shrink-0">
-            <img src="/logo.png" alt="FizzDragon" className="h-7" />
-          </Link>
+    <header className="fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-4">
+      <div className="flex h-14 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] pl-6 pr-2 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-2xl backdrop-saturate-150">
+        {/* Logo (wordmark image — no extra text label, the image already has the brand name) */}
+        <Link href="/" className="mr-2 flex shrink-0 items-center">
+          <img src="/logo.png" alt="FizzDragon" className="h-6 w-auto object-contain" />
+        </Link>
 
-          <nav className="hidden items-center gap-1 md:flex mx-auto">
-            {navItems.map(({ href, label, icon: Icon, target }) => (
-              <Link
-                key={href}
-                href={href}
-                target={target}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors",
-                  isActive(href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                )}
-              >
-                <Icon className="size-4" />
-                {label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-
-        {/* Right side: theme + language + CTA */}
-        <div className="flex items-center gap-2">
-          {/* Theme toggle */}
-          {mounted && (
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="flex size-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground transition-colors hover:text-foreground"
+        {/* Nav links — text only, generous spacing */}
+        <nav className="hidden items-center gap-8 px-4 lg:flex">
+          {navItems.map(({ href, label, target }) => (
+            <Link
+              key={href}
+              href={href}
+              target={target}
+              className={cn(
+                "text-sm transition-colors",
+                isActive(href) ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
             >
-              {isDark ? <IconMoon className="size-4" /> : <IconSun className="size-4" />}
-            </button>
-          )}
+              {label}
+            </Link>
+          ))}
+        </nav>
 
-          {/* Language menu */}
+        {/* Right cluster — theme / language / CTA, all rounded-full to match the pill */}
+        <div className="ml-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={t("language")}
+            className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+          >
+            {isDark ? <IconMoon className="size-4" /> : <IconSun className="size-4" />}
+          </button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 aria-label={t("language")}
-                className="flex size-9 items-center justify-center rounded-lg bg-secondary text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <IconLanguage className="size-4" />
               </button>
@@ -171,14 +149,13 @@ export function GlobalNav() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* User or CTA */}
           {user ? (
             <UserMenu />
           ) : (
             <button
               type="button"
               onClick={() => router.push(localizePath("/login", locale as Locale))}
-              className="ml-1 rounded-full bg-foreground px-4 py-1.5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+              className="ml-1 flex h-9 items-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
             >
               {t("getStarted")}
             </button>

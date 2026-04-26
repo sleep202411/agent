@@ -2488,5 +2488,17 @@
   "about": {
     "version": "版本 v{version}",
     "tagline": "一个为全球创意内容提供高效交易与赋能的流动性市场。"
+  },
+  "home": {
+    "tagline": "让你的故事，动起来。",
+    "subtitle": "剧本 → 分镜 → 成片。AI 帮你处理重活，你只管讲好故事。",
+    "cta": "开始创作",
+    "secondaryCta": "看看怎么做的",
+    "frames": {
+      "script": "剧本",
+      "storyboard": "分镜",
+      "shot": "镜头",
+      "render": "成片"
+    }
   }
 }
