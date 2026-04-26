@@ -13,6 +13,16 @@ node_modules
 .env.*
 !.env.*.example
 !.env.example
+# Tracked dev/deploy env files (URLs, ports, public OSS buckets, etc — keep
+# secret-laden values out of these or accept the risk of repo-wide exposure)
+!apps/web/.env.local
+!apps/web/.env.staging
+!apps/web/.env.production.cn
+!apps/web/.env.production.com
+!deploy/.env.local
+!deploy/.env.staging
+!deploy/.env.production.cn
+!deploy/.env.production.com
 
 # Testing
 coverage
