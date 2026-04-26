@@ -283,3 +283,62 @@ ANTHROPIC_API_KEY=... tsx scripts/verify-anthropic-cache.ts
 # zero network calls, for regression / UX checks
 tsx scripts/simulate-hardening.ts
 ```
+
+---
+
+## Troubleshooting
+
+### `"Let me reorganize my thoughts — please try again in a moment."`
+
+The AgentStreamService fallback bubble. Means the supervisor stream
+produced no usable content **or** threw mid-stream. Source:
+`apps/server/src/assistant/chat/agent-stream.service.ts:389/431`.
+
+#### Step 1 — figure out which path (server logs)
+
+Container names follow `${COMPOSE_PROJECT_NAME}-server` /
+`-agent` (e.g. `production-com-server`, `staging-server`).
+
+```bash
+docker logs --tail 300 <env>-server | grep -E 'consume (done|failed)'
+```
+
+| Log line                                                                     | Path | Meaning                                                  |
+| ---------------------------------------------------------------------------- | ---- | -------------------------------------------------------- |
+| `consume done project=… iterations=N finalParts=0 (fallback bubble emitted)` | A    | Stream completed but parts were empty after sanitization |
+| `consume failed project=… iterations=N: <message>`                           | B    | Stream threw mid-flight; message is the JS error         |
+
+#### Step 2 — check provider error body (agent logs)
+
+```bash
+docker logs --tail 500 <env>-agent | grep -iE 'error|fail|401|403|429|timeout|deepseek|persona|router|insufficient'
+```
+
+Look for a `responseBody` near the matched lines — the provider's actual
+error JSON tells you what went wrong.
+
+| Error in agent log                                                | Cause                                      | Fix                                                                              |
+| ----------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------- |
+| `"Insufficient Balance"` (DeepSeek, code `invalid_request_error`) | DeepSeek account out of balance            | Top up at platform.deepseek.com — **no code/container change**                   |
+| `401 Unauthorized` / `invalid api key`                            | Bad / rotated provider key in env file     | Update env, rebuild + redeploy `agent` and `agent-worker`                        |
+| `429 Too Many Requests`                                           | Rate limited                               | Wait, or lower `STORYOS_CLAUDE_MAX_CONCURRENCY` / `WORKER_CONCURRENCY`           |
+| `timeout` / `ECONNRESET`                                          | Network from container to provider stuck   | Test from inside the container; check provider region status                     |
+| `circuit_open`                                                    | Hardening circuit tripped (5 fails in 60s) | Address the underlying provider error first; circuit auto-recovers (default 60s) |
+
+**Heads up — shared keys**: `staging`, `prod-cn`, `prod-com` use the
+same DeepSeek API key (see `deploy/.env.*`). A balance/auth issue
+takes down **all three environments simultaneously**, so a "prod is
+broken" report is usually staging too. Same applies to the Anthropic
+router key on global envs.
+
+#### Step 3 — confirm the fix
+
+Once you believe the underlying cause is resolved (top-up, key rotation,
+provider recovery), trigger another chat turn from the UI and watch:
+
+```bash
+docker logs -f <env>-server | grep 'consume done\|consume failed'
+```
+
+A healthy turn logs `consume done … finalParts=N` where `N > 0` and no
+`(fallback bubble emitted)` suffix.
