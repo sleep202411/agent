@@ -94,24 +94,44 @@ function acceptLanguage(): string {
   return "en-US";
 }
 
+// Read the SaToken from cookie if present. Backend requires the
+// `Authorization: Bearer <token>` header even when the token is empty
+// (legacy fizzdragon-web always sends `Bearer ${token || ''}`); without
+// the header at all the backend NPEs with a 500.
+function bearerHeader(): string {
+  if (typeof document === "undefined") return "Bearer ";
+  const match = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+  return `Bearer ${match?.[1] ?? ""}`;
+}
+
 async function searchIPProjects(params: {
   page?: number;
   pageSize?: number;
   key?: string;
+  typeId?: string;
+  tag?: string;
 }): Promise<{ list: IPProject[]; total: number }> {
+  // Body shape mirrors legacy: page, pageSize, key (always sent, may be
+  // empty). Server-side parsers tolerate key="" but NPE without the field.
+  // TypeId and tag are only sent when set — empty values would filter to nothing.
+  const body = new URLSearchParams({
+    page: String(params.page ?? 1),
+    pageSize: String(params.pageSize ?? 20),
+    key: params.key ?? "",
+  });
+  if (params.typeId) body.append("TypeId", params.typeId);
+  if (params.tag) body.append("tag", params.tag);
   const res = await fetch("/vedio/project/search", {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
       "accept-language": acceptLanguage(),
+      Authorization: bearerHeader(),
     },
-    body: new URLSearchParams({
-      page: String(params.page ?? 1),
-      pageSize: String(params.pageSize ?? 20),
-      key: params.key ?? "",
-    }),
+    body,
   });
+  if (!res.ok) return { list: [], total: 0 };
   const json = (await res.json()) as { code: number; data: IPProject[]; sum: number };
   return { list: json.data ?? [], total: json.sum ?? 0 };
 }
@@ -119,8 +139,9 @@ async function searchIPProjects(params: {
 async function getCategories(): Promise<CategoryMap> {
   const res = await fetch("/vedio/type/list", {
     credentials: "include",
-    headers: { "accept-language": acceptLanguage() },
+    headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
   });
+  if (!res.ok) return {};
   const json = (await res.json()) as { code: number; data: Record<string, string> };
   return json.data ?? {};
 }
@@ -128,8 +149,9 @@ async function getCategories(): Promise<CategoryMap> {
 async function getTagList(): Promise<TagListResponse> {
   const res = await fetch("/vedio/type/tag/list", {
     credentials: "include",
-    headers: { "accept-language": acceptLanguage() },
+    headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
   });
+  if (!res.ok) return { all: {}, data: {}, map: {} };
   const json = (await res.json()) as TagListResponse & { code: number };
   return { all: json.all ?? {}, data: json.data ?? {}, map: json.map ?? {} };
 }
@@ -138,7 +160,13 @@ async function getTagList(): Promise<TagListResponse> {
 
 export const ipKeys = {
   all: ["ip"] as const,
-  projects: (page: number, pageSize: number) => ["ip", "projects", { page, pageSize }] as const,
+  projects: (filter: {
+    page: number;
+    pageSize: number;
+    key: string;
+    typeId: string;
+    tag: string;
+  }) => ["ip", "projects", filter] as const,
   categories: ["ip", "categories"] as const,
   tags: ["ip", "tags"] as const,
   detail: (id: string) => ["ip", "detail", id] as const,
@@ -149,12 +177,21 @@ export const ipKeys = {
 
 // ─── List hooks ─────────────────────────────────────
 
-export function useIPProjects(params?: { page?: number; pageSize?: number }) {
+export function useIPProjects(params?: {
+  page?: number;
+  pageSize?: number;
+  key?: string;
+  typeId?: string;
+  tag?: string;
+}) {
   const page = params?.page ?? 1;
   const pageSize = params?.pageSize ?? 20;
+  const key = params?.key ?? "";
+  const typeId = params?.typeId ?? "";
+  const tag = params?.tag ?? "";
   return useQuery<{ list: IPProject[]; total: number }>({
-    queryKey: ipKeys.projects(page, pageSize),
-    queryFn: () => searchIPProjects({ page, pageSize }),
+    queryKey: ipKeys.projects({ page, pageSize, key, typeId, tag }),
+    queryFn: () => searchIPProjects({ page, pageSize, key, typeId, tag }),
   });
 }
 

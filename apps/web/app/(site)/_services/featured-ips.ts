@@ -20,17 +20,26 @@ export interface FeaturedIP {
 
 export async function fetchFeaturedIPs(limit = 8): Promise<FeaturedIP[]> {
   // `credentials: "include"` and `accept-language` mirror the legacy /
-  // shared backend client; the Java backend 500s without them.
+  // shared backend client. `Authorization: Bearer <satoken or empty>`
+  // is required: legacy fizzdragon-web always sends `Bearer ${token||''}`,
+  // and the backend NPEs without the header even when the token is empty.
   const lang = typeof document !== "undefined" ? document.documentElement.lang || "en-US" : "en-US";
+  let bearer = "Bearer ";
+  if (typeof document !== "undefined") {
+    const m = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+    bearer = `Bearer ${m?.[1] ?? ""}`;
+  }
   const res = await fetch("/vedio/project/search", {
     method: "POST",
     credentials: "include",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
       "accept-language": lang,
+      Authorization: bearer,
     },
     body: new URLSearchParams({ page: "1", pageSize: String(limit), key: "" }),
   });
+  if (!res.ok) return [];
   const json = (await res.json()) as { code: number; data: FeaturedIP[] };
   return json.data ?? [];
 }
