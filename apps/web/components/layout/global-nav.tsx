@@ -99,7 +99,7 @@ export function GlobalNav() {
           : "border-b border-transparent bg-transparent"
       )}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-6">
+      <div className="mx-auto flex h-16 max-w-screen-2xl items-center gap-4 px-6">
         {/* Logo */}
         <Link href="/" className="flex shrink-0 items-center">
           <img src="/logo.png" alt="FizzDragon" className="h-6 w-auto object-contain" />

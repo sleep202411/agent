@@ -80,15 +80,26 @@ export default function CrewsPage() {
     <div className="min-h-screen bg-background">
       {/* Hero */}
       <div className="relative overflow-hidden border-b border-border">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-accent/5" />
+        {/* Background photo (placeholder — replace with own asset) */}
+        <img
+          src="https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=2400&q=80"
+          alt=""
+          aria-hidden
+          className="absolute inset-0 size-full object-cover object-[80%_center] opacity-50"
+        />
+        {/* Left-to-right dark mask so heading stays readable */}
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/30" />
+        {/* Bottom fade into next section */}
+        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-background" />
+        {/* Brand color tint */}
         <div
           className="absolute inset-0"
           style={{
             backgroundImage:
-              "radial-gradient(circle at 15% 50%, hsl(210 100% 56% / 0.1) 0%, transparent 55%), radial-gradient(circle at 85% 20%, hsl(42 95% 55% / 0.08) 0%, transparent 50%)",
+              "radial-gradient(circle at 15% 50%, hsl(210 100% 56% / 0.12) 0%, transparent 55%), radial-gradient(circle at 85% 20%, hsl(0 78% 52% / 0.1) 0%, transparent 50%)",
           }}
         />
-        <div className="relative mx-auto max-w-screen-2xl px-6 pb-8 pt-10">
+        <div className="relative mx-auto max-w-screen-2xl px-6 pb-12 pt-14">
           <div className="mb-3 flex items-center gap-2">
             <IconMovie className="size-4 text-primary" />
             <span className="text-xs font-semibold uppercase tracking-widest text-primary">

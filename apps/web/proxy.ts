@@ -2,51 +2,57 @@
  * Locale rewrite proxy (Next.js 16).
  *
  * URL convention:
- * - en-US (default): no prefix — /crews, /ip/123
- * - zh-CN, zh-HK:    prefix — /zh-CN/crews, /zh-HK/ip/123
+ * - All locales use a URL prefix: /en-US/crews, /zh-CN/crews, /zh-HK/crews
+ * - Hitting an unprefixed path (/crews, /ips/123, /) 308-redirects to
+ *   the default-locale prefix (/en-US/crews, /en-US/ips/123, /en-US).
  *
  * Proxy action:
- * - Request for /zh-CN/crews → internally rewrite to /crews (so Next.js routes to app/crews/page.tsx),
- *   attach x-locale header, keep URL visible in browser
- * - Request for /crews (no prefix) → locale = default en-US, no rewrite, attach x-locale header
- * - Paths that hit backend proxies (rewritten in next.config) are matched out via matcher
+ * - /zh-CN/crews → rewrite internally to /crews so Next routes to
+ *   app/(site)/crews/page.tsx; URL in browser stays /zh-CN/crews.
+ * - /en-US/crews → same: rewrite internally to /crews.
+ * - /crews (no prefix) → 308 to /en-US/crews. Then the request above
+ *   handles it.
+ * - Paths that hit backend proxies (rewritten in next.config) are
+ *   filtered out via the matcher.
  */
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const LOCALES = ["en-US", "zh-HK", "zh-CN"] as const; // any locale prefix is recognised; default is stripped on input
+const LOCALES = ["en-US", "zh-HK", "zh-CN"] as const;
 const DEFAULT_LOCALE = "en-US";
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
-  // Extract locale prefix
-  let locale: string = DEFAULT_LOCALE;
+  // Try to extract a locale prefix.
+  let matchedLocale: string | null = null;
   let rewrittenPathname = pathname;
 
   for (const candidate of LOCALES) {
     if (pathname === `/${candidate}` || pathname.startsWith(`/${candidate}/`)) {
-      locale = candidate;
+      matchedLocale = candidate;
       rewrittenPathname = pathname.slice(candidate.length + 1) || "/";
       break;
     }
   }
 
-  // Build request headers with resolved locale for downstream server components
-  const headers = new Headers(request.headers);
-  headers.set("x-locale", locale);
-
-  // If URL carried a locale prefix → rewrite internally (URL stays the same in browser)
-  if (rewrittenPathname !== pathname) {
+  // No prefix → 308 redirect to /<DEFAULT_LOCALE><pathname>.
+  if (matchedLocale === null) {
     const url = request.nextUrl.clone();
-    url.pathname = rewrittenPathname;
-    url.search = search;
-    return NextResponse.rewrite(url, { request: { headers } });
+    url.pathname = `/${DEFAULT_LOCALE}${pathname === "/" ? "" : pathname}`;
+    return NextResponse.redirect(url, 308);
   }
 
-  // No prefix — just pass through with locale header attached
-  return NextResponse.next({ request: { headers } });
+  // Prefix present → rewrite to the unprefixed path internally and
+  // attach x-locale header for server components.
+  const headers = new Headers(request.headers);
+  headers.set("x-locale", matchedLocale);
+
+  const url = request.nextUrl.clone();
+  url.pathname = rewrittenPathname;
+  url.search = search;
+  return NextResponse.rewrite(url, { request: { headers } });
 }
 
 export const config = {
