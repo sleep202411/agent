@@ -1,3 +1,4 @@
+# ⚠️ Do not put infrastructure secrets here (DB / OSS-write / JWT / cloud SDK keys) — use 1Password/Vault for those.
 # ============ Production COM (fizzstudio.fizzdragon.com) ============
 COMPOSE_PROJECT_NAME=production-com
 WEB_IMAGE=ghcr.io/fizzdragon-pte-ltd-2/studio-web:production-com
