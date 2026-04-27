@@ -6,7 +6,7 @@
  * and updates task status on completion/failure.
  */
 
-import { backendApi } from "@/src/lib/api";
+import { backendApi, ApiRequestError } from "@/src/lib/api";
 import { store } from "@/src/store";
 import {
   addTask,
@@ -116,7 +116,17 @@ async function executeTask(taskId: string) {
     const output: TaskOutput = { url, storagePath };
     store.dispatch(completeTask({ taskId, output }));
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Generation failed";
+    // Preserve the full upstream payload when present so the UI can
+    // hover-reveal the entire backend response, not just a short
+    // summary line.
+    let msg: string;
+    if (err instanceof ApiRequestError) {
+      msg = err.responseBody?.trim() || `${err.message} (code=${err.code}, status=${err.status})`;
+    } else if (err instanceof Error) {
+      msg = err.message;
+    } else {
+      msg = "Generation failed";
+    }
     store.dispatch(failTask({ taskId, error: msg }));
   }
 }

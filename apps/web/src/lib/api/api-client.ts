@@ -37,12 +37,19 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
 export class ApiRequestError extends Error {
   public code: number | string;
   public status: number;
+  /**
+   * Raw upstream response body (text or stringified JSON). Preserved so
+   * UI surfaces (e.g. failed-task tooltips) can show the full payload
+   * the backend returned, not just the short `message`.
+   */
+  public responseBody?: string;
 
-  constructor(code: number | string, message: string, status: number) {
+  constructor(code: number | string, message: string, status: number, responseBody?: string) {
     super(message);
     this.name = "ApiRequestError";
     this.code = code;
     this.status = status;
+    this.responseBody = responseBody;
   }
 }
 
@@ -135,18 +142,19 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
+    let rawBody = "";
     try {
-      const text = await response.text();
+      rawBody = await response.text();
       try {
-        const body = JSON.parse(text) as Record<string, unknown>;
+        const body = JSON.parse(rawBody) as Record<string, unknown>;
         message = String(body.msg || body.message || "") || message;
       } catch {
-        if (text.trim()) message = text.trim();
+        if (rawBody.trim()) message = rawBody.trim();
       }
     } catch {
       /* ignore read error */
     }
-    throw new ApiRequestError(`HTTP_${response.status}`, message, response.status);
+    throw new ApiRequestError(`HTTP_${response.status}`, message, response.status, rawBody);
   }
 
   const body = await response.json();
@@ -156,7 +164,8 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     throw new ApiRequestError(
       body.code ?? "UNKNOWN",
       body.msg || body.message || "Request failed",
-      200
+      200,
+      JSON.stringify(body)
     );
   }
 

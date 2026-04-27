@@ -1,7 +1,8 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
-import { IconLoader2, IconRefresh, IconX } from "@tabler/icons-react";
+import { IconAlertTriangleFilled, IconLoader2, IconRefresh, IconX } from "@tabler/icons-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
@@ -232,13 +233,34 @@ export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
                     <>
                       <button
                         type="button"
-                        title={task.error || tc("generateFailed")}
                         onClick={() => retryImageTask(task.id)}
                         className="flex flex-col items-center gap-1 text-destructive hover:text-destructive/80"
                       >
                         <IconRefresh className="size-4" />
                         <span className="text-[10px]">{tc("retry")}</span>
                       </button>
+                      {/* Alert icon — hover reveals the full backend response */}
+                      <TooltipProvider delayDuration={150}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              className="absolute left-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-destructive hover:bg-destructive/90 hover:text-white"
+                              aria-label={tc("generateFailed")}
+                            >
+                              <IconAlertTriangleFilled className="size-3" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            align="start"
+                            className="max-w-md whitespace-pre-wrap break-words bg-popover text-popover-foreground"
+                          >
+                            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+                              {task.error || tc("generateFailed")}
+                            </pre>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       <button
                         type="button"
                         onClick={() => dispatch(removeTask(task.id))}
