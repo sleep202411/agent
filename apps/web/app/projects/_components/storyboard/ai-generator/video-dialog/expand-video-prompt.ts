@@ -15,7 +15,7 @@
  * dumping CDN URLs into the LLM context.
  */
 
-import { stripAllTags } from "@/app/projects/_components/storyboard/cells/cell-utils";
+import { stripNonMentionTags } from "@/app/projects/_components/storyboard/cells/cell-utils";
 import type { ShotColumn, ShotRow, ShotValue, Asset } from "@/src/store/slices/projectSlice";
 
 export interface ExpandVideoPromptRequest {
@@ -59,7 +59,7 @@ function cellPlainText(cell: ShotValue | undefined): string {
   if (!cell) return "";
   const richTextContent = cell.richText?.content;
   if (typeof richTextContent === "string" && richTextContent.trim()) {
-    return stripAllTags(richTextContent).trim();
+    return stripNonMentionTags(richTextContent).trim();
   }
   const raw =
     typeof cell.value === "string"
@@ -67,7 +67,7 @@ function cellPlainText(cell: ShotValue | undefined): string {
       : typeof (cell as { text?: unknown }).text === "string"
         ? String((cell as { text?: unknown }).text)
         : "";
-  return stripAllTags(raw).trim();
+  return stripNonMentionTags(raw).trim();
 }
 
 function columnLabel(column: ShotColumn | undefined, fallback: string): string {

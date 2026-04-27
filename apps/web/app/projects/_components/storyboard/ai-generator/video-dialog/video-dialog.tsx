@@ -77,7 +77,7 @@ import {
   loadServerTasks,
   pollServerTasks,
 } from "@/src/store/slices/taskSlice";
-import { stripAllTags } from "@/app/projects/_components/storyboard/cells/cell-utils";
+import { stripNonMentionTags } from "@/app/projects/_components/storyboard/cells/cell-utils";
 import { buildExpandPayload, expandVideoPrompt } from "./expand-video-prompt";
 
 import type {
@@ -303,8 +303,10 @@ export function AiVideoGeneratorDialog({
       // The textarea binds to redux `formData.prompt`, which isn't
       // written back to the row cell until the user submits. Override
       // with what the user is actually typing right now — otherwise
-      // expand would see the stale cell value.
-      const typed = stripAllTags(prompt).trim();
+      // expand would see the stale cell value. Strip non-mention HTML
+      // tags but keep `<mention>` intact so the LLM sees the entity
+      // references and can preserve them in the rewrite.
+      const typed = stripNonMentionTags(prompt).trim();
       payload.currentPrompt = typed || undefined;
       const expanded = await expandVideoPrompt(payload);
       dispatch(updateVideoForm({ key, updates: { prompt: expanded } }));
