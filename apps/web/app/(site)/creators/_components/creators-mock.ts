@@ -367,14 +367,171 @@ export const MOCK_SKILL_DEMANDS: SkillDemand[] = [
   { skill: "Music", openRoles: 27, trend: "stable" },
 ];
 
+// ─── Detail-page types ───────────────────────────────
+
+export interface StudioHistoryEntry {
+  name: string;
+  role: string;
+  period: string;
+  project: string;
+}
+
+export interface CreatorIPEntry {
+  title: string;
+  role: string;
+  status: string;
+  episodes: number;
+  cover: string;
+}
+
+export interface PortfolioPiece {
+  id: string;
+  title: string;
+  type: string;
+  cover: string;
+}
+
+export interface CreatorReview {
+  author: string;
+  rating: number;
+  text: string;
+  date: string;
+}
+
+export interface CreatorDetail extends Creator {
+  timezone: string;
+  school: string;
+  fullBio: string;
+  studioHistory: StudioHistoryEntry[];
+  ips: CreatorIPEntry[];
+  portfolio: PortfolioPiece[];
+  /** Renamed to `reviewList` to avoid clashing with `Creator.reviews` (the count). */
+  reviewList: CreatorReview[];
+}
+
+// ─── Mock detail records (overlay onto base Creator) ─
+
+const DEFAULT_DETAIL_OVERLAY: Omit<CreatorDetail, keyof Creator> = {
+  timezone: "UTC+8",
+  school: "Shanghai Theatre Academy · Animation",
+  fullBio:
+    "Specializes in blending Eastern aesthetics with cyberpunk style, focused on AI animation art direction. Representative work 'Neon Dragon' has over 1M views, continuously exploring the boundaries of AI-assisted creation.",
+  studioHistory: [
+    {
+      name: "Neon Studio",
+      role: "AI Art Director",
+      period: "2023.06 — Present",
+      project: "Neon Dragon Series",
+    },
+    {
+      name: "Spark Creative",
+      role: "Character Designer",
+      period: "2022.09 — 2023.05",
+      project: "Wasteland Era",
+    },
+    {
+      name: "Freelance",
+      role: "AI Art",
+      period: "2022.01 — 2022.08",
+      project: "Multiple short films",
+    },
+  ],
+  ips: [
+    {
+      title: "Neon Dragon",
+      role: "Art Director",
+      status: "In Production",
+      episodes: 12,
+      cover: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=200&q=70",
+    },
+    {
+      title: "Cyber Hanafuda",
+      role: "Concept Design",
+      status: "Completed",
+      episodes: 6,
+      cover: "https://images.unsplash.com/photo-1679083216051-aa510a1a2c0e?w=200&q=70",
+    },
+  ],
+  portfolio: [
+    {
+      id: "p1",
+      title: "Neon Dragon · Character Design",
+      type: "AI Art",
+      cover: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=600&q=80",
+    },
+    {
+      id: "p2",
+      title: "Wasteland Era · Scene",
+      type: "Scene Design",
+      cover: "https://images.unsplash.com/photo-1676299023918-6c6c6b524488?w=600&q=80",
+    },
+    {
+      id: "p3",
+      title: "Cyber Hanafuda · Concept",
+      type: "Concept Design",
+      cover: "https://images.unsplash.com/photo-1679083216051-aa510a1a2c0e?w=600&q=80",
+    },
+    {
+      id: "p4",
+      title: "Neon Dragon · Storyboard",
+      type: "Storyboard",
+      cover: "https://images.unsplash.com/photo-1686191128892-3b37add3bfb3?w=600&q=80",
+    },
+  ],
+  reviewList: [
+    {
+      author: "Pax_Storyboarder",
+      rating: 5,
+      text: "Stunning character design, the cyberpunk details are perfectly handled.",
+      date: "2024-03",
+    },
+    {
+      author: "Galaxy Writer",
+      rating: 5,
+      text: "Precise art direction, efficient communication, realized the visual imagination perfectly.",
+      date: "2024-02",
+    },
+    {
+      author: "Ghost Voice",
+      rating: 4,
+      text: "Top-notch design quality. Would be even better with a few more alternative options.",
+      date: "2024-01",
+    },
+  ],
+};
+
+const MOCK_CREATOR_DETAIL_OVERRIDES: Partial<
+  Record<string, Partial<Omit<CreatorDetail, keyof Creator>>>
+> = {
+  c2: {
+    school: "Beijing Film Academy · Directing",
+    fullBio:
+      "10-year commercial director turned AI creator. Expert in post-apocalyptic scene design, fluent in cinematic camera language and rhythm.",
+  },
+  c6: {
+    school: "Xi'an Conservatory · Composition",
+    fullBio:
+      "Classical and electronic music fusion creator, composed original scores for 30+ AI short dramas, multiple awards.",
+  },
+};
+
+/** Build a CreatorDetail by merging a Creator with the default overlay + per-id override. */
+export function buildCreatorDetail(creator: Creator): CreatorDetail {
+  const override = MOCK_CREATOR_DETAIL_OVERRIDES[creator.id] ?? {};
+  return { ...creator, ...DEFAULT_DETAIL_OVERLAY, ...override };
+}
+
 // ─── API Interface Spec (for future backend) ─────────
 //
 // GET  /api/creators                   → Creator[]      (query: skill, level, availability, sort, page, pageSize, keyword)
-// GET  /api/creators/:id               → Creator        (creator detail with portfolio)
+// GET  /api/creators/:id               → CreatorDetail  (creator detail with portfolio + reviews)
 // GET  /api/creators/featured          → Creator[]      (spotlight / featured creators)
 // GET  /api/creators/stats             → Stats          (activeCreators, openRoles, etc.)
 // GET  /api/community/feed             → FeedItem[]     (query: type, page, pageSize)
 // GET  /api/certification/levels       → CertLevel[]    (all FD certification levels)
 // GET  /api/skills/demand              → SkillDemand[]  (current skill demand stats)
 // POST /api/creators/:id/invite        → void           (send invitation to creator)
+// POST /api/creators/:id/contact       → void           (send a contact message)
+// POST /api/creators/:id/like          → void           (toggle like)
+// POST /api/creators/:id/save          → void           (toggle bookmark)
 // POST /api/community/feed/:id/like    → void           (like a feed item)
