@@ -69,7 +69,6 @@ jobs:
 
   build-web:
     runs-on: ubuntu-latest
-    environment: staging
     permissions:
       contents: read
       packages: write
@@ -81,6 +80,13 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Load apps/web/.env.staging into job env
+        # Single source of truth: the env file already maintained for the
+        # local dev / docs flow. Strips comments and blank lines, exports
+        # everything else so the next step's build-args block can read it
+        # via ${{ env.* }}.
+        run: |
+          grep -E '^[A-Z_]+=' apps/web/.env.staging >> "$GITHUB_ENV"
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -89,13 +95,13 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/studio-web:staging
           build-args: |
-            NEXT_PUBLIC_OSS_BASE_URL=${{ vars.NEXT_PUBLIC_OSS_BASE_URL }}
-            NEXT_PUBLIC_BANNER_BASE_URL=${{ vars.NEXT_PUBLIC_BANNER_BASE_URL }}
-            NEXT_PUBLIC_USER_BASE_URL=${{ vars.NEXT_PUBLIC_USER_BASE_URL }}
-            NEXT_PUBLIC_SITE_REGION=${{ vars.NEXT_PUBLIC_SITE_REGION }}
-            NEXT_PUBLIC_PARENT_ORIGIN=${{ vars.NEXT_PUBLIC_PARENT_ORIGIN }}
+            NEXT_PUBLIC_OSS_BASE_URL=${{ env.NEXT_PUBLIC_OSS_BASE_URL }}
+            NEXT_PUBLIC_BANNER_BASE_URL=${{ env.NEXT_PUBLIC_BANNER_BASE_URL }}
+            NEXT_PUBLIC_USER_BASE_URL=${{ env.NEXT_PUBLIC_USER_BASE_URL }}
+            NEXT_PUBLIC_SITE_REGION=${{ env.NEXT_PUBLIC_SITE_REGION }}
+            NEXT_PUBLIC_PARENT_ORIGIN=${{ env.NEXT_PUBLIC_PARENT_ORIGIN }}
             SERVER_URL=http://server:3001
-            JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
-            JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
+            JAVA_STUDIO_URL=${{ env.JAVA_STUDIO_URL }}
+            JAVA_CONTENT_URL=${{ env.JAVA_CONTENT_URL }}
           cache-from: type=gha,scope=web-staging
           cache-to: type=gha,scope=web-staging,mode=max
