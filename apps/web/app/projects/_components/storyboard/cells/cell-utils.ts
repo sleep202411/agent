@@ -427,13 +427,23 @@ export function buildVideoPromptContext(
   const shotValues = row.shotValues ?? [];
   const videoPromptCell = shotValues.find((item) => item.presetColumnKey === "video_prompt");
 
+  // The cell only exists once the user has typed into it once. Schema-
+  // wise the column always exists, so fall back to it when we need the
+  // id (e.g. to persist the prompt back after a generate click).
+  const videoPromptColumnFromSchema = columns.find((c) => c.presetColumnKey === "video_prompt");
+  const resolvedVideoPromptColumnId = videoPromptCell?.shotColumnId
+    ? String(videoPromptCell.shotColumnId)
+    : videoPromptColumnFromSchema?.id
+      ? String(videoPromptColumnFromSchema.id)
+      : "";
+
   if (videoPromptCell) {
     const content = getShotPromptContent(videoPromptCell, columns, videoPromptCell.shotColumnId);
     if (content && stripAllTags(content)) {
       return {
         prompt: content,
         referenceFields: [] as string[],
-        videoPromptColumnId: String(videoPromptCell.shotColumnId ?? ""),
+        videoPromptColumnId: resolvedVideoPromptColumnId,
       };
     }
   }
@@ -458,9 +468,7 @@ export function buildVideoPromptContext(
     return {
       prompt: promptParts.join(", "),
       referenceFields,
-      videoPromptColumnId: videoPromptCell?.shotColumnId
-        ? String(videoPromptCell.shotColumnId)
-        : "",
+      videoPromptColumnId: resolvedVideoPromptColumnId,
     };
   }
 
@@ -500,7 +508,7 @@ export function buildVideoPromptContext(
   return {
     prompt: promptParts.join(", "),
     referenceFields,
-    videoPromptColumnId: videoPromptCell?.shotColumnId ? String(videoPromptCell.shotColumnId) : "",
+    videoPromptColumnId: resolvedVideoPromptColumnId,
   };
 }
 
