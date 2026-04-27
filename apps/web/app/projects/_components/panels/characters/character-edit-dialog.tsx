@@ -358,13 +358,21 @@ export function CharacterEditDialog({
                   <div className="mb-2 text-[11px] text-muted-foreground/80">
                     {t("characterImageLabel")}
                   </div>
-                  <div className="group relative aspect-9/14 h-48 overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
+                  <div
+                    className={cn(
+                      "group relative h-48 overflow-hidden rounded-lg border border-dashed border-border bg-muted/20",
+                      // With an image: width auto-fits the picture's natural
+                      // aspect at h-48. Empty state keeps a portrait-ish
+                      // box so the placeholder copy fits.
+                      hasRoleImage ? "w-fit" : "aspect-9/14"
+                    )}
+                  >
                     {hasRoleImage ? (
                       <>
                         <img
                           src={roleImageUrl}
                           alt=""
-                          className="h-full w-full cursor-zoom-in object-cover"
+                          className="h-full w-auto cursor-zoom-in"
                           onClick={() => setPreviewImage(roleImageUrl)}
                         />
                         <button
