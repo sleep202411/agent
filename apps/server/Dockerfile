@@ -22,6 +22,7 @@ RUN npx turbo run build --filter=server
 
 # ─── Stage 4: Runner ────────────────────────────────────
 FROM base AS runner
+LABEL org.opencontainers.image.source=https://github.com/Fizzdragon-Pte-Ltd-2/fizzdragon-platform
 WORKDIR /app
 
 ENV NODE_ENV=production
