@@ -7,10 +7,8 @@ name: Build & Push (staging)
 on:
   push:
     branches:
-      - main
       - develop
-      - feat/migration-feature-parity
-  workflow_dispatch:
+  workflow_dispatch: # allow manual builds from any branch when needed
 
 concurrency:
   group: build-staging-${{ github.ref_name }}
