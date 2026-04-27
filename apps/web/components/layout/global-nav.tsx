@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { UserMenu } from "@/components/layout/user-menu";
+import { SiteUserMenu } from "@/components/layout/site-user-menu";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { fetchUser } from "@/src/store/slices/authSlice";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
@@ -163,7 +163,7 @@ export function GlobalNav() {
           </DropdownMenu>
 
           {user ? (
-            <UserMenu />
+            <SiteUserMenu />
           ) : (
             <button
               type="button"
