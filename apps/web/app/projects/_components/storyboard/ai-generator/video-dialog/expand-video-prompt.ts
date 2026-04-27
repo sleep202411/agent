@@ -157,3 +157,48 @@ export async function expandVideoPrompt(payload: ExpandVideoPromptRequest): Prom
   if (!data.prompt) throw new Error("empty prompt from server");
   return data.prompt;
 }
+
+// ─── Translate ────────────────────────────────────────
+
+export type PromptLang = "zh" | "en";
+
+/**
+ * Heuristic prompt-language detection. CJK unified ideographs / kana /
+ * CJK punctuation count vs ASCII letter count — whichever wins is the
+ * source language. Treats mixed prompts as Chinese when the CJK count
+ * matches latin letters because Chinese characters carry far more
+ * meaning per glyph than letters do per latin word.
+ */
+export function detectPromptLanguage(text: string): PromptLang {
+  if (!text) return "en";
+  // Strip <mention> tags whole (tag + inner) before counting:
+  // their attrs (id / type / imgUrl) carry heavy ASCII that would
+  // otherwise tip the counter toward English on Chinese prompts.
+  const cleaned = text.replace(/<mention\s[^>]*>[\s\S]*?<\/mention>/g, "");
+  const cjk = (cleaned.match(/[\u4E00-\u9FFF\u3040-\u30FF\u3000-\u303F\uF900-\uFAFF]/g) ?? [])
+    .length;
+  const latin = (cleaned.match(/[A-Za-z]/g) ?? []).length;
+  return cjk >= latin ? "zh" : "en";
+}
+
+export interface TranslateVideoPromptRequest {
+  prompt: string;
+  sourceLang: PromptLang;
+  targetLang: PromptLang;
+}
+
+export async function translateVideoPrompt(payload: TranslateVideoPromptRequest): Promise<string> {
+  const response = await fetch("/aurora/video-prompt/translate", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text.slice(0, 200) || `translate failed: ${response.status}`);
+  }
+  const data = (await response.json()) as { prompt?: string };
+  if (!data.prompt) throw new Error("empty prompt from server");
+  return data.prompt;
+}

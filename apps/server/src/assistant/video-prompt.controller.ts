@@ -1,11 +1,11 @@
 /**
- * Thin passthrough from the frontend to Mastra's `/video-prompt/expand`.
- * Reachable at `/aurora/video-prompt/expand` thanks to the Next.js rewrite
- * that strips the `/aurora` prefix.
+ * Thin passthrough from the frontend to Mastra's video-prompt routes.
+ * Reachable at `/aurora/video-prompt/{expand,translate}` thanks to the
+ * Next.js rewrite that strips the `/aurora` prefix.
  *
  * Auth/context handling mirrors WorkflowProxyController so the upstream
- * route sees the same `x-storyos-context` shape — though this particular
- * route doesn't inspect project/world today, it's cheap to keep consistent.
+ * routes see the same `x-storyos-context` shape — though these particular
+ * routes don't inspect project/world today, it's cheap to keep consistent.
  */
 import {
   Body,
@@ -38,7 +38,25 @@ export class VideoPromptController {
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
   ) {
-    const url = `${this.mastraUrl}/video-prompt/expand`;
+    return this.proxy('expand', body, user, req);
+  }
+
+  @Post('translate')
+  async translate(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.proxy('translate', body, user, req);
+  }
+
+  private async proxy(
+    op: 'expand' | 'translate',
+    body: JsonBody,
+    user: AuthUser,
+    req: Request,
+  ) {
+    const url = `${this.mastraUrl}/video-prompt/${op}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
@@ -71,7 +89,7 @@ export class VideoPromptController {
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => '');
       this.logger.warn(
-        `Mastra video-prompt/expand → ${upstream.status}: ${text.slice(0, 200)}`,
+        `Mastra video-prompt/${op} → ${upstream.status}: ${text.slice(0, 200)}`,
       );
       const code =
         upstream.status >= 400 && upstream.status < 500

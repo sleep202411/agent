@@ -13,6 +13,7 @@ import {
   IconDownload,
   IconEye,
   IconFileText,
+  IconLanguage,
   IconLayoutGrid,
   IconLoader2,
   IconMaximize,
@@ -78,7 +79,12 @@ import {
   pollServerTasks,
 } from "@/src/store/slices/taskSlice";
 import { stripNonMentionTags } from "@/app/projects/_components/storyboard/cells/cell-utils";
-import { buildExpandPayload, expandVideoPrompt } from "./expand-video-prompt";
+import {
+  buildExpandPayload,
+  detectPromptLanguage,
+  expandVideoPrompt,
+  translateVideoPrompt,
+} from "./expand-video-prompt";
 
 import type {
   AiVideoGeneratorDialogProps,
@@ -262,6 +268,7 @@ export function AiVideoGeneratorDialog({
   const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
   const shotRow = useMemo(() => rows.find((r) => r.shotId === shotId), [rows, shotId]);
   const [isExpandingPrompt, setIsExpandingPrompt] = useState(false);
+  const [isTranslatingPrompt, setIsTranslatingPrompt] = useState(false);
 
   // Seedance-2.0 forbids non-Seedream-generated photorealistic reference
   // images. Warn the user the first time they pick it per device; the
@@ -318,6 +325,34 @@ export function AiVideoGeneratorDialog({
       setIsExpandingPrompt(false);
     }
   }, [columns, dispatch, isExpandingPrompt, key, prompt, shotNumber, shotRow, t]);
+
+  const handleTranslatePrompt = useCallback(async () => {
+    if (isTranslatingPrompt) return;
+    const typed = stripNonMentionTags(prompt).trim();
+    if (!typed) {
+      toast.error(t("translatePromptEmpty"));
+      return;
+    }
+    setIsTranslatingPrompt(true);
+    try {
+      const sourceLang = detectPromptLanguage(typed);
+      const targetLang = sourceLang === "zh" ? "en" : "zh";
+      const translated = await translateVideoPrompt({
+        prompt: typed,
+        sourceLang,
+        targetLang,
+      });
+      dispatch(updateVideoForm({ key, updates: { prompt: translated } }));
+      toast.success(
+        t(targetLang === "en" ? "translatePromptSuccessToEn" : "translatePromptSuccessToZh")
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`${t("translatePromptFailed")}: ${msg}`);
+    } finally {
+      setIsTranslatingPrompt(false);
+    }
+  }, [dispatch, isTranslatingPrompt, key, prompt, t]);
 
   const {
     referenceImages,
@@ -1090,6 +1125,20 @@ export function AiVideoGeneratorDialog({
                   placeholder={t("prefixPromptPlaceholder")}
                   className="flex-1 bg-transparent text-xs text-foreground/80 outline-none placeholder:text-muted-foreground/40"
                 />
+                <button
+                  type="button"
+                  onClick={() => void handleTranslatePrompt()}
+                  disabled={isTranslatingPrompt}
+                  title={t("translatePromptTooltip")}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/40 bg-background/40 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isTranslatingPrompt ? (
+                    <IconLoader2 className="size-3 animate-spin" />
+                  ) : (
+                    <IconLanguage className="size-3" />
+                  )}
+                  {t("translatePromptButton")}
+                </button>
                 <button
                   type="button"
                   onClick={() => void handleExpandPrompt()}

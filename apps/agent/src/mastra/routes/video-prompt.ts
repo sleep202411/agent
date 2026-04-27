@@ -142,6 +142,47 @@ function resolveVideoPromptModel(): LanguageModel {
   return defaultPersonaModel();
 }
 
+// ─── /video-prompt/translate ────────────────────────────
+//
+// Companion to /expand: bidirectional zh ↔ en translation for the same
+// prompt textbox. Frontend detects the source language heuristically
+// and tells the model where to go; the model only translates.
+
+const TranslateRequestSchema = z.object({
+  prompt: z.string().min(1),
+  sourceLang: z.enum(["zh", "en"]),
+  targetLang: z.enum(["zh", "en"]),
+});
+
+type TranslateRequest = z.infer<typeof TranslateRequestSchema>;
+
+const TRANSLATE_SYSTEM_PROMPT = [
+  `You are a translator for short-video storyboard prompts. The text describes camera shots, framing, character action, dialogue, and scene.`,
+  ``,
+  `# Critical rules`,
+  ``,
+  `1. **Preserve every \`<mention id="..." type="..." imgUrl="..." [voiceId="..."] [model="..."]>label</mention>\` tag exactly.** Keep all attributes verbatim, and DO NOT translate the inner label — those names are project entity identifiers; translating them would break the badges that reference them. Move each \`<mention>\` tag unchanged into the natural position in the translated sentence.`,
+  `2. **Translate only the prose around the tags.** Map storyboard vocabulary to natural equivalents:`,
+  `   - 镜号 N ↔ Shot N`,
+  `   - 第一镜头 / 第二镜头 ↔ Shot 1 / Shot 2`,
+  `   - 切入 ↔ cut in；快切 ↔ quick cut；推拉 ↔ push-pull；跟拍 ↔ tracking shot`,
+  `   - 特写 / 近景 / 中景 / 全景 / 远景 ↔ close-up / medium close-up / medium / wide / long shot`,
+  `   - 正拍 / 侧拍 / 俯拍 / 仰拍 / 过肩 ↔ front / side / high-angle / low-angle / over-the-shoulder`,
+  `   - Time ranges: (0-4秒) ↔ (0-4s)`,
+  `3. **Keep the structure.** Preserve line breaks, parenthetical notes, dialogue quotes ("..."), and section labels. Don't reflow paragraphs.`,
+  `4. **Output the translated text only.** No explanation, no quotes around the whole output, no markdown headings.`,
+].join("\n");
+
+function buildTranslateUserMessage(input: TranslateRequest): string {
+  const fromTo =
+    input.sourceLang === "zh" && input.targetLang === "en"
+      ? "Translate the following text from Chinese (Simplified) to natural, fluent English:"
+      : input.sourceLang === "en" && input.targetLang === "zh"
+        ? "Translate the following text from English to natural, fluent Simplified Chinese:"
+        : `Translate the following text from ${input.sourceLang} to ${input.targetLang}:`;
+  return `${fromTo}\n\n${input.prompt}`;
+}
+
 export const videoPromptRoutes = [
   registerApiRoute("/video-prompt/expand", {
     method: "POST",
@@ -177,6 +218,50 @@ export const videoPromptRoutes = [
         // eslint-disable-next-line no-console
         console.error("[video-prompt/expand] LLM call failed:", message);
         return c.json({ error: `expand failed: ${message}` }, 500);
+      }
+    },
+  }),
+
+  registerApiRoute("/video-prompt/translate", {
+    method: "POST",
+    handler: async (c) => {
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "invalid JSON body" }, 400);
+      }
+
+      const parsed = TranslateRequestSchema.safeParse(body);
+      if (!parsed.success) {
+        return c.json({ error: "invalid input", issues: parsed.error.issues }, 400);
+      }
+
+      // No-op when the user picked the same source and target.
+      if (parsed.data.sourceLang === parsed.data.targetLang) {
+        return c.json({ prompt: parsed.data.prompt });
+      }
+
+      try {
+        const model = resolveVideoPromptModel();
+        const { text } = await generateText({
+          model,
+          system: TRANSLATE_SYSTEM_PROMPT,
+          prompt: buildTranslateUserMessage(parsed.data),
+          // Translation should be deterministic-ish; lower than expand.
+          temperature: 0.2,
+        });
+
+        const cleaned = text.trim();
+        if (!cleaned) {
+          return c.json({ error: "empty response from model" }, 502);
+        }
+        return c.json({ prompt: cleaned });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // eslint-disable-next-line no-console
+        console.error("[video-prompt/translate] LLM call failed:", message);
+        return c.json({ error: `translate failed: ${message}` }, 500);
       }
     },
   }),
