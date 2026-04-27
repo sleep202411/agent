@@ -67,21 +67,32 @@ function normalizeUpstream(raw: UpstreamItem): NewsItem {
   };
 }
 
-function flatten(data: UpstreamResponse["data"]): NewsItem[] {
+function flatten(data: unknown): NewsItem[] {
+  // Defensive: upstream sometimes returns malformed shapes (string error
+  // bodies, sections that aren't arrays, items missing fields). We never
+  // want to throw — worst case is "no live articles".
+  if (!data || typeof data !== "object") return [];
+
   const seen = new Set<number>();
   const out: NewsItem[] = [];
-  for (const arr of Object.values(data)) {
-    if (!arr) continue;
-    for (const raw of arr) {
-      if (!raw || typeof raw.id !== "number") continue;
-      // Drop garbage rows: live newsapi items only make sense if they
-      // carry an external link. Title/cover-only entries are filler.
-      if (!raw.url || raw.url.trim() === "") continue;
-      if (!raw.title || raw.title.trim() === "") continue;
-      if (seen.has(raw.id)) continue;
-      seen.add(raw.id);
-      out.push(normalizeUpstream(raw));
+  try {
+    for (const arr of Object.values(data as Record<string, unknown>)) {
+      if (!Array.isArray(arr)) continue;
+      for (const raw of arr) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as UpstreamItem;
+        if (typeof item.id !== "number") continue;
+        // Drop garbage rows: live newsapi items only make sense if they
+        // carry an external link. Title/cover-only entries are filler.
+        if (!item.url || item.url.trim() === "") continue;
+        if (!item.title || item.title.trim() === "") continue;
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        out.push(normalizeUpstream(item));
+      }
     }
+  } catch (err) {
+    console.warn("[/api/news] flatten failed, returning partial result:", err);
   }
   return out;
 }
@@ -97,20 +108,32 @@ export async function GET(request: NextRequest) {
       ? acceptHeader
       : "en-US";
 
+  // Upstream is flaky — wrap everything (network, parse, shape) so a 500
+  // / malformed body / non-JSON response can never bubble up. Worst case
+  // we just serve the static articles (or an empty list on .cn).
   let live: NewsItem[] = [];
   try {
     const res = await fetch(UPSTREAM, {
       headers: { "accept-language": lang },
       next: { revalidate: 300 },
     });
-    if (res.ok) {
-      const json = (await res.json()) as UpstreamResponse;
-      if (json.code === 200 && json.data) {
+    if (!res.ok) {
+      console.warn(`[/api/news] upstream non-OK: ${res.status} ${res.statusText}`);
+    } else {
+      let json: UpstreamResponse | null = null;
+      try {
+        json = (await res.json()) as UpstreamResponse;
+      } catch (err) {
+        console.warn("[/api/news] upstream JSON parse failed:", err);
+      }
+      if (json && json.code === 200 && json.data) {
         live = flatten(json.data);
+      } else if (json && json.code !== 200) {
+        console.warn(`[/api/news] upstream code != 200:`, json.code);
       }
     }
-  } catch {
-    // Upstream down — fall back to static-only.
+  } catch (err) {
+    console.warn("[/api/news] upstream fetch failed, falling back to static-only:", err);
   }
 
   // Hardcoded marketing articles only run on staging + production .com
