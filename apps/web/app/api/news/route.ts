@@ -43,9 +43,22 @@ interface UpstreamItem {
   createTime?: string;
 }
 
+// Upstream is in flux: legacy shape uses `code: 200` for success; the
+// new shape uses `success: true`. Error bodies look like
+// `{ success: false, code: "UNKNOWN_ERROR", message, data: null }`.
+// Accept both successes; treat anything else as empty.
 interface UpstreamResponse {
-  code: number;
-  data: Record<string, UpstreamItem[] | undefined>;
+  code?: number | string;
+  success?: boolean;
+  message?: string;
+  data?: unknown;
+}
+
+function isUpstreamSuccess(json: UpstreamResponse | null): boolean {
+  if (!json) return false;
+  if (json.success === true) return true;
+  if (json.code === 200) return true;
+  return false;
 }
 
 function normalizeUpstream(raw: UpstreamItem): NewsItem {
@@ -126,10 +139,12 @@ export async function GET(request: NextRequest) {
       } catch (err) {
         console.warn("[/api/news] upstream JSON parse failed:", err);
       }
-      if (json && json.code === 200 && json.data) {
-        live = flatten(json.data);
-      } else if (json && json.code !== 200) {
-        console.warn(`[/api/news] upstream code != 200:`, json.code);
+      if (isUpstreamSuccess(json) && json!.data) {
+        live = flatten(json!.data);
+      } else if (json) {
+        console.warn(
+          `[/api/news] upstream not OK — success=${json.success} code=${json.code} message=${json.message}`
+        );
       }
     }
   } catch (err) {
