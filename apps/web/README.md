@@ -60,12 +60,11 @@ apps/web/
 
 `next.config.ts` rewrites these prefixes to backend services:
 
-| Prefix                              | Target                             |
-| ----------------------------------- | ---------------------------------- |
-| `/aurora/*`                         | NestJS server (`SERVER_URL`)       |
-| `/api/*`, `/anon/*`, `/studio/*`    | Java Studio (`JAVA_STUDIO_URL`)    |
-| `/user/*`, `/project/*`, `/vedio/*` | Java Content (`JAVA_CONTENT_URL`)  |
-| `/newsapi/*`                        | `https://fizzdragon.com/content/*` |
+| Prefix                              | Target                            |
+| ----------------------------------- | --------------------------------- |
+| `/aurora/*`                         | NestJS server (`SERVER_URL`)      |
+| `/api/*`, `/anon/*`, `/studio/*`    | Java Studio (`JAVA_STUDIO_URL`)   |
+| `/user/*`, `/project/*`, `/vedio/*` | Java Content (`JAVA_CONTENT_URL`) |
 
 Just call `backendApi.get('/project/list/course/type/title')` — no manual
 host prefix; the rewrite handles it per-environment.

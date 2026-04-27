@@ -1,10 +1,10 @@
 /**
- * Shared news types — kept in a non-"use client" module so the
- * Next.js API route can import them on the server.
+ * Shared news types — used by both the server-side `_data/news.ts`
+ * data layer and the client card / detail components.
  *
- * The shape here is the **client-facing** shape returned by /blaze/news.
- * The route normalizes both the upstream Java backend feed and our
- * hardcoded static articles into this single form.
+ * `_data/news.ts#getNewsList` normalizes the upstream Java backend feed
+ * and our hardcoded static articles into this single rendered shape,
+ * which the news pages consume directly.
  */
 
 export interface NewsItem {

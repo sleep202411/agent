@@ -48,18 +48,15 @@ Turbopack is the default bundler — no flags needed.
 - `/aurora/*` → NestJS (`SERVER_URL`)
 - `/api/*`, `/anon/*`, `/studio/*` → Java Studio (`JAVA_STUDIO_URL`)
 - `/user/*`, `/project/*`, `/vedio/*` → Java Content (`JAVA_CONTENT_URL`)
-- `/newsapi/*` → `https://fizzdragon.com/content/*`
 
-`/blaze/*` is reserved for **Next.js local route handlers** — endpoints
-where the web app does its own server-side work (fetching, merging,
-fallback) before responding to its own UI. The handler files live under
-`app/api/<name>/route.ts` (Next.js convention), but the public URL
-exposed to clients is `/blaze/<name>` — `next.config.ts#rewrites`
-internally rewrites `/blaze/:path*` → `/api/:path*` so the route handler
-runs. Public URL is on `/blaze/*` so nginx (which forwards `/api/*` to
-Java Studio on legacy hosts) won't intercept the call. Use this prefix
-for any new server-side endpoint owned by the web app rather than
-exposing `/api/*` to clients.
+**No public Next.js HTTP endpoints.** Anything the web app needs to
+fetch / merge / sanitize on the server side is done as part of an
+`async` server component, not as a route handler. nginx on prod
+forwards `/api/*` directly to Java Studio, so exposing a `/api/*` route
+handler doesn't work end-to-end anyway — and SSR gives us SEO + faster
+first paint for free. If a true HTTP endpoint is ever needed (webhook,
+external consumer), pick a fresh non-conflicting prefix and add an
+nginx rule.
 
 ## Feature colocation (work-in-progress convention)
 
