@@ -131,19 +131,19 @@ const splitStep = createStep({
 
     const numbered = rawLines.map((l, i) => `${i + 1}: ${l}`).join("\n");
     const feedbackBlock = inputData.feedback
-      ? `\n\n【用户修改意见（优先遵循）】\n${inputData.feedback}\n`
+      ? `\n\n[User feedback (must be followed)]\n${inputData.feedback}\n`
       : "";
     const prompt = [
-      `目标集数：${inputData.targetEpisodeCount}`,
-      `总行数 totalLines：${totalLines}`,
+      `Target episode count: ${inputData.targetEpisodeCount}`,
+      `Total lines (totalLines): ${totalLines}`,
       "",
-      "带行号的剧本全文：",
+      "Full script with line numbers:",
       "```",
       numbered,
       "```",
       feedbackBlock,
       "",
-      `请严格返回 ${inputData.targetEpisodeCount} 条 episodes，每条的 startLine/endLine 必须闭区间、严格衔接、落在 [1, ${totalLines}] 内。`,
+      `Return exactly ${inputData.targetEpisodeCount} episodes. Every entry's startLine/endLine must be inclusive, strictly contiguous, and land in [1, ${totalLines}].`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -157,7 +157,7 @@ const splitStep = createStep({
     const rawEpisodes =
       (response.object as { episodes?: z.infer<typeof SplitEntry>[] } | undefined)?.episodes ?? [];
     if (rawEpisodes.length === 0) {
-      throw new Error("scriptSplitter 未返回任何 episodes");
+      throw new Error("scriptSplitter returned no episodes");
     }
 
     // Clamp line ranges to [1, totalLines] and enforce strict ordering —
@@ -175,7 +175,7 @@ const splitStep = createStep({
       .slice(0, inputData.targetEpisodeCount);
 
     if (clamped.length === 0) {
-      throw new Error("所有返回的 episodes 行号都不合法，切分失败");
+      throw new Error("All returned episode line ranges were invalid; split failed");
     }
 
     // Stitch gaps: if episode i ends before episode i+1 starts - 1, extend
@@ -276,10 +276,11 @@ const waitConfirmationStep = createStep({
         statuses: ["pending"],
       });
       // No nextAction — after approval parse_script's completion emits a
-      // 2-option nextSteps card (完整资产 vs 直接分镜) for the user to pick
-      // downstream. The suspended card button should just be "完成 · N 积分"
-      // (approve current drafts + commit), not "继续 xxx" which misleads
-      // into thinking the next phase runs immediately.
+      // 2-option nextSteps card (full-asset path vs straight-to-storyboard)
+      // for the user to pick downstream. The suspended card button should
+      // just be "Done · N credits" (approve current drafts + commit), not
+      // "Continue …" which misleads into thinking the next phase runs
+      // immediately.
       await publishWorkflowSuspended(ctx.projectId, runId, "parse_script", {
         draftGroups: [
           {
@@ -534,8 +535,8 @@ const applyDecisionStep = createStep({
         : `partial failure: ${failed.length}/${accepts.length}`;
 
     // After parse_script, user picks the downstream path:
-    //   - 完整资产（角色 → 场景 → 道具 → 分镜）via story_outline
-    //   - 直接出分镜（跳过角色/场景/道具 assets）via storyboard_phase
+    //   - Full assets (role → scene → prop → storyboard) via story_outline
+    //   - Straight to storyboard (skip role/scene/prop assets) via storyboard_phase
     // Replaces the former script_import_flow / script_to_storyboard_flow
     // parent workflows — LLM or button decides which branch.
     await publishWorkflowCompleted(ctx.projectId, runId, "parse_script", {
@@ -575,7 +576,7 @@ const applyDecisionStep = createStep({
 export const parseScriptWorkflow = createWorkflow({
   id: "parse_script",
   description:
-    "剧本切分：把用户上传的完整剧本按自然 场/幕/章 边界切成 N 集 → HITL → 入库 episode + script（原文照搬）。跳过 script_breakdown / script_phase。",
+    "Script slicing: split a user-uploaded complete script into N episodes along natural scene/act/chapter boundaries → HITL → commit episode + script (verbatim source). Skips script_breakdown / script_phase.",
   inputSchema: ParseScriptInputSchema,
   outputSchema: ParseScriptOutputSchema,
   stateSchema: StateSchema,

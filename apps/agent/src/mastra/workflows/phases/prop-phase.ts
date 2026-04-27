@@ -41,7 +41,7 @@ const PropDesignSchema = z.object({
   category: z
     .enum(["object", "document", "apparel", "vehicle", "weapon", "food", "art", "other"])
     .default("object"),
-  era: z.string().default("当代"),
+  era: z.string().default("contemporary"),
   material: z.string().min(1),
   appearance: z.string().min(1),
   significance: z.string().min(1),
@@ -83,30 +83,32 @@ function buildElaboratePrompt(
   const chapterRefs = entry.firstAppearance
     ? skeleton.structure
         .filter((ch) => ch.chapterId === entry.firstAppearance)
-        .map((ch) => `- ${ch.chapterId} 《${ch.title}》：${ch.summary}`)
+        .map((ch) => `- ${ch.chapterId} "${ch.title}": ${ch.summary}`)
         .join("\n")
     : "";
-  const feedbackBlock = feedback ? `\n\n【用户补充意见（优先遵循）】\n${feedback}\n` : "";
+  const feedbackBlock = feedback ? `\n\n[User feedback (must be followed)]\n${feedback}\n` : "";
   return [
-    "请基于下面的故事骨架与道具名册条目，产出**一个完整道具设计**（JSON）。",
+    "Based on the story skeleton and the prop roster entry below, produce **one complete prop design** as JSON.",
     "",
-    "## 故事概况",
-    `类型：${skeleton.genre} / 基调：${skeleton.tone}`,
-    `主线：${skeleton.threads.main}`,
-    `摘要：${skeleton.storySummary}`,
+    "## Story snapshot",
+    `Genre: ${skeleton.genre} / Tone: ${skeleton.tone}`,
+    `Main thread: ${skeleton.threads.main}`,
+    `Summary: ${skeleton.storySummary}`,
     "",
-    "## 这个道具在骨架里的信息",
-    `- 名称：${entry.name}`,
-    `- 类型提示：${entry.typeHint}`,
-    entry.firstAppearance ? `- 首次出现：${entry.firstAppearance}` : "",
-    chapterRefs ? `\n相关章节：\n${chapterRefs}` : "",
+    "## This prop's roster entry",
+    `- Name: ${entry.name}`,
+    `- Type hint: ${entry.typeHint}`,
+    entry.firstAppearance ? `- First appearance: ${entry.firstAppearance}` : "",
+    chapterRefs ? `\nRelevant chapters:\n${chapterRefs}` : "",
     feedbackBlock,
     "",
-    "## 必须遵守 Prop Designer 的 JSON schema，字段含义看你 system prompt。",
-    "- name 沿用骨架里给的名称，不要改",
-    "- appearance 40-80 字、强调可识别细节（给人看）",
-    "- significance 紧扣道具在故事中的剧情功能",
-    "- prompt 是**图像生成提示词** —— 40-80 字视觉 token 串，按「道具主体+材质+年代感+使用痕迹+特写/静物视角」顺序、顿号分隔。只写画面能看见的细节。**不要**加画风/品质 token（写实、微距、电影感 等）—— 下游按项目 stylePainting 自动拼接。不要写剧情/情感用途。",
+    "Output language: default English. If the project context provides a `dialogLanguage` (or equivalent locale param), follow it.",
+    "",
+    "## Strictly follow the Prop Designer JSON schema; field meanings are in your system prompt.",
+    "- name: keep the roster name verbatim, do not change it",
+    "- appearance: 40-80 characters / ~25-50 English words; emphasize identifying details (for human readers)",
+    "- significance: tied tightly to the prop's narrative function in the story",
+    "- prompt: the **image-generation prompt** — 40-80 characters / ~25-50 English words of visual tokens, comma-separated in this order: prop subject, material, period feel, signs of use, close-up / still-life angle. Only paintable details. **Do not** add style/quality tokens (realistic, macro, cinematic, etc.) — the project's `stylePainting` is appended downstream. Do not write plot/emotional usage.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -197,11 +199,11 @@ const collectDraftsStep = createStep({
     for (const p of inputData.props) {
       const clientRefId = randomUUID();
       const description = [
-        `类型：${p.category} · ${p.era}`,
-        `材质：${p.material}`,
-        `外观：${p.appearance}`,
-        `剧情功能：${p.significance}`,
-        p.keyScenes.length > 0 ? `关键出场：${p.keyScenes.join("；")}` : "",
+        `Type: ${p.category} · ${p.era}`,
+        `Material: ${p.material}`,
+        `Appearance: ${p.appearance}`,
+        `Narrative function: ${p.significance}`,
+        p.keyScenes.length > 0 ? `Key appearances: ${p.keyScenes.join("; ")}` : "",
       ]
         .filter(Boolean)
         .join("\n");
@@ -299,7 +301,7 @@ const emitReviewStep = createStep({
 export const propPhaseWorkflow = createWorkflow({
   id: "prop_phase",
   description:
-    "道具阶段：从故事骨架 props 名册扩展 → 道具草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库。",
+    "Prop phase: expand from the story skeleton's props roster → prop drafts into Redis → wait for user confirmation. After approval, apply_phase_drafts commits to Java.",
   inputSchema: PropPhaseInputSchema,
   outputSchema: PropPhaseOutputSchema,
 })
@@ -425,7 +427,7 @@ export async function applyPropDrafts(
     });
   }
 
-  const endLabel = `道具入库完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  const endLabel = `Props committed: ${committed.length} ok / ${failed.length} failed`;
   await reportProgress(runId, {
     stepId: "prop_phase.commit",
     current: committed.length,

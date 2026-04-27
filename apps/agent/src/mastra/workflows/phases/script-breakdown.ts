@@ -25,10 +25,10 @@ import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/la
 
 /**
  * DeepSeek sometimes emits arrays where we expect a single string.
- * Coerce by joining with Chinese enumeration comma.
+ * Coerce by joining with a comma so the field stays a single string.
  */
 const stringLike = z.preprocess((val) => {
-  if (Array.isArray(val)) return val.map((v) => String(v)).join("、");
+  if (Array.isArray(val)) return val.map((v) => String(v)).join(", ");
   return val;
 }, z.string().min(1));
 
@@ -66,8 +66,8 @@ const ThreadsSchema = z.object({
  *
  * DeepSeek occasionally drops `role` or `arc` on secondary cast entries when
  * it races through the tail of a long list. We preprocess to fill in
- * "原文未明示" (matches the persona's own fallback instruction) so one missing
- * sub-field doesn't nuke the whole run.
+ * "not specified in source" (matches the persona's own fallback instruction)
+ * so one missing sub-field doesn't nuke the whole run.
  */
 const CastRosterEntrySchema = z.preprocess(
   (val) => {
@@ -75,8 +75,8 @@ const CastRosterEntrySchema = z.preprocess(
     const obj = val as Record<string, unknown>;
     return {
       ...obj,
-      role: obj.role ?? "原文未明示",
-      arc: obj.arc ?? "原文未明示",
+      role: obj.role ?? "not specified in source",
+      arc: obj.arc ?? "not specified in source",
     };
   },
   z.object({
@@ -97,7 +97,7 @@ const SettingsRosterEntrySchema = z.preprocess(
     const obj = val as Record<string, unknown>;
     return {
       ...obj,
-      typeHint: obj.typeHint ?? "未明示",
+      typeHint: obj.typeHint ?? "unspecified",
     };
   },
   z.object({
@@ -117,7 +117,7 @@ const PropsRosterEntrySchema = z.preprocess(
     const obj = val as Record<string, unknown>;
     return {
       ...obj,
-      typeHint: obj.typeHint ?? "未明示",
+      typeHint: obj.typeHint ?? "unspecified",
     };
   },
   z.object({
@@ -183,7 +183,7 @@ async function loadTextFromCommittedEpisodes(ctx: StoryosContext): Promise<strin
         const raw = res.content ?? res.script ?? "";
         const plain = htmlToPlainText(raw);
         if (!plain.trim()) return "";
-        const header = `## 第 ${i + 1} 集 ${ep.title ?? ""}`.trim();
+        const header = `## Episode ${i + 1} ${ep.title ?? ""}`.trim();
         return `${header}\n\n${plain}`;
       } catch {
         return "";
@@ -371,21 +371,21 @@ function buildStoryEditorPrompt(input: {
   styleHint?: string;
   contentLanguage: string;
 }): string {
-  const styleBlock = input.styleHint ? `\n\n用户想要的风格提示：${input.styleHint}\n` : "";
+  const styleBlock = input.styleHint ? `\n\nUser-supplied style hint: ${input.styleHint}\n` : "";
   return [
-    "请对以下原始素材做**剧本统筹级的骨架拆解**。只产出结构 / 线索 / 名册，**不要**做角色和场景的详细设计。严格按约定的 JSON schema 返回。",
+    "Do a **story-editor-level skeleton breakdown** of the source material below. Produce only structure / threads / rosters — **do not** do detailed character or scene design. Follow the agreed JSON schema strictly.",
     "",
     "```",
     input.text,
     "```",
     styleBlock,
     "",
-    "核心要求：",
-    "1. structure 必须覆盖全文，章节划分合理（短篇 3-5 章，中篇 5-15 章，长篇按原文分章）。",
-    "2. cast 里**只列角色名册**（name + role + 一句话 arc），不要写外貌/性格/台词——这是角色设计师下一步的活。",
-    "3. settings 同理，只列场地名册 + typeHint，不要写氛围/光线/陈设。",
-    "4. props 列剧情里**明确出现且被角色互动的物件**名册 + typeHint。包括但不限于：身份象征物（玉佩、官印、令牌、头冠）、关键证物（信件、画像、手札、照片）、触发物（穿越钥匙、契约、戒指、古董）、武器或工具、信物（定情物、家传物）、反复出现的道具（烟斗、折扇、药瓶）。只要剧情提到且推动情节/区分角色/承载情感，就应当列入（用户会在下一步审查）。只排除纯背景陈设（桌椅杯盘、一次性食物饮品）。**通常至少 3-8 个；返回空数组仅限于极简抽象叙事、纯对话独幕剧或类似场景**。",
-    "5. threads.main 要提炼贯穿全文的核心线索，subs 列出交织的支线。",
+    "Core requirements:",
+    "1. `structure` must cover the entire source. Chapter division should be reasonable (short pieces: 3-5 chapters; mid-length: 5-15; long-form: follow the source's own chapters).",
+    "2. `cast` is a **roster only** (name + role + one-line arc). Do not write appearance / personality / dialogue — that is the character designer's next step.",
+    "3. `settings` is the same: roster of locations + typeHint only. Do not write atmosphere / lighting / dressing.",
+    "4. `props` lists objects that **explicitly appear and are interacted with** by characters, plus a typeHint. Includes but isn't limited to: identity tokens (jade pendants, official seals, plaques, crowns), key evidence (letters, portraits, journals, photographs), trigger objects (transmigration keys, contracts, rings, antiques), weapons or tools, keepsakes (love tokens, heirlooms), recurring props (pipes, folding fans, medicine bottles). If the plot mentions it and it advances the story / distinguishes a character / carries emotion, include it (the user reviews next). Exclude only pure background dressing (tables, chairs, single-use food and drink). **Typically 3-8 entries; return an empty array only for highly abstract narratives, pure single-set dialogue plays, or similar.**",
+    "5. `threads.main` must capture the through-line of the whole source. `subs` lists interwoven side threads.",
     contentLanguageInstruction(input.contentLanguage),
   ].join("\n");
 }
@@ -420,7 +420,7 @@ const persistStep = createStep({
 export const scriptBreakdownWorkflow = createWorkflow({
   id: "story_outline",
   description:
-    "剧本统筹：读原始素材 → 压缩成故事骨架（章节/线索/角色名册/场景名册），写入 Redis 供下游阶段使用。",
+    "Story editing: read raw material → compress into a story skeleton (chapters / threads / cast roster / settings roster) and persist to Redis for downstream phases.",
   inputSchema: ScriptBreakdownInputSchema,
   outputSchema: ScriptBreakdownOutputSchema,
 })

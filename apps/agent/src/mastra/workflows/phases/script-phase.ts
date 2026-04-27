@@ -281,9 +281,9 @@ function buildCastBlock(
 ): string {
   if (characters.length === 0) return "";
   const lines = characters.map(
-    (c) => `- **${c.name}**（${c.role}）${c.personality ? ` — ${c.personality.slice(0, 80)}` : ""}`
+    (c) => `- **${c.name}** (${c.role})${c.personality ? ` — ${c.personality.slice(0, 80)}` : ""}`
   );
-  return `\n角色清单（对白和动作要符合各自性格）：\n${lines.join("\n")}\n`;
+  return `\nCast (dialogue and actions must match each character's voice):\n${lines.join("\n")}\n`;
 }
 
 function scriptToTiptapHtml(text: string): string {
@@ -302,13 +302,13 @@ function scriptToTiptapHtml(text: string): string {
 function dialogLanguageLabel(code: string | undefined): string {
   switch (code) {
     case "zh-CN":
-      return "简体中文";
+      return "Simplified Chinese";
     case "zh-HK":
-      return "繁体中文";
+      return "Traditional Chinese";
     case "en-US":
       return "English";
     default:
-      return code || "简体中文";
+      return code || "English";
   }
 }
 
@@ -323,31 +323,35 @@ function buildPrompt(args: {
   dialogLanguage?: string;
 }): string {
   const { index, total, episode, storySummary, castBlock, genre, tone, dialogLanguage } = args;
-  const meta = [genre ? `类型：${genre}` : "", tone ? `基调：${tone}` : ""]
+  const meta = [genre ? `Genre: ${genre}` : "", tone ? `Tone: ${tone}` : ""]
     .filter(Boolean)
     .join(" / ");
   const langLabel = dialogLanguageLabel(dialogLanguage);
 
   return [
-    `请为第 ${index}/${total} 集写完整的可拍摄短剧剧本。`,
+    `Write a fully shootable short-drama episode script — Episode ${index}/${total}.`,
     meta,
     "",
-    "故事主线：",
+    "Story main thread:",
     storySummary,
     castBlock,
-    "本集标题：" + episode.title,
-    episode.introduction ? "本集大纲：" + episode.introduction : "",
+    "Episode title: " + episode.title,
+    episode.introduction ? "Episode outline: " + episode.introduction : "",
     "",
-    "要求：",
-    `- **全部台词与旁白用${langLabel}**（画面描述、音效提示可用中文框架；对白严格按此语言）`,
-    `- 按 persona 里"时间码拍摄本格式"严格输出：首行集标题，之后按 \`0:00-0:15\` 等时码分段，每段内\`【画面】\` / \`【音效/环境】\` / 角色台词 各独占一行`,
-    "- 总时长 1-3 分钟，通常切 4-8 个时间段，每段 10-30 秒对应 30-150 字",
-    "- 第 1 段 15 秒必须锚定场景 + 抛钩子；末段强 cliffhanger",
-    "- 每集至少 1 个标志性画面（特写 / 对视 / 道具慢镜）",
-    "- 音效拟声词用大写（TINKS / RUSTLES / KNOCKS 等），营造氛围",
-    "- 台词必须有潜台词 + 推动剧情/揭示角色/制造冲突（三不沾删掉）",
+    "Output language: dialogue and narration in **" +
+      langLabel +
+      "**. Visuals and SFX cues may be in English; dialogue strictly in the dialogue language.",
     "",
-    '以 JSON 返回：\`{"content": "...剧本全文，真实换行用 \\\\n..."}\`。不要 Markdown 代码块、不要前言。',
+    "Requirements:",
+    `- **All dialogue and narration must be in ${langLabel}**.`,
+    '- Follow the persona\'s "timecode shooting-script format" strictly: episode title on the first line, then time blocks marked `0:00-0:15` etc.; within each block put `[VISUAL]` (or `【画面】` for Chinese locales) / `[SFX/AMBIENT]` (or `【音效/环境】`) / dialogue each on its own line.',
+    "- Total runtime 1-3 minutes, typically 4-8 time blocks, each 10-30 seconds = 30-150 characters / ~20-100 English words.",
+    "- Block 1 (first 15s) must anchor the scene and drop a hook; the final block needs a strong cliffhanger.",
+    "- Every episode needs at least one signature image (close-up / held look / slow shot of a key prop).",
+    "- SFX onomatopoeia in UPPERCASE (TINKS / RUSTLES / KNOCKS, etc.) to build atmosphere.",
+    "- Every line must carry subtext AND do one of: drive plot / reveal character / create conflict (cut anything that does none).",
+    "",
+    'Return JSON: `{"content": "...full script text, with real newlines as \\\\n..."}`. No Markdown code fences, no preamble.',
     contentLanguageInstruction(resolveContentLanguage(dialogLanguage)),
   ]
     .filter(Boolean)

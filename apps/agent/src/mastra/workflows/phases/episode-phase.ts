@@ -189,16 +189,16 @@ const planStep = createStep({
 });
 
 function buildPrompt(input: z.infer<typeof ResolvedPlanInputSchema>): string {
-  const cast = input.characters.map((c) => `- ${c.name}（${c.role}）`).join("\n");
+  const cast = input.characters.map((c) => `- ${c.name} (${c.role})`).join("\n");
   const chapterBlock = input.structure?.length
     ? [
         "",
-        "原作章节骨架（尽量参考、合理重划为剧集；不必 1 对 1）：",
+        "Source chapter skeleton (reference; redivide reasonably into episodes — does not need to be 1-to-1):",
         input.structure
           .map((ch) =>
             [
-              `- ${ch.chapterId}《${ch.title}》：${ch.summary}`,
-              ch.keyEvents.length ? `  关键：${ch.keyEvents.join("；")}` : "",
+              `- ${ch.chapterId} "${ch.title}": ${ch.summary}`,
+              ch.keyEvents.length ? `  Key events: ${ch.keyEvents.join("; ")}` : "",
             ]
               .filter(Boolean)
               .join("\n")
@@ -207,21 +207,21 @@ function buildPrompt(input: z.infer<typeof ResolvedPlanInputSchema>): string {
       ].join("\n")
     : "";
   const feedbackBlock = input.feedback
-    ? `\n\n【用户修改意见（优先遵循）】\n${input.feedback}\n`
+    ? `\n\n[User feedback (must take precedence)]\n${input.feedback}\n`
     : "";
   const parts = [
-    `目标集数：${input.targetEpisodeCount}`,
-    input.genre ? `类型：${input.genre}` : "",
-    input.tone ? `基调：${input.tone}` : "",
+    `Target episode count: ${input.targetEpisodeCount}`,
+    input.genre ? `Genre: ${input.genre}` : "",
+    input.tone ? `Tone: ${input.tone}` : "",
     "",
-    "故事主线：",
+    "Story main thread:",
     input.storySummary,
     "",
-    cast ? `角色清单：\n${cast}` : "",
+    cast ? `Cast:\n${cast}` : "",
     chapterBlock,
     feedbackBlock,
     "",
-    `请输出严格 ${input.targetEpisodeCount} 集的分集大纲，JSON 数组 episodes 返回。每集 introduction 控制在 80-200 字。`,
+    `Output exactly ${input.targetEpisodeCount} episode outlines as a JSON array under \`episodes\`. Keep each \`introduction\` to ~30-80 English words / 80-200 Chinese characters.`,
     contentLanguageInstruction(resolveContentLanguage(input.contentLanguage)),
   ].filter(Boolean);
   return parts.join("\n");
@@ -312,7 +312,7 @@ const emitReviewStep = createStep({
 export const episodePhaseWorkflow = createWorkflow({
   id: "episode_phase",
   description:
-    "分集阶段：从骨架规划 N 集大纲 → 草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库。",
+    "Episode phase: plan N episode outlines from the skeleton → stash drafts in Redis → wait for user confirmation. On accept, apply_phase_drafts batch-saves to Java.",
   inputSchema: EpisodePhaseInputSchema,
   outputSchema: EpisodePhaseOutputSchema,
 })

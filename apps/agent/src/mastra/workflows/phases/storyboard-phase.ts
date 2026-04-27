@@ -54,40 +54,43 @@ import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared
  */
 const StoryboardRow = z.object({
   /**
-   * 镜号 — 后端在 generateStep 里用 `String(idx + 1)` 无条件覆盖，LLM 返
-   * 回什么都不关心。z.coerce.string() 是为了让 DeepSeek / Qwen 那种把
-   * shot_no 当纯数字吐回来的响应（rows.0.shot_no: 1）也能过 schema，
-   * 不然整个 batch 11/11 episodes 全 fail。
+   * Shot number — the backend unconditionally overwrites this with
+   * `String(idx + 1)` inside generateStep, so we don't care what the LLM
+   * returns. `z.coerce.string()` lets DeepSeek / Qwen responses that emit
+   * `shot_no` as a bare number (rows.0.shot_no: 1) still pass the schema;
+   * otherwise the whole batch (e.g. 11/11 episodes) fails.
    */
   shot_no: z.coerce.string().optional(),
   /**
-   * 场景 — prefer a worldscene name so frontend can linkify via <mention>.
-   * Optional at schema level (not `.min(1)`) because DeepSeek drops this
-   * field on tail rows of long structured outputs (~rows 29-32 of a
-   * 30-40 row ask). generateStep filters out rows missing scene OR
-   * description before committing — a row lacking either is unusable
-   * in the editor anyway, so dropping it is lossless.
+   * Scene — prefer a worldscene name so the frontend can linkify via
+   * `<mention>`. Optional at schema level (not `.min(1)`) because DeepSeek
+   * drops this field on tail rows of long structured outputs (~rows 29-32
+   * of a 30-40 row ask). generateStep filters out rows missing scene OR
+   * description before committing — a row lacking either is unusable in
+   * the editor anyway, so dropping it is lossless.
    */
   scene: z.string().optional(),
-  /** 画面描述 — same laziness caveat as `scene`. */
+  /** Description — same laziness caveat as `scene`. */
   description: z.string().optional(),
-  /** 图片提示词 — visual-token string fed to image model. */
+  /** Image prompt — visual-token string fed to image model. */
   image_prompt: z.string().optional().default(""),
-  /** 影片提示词 — video-gen prompt emphasizing motion / expression. */
+  /** Video prompt — video-gen prompt emphasizing motion / expression. */
   video_prompt: z.string().optional().default(""),
   /**
-   * 运镜 — camera movement vocab: 固定镜头 / 推镜头 / 拉镜头 / 左移镜头 /
-   * 右移镜头 / 左摇镜头 / 右摇镜头 / 升镜头 / 降镜头 / 上摇镜头 / 下摇镜头 /
-   * 左旋镜头 / 右旋镜头 / 晃动镜头 / 变焦推进 / 变焦拉远 / 场景镜头
+   * Camera movement — vocab values are stored verbatim in Java's worldshot
+   * schema, so the strings themselves are field values, not free text.
+   * Allowed: 固定镜头 / 推镜头 / 拉镜头 / 左移镜头 / 右移镜头 / 左摇镜头 /
+   * 右摇镜头 / 升镜头 / 降镜头 / 上摇镜头 / 下摇镜头 / 左旋镜头 / 右旋镜头 /
+   * 晃动镜头 / 变焦推进 / 变焦拉远 / 场景镜头.
    */
   movement: z.string().optional().default("固定镜头"),
-  /** 对白 / 旁白 — "角色：台词" or "旁白：内容"; empty when silent. */
+  /** Dialogue / narration — "Character: line" or "Narrator: ..."; empty when silent. */
   dialogue: z.string().optional().default(""),
-  /** 景别 — 超特写 / 特写 / 中景 / 全景 / 大全景 / 双人镜头 / 过肩 / 主观 / 插镜. */
+  /** Shot size (Java enum value): 超特写 / 特写 / 中景 / 全景 / 大全景 / 双人镜头 / 过肩 / 主观 / 插镜. */
   shot_size: z.string().optional().default("中景"),
-  /** 视角 — 平视 / 俯视 / 仰视 / 鸟瞰 / 倾斜 / 航拍 / 背面. */
+  /** Perspective (Java enum value): 平视 / 俯视 / 仰视 / 鸟瞰 / 倾斜 / 航拍 / 背面. */
   perspective: z.string().optional().default("平视"),
-  /** 时长 — seconds, 2-8. coerce covers LLMs returning "5" as string. */
+  /** Duration — seconds, 2-8. coerce covers LLMs returning "5" as string. */
   duration: z.coerce.number().min(1).max(120).optional(),
 });
 
@@ -340,7 +343,7 @@ const generateStep = createStep({
       } finally {
         // Increment under the single-threaded event loop — no races.
         completedCount += 1;
-        const label = `已出 ${completedCount}/${total} 集分镜`;
+        const label = `Storyboards ready: ${completedCount}/${total} episodes`;
         await reportProgress(runId, {
           stepId: "storyboard_phase.generate",
           current: completedCount,
@@ -388,13 +391,13 @@ const generateStep = createStep({
 function storyboardDialogLanguageLabel(code: string | undefined): string {
   switch (code) {
     case "zh-CN":
-      return "简体中文";
+      return "Simplified Chinese";
     case "zh-HK":
-      return "繁体中文";
+      return "Traditional Chinese";
     case "en-US":
       return "English";
     default:
-      return code || "简体中文";
+      return code || "English";
   }
 }
 
@@ -416,8 +419,8 @@ function buildPrompt(
   // post-worker-fix but keeps the prompt sensible).
   const shotRangeLine =
     typeof shotsPerEpisode === "number" && Number.isFinite(shotsPerEpisode)
-      ? `镜头数量约 ${shotsPerEpisode} 个（允许 ${Math.max(5, shotsPerEpisode - 3)}-${shotsPerEpisode + 3} 浮动）。每个镜头时长 2-8 秒。`
-      : "镜头数量 15-40 个之间。每个镜头时长 2-8 秒。";
+      ? `Aim for ~${shotsPerEpisode} shots (allow ${Math.max(5, shotsPerEpisode - 3)}-${shotsPerEpisode + 3}). Each shot 2-8 seconds.`
+      : "Use 15-40 shots. Each shot 2-8 seconds.";
   // Whitelist gate — when the project already has worldscenes committed
   // (scene_phase ran), force the LLM to pick a scene from the roster so
   // backfillSceneColumn hits the cache instead of creating duplicate
@@ -426,36 +429,50 @@ function buildPrompt(
     sceneNames.length > 0
       ? [
           "",
-          "**可用场景（scene 字段必须从下表里原样选一个，不要自创新名）**：",
+          "**Available scenes (the `scene` field MUST be picked verbatim from this list — do not invent new names):**",
           ...sceneNames.map((n) => `- ${n}`),
           "",
         ]
       : [];
   const sceneRule =
     sceneNames.length > 0
-      ? "- **scene** — 场景名，**必须**从上方「可用场景」列表中原样挑一个；找不到合适的就挑最接近的，不要自创"
-      : "- **scene** — 场景名（尽量复用剧本里已出现的场景名，前端会自动 linkify）";
+      ? '- **scene** — scene name, **must** be picked verbatim from the "Available scenes" list above; if none fits, pick the closest one — do not invent new names.'
+      : "- **scene** — scene name (reuse names that already appear in the script when possible; the frontend auto-linkifies them).";
   return [
-    `请把以下剧集剧本拆成分镜表，JSON 返回，字段 rows 是镜头数组。`,
+    `Break the following episode script into a storyboard table. Return JSON whose \`rows\` field is the array of shots.`,
     "",
-    `集标题：${ep.title}`,
-    "剧本：",
+    `Episode title: ${ep.title}`,
+    "Script:",
     "```",
     ep.scriptContent,
     "```",
     ...sceneBlock,
-    `**dialogue 的对白/旁白必须用${langLabel}**。description / image_prompt / video_prompt 按当前语境自然语言。`,
-    "每行 rows 严格按约定字段填：",
+    "Output language:",
+    `- **The \`dialogue\` field (lines + narration) must be in ${langLabel}.**`,
+    "- `description` / `image_prompt` / `video_prompt` should default to English; if the project context provides a `dialogLanguage`, follow it for consistency.",
+    "",
+    "Each row in `rows` must follow these field rules strictly:",
     sceneRule,
-    "- **description** — 画面描述（给人读的一句话，可以出现角色名/场景名）",
+    "- **description** — one-line shot description (human-readable; character / scene names are fine).",
     // image_prompt / video_prompt specs aligned with the legacy skill files
-    // (apps/server/src/ai/skills/prompt_format_cn.skill.md — the "Pax 版"
+    // (apps/server/src/ai/skills/prompt_format_cn.skill.md — the "Pax"
     // authoritative format). Previously we had one-line hand-wavy bullets
     // that produced 20-60 char prompts; now forcing structured field cards
     // at 120-220 chars for image, three-part structure for video.
-    "- **image_prompt** — **单帧**图像生成提示词，中文字段化卡（多行文本），**120-220 字**。必须按以下字段顺序和格式：",
+    "- **image_prompt** — **single-frame** image-generation prompt, structured multi-line card, **120-220 characters / ~80-150 English words**. Strict field order:",
+    "  English example:",
     "  ```",
-    "  画面描述：<主体 + 环境 + 材质细节 + 空间位置关系（前景-中景-后景） + 光影效果 + 可见物理现象；不写角色连续动作链>",
+    "  Visual: <subject + environment + material detail + spatial layout (foreground - midground - background) + lighting + visible physical phenomena; do NOT write a chain of character actions>",
+    "  Shot size: <extreme wide / wide / medium / close / close-up / extreme close-up>",
+    "  Angle: <high angle / low angle / eye level / bird's eye / over-the-shoulder>",
+    "  Lens: <14mm ultra-wide / 24mm wide / 50mm standard / 85mm short telephoto>",
+    "  Composition: <diagonal / leading lines / centered / rule of thirds>",
+    "  Lighting: <warm / cool / backlit / sidelit / golden hour / blue hour / ...>",
+    "  Mood: <emotion + texture, one sentence>",
+    "  ```",
+    "  Chinese example (when `dialogLanguage = zh-CN`):",
+    "  ```",
+    "  画面描述：<主体 + 环境 + 材质细节 + 空间位置关系（前景-中景-后景）+ 光影效果 + 可见物理现象；不写角色连续动作链>",
     "  景别：<大远景 / 全景 / 中景 / 近景 / 特写 / 极特写>",
     "  拍摄角度：<俯拍 / 仰拍 / 平视 / 鸟瞰 / 过肩>",
     "  镜头焦距：<14mm 超广角 / 24mm 广角 / 50mm 标准 / 85mm 中长焦>",
@@ -463,19 +480,19 @@ function buildPrompt(
     "  光影：<暖光 / 冷光 / 逆光 / 侧光 / 黄金时刻 / 蓝调时刻 / ...>",
     "  画面氛围：<情绪与质感，一句话>",
     "  ```",
-    "  Blocking 强制：若出现关键道具/角色/门/桌/光源，必须写明相对位置（左/右/前景/后景/门框内/走廊尽头）。**不写** cinematic / 8K / 写实 / masterpiece 之类英文画风质量词——下游会按项目 stylePainting 自动拼接。",
-    "- **video_prompt** — 动态视频提示词，中文，**严格三段式**（A / B / C 三行）：",
+    "  Blocking is mandatory: if a key prop / character / door / table / light source appears, write its relative position (left / right / foreground / background / inside the doorframe / end of the corridor). **Do not** add style/quality tokens (cinematic / 8K / photorealistic / masterpiece) — the project's `stylePainting` is appended downstream.",
+    "- **video_prompt** — motion video prompt, **strict three-part structure** (A / B / C, one line each):",
     "  ```",
-    "  A. 镜头运动：<机位 + 运动 + 推进 / 横移 / 跟拍 / 固定微动 / 焦点锁定>",
-    "  B. 画面描述：<持续动作 + 环境反应 + 物理细节，可生成的动态过程>",
-    '  C. 声音：<默认 "无人声，无对白，无背景音乐"；允许自然环境音（风/雪/火焰/布料摩擦），不能有人声或配乐>',
+    "  A. Camera motion: <camera position + movement + push-in / lateral / tracking / locked with micro-motion / focus rack>",
+    "  B. Action: <continuous action + environmental reaction + physical detail; a generatable dynamic process>",
+    '  C. Audio: <default "no voice, no dialogue, no background music"; natural ambient sound is allowed (wind / snow / fire / fabric friction), no human voice or score>',
     "  ```",
-    "  **硬冲突检查**：如果 dialogue 字段为空 / 「-」，video_prompt 的 B 段不可出现「说话 / 喊叫 / 尖叫」，只能写口型开合、喘息、表情动作。",
-    `- **shot_size** — 景别，从枚举里选一个：${SHOT_SIZE_OPTIONS}`,
-    `- **perspective** — 视角，从枚举里选一个：${PERSPECTIVE_OPTIONS}`,
-    `- **movement** — 运镜，从枚举里选一个：${MOVEMENT_OPTIONS}`,
-    "- **dialogue** — 对白或旁白，格式 `角色名：台词内容` 或 `旁白：内容`；没有留空",
-    "- **duration** — 该镜头秒数，2-8",
+    '  **Hard-conflict check**: if the `dialogue` field is empty or `-`, the B section must not include "speaking / shouting / screaming" — only mouth-shape opening/closing, breathing, facial action.',
+    `- **shot_size** — pick one from the enum (Java enum values, keep them verbatim): ${SHOT_SIZE_OPTIONS}`,
+    `- **perspective** — pick one from the enum (Java enum values, keep them verbatim): ${PERSPECTIVE_OPTIONS}`,
+    `- **movement** — pick one from the enum (Java enum values, keep them verbatim): ${MOVEMENT_OPTIONS}`,
+    "- **dialogue** — line or narration, format `Character: line` or `Narrator: ...` (or the equivalent in the dialogue language); leave empty when silent.",
+    "- **duration** — shot length in seconds, 2-8.",
     "",
     shotRangeLine,
     contentLanguageInstruction(resolveContentLanguage(dialogLanguage)),
@@ -792,7 +809,7 @@ const STORYBOARD_HEADERS = [
 export const storyboardPhaseWorkflow = createWorkflow({
   id: "storyboard_phase",
   description:
-    "分镜阶段：每集调分镜师出镜头 → 草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库。",
+    "Storyboard phase: per episode, call the storyboarder to produce shot rows → drafts into Redis → wait for user confirmation. After approval, apply_phase_drafts commits to Java.",
   inputSchema: StoryboardPhaseInputSchema,
   outputSchema: StoryboardPhaseOutputSchema,
 })
@@ -991,7 +1008,7 @@ export async function applyStoryboardDrafts(
     });
   }
 
-  const endLabel = `分镜保存完成：成功 ${committed.length} / 失败 ${failed.length}`;
+  const endLabel = `Storyboards committed: ${committed.length} ok / ${failed.length} failed`;
   await reportProgress(runId, {
     stepId: "storyboard_phase.commit",
     current: committed.length,

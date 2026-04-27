@@ -154,20 +154,22 @@ const planRolesStep = createStep({
 
 function buildPlanPrompt(input: z.infer<typeof InputSchema>, stylePainting?: string): string {
   const feedbackBlock = input.feedback
-    ? `\n\n上一轮用户给的修改意见（必须采纳）：\n${input.feedback}\n`
+    ? `\n\nUser feedback from the previous round (must be adopted):\n${input.feedback}\n`
     : "";
   return [
-    `请基于以下故事梗概设计 ${input.roleCount} 个角色：`,
+    `Design ${input.roleCount} characters based on the story outline below:`,
     "",
     input.outline,
     feedbackBlock,
     "",
-    "要求：",
-    `- 严格 ${input.roleCount} 个，不多不少`,
-    "- 每个角色的外观特征要具体（发型发色/服饰/显著标志），便于后续生成立绘",
-    "- 性格描述要帮助演员（LLM）在后续对话戏里保持一致",
-    "- **prompt 字段是图像生成提示词**，60-120 字，按角色设计师 persona 里规定的格式写；必含：年龄段、人种特征、发型发色、眼神表情、2 项以上服饰（颜色+材质）、1 个标志物/伤疤/配件、景别",
-    "- 返回 JSON 对象，字段 roles 是角色数组，每个元素有 name / role / appearance / personality / prompt",
+    "Output language: default English. If the project context provides a `dialogLanguage` (or equivalent locale param), follow it for natural-language fields.",
+    "",
+    "Requirements:",
+    `- Exactly ${input.roleCount} characters, no more, no fewer.`,
+    "- Each character's appearance must be concrete (hairstyle / hair color / outfit / signature item) so it can drive a downstream character portrait.",
+    "- Personality must help an actor (LLM) stay consistent across later dialogue scenes.",
+    "- **`prompt` is the image-generation prompt** (60-120 chars / ~25-50 English words), formatted per the Role Designer persona. Must include: age range, ethnicity / racial features, hair, eyes / expression, 2+ specific garments (color + material), at least one signature item / scar / accessory, and framing.",
+    "- Return a JSON object whose `roles` field is the array of characters; each entry has `name` / `role` / `appearance` / `personality` / `prompt`.",
     stylePaintingHint(stylePainting),
   ]
     .filter(Boolean)
@@ -203,9 +205,9 @@ const collectDraftsStep = createStep({
         worldId,
         name: role.name,
         description: [
-          `定位：${role.role}`,
-          `外观：${role.appearance}`,
-          `性格：${role.personality}`,
+          `Role: ${role.role}`,
+          `Appearance: ${role.appearance}`,
+          `Personality: ${role.personality}`,
         ].join("\n"),
         prompt: imagePrompt,
         roleImgPath: [],
@@ -438,7 +440,8 @@ const applyDecisionStep = createStep({
 
 export const roleDesignWorkflow = createWorkflow({
   id: "role_design",
-  description: "根据故事梗概设计角色，人工确认后入库 — 不生成角色立绘。",
+  description:
+    "Design characters from a story outline, commit to the database after human review — does not generate character portraits.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   stateSchema: StateSchema,

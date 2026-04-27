@@ -215,7 +215,7 @@ const waitAllStep = createStep({
 
       if (readyCount !== lastReportedReady) {
         lastReportedReady = readyCount;
-        const label = failedCount > 0 ? `已就绪（${failedCount} 失败）` : `已就绪`;
+        const label = failedCount > 0 ? `Ready (${failedCount} failed)` : `Ready`;
         await reportProgress(runId, {
           stepId: "wait_all",
           current: readyCount,
@@ -233,8 +233,8 @@ const waitAllStep = createStep({
         const outcome = failedCount === 0 ? ("all_ready" as const) : ("partial_failure" as const);
         const message =
           failedCount === 0
-            ? `全部 ${readyCount} 张角色主图生成完成。`
-            : `完成 ${readyCount} 张，失败 ${failedCount} 张（失败的角色可以在资产库单独重试）。`;
+            ? `All ${readyCount} character portraits generated.`
+            : `${readyCount} succeeded, ${failedCount} failed (failed characters can be retried individually from the asset library).`;
         await publishWorkflowCompleted(ctx.projectId, runId, "role_image_phase", {
           committed: Array.from({ length: readyCount }, (_, i) => ({
             serverId: assetIds[i] ?? `role-${i}`,
@@ -261,7 +261,7 @@ const waitAllStep = createStep({
     }
 
     // Timeout — return whatever state we have.
-    const message = `生图等待超时：完成 ${readyCount}，失败 ${failedCount}，剩余 ${assetIds.length - readyCount - failedCount} 仍在处理中。`;
+    const message = `Image generation timed out: ${readyCount} ready, ${failedCount} failed, ${assetIds.length - readyCount - failedCount} still in progress.`;
     await publishWorkflowCompleted(ctx.projectId, runId, "role_image_phase", {
       committed: Array.from({ length: readyCount }, (_, i) => ({
         serverId: assetIds[i] ?? `role-${i}`,
@@ -289,7 +289,8 @@ const waitAllStep = createStep({
 
 export const roleImagePhaseWorkflow = createWorkflow({
   id: "role_image_phase",
-  description: "批量为已入库角色生成主图：派发 BullMQ 任务，轮询状态直到全部终态。",
+  description:
+    "Batch-generate main portraits for committed characters: dispatch BullMQ jobs and poll until every asset reaches a terminal state.",
   inputSchema: RoleImagePhaseInputSchema,
   outputSchema: RoleImagePhaseOutputSchema,
 })

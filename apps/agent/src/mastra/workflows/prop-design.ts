@@ -38,7 +38,7 @@ const PlannedProp = z.object({
   category: z
     .enum(["object", "document", "apparel", "vehicle", "weapon", "food", "art", "other"])
     .default("object"),
-  era: z.string().default("当代"),
+  era: z.string().default("contemporary"),
   material: z.string().min(1),
   appearance: z.string().min(1),
   significance: z.string().min(1),
@@ -80,22 +80,24 @@ const SuspendSchema = z.object({
 
 function buildPlanPrompt(input: z.infer<typeof InputSchema>, stylePainting?: string): string {
   const feedbackBlock = input.feedback
-    ? `\n\n上一轮用户给的修改意见（必须采纳）：\n${input.feedback}\n`
+    ? `\n\nUser feedback from the previous round (must be adopted):\n${input.feedback}\n`
     : "";
   return [
-    `请基于以下故事梗概设计 ${input.propCount} 个剧情相关的关键道具：`,
+    `Design ${input.propCount} narratively important props from the story outline below:`,
     "",
     input.outline,
     feedbackBlock,
     "",
-    "要求：",
-    `- 严格 ${input.propCount} 个，不多不少`,
-    "- 只设计**剧情上有意义的**道具（推动情节/承载情感/象征意义）",
-    "- 不要列泛用日常物（桌椅杯盘）",
-    "- appearance 40-80 字，强调可识别细节（划痕、铭文、颜色、尺寸）",
-    "- significance 说清楚这个道具为什么重要",
-    "- prompt 是图像生成提示词，按道具设计师 persona 规定的格式写，60-120 字，顿号分隔；只写画面元素，不加画风/品质 token",
-    "- 返回 JSON 对象，字段 props 是道具数组",
+    "Output language: default English. If the project context provides a `dialogLanguage` (or equivalent locale param), follow it.",
+    "",
+    "Requirements:",
+    `- Exactly ${input.propCount} props, no more, no less.`,
+    "- Only design **narratively meaningful** props (drive plot / carry emotion / symbolic significance).",
+    "- Do not include generic everyday objects (tables, chairs, cups, plates).",
+    "- `appearance`: 40-80 characters / ~25-50 English words; emphasize identifying details (scratches, inscriptions, color, size).",
+    "- `significance`: explain why the prop matters in the story.",
+    "- `prompt` is the image-generation prompt, formatted per the Prop Designer persona's rules, 60-120 characters / ~40-80 English words, comma-separated; only paintable elements, no style/quality tokens.",
+    "- Return a JSON object whose `props` field is the array of props.",
     stylePaintingHint(stylePainting),
   ]
     .filter(Boolean)
@@ -187,10 +189,10 @@ const collectDraftsStep = createStep({
     for (const prop of plannedProps) {
       const clientRefId = randomUUID();
       const description = [
-        `类型：${prop.category} · ${prop.era}`,
-        `材质：${prop.material}`,
-        `外观：${prop.appearance}`,
-        `剧情功能：${prop.significance}`,
+        `Type: ${prop.category} · ${prop.era}`,
+        `Material: ${prop.material}`,
+        `Appearance: ${prop.appearance}`,
+        `Narrative function: ${prop.significance}`,
       ].join("\n");
       const imagePrompt =
         prop.prompt && prop.prompt.trim().length > 0 ? prop.prompt.trim() : prop.appearance;
@@ -398,7 +400,7 @@ const applyDecisionStep = createStep({
 export const propDesignWorkflow = createWorkflow({
   id: "prop_design",
   description:
-    "冷启动批量设计道具：根据一句话梗概凭空设计 N 个剧情相关的关键道具 → 人工确认 → 入库。没有 outline / 名册时用这个；有 outline 时优先 prop_phase。",
+    "Cold-start batch prop design: design N narratively important props from a one-line outline → user confirms → commit. Use this when there's no outline / roster yet; if an outline exists, prefer prop_phase.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   stateSchema: StateSchema,

@@ -264,8 +264,8 @@ const applyDecisionStep = createStep({
       failed,
       message:
         outcome === "committed"
-          ? `已成功入库 ${committed.length} 个 ${inputData.assetType}。`
-          : `成功 ${committed.length}，失败 ${failed.length}。失败项保留在草稿区供重试。`,
+          ? `Saved ${committed.length} ${inputData.assetType}(s).`
+          : `${committed.length} succeeded, ${failed.length} failed. Failed drafts are kept for retry.`,
     };
   },
 });
@@ -274,7 +274,8 @@ const applyDecisionStep = createStep({
 
 export const batchCreateAssetWorkflow = createWorkflow({
   id: "batch_create_asset",
-  description: "用户直接给出角色/场景/道具列表，草稿 → 确认 → 入库，不经 LLM。",
+  description:
+    "User-supplied list of characters / scenes / props: draft → confirm → commit, no LLM in the loop.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   stateSchema: StateSchema,

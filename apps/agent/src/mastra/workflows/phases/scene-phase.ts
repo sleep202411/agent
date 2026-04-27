@@ -85,30 +85,32 @@ function buildElaboratePrompt(
   const chapterRefs = entry.firstAppearance
     ? skeleton.structure
         .filter((ch) => ch.chapterId === entry.firstAppearance)
-        .map((ch) => `- ${ch.chapterId} 《${ch.title}》：${ch.summary}`)
+        .map((ch) => `- ${ch.chapterId} "${ch.title}": ${ch.summary}`)
         .join("\n")
     : "";
-  const feedbackBlock = feedback ? `\n\n【用户补充意见（优先遵循）】\n${feedback}\n` : "";
+  const feedbackBlock = feedback ? `\n\n[User feedback (must be followed)]\n${feedback}\n` : "";
   return [
-    "请基于下面的故事骨架与场景名册条目，产出**一个完整场景设计**（JSON）。",
+    "Based on the story skeleton and the settings roster entry below, produce **one complete scene design** as JSON.",
     "",
-    "## 故事概况",
-    `类型：${skeleton.genre} / 基调：${skeleton.tone}`,
-    `主线：${skeleton.threads.main}`,
-    `摘要：${skeleton.storySummary}`,
+    "## Story snapshot",
+    `Genre: ${skeleton.genre} / Tone: ${skeleton.tone}`,
+    `Main thread: ${skeleton.threads.main}`,
+    `Summary: ${skeleton.storySummary}`,
     "",
-    "## 这个场景在骨架里的信息",
-    `- 名称：${entry.name}`,
-    `- 空间类型提示：${entry.typeHint}`,
-    entry.firstAppearance ? `- 首次出现：${entry.firstAppearance}` : "",
-    chapterRefs ? `\n相关章节：\n${chapterRefs}` : "",
+    "## This scene's roster entry",
+    `- Name: ${entry.name}`,
+    `- Space type hint: ${entry.typeHint}`,
+    entry.firstAppearance ? `- First appearance: ${entry.firstAppearance}` : "",
+    chapterRefs ? `\nRelevant chapters:\n${chapterRefs}` : "",
     feedbackBlock,
     "",
-    "## 必须遵守 Scene Designer 的 JSON schema，字段含义看你 system prompt。",
-    "- name 沿用骨架里给的名称，不要改",
-    "- keyElements 3-7 个具体视觉锚点",
-    "- lighting / atmosphere 各 30-60 字",
-    "- prompt 是**图像生成提示词** —— 40-80 字视觉 token 串，按「场景类型+时间光线+空间布局+关键视觉元素+氛围」顺序、顿号分隔。只写画面元素。**不要**加画风/品质 token（写实、电影感、4k 等）—— 下游会按项目 stylePainting 拼接。",
+    "Output language: default English. If the project context provides a `dialogLanguage` (or equivalent locale param), follow it.",
+    "",
+    "## Strictly follow the Scene Designer JSON schema; field meanings are in your system prompt.",
+    "- name: keep the roster name verbatim, do not change it",
+    "- keyElements: 3-7 concrete visual anchors",
+    "- lighting / atmosphere: each 30-60 characters / ~20-40 English words",
+    "- prompt: the **image-generation prompt** — 40-80 characters / ~25-50 English words of visual tokens, comma-separated in this order: scene type, time/lighting, spatial layout, key visual elements, atmosphere. Only paintable elements. **Do not** add style/quality tokens (realistic, cinematic, 4k, etc.) — the project's `stylePainting` is appended downstream.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -202,14 +204,14 @@ const collectDraftsStep = createStep({
     for (const s of inputData.scenes) {
       const clientRefId = randomUUID();
       const description = [
-        `类型：${s.category} · ${s.timeOfDay}${s.weather ? ` · ${s.weather}` : ""}`,
-        `环境：${s.setting}`,
-        s.keyElements.length > 0 ? `视觉锚点：${s.keyElements.join("、")}` : "",
-        s.props.length > 0 ? `关键道具：${s.props.join("、")}` : "",
-        `光线：${s.lighting}`,
-        `氛围：${s.atmosphere}`,
-        s.cameraHints.length > 0 ? `镜头建议：${s.cameraHints.join("；")}` : "",
-        s.continuityNotes ? `连贯性：${s.continuityNotes}` : "",
+        `Type: ${s.category} · ${s.timeOfDay}${s.weather ? ` · ${s.weather}` : ""}`,
+        `Setting: ${s.setting}`,
+        s.keyElements.length > 0 ? `Visual anchors: ${s.keyElements.join(", ")}` : "",
+        s.props.length > 0 ? `Key props: ${s.props.join(", ")}` : "",
+        `Lighting: ${s.lighting}`,
+        `Atmosphere: ${s.atmosphere}`,
+        s.cameraHints.length > 0 ? `Camera hints: ${s.cameraHints.join("; ")}` : "",
+        s.continuityNotes ? `Continuity: ${s.continuityNotes}` : "",
       ]
         .filter(Boolean)
         .join("\n");
@@ -219,7 +221,7 @@ const collectDraftsStep = createStep({
       const imagePrompt =
         s.prompt && s.prompt.trim().length > 0
           ? s.prompt.trim()
-          : [s.setting, s.lighting, s.atmosphere].filter(Boolean).join("，");
+          : [s.setting, s.lighting, s.atmosphere].filter(Boolean).join(", ");
       const data: SceneCreateData = {
         worldId: inputData.worldId,
         name: s.name,
@@ -292,7 +294,7 @@ const emitReviewStep = createStep({
 export const scenePhaseWorkflow = createWorkflow({
   id: "scene_phase",
   description:
-    "场景阶段：从故事骨架 settings 扩展 → 场景草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库，不再走 Mastra resume。",
+    "Scene phase: expand from the story skeleton's settings roster → scene drafts into Redis → wait for user confirmation. After approval, apply_phase_drafts commits to Java; no Mastra resume.",
   inputSchema: ScenePhaseInputSchema,
   outputSchema: ScenePhaseOutputSchema,
 })

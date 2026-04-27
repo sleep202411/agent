@@ -86,20 +86,22 @@ const SuspendSchema = z.object({
 
 function buildPlanPrompt(input: z.infer<typeof InputSchema>, stylePainting?: string): string {
   const feedbackBlock = input.feedback
-    ? `\n\n上一轮用户给的修改意见（必须采纳）：\n${input.feedback}\n`
+    ? `\n\nUser feedback from the previous round (must be adopted):\n${input.feedback}\n`
     : "";
   return [
-    `请基于以下故事梗概设计 ${input.sceneCount} 个有代表性的场景：`,
+    `Design ${input.sceneCount} representative scenes from the story outline below:`,
     "",
     input.outline,
     feedbackBlock,
     "",
-    "要求：",
-    `- 严格 ${input.sceneCount} 个，不多不少`,
-    "- 场景之间差异明显，覆盖故事可能的空间（室内/室外、不同时间/天气）",
-    "- 每个场景的 keyElements 要具体（3-7 条视觉锚点），后续可直接出参考图",
-    "- prompt 是图像生成提示词，按场景设计师 persona 规定的格式写，60-120 字，顿号分隔；只写画面元素，不加画风/品质 token",
-    "- 返回 JSON 对象，字段 scenes 是场景数组",
+    "Output language: default English. If the project context provides a `dialogLanguage` (or equivalent locale param), follow it.",
+    "",
+    "Requirements:",
+    `- Exactly ${input.sceneCount} scenes, no more, no less.`,
+    "- Make the scenes visibly distinct from each other; cover the story's likely spaces (interior / exterior, varied time / weather).",
+    "- Each scene's `keyElements` must be concrete (3-7 visual anchors) so a reference image can be generated directly.",
+    "- `prompt` is the image-generation prompt, formatted per the Scene Designer persona's rules, 60-120 characters / ~40-80 English words, comma-separated; only paintable elements, no style/quality tokens.",
+    "- Return a JSON object whose `scenes` field is the array of scenes.",
     stylePaintingHint(stylePainting),
   ]
     .filter(Boolean)
@@ -191,20 +193,20 @@ const collectDraftsStep = createStep({
     for (const scene of plannedScenes) {
       const clientRefId = randomUUID();
       const description = [
-        `类型：${scene.category} · ${scene.timeOfDay}`,
-        `环境：${scene.setting}`,
+        `Type: ${scene.category} · ${scene.timeOfDay}`,
+        `Setting: ${scene.setting}`,
         scene.keyElements && scene.keyElements.length > 0
-          ? `视觉锚点：${scene.keyElements.join("、")}`
+          ? `Visual anchors: ${scene.keyElements.join(", ")}`
           : "",
-        `光线：${scene.lighting}`,
-        `氛围：${scene.atmosphere}`,
+        `Lighting: ${scene.lighting}`,
+        `Atmosphere: ${scene.atmosphere}`,
       ]
         .filter(Boolean)
         .join("\n");
       const imagePrompt =
         scene.prompt && scene.prompt.trim().length > 0
           ? scene.prompt.trim()
-          : [scene.setting, scene.lighting, scene.atmosphere].filter(Boolean).join("，");
+          : [scene.setting, scene.lighting, scene.atmosphere].filter(Boolean).join(", ");
       const data: SceneCreateData = {
         worldId,
         name: scene.name,
@@ -409,7 +411,7 @@ const applyDecisionStep = createStep({
 export const sceneDesignWorkflow = createWorkflow({
   id: "scene_design",
   description:
-    "冷启动批量设计场景：根据一句话梗概凭空设计 N 个场景 → 人工确认 → 入库。没有 outline / 名册时用这个；有 outline 时优先 scene_phase。",
+    "Cold-start batch scene design: design N scenes from a one-line outline → user confirms → commit. Use this when there's no outline / roster yet; if an outline exists, prefer scene_phase.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   stateSchema: StateSchema,

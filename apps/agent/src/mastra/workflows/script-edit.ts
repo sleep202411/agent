@@ -165,16 +165,18 @@ const generateEditStep = createStep({
 
 function buildEditPrompt(original: string, userEdit: string): string {
   return [
-    "以下是当前剧本的完整内容：",
+    "Below is the current script in full:",
     "",
     "```",
     original,
     "```",
     "",
-    "用户的修改意见：",
+    "User's revision notes:",
     userEdit,
     "",
-    "请输出**完整**的修改后剧本。以 JSON 返回，字段 revised 就是完整剧本文本。",
+    "Output language: default English. If the project context provides a `dialogLanguage` (or equivalent locale param), follow it for the rewritten script.",
+    "",
+    "Output the **complete** revised script. Return JSON; the `revised` field holds the entire revised script text.",
   ].join("\n");
 }
 
@@ -336,7 +338,8 @@ const applyDecisionStep = createStep({
 
 export const scriptEditWorkflow = createWorkflow({
   id: "script_edit",
-  description: "根据用户的修改指令，重写某一集的剧本并经人工确认后保存。",
+  description:
+    "Rewrite one episode's script based on the user's revision notes; save after human confirmation.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   stateSchema: StateSchema,

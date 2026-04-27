@@ -75,32 +75,34 @@ function buildElaboratePrompt(
   const chapterRefs = entry.firstAppearance
     ? skeleton.structure
         .filter((ch) => ch.chapterId === entry.firstAppearance)
-        .map((ch) => `- ${ch.chapterId} 《${ch.title}》：${ch.summary}`)
+        .map((ch) => `- ${ch.chapterId} "${ch.title}": ${ch.summary}`)
         .join("\n")
     : "";
-  const feedbackBlock = feedback ? `\n\n【用户补充意见（优先遵循）】\n${feedback}\n` : "";
+  const feedbackBlock = feedback ? `\n\n[User feedback (must be followed)]\n${feedback}\n` : "";
   return [
-    "请基于下面的故事骨架与角色名册条目，产出**一个完整角色设计**（JSON）。",
+    "Based on the story skeleton and the cast roster entry below, produce **one complete character design** as JSON.",
     "",
-    "## 故事概况",
-    `类型：${skeleton.genre} / 基调：${skeleton.tone}`,
-    `主线：${skeleton.threads.main}`,
-    `摘要：${skeleton.storySummary}`,
+    "## Story snapshot",
+    `Genre: ${skeleton.genre} / Tone: ${skeleton.tone}`,
+    `Main thread: ${skeleton.threads.main}`,
+    `Summary: ${skeleton.storySummary}`,
     "",
-    "## 这个角色在骨架里的信息",
-    `- 姓名：${entry.name}`,
-    `- 功能定位：${entry.role}`,
-    `- 角色弧线：${entry.arc}`,
-    entry.firstAppearance ? `- 首次出场：${entry.firstAppearance}` : "",
-    chapterRefs ? `\n相关章节：\n${chapterRefs}` : "",
+    "## This character's roster entry",
+    `- Name: ${entry.name}`,
+    `- Function: ${entry.role}`,
+    `- Arc: ${entry.arc}`,
+    entry.firstAppearance ? `- First appearance: ${entry.firstAppearance}` : "",
+    chapterRefs ? `\nRelevant chapters:\n${chapterRefs}` : "",
     feedbackBlock,
     "",
-    "## 你产出的字段（都是 string）",
-    "- name：沿用骨架里给的姓名，不要改",
-    "- role：沿用骨架里给的功能定位，不要改",
-    "- appearance：15-40 字**人读**的外貌描述。发型、服饰、体态、显著视觉标志，用顿号连接",
-    "- personality：20-50 字性格 + 说话风格 + 典型行为，紧扣 arc 给的成长弧线",
-    "- prompt：**图像生成提示词**。和 appearance 不同，这是直接喂给图像模型的 prompt —— **60-120 字**、中文顿号 `、` 分隔的视觉关键词串，按「主体（年龄+性别+人种/种族）+ 体型 + 发型发色 + 眼神/表情 + 服装（**颜色+材质**，至少 2 项）+ 标志物/伤疤/配件（至少 1 项）+ 气质神态 + 镜头（胸像/半身/特写）」顺序排。**不要**写故事背景 / 情节 / 情感；只写画面上能看到的东西。**不要**加画风/品质 token（写实、电影感、高清、8K、4k、cartoon 这类）—— 下游会根据项目选定画风统一拼接。与 appearance 的视觉信息保持一致但扩充细节到图像模型能画出稳定外观。",
+    "Output language: default English. If the project context provides a `dialogLanguage` (or equivalent locale param), follow it.",
+    "",
+    "## Fields to produce (all strings)",
+    "- name: keep the roster name verbatim, do not change it",
+    "- role: keep the roster function verbatim, do not change it",
+    "- appearance: 15-40 characters / ~10-25 English words, **human-readable** look. Hairstyle, clothing, build, signature visual markers, comma-separated.",
+    "- personality: 20-50 characters / ~15-30 English words covering personality + speech style + typical behavior, tied to the arc's growth trajectory.",
+    "- prompt: **image-generation prompt**. Distinct from `appearance` — this is fed directly to the image model. **60-120 characters / ~40-80 English words**, comma-separated visual keywords in this order: subject (age + gender + ethnicity), build, hair (style + color), eyes/expression, clothing (**color + material**, at least 2 items), markers/scars/accessories (at least 1), demeanor, framing (bust / half-body / close-up). **Do not** write story background / plot / emotion — only what's visible in the frame. **Do not** add style/quality tokens (realistic, cinematic, HD, 8K, 4k, cartoon, etc.) — the project's `stylePainting` is appended downstream. Stay consistent with `appearance` but expand the detail enough that the image model produces a stable look.",
     stylePaintingHint(stylePainting),
   ]
     .filter(Boolean)
@@ -203,9 +205,11 @@ const collectDraftsStep = createStep({
       const data: RoleCreateData = {
         worldId: inputData.worldId,
         name: c.name,
-        description: [`定位：${c.role}`, `外观：${c.appearance}`, `性格：${c.personality}`].join(
-          "\n"
-        ),
+        description: [
+          `Role: ${c.role}`,
+          `Appearance: ${c.appearance}`,
+          `Personality: ${c.personality}`,
+        ].join("\n"),
         prompt: c.prompt,
         roleImgPath: [],
         referenceImgPath: [],
@@ -276,7 +280,7 @@ const emitReviewStep = createStep({
 export const rolePhaseWorkflow = createWorkflow({
   id: "role_phase",
   description:
-    "角色阶段：从故事骨架扩展 → 角色草稿入 Redis → 等用户确认。确认后走 apply_phase_drafts 入库，不走 Mastra resume。",
+    "Role phase: expand from the story skeleton → role drafts into Redis → wait for user confirmation. After approval, apply_phase_drafts commits to Java; no Mastra resume.",
   inputSchema: RolePhaseInputSchema,
   outputSchema: RolePhaseOutputSchema,
 })
