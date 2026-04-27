@@ -452,8 +452,11 @@ export function UpgradeDialog({ open, onOpenChange, onSuccess }: UpgradeDialogPr
                         </button>
                       </div>
 
-                      {/* Benefits */}
-                      <div className="mt-auto space-y-4">
+                      {/* Benefits — top-aligned across cards (no mt-auto)
+                          so the first benefit row sits right under the
+                          subscribe button on every card. The grid container
+                          already stretches all cards to the same height. */}
+                      <div className="space-y-4">
                         {benefits.map((group, gi) => (
                           <div key={gi}>
                             {group.title && (
