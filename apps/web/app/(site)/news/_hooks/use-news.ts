@@ -1,7 +1,7 @@
 /**
  * News feature data layer.
  *
- * The client hits our own /api/news route, which server-side merges the
+ * The client hits our own /blaze/news route, which server-side merges the
  * upstream Java content feed with our hardcoded static articles and
  * returns one normalized `NewsItem[]`. Items already carry a fully-
  * resolved `cover` URL plus an `isExternal` flag — the page just routes
@@ -41,7 +41,7 @@ export function articleHref(item: NewsItem): string {
 // ─── Fetcher / hooks ──────────────────────────────────
 
 async function fetchNewsList(lang: string): Promise<NewsItem[]> {
-  const res = await fetch(`/api/news?lang=${encodeURIComponent(lang)}`);
+  const res = await fetch(`/blaze/news?lang=${encodeURIComponent(lang)}`);
   if (!res.ok) return [];
   const json = (await res.json()) as { articles: NewsItem[] };
   return json.articles ?? [];

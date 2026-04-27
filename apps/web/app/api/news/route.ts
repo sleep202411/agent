@@ -105,7 +105,7 @@ function flatten(data: unknown): NewsItem[] {
       }
     }
   } catch (err) {
-    console.warn("[/api/news] flatten failed, returning partial result:", err);
+    console.warn("[/blaze/news] flatten failed, returning partial result:", err);
   }
   return out;
 }
@@ -131,24 +131,24 @@ export async function GET(request: NextRequest) {
       next: { revalidate: 300 },
     });
     if (!res.ok) {
-      console.warn(`[/api/news] upstream non-OK: ${res.status} ${res.statusText}`);
+      console.warn(`[/blaze/news] upstream non-OK: ${res.status} ${res.statusText}`);
     } else {
       let json: UpstreamResponse | null = null;
       try {
         json = (await res.json()) as UpstreamResponse;
       } catch (err) {
-        console.warn("[/api/news] upstream JSON parse failed:", err);
+        console.warn("[/blaze/news] upstream JSON parse failed:", err);
       }
       if (isUpstreamSuccess(json) && json!.data) {
         live = flatten(json!.data);
       } else if (json) {
         console.warn(
-          `[/api/news] upstream not OK — success=${json.success} code=${json.code} message=${json.message}`
+          `[/blaze/news] upstream not OK — success=${json.success} code=${json.code} message=${json.message}`
         );
       }
     }
   } catch (err) {
-    console.warn("[/api/news] upstream fetch failed, falling back to static-only:", err);
+    console.warn("[/blaze/news] upstream fetch failed, falling back to static-only:", err);
   }
 
   // Hardcoded marketing articles only run on staging + production .com

@@ -50,6 +50,17 @@ Turbopack is the default bundler — no flags needed.
 - `/user/*`, `/project/*`, `/vedio/*` → Java Content (`JAVA_CONTENT_URL`)
 - `/newsapi/*` → `https://fizzdragon.com/content/*`
 
+`/blaze/*` is reserved for **Next.js local route handlers** — endpoints
+where the web app does its own server-side work (fetching, merging,
+fallback) before responding to its own UI. The handler files live under
+`app/api/<name>/route.ts` (Next.js convention), but the public URL
+exposed to clients is `/blaze/<name>` — `next.config.ts#rewrites`
+internally rewrites `/blaze/:path*` → `/api/:path*` so the route handler
+runs. Public URL is on `/blaze/*` so nginx (which forwards `/api/*` to
+Java Studio on legacy hosts) won't intercept the call. Use this prefix
+for any new server-side endpoint owned by the web app rather than
+exposing `/api/*` to clients.
+
 ## Feature colocation (work-in-progress convention)
 
 The IP feature (`app/(site)/ips/`) is the **reference implementation** of

@@ -21,6 +21,12 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      // Local Next.js endpoints. Folder lives at app/api/* (Next.js convention),
+      // but the public URL is /blaze/* so nginx — which forwards /api/* directly
+      // to Java Studio on legacy hosts — can't intercept it. Must come before
+      // the /api/* → Java rewrite below; the request flow is
+      // /blaze/news → rewrite to /api/news → filesystem hit on app/api/news/route.ts.
+      { source: "/blaze/:path*", destination: "/api/:path*" },
       // NestJS server (strip /aurora prefix)
       { source: "/aurora/:path*", destination: `${SERVER_URL}/:path*` },
       // Java Studio service

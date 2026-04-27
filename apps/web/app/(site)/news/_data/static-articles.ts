@@ -14,7 +14,7 @@
  *   # body markdown
  *
  * SERVER-ONLY: this module uses `node:fs` and is consumed by the
- * `/api/news` route. Don't import it from a client component.
+ * `/blaze/news` route. Don't import it from a client component.
  */
 
 import { readFileSync } from "node:fs";

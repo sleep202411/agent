@@ -2,7 +2,7 @@
  * Shared news types — kept in a non-"use client" module so the
  * Next.js API route can import them on the server.
  *
- * The shape here is the **client-facing** shape returned by /api/news.
+ * The shape here is the **client-facing** shape returned by /blaze/news.
  * The route normalizes both the upstream Java backend feed and our
  * hardcoded static articles into this single form.
  */
