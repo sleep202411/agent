@@ -3,6 +3,13 @@ services:
     image: ${WEB_IMAGE:-fizzdragon-web}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-web
     restart: always
+    # Pull-based auto-deploy: the host's `podman auto-update` (or
+    # Watchtower on the docker host) detects when GHCR has a newer
+    # digest for the tag this container was launched with, then pulls
+    # and recreates the container. CI never SSHs into a server.
+    labels:
+      io.containers.autoupdate: registry              # podman auto-update
+      com.centurylinklabs.watchtower.enable: "true"   # docker watchtower
     # Per-service memory caps so no single container can starve the others
     # when the host hits pressure. Sized for an 8c16g ECS + WORKER_CONCURRENCY=90:
     # web 1g, server 1g, agent 3g, agent-worker 10g, redis 1g → ~16g total,
@@ -21,6 +28,9 @@ services:
     image: ${SERVER_IMAGE:-fizzdragon-server}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-server
     restart: always
+    labels:
+      io.containers.autoupdate: registry
+      com.centurylinklabs.watchtower.enable: "true"
     mem_limit: 1g
     ports:
       - "${SERVER_PORT:-3001}:3001"
@@ -51,6 +61,9 @@ services:
     image: ${AGENT_IMAGE:-fizzdragon-agent}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-agent
     restart: always
+    labels:
+      io.containers.autoupdate: registry
+      com.centurylinklabs.watchtower.enable: "true"
     # 3g because concurrent supervisor streams (dozens at once) each hold
     # their own conversation context + pending tool-call state.
     mem_limit: 3g
@@ -95,6 +108,9 @@ services:
     image: ${AGENT_IMAGE:-fizzdragon-agent}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-agent-worker
     restart: always
+    labels:
+      io.containers.autoupdate: registry
+      com.centurylinklabs.watchtower.enable: "true"
     # Worker ceiling highest because it holds live workflow state +
     # batched LLM buffers for bulk phases (parse_script on a 50K-char
     # novel, storyboard_phase generating 30 shots × N episodes in parallel).

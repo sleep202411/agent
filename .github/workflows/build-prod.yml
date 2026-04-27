@@ -1,0 +1,140 @@
+name: Build & Push (production)
+
+# Production builds are **manual only** (workflow_dispatch). Pushing
+# the tag is intentional, then the matching ECS auto-updates within
+# ~5 minutes via podman auto-update / Watchtower.
+#
+# To roll back a production deploy: re-run this workflow against an
+# earlier commit, or in GHCR's web UI move the tag back to the
+# previous digest. ECS picks up the change on the next poll.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        description: "Production target"
+        options:
+          - prod-cn
+          - prod-com
+          - both
+        default: prod-cn
+
+concurrency:
+  group: build-prod-${{ inputs.target }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/fizzdragon-pte-ltd-2
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.resolve.outputs.targets }}
+    steps:
+      - name: Guard
+        if: github.ref_name != 'main'
+        run: |
+          echo "::error::Production builds are only allowed from main."
+          exit 1
+      - name: Resolve targets
+        id: resolve
+        run: |
+          if [ "${{ inputs.target }}" = "both" ]; then
+            echo 'targets=["prod-cn","prod-com"]' >> $GITHUB_OUTPUT
+          else
+            echo 'targets=["${{ inputs.target }}"]' >> $GITHUB_OUTPUT
+          fi
+
+  build-server:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.prepare.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/studio-server:production-${{ matrix.target == 'prod-cn' && 'cn' || 'com' }}
+          cache-from: type=gha,scope=server-${{ matrix.target }}
+          cache-to: type=gha,scope=server-${{ matrix.target }},mode=max
+
+  build-agent:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.prepare.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/agent/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/studio-agent:production-${{ matrix.target == 'prod-cn' && 'cn' || 'com' }}
+          cache-from: type=gha,scope=agent-${{ matrix.target }}
+          cache-to: type=gha,scope=agent-${{ matrix.target }},mode=max
+
+  build-web:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: ${{ fromJson(needs.prepare.outputs.targets) }}
+    environment: ${{ matrix.target }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/studio-web:production-${{ matrix.target == 'prod-cn' && 'cn' || 'com' }}
+          build-args: |
+            NEXT_PUBLIC_OSS_BASE_URL=${{ vars.NEXT_PUBLIC_OSS_BASE_URL }}
+            NEXT_PUBLIC_BANNER_BASE_URL=${{ vars.NEXT_PUBLIC_BANNER_BASE_URL }}
+            NEXT_PUBLIC_USER_BASE_URL=${{ vars.NEXT_PUBLIC_USER_BASE_URL }}
+            NEXT_PUBLIC_SITE_REGION=${{ vars.NEXT_PUBLIC_SITE_REGION }}
+            NEXT_PUBLIC_PARENT_ORIGIN=${{ vars.NEXT_PUBLIC_PARENT_ORIGIN }}
+            SERVER_URL=http://server:3001
+            JAVA_STUDIO_URL=${{ vars.JAVA_STUDIO_URL }}
+            JAVA_CONTENT_URL=${{ vars.JAVA_CONTENT_URL }}
+          cache-from: type=gha,scope=web-${{ matrix.target }}
+          cache-to: type=gha,scope=web-${{ matrix.target }},mode=max
