@@ -22,14 +22,11 @@ import { useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 
-// Primary backdrop. Swap candidates (all 200-verified Unsplash hot-links):
-//   /photo-1640903581708-8d491706515b  hooded figure / dark forest
-//   /photo-1697205153149-a60e3a2ddc61  girl in hallway / anime
-//   /photo-1641071651748-274f40fa5fde  cyberpunk neon
-//   /photo-1709595303000-8eac8137440f  cinematic
-//   /photo-1631878139457-3175fd1c824d  cyberpunk portrait
+// Primary backdrop. Hand-generated artwork uploaded to OSS via the
+// public/upload/static endpoint; served from static.fizzspace.cn.
+// To swap: drop a new image into the same OSS path or replace the URL.
 const HERO_IMAGE =
-  "https://images.unsplash.com/photo-1641071651748-274f40fa5fde?w=2400&q=85&fit=crop";
+  "https://static.fizzspace.cn/static/pc/ChatGPT%20Image%202026%E5%B9%B44%E6%9C%8827%E6%97%A5%2012_25_56.png";
 
 export function Hero() {
   const locale = useLocale() as Locale;

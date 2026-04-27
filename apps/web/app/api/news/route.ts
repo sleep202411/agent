@@ -113,7 +113,11 @@ export async function GET(request: NextRequest) {
     // Upstream down — fall back to static-only.
   }
 
-  const staticArticles = getStaticArticles(lang);
+  // Hardcoded marketing articles only run on staging + production .com
+  // (NEXT_PUBLIC_SITE_REGION === "global"). Production .cn (region "cn")
+  // shows live newsapi feed only.
+  const region = process.env.NEXT_PUBLIC_SITE_REGION ?? "global";
+  const staticArticles = region === "cn" ? [] : getStaticArticles(lang);
   const merged = [...staticArticles, ...live].sort(
     (a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime()
   );
