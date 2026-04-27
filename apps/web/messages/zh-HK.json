@@ -1125,6 +1125,7 @@
     "noShotsData": "目前劇集暫無鏡頭資料",
     "loadingStoryboard": "載入分鏡表...",
     "noStoryboardData": "暫無分鏡資料",
+    "reorderFailed": "儲存鏡頭順序失敗",
     "richtextPlaceholder": "輸入內容，支援 @角色 / @場景 / @道具",
     "dialoguePlaceholder": "輸入對白，支援 @角色",
     "batchExportFinalizedImages": "批次匯出定稿圖",

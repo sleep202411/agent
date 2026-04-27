@@ -1125,6 +1125,7 @@
     "noShotsData": "No shots in this episode",
     "loadingStoryboard": "Loading storyboard...",
     "noStoryboardData": "No storyboard data",
+    "reorderFailed": "Failed to save shot order",
     "richtextPlaceholder": "Enter content, use @ to reference characters / scenes / props",
     "dialoguePlaceholder": "Enter dialogue, use @ to reference characters",
     "batchExportFinalizedImages": "Export Finalized Images",

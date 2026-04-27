@@ -1125,6 +1125,7 @@
     "noShotsData": "当前剧集暂无镜头数据",
     "loadingStoryboard": "加载分镜表...",
     "noStoryboardData": "暂无分镜数据",
+    "reorderFailed": "保存镜头顺序失败",
     "richtextPlaceholder": "输入内容，支持 @角色 / @场景 / @道具",
     "dialoguePlaceholder": "输入对白，支持 @角色",
     "batchExportFinalizedImages": "批量导出定稿图",

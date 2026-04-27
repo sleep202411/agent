@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { IconPencil } from "@tabler/icons-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  IconGripVertical,
+  IconLoader2,
+  IconPencil,
+  IconRowInsertBottom,
+  IconRowInsertTop,
+  IconTrash,
+} from "@tabler/icons-react";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
 import {
   StoryboardCardImageActions,
   StoryboardCardVideoActions,
@@ -15,6 +24,20 @@ import {
 } from "@/app/projects/_components/storyboard/cells";
 import { persistValueList } from "@/app/projects/_components/storyboard/cells/cell-utils";
 import { WorldAssetSelectDialog } from "@/app/projects/_components/storyboard/dialogs/world-asset-select-dialog";
+import { useShotRowActions } from "@/app/projects/_components/storyboard/use-shot-row-actions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { Asset } from "@/src/store/slices/projectSlice";
 import { useTranslations } from "@/src/i18n/i18n";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
@@ -25,6 +48,13 @@ import {
   type ShotRow,
   type ShotValue,
 } from "@/src/store/slices/projectSlice";
+
+function arrayMove<T>(arr: T[], from: number, to: number): T[] {
+  const next = [...arr];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
 
 // Map of styleId → styleName for the project-level 画风 dictionary. Used
 // as a fallback when a select column stores an id that isn't resolvable
@@ -43,10 +73,50 @@ type StyleDict = Record<string, string>;
  * interactions (upload, open, generate) stay consistent. Everything
  * else is flattened into a compact "label: value" list.
  */
-export function StoryboardCardView() {
+export function StoryboardCardView({
+  onReorder,
+}: {
+  onReorder?: (reordered: ShotRow[], movedShotId: string) => void;
+}) {
   const t = useTranslations("storyboard");
   const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
   const rows = useAppSelector((s) => selectCurrentInstance(s).rows);
+  // Drag refs — same pattern as the table view; storing in refs avoids
+  // re-rendering all cards on every pointer move.
+  const pendingReorderRef = useRef<ShotRow[] | null>(null);
+  const movedShotIdRef = useRef<string | null>(null);
+
+  const handleDragOver = useCallback(
+    (event: unknown) => {
+      const op = (
+        event as {
+          operation?: { source?: { id: string | number }; target?: { id: string | number } };
+        }
+      ).operation;
+      const source = op?.source;
+      const target = op?.target;
+      if (!source || !target || source.id === target.id) return;
+
+      const currentList = pendingReorderRef.current ?? rows;
+      const fromIndex = currentList.findIndex((r) => String(r.shotId ?? "") === String(source.id));
+      const toIndex = currentList.findIndex((r) => String(r.shotId ?? "") === String(target.id));
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+
+      pendingReorderRef.current = arrayMove(currentList, fromIndex, toIndex);
+      movedShotIdRef.current = String(source.id);
+    },
+    [rows]
+  );
+
+  const handleDragEnd = useCallback(() => {
+    const reordered = pendingReorderRef.current;
+    const movedShotId = movedShotIdRef.current;
+    pendingReorderRef.current = null;
+    movedShotIdRef.current = null;
+    if (reordered && movedShotId && onReorder) {
+      onReorder(reordered, movedShotId);
+    }
+  }, [onReorder]);
   const characters = useAppSelector((s) => selectCurrentInstance(s).characters);
   const scenes = useAppSelector((s) => selectCurrentInstance(s).scenes);
   const props = useAppSelector((s) => selectCurrentInstance(s).props);
@@ -106,22 +176,24 @@ export function StoryboardCardView() {
   }
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="flex flex-col gap-4">
-        {rows.map((row, index) => (
-          <StoryboardCard
-            key={row.shotId ?? index}
-            row={row}
-            index={index}
-            imageColumn={imageColumn}
-            videoColumn={videoColumn}
-            otherColumns={otherColumns}
-            styleDict={styleDict}
-            mentionItems={mentionItems}
-          />
-        ))}
+    <DragDropProvider onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+      <div className="flex-1 overflow-auto">
+        <div className="flex flex-col gap-4">
+          {rows.map((row, index) => (
+            <StoryboardCard
+              key={row.shotId ?? index}
+              row={row}
+              index={index}
+              imageColumn={imageColumn}
+              videoColumn={videoColumn}
+              otherColumns={otherColumns}
+              styleDict={styleDict}
+              mentionItems={mentionItems}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+    </DragDropProvider>
   );
 }
 
@@ -142,6 +214,8 @@ function StoryboardCard({
   styleDict: StyleDict;
   mentionItems: ReturnType<typeof buildMentionItems>;
 }) {
+  const tc = useTranslations("common");
+  const t = useTranslations("storyboard");
   const shotId = String(row.shotId ?? "");
   const title = `Storyboard ${String(index + 1).padStart(2, "0")}`;
 
@@ -154,13 +228,120 @@ function StoryboardCard({
       ? otherColumns.find((c) => String(c.id ?? "") === editingColumnId)
       : undefined;
 
+  // Per-card actions: insert above / below + delete (shared with the
+  // table-view shot-no-cell so both views stay in sync).
+  const { insert, remove, inserting } = useShotRowActions(row, index);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Pending (un-saved) rows can't be reordered server-side — disable
+  // sortable for them, just like the table view does.
+  const sortableId = shotId || `pending-${index}`;
+  const { ref, handleRef, isDragging } = useSortable({
+    id: sortableId,
+    index,
+    disabled: !shotId,
+  });
+
   return (
     <div
+      ref={ref}
       data-storyboard-shot-id={shotId}
-      className="flex flex-col rounded-lg border border-border/60 bg-muted/40 p-4"
+      className={cn(
+        "group relative flex flex-col rounded-lg border border-border/60 bg-muted/40 p-4 transition-shadow",
+        isDragging && "z-30 opacity-60 shadow-lg"
+      )}
     >
       <div className="mb-3 flex shrink-0 items-center justify-between">
-        <span className="text-[14px] font-medium text-foreground/90">{title}</span>
+        <div className="flex items-center gap-2">
+          {/* Drag handle — hover-only so it doesn't crowd the title at rest. */}
+          {shotId ? (
+            <div
+              ref={handleRef}
+              className="cursor-grab touch-none rounded p-0.5 text-muted-foreground/40 opacity-0 transition-opacity hover:text-muted-foreground group-hover:opacity-100 active:cursor-grabbing"
+              title="Drag to reorder"
+              aria-label="Drag to reorder this shot"
+            >
+              <IconGripVertical className="size-4" />
+            </div>
+          ) : null}
+          <span className="text-[14px] font-medium text-foreground/90">{title}</span>
+        </div>
+
+        {/* Row actions — flat row of three icon buttons. Hover-only so
+            they don't crowd the card header at rest. Shares the same
+            useShotRowActions hook as the table-view shot-no-cell. */}
+        <TooltipProvider delayDuration={200}>
+          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  color="muted"
+                  size="icon-xs"
+                  disabled={!!inserting}
+                  onClick={() => void insert("before")}
+                  aria-label={t("insertAbove")}
+                >
+                  {inserting === "before" ? (
+                    <IconLoader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <IconRowInsertTop className="size-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t("insertAbove")}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  color="muted"
+                  size="icon-xs"
+                  disabled={!!inserting}
+                  onClick={() => void insert("after")}
+                  aria-label={t("insertBelow")}
+                >
+                  {inserting === "after" ? (
+                    <IconLoader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <IconRowInsertBottom className="size-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{t("insertBelow")}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  color="destructive"
+                  size="icon-xs"
+                  disabled={!shotId}
+                  onClick={() => setDeleteOpen(true)}
+                  aria-label={tc("delete")}
+                >
+                  <IconTrash className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{tc("delete")}</TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
+
+        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{tc("confirm")}</AlertDialogTitle>
+              <AlertDialogDescription>{t("confirmDeleteShot")}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
+              <AlertDialogAction variant="solid" color="destructive" onClick={() => void remove()}>
+                {tc("delete")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       {/* Row height is driven by 分镜图 / 分镜视频 (slot + buttons stacked).
