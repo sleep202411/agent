@@ -17,10 +17,12 @@ import { localeFromPathname, localizePath } from "@/src/i18n/locale-url";
  *   same URL shell whether embedded or standalone. We carry forward
  *   the `?embed=1` / `?redirect=...` search params so the login page
  *   downstream still knows how to finish the flow.
- * - login + embedded: postMessage the token to the parent and stop.
- *   The host owns the "close iframe / redirect" decision.
- * - login + standalone: navigate to the `redirect` query param if
- *   present + safe, otherwise fall back to the studio shell.
+ * - login + embedded (iframe or `?embed=1`): postMessage the token
+ *   to the parent and stop. The host owns the "close iframe /
+ *   redirect" decision.
+ * - login + standalone: never dispatch any event — just navigate.
+ *   The `redirect` query param wins if present + safe, otherwise we
+ *   fall back to the homepage.
  */
 export function handleAuthSuccess(action: AuthAction, result: AuthResult): void {
   if (typeof window === "undefined") return;
@@ -41,7 +43,9 @@ export function handleAuthSuccess(action: AuthAction, result: AuthResult): void 
     return;
   }
 
-  const fallback = localizePath("/studio/projects", locale);
+  // Standalone: no event, just hard-navigate. Honor `?redirect=<safe>`,
+  // else go to the localized homepage.
+  const fallback = localizePath("/", locale);
   const redirect = readRedirectParam();
   window.location.assign(resolveRedirectTarget(redirect) ?? fallback);
 }
