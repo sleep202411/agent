@@ -468,7 +468,10 @@ export function TimelineView() {
               : nextRows.length;
         nextRows.splice(insertIndex, 0, { shotId: nextShotId, shotValues: [] });
         dispatch(setRows(nextRows));
-        dispatch(setActiveTab("storyboard"));
+        // Stay on the timeline tab — the user just added a shot here, so
+        // jumping back to the storyboard table is disorienting. The
+        // workspace:focus-shot event is still dispatched in case any
+        // listener (e.g. a timeline scroll-into-view handler) wants it.
         requestAnimationFrame(() => {
           window.dispatchEvent(
             new CustomEvent("workspace:focus-shot", { detail: { shotId: nextShotId } })
