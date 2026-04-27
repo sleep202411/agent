@@ -19,6 +19,8 @@ deploy/
   .env.staging             测试环境变量
   .env.local               本地环境变量
   nginx/                   Nginx 配置
+  auto-update.sh           Podman 主机的自动滚动脚本（auto-deploy）
+  AUTO_DEPLOY.md           Pull-based 自动部署架构 + 一次性主机配置
   DEPLOY.md                部署指南
 ```
 
@@ -80,7 +82,16 @@ npx turbo build --filter=server
 
 ## Docker Deployment
 
-详细部署指南见 [`deploy/DEPLOY.md`](deploy/DEPLOY.md)。
+部署架构（pull-based 自动滚动）：[`deploy/AUTO_DEPLOY.md`](deploy/AUTO_DEPLOY.md)
+日常构建 / 部署细节：[`deploy/DEPLOY.md`](deploy/DEPLOY.md)
+
+简版日常流程：
+
+- **staging**：push 到 `develop` → CI 自动构建 → 5 分钟内自动滚动
+- **prod-cn / prod-com**：GitHub Actions 手动 dispatch `Build & Push (production)` →
+  CI 构建 → 5 分钟内自动滚动（CI 不 SSH 任何服务器）
+
+详见 [`AUTO_DEPLOY.md`](deploy/AUTO_DEPLOY.md)。
 
 ### 快速构建
 
