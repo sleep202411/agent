@@ -25,15 +25,18 @@ const InputSchema = z.object({
     .string()
     .min(1)
     .describe(
-      "worldrole / worldscene / worldprop 的 id（batch_create_* 返回的 id，或 list_assets 查到的）"
+      "ID of the worldrole / worldscene / worldprop (returned by batch_create_*, or fetched via list_assets)"
     ),
-  name: z.string().min(1).describe("资产名 — 仅用于错误消息定位，不参与入库"),
-  prompt: z.string().min(1).describe("图像提示词 — 直接透传给 Java，不做改写"),
+  name: z.string().min(1).describe("Asset name — only used for error messages, not persisted"),
+  prompt: z
+    .string()
+    .min(1)
+    .describe("Image prompt — passed straight through to Java without rewriting"),
 });
 
 const OutputSchema = z.object({
   ok: z.boolean(),
-  path: z.string().optional().describe("OSS 路径（成功时）"),
+  path: z.string().optional().describe("OSS path (on success)"),
   message: z.string(),
 });
 
@@ -46,9 +49,9 @@ const UI_ENTITY: Record<AssetKind, EntityType> = {
 };
 
 const LABEL: Record<AssetKind, string> = {
-  role: "角色",
-  scene: "场景",
-  prop: "道具",
+  role: "character",
+  scene: "scene",
+  prop: "prop",
 };
 
 async function runGenerate(
@@ -91,7 +94,7 @@ async function runGenerate(
 export const generateCharacterImage = createTool({
   id: "generate_character_image",
   description:
-    '为单个已入库角色（worldrole）同步生成主图并写回记录。Java 接口阻塞 5-30s 后返回 OSS 路径。用在"用户已确认要生图"的场景 —— 典型是 batch_create_character 之后对每个返回的 id 调一次。多个角色就多次调用这个 tool（不要期望它接收数组）。对凭空设计一批角色 + 生图的场景用 invoke_workflow: role_design。',
+    'Synchronously generate a main image for a single saved character (worldrole) and write the OSS path back onto the record. The Java endpoint blocks 5-30s. Use when the user has already confirmed they want images — typical case: call once per id returned from batch_create_character. For multiple characters, invoke this tool multiple times (it does NOT take an array). For "design a fresh batch of characters from scratch + generate images", use invoke_workflow: role_design instead.',
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async (input, execCtx) =>
@@ -101,7 +104,7 @@ export const generateCharacterImage = createTool({
 export const generateSceneImage = createTool({
   id: "generate_scene_image",
   description:
-    "为单个已入库场景（worldscene）同步生成主图并写回记录。用法同 generate_character_image。",
+    "Synchronously generate a main image for a single saved scene (worldscene) and write it back. Same usage pattern as generate_character_image.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async (input, execCtx) => runGenerate("scene", "generate_scene_image", input, execCtx),
@@ -110,7 +113,7 @@ export const generateSceneImage = createTool({
 export const generatePropImage = createTool({
   id: "generate_prop_image",
   description:
-    "为单个已入库道具（worldprop）同步生成主图并写回记录。用法同 generate_character_image。",
+    "Synchronously generate a main image for a single saved prop (worldprop) and write it back. Same usage pattern as generate_character_image.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async (input, execCtx) => runGenerate("prop", "generate_prop_image", input, execCtx),

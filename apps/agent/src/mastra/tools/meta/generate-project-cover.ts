@@ -168,23 +168,25 @@ async function writeCoverPrompt(opts: {
       .join(", ");
   }
 
-  // Feed everything we know about the project. The "core 意象" field
-  // (顿号-separated concrete objects like "断桥烟柳、春茶市集、油纸伞")
+  // Feed everything we know about the project. The "core motifs" field
+  // (concrete objects like "broken bridge, misty willows, paper umbrella")
   // matters most — it's what gives Flux something specific to draw.
   const userMsg = [
-    "请根据下面素材，生成 1 句英文图像生成提示词（≤ 60 词）用于 Flux 模型生成电影海报风格封面：",
-    `- 画幅：${opts.aspectRatio}`,
-    opts.projectName ? `- 项目名：${opts.projectName}` : null,
-    opts.description ? `- 一句话概念：${opts.description}` : null,
-    opts.core ? `- 核心意象（必须具象体现）：${opts.core}` : null,
-    opts.styleLabel ? `- 画风（用该画风呈现）：${opts.styleLabel}` : null,
-    opts.script ? `- 剧本开头片段：\n${opts.script.slice(0, 1200)}` : "- 暂无剧本内容",
+    "Using the material below, generate 1 English image-generation prompt (<= 60 words) for the Flux model to produce a cinematic movie-poster cover:",
+    `- Aspect ratio: ${opts.aspectRatio}`,
+    opts.projectName ? `- Project name: ${opts.projectName}` : null,
+    opts.description ? `- One-sentence concept: ${opts.description}` : null,
+    opts.core ? `- Core motifs (must appear concretely in frame): ${opts.core}` : null,
+    opts.styleLabel ? `- Art style (render in this style): ${opts.styleLabel}` : null,
+    opts.script
+      ? `- Opening script excerpt:\n${opts.script.slice(0, 1200)}`
+      : "- No script content available",
     "",
-    "要求：",
-    "- 全英文；只出 1 句 prompt 本身，不要解释、不要引号、不要 markdown",
-    "- **核心意象**必须具象地出现在画面里（断桥烟柳、油纸伞这类具体物件）",
-    "- **画风**要明确落在 prompt 里（例 Chinese ink wash painting / cyberpunk illustration）",
-    "- cinematic、dramatic、不要让模型画出文字/logo/watermark",
+    "Requirements:",
+    "- English only; output the prompt sentence itself, no explanation, no quotes, no markdown",
+    "- The **core motifs** must literally appear in the image (concrete objects like 'broken bridge, paper umbrella')",
+    "- The **art style** must be stated in the prompt (e.g. 'Chinese ink wash painting' / 'cyberpunk illustration')",
+    "- cinematic, dramatic; do not let the model render text / logos / watermarks",
   ]
     .filter(Boolean)
     .join("\n");
@@ -274,13 +276,13 @@ function extractStoragePathFromSignedUrl(signedUrl: string): string {
 export const generateProjectCover = createTool({
   id: "generate_project_cover",
   description:
-    "为当前项目自动生成一张 AI 封面图并落库到 project.imagePath。supervisor 在 mark_project_params_updated 之后**总是**调用；Tool 内部会自己检查项目是否已有封面（幂等）。不消耗用户积分。如果用户本轮消息附带了剧本 att_ 引用，请把 textRef 传过来，生成的封面会更贴剧本。",
+    "Auto-generate an AI cover image for the current project and persist the path to project.imagePath. Supervisor **always** calls this after mark_project_params_updated; the tool checks internally whether a cover already exists (idempotent). Does not consume user credits. If the user's current message attached a script via an att_ ref, pass it as textRef so the generated cover stays closer to the script.",
   inputSchema: z.object({
     textRef: z
       .string()
       .optional()
       .describe(
-        "如果当前轮 user 消息的 attachments 里有 att_xxx 引用（和你传给 story_outline 的 textRef 一致），把它传进来。没有就不传。"
+        "Pass the same att_xxx ref you passed to story_outline if the current user message attached one. Omit otherwise."
       ),
   }),
   outputSchema: z.object({

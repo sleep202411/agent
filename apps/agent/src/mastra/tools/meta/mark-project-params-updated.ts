@@ -15,7 +15,7 @@ import { z } from "zod";
 export const markProjectParamsUpdated = createTool({
   id: "mark_project_params_updated",
   description:
-    "在项目参数已被系统保存后，向用户展示一条「✓ 更新项目参数」的完成提示。只在看到 <PROJECT_PARAMS_CONFIRMED/> 标签之后调用，不要在其它场景使用。无入参。",
+    "Show the user a small confirmation chip ('Project parameters updated') after the system has persisted the project's params. Only call after seeing the <PROJECT_PARAMS_CONFIRMED/> tag — never in other situations. Takes no input.",
   inputSchema: z.object({}),
   outputSchema: z.object({ ok: z.boolean() }),
   execute: async () => ({ ok: true }),

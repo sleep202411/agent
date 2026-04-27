@@ -4,7 +4,8 @@ import { cancelWorkflow } from "../../workflows/engine";
 
 export const cancelWorkflowTool = createTool({
   id: "cancel_workflow",
-  description: '取消一个正在运行或暂停中的 workflow。用户明确说"停下"/"取消"/"别跑了"时调用。',
+  description:
+    'Cancel a running or suspended workflow. Call when the user explicitly says "stop", "cancel", or "abort it".',
   inputSchema: z.object({
     runId: z.string(),
   }),

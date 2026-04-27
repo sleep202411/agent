@@ -29,9 +29,9 @@ export async function loadRoles(
     if (items.length === 0) return "";
     return items
       .map((r, i) => {
-        const name = String(r.name ?? r.title ?? `(角色 ${i + 1})`);
+        const name = String(r.name ?? r.title ?? `(character ${i + 1})`);
         const desc = String(r.description ?? r.prompt ?? "").trim();
-        return desc ? `- ${name}：${desc.slice(0, 180)}` : `- ${name}`;
+        return desc ? `- ${name}: ${desc.slice(0, 180)}` : `- ${name}`;
       })
       .join("\n");
   } catch (err) {
@@ -55,9 +55,9 @@ export async function loadScenes(
     if (items.length === 0) return "";
     return items
       .map((s, i) => {
-        const name = String(s.name ?? s.title ?? `(场景 ${i + 1})`);
+        const name = String(s.name ?? s.title ?? `(scene ${i + 1})`);
         const desc = String(s.description ?? s.prompt ?? "").trim();
-        return desc ? `- ${name}：${desc.slice(0, 180)}` : `- ${name}`;
+        return desc ? `- ${name}: ${desc.slice(0, 180)}` : `- ${name}`;
       })
       .join("\n");
   } catch (err) {
@@ -81,9 +81,9 @@ export async function loadProps(
     if (items.length === 0) return "";
     return items
       .map((p, i) => {
-        const name = String(p.name ?? p.title ?? `(道具 ${i + 1})`);
+        const name = String(p.name ?? p.title ?? `(prop ${i + 1})`);
         const desc = String(p.description ?? p.prompt ?? "").trim();
-        return desc ? `- ${name}：${desc.slice(0, 180)}` : `- ${name}`;
+        return desc ? `- ${name}: ${desc.slice(0, 180)}` : `- ${name}`;
       })
       .join("\n");
   } catch (err) {
@@ -107,7 +107,7 @@ export async function loadEpisodeScript(
     );
     const content = String(resp?.content ?? "").trim();
     if (!content) return "";
-    return content.length > maxChars ? content.slice(0, maxChars) + "\n[…已截断]" : content;
+    return content.length > maxChars ? content.slice(0, maxChars) + "\n[… truncated]" : content;
   } catch (err) {
     console.warn("[context-loader] loadEpisodeScript failed", err);
     return "";
@@ -128,12 +128,12 @@ export async function loadEpisodes(
     if (items.length === 0) return "";
     return items
       .map((ep, i) => {
-        const title = String(ep.title ?? ep.name ?? `第 ${i + 1} 集`);
+        const title = String(ep.title ?? ep.name ?? `Episode ${i + 1}`);
         const sort = ep.sort ?? i + 1;
         const brief = String(ep.synopsis ?? ep.description ?? "").trim();
         return brief
-          ? `- 第 ${sort} 集「${title}」：${brief.slice(0, 120)}`
-          : `- 第 ${sort} 集「${title}」`;
+          ? `- Episode ${sort} "${title}": ${brief.slice(0, 120)}`
+          : `- Episode ${sort} "${title}"`;
       })
       .join("\n");
   } catch (err) {
@@ -179,9 +179,9 @@ export async function loadStoryboard(
         const scene = get("scene");
         const desc = get("description");
         const id = shot.shotId != null ? String(shot.shotId) : "?";
-        const preview = desc ? `：${desc.slice(0, maxCharsPerRow)}` : "";
-        const sceneTag = scene ? `【${scene}】` : "";
-        return `- 第 ${shotNo} 镜 (id ${id})${sceneTag}${preview}`;
+        const preview = desc ? `: ${desc.slice(0, maxCharsPerRow)}` : "";
+        const sceneTag = scene ? ` [${scene}]` : "";
+        return `- Shot ${shotNo} (id ${id})${sceneTag}${preview}`;
       })
       .join("\n");
   } catch (err) {
@@ -195,10 +195,10 @@ export async function loadProjectSummary(ctx: StoryosContext): Promise<string> {
   try {
     const detail = await javaRequest<Record_>(ctx, `/api/user/project/detail/${ctx.projectId}`);
     const lines: string[] = [];
-    if (detail.name) lines.push(`项目：${detail.name}`);
-    if (detail.description) lines.push(`简介：${String(detail.description).slice(0, 200)}`);
-    if (detail.genreTag) lines.push(`类型：${detail.genreTag}`);
-    if (detail.toneTag) lines.push(`基调：${detail.toneTag}`);
+    if (detail.name) lines.push(`Project: ${detail.name}`);
+    if (detail.description) lines.push(`Synopsis: ${String(detail.description).slice(0, 200)}`);
+    if (detail.genreTag) lines.push(`Genre: ${detail.genreTag}`);
+    if (detail.toneTag) lines.push(`Tone: ${detail.toneTag}`);
     return lines.join("\n");
   } catch (err) {
     console.warn("[context-loader] loadProjectSummary failed", err);

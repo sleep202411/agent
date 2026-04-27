@@ -41,10 +41,10 @@ export const PersonaReplyShapeSchema = z.object({
     .string()
     .min(1)
     .describe(
-      "一句到两段的 markdown prose，面向用户展示（ToolPersonaCard 渲染）。**所有 persona 都必须填**。对设计类 persona 讲最有辨识度的亮点；对讨论/建议类 persona 直接写你的意见。"
+      "One-sentence to two-paragraph markdown prose shown to the user (rendered by ToolPersonaCard). **Required for every persona.** For design personas, call out the most distinctive aspects; for discussion / advisory personas, write your opinion directly."
     ),
   fields: PersonaReplyFieldsSchema.optional().describe(
-    "结构化数据，供 supervisor 直接喂给下游 atomic tool（batch_create_* / add_shot 等）。key 由你的角色决定：角色师 → {name, description, prompt}；场景师 → {name, description, prompt}；道具师 → {name, description, prompt}；分镜师 → {scene, description, image_prompt, video_prompt, movement, shot_size, perspective, dialogue, duration}；评审/讨论类 persona 留空。**字符串里的引号一律用中文引号「」，禁止 ASCII 双引号避免 supervisor 转嵌时 JSON 破损。**"
+    "Structured payload the supervisor feeds straight to downstream atomic tools (batch_create_* / add_shot etc.). Keys are persona-specific: character designer → {name, description, prompt}; scene designer → {name, description, prompt}; prop designer → {name, description, prompt}; storyboarder → {scene, description, image_prompt, video_prompt, movement, shot_size, perspective, dialogue, duration}; review / discussion personas leave it empty. **Always use curly quotes “” inside string values, never ASCII double quotes — ASCII quotes break the supervisor's JSON wrapping.**"
   ),
 });
 
@@ -92,10 +92,10 @@ function tryParseJson(text: string): unknown {
 }
 
 function composePrompt(task: string, blocks: Array<{ heading: string; body: string }>): string {
-  const parts: string[] = [`【用户请求】\n${task.trim()}`];
+  const parts: string[] = [`[User request]\n${task.trim()}`];
   for (const b of blocks) {
     if (!b.body?.trim()) continue;
-    parts.push(`【${b.heading}】\n${b.body.trim()}`);
+    parts.push(`[${b.heading}]\n${b.body.trim()}`);
   }
   return parts.join("\n\n");
 }
@@ -169,7 +169,10 @@ export async function askPersona(opts: AskPersonaOptions): Promise<AskPersonaRes
             (typeof record.setting === "string" && record.setting) ||
             (typeof record.image_prompt === "string" && record.image_prompt) ||
             "";
-          const wrapped = { summary: synth || "（persona 未提供摘要）", fields: record };
+          const wrapped = {
+            summary: synth || "(persona did not provide a summary)",
+            fields: record,
+          };
           const retry = PersonaReplyShapeSchema.safeParse(wrapped);
           if (retry.success) {
             parsed = retry;

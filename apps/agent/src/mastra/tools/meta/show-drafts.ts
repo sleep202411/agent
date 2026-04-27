@@ -6,7 +6,7 @@ import { listDrafts } from "../../lib/drafts";
 export const showDrafts = createTool({
   id: "show_drafts",
   description:
-    '列出一个 workflow run 当前待确认的 drafts。当用户问"生成了什么?"或需要在确认前预览时调用。',
+    'List the drafts pending confirmation on a workflow run. Call when the user asks "what was generated?" or when a preview is needed before confirming.',
   inputSchema: z.object({
     runId: z.string(),
     entityType: z.enum(ENTITY_TYPES).optional(),

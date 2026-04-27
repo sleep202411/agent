@@ -27,28 +27,36 @@ import { z } from "zod";
 export const showOptions = createTool({
   id: "show_options",
   description:
-    '让用户从一组选项里挑一个（或多个）。用在用户意图**涉及多个已知实体但没锁定目标**的场景：比如"某一集加分镜"没说哪集（options=episode 列表）、"跳到那个角色"有多个候选（options=role 列表），或 workflow 分叉有不同成本/结果（完整流程 vs 只出分镜）。**千万不要用文字反问"请告诉我是哪个"**——卡片就是干这个的。用户措辞明确（"只要分镜" / 唯一匹配的"第 2 集"）就跳过，直接调对应原子工具 / invoke_workflow。返回 {selectedIds: [...]}; single-select 时数组只有 1 个元素。',
+    'Have the user pick one (or several) options from a list. Use when the user\'s intent **references multiple known entities but doesn\'t pin down the target**: e.g. "add a shot to one of the episodes" without saying which (options = episode list), "jump to that character" with multiple candidates (options = role list), or a workflow fork with different cost / outcome trade-offs (full flow vs. storyboard only). **Never reply with prose like "please tell me which one"** — that\'s exactly what this card is for. When the wording is unambiguous ("storyboard only" / a single matching "episode 2"), skip this and route directly to the relevant atomic tool / invoke_workflow. Returns {selectedIds: [...]}; single-select results contain exactly one id.',
   inputSchema: z.object({
-    title: z.string().describe("标题，5-15 字。例：'想怎么处理这份剧本？'"),
-    description: z.string().optional().describe("副标题说明一句话（≤ 50 字），解释为什么要选"),
+    title: z
+      .string()
+      .describe("Title, 5-15 chars. e.g. 'How would you like to handle this script?'"),
+    description: z
+      .string()
+      .optional()
+      .describe("One-sentence subtitle (<= 50 chars) explaining why a choice is needed"),
     options: z
       .array(
         z.object({
           id: z
             .string()
             .describe(
-              "选项内部 id，英文小写+下划线。你会在下一轮拿到这个 id，用来 invoke 对应的 workflow"
+              "Option id, lowercase+underscore. You'll receive this id on the next turn and use it to invoke the corresponding workflow"
             ),
-          label: z.string().describe("按钮上显示的主文案，8-15 字"),
+          label: z.string().describe("Primary button text, 8-15 chars"),
           description: z
             .string()
             .optional()
-            .describe("按钮下方灰色补充说明（≤ 40 字），可带预估积分"),
+            .describe("Secondary text under the button (<= 40 chars), may include estimated cost"),
         })
       )
       .min(2)
       .max(6),
-    multiple: z.boolean().optional().describe("默认 false 单选；true 多选"),
+    multiple: z
+      .boolean()
+      .optional()
+      .describe("Default false (single-select); true for multi-select"),
   }),
   outputSchema: z.object({
     selectedIds: z.array(z.string()),

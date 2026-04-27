@@ -14,5 +14,5 @@
 export function stylePaintingHint(stylePainting: string | undefined): string {
   const v = (stylePainting ?? "").trim();
   if (!v) return "";
-  return `\n\n项目画风提示：${v}\n（提示词里**不要**直接写画风关键词——下游会统一拼接。但请根据该画风的特征选择恰当的视觉 token，例如写实风强调皮肤/布料质感细节，二次元风强调轮廓/色块，油画风强调笔触/肌理。）`;
+  return `\n\nProject art-style hint: ${v}\n(Do **not** write style keywords in the prompt itself — downstream concatenates them uniformly. Instead, pick visual tokens that fit the style: realistic styles emphasize skin / fabric texture; anime styles emphasize silhouette and color blocks; oil-painting styles emphasize brushwork and texture.)`;
 }

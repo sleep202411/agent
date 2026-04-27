@@ -34,16 +34,16 @@ type EvaluatableKind = (typeof EVALUATABLE_KINDS)[number];
 function buildEvaluationPrompt(kind: EvaluatableKind, drafts: Array<{ data: unknown }>): string {
   const label =
     kind === "role"
-      ? "角色清单"
+      ? "character list"
       : kind === "episode"
-        ? "分集大纲"
+        ? "episode outline"
         : kind === "script"
-          ? "剧本"
-          : "分镜";
+          ? "script"
+          : "storyboard";
   return [
-    `请评审以下 ${drafts.length} 条【${label}】草稿，按你 system prompt 规定的 JSON 结构返回报告。`,
+    `Review the following ${drafts.length} draft(s) of [${label}]. Return a report using the JSON structure defined in your system prompt.`,
     "",
-    "草稿内容：",
+    "Drafts:",
     JSON.stringify(
       drafts.map((d) => d.data),
       null,
@@ -55,7 +55,7 @@ function buildEvaluationPrompt(kind: EvaluatableKind, drafts: Array<{ data: unkn
 export const evaluateDrafts = createTool({
   id: "evaluate",
   description:
-    "对某个 workflow run 产出的 draft 做质量评审（调 evaluator persona），拿到 overallScore / verdict / 具体 issues / feedbackForRegeneration。verdict=rework 时可以把 feedback 塞回对应 workflow 的 feedback 参数重跑一轮。",
+    "Run a quality review (via the evaluator persona) over the drafts produced by a given workflow run. Returns overallScore / verdict / specific issues / feedbackForRegeneration. When verdict=rework, the feedback can be fed back into the corresponding workflow's feedback input for a retry.",
   inputSchema: z.object({
     runId: z.string().min(1),
     kind: z.enum(EVALUATABLE_KINDS),
@@ -81,8 +81,9 @@ export const evaluateDrafts = createTool({
           {
             severity: "critical" as const,
             target: "(no drafts)",
-            problem: `Run ${runId} 下没有 ${kind} 草稿可评。`,
-            suggestion: "先 invoke 对应 workflow 生成草稿再评审。",
+            problem: `Run ${runId} has no ${kind} drafts to evaluate.`,
+            suggestion:
+              "Invoke the corresponding workflow to generate drafts first, then re-evaluate.",
           },
         ],
         feedbackForRegeneration: "",
@@ -110,8 +111,8 @@ export const evaluateDrafts = createTool({
           {
             severity: "major" as const,
             target: "(evaluator)",
-            problem: "Evaluator 未返回结构化报告。",
-            suggestion: "建议人工检查草稿内容。",
+            problem: "Evaluator did not return a structured report.",
+            suggestion: "Recommend a manual review of the draft contents.",
           },
         ],
         feedbackForRegeneration: "",

@@ -21,12 +21,12 @@ const KIND_TO_ROUTE = {
 export const listAssets = createTool({
   id: "list_assets",
   description:
-    '分页列出当前世界里的角色 / 场景 / 道具（完整列表，不是抽样）。用户问"列出全部角色 / 我有哪些场景 / 项目里所有道具是什么"时调。常规概况用 query_context 更便宜。',
+    'Paged full listing of roles / scenes / props in the current world (complete, not a sample). Call when the user asks "list all characters" / "what scenes do I have" / "what are all the props in this project". For lightweight summaries, query_context is cheaper.',
   inputSchema: z.object({
     kind: z.enum(["role", "scene", "prop"]),
     page: z.number().int().min(1).default(1),
     pageSize: z.number().int().min(1).max(200).default(50),
-    query: z.string().optional().describe("按名称模糊匹配"),
+    query: z.string().optional().describe("Fuzzy match on name"),
   }),
   outputSchema: z.object({
     kind: z.enum(["role", "scene", "prop"]),

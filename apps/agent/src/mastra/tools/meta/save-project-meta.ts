@@ -53,11 +53,17 @@ function isEmptyString(v: unknown): boolean {
 export const saveProjectMeta = createTool({
   id: "save_project_meta",
   description:
-    '把通过 analyze_brief 拿到的项目名/一句话梗概/视觉核心写回项目和世界表。只填写当前为空或默认值的字段，绝不覆盖用户手动填过的内容。默认只在"新项目 + 刚拿到 analyze_brief 结果"的场景下调用一次；同一项目只调一次就够。',
+    "Persist the analyze_brief output (project name / one-line synopsis / visual core) onto the project + world records. Only fills empty or default-value fields — never overwrites anything the user has set by hand. Call exactly once per project, right after analyze_brief returns on a fresh project.",
   inputSchema: z.object({
-    name: z.string().optional().describe("项目名。空串或未传表示不设。"),
-    description: z.string().optional().describe("一句话项目梗概。"),
-    core: z.string().optional().describe("视觉与世界观核心意象（顿号列表）。"),
+    name: z
+      .string()
+      .optional()
+      .describe("Project name. Omit or empty string means leave unchanged."),
+    description: z.string().optional().describe("One-sentence project synopsis."),
+    core: z
+      .string()
+      .optional()
+      .describe("Core visual / world-building motifs (comma- or enumeration-comma separated)."),
   }),
   outputSchema: z.object({
     projectUpdated: z.boolean(),

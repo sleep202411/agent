@@ -33,18 +33,23 @@ const PhaseNameEnum = z.enum([
 export const applyPhaseDrafts = createTool({
   id: "apply_phase_drafts",
   description:
-    '提交或丢弃某个 HITL phase 的 drafts。用在用户对 suspended phase 的内容表态时：明确"满意/继续" → approved=true 入库并通过 completion card 问"下一步"；"重做/改成 X" → approved=false + feedback，丢弃草稿，然后你**必须立即** invoke_workflow 同一 phase 带上 feedback 重跑。runId 从最近的 workflow_suspended 事件或 list_active_workflows 拿。**注意：这个工具的 output 本身就渲染为 completion 卡片（包含下一步按钮），不要再用 text 重复总结 —— 直接结束 turn。',
+    'Commit or discard the drafts of a HITL phase. Use when the user has reacted to a suspended phase\'s contents: "looks good / continue" → approved=true commits to Java and prompts "what\'s next" via the completion card; "redo / change it to X" → approved=false + feedback, drafts are discarded, then you **must immediately** invoke_workflow on the same phase carrying the feedback to re-run. Get runId from the most recent workflow_suspended event or list_active_workflows. **Note: this tool\'s output is itself rendered as a completion card (with next-step buttons) — do not also write a recap as text. End the turn.',
   inputSchema: z.object({
     runId: z.string().min(1),
     phase: PhaseNameEnum,
     approved: z
       .boolean()
-      .describe("true = 提交 drafts 到 Java；false = 丢弃 drafts（配合 feedback 的 revise 场景）"),
-    feedback: z.string().optional().describe("当 approved=false 时用户的具体修改意见（log 用）"),
+      .describe(
+        "true = commit drafts to Java; false = discard drafts (paired with feedback in revise flows)"
+      ),
+    feedback: z
+      .string()
+      .optional()
+      .describe("When approved=false, the user's concrete revision notes (for logging)"),
     acceptedClientRefIds: z
       .array(z.string())
       .optional()
-      .describe("精细化选择：只提交指定的 drafts。不传则提交全部"),
+      .describe("Fine-grained selection: only commit these drafts. Omit to commit all."),
   }),
   outputSchema: z.object({
     outcome: z.enum(["committed", "partial_failure", "rejected"]),

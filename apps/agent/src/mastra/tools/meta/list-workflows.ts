@@ -6,7 +6,7 @@ import { getContext } from "../../lib/workspace-client";
 export const listActiveWorkflows = createTool({
   id: "list_active_workflows",
   description:
-    '列出当前用户在当前工作区的活跃（未完成）workflow。用户问"现在在跑什么?"/"有什么任务?"时调用。',
+    'List active (unfinished) workflows for the current user in the current workspace. Call when the user asks "what\'s running?" / "what tasks are active?".',
   inputSchema: z.object({
     scope: z.enum(["user", "workspace"]).default("user"),
     limit: z.number().int().min(1).max(50).default(10),

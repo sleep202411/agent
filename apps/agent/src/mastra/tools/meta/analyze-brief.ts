@@ -101,10 +101,10 @@ function detectLangFromText(text: string): "zh-CN" | "en-US" {
 
 function buildPrompt(text: string, contentLang: string): string {
   return [
-    "下面是用户提供的原始创作素材（可能是小说片段、梗概、一句话主题等）。",
-    "请按你 system prompt 规定的 JSON 结构返回简报。",
+    "Below is the raw creative material the user provided (possibly a novel excerpt, a synopsis, a one-line theme, etc.).",
+    "Return the brief as the JSON structure specified in your system prompt.",
     "",
-    "原始素材：",
+    "Raw material:",
     text,
     contentLanguageInstruction(contentLang),
   ].join("\n");
@@ -113,7 +113,7 @@ function buildPrompt(text: string, contentLang: string): string {
 export const analyzeBrief = createTool({
   id: "analyze_brief",
   description:
-    "从用户的原始创作素材里提取项目简报（项目名/一句话梗概/视觉核心）+ 推荐参数（画风/画幅/单集时长/集数/对白语言）。必须在新项目且用户已给素材/梗概的场景下使用，用来在弹 require_project_params 之前填好默认值 + 顺手给项目命名。只读问题、已有素材分析过的项目、无素材的项目不要调用。",
+    "Extract a project brief (project name / one-sentence synopsis / visual core) + recommended params (art style / aspect ratio / per-episode length / episode count / dialogue language) from the user's raw creative material. Required for fresh projects where the user has provided material or a synopsis — used to pre-fill defaults before opening require_project_params and to silently name the project. Do NOT call for read-only questions, projects whose material has already been analyzed, or projects with no material at all.",
   inputSchema: z.object({
     text: z
       .string()
@@ -176,7 +176,8 @@ export const analyzeBrief = createTool({
           targetEpisodeCount: 10,
           dialogLanguage: "zh-CN" as const,
           aspectRatioType: "_16_9" as const,
-          reasoning: "briefAnalyzer 未返回结构化结果，使用系统默认参数",
+          reasoning:
+            "briefAnalyzer did not return structured output; falling back to system defaults",
         },
         themeSummary: "",
         inputType: "novel" as const,

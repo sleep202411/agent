@@ -55,7 +55,7 @@ async function sampleAssets(
 export const queryContext = createTool({
   id: "query_context",
   description:
-    '读当前项目的概况（项目信息、剧集数、角色/场景/道具数量与抽样名称）。用户问到项目现状、问"我有哪些角色"、问"第几集在哪"等需要事实依据的问题前调用。',
+    'Read a summary of the current project (project info, episode count, character/scene/prop totals with sample names). Call before answering any factual question about the project state — e.g. "what characters do I have?", "which episode is X in?".',
   inputSchema: z.object({
     /**
      * Scope lets the agent ask for the lightweight common case (summary) or

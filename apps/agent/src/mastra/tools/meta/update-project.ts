@@ -19,11 +19,11 @@ import { publishEntityEvent } from "../../lib/entity-events";
 export const updateProject = createTool({
   id: "update_project",
   description:
-    '更新当前项目的名称 / 描述 / 封面路径。用户明确说"改项目名为 xxx"、"改项目描述"、"换封面"时调。**不要**用这个工具改画幅/集时长/画风/对白语言 —— 那些走 require_project_params。',
+    'Update the current project\'s name / description / cover image path. Call when the user explicitly says "rename the project to X", "update the project description", or "change the cover". **Do NOT** use this for aspect ratio / episode length / art style / dialogue language — those go through require_project_params.',
   inputSchema: z.object({
-    name: z.string().optional().describe("项目名"),
-    description: z.string().optional().describe("项目一句话描述"),
-    imagePath: z.string().optional().describe("封面 OSS 路径（完整 URL 或相对路径）"),
+    name: z.string().optional().describe("Project name"),
+    description: z.string().optional().describe("One-sentence project description"),
+    imagePath: z.string().optional().describe("Cover OSS path (full URL or relative path)"),
   }),
   outputSchema: z.object({
     ok: z.boolean(),

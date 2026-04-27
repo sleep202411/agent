@@ -76,7 +76,7 @@ export interface RobustGenerateResult<T> {
 }
 
 const DEFAULT_RETRY_POSTFIX =
-  "\n\n**重要**：只输出一个合法 JSON 对象，不要任何解释、Markdown 代码块、前缀。字段必须齐全且严格匹配请求的 schema。";
+  "\n\n**Important**: output a single valid JSON object only — no explanations, Markdown code fences, or prefixes. All fields must be present and strictly match the requested schema.";
 
 function defaultIsEmpty<T>(obj: T | undefined): boolean {
   if (obj == null) return true;

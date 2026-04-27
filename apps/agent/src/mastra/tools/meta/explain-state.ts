@@ -6,7 +6,7 @@ import { listDrafts } from "../../lib/drafts";
 export const explainCurrentState = createTool({
   id: "explain_current_state",
   description:
-    '解释一个具体的 workflow run 当前在干啥：状态、进度、当前 step、是否在等用户确认。用户追问"进度怎么样?"/"卡在哪了?"时调用。',
+    'Explain what a specific workflow run is doing right now: status, progress, current step, and whether it\'s waiting on user confirmation. Call when the user asks "how\'s it going?" / "where is it stuck?".',
   inputSchema: z.object({ runId: z.string() }),
   outputSchema: z.object({
     runId: z.string(),

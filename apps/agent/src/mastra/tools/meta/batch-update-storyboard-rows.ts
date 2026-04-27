@@ -39,14 +39,14 @@ type ShotRow = {
 
 export const batchUpdateStoryboardRows = createTool({
   id: "batch_update_storyboard_rows",
-  description: `把同一份 patch 套到一集里多个分镜。用户明确说"把第 3 集第 1-5 镜的景别改成特写" / "给第 1 集前三镜都加上杰克" / "把第 2 集第 2、4、6 镜的风格改为写实" 时调。\n\npatch 字段和 update_storyboard_row 一致（scene / characters / description / image_prompt / video_prompt / movement / dialogue / shot_size / perspective / duration / style_planting）。\n\nshotNos 必须是字符串数组（例：["1","2","3"]）。上限 ${MAX_SHOTS} 镜；超过请走 invoke_workflow。shotNo 规则同 update_storyboard_row：优先匹配 shot_no 列值，退化到 1-based 位置。`,
+  description: `Apply the same patch to multiple shots in one episode. Call when the user explicitly says e.g. "change the shot size of episode 3 shots 1-5 to close-up" / "add Jack to the first three shots of episode 1" / "switch the style of episode 2 shots 2, 4, and 6 to realistic".\n\nThe patch fields match update_storyboard_row (scene / characters / description / image_prompt / video_prompt / movement / dialogue / shot_size / perspective / duration / style_planting).\n\nshotNos must be an array of strings (e.g. ["1","2","3"]). Cap is ${MAX_SHOTS}; for anything larger, route to invoke_workflow. shotNo lookup follows update_storyboard_row: prefer matching the shot_no column value, fall back to 1-based position.`,
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id — 从 query_context 拿"),
+    episodeId: z.string().describe("Java episode id — get from query_context"),
     shotNos: z
       .array(z.string())
       .min(1)
       .max(MAX_SHOTS)
-      .describe(`要改的镜号列表，例：["1","2","3"]。最多 ${MAX_SHOTS} 条。`),
+      .describe(`Shot numbers to update, e.g. ["1","2","3"]. Max ${MAX_SHOTS} entries.`),
     patch: z
       .object({
         scene: z.string().optional(),
@@ -307,10 +307,10 @@ export const batchUpdateStoryboardRows = createTool({
     return {
       ok,
       message: ok
-        ? `已更新 ${totalUpdated} 镜`
+        ? `Updated ${totalUpdated} shots`
         : totalFailed > 0
-          ? `${totalUpdated}/${shotNos.length} 镜成功，${totalFailed} 镜有失败（详见 perShot.failedFields）`
-          : "没有任何字段写入",
+          ? `${totalUpdated}/${shotNos.length} shots succeeded, ${totalFailed} had failures (see perShot.failedFields)`
+          : "No fields were written",
       perShot,
     };
   },

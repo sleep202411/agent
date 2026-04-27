@@ -15,12 +15,14 @@ import { publishEntityEvent } from "../../lib/entity-events";
 export const deleteShot = createTool({
   id: "delete_shot",
   description:
-    '删除一集分镜表里的某一镜。用户明确说"删掉第 3 集第 5 镜" / "第 1 集的第一镜不要了"时调。不支持批量删除，想批量改动请走 invoke_workflow。',
+    'Delete one shot row from an episode\'s storyboard. Call when the user explicitly says "delete shot 5 of episode 3" / "drop the first shot of episode 1". No batch delete — for bulk changes, route to invoke_workflow.',
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id — 从 query_context 拿"),
+    episodeId: z.string().describe("Java episode id — get from query_context"),
     shotNo: z
       .string()
-      .describe('镜号字符串，如 "5"。优先匹配 shot_no 列值，其次退化为 1-based 列表位置。'),
+      .describe(
+        'Shot number as a string, e.g. "5". Prefers matching the shot_no column value, falls back to 1-based list position.'
+      ),
   }),
   outputSchema: z.object({
     ok: z.boolean(),
@@ -62,8 +64,8 @@ export const deleteShot = createTool({
         ok: false,
         message:
           shots.length === 0
-            ? `episode ${episodeId} 还没有分镜`
-            : `未找到 episode ${episodeId} 的第 ${shotNo} 镜（该集共 ${shots.length} 镜）`,
+            ? `Episode ${episodeId} has no shots yet`
+            : `Shot ${shotNo} not found in episode ${episodeId} (episode has ${shots.length} shots)`,
       };
     }
 

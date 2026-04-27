@@ -45,14 +45,17 @@ const OnConfirmWorkflowSchema = z.object({
 export const requireProjectParams = createTool({
   id: "require_project_params",
   description:
-    "当用户想开始创作（分析素材 / 生成角色 / 写剧本 / 出分镜 / 主流程）但项目的核心参数（影片尺寸 / 单集时长 / 画风 / 对白语言）尚未设好时，先调用此工具弹出参数表单。返回 confirmed:true 之后前端会直接把确认的参数 + onConfirmWorkflow 发给 Nest，Nest 存参数后直接启动你声明的 workflow（完全不走 LLM 再绕一轮）。只在用户明确创作意图时调用；只读问题或讨论类请求不要调用。如果刚调完 analyze_brief，把返回的 suggestedParams 对象透传给此工具的 suggestedParams 入参。如果你已经知道用户接下来要跑哪个 workflow，**务必**把 onConfirmWorkflow 也带上。",
+    "When the user wants to start creating (analyze material / generate characters / write scripts / build storyboards / kick off the main flow) but the project's core params (aspect ratio / per-episode length / art style / dialogue language) aren't all set yet, call this tool to open a params form. After confirmed:true the frontend forwards the confirmed params + onConfirmWorkflow to Nest, which persists the params and starts the declared workflow directly (no extra LLM round-trip). Only call when the user has clearly expressed creation intent; do NOT call for read-only or discussion-only requests. If analyze_brief just ran, forward its suggestedParams object into this tool's suggestedParams input. If you already know which workflow to start next, you **must** also pass onConfirmWorkflow.",
   inputSchema: z.object({
-    reason: z.string().optional().describe("为什么需要让用户现在设置参数，一句话即可（用于日志）"),
+    reason: z
+      .string()
+      .optional()
+      .describe("One-sentence reason why params are needed now (for logs)"),
     suggestedParams: SuggestedParamsSchema.optional().describe(
-      "从 analyze_brief 拿到的推荐参数。前端用来预填表单 + 显示推荐理由。不确定时不要传。"
+      "Recommended params from analyze_brief. Frontend uses these to pre-fill the form and display the recommendation rationale. Omit if unsure."
     ),
     onConfirmWorkflow: OnConfirmWorkflowSchema.optional().describe(
-      "用户确认参数后要直接启动的 workflow（workflowName + 可选 inputData）。带上这个，系统就能跳过 LLM 直接派发，响应更快。意图不明确时不传。"
+      "Workflow to start automatically after the user confirms (workflowName + optional inputData). Including this lets the system dispatch without another LLM round-trip, so responses are faster. Omit when intent is unclear."
     ),
   }),
   outputSchema: z.object({

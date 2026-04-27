@@ -26,20 +26,20 @@ import { publishEntityEvent } from "../../lib/entity-events";
 import type { EntityType } from "@repo/shared/entity-events";
 
 const ItemSchema = z.object({
-  name: z.string().min(1).max(50).describe("名称"),
-  description: z.string().optional().describe("简介 / 设定"),
-  prompt: z.string().optional().describe("图像提示词 — 不传则用 description"),
+  name: z.string().min(1).max(50).describe("Name"),
+  description: z.string().optional().describe("Brief / setting description"),
+  prompt: z.string().optional().describe("Image prompt — falls back to description if omitted"),
 });
 
 const InputSchema = z.object({
-  items: z.array(ItemSchema).min(1).max(50).describe("要创建的资产列表"),
+  items: z.array(ItemSchema).min(1).max(50).describe("Assets to create"),
 });
 
 const OutputSchema = z.object({
   ok: z.boolean(),
   created: z
     .array(z.object({ name: z.string(), id: z.string() }))
-    .describe("成功入库的条目（name 原样回显，id 为 Java 分配）"),
+    .describe("Items that landed in the DB (name echoed verbatim, id assigned by Java)"),
   failed: z.array(z.object({ name: z.string(), reason: z.string() })),
   message: z.string(),
 });
@@ -177,7 +177,7 @@ async function runBatch(
 export const batchCreateCharacter = createTool({
   id: "batch_create_character",
   description:
-    '批量创建角色（worldrole）到当前项目，直接写入无需用户确认。用在"用户已经确认要保存这 N 个新角色"的场景 —— 典型触发：用户点击了"仅保存"按钮后，supervisor 应用该 action。对"帮我设计一批角色供我审查"这种提议类场景，用 invoke_workflow: role_design 而不是这个工具。',
+    'Batch-create characters (worldrole) in the current project — direct write, no user confirmation needed. Use when the user has already confirmed they want to save these N new characters — typical trigger: user clicked the "save only" button and the supervisor applies the resulting action. For propose-and-review flows ("design a batch of characters for me to review"), use invoke_workflow: role_design instead.',
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async ({ items }, execCtx) => runBatch("role", items, "batch_create_character", execCtx),
@@ -186,7 +186,7 @@ export const batchCreateCharacter = createTool({
 export const batchCreateScene = createTool({
   id: "batch_create_scene",
   description:
-    "批量创建场景（worldscene）到当前项目，直接写入无需用户确认。用法同 batch_create_character，但针对场景。",
+    "Batch-create scenes (worldscene) in the current project — direct write, no user confirmation needed. Same usage as batch_create_character, but for scenes.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async ({ items }, execCtx) => runBatch("scene", items, "batch_create_scene", execCtx),
@@ -195,7 +195,7 @@ export const batchCreateScene = createTool({
 export const batchCreateProp = createTool({
   id: "batch_create_prop",
   description:
-    "批量创建道具（worldprop）到当前项目，直接写入无需用户确认。用法同 batch_create_character，但针对道具。",
+    "Batch-create props (worldprop) in the current project — direct write, no user confirmation needed. Same usage as batch_create_character, but for props.",
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async ({ items }, execCtx) => runBatch("prop", items, "batch_create_prop", execCtx),

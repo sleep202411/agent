@@ -39,17 +39,17 @@ function htmlToPlainText(html: string): string {
 export const exportScripts = createTool({
   id: "export_scripts",
   description:
-    '把当前项目所有剧集的剧本打包给用户下载（.docx）。用户说"导出剧本 / 下载剧本 / 把所有剧本导出"时调。返回每集的 title + plain text；**实际的 .docx 生成和下载在前端完成**，你只需要给用户一句"剧本已准备好，点下方按钮下载"即可。',
+    'Bundle every episode\'s script in the current project for the user to download as a .docx. Call when the user says "export scripts / download scripts / export all scripts". Returns each episode\'s title + plain text; **the actual .docx generation and download happen in the frontend**, so just tell the user "the scripts are ready — click the button below to download".',
   inputSchema: z.object({
     /**
      * Optional subset — if provided, only export these episodes. Default is
-     * all. Useful for "导出第 1-5 集" narrow asks; LLM fetches ids from
-     * query_context first.
+     * all. Useful for "export episodes 1-5" narrow asks; LLM fetches ids
+     * from query_context first.
      */
     episodeIds: z
       .array(z.string())
       .optional()
-      .describe("可选：只导出这些 episode id；不传就导出全部"),
+      .describe("Optional: only export these episode ids; omit to export all"),
   }),
   outputSchema: z.object({
     ok: z.boolean(),
@@ -122,7 +122,7 @@ export const exportScripts = createTool({
           const raw = res.content ?? res.script ?? "";
           return {
             episodeId: ep.id,
-            title: ep.title || `第 ${targets.indexOf(ep) + 1} 集`,
+            title: ep.title || `Episode ${targets.indexOf(ep) + 1}`,
             content: htmlToPlainText(raw),
           };
         } catch {
@@ -144,8 +144,8 @@ export const exportScripts = createTool({
       episodes,
       message:
         nonEmpty.length > 0
-          ? `已准备好 ${nonEmpty.length} 集剧本（约 ${totalChars.toLocaleString()} 字），点击卡片上的按钮可以下载 ${filename}。`
-          : "所有剧集的剧本都是空的，无法导出。",
+          ? `Prepared ${nonEmpty.length} scripts (~${totalChars.toLocaleString()} characters). Click the button on the card to download ${filename}.`
+          : "All episode scripts are empty — nothing to export.",
     };
   },
 });

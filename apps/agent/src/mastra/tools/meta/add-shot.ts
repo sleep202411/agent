@@ -29,13 +29,13 @@ function extractShotId(raw: unknown): string {
 export const addShot = createTool({
   id: "add_shot",
   description:
-    '在一集末尾新增一镜（新行），可选填初始字段（场景 / 角色 / 描述 / 对白 / 图提 / 视频提 / 运镜 / 景别 / 视角 / 时长 / 风格）。用户明确说"给第 3 集末尾加一镜，场景设为咖啡馆，角色是杰克"时调。Scene 和 update_storyboard_row 一样，已存在的复用不存在的新建；characters 只接受已存在的 worldrole。',
+    'Append a new shot (new row) to the end of an episode, optionally pre-populating fields (scene / characters / description / dialogue / image prompt / video prompt / movement / shot size / perspective / duration / style). Call when the user explicitly says e.g. "add a shot at the end of episode 3, scene = café, character = Jack". Scene resolution mirrors update_storyboard_row: reuse an existing scene by name or create one; characters only accept existing worldroles.',
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id — 从 query_context 拿"),
+    episodeId: z.string().describe("Java episode id — get from query_context"),
     patch: z
       .object({
-        scene: z.string().optional().describe("场景名"),
-        characters: z.array(z.string()).optional().describe("角色名数组"),
+        scene: z.string().optional().describe("Scene name"),
+        characters: z.array(z.string()).optional().describe("Array of character names"),
         description: z.string().optional(),
         image_prompt: z.string().optional(),
         video_prompt: z.string().optional(),
@@ -47,7 +47,7 @@ export const addShot = createTool({
         style_planting: z.string().optional(),
       })
       .optional()
-      .describe("可选初始字段。不传就纯新建一个空行。"),
+      .describe("Optional initial values. Omit to add a plain empty row."),
   }),
   outputSchema: z.object({
     ok: z.boolean(),
@@ -218,8 +218,8 @@ export const addShot = createTool({
     return {
       ok,
       message: ok
-        ? `已新增一镜（${shotId}），写入字段：${updatedFields.join(" / ") || "无"}`
-        : `已新增一镜（${shotId}），但部分字段失败：${failedFields.map((f) => f.key).join(", ")}`,
+        ? `Added shot ${shotId}; wrote fields: ${updatedFields.join(" / ") || "(none)"}`
+        : `Added shot ${shotId}, but some fields failed: ${failedFields.map((f) => f.key).join(", ")}`,
       shotId,
       updatedFields,
       failedFields,

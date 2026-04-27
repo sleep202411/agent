@@ -46,7 +46,7 @@ async function resolveAttachmentRefs(value: unknown): Promise<unknown> {
 export const invokeWorkflow = createTool({
   id: "invoke_workflow",
   description:
-    '启动一个后台 workflow（如 role_design / script_writing / storyboard_gen）。立刻返回 runId，然后由 worker 异步执行。对任何可能 > 30 秒或涉及批量生成/写入的意图，必须通过这个工具调用，不要自己用文本回复"生成"出内容。如用户消息中出现 [附件「…」] 带 att_xxx 引用, 请在 inputData 中用 textRef: "att_xxx" 传递, 不要复制正文。',
+    'Start a background workflow (e.g. role_design / script_writing / storyboard_gen). Returns a runId immediately; the worker runs asynchronously. **Any intent that might take > 30s or involves batch generation / writes must go through this tool — never "generate" content yourself in a text reply.** If the user message contains an [attachment "..."] block with an att_xxx ref, pass it via inputData as textRef: "att_xxx" rather than copying the raw text.',
   inputSchema: z.object({
     workflowName: z.enum(WORKFLOW_NAMES),
     inputData: z

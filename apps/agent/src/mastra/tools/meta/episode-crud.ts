@@ -21,13 +21,19 @@ import { publishEntityEvent } from "../../lib/entity-events";
 export const updateEpisode = createTool({
   id: "update_episode",
   description:
-    '更新单集的标题 / 简介 / 前后缀 prompt。用户明确说"第 N 集标题改为 xxx"、"第 N 集简介补一句 yyy" 时调。批量改多集请用 invoke_workflow("episode_phase") 重新跑。episodeId 从 query_context(summary) 的 episodes 字段拿。',
+    'Update one episode\'s title / synopsis / per-shot prompt prefix or suffix. Call when the user explicitly says "rename episode N to X" or "add Y to the episode N synopsis". For bulk changes across episodes, re-run via invoke_workflow("episode_phase"). Get episodeId from query_context(summary).episodes.',
   inputSchema: z.object({
     episodeId: z.string().describe("Java episode id"),
     title: z.string().optional(),
     introduction: z.string().optional(),
-    frontPrompt: z.string().optional().describe("每镜图片/视频提示词前缀"),
-    behindPrompt: z.string().optional().describe("每镜图片/视频提示词后缀"),
+    frontPrompt: z
+      .string()
+      .optional()
+      .describe("Prefix prepended to every shot's image/video prompt"),
+    behindPrompt: z
+      .string()
+      .optional()
+      .describe("Suffix appended to every shot's image/video prompt"),
   }),
   outputSchema: z.object({
     ok: z.boolean(),
@@ -78,7 +84,7 @@ export const updateEpisode = createTool({
 export const deleteEpisode = createTool({
   id: "delete_episode",
   description:
-    '删除一集。用户明确说"删第 N 集 / 去掉第 N 集 / 把第 N 集从项目里移除"时调。**无撤销**，调之前确保用户明确说了要删。episodeId 从 query_context 拿。',
+    'Delete one episode. Call when the user explicitly says "delete episode N" / "remove episode N" / "drop episode N from the project". **No undo** — only call after the user clearly confirmed deletion. Get episodeId from query_context.',
   inputSchema: z.object({
     episodeId: z.string().describe("Java episode id"),
   }),

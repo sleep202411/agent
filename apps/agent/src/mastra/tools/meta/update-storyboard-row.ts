@@ -41,35 +41,37 @@ type PatchKey = (typeof PATCHABLE_KEYS)[number];
 export const updateStoryboardRow = createTool({
   id: "update_storyboard_row",
   description:
-    '改一集分镜表里某一镜的字段（场景 / 角色 / 描述 / 对白 / 图提 / 视频提 / 运镜 / 景别 / 视角 / 时长 / 风格）。用户明确说"第 N 集第 M 镜的对白改为 xxx" / "把第 1 镜的场景设为咖啡馆" / "把第 3 镜加上杰克和李娜两个角色"时调。scene 传场景名——已存在的直接绑定，不存在的自动新建。characters 传角色名数组——只接受已存在的 worldrole。批量改整集/多集请用 invoke_workflow。',
+    'Patch one or more fields of a single shot in an episode\'s storyboard (scene / characters / description / dialogue / image prompt / video prompt / movement / shot size / perspective / duration / style). Call when the user explicitly says e.g. "change the dialogue of episode N shot M to X" / "set the scene of shot 1 to café" / "add Jack and Lina to shot 3". Pass scene as a name — existing scenes are reused, new names are auto-created. Pass characters as an array of names — only existing worldroles are accepted. For bulk changes across an episode or many episodes, use invoke_workflow.',
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id — 从 query_context 拿"),
+    episodeId: z.string().describe("Java episode id — get from query_context"),
     shotNo: z
       .string()
       .describe(
-        '镜号字符串，如 "5"。优先匹配 shot_no 列值；若该列尚未写入（新建集），退化为 1-based 列表位置——"1" 就是第一行。'
+        'Shot number as a string, e.g. "5". Prefers matching the shot_no column value; if shot_no has not been populated yet (fresh episode), falls back to 1-based list position — "1" is the first row.'
       ),
     patch: z
       .object({
         scene: z
           .string()
           .optional()
-          .describe("场景名（例：咖啡馆）。已存在的复用，不存在的自动新建"),
+          .describe(
+            "Scene name (e.g. 'café'). Reuses an existing scene by name, or creates a new one"
+          ),
         characters: z
           .array(z.string())
           .optional()
           .describe(
-            "角色名数组（例：['杰克', '李娜']）。只接受已存在的 worldrole；找不到的会在 failedFields 里告诉你。传空数组表示清空"
+            "Array of character names (e.g. ['Jack', 'Lina']). Only accepts existing worldroles; missing ones are reported in failedFields. Pass an empty array to clear the column."
           ),
-        description: z.string().optional().describe("画面描述"),
-        image_prompt: z.string().optional().describe("图片提示词"),
-        video_prompt: z.string().optional().describe("视频提示词"),
-        movement: z.string().optional().describe("运镜"),
-        dialogue: z.string().optional().describe("对白 / 旁白"),
-        shot_size: z.string().optional().describe("景别"),
-        perspective: z.string().optional().describe("视角"),
-        duration: z.coerce.number().optional().describe("时长（秒）"),
-        style_planting: z.string().optional().describe("风格"),
+        description: z.string().optional().describe("Shot description"),
+        image_prompt: z.string().optional().describe("Image prompt"),
+        video_prompt: z.string().optional().describe("Video prompt"),
+        movement: z.string().optional().describe("Camera movement"),
+        dialogue: z.string().optional().describe("Dialogue / voiceover"),
+        shot_size: z.string().optional().describe("Shot size"),
+        perspective: z.string().optional().describe("Perspective / angle"),
+        duration: z.coerce.number().optional().describe("Duration (seconds)"),
+        style_planting: z.string().optional().describe("Style"),
       })
       .refine(
         (p) =>
@@ -142,8 +144,8 @@ export const updateStoryboardRow = createTool({
         ok: false,
         message:
           shots.length === 0
-            ? `episode ${episodeId} 还没有分镜，先生成分镜再调这个工具`
-            : `未找到 episode ${episodeId} 的第 ${shotNo} 镜（该集共 ${shots.length} 镜）`,
+            ? `Episode ${episodeId} has no shots yet — generate the storyboard first before calling this tool`
+            : `Shot ${shotNo} not found in episode ${episodeId} (episode has ${shots.length} shots)`,
         updatedFields: [],
         failedFields: [],
       };
@@ -274,10 +276,10 @@ export const updateStoryboardRow = createTool({
     return {
       ok,
       message: ok
-        ? `已更新第 ${shotNo} 镜的 ${updatedFields.join(" / ")} 字段`
+        ? `Updated shot ${shotNo}: ${updatedFields.join(" / ")}`
         : failedFields.length > 0
-          ? `部分字段失败：${failedFields.map((f) => f.key).join(", ")}`
-          : "patch 里没有要写入的字段",
+          ? `Some fields failed: ${failedFields.map((f) => f.key).join(", ")}`
+          : "patch contained no fields to write",
       updatedFields,
       failedFields,
     };
