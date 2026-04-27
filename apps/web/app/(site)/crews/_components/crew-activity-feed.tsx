@@ -14,22 +14,25 @@ export function CrewActivityFeed() {
         <h3 className="text-sm font-semibold text-foreground">{t("recentActivity")}</h3>
       </div>
       <div className="space-y-1">
-        {MOCK_ACTIVITIES.map((item) => (
-          <div
-            key={item.id}
-            className="flex items-start gap-2.5 rounded-lg p-2 transition-colors hover:bg-muted/50"
-          >
+        {MOCK_ACTIVITIES.map((item) => {
+          const Icon = item.icon;
+          return (
             <div
-              className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${item.color}`}
+              key={item.id}
+              className="flex items-start gap-2.5 rounded-lg p-2 transition-colors hover:bg-muted/50"
             >
-              <span className="text-xs">{item.icon}</span>
+              <div
+                className={`mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full ${item.color}`}
+              >
+                <Icon className="size-3.5" stroke={1.75} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs leading-relaxed text-muted-foreground">{item.text}</p>
+                <span className="text-[10px] text-muted-foreground/50">{item.time}</span>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs leading-relaxed text-muted-foreground">{item.text}</p>
-              <span className="text-[10px] text-muted-foreground/50">{item.time}</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

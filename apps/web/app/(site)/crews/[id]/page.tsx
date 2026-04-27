@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   IconArrowLeft,
   IconUsers,
@@ -10,22 +11,37 @@ import {
   IconUserPlus,
   IconCircleCheck,
   IconCircle,
-  IconSettings,
-  IconDeviceDesktop,
+  IconLayoutDashboard,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import {
-  STATUS_CONFIG,
-  MOCK_CREW_DETAIL,
-  type CrewDetail,
-} from "@/app/(site)/crews/_components/crew-mock";
+import { STATUS_CONFIG, useCrewDetail } from "@/app/(site)/crews/_hooks/use-crew";
 
-export default function CrewDetailPage({ id }: { id: string }) {
+export default function CrewDetailPage() {
   const t = useTranslations("crew");
+  const params = useParams<{ id: string }>();
+  const id = params.id;
+  const { data: crew, isLoading } = useCrewDetail(id);
 
-  // TODO: fetch by id
-  const crew: CrewDetail = MOCK_CREW_DETAIL;
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+      </div>
+    );
+  }
+
+  if (!crew) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
+        <h1 className="text-xl font-bold text-foreground">Crew not found</h1>
+        <Link href="/crews" className="text-sm text-primary hover:underline">
+          ← Back to Crews
+        </Link>
+      </div>
+    );
+  }
+
   const status = STATUS_CONFIG[crew.status];
 
   return (
@@ -62,20 +78,13 @@ export default function CrewDetailPage({ id }: { id: string }) {
               <p className="text-sm text-white/70">{crew.description}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <a
+              <Link
                 href={`/crews/${id}/workspace`}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10"
+                className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black shadow-sm transition-transform hover:scale-[1.02]"
               >
-                <IconDeviceDesktop className="size-4" />
-                {t("workspace")}
-              </a>
-              <a
-                href={`/crews/${id}/edit`}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10"
-              >
-                <IconSettings className="size-4" />
-                {t("settings")}
-              </a>
+                <IconLayoutDashboard className="size-4" />
+                {t("manage")}
+              </Link>
             </div>
           </div>
         </div>

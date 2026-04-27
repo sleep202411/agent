@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   IconArrowLeft,
   IconClock,
@@ -17,18 +18,20 @@ import {
   IconPackage,
   IconActivity,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
-  MOCK_WORKSPACE,
-  CURRENT_EP_MEMBERS,
-  ROLES_PROGRESS,
-  TODOS,
-  ACTIVITY_LIST,
-  DELIVERY_RECORDS,
   MEMBER_STATUS_META,
-} from "@/app/(site)/crews/_components/workspace-mock";
+  useCrewWorkspace,
+  useEpisodeMemberAction,
+  useSubmitEpisodeToClient,
+  useInviteMember,
+  type EpMember,
+} from "@/app/(site)/crews/_hooks/use-crew";
+import { useDevIdentity } from "@/app/(site)/crews/_hooks/use-dev-identity";
 import { EpisodeAccordion } from "@/app/(site)/crews/_components/episode-accordion";
+import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
 
 const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },
@@ -52,10 +55,99 @@ const BTN_STYLES: Record<string, string> = {
   ghost: "bg-secondary text-muted-foreground border-border hover:text-foreground",
 };
 
-export default function CrewWorkspacePage({ id }: { id: string }) {
+export default function CrewWorkspacePage() {
   const t = useTranslations("workspace");
+  const params = useParams<{ id: string }>();
+  const id = params.id;
+  const identity = useDevIdentity();
+  const isOwner = identity.kind === "owner";
+  const selfMemberName = identity.kind === "member" ? identity.name : null;
   const [activeTab, setActiveTab] = useState("overview");
-  const s = MOCK_WORKSPACE;
+  const [completedTodos, setCompletedTodos] = useState<Set<number>>(new Set());
+
+  const { data, isLoading } = useCrewWorkspace(id);
+  const memberAction = useEpisodeMemberAction(id);
+  const submitToClient = useSubmitEpisodeToClient(id);
+  const inviteMember = useInviteMember(id);
+
+  // Derived stats stay reactive to cache mutations.
+  const pendingReviewCount = useMemo(
+    () => data?.currentEpMembers.filter((m) => m.status === "submitted").length ?? 0,
+    [data]
+  );
+  const inProgressCount = useMemo(
+    () => data?.currentEpMembers.filter((m) => m.status === "in_progress").length ?? 0,
+    [data]
+  );
+
+  if (isLoading || !data) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+      </div>
+    );
+  }
+
+  const s = data.studio;
+  const currentEpMembers = data.currentEpMembers;
+  const rolesProgress = data.rolesProgress;
+  const todos = data.todos;
+  const activityList = data.activity;
+  const deliveryRecords = data.delivery;
+
+  const handleMemberAction = (
+    member: EpMember,
+    action: "approve" | "reject" | "remind" | "submitReview"
+  ) => {
+    memberAction.mutate(
+      { crewId: id, memberName: member.name, action },
+      {
+        onSuccess: () => {
+          const labelKey =
+            action === "approve"
+              ? "tApproved"
+              : action === "reject"
+                ? "tRejected"
+                : action === "remind"
+                  ? "tReminderSent"
+                  : "tSubmittedForReview";
+          toast.success(t(labelKey, { name: member.name }));
+        },
+        onError: () => toast.error(t("tActionFailed")),
+      }
+    );
+  };
+
+  const handleSubmitToClient = () => {
+    submitToClient.mutate(
+      { crewId: id, episodeNumber: s.currentEpisode },
+      {
+        onSuccess: () => toast.success(t("tEpisodeSubmitted", { n: s.currentEpisode })),
+        onError: () => toast.error(t("tActionFailed")),
+      }
+    );
+  };
+
+  const handleInvite = () => {
+    const identifier = window.prompt(t("inviteByPrompt"));
+    if (!identifier) return;
+    inviteMember.mutate(
+      { crewId: id, identifier },
+      {
+        onSuccess: () => toast.success(t("tInviteSent", { who: identifier })),
+        onError: () => toast.error(t("tActionFailed")),
+      }
+    );
+  };
+
+  const toggleTodo = (i: number) => {
+    setCompletedTodos((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -107,20 +199,25 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
                 </span>
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <a
-                href={`/crews/${id}/edit`}
-                className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70"
-              >
-                <IconEdit className="size-3.5" /> {t("wsEditStudio")}
-              </a>
-              <button
-                type="button"
-                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <IconSend className="size-3.5" /> {t("wsSubmitClient")}
-              </button>
-            </div>
+            {isOwner && (
+              <div className="flex shrink-0 items-center gap-2">
+                <Link
+                  href={`/crews/${id}/edit`}
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70"
+                >
+                  <IconEdit className="size-3.5" /> {t("wsEditStudio")}
+                </Link>
+                <button
+                  type="button"
+                  disabled={submitToClient.isPending}
+                  onClick={handleSubmitToClient}
+                  className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <IconSend className="size-3.5" />{" "}
+                  {submitToClient.isPending ? t("wsSubmitting") : t("wsSubmitClient")}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Stats */}
@@ -205,11 +302,13 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground">{t("wsIncomplete")}</span>
-                    <div className="mt-0.5 font-semibold text-amber-400">2 {t("people")}</div>
+                    <div className="mt-0.5 font-semibold text-amber-400">
+                      {inProgressCount} {t("people")}
+                    </div>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground">{t("deadlineLabel")}</span>
-                    <div className="mt-0.5 font-semibold text-foreground">2026-03-30</div>
+                    <span className="text-xs text-muted-foreground">{t("colPending")}</span>
+                    <div className="mt-0.5 font-semibold text-foreground">{pendingReviewCount}</div>
                   </div>
                 </div>
               </div>
@@ -218,13 +317,17 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
               <div className="rounded-xl border border-border bg-card p-5">
                 <h3 className="mb-3 text-sm font-bold">{t("epMemberStatus")}</h3>
                 <div className="space-y-2">
-                  {CURRENT_EP_MEMBERS.map((m) => {
-                    const variant = ACTION_VARIANT[m.status];
+                  {currentEpMembers.map((m) => {
                     const meta = MEMBER_STATUS_META[m.status];
+                    const isPending = memberAction.isPending;
+                    const isSelf = selfMemberName === m.name;
                     return (
                       <div
                         key={m.name}
-                        className="flex items-center justify-between border-b border-border/50 py-2 last:border-0"
+                        className={cn(
+                          "flex items-center justify-between border-b border-border/50 py-2 last:border-0",
+                          isSelf && "rounded-lg bg-primary/5 px-2"
+                        )}
                       >
                         <div className="flex items-center gap-3">
                           <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-xs font-bold text-foreground">
@@ -232,10 +335,15 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
                           </div>
                           <div>
                             <span className="text-sm font-medium text-foreground">{m.name}</span>
+                            {isSelf && (
+                              <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                                You
+                              </span>
+                            )}
                             <span className="ml-2 text-xs text-muted-foreground">/ {m.role}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           <span
                             className={cn(
                               "rounded-full border px-2 py-0.5 text-xs font-semibold",
@@ -244,19 +352,80 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
                           >
                             {t(meta.labelKey)}
                           </span>
-                          <button
-                            type="button"
-                            className={cn(
-                              "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors",
-                              BTN_STYLES[variant]
-                            )}
-                          >
-                            {m.status === "submitted"
-                              ? t("actReview")
-                              : m.status === "in_progress"
-                                ? t("actRemind")
-                                : t("actView")}
-                          </button>
+                          {/* Owner-only review actions */}
+                          {isOwner && m.status === "submitted" && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={isPending}
+                                onClick={() => handleMemberAction(m, "approve")}
+                                className={cn(
+                                  "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
+                                  BTN_STYLES.primary
+                                )}
+                              >
+                                {t("actApprove")}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isPending}
+                                onClick={() => handleMemberAction(m, "reject")}
+                                className="rounded-lg border border-red-400/20 bg-red-400/10 px-2.5 py-1 text-xs font-semibold text-red-400 transition-colors hover:bg-red-400/20 disabled:opacity-50"
+                              >
+                                {t("actReject")}
+                              </button>
+                            </>
+                          )}
+                          {isOwner && m.status === "in_progress" && (
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => handleMemberAction(m, "remind")}
+                              className={cn(
+                                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
+                                BTN_STYLES.warn
+                              )}
+                            >
+                              {t("actRemind")}
+                            </button>
+                          )}
+                          {/* Member self-actions */}
+                          {isSelf && (m.status === "in_progress" || m.status === "rejected") && (
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => handleMemberAction(m, "submitReview")}
+                              className={cn(
+                                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
+                                BTN_STYLES.primary
+                              )}
+                            >
+                              {t("actSubmitReview")}
+                            </button>
+                          )}
+                          {/* Read-only View button for everyone else */}
+                          {!isOwner && !isSelf && (
+                            <button
+                              type="button"
+                              className={cn(
+                                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors",
+                                BTN_STYLES.ghost
+                              )}
+                            >
+                              {t("actView")}
+                            </button>
+                          )}
+                          {isOwner && (m.status === "approved" || m.status === "rejected") && (
+                            <button
+                              type="button"
+                              className={cn(
+                                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors",
+                                BTN_STYLES.ghost
+                              )}
+                            >
+                              {t("actView")}
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -277,7 +446,7 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  {ROLES_PROGRESS.map((r) => (
+                  {rolesProgress.map((r) => (
                     <div
                       key={r.role}
                       className={cn(
@@ -301,20 +470,47 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
                 <h3 className="mb-3 flex items-center gap-2 text-sm font-bold">
                   <IconAlertCircle className="size-4 text-amber-400" /> {t("todoItems")}
                 </h3>
-                <div className="space-y-2">
-                  {TODOS.map((todo, i) => (
-                    <div key={i} className="flex items-center gap-2.5 py-1.5 text-sm">
-                      <div
-                        className={cn(
-                          "size-1.5 shrink-0 rounded-full",
-                          todo.urgent ? "bg-red-400" : "bg-amber-400"
-                        )}
-                      />
-                      <span className={todo.urgent ? "text-foreground" : "text-foreground/80"}>
-                        {todo.text}
-                      </span>
-                    </div>
-                  ))}
+                <div className="space-y-1">
+                  {todos.length === 0 ? (
+                    <div className="py-2 text-sm text-muted-foreground">{t("noTodos")}</div>
+                  ) : (
+                    todos.map((todo, i) => {
+                      const done = completedTodos.has(i);
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => toggleTodo(i)}
+                          className="group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left text-sm transition-colors hover:bg-secondary/40"
+                        >
+                          <div
+                            className={cn(
+                              "flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
+                              done
+                                ? "border-green-400 bg-green-400 text-black"
+                                : todo.urgent
+                                  ? "border-red-400/50"
+                                  : "border-amber-400/50"
+                            )}
+                          >
+                            {done && <span className="text-[10px] font-bold">✓</span>}
+                          </div>
+                          <span
+                            className={cn(
+                              "flex-1",
+                              done
+                                ? "text-muted-foreground line-through"
+                                : todo.urgent
+                                  ? "text-foreground"
+                                  : "text-foreground/80"
+                            )}
+                          >
+                            {todo.text}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -322,7 +518,7 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
               <div className="rounded-xl border border-border bg-card p-5">
                 <h3 className="mb-3 text-sm font-bold">{t("recentActivity")}</h3>
                 <div className="space-y-0">
-                  {ACTIVITY_LIST.map((a, i) => (
+                  {activityList.map((a, i) => (
                     <div
                       key={i}
                       className="flex items-center justify-between border-b border-border/50 py-2 text-sm last:border-0"
@@ -341,7 +537,7 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
             <div className="rounded-xl border border-border bg-card p-5">
               <h3 className="mb-4 text-sm font-bold">{t("tabRecruitment")}</h3>
               <div className="space-y-3">
-                {ROLES_PROGRESS.map((r) => (
+                {rolesProgress.map((r) => (
                   <div
                     key={r.role}
                     className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-3"
@@ -386,15 +582,19 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
                 <h3 className="text-sm font-bold">
                   {t("memberManagement")} · {s.memberCount} {t("people")}
                 </h3>
-                <button
-                  type="button"
-                  className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
-                >
-                  + {t("inviteMember")}
-                </button>
+                {isOwner && (
+                  <button
+                    type="button"
+                    disabled={inviteMember.isPending}
+                    onClick={handleInvite}
+                    className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
+                  >
+                    + {t("inviteMember")}
+                  </button>
+                )}
               </div>
               <div className="space-y-2">
-                {CURRENT_EP_MEMBERS.map((m) => (
+                {currentEpMembers.map((m) => (
                   <div
                     key={m.name}
                     className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-3"
@@ -457,7 +657,7 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
               </a>
               <div className="rounded-xl border border-border bg-card p-5">
                 <h3 className="mb-3 text-sm font-bold">{t("deliveryHistory")}</h3>
-                {DELIVERY_RECORDS.map((d) => (
+                {deliveryRecords.map((d) => (
                   <div
                     key={d.ep}
                     className="flex items-center justify-between border-b border-border/50 py-2.5 last:border-0"
@@ -487,7 +687,7 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
             <div className="rounded-xl border border-border bg-card p-5">
               <h3 className="mb-4 text-sm font-bold">{t("allActivity")}</h3>
               <div className="space-y-0">
-                {[...ACTIVITY_LIST, ...ACTIVITY_LIST].map((a, i) => (
+                {activityList.map((a, i) => (
                   <div
                     key={i}
                     className="flex items-start gap-3 border-b border-border/50 py-3 last:border-0"
@@ -504,6 +704,7 @@ export default function CrewWorkspacePage({ id }: { id: string }) {
           )}
         </div>
       </div>
+      <DevIdentitySwitcher />
     </div>
   );
 }

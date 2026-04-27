@@ -1,3 +1,15 @@
+import type { Icon } from "@tabler/icons-react";
+import {
+  IconUserPlus,
+  IconBriefcase,
+  IconCircleCheck,
+  IconUpload,
+  IconMessageCircle,
+  IconAward,
+  IconMovie,
+  IconAlertCircle,
+} from "@tabler/icons-react";
+
 // ─── Types ───────────────────────────────────────────
 
 export interface CrewItem {
@@ -19,7 +31,7 @@ export interface CrewItem {
 
 export interface ActivityItem {
   id: number;
-  icon: string;
+  icon: Icon;
   color: string;
   text: string;
   time: string;
@@ -184,56 +196,56 @@ export const PLATFORM_STATS = [
 export const MOCK_ACTIVITIES: ActivityItem[] = [
   {
     id: 1,
-    icon: "👻",
+    icon: IconUserPlus,
     color: "text-green-400 bg-green-400/10",
     text: "Ghost制片 加入了「深港纪事」剧组",
     time: "10分钟前",
   },
   {
     id: 2,
-    icon: "📋",
+    icon: IconBriefcase,
     color: "text-blue-400 bg-blue-400/10",
     text: "「深港纪事」新增职位：场景概念师",
     time: "30分钟前",
   },
   {
     id: 3,
-    icon: "✅",
+    icon: IconCircleCheck,
     color: "text-cyan-400 bg-cyan-400/10",
     text: "齿轮画师 完成了「机械臂设计」任务",
     time: "1小时前",
   },
   {
     id: 4,
-    icon: "📦",
+    icon: IconUpload,
     color: "text-purple-400 bg-purple-400/10",
     text: "星轨编剧 上传了 EP03 剧本终稿",
     time: "2小时前",
   },
   {
     id: 5,
-    icon: "💬",
+    icon: IconMessageCircle,
     color: "text-amber-400 bg-amber-400/10",
     text: "浪潮导演 评论了「角色配色方案」",
     time: "3小时前",
   },
   {
     id: 6,
-    icon: "⭐",
+    icon: IconAward,
     color: "text-yellow-400 bg-yellow-400/10",
     text: "调色大师 获得了「多产画师」徽章",
     time: "4小时前",
   },
   {
     id: 7,
-    icon: "🎯",
+    icon: IconMovie,
     color: "text-red-400 bg-red-400/10",
     text: "「蒸汽纪元」EP02 进入后期制作",
     time: "5小时前",
   },
   {
     id: 8,
-    icon: "🔔",
+    icon: IconAlertCircle,
     color: "text-orange-400 bg-orange-400/10",
     text: "「赛博朋克2099」分镜任务即将到期",
     time: "6小时前",
