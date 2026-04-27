@@ -668,6 +668,24 @@
     "latestActivity": "最新动态",
     "applyToJoin": "申请加入"
   },
+  "news": {
+    "title": "FizzDragon 新闻中心",
+    "subtitle": "AI 原生电影工作室的故事、访谈与公告。",
+    "subscribePlaceholder": "输入你的邮箱",
+    "subscribe": "订阅",
+    "tSubscribed": "订阅成功！我们会把更新发送到 {{email}}。",
+    "tInvalidEmail": "请输入有效的邮箱",
+    "recent": "最新文章",
+    "all": "全部文章",
+    "external": "外部",
+    "empty": "暂无文章，过几天再来看看。",
+    "back": "返回新闻",
+    "openExternal": "正在打开外部文章…",
+    "openInNewTab": "在新标签页打开",
+    "more": "更多 FizzDragon 内容",
+    "notFoundTitle": "文章不存在",
+    "notFoundDesc": "这篇文章可能已被移除，或链接无效。"
+  },
   "creator": {
     "plaza": "人才市场",
     "heroTitle": "找到对的创作者",

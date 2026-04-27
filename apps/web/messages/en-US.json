@@ -668,6 +668,24 @@
     "latestActivity": "Latest Activity",
     "applyToJoin": "Apply to Join"
   },
+  "news": {
+    "title": "FizzDragon Newsroom",
+    "subtitle": "Stories, interviews and announcements from the AI-native film studio.",
+    "subscribePlaceholder": "Enter your email",
+    "subscribe": "Subscribe",
+    "tSubscribed": "Subscribed! We'll send updates to {{email}}.",
+    "tInvalidEmail": "Please enter a valid email",
+    "recent": "Recent blog posts",
+    "all": "All blog posts",
+    "external": "External",
+    "empty": "No posts yet — check back soon.",
+    "back": "Back to News",
+    "openExternal": "Opening external article…",
+    "openInNewTab": "Open in new tab",
+    "more": "More from FizzDragon",
+    "notFoundTitle": "Article not found",
+    "notFoundDesc": "This story may have been removed or the link is invalid."
+  },
   "creator": {
     "plaza": "Talent Market",
     "heroTitle": "Find creators who get it",

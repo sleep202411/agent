@@ -41,7 +41,7 @@ const COLUMNS: FooterCol[] = [
 export function SiteFooter() {
   return (
     <footer className="mt-20 border-t border-border pb-10">
-      <div className="mx-auto max-w-screen-xl px-6 pt-12">
+      <div className="mx-auto max-w-screen-2xl px-6 pt-12">
         <div className="flex flex-col gap-10 lg:flex-row">
           <div className="flex shrink-0 flex-col lg:w-64">
             <img src="/logo.png" alt="FizzDragon" className="h-8 w-fit" />

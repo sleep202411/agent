@@ -1,47 +1,22 @@
 /**
  * News feature data layer.
  *
- * The backend exposes a single list endpoint (/newsapi/project/list/newsad)
- * keyed by section ("banner-Big", "banner-Small", "s-<name>-Title",
- * "s-<name>-Small", "footer", …). There is no detail endpoint — each item
- * carries an external `url`. The detail page reuses the same list query
- * and looks the item up by id.
+ * The client hits our own /api/news route, which server-side merges the
+ * upstream Java content feed with our hardcoded static articles and
+ * returns one normalized `NewsItem[]`. Items already carry a fully-
+ * resolved `cover` URL plus an `isExternal` flag — the page just routes
+ * accordingly.
  */
 
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useLocale } from "@/src/i18n/i18n";
+import type { NewsItem } from "../_data/types";
 
-// ─── Types ────────────────────────────────────────────
-
-export interface NewsItem {
-  id: number;
-  type: string;
-  title: string;
-  info: string;
-  url: string;
-  picLink: string;
-  createTime: string;
-}
-
-export interface NewsData {
-  "banner-Big"?: NewsItem[];
-  "banner-Small"?: NewsItem[];
-  footer?: NewsItem[];
-  [key: string]: NewsItem[] | undefined;
-}
-
-// ─── Constants ────────────────────────────────────────
-
-const IMG_BASE = "https://banner.fizzspace.cn";
-const API_URL = "/newsapi/project/list/newsad";
+export type { NewsItem } from "../_data/types";
 
 // ─── Helpers ──────────────────────────────────────────
-
-export function imgUrl(picLink: string): string {
-  if (!picLink) return "";
-  return `${IMG_BASE}/${picLink}`;
-}
 
 export function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -52,71 +27,43 @@ export function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-/** Flatten every section into a single id→item map for detail lookup. */
-export function flattenItems(data: NewsData | undefined): Map<number, NewsItem> {
-  const map = new Map<number, NewsItem>();
-  if (!data) return map;
-  for (const arr of Object.values(data)) {
-    if (!arr) continue;
-    for (const item of arr) {
-      if (!map.has(item.id)) map.set(item.id, item);
-    }
-  }
-  return map;
+export function formatDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Parse `s-<name>-Title` / `s-<name>-Small` pairs into named sections. */
-export function parseSections(
-  data: NewsData
-): { name: string; title: string; items: NewsItem[] }[] {
-  const sections: { name: string; title: string; items: NewsItem[] }[] = [];
-  const seen = new Set<string>();
-
-  for (const key of Object.keys(data)) {
-    if (!key.startsWith("s-") || !key.endsWith("-Title")) continue;
-    const name = key.replace("s-", "").replace("-Title", "");
-    if (seen.has(name)) continue;
-    seen.add(name);
-
-    const titleItems = data[`s-${name}-Title`] ?? [];
-    const smallItems = data[`s-${name}-Small`] ?? [];
-    if (smallItems.length === 0) continue;
-
-    sections.push({
-      name,
-      title: titleItems[0]?.title ?? name,
-      items: smallItems.slice(0, 2),
-    });
-  }
-  return sections;
+/** Where a card should link — internal detail page or external blog. */
+export function articleHref(item: NewsItem): string {
+  if (item.isExternal && item.url) return item.url;
+  return `/news/${item.id}`;
 }
 
 // ─── Fetcher / hooks ──────────────────────────────────
 
-async function fetchNewsData(): Promise<NewsData> {
-  const res = await fetch(API_URL);
-  if (!res.ok) return {};
-  const json = (await res.json()) as { code: number; data: NewsData };
-  if (json.code !== 200 || !json.data) return {};
-  return json.data;
+async function fetchNewsList(lang: string): Promise<NewsItem[]> {
+  const res = await fetch(`/api/news?lang=${encodeURIComponent(lang)}`);
+  if (!res.ok) return [];
+  const json = (await res.json()) as { articles: NewsItem[] };
+  return json.articles ?? [];
 }
 
 export const newsKeys = {
   all: ["news"] as const,
-  list: ["news", "list"] as const,
+  list: (lang: string) => ["news", "list", lang] as const,
 };
 
-export function useNewsData() {
-  return useQuery<NewsData>({
-    queryKey: newsKeys.list,
-    queryFn: fetchNewsData,
+export function useNewsList() {
+  const locale = useLocale();
+  return useQuery<NewsItem[]>({
+    queryKey: newsKeys.list(locale),
+    queryFn: () => fetchNewsList(locale),
     staleTime: 1000 * 60 * 5,
   });
 }
 
-/** Look up a single item by id from the cached list data. */
+/** Look up a single internal item by id from the cached list. */
 export function useNewsItem(id: number) {
-  const { data, isLoading } = useNewsData();
-  const item = data ? flattenItems(data).get(id) : undefined;
-  return { item, data, isLoading };
+  const { data, isLoading } = useNewsList();
+  const item = data?.find((a) => a.id === id);
+  return { item, all: data ?? [], isLoading };
 }

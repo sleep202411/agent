@@ -1,14 +1,31 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { imgUrl, timeAgo, parseSections, useNewsData, type NewsItem } from "./_hooks/use-news";
+import { IconArrowUpRight, IconExternalLink } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { useTranslations } from "@/src/i18n/i18n";
+import { articleHref, formatDate, useNewsList, type NewsItem } from "./_hooks/use-news";
 
-// ─── Component ────────────────────────────────────────
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function NewsPage() {
-  const { data, isLoading } = useNewsData();
+  const t = useTranslations("news");
+  const { data: articles = [], isLoading } = useNewsList();
+  const [email, setEmail] = useState("");
 
-  if (isLoading) {
+  const handleSubscribe = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = email.trim();
+    if (!EMAIL_RE.test(trimmed)) {
+      toast.error(t("tInvalidEmail"));
+      return;
+    }
+    toast.success(t("tSubscribed", { email: trimmed }));
+    setEmail("");
+  };
+
+  if (isLoading && articles.length === 0) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
@@ -16,259 +33,215 @@ export default function NewsPage() {
     );
   }
 
-  if (!data) return null;
-
-  const bannerBig = data["banner-Big"] ?? [];
-  const bannerSmall = data["banner-Small"] ?? [];
-  const featured = bannerBig[0];
-  const latestNews = bannerSmall.slice(0, 4);
-  const mustRead = [bannerBig[1], bannerBig[2], bannerBig[3], bannerSmall[4]].filter(
-    Boolean
-  ) as NewsItem[];
-  const dualSections = parseSections(data);
+  const featured = articles[0];
+  const stacked = articles.slice(1, 4);
+  const rest = articles.slice(4);
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-[1200px] px-5 py-8 md:px-8 md:py-10">
-        {/* Featured Article */}
-        {featured && (
-          <Link
-            href={`/news/${featured.id}`}
-            className="group mb-12 flex flex-col gap-6 md:mb-16 md:flex-row md:gap-8"
+      <div className="mx-auto max-w-[1200px] px-5 py-12 md:px-8 md:py-20">
+        {/* Hero */}
+        <header className="mx-auto max-w-2xl text-center">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-5xl">
+            {t("title")}
+          </h1>
+          <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
+            {t("subtitle")}
+          </p>
+          <form
+            onSubmit={handleSubscribe}
+            className="mx-auto mt-8 flex w-full max-w-md flex-col gap-2 sm:flex-row"
           >
-            <img
-              src={imgUrl(featured.picLink)}
-              alt={featured.title}
-              className="h-60 w-full rounded-xl object-cover md:h-80 md:w-1/2"
+            <input
+              type="email"
+              placeholder={t("subscribePlaceholder")}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-11 flex-1 rounded-xl border border-border bg-secondary/40 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
-            <div className="flex flex-col justify-center gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="size-2 rounded-full bg-primary" />
-                <span className="text-sm font-medium text-foreground">FizzDragon</span>
-                <span className="text-sm text-muted-foreground">
-                  · {timeAgo(featured.createTime)}
-                </span>
-              </div>
-              <h1 className="text-2xl font-bold leading-tight text-foreground md:text-3xl">
-                {featured.title}
-              </h1>
-              <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
-                {featured.info}
-              </p>
-            </div>
-          </Link>
-        )}
+            <button
+              type="submit"
+              className="h-11 shrink-0 rounded-xl bg-foreground px-5 text-sm font-semibold text-background transition-opacity hover:opacity-90"
+            >
+              {t("subscribe")}
+            </button>
+          </form>
+        </header>
 
-        {/* Latest News */}
-        {latestNews.length > 0 && (
+        {articles.length === 0 ? (
+          <div className="mt-20 text-center text-sm text-muted-foreground">{t("empty")}</div>
+        ) : (
           <>
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-foreground">Latest News</h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              {latestNews.map((item) => (
-                <Link
-                  key={item.id}
-                  href={`/news/${item.id}`}
-                  className="group flex flex-col transition-transform hover:-translate-y-1"
-                >
-                  <img
-                    src={imgUrl(item.picLink)}
-                    alt={item.title}
-                    className="h-48 w-full rounded-xl object-cover lg:h-44"
-                  />
-                  <div className="flex flex-col gap-2 pt-3.5">
-                    <div className="flex items-center gap-2">
-                      <span className="size-2 rounded-full bg-primary" />
-                      <span className="text-xs font-medium text-foreground">FizzDragon</span>
-                      <span className="text-xs text-muted-foreground">
-                        · {timeAgo(item.createTime)}
-                      </span>
-                    </div>
-                    <h3 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
-                      {item.title}
-                    </h3>
-                    <p className="line-clamp-3 text-[13px] leading-relaxed text-muted-foreground">
-                      {item.info}
-                    </p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Must Read */}
-        {mustRead.length >= 4 && (
-          <div className="mt-16">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-foreground">Must Read</h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.5fr_minmax(0,300px)]">
-              {/* Col 1 */}
-              <Link
-                href={`/news/${mustRead[0].id}`}
-                className="group flex flex-col transition-transform hover:-translate-y-1 lg:self-start"
-              >
-                <div className="aspect-square w-full shrink-0 overflow-hidden rounded-xl">
-                  <img
-                    src={imgUrl(mustRead[0].picLink)}
-                    alt={mustRead[0].title}
-                    className="size-full object-cover"
-                  />
-                </div>
-                <div className="flex flex-1 flex-col gap-2 pt-3">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="font-medium text-foreground">FizzDragon</span>
-                    <span className="text-muted-foreground">
-                      · {timeAgo(mustRead[0].createTime)}
-                    </span>
-                  </div>
-                  <h3 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
-                    {mustRead[0].title}
-                  </h3>
-                  <p className="line-clamp-4 text-[13px] leading-relaxed text-muted-foreground">
-                    {mustRead[0].info}
-                  </p>
-                </div>
-              </Link>
-
-              {/* Col 2 — overlay */}
-              <Link
-                href={`/news/${mustRead[1].id}`}
-                className="group relative self-start overflow-hidden rounded-xl transition-transform hover:-translate-y-1"
-              >
-                <div className="aspect-square w-full">
-                  <img
-                    src={imgUrl(mustRead[1].picLink)}
-                    alt={mustRead[1].title}
-                    className="size-full object-cover"
-                  />
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 flex flex-col gap-2 p-5">
-                  <div className="flex items-center gap-2 text-xs text-white/80">
-                    <span className="font-medium">FizzDragon</span>
-                    <span>· {timeAgo(mustRead[1].createTime)}</span>
-                  </div>
-                  <h3 className="line-clamp-2 text-lg font-bold leading-snug text-white">
-                    {mustRead[1].title}
-                  </h3>
-                  <p className="line-clamp-2 text-[13px] leading-relaxed text-white/70">
-                    {mustRead[1].info}
-                  </p>
-                </div>
-              </Link>
-
-              {/* Col 3 — two stacked */}
-              <div className="flex flex-col gap-4 sm:flex-row sm:gap-5 lg:flex-col lg:self-stretch">
-                {mustRead.slice(2, 4).map((item) => (
-                  <Link
-                    key={item.id}
-                    href={`/news/${item.id}`}
-                    className="group flex flex-1 flex-col transition-transform hover:-translate-y-1"
-                  >
-                    <div className="aspect-[5/2] w-full shrink-0 overflow-hidden rounded-xl">
-                      <img
-                        src={imgUrl(item.picLink)}
-                        alt={item.title}
-                        className="size-full object-cover"
-                      />
-                    </div>
-                    <div className="flex flex-1 flex-col gap-1.5 pt-2.5">
-                      <div className="flex items-center gap-2 text-[11px]">
-                        <span className="size-1.5 rounded-full bg-primary" />
-                        <span className="font-medium text-foreground">FizzDragon</span>
-                        <span className="text-muted-foreground">· {timeAgo(item.createTime)}</span>
-                      </div>
-                      <h4 className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
-                        {item.title}
-                      </h4>
-                      {item.info && (
-                        <p className="line-clamp-1 text-[11px] leading-relaxed text-muted-foreground">
-                          {item.info}
-                        </p>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Dual Sections */}
-        {dualSections.length >= 2 && (
-          <div className="mt-16 grid grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-5">
-            {dualSections.slice(0, 2).map((section) => (
-              <div key={section.name}>
-                <div className="mb-5 flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-foreground">{section.title}</h2>
-                </div>
-                <div className="grid grid-cols-2 gap-5">
-                  {section.items.map((item) => (
-                    <Link
-                      key={item.id}
-                      href={`/news/${item.id}`}
-                      className="group flex flex-col transition-transform hover:-translate-y-1"
-                    >
-                      <div className="aspect-[4/3] w-full overflow-hidden rounded-xl">
-                        <img
-                          src={imgUrl(item.picLink)}
-                          alt={item.title}
-                          className="size-full object-cover"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5 pt-3">
-                        <div className="flex items-center gap-2 text-[11px]">
-                          <span className="size-1.5 rounded-full bg-primary" />
-                          <span className="font-medium text-foreground">FizzDragon</span>
-                          <span className="text-muted-foreground">
-                            · {timeAgo(item.createTime)}
-                          </span>
-                        </div>
-                        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
-                          {item.title}
-                        </h3>
-                        <p className="line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
-                          {item.info}
-                        </p>
-                      </div>
-                    </Link>
+            {/* Recent blog posts */}
+            <section className="mt-16 md:mt-24">
+              <h2 className="mb-8 text-lg font-bold text-foreground">{t("recent")}</h2>
+              <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+                {featured && <FeaturedCard article={featured} />}
+                <div className="flex flex-col gap-6">
+                  {stacked.map((a) => (
+                    <RowCard key={a.id} article={a} />
                   ))}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            </section>
 
-        {/* Subscribe Section */}
-        <div className="mt-16 rounded-2xl bg-muted px-6 py-10 md:px-12 md:py-12">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                Get First Update
-              </p>
-              <h2 className="text-xl font-bold leading-snug text-foreground md:text-2xl">
-                Get the news in front line by <span className="text-primary">subscribe</span> our
-                latest updates
-              </h2>
-            </div>
-            <div className="flex w-full shrink-0 gap-3 lg:w-auto">
-              <input
-                type="email"
-                placeholder="Your email"
-                className="h-12 w-full min-w-0 rounded-lg border border-border bg-background px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 lg:w-64"
-              />
-              <button className="h-12 shrink-0 rounded-lg bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
-                Subscribe
-              </button>
-            </div>
-          </div>
-        </div>
+            {/* All blog posts */}
+            {rest.length > 0 && (
+              <section className="mt-20 md:mt-24">
+                <h2 className="mb-8 text-lg font-bold text-foreground">{t("all")}</h2>
+                <div className="grid grid-cols-1 gap-x-8 gap-y-12 md:grid-cols-2 lg:grid-cols-3">
+                  {rest.map((a) => (
+                    <GridCard key={a.id} article={a} />
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+// ─── Routing wrapper ──────────────────────────────────
+//
+// Internal articles → next/link to /news/[id].
+// External news items → plain <a target="_blank">.
+
+function ArticleLink({
+  article,
+  className,
+  children,
+}: {
+  article: NewsItem;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const href = articleHref(article);
+  if (article.isExternal) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className={className}>
+        {children}
+      </a>
+    );
+  }
+  return (
+    <Link href={href} className={className}>
+      {children}
+    </Link>
+  );
+}
+
+// ─── Bits ─────────────────────────────────────────────
+
+function Meta({ article }: { article: NewsItem }) {
+  const t = useTranslations("news");
+  return (
+    <div className="text-xs font-medium text-primary">
+      <span>{article.author ?? "FizzDragon"}</span>
+      <span className="mx-1.5 text-muted-foreground">·</span>
+      <span className="text-muted-foreground">{formatDate(article.createTime)}</span>
+      {article.isExternal && (
+        <>
+          <span className="mx-1.5 text-muted-foreground">·</span>
+          <span className="inline-flex items-center gap-0.5 text-muted-foreground">
+            <IconExternalLink className="size-3" /> {t("external")}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ArrowIcon({ external }: { external: boolean }) {
+  const Icon = external ? IconExternalLink : IconArrowUpRight;
+  return (
+    <Icon className="mt-1 size-5 shrink-0 text-foreground transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+  );
+}
+
+// ─── Cards ────────────────────────────────────────────
+
+function FeaturedCard({ article }: { article: NewsItem }) {
+  return (
+    <ArticleLink
+      article={article}
+      className="group flex flex-col gap-5 transition-transform hover:-translate-y-1"
+    >
+      <div className="aspect-[16/10] w-full overflow-hidden rounded-2xl bg-secondary">
+        {article.cover && (
+          <img
+            src={article.cover}
+            alt={article.title}
+            className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+          />
+        )}
+      </div>
+      <div className="flex flex-col gap-3">
+        <Meta article={article} />
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="text-xl font-semibold leading-tight text-foreground transition-colors group-hover:text-primary md:text-2xl">
+            {article.title}
+          </h3>
+          <ArrowIcon external={article.isExternal} />
+        </div>
+        <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">{article.info}</p>
+      </div>
+    </ArticleLink>
+  );
+}
+
+function RowCard({ article }: { article: NewsItem }) {
+  return (
+    <ArticleLink article={article} className="group flex items-start gap-5">
+      <div className="aspect-[4/3] w-32 shrink-0 overflow-hidden rounded-xl bg-secondary sm:w-40 md:w-48">
+        {article.cover && (
+          <img
+            src={article.cover}
+            alt={article.title}
+            className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          />
+        )}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <Meta article={article} />
+        <div className="flex items-start justify-between gap-3">
+          <h4 className="line-clamp-2 text-base font-semibold leading-snug text-foreground transition-colors group-hover:text-primary">
+            {article.title}
+          </h4>
+          <ArrowIcon external={article.isExternal} />
+        </div>
+        <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{article.info}</p>
+      </div>
+    </ArticleLink>
+  );
+}
+
+function GridCard({ article }: { article: NewsItem }) {
+  return (
+    <ArticleLink
+      article={article}
+      className="group flex flex-col gap-5 transition-transform hover:-translate-y-1"
+    >
+      <div className="aspect-[16/10] w-full overflow-hidden rounded-2xl bg-secondary">
+        {article.cover && (
+          <img
+            src={article.cover}
+            alt={article.title}
+            className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          />
+        )}
+      </div>
+      <div className="flex flex-col gap-2.5">
+        <Meta article={article} />
+        <div className="flex items-start justify-between gap-3">
+          <h4 className="line-clamp-2 text-lg font-semibold leading-snug text-foreground transition-colors group-hover:text-primary">
+            {article.title}
+          </h4>
+          <ArrowIcon external={article.isExternal} />
+        </div>
+        <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">{article.info}</p>
+      </div>
+    </ArticleLink>
   );
 }

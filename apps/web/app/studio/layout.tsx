@@ -1,21 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { WorkspaceHeader } from "@/components/workspace/workspace-header";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
+import { useIsInIframe } from "@/src/hooks/use-is-in-iframe";
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   // Hide the workspace chrome (top header + sidebar) when /studio is
   // embedded inside an iframe — the embedding host provides its own shell.
-  const [isInIframe, setIsInIframe] = useState(false);
-  useEffect(() => {
-    try {
-      setIsInIframe(window.self !== window.top);
-    } catch {
-      // Cross-origin frame access throws — treat as iframe.
-      setIsInIframe(true);
-    }
-  }, []);
+  const isInIframe = useIsInIframe();
 
   if (isInIframe) {
     return (
