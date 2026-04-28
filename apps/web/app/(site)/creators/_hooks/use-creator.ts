@@ -71,17 +71,26 @@ function buildAvatarUrl(path: string): string {
 
 function toCreator(row: CreatorRow | null | undefined): Creator | null {
   if (!row || typeof row !== "object") return null;
-  const info = row.info ?? ({} as CreatorRow["info"]);
+  // The list endpoint (`/user/list/user/info`) returns rows shaped as
+  // `{ level, info }`. The single-user endpoint (`/user/other/user/info`)
+  // returns `{ msg, code, level, info }` — but the shared api client
+  // unwraps `body.info` automatically (`body.data ?? body.info ?? …`),
+  // so we receive the flat info object with `level` lost. Detect both:
+  // if `info` is missing but the row itself looks like an info object,
+  // treat the row as info and default `level` to [].
+  const looksLikeInfo = !("info" in row) && ("id" in row || "nickName" in row || "avatar" in row);
+  const info = looksLikeInfo
+    ? (row as unknown as CreatorRow["info"])
+    : (row.info ?? ({} as CreatorRow["info"]));
+  const levelRaw = looksLikeInfo ? [] : Array.isArray(row.level) ? row.level : [];
   if (info.id === null || info.id === undefined) return null;
 
   const id = String(info.id);
   const name = safeStr(info.nickName).trim() || safeStr(info.name).trim() || "Unknown";
   const avatarPath = safeStr(info.avatar);
-  const levels: CreatorLevel[] = Array.isArray(row.level)
-    ? row.level
-        .filter((l): l is NonNullable<typeof l> => !!l && typeof l.name === "string")
-        .map((l) => ({ id: Number(l.id) || 0, name: l.name }))
-    : [];
+  const levels: CreatorLevel[] = levelRaw
+    .filter((l): l is NonNullable<typeof l> => !!l && typeof l.name === "string")
+    .map((l) => ({ id: Number(l.id) || 0, name: l.name }));
 
   return {
     id,
