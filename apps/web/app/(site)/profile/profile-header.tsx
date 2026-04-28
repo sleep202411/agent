@@ -116,6 +116,10 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const info = userInfo;
   const displayName = info?.nickName || info?.userName || info?.name || "User";
   const initials = displayName.slice(0, 1).toUpperCase();
+  // Default-visible: treat undefined / null as opted-in. Only an explicit
+  // `false` from the backend means hidden. Keeps existing users discoverable
+  // in the talent market without forcing them to flip a switch first.
+  const isVisibleInMarket = (info as Record<string, unknown>)?.availableForWork !== false;
 
   const handleAvatarClick = () => fileInputRef.current?.click();
 
@@ -142,7 +146,10 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const handleGenerateReferralLink = () => {
     doGetReferralCode(undefined, {
       onSuccess: (code) => {
-        const link = `${window.location.origin}/register?recommendationCode=${code}`;
+        const inIframe = window.self !== window.top && !!document.referrer;
+        const link = inIframe
+          ? `${new URL(document.referrer).origin}/pages/register/register?recommendationCode=${code}`
+          : `${window.location.origin}/register?recommendationCode=${code}`;
         setReferralLink(link);
         setCopied(false);
         setReferralDialogOpen(true);
@@ -183,12 +190,12 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
           <img src={coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
         ) : (
           <>
-            <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]" />
+            <div className="absolute inset-0 bg-linear-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]" />
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(229,34,39,0.2),transparent_50%)]" />
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(80,120,255,0.15),transparent_50%)]" />
           </>
         )}
-        <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/40 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-black/40 to-transparent" />
 
         {/* Cover upload button */}
         <button
@@ -250,17 +257,15 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
                     type="button"
                     onClick={() => setAvailableAlertOpen(true)}
                     className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                      (info as Record<string, unknown>)?.availableForWork
+                      isVisibleInMarket
                         ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
                         : "bg-white/10 text-white/50 hover:bg-white/15 hover:text-white/70"
                     }`}
                   >
                     <span
-                      className={`size-2 rounded-full ${(info as Record<string, unknown>)?.availableForWork ? "bg-green-400" : "bg-white/30"}`}
+                      className={`size-2 rounded-full ${isVisibleInMarket ? "bg-green-400" : "bg-white/30"}`}
                     />
-                    {(info as Record<string, unknown>)?.availableForWork
-                      ? t("available")
-                      : t("unavailable")}
+                    {isVisibleInMarket ? t("available") : t("unavailable")}
                   </button>
                 </div>
                 <div className="mt-1 flex items-center gap-1.5">
@@ -372,21 +377,17 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {(info as Record<string, unknown>)?.availableForWork
-                ? t("availableOffTitle")
-                : t("availableOnTitle")}
+              {isVisibleInMarket ? t("availableOffTitle") : t("availableOnTitle")}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {(info as Record<string, unknown>)?.availableForWork
-                ? t("availableOffDesc")
-                : t("availableOnDesc")}
+              {isVisibleInMarket ? t("availableOffDesc") : t("availableOnDesc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                const next = !(info as Record<string, unknown>)?.availableForWork;
+                const next = !isVisibleInMarket;
                 doUpdateUserInfo({ availableForWork: next } as Record<string, unknown>, {
                   onSuccess: () => toast.success(next ? t("availableOn") : t("availableOff")),
                 });
