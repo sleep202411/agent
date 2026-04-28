@@ -2,6 +2,7 @@
 
 import { IconBrandWechat, IconSparkles } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface CreatorsHeroProps {
   total: number;
@@ -37,8 +38,44 @@ export function CreatorsHero({ total }: CreatorsHeroProps) {
         }}
       />
 
-      <div className="relative mx-auto grid max-w-screen-2xl gap-8 px-6 pb-12 pt-16 md:grid-cols-[1fr_auto] md:items-center">
-        <div>
+      <div className="relative mx-auto max-w-screen-2xl px-6 pb-12 pt-16">
+        {showQr && (
+          <div className="absolute right-6 top-16">
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("groupQrTitle")}
+                  className="inline-flex size-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-emerald-300 backdrop-blur-md transition-colors hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                >
+                  <IconBrandWechat className="size-5" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 gap-3 p-4">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+                  <IconBrandWechat className="size-3.5" />
+                  {t("groupQrEyebrow")}
+                </div>
+                <div className="overflow-hidden rounded-lg bg-white">
+                  <img
+                    src={WECHAT_GROUP_QR_SRC}
+                    alt={t("groupQrAlt")}
+                    className="block aspect-square w-full object-contain"
+                    loading="lazy"
+                  />
+                </div>
+                <p className="text-center text-xs font-medium text-foreground">
+                  {t("groupQrTitle")}
+                </p>
+                <p className="-mt-2 text-center text-[10px] text-muted-foreground">
+                  {t("groupQrExpiry", { date: WECHAT_GROUP_EXPIRES_AT })}
+                </p>
+              </PopoverContent>
+            </Popover>
+          </div>
+        )}
+
+        <div className="max-w-3xl">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400">
             <IconSparkles className="size-4" />
             {t("plaza")}
@@ -64,29 +101,6 @@ export function CreatorsHero({ total }: CreatorsHeroProps) {
             <span>{t("openCountSuffix")}</span>
           </div>
         </div>
-
-        {showQr && (
-          <aside className="hidden w-70 shrink-0 rounded-2xl border border-white/10 bg-white/4 p-5 backdrop-blur-md md:block">
-            <div className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
-              <IconBrandWechat className="size-3.5" />
-              {t("groupQrEyebrow")}
-            </div>
-            <div className="overflow-hidden rounded-lg bg-white">
-              <img
-                src={WECHAT_GROUP_QR_SRC}
-                alt={t("groupQrAlt")}
-                className="block aspect-square w-full object-contain"
-                loading="lazy"
-              />
-            </div>
-            <p className="mt-3 text-center text-xs font-medium text-foreground">
-              {t("groupQrTitle")}
-            </p>
-            <p className="mt-1 text-center text-[10px] text-muted-foreground">
-              {t("groupQrExpiry", { date: WECHAT_GROUP_EXPIRES_AT })}
-            </p>
-          </aside>
-        )}
       </div>
     </section>
   );
