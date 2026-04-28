@@ -19,6 +19,14 @@ export const env = {
   BANNER_BASE_URL: required("NEXT_PUBLIC_BANNER_BASE_URL", process.env.NEXT_PUBLIC_BANNER_BASE_URL),
   /** Base URL for user avatar images */
   USER_BASE_URL: process.env.NEXT_PUBLIC_USER_BASE_URL ?? "",
+  /**
+   * Base URL for static assets (default covers, fallback art). Mirrors
+   * legacy fizzdragon-web's `STATIC_BASE_URL` — `static.fizzspace.cn` in
+   * mainland envs, `fizzdragon-web-static-sg.oss-…` overseas.
+   */
+  STATIC_BASE_URL: process.env.NEXT_PUBLIC_STATIC_BASE_URL ?? "https://static.fizzspace.cn",
+  /** Default cover used when a work has no banner / the banner 404s. */
+  DEFAULT_COVER_URL: `${process.env.NEXT_PUBLIC_STATIC_BASE_URL ?? "https://static.fizzspace.cn"}/static/bg/default_bg.png`,
   SITE_REGION: process.env.NEXT_PUBLIC_SITE_REGION ?? "global",
   PARENT_ORIGIN: process.env.NEXT_PUBLIC_PARENT_ORIGIN ?? "",
 } as const;

@@ -167,19 +167,12 @@ function PersonalWorksTab() {
   const { data: kycStatus } = useKycAuthStatus();
   const [publishOpen, setPublishOpen] = useState(false);
   const [kycGateOpen, setKycGateOpen] = useState(false);
-  const [editWork, setEditWork] = useState<import("@/src/services/project").PersonalWork | null>(
-    null
-  );
 
-  // Publish card is the only KYC-gated action on this page. Editing an
-  // existing work doesn't re-check — backend enforces its own rules on
-  // updates.
-  const requestPublish = (work: import("@/src/services/project").PersonalWork | null) => {
+  const requestPublish = () => {
     if (kycStatus?.needAuth) {
       setKycGateOpen(true);
       return;
     }
-    setEditWork(work);
     setPublishOpen(true);
   };
 
@@ -197,7 +190,7 @@ function PersonalWorksTab() {
         {/* Publish card */}
         <button
           type="button"
-          onClick={() => requestPublish(null)}
+          onClick={requestPublish}
           className="overflow-hidden rounded-xl border border-dashed border-border bg-card text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
         >
           <div className="flex aspect-video items-center justify-center bg-muted/30">
@@ -218,9 +211,11 @@ function PersonalWorksTab() {
           const coverUrl = bannerPath
             ? bannerPath.startsWith("http")
               ? bannerPath
-              : `${env.OSS_BASE_URL}/${bannerPath}`
+              : `${env.BANNER_BASE_URL}/${bannerPath.replace(/^\/+/, "")}`
             : videoPath
-              ? `${env.OSS_BASE_URL}/${videoPath}?x-oss-process=video/snapshot,t_0,m_fast`
+              ? videoPath.startsWith("http")
+                ? `${videoPath}?x-oss-process=video/snapshot,t_0,m_fast`
+                : `${env.OSS_BASE_URL}/${videoPath.replace(/^\/+/, "")}?x-oss-process=video/snapshot,t_0,m_fast`
               : "";
           const isReviewing = work.review === 0;
 
@@ -235,39 +230,24 @@ function PersonalWorksTab() {
                 </div>
               )}
               <div className="aspect-video overflow-hidden bg-muted">
-                {coverUrl ? (
-                  <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-muted-foreground/30">
-                    {title.slice(0, 1) || "?"}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center justify-between p-3">
-                <div className="min-w-0 truncate text-sm font-medium">{title || t("noData")}</div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditWork(work);
-                    setPublishOpen(true);
+                <img
+                  src={coverUrl || env.DEFAULT_COVER_URL}
+                  alt={title}
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    if (img.src !== env.DEFAULT_COVER_URL) img.src = env.DEFAULT_COVER_URL;
                   }}
-                  className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <IconEdit className="size-3.5" />
-                </button>
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="p-3">
+                <div className="truncate text-sm font-medium">{title || t("noData")}</div>
               </div>
             </div>
           );
         })}
       </div>
-      <PublishWorkDialog
-        open={publishOpen}
-        onOpenChange={(next) => {
-          setPublishOpen(next);
-          if (!next) setEditWork(null);
-        }}
-        editWork={editWork}
-      />
+      <PublishWorkDialog open={publishOpen} onOpenChange={setPublishOpen} />
       <KycGateDialog open={kycGateOpen} onOpenChange={setKycGateOpen} />
     </>
   );
