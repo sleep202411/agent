@@ -10,10 +10,10 @@ import {
   IconUpload,
   IconX,
   IconPlus,
-  IconGripVertical,
   IconTrash,
   IconLoader2,
 } from "@tabler/icons-react";
+import { DragDropProvider } from "@dnd-kit/react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
@@ -27,19 +27,16 @@ import {
   useProjectVideoLink,
   useUploadProjectVideo,
 } from "@/app/(site)/ips/_hooks/use-ip";
-import {
-  SUGGESTED_TAGS,
-  TARGET_EPISODES_OPTIONS,
-  PRESET_REWARDS,
-  type IPRewardTier,
-} from "@/app/(site)/ips/_data/ip";
+import { SUGGESTED_TAGS, PRESET_REWARDS, type IPRewardTier } from "@/app/(site)/ips/_data/ip";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
+import { EpisodeDialog, type EpisodeDraft } from "./episode-dialog";
+import { SortableEpisodeRow } from "./episode-row";
 
 // ─── Tabs ────────────────────────────────────────────
 
 const TABS = [
   { id: "basic", labelKey: "editBasic", icon: IconFileText },
-  { id: "media", labelKey: "editMedia", icon: IconVideo },
+  { id: "trailer", labelKey: "editTrailer", icon: IconVideo },
   { id: "story", labelKey: "editStory", icon: IconBook },
   { id: "episodes", labelKey: "editEpisodes", icon: IconPlaylist },
   { id: "team", labelKey: "editTeam", icon: IconUsers },
@@ -58,13 +55,19 @@ interface EditForm {
   tags: string[];
   // Future tabs
   promoVideo: string | null;
-  episodes: { title: string; price: number; type: "linear" | "interactive" }[];
+  episodes: {
+    title: string;
+    description: string;
+    type: "linear" | "interactive";
+    videoUrl: string;
+    cover: string;
+    duration: number;
+  }[];
   jobs: { role: string; description: string; profitRatio: string; earnings: string }[];
   faqs: { question: string; answer: string }[];
   // Keep for UI compatibility
   story: string;
   whyThisIP: string;
-  targetEpisodes: number;
   fundingMode: "investment" | "presale";
   valuation: string;
   sharesOffered: string;
@@ -93,7 +96,6 @@ const EMPTY_FORM: EditForm = {
   faqs: [],
   story: "",
   whyThisIP: "",
-  targetEpisodes: 10,
   fundingMode: "investment",
   valuation: "",
   sharesOffered: "",
@@ -140,6 +142,8 @@ export default function IPEditPage({ id }: { id: string }) {
   const [form, setForm] = useState<EditForm>(EMPTY_FORM);
   const [saved, setSaved] = useState(false);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
+  // Episode dialog: null = closed, -1 = creating, otherwise editing index
+  const [episodeDialogIndex, setEpisodeDialogIndex] = useState<number | null>(null);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const { mutate: doUpdate, isPending: saving } = useUpdateProject();
@@ -226,15 +230,54 @@ export default function IPEditPage({ id }: { id: string }) {
   const removeTag = (tag: string) => update({ tags: form.tags.filter((t) => t !== tag) });
 
   // Episode helpers
-  const addEpisode = (type: "linear" | "interactive" = "linear") =>
-    update({ episodes: [...form.episodes, { title: "", price: 0, type }] });
   const removeEpisode = (i: number) =>
     update({ episodes: form.episodes.filter((_, j) => j !== i) });
-  const updateEpisode = (i: number, patch: Partial<{ title: string; price: number }>) => {
-    const eps = [...form.episodes];
-    eps[i] = { ...eps[i], ...patch };
-    update({ episodes: eps });
+  const upsertEpisode = (i: number | null, next: EditForm["episodes"][number]) => {
+    if (i === null) update({ episodes: [...form.episodes, next] });
+    else {
+      const eps = [...form.episodes];
+      eps[i] = next;
+      update({ episodes: eps });
+    }
   };
+  // Drag-reorder buffer: dnd-kit fires onDragOver continuously; we batch
+  // the latest projected order and commit in onDragEnd.
+  const pendingReorderRef = useRef<EditForm["episodes"] | null>(null);
+  const handleEpisodeDragOver = useCallback(
+    (event: unknown) => {
+      const op = (
+        event as {
+          operation?: { source?: { id: string | number }; target?: { id: string | number } };
+        }
+      ).operation;
+      const source = op?.source;
+      const target = op?.target;
+      if (!source || !target || source.id === target.id) return;
+      const list = pendingReorderRef.current ?? form.episodes;
+      const fromIndex = Number(source.id);
+      const toIndex = Number(target.id);
+      if (
+        Number.isNaN(fromIndex) ||
+        Number.isNaN(toIndex) ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex === toIndex
+      ) {
+        return;
+      }
+      const next = [...list];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      pendingReorderRef.current = next;
+    },
+    [form.episodes]
+  );
+  const handleEpisodeDragEnd = useCallback(() => {
+    if (pendingReorderRef.current) {
+      update({ episodes: pendingReorderRef.current });
+      pendingReorderRef.current = null;
+    }
+  }, [update]);
 
   // Job helpers
   const addJob = () =>
@@ -259,9 +302,9 @@ export default function IPEditPage({ id }: { id: string }) {
     update({ rewards: form.rewards.filter((r) => r.id !== rid) });
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col bg-background">
+    <div className="flex flex-col bg-background">
       {/* Top tab nav */}
-      <div className="border-b border-border bg-card/50">
+      <div className="sticky top-14 z-30 border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/70">
         <div className="relative flex items-center justify-center px-6">
           <nav className="flex items-center gap-1 overflow-x-auto">
             {TABS.map((tab) => (
@@ -292,13 +335,13 @@ export default function IPEditPage({ id }: { id: string }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div>
         <div className="mx-auto max-w-screen-lg px-6">
           {/* ── Basic ── */}
           {/* ── Media ── */}
-          {activeTab === "media" && (
+          {activeTab === "trailer" && (
             <>
-              <Section title={t("sectionImage")} description={t("sectionImageDesc")}>
+              <Section title={t("sectionTrailerCover")} description={t("sectionTrailerCoverDesc")}>
                 {form.coverImage ? (
                   <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-border">
                     <img src={form.coverImage} alt="" className="size-full object-cover" />
@@ -325,8 +368,8 @@ export default function IPEditPage({ id }: { id: string }) {
                 )}
               </Section>
 
-              {/* Project Video (optional) */}
-              <Section title={t("sectionVideo")} description={t("sectionVideoDesc")}>
+              {/* Trailer video */}
+              <Section title={t("sectionTrailerVideo")} description={t("sectionTrailerVideoDesc")}>
                 {videoLink ? (
                   <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-border bg-black">
                     <video
@@ -520,118 +563,59 @@ export default function IPEditPage({ id }: { id: string }) {
                   {form.whyThisIP.length}/1000
                 </span>
               </Section>
-
-              <Section
-                title={t("sectionTargetEpisodes")}
-                description={t("sectionTargetEpisodesDesc")}
-              >
-                <div className="flex flex-wrap gap-2">
-                  {TARGET_EPISODES_OPTIONS.map((n) => (
-                    <Button
-                      key={n}
-                      variant={form.targetEpisodes === n ? "soft" : "outline"}
-                      color={form.targetEpisodes === n ? "primary" : "muted"}
-                      size="sm"
-                      onClick={() => update({ targetEpisodes: n })}
-                    >
-                      {n} {t("eps")}
-                    </Button>
-                  ))}
-                </div>
-              </Section>
             </>
           )}
 
           {/* ── Episodes ── */}
           {activeTab === "episodes" && (
             <Section title={t("sectionEpisodes")} description={t("sectionEpisodesDesc")}>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {form.episodes.map((ep, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      "group relative overflow-hidden rounded-xl border transition-colors",
-                      ep.type === "interactive"
-                        ? "border-violet-400/20 bg-violet-400/5"
-                        : "border-border bg-card"
-                    )}
+              <DragDropProvider onDragOver={handleEpisodeDragOver} onDragEnd={handleEpisodeDragEnd}>
+                <div className="space-y-2">
+                  {form.episodes.map((ep, i) => (
+                    <SortableEpisodeRow
+                      key={i}
+                      id={String(i)}
+                      index={i}
+                      episode={ep}
+                      ipId={id}
+                      onClick={() => setEpisodeDialogIndex(i)}
+                      onDelete={() => removeEpisode(i)}
+                    />
+                  ))}
+
+                  {/* Add episode row */}
+                  <button
+                    type="button"
+                    onClick={() => setEpisodeDialogIndex(-1)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-transparent py-4 text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
                   >
-                    {/* Thumbnail area */}
-                    <div className="relative flex aspect-video items-center justify-center bg-muted/50">
-                      <IconPlaylist className="size-10 text-muted-foreground/20" />
-                      <span
-                        className={cn(
-                          "absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                          ep.type === "interactive"
-                            ? "bg-violet-400/15 text-violet-400"
-                            : "bg-blue-400/15 text-blue-400"
-                        )}
-                      >
-                        {ep.type === "interactive" ? t("typeInteractive") : t("typeLinear")}
-                      </span>
-                      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        {ep.type === "interactive" && (
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            className="bg-black/60 text-white hover:bg-black/80"
-                            asChild
-                          >
-                            <a href={`/ips/${id}/episodes/${i + 1}/editor`}>
-                              <IconFileText className="size-3.5" />
-                            </a>
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          className="bg-black/60 text-white hover:bg-red-500/80"
-                          onClick={() => removeEpisode(i)}
-                        >
-                          <IconTrash className="size-3.5" />
-                        </Button>
-                      </div>
-                    </div>
+                    <IconPlus className="size-5" />
+                    <span className="text-sm font-medium">{t("addEpisode")}</span>
+                  </button>
+                </div>
+              </DragDropProvider>
 
-                    {/* Info */}
-                    <div className="space-y-2 p-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex size-6 shrink-0 items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground">
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
-                        <Input
-                          value={ep.title}
-                          onChange={(e) => updateEpisode(i, { title: e.target.value })}
-                          placeholder={t("epTitlePlaceholder")}
-                          className="h-8 min-w-0 flex-1 text-sm"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">¥</span>
-                        <Input
-                          type="number"
-                          value={ep.price}
-                          onChange={(e) => updateEpisode(i, { price: Number(e.target.value) || 0 })}
-                          className="h-8 w-20 text-center text-sm"
-                        />
-                        <span className="text-[10px] text-muted-foreground/60">
-                          / {t("episode")}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {/* Add episode card */}
-                <button
-                  type="button"
-                  onClick={() => addEpisode("linear")}
-                  className="flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-transparent text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-                >
-                  <IconPlus className="size-8" />
-                  <span className="text-sm font-medium">{t("addEpisode")}</span>
-                </button>
-              </div>
+              <EpisodeDialog
+                open={episodeDialogIndex !== null}
+                onOpenChange={(v) => {
+                  if (!v) setEpisodeDialogIndex(null);
+                }}
+                index={episodeDialogIndex}
+                initial={
+                  episodeDialogIndex !== null && episodeDialogIndex >= 0
+                    ? form.episodes[episodeDialogIndex]
+                    : null
+                }
+                onSubmit={(draft: EpisodeDraft) => {
+                  upsertEpisode(
+                    episodeDialogIndex !== null && episodeDialogIndex >= 0
+                      ? episodeDialogIndex
+                      : null,
+                    draft
+                  );
+                  setEpisodeDialogIndex(null);
+                }}
+              />
             </Section>
           )}
 

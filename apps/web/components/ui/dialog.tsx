@@ -161,6 +161,87 @@ function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+// DialogHero — image banner that stretches across the top of a dialog with
+// title / description / eyebrow overlaid on a legibility scrim. Pair with
+// `<DialogContent className="overflow-hidden p-0">` so the image bleeds to
+// the rounded corners. Use the `eyebrow` prop for short uppercase taglines;
+// `title` and `description` should be DialogTitle / DialogDescription nodes
+// (or strings, in which case they're rendered with the right styling).
+function DialogHero({
+  src,
+  alt = "",
+  eyebrow,
+  title,
+  description,
+  className,
+  height = "h-44",
+  fallbackGradient = "bg-linear-to-br from-[#1a1a2e] via-[#1f1530] to-[#0f3460]",
+}: {
+  src: string;
+  alt?: string;
+  eyebrow?: React.ReactNode;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+  className?: string;
+  height?: string;
+  fallbackGradient?: string;
+}) {
+  return (
+    <div
+      data-slot="dialog-hero"
+      className={cn("relative w-full overflow-hidden", height, fallbackGradient, className)}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="absolute inset-0 size-full object-cover"
+        onError={(e) => {
+          e.currentTarget.style.display = "none";
+        }}
+      />
+      {/* Legibility scrim */}
+      <div className="absolute inset-0 bg-linear-to-b from-black/60 via-black/20 to-transparent" />
+
+      {(eyebrow || title || description) && (
+        <div className="absolute inset-x-4 top-5">
+          {eyebrow && (
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-amber-300">
+              {eyebrow}
+            </div>
+          )}
+          {title &&
+            (typeof title === "string" ? (
+              <DialogTitle className="mt-1 font-heading text-xl font-bold text-white drop-shadow-md">
+                {title}
+              </DialogTitle>
+            ) : (
+              title
+            ))}
+          {description &&
+            (typeof description === "string" ? (
+              <DialogDescription className="mt-1.5 line-clamp-2 max-w-[420px] text-xs text-white/75">
+                {description}
+              </DialogDescription>
+            ) : (
+              description
+            ))}
+        </div>
+      )}
+
+      <DialogPrimitive.Close asChild>
+        <button
+          type="button"
+          aria-label="Close"
+          className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-full bg-black/30 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white"
+        >
+          <IconX className="size-4" />
+        </button>
+      </DialogPrimitive.Close>
+    </div>
+  );
+}
+
 export {
   Dialog,
   DialogBody,
@@ -169,6 +250,7 @@ export {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogHero,
   DialogOverlay,
   DialogPortal,
   DialogTitle,
