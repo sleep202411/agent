@@ -308,6 +308,7 @@ export interface IPMockDetailContent {
   title: string;
   tagline: string;
   trailerUrl: string;
+  /** Landscape key-art (16:9). */
   cover: string;
   tags: string[];
   story: string;
