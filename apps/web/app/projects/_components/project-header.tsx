@@ -161,7 +161,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
           <Button
             data-tour-step="upgrade"
             size="sm"
-            className="hidden bg-gradient-to-r from-purple-600 to-purple-500 text-white hover:from-purple-500 hover:to-purple-400 xl:flex"
+            className="hidden bg-linear-to-r from-purple-600 to-purple-500 text-white hover:from-purple-500 hover:to-purple-400 xl:flex"
             onClick={() => setUpgradeOpen(true)}
           >
             <IconCrown className="size-3.5" />
@@ -244,24 +244,39 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
                   </div>
                 ) : (
                   <div className="max-h-72 space-y-2 overflow-auto">
-                    {integralRecords.map((record, index) => (
-                      <div
-                        key={`${record.id ?? "record"}-${index}`}
-                        className="rounded-xl border border-border px-3 py-2"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm">
-                            {String(record.recordType ?? t("creditsChange"))}
-                          </span>
-                          <span className="text-sm font-semibold">
-                            {Number(record.integralChange ?? 0)}
-                          </span>
+                    {integralRecords.map((record, index) => {
+                      // Backend `recordType` enum: 1=recharge, 2=consume,
+                      // 3=system gift. Anything outside the enum (or null)
+                      // falls back to the generic "credits change" label.
+                      const typeKey = (() => {
+                        switch (String(record.recordType)) {
+                          case "1":
+                            return "recordTypeRecharge";
+                          case "2":
+                            return "recordTypeConsume";
+                          case "3":
+                            return "recordTypeSystemGift";
+                          default:
+                            return "creditsChange";
+                        }
+                      })();
+                      return (
+                        <div
+                          key={`${record.id ?? "record"}-${index}`}
+                          className="rounded-xl border border-border px-3 py-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm">{t(typeKey)}</span>
+                            <span className="text-sm font-semibold">
+                              {Number(record.integralChange ?? 0)}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {String(record.createTime ?? "")}
+                          </div>
                         </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {String(record.createTime ?? "")}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
