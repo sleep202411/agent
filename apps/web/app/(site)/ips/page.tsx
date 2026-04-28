@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
-import { IPFanHero } from "@/app/(site)/ips/_components/ip-fan-hero";
+import { IPCinematicHero } from "@/app/(site)/ips/_components/ip-cinematic-hero";
 import { IPPlazaCard } from "@/app/(site)/ips/_components/ip-plaza-card";
 import {
   useIPProjects,
@@ -201,8 +201,10 @@ export default function IPPlazaPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ── Hero (fanned cards + glassmorphism) ── */}
-      <IPFanHero onCreateClick={() => setCreateOpen(true)} listingsAnchorId="listings" />
+      {/* ── Hero — bleeds under the (fixed, transparent) global nav ── */}
+      <div className="-mt-16">
+        <IPCinematicHero />
+      </div>
 
       {/* ── Main ── */}
       <div id="listings" className="mx-auto max-w-screen-2xl px-6 py-10">
@@ -212,14 +214,18 @@ export default function IPPlazaPage() {
             <div className="sticky top-20">{filterPanel}</div>
           </aside>
 
-          {/* Right column: count + masonry */}
+          {/* Right column: section header + masonry */}
           <div>
-            {/* Count + mobile filter trigger + create button */}
+            {/* Section header: title + count + filter / create */}
             <div className="mb-4 flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">
-                {t("total")}{" "}
-                <span className="font-semibold text-foreground">{projects.length}</span> {t("ips")}
-              </span>
+              <div className="flex items-baseline gap-2">
+                <h2 className="text-lg font-semibold text-foreground">{t("exploreAll")}</h2>
+                <span className="text-xs text-muted-foreground">
+                  {t("total")}{" "}
+                  <span className="font-semibold text-foreground">{projects.length}</span>{" "}
+                  {t("ips")}
+                </span>
+              </div>
               <div className="flex items-center gap-2">
                 <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
                   <SheetTrigger asChild>
