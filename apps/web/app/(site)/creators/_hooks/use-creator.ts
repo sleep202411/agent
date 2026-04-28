@@ -39,6 +39,7 @@ export interface Creator {
   bio: string;
   joinedAt: string;
   levels: CreatorLevel[];
+  contact: string;
 }
 
 function safeStr(v: unknown): string {
@@ -89,6 +90,7 @@ function toCreator(row: CreatorRow | null | undefined): Creator | null {
     bio: safeStr(info.description),
     joinedAt: safeStr(info.createTime),
     levels,
+    contact: safeStr(info.contact).trim(),
   };
 }
 

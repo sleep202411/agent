@@ -704,7 +704,12 @@
     "about": "About",
     "back": "Back",
     "notFoundTitle": "Creator not found",
-    "notFoundDesc": "This profile may have been removed or the link is invalid."
+    "notFoundDesc": "This profile may have been removed or the link is invalid.",
+    "contactButton": "Contact",
+    "contactTitle": "Contact",
+    "contactDesc": "Reach out to {name} via the channel they've shared below.",
+    "contactCopy": "Copy",
+    "contactCopied": "Copied"
   },
   "sidebar": {
     "projects": "Projects",

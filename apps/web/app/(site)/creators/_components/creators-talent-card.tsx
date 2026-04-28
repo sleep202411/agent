@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { IconCalendar, IconUserPlus } from "@tabler/icons-react";
+import { IconCalendar } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
 
@@ -27,10 +27,10 @@ export function CreatorsTalentCard({ creator }: { creator: Creator }) {
   return (
     <Link
       href={`/creators/${id}`}
-      className="group relative mt-8 flex h-full w-full flex-col rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-white/[0.06] hover:shadow-lg hover:shadow-primary/5"
+      className="group relative mt-8 flex h-full w-full flex-col rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-white/6 hover:shadow-lg hover:shadow-primary/5"
     >
       {/* Avatar — half pokes above the card edge */}
-      <div className="absolute -top-8 left-4 h-16 w-16 overflow-hidden rounded-2xl border-2 border-background bg-white/[0.06] shadow-lg shadow-black/30">
+      <div className="absolute -top-8 left-4 h-16 w-16 overflow-hidden rounded-2xl border-2 border-background bg-white/6 shadow-lg shadow-black/30">
         {avatar && (
           <img
             src={avatar}
@@ -43,13 +43,6 @@ export function CreatorsTalentCard({ creator }: { creator: Creator }) {
           />
         )}
       </div>
-
-      <span
-        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg bg-black/40 text-white opacity-0 backdrop-blur-sm transition-all group-hover:opacity-100"
-        aria-hidden
-      >
-        <IconUserPlus className="h-3.5 w-3.5" />
-      </span>
 
       <div className="flex flex-1 flex-col px-4 pb-4 pt-11">
         <div className="flex items-center gap-2">
@@ -77,7 +70,7 @@ export function CreatorsTalentCard({ creator }: { creator: Creator }) {
             {extraLevels.map((l) => (
               <span
                 key={l.id}
-                className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] text-muted-foreground"
+                className="rounded-md bg-white/6 px-2 py-0.5 text-[10px] text-muted-foreground"
               >
                 {l.name}
               </span>

@@ -704,7 +704,12 @@
     "about": "自我介绍",
     "back": "返回",
     "notFoundTitle": "创作者不存在",
-    "notFoundDesc": "该资料可能已被移除或链接无效。"
+    "notFoundDesc": "该资料可能已被移除或链接无效。",
+    "contactButton": "联系方式",
+    "contactTitle": "联系方式",
+    "contactDesc": "通过 {name} 公开的联系方式与其取得联系。",
+    "contactCopy": "复制",
+    "contactCopied": "已复制"
   },
   "sidebar": {
     "projects": "项目",

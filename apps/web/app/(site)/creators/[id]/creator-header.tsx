@@ -1,6 +1,17 @@
 "use client";
 
+import { useState } from "react";
+import { IconMail, IconCopy, IconCheck } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
 
@@ -25,20 +36,23 @@ interface CreatorHeaderProps {
  */
 export function CreatorHeader({ creator }: CreatorHeaderProps) {
   const t = useTranslations("creator");
+  const [contactOpen, setContactOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const name = (creator.name || "").trim() || "Unknown";
   const initials = name.slice(0, 1).toUpperCase();
   const bio = (creator.bio || "").trim();
   const joined = formatJoined(creator.joinedAt);
   const levels = Array.isArray(creator.levels) ? creator.levels.filter((l) => !!l?.name) : [];
+  const contact = (creator.contact || "").trim();
 
   return (
     <div className="relative flex h-75 w-full items-end overflow-hidden">
       {/* Default gradient banner (no cover image data on creators yet) */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]" />
+      <div className="absolute inset-0 bg-linear-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(229,34,39,0.2),transparent_50%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(80,120,255,0.15),transparent_50%)]" />
-      <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/40 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-black/40 to-transparent" />
 
       <div className="relative mx-auto flex w-full max-w-5xl items-end justify-between px-8 pb-6">
         <div className="flex max-w-3xl flex-col gap-3">
@@ -74,9 +88,55 @@ export function CreatorHeader({ creator }: CreatorHeaderProps) {
           </div>
         </div>
 
-        {/* Right slot reserved for future actions (invite / message etc.). */}
-        <div className="hidden shrink-0 items-center gap-2 md:flex" />
+        <div className="hidden shrink-0 items-center gap-2 md:flex">
+          {contact && (
+            <Button
+              variant="solid"
+              size="sm"
+              onClick={() => {
+                setCopied(false);
+                setContactOpen(true);
+              }}
+            >
+              <IconMail className="size-4" />
+              {t("contactButton")}
+            </Button>
+          )}
+        </div>
       </div>
+
+      <Dialog open={contactOpen} onOpenChange={setContactOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("contactTitle")}</DialogTitle>
+            <DialogDescription>{t("contactDesc", { name })}</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 p-4">
+            <input
+              readOnly
+              value={contact}
+              className="h-10 flex-1 rounded-lg border border-border bg-muted px-3 text-sm text-foreground"
+              onFocus={(e) => e.target.select()}
+            />
+            <Button
+              size="sm"
+              variant={copied ? "outline" : "solid"}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(contact);
+                  setCopied(true);
+                  toast.success(t("contactCopied"));
+                } catch {
+                  /* clipboard blocked — user can still select & copy manually */
+                }
+              }}
+            >
+              {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+              {copied ? t("contactCopied") : t("contactCopy")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
