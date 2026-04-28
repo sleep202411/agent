@@ -207,30 +207,6 @@ export function FundingSidebar({ ip }: { ip: IPDetail }) {
 
   return (
     <div className="sticky top-28 space-y-4">
-      {/* Team list */}
-      <div className="rounded-xl border border-border bg-card p-4">
-        <h3 className="mb-3 text-sm font-semibold text-foreground">{t("detailCreativeTeam")}</h3>
-        <div className="space-y-3">
-          {ip.team.map((member) => (
-            <div key={member.name} className="flex items-center gap-3">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-sm">
-                {member.avatar}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-medium text-foreground">{member.name}</span>
-                  <span className="rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">
-                    {member.level}
-                  </span>
-                  {member.certified && <IconCircleCheck className="size-3 text-green-400" />}
-                </div>
-                <span className="text-[10px] text-muted-foreground">{member.role}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Stage panel */}
       {ip.stage === "investment" && <InvestmentPanel ip={ip} />}
       {ip.stage === "producing" && <ProducingPanel ip={ip} />}

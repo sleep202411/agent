@@ -173,7 +173,24 @@ export const ipKeys = {
   video: (id: string) => ["ip", "video", id] as const,
   members: (id: string) => ["ip", "members", id] as const,
   jobs: (id: string) => ["ip", "jobs", id] as const,
+  episodes: (id: string) => ["ip", "episodes", id] as const,
 };
+
+// Public-facing episode shape, mirroring what the backend will return per
+// `apps/web/app/(site)/ips/README.md §1`. Distinct from `EpisodeDraft` in
+// the editor (which carries client-side upload state).
+export interface Episode {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  videoUrl: string;
+  cover: string;
+  duration: number;
+  type: "linear" | "interactive";
+  sort: number;
+  createdAt?: string;
+}
 
 // ─── List hooks ─────────────────────────────────────
 
@@ -248,6 +265,18 @@ export function useProjectJobs(id: string) {
     queryKey: ipKeys.jobs(id),
     queryFn: () => getProjectJobs(id),
     enabled: !!id,
+  });
+}
+
+// TODO: backend endpoint not implemented yet — see ips/README.md §2.
+// When `GET /vedio/project/episode/list?projectId=xxx` lands, swap the
+// queryFn to a real fetcher and remove the empty-array stub.
+export function useProjectEpisodes(id: string) {
+  return useQuery<Episode[]>({
+    queryKey: ipKeys.episodes(id),
+    queryFn: async () => [],
+    enabled: !!id,
+    staleTime: 1000 * 60,
   });
 }
 
