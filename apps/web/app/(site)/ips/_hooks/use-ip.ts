@@ -281,3 +281,15 @@ export function ipImageUrl(path?: string | null): string {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
   return `${env.BANNER_BASE_URL}/${path}`;
 }
+
+/** Convert a relative user-avatar path to a full URL. User avatars live on
+ *  a different OSS bucket than IP banners (USER_BASE_URL, e.g.
+ *  avatar.fizzspace.cn for the CN deploy), so they need a separate helper. */
+export function userAvatarUrl(path?: string | null): string {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  const base = env.USER_BASE_URL || env.OSS_BASE_URL;
+  if (!base) return "";
+  const trimmed = path.startsWith("/") ? path.slice(1) : path;
+  return `${base.replace(/\/+$/, "")}/${trimmed}`;
+}

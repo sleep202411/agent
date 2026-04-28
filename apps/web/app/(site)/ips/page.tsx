@@ -1,15 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
-import { IconSparkles, IconSearch, IconPlayerPlay } from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { IconSparkles, IconSearch, IconFilter, IconBolt } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
 import { IPFanHero } from "@/app/(site)/ips/_components/ip-fan-hero";
+import { IPPlazaCard } from "@/app/(site)/ips/_components/ip-plaza-card";
 import {
-  ipImageUrl,
   useIPProjects,
   useIPCategories,
   useIPTags,
@@ -17,114 +18,100 @@ import {
   type CategoryMap,
 } from "./_hooks/use-ip";
 
-// ─── IP Card ────────────────────────────────────────
+// ─── Filter panel (shared between sidebar + sheet) ──
 
-function IPCard({ project, categories }: { project: IPProject; categories: CategoryMap }) {
-  const cover = ipImageUrl(project.bannerLink);
-  const avatar = ipImageUrl(project.ownerAvatar);
-  const cat = categories[String(project.typeId)] ?? "";
-
-  return (
-    <Link
-      href={`/ips/${project.id}`}
-      className="group block overflow-hidden rounded-2xl border border-border bg-card transition-all hover:border-border/60 hover:shadow-lg hover:shadow-black/10"
-    >
-      <div className="relative h-44 overflow-hidden">
-        {cover ? (
-          <img
-            src={cover}
-            alt={project.name}
-            className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center bg-secondary">
-            <IconSparkles className="size-8 text-muted-foreground/20" />
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-        {/* Category badge */}
-        {cat && (
-          <div className="absolute left-3 top-3">
-            <span className="rounded-full border border-white/20 bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
-              {cat}
-            </span>
-          </div>
-        )}
-        {/* Video badge */}
-        {project.videoLink && (
-          <div className="absolute right-3 top-3">
-            <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-              <IconPlayerPlay className="size-3" /> Trailer
-            </span>
-          </div>
-        )}
-        {/* Title overlay */}
-        <div className="absolute inset-x-3 bottom-3">
-          <h3 className="text-base font-bold leading-tight text-white transition-colors group-hover:text-primary">
-            {project.name}
-          </h3>
-        </div>
-      </div>
-      <div className="p-4">
-        <p className="mb-3 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-          {project.description}
-        </p>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            {avatar ? (
-              <img src={avatar} alt="" className="size-5 rounded-full object-cover" />
-            ) : (
-              <div className="flex size-5 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">
-                {(project.ownerName || "?")[0]}
-              </div>
-            )}
-            <span className="font-medium text-foreground">{project.ownerName || "Anonymous"}</span>
-          </div>
-          <span className="text-[10px]">{new Date(project.createTime).toLocaleDateString()}</span>
-        </div>
-      </div>
-    </Link>
-  );
+interface FilterPanelProps {
+  search: string;
+  onSearchChange: (value: string) => void;
+  categoryOptions: { id: string; name: string }[];
+  tagOptions: { id: string; name: string }[];
+  selectedTypeId: string;
+  selectedTagId: string;
+  onTypeChange: (id: string) => void;
+  onTagChange: (id: string) => void;
 }
 
-// ─── Filter chip row ────────────────────────────────
+function FilterPanel({
+  search,
+  onSearchChange,
+  categoryOptions,
+  tagOptions,
+  selectedTypeId,
+  selectedTagId,
+  onTypeChange,
+  onTagChange,
+}: FilterPanelProps) {
+  const t = useTranslations("ip");
 
-function FilterRow({
-  label,
-  options,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  options: { id: string; name: string }[];
-  selected: string;
-  onSelect: (id: string) => void;
-}) {
   return (
-    <div className="mb-5">
-      <div className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
+    <div className="space-y-6">
+      {/* Search */}
+      <div className="relative">
+        <IconSearch className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder={t("searchPlaceholder")}
+          className="h-10 pl-10"
+        />
       </div>
-      <div className="flex flex-wrap gap-2">
-        {options.map((opt) => {
-          const active = selected === opt.id;
-          return (
-            <button
-              key={opt.id || "all"}
-              type="button"
-              onClick={() => onSelect(opt.id)}
-              className={cn(
-                "rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all",
-                active
-                  ? "border-white/15 bg-white text-black shadow-sm"
-                  : "border-white/10 bg-white/[0.04] text-muted-foreground backdrop-blur-md hover:border-white/20 hover:bg-white/[0.07] hover:text-foreground"
-              )}
-            >
-              {opt.name}
-            </button>
-          );
-        })}
+
+      {/* Categories — vertical list, like a nav rail */}
+      <div>
+        <h3 className="mb-2.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("categoriesLabel")}
+        </h3>
+        <ul className="space-y-0.5">
+          {categoryOptions.map((opt) => {
+            const active = selectedTypeId === opt.id;
+            return (
+              <li key={opt.id || "all"}>
+                <button
+                  type="button"
+                  onClick={() => onTypeChange(opt.id)}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                    active
+                      ? "bg-white/10 font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                  )}
+                >
+                  <span className="truncate">{opt.name}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
       </div>
+
+      {/* Tags — chips, only meaningful inside a category */}
+      {selectedTypeId && tagOptions.length > 1 && (
+        <div>
+          <h3 className="mb-2.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            {t("tagsLabel")}
+          </h3>
+          <div className="flex flex-wrap gap-1.5 px-2">
+            {tagOptions.map((opt) => {
+              const active = selectedTagId === opt.id;
+              return (
+                <button
+                  key={opt.id || "all"}
+                  type="button"
+                  onClick={() => onTagChange(opt.id)}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                    active
+                      ? "bg-white text-black"
+                      : "bg-white/4 text-muted-foreground hover:bg-white/8 hover:text-foreground"
+                  )}
+                >
+                  {opt.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -137,6 +124,23 @@ export default function IPPlazaPage() {
   const [selectedTypeId, setSelectedTypeId] = useState("");
   const [selectedTagId, setSelectedTagId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+
+  // Pin a small sentinel near the inline "Create IP" button. Once it
+  // scrolls out of view we surface a floating-action variant in the
+  // bottom-right corner so the create flow is always one click away.
+  const inlineCreateRef = useRef<HTMLDivElement>(null);
+  const [showFloatingCreate, setShowFloatingCreate] = useState(false);
+  useEffect(() => {
+    const node = inlineCreateRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowFloatingCreate(!entry.isIntersecting),
+      { rootMargin: "0px", threshold: 0 }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   // Server-side filtering: backend filters by `key` + `TypeId` + `tag`
   // (legacy /vedio/project/search contract).
@@ -182,6 +186,19 @@ export default function IPPlazaPage() {
     setSelectedTagId("");
   };
 
+  const filterPanel = (
+    <FilterPanel
+      search={search}
+      onSearchChange={setSearch}
+      categoryOptions={categoryOptions}
+      tagOptions={tagOptions}
+      selectedTypeId={selectedTypeId}
+      selectedTagId={selectedTagId}
+      onTypeChange={handleTypeChange}
+      onTagChange={setSelectedTagId}
+    />
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* ── Hero (fanned cards + glassmorphism) ── */}
@@ -189,70 +206,90 @@ export default function IPPlazaPage() {
 
       {/* ── Main ── */}
       <div id="listings" className="mx-auto max-w-screen-2xl px-6 py-10">
-        {/* Search */}
-        <div className="relative mx-auto mb-8 max-w-2xl">
-          <IconSearch className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("searchPlaceholder")}
-            className="h-11 pl-11"
-          />
-        </div>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-[220px_1fr]">
+          {/* Sidebar (md+) */}
+          <aside className="hidden md:block">
+            <div className="sticky top-20">{filterPanel}</div>
+          </aside>
 
-        {/* Category filter */}
-        <FilterRow
-          label={t("categoriesLabel")}
-          options={categoryOptions}
-          selected={selectedTypeId}
-          onSelect={handleTypeChange}
-        />
+          {/* Right column: count + masonry */}
+          <div>
+            {/* Count + mobile filter trigger + create button */}
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">
+                {t("total")}{" "}
+                <span className="font-semibold text-foreground">{projects.length}</span> {t("ips")}
+              </span>
+              <div className="flex items-center gap-2">
+                <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="sm" className="md:hidden">
+                      <IconFilter className="size-4" />
+                      {t("filters")}
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="left" className="w-72 p-6">
+                    <SheetHeader>
+                      <SheetTitle>{t("filters")}</SheetTitle>
+                    </SheetHeader>
+                    <div className="mt-4">{filterPanel}</div>
+                  </SheetContent>
+                </Sheet>
+                <div ref={inlineCreateRef}>
+                  <Button size="sm" onClick={() => setCreateOpen(true)}>
+                    <IconBolt className="size-4" />
+                    {t("createIP")}
+                  </Button>
+                </div>
+              </div>
+            </div>
 
-        {/* Tag filter — only meaningful inside a category */}
-        {selectedTypeId && tagOptions.length > 1 && (
-          <FilterRow
-            label={t("tagsLabel")}
-            options={tagOptions}
-            selected={selectedTagId}
-            onSelect={setSelectedTagId}
-          />
-        )}
-
-        {/* Count */}
-        <div className="mb-4 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            {t("total")} <span className="font-semibold text-foreground">{projects.length}</span>{" "}
-            {t("ips")}
-          </span>
-        </div>
-
-        {/* Grid */}
-        {loading ? (
-          <div className="py-20 text-center text-sm text-muted-foreground">{t("loading")}</div>
-        ) : projects.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {projects.map((p) => (
-              <IPCard key={p.id} project={p} categories={categories} />
-            ))}
+            {/* Masonry */}
+            {loading ? (
+              <div className="py-20 text-center text-sm text-muted-foreground">{t("loading")}</div>
+            ) : projects.length > 0 ? (
+              <div className="columns-2 gap-6 sm:columns-3 lg:columns-3 xl:columns-4">
+                {projects.map((p) => (
+                  <IPPlazaCard key={p.id} project={p} categories={categories} />
+                ))}
+              </div>
+            ) : (
+              <div className="py-20 text-center text-muted-foreground">
+                <IconSparkles className="mx-auto mb-3 size-10 opacity-30" />
+                <p className="text-sm">{t("noResults")}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTypeId("");
+                    setSelectedTagId("");
+                    setSearch("");
+                  }}
+                  className="mt-3 text-xs text-primary hover:underline"
+                >
+                  {t("clearFilters")}
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="py-20 text-center text-muted-foreground">
-            <IconSparkles className="mx-auto mb-3 size-10 opacity-30" />
-            <p className="text-sm">{t("noResults")}</p>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedTypeId("");
-                setSelectedTagId("");
-                setSearch("");
-              }}
-              className="mt-3 text-xs text-primary hover:underline"
-            >
-              {t("clearFilters")}
-            </button>
-          </div>
-        )}
+        </div>
       </div>
+
+      {/* Floating create FAB — fades in once the inline button scrolls
+          out of view. Stays anchored to the viewport's bottom-right. */}
+      <button
+        type="button"
+        onClick={() => setCreateOpen(true)}
+        aria-label={t("createIP")}
+        className={cn(
+          "fixed bottom-6 right-6 z-40 inline-flex h-12 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-xl shadow-black/40 transition-all duration-300 hover:bg-primary/90",
+          showFloatingCreate
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-3 opacity-0"
+        )}
+      >
+        <IconBolt className="size-4" />
+        {t("createIP")}
+      </button>
 
       <CreateIPDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>

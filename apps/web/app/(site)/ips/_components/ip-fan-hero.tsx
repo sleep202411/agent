@@ -330,7 +330,7 @@ function ActiveCardInfo({ card }: { card: SlotItem }) {
           </h1>
         </div>
         <div className="flex flex-col gap-4 lg:items-end lg:text-right">
-          <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+          <p className="line-clamp-4 max-w-md text-sm leading-relaxed text-muted-foreground">
             {card.description?.trim() || fallbackDesc}
           </p>
           {card.ownerName ? (
