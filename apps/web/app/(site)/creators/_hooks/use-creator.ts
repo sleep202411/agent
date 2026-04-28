@@ -46,22 +46,12 @@ function safeStr(v: unknown): string {
 }
 
 /**
- * Backend serves a default person-silhouette PNG for users who haven't
- * uploaded an avatar (`<userId>/d17b1d5e-282e-47e0-bd99-9a72477adf93.png`).
- * That image looks worse than a plain gray block, so treat it as "no
- * avatar" and let the UI render its own empty state.
- */
-const DEFAULT_AVATAR_FILE = "d17b1d5e-282e-47e0-bd99-9a72477adf93.png";
-
-/**
  * User avatars live on a different OSS bucket than studio assets, so they
  * resolve via `NEXT_PUBLIC_USER_BASE_URL` (with `OSS_BASE_URL` as fallback).
- * Already-absolute URLs pass through unchanged. Returns "" for empty paths
- * and for the known backend placeholder.
+ * Already-absolute URLs pass through unchanged.
  */
 function buildAvatarUrl(path: string): string {
   if (!path) return "";
-  if (path.endsWith(DEFAULT_AVATAR_FILE)) return "";
   if (/^(https?:|blob:|data:)/i.test(path)) return path;
   const base = env.USER_BASE_URL || env.OSS_BASE_URL;
   if (!base) return "";
