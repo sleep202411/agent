@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useUserInfo } from "@/src/hooks/use-user";
-import type { UserInfo } from "@/src/services/user";
+import { parseEducation, type UserInfo } from "@/src/services/user";
 import {
   useMyProjects,
   useMyJoinedProjects,
@@ -94,14 +94,7 @@ function ProfileTabs({ userInfo }: { userInfo: UserInfo | null }) {
 
 function OverviewTab({ userInfo }: { userInfo: UserInfo | null }) {
   const t = useTranslations("profile");
-
-  // Education entries — one per non-empty line in the `study` field.
-  // Stays a list-of-strings until backend gives us a structured shape;
-  // each line just renders as its own row.
-  const studyLines = (userInfo?.study ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const education = parseEducation(userInfo?.study);
 
   return (
     <div className="space-y-8">
@@ -109,18 +102,25 @@ function OverviewTab({ userInfo }: { userInfo: UserInfo | null }) {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
           {t("education")}
         </h2>
-        {studyLines.length === 0 ? (
+        {education.length === 0 ? (
           <p className="text-sm text-muted-foreground/70">{t("educationEmpty")}</p>
         ) : (
           <ul className="space-y-2">
-            {studyLines.map((line, i) => (
-              <li
-                key={i}
-                className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground"
-              >
-                {line}
-              </li>
-            ))}
+            {education.map((entry, i) => {
+              const range = [entry.startDate, entry.endDate || t("present")]
+                .filter(Boolean)
+                .join(" – ");
+              const head = [entry.schoolName, entry.major].filter(Boolean).join(" · ");
+              return (
+                <li
+                  key={i}
+                  className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground"
+                >
+                  {head && <div className="font-medium">{head}</div>}
+                  {range && <div className="mt-0.5 text-xs text-muted-foreground">{range}</div>}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
