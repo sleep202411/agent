@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useUserInfo } from "@/src/hooks/use-user";
+import type { UserInfo } from "@/src/services/user";
 import {
   useMyProjects,
   useMyJoinedProjects,
@@ -37,7 +38,7 @@ export default function ProfilePage() {
       <ProfileHeader userInfo={userInfo ?? null} onEditProfile={() => setEditOpen(true)} />
 
       <div className="relative mx-auto max-w-5xl px-8">
-        <ProfileTabs />
+        <ProfileTabs userInfo={userInfo ?? null} />
       </div>
 
       <ProfileEditDialog open={editOpen} onOpenChange={setEditOpen} userInfo={userInfo ?? null} />
@@ -47,13 +48,14 @@ export default function ProfilePage() {
 
 // ─── Tabs ──────────────────────────────────────────────
 
-type ProfileTab = "works" | "ips" | "joined";
+type ProfileTab = "overview" | "works" | "ips" | "joined";
 
-function ProfileTabs() {
+function ProfileTabs({ userInfo }: { userInfo: UserInfo | null }) {
   const t = useTranslations("profile");
-  const [activeTab, setActiveTab] = useState<ProfileTab>("works");
+  const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
 
   const tabs: { key: ProfileTab; label: string }[] = [
+    { key: "overview", label: t("overview") },
     { key: "works", label: t("personalWorks") },
     { key: "ips", label: t("myIPs") },
     { key: "joined", label: t("joinedCrews") },
@@ -79,10 +81,49 @@ function ProfileTabs() {
       </div>
 
       <div className="mt-6">
+        {activeTab === "overview" && <OverviewTab userInfo={userInfo} />}
         {activeTab === "works" && <PersonalWorksTab />}
         {activeTab === "ips" && <MyIPsTab />}
         {activeTab === "joined" && <JoinedTab />}
       </div>
+    </div>
+  );
+}
+
+// ─── Overview Tab ─────────────────────────────────────
+
+function OverviewTab({ userInfo }: { userInfo: UserInfo | null }) {
+  const t = useTranslations("profile");
+
+  // Education entries — one per non-empty line in the `study` field.
+  // Stays a list-of-strings until backend gives us a structured shape;
+  // each line just renders as its own row.
+  const studyLines = (userInfo?.study ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("education")}
+        </h2>
+        {studyLines.length === 0 ? (
+          <p className="text-sm text-muted-foreground/70">{t("educationEmpty")}</p>
+        ) : (
+          <ul className="space-y-2">
+            {studyLines.map((line, i) => (
+              <li
+                key={i}
+                className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground"
+              >
+                {line}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

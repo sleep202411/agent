@@ -89,6 +89,30 @@ export const getMyPersonalWorks = (page = 1, pageSize = 10) =>
     pageSize: String(pageSize),
   });
 
+/** 人才库 详情页：某用户的个人作品集（视频） */
+export const getUserPersonalWorks = (userId: number | string, page = 1, pageSize = 10) =>
+  api.postForm<PersonalWork[]>("/vedio/query/user/personal", {
+    userId: String(userId),
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+
+/** 人才库 详情页：某用户作为创建者的项目作品 */
+export const getUserProjects = (userId: number | string, page = 1, pageSize = 10) =>
+  api.postForm<Project[]>("/project/user/projects", {
+    userId: String(userId),
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+
+/** 人才库 详情页：某用户加入的项目 */
+export const getUserJoinedProjects = (userId: number | string, page = 1, pageSize = 10) =>
+  api.postForm<Project[]>("/project/user/joined", {
+    userId: String(userId),
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+
 /** 创建个人作品 */
 export const createPersonalWork = (data: {
   title: string;

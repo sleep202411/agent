@@ -1,326 +1,172 @@
 /**
  * Creators feature data layer.
  *
- * Mirrors the IP / Crews reference implementation. Routes import only
- * from this file (or sibling _components mocks); pages never reach
- * into mocks directly.
+ * Backend currently exposes one endpoint:
+ *   POST /user/list/user/info  → list users for the talent market
  *
- * ## Backend status
+ * Response shape: `Array<{ level: LevelEntry[]; info: CreatorInfo }>`.
+ * Every field is treated as possibly null/undefined — backend rows are
+ * incomplete in practice (nickName: "", description: null, level: []).
  *
- * The creator backend isn't ready yet. Every fetcher in this file is
- * mock-backed (see `_components/creators-mock.ts`). When real endpoints
- * land, only the bodies of the fetcher functions change — hook
- * signatures, types, and cache keys stay put.
- *
- * ## Endpoint map (target — mirrors the spec at the bottom of creators-mock.ts)
- *
- *   GET  /api/creators              → searchCreators
- *   GET  /api/creators/:id          → fetchCreatorDetail
- *   GET  /api/creators/featured     → fetchFeaturedCreators
- *   GET  /api/creators/stats        → fetchCreatorStats
- *   GET  /api/community/feed        → fetchCommunityFeed
- *   GET  /api/certification/levels  → fetchCertLevels
- *   GET  /api/skills/demand         → fetchSkillDemands
- *   POST /api/creators/:id/invite   → inviteCreatorToCrew
- *   POST /api/creators/:id/contact  → contactCreator
- *   POST /api/creators/:id/like     → likeCreator
- *   POST /api/creators/:id/save     → saveCreator
- *   POST /api/community/feed/:id/like → likeFeedItem
+ * `/api/creators/:id` (detail) and the social mutations (like / save /
+ * invite / contact / community feed / cert levels / skill demand) are
+ * not yet on the roadmap, so the UI only renders fields the list payload
+ * actually carries: id, name, avatar, bio, joinedAt, level.
  */
 
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { listCreators, getCreatorBasicInfo, type CreatorRow } from "@/src/services/creator";
 import {
-  MOCK_CREATORS,
-  MOCK_FEED,
-  MOCK_STATS,
-  MOCK_HOT_SKILLS,
-  MOCK_CERT_LEVELS,
-  MOCK_SKILL_DEMANDS,
-  buildCreatorDetail,
-} from "../_components/creators-mock";
+  getUserPersonalWorks,
+  getUserProjects,
+  getUserJoinedProjects,
+  type PersonalWork,
+  type Project,
+} from "@/src/services/project";
+import { env } from "@/src/env";
 
-// Re-export shape types so pages import only from here.
-export type {
-  Creator,
-  CreatorDetail,
-  StudioHistoryEntry,
-  CreatorIPEntry,
-  PortfolioPiece,
-  CreatorReview,
-  FeedItem,
-  CertLevel,
-  SkillDemand,
-} from "../_components/creators-mock";
-export {
-  SKILL_OPTIONS,
-  LEVEL_OPTIONS,
-  SORT_OPTIONS,
-  LEVEL_COLORS,
-  AVAILABILITY_CONFIG,
-  MOCK_HOT_SKILLS,
-} from "../_components/creators-mock";
-
-import type { Creator, CreatorDetail, FeedItem } from "../_components/creators-mock";
-
-// ─── Filters ───────────────────────────────────────────
-
-export interface CreatorListFilter {
-  search?: string;
-  skill?: string;
-  level?: string;
-  availability?: string;
-  sort?: "rating" | "projects" | "recent";
+export interface CreatorLevel {
+  id: number;
+  name: string;
 }
 
-// ─── In-memory mutation state ──────────────────────────
-
-const mutationState = {
-  liked: new Set<string>(),
-  saved: new Set<string>(),
-  invited: new Set<string>(),
-  contacted: new Set<string>(),
-  feedLikes: new Map<string, number>(),
-};
-
-// ─── Mock helpers ──────────────────────────────────────
-
-const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-// ─── Mock fetchers ─────────────────────────────────────
-
-async function searchCreators(filter: CreatorListFilter = {}): Promise<Creator[]> {
-  await delay(180);
-  let items: Creator[] = [...MOCK_CREATORS];
-  if (filter.search) {
-    const q = filter.search.toLowerCase();
-    items = items.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.skills.some((s) => s.toLowerCase().includes(q)) ||
-        c.bio.toLowerCase().includes(q)
-    );
-  }
-  if (filter.skill && filter.skill !== "All Skills") {
-    items = items.filter((c) => c.skills.includes(filter.skill!));
-  }
-  if (filter.level && filter.level !== "All Levels") {
-    items = items.filter((c) => c.level === filter.level);
-  }
-  if (filter.availability) {
-    items = items.filter((c) => c.availability === filter.availability);
-  }
-  const sort = filter.sort ?? "rating";
-  items.sort((a, b) => {
-    if (sort === "rating") return b.rating - a.rating;
-    if (sort === "projects") return b.projects - a.projects;
-    return b.joinedAt.localeCompare(a.joinedAt);
-  });
-  return items;
+export interface Creator {
+  id: string;
+  name: string;
+  avatar: string;
+  bio: string;
+  joinedAt: string;
+  levels: CreatorLevel[];
 }
 
-async function fetchCreatorDetail(id: string): Promise<CreatorDetail | null> {
-  await delay(220);
-  const base = MOCK_CREATORS.find((c) => c.id === id);
-  if (!base) return null;
-  return buildCreatorDetail(base);
+function safeStr(v: unknown): string {
+  return typeof v === "string" ? v : "";
 }
 
-async function fetchFeaturedCreators(): Promise<Creator[]> {
-  await delay(160);
-  return MOCK_CREATORS.filter((c) => c.featured);
+/**
+ * Backend serves a default person-silhouette PNG for users who haven't
+ * uploaded an avatar (`<userId>/d17b1d5e-282e-47e0-bd99-9a72477adf93.png`).
+ * That image looks worse than a plain gray block, so treat it as "no
+ * avatar" and let the UI render its own empty state.
+ */
+const DEFAULT_AVATAR_FILE = "d17b1d5e-282e-47e0-bd99-9a72477adf93.png";
+
+/**
+ * User avatars live on a different OSS bucket than studio assets, so they
+ * resolve via `NEXT_PUBLIC_USER_BASE_URL` (with `OSS_BASE_URL` as fallback).
+ * Already-absolute URLs pass through unchanged. Returns "" for empty paths
+ * and for the known backend placeholder.
+ */
+function buildAvatarUrl(path: string): string {
+  if (!path) return "";
+  if (path.endsWith(DEFAULT_AVATAR_FILE)) return "";
+  if (/^(https?:|blob:|data:)/i.test(path)) return path;
+  const base = env.USER_BASE_URL || env.OSS_BASE_URL;
+  if (!base) return "";
+  const trimmed = path.startsWith("/") ? path.slice(1) : path;
+  return `${base.replace(/\/+$/, "")}/${trimmed}`;
 }
 
-async function fetchCreatorStats(): Promise<typeof MOCK_STATS> {
-  await delay(120);
-  return MOCK_STATS;
+function toCreator(row: CreatorRow | null | undefined): Creator | null {
+  if (!row || typeof row !== "object") return null;
+  const info = row.info ?? ({} as CreatorRow["info"]);
+  if (info.id === null || info.id === undefined) return null;
+
+  const id = String(info.id);
+  const name = safeStr(info.nickName).trim() || safeStr(info.name).trim() || "Unknown";
+  const avatarPath = safeStr(info.avatar);
+  const levels: CreatorLevel[] = Array.isArray(row.level)
+    ? row.level
+        .filter((l): l is NonNullable<typeof l> => !!l && typeof l.name === "string")
+        .map((l) => ({ id: Number(l.id) || 0, name: l.name }))
+    : [];
+
+  return {
+    id,
+    name,
+    avatar: buildAvatarUrl(avatarPath),
+    bio: safeStr(info.description),
+    joinedAt: safeStr(info.createTime),
+    levels,
+  };
 }
 
-async function fetchCommunityFeed(): Promise<FeedItem[]> {
-  await delay(180);
-  return MOCK_FEED.map((item) => ({
-    ...item,
-    likes: mutationState.feedLikes.get(item.id) ?? item.likes,
-  }));
+async function fetchCreators(): Promise<Creator[]> {
+  const rows = await listCreators({ page: 1, pageSize: 60 });
+  if (!Array.isArray(rows)) return [];
+  return rows.map(toCreator).filter((c): c is Creator => c !== null);
 }
-
-async function fetchCertLevels(): Promise<typeof MOCK_CERT_LEVELS> {
-  await delay(140);
-  return MOCK_CERT_LEVELS;
-}
-
-async function fetchSkillDemands(): Promise<typeof MOCK_SKILL_DEMANDS> {
-  await delay(140);
-  return MOCK_SKILL_DEMANDS;
-}
-
-// ─── Mock mutations ────────────────────────────────────
-
-async function inviteCreatorToCrew(_args: {
-  creatorId: string;
-  crewId: string;
-  role: string;
-  message: string;
-}): Promise<void> {
-  await delay(280);
-  mutationState.invited.add(_args.creatorId);
-}
-
-async function contactCreator(_args: { creatorId: string; message: string }): Promise<void> {
-  await delay(260);
-  mutationState.contacted.add(_args.creatorId);
-}
-
-async function likeCreator(_args: { creatorId: string }): Promise<{ liked: boolean }> {
-  await delay(140);
-  if (mutationState.liked.has(_args.creatorId)) {
-    mutationState.liked.delete(_args.creatorId);
-    return { liked: false };
-  }
-  mutationState.liked.add(_args.creatorId);
-  return { liked: true };
-}
-
-async function saveCreator(_args: { creatorId: string }): Promise<{ saved: boolean }> {
-  await delay(140);
-  if (mutationState.saved.has(_args.creatorId)) {
-    mutationState.saved.delete(_args.creatorId);
-    return { saved: false };
-  }
-  mutationState.saved.add(_args.creatorId);
-  return { saved: true };
-}
-
-async function likeFeedItem(_args: { feedId: string }): Promise<void> {
-  await delay(120);
-  const cur = mutationState.feedLikes.get(_args.feedId) ?? 0;
-  mutationState.feedLikes.set(_args.feedId, cur + 1);
-}
-
-// ─── Query keys ────────────────────────────────────────
 
 export const creatorKeys = {
   all: ["creator"] as const,
-  list: (filter: CreatorListFilter) => ["creator", "list", filter] as const,
+  list: () => ["creator", "list"] as const,
   detail: (id: string) => ["creator", "detail", id] as const,
-  featured: ["creator", "featured"] as const,
-  stats: ["creator", "stats"] as const,
-  feed: ["creator", "feed"] as const,
-  certLevels: ["creator", "certLevels"] as const,
-  skillDemands: ["creator", "skillDemands"] as const,
-  liked: (id: string) => ["creator", "liked", id] as const,
-  saved: (id: string) => ["creator", "saved", id] as const,
 };
 
-// ─── Hooks ─────────────────────────────────────────────
-
-export function useCreators(filter: CreatorListFilter = {}) {
+export function useCreators() {
   return useQuery({
-    queryKey: creatorKeys.list(filter),
-    queryFn: () => searchCreators(filter),
+    queryKey: creatorKeys.list(),
+    queryFn: fetchCreators,
   });
 }
 
+/**
+ * Resolve a creator by id. Tries the list cache first (the Talent Market
+ * grid usually populated it), then falls back to
+ * `POST /user/query/user/info { userId }` so direct URL hits and
+ * page reloads still work.
+ */
 export function useCreatorDetail(id: string) {
-  return useQuery({
-    queryKey: creatorKeys.detail(id),
-    queryFn: () => fetchCreatorDetail(id),
-    enabled: !!id,
-  });
-}
-
-export function useFeaturedCreators() {
-  return useQuery({
-    queryKey: creatorKeys.featured,
-    queryFn: fetchFeaturedCreators,
-    staleTime: 1000 * 60 * 10,
-  });
-}
-
-export function useCreatorStats() {
-  return useQuery({
-    queryKey: creatorKeys.stats,
-    queryFn: fetchCreatorStats,
-    staleTime: 1000 * 60 * 10,
-  });
-}
-
-export function useCommunityFeed() {
-  return useQuery({
-    queryKey: creatorKeys.feed,
-    queryFn: fetchCommunityFeed,
-  });
-}
-
-export function useCertLevels() {
-  return useQuery({
-    queryKey: creatorKeys.certLevels,
-    queryFn: fetchCertLevels,
-    staleTime: 1000 * 60 * 30,
-  });
-}
-
-export function useSkillDemands() {
-  return useQuery({
-    queryKey: creatorKeys.skillDemands,
-    queryFn: fetchSkillDemands,
-    staleTime: 1000 * 60 * 10,
-  });
-}
-
-export function useIsLiked(id: string) {
-  return useQuery({
-    queryKey: creatorKeys.liked(id),
-    queryFn: async () => mutationState.liked.has(id),
-    enabled: !!id,
-  });
-}
-
-export function useIsSaved(id: string) {
-  return useQuery({
-    queryKey: creatorKeys.saved(id),
-    queryFn: async () => mutationState.saved.has(id),
-    enabled: !!id,
-  });
-}
-
-// ─── Mutations ─────────────────────────────────────────
-
-export function useInviteCreatorToCrew() {
-  return useMutation({ mutationFn: inviteCreatorToCrew });
-}
-
-export function useContactCreator() {
-  return useMutation({ mutationFn: contactCreator });
-}
-
-export function useLikeCreator(creatorId: string) {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => likeCreator({ creatorId }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: creatorKeys.liked(creatorId) });
+  return useQuery<Creator | null>({
+    queryKey: ["creator", "detail", id],
+    queryFn: async () => {
+      const cached = qc.getQueryData<Creator[]>(creatorKeys.list());
+      const fromCache = Array.isArray(cached) ? cached.find((c) => c.id === id) : undefined;
+      if (fromCache) return fromCache;
+      if (!id) return null;
+      const row = await getCreatorBasicInfo(id);
+      return toCreator(row);
     },
+    enabled: !!id,
+    staleTime: 30_000,
   });
 }
 
-export function useSaveCreator(creatorId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => saveCreator({ creatorId }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: creatorKeys.saved(creatorId) });
-    },
+/**
+ * Personal works for a given creator. Backend endpoint:
+ *   POST /vedio/query/user/personal  { userId, page, pageSize }
+ */
+export function useCreatorPersonalWorks(creatorId: string) {
+  return useQuery<PersonalWork[]>({
+    queryKey: ["creator", "personal-works", creatorId],
+    queryFn: () => getUserPersonalWorks(creatorId, 1, 50),
+    enabled: !!creatorId,
   });
 }
 
-export function useLikeFeedItem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: likeFeedItem,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: creatorKeys.feed });
-    },
+/**
+ * Projects (IPs) created by a given creator. Backend endpoint:
+ *   POST /project/user/projects  { userId, page, pageSize }
+ */
+export function useCreatorProjects(creatorId: string) {
+  return useQuery<Project[]>({
+    queryKey: ["creator", "projects", creatorId],
+    queryFn: () => getUserProjects(creatorId, 1, 50),
+    enabled: !!creatorId,
+  });
+}
+
+/**
+ * Projects (IPs) the creator has joined as a contributor. Backend endpoint:
+ *   POST /project/user/joined  { userId, page, pageSize }
+ */
+export function useCreatorJoinedProjects(creatorId: string) {
+  return useQuery<Project[]>({
+    queryKey: ["creator", "joined", creatorId],
+    queryFn: () => getUserJoinedProjects(creatorId, 1, 50),
+    enabled: !!creatorId,
   });
 }

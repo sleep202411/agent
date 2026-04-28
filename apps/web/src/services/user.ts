@@ -26,7 +26,12 @@ export interface UserInfo {
   expireTime?: string;
   createTime?: string;
   coverImage?: string;
+  /** Whether the user is open to job offers / freelance work. */
   availableForWork?: boolean;
+  /** Education history. Free-form multi-line text — one entry per line.
+   *  If the backend switches to structured JSON later, parse it inside
+   *  the overview tab; the wire contract here stays a string. */
+  study?: string;
 }
 
 export interface CreditInfo {
@@ -67,6 +72,10 @@ export const updateUserInfo = (data: {
   contact?: string;
   description?: string;
   other?: string;
+  /** Education history (free-form multi-line text). */
+  study?: string;
+  /** Job-seeking toggle. true = open / show in talent market filters. */
+  availableForWork?: boolean;
 }) => api.post("/user/update/user/info", { data });
 
 export const uploadAvatar = (file: File) => api.upload<string>("/user/uploadAratar", file);
