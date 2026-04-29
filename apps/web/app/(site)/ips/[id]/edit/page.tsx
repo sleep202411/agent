@@ -31,14 +31,79 @@ import {
   useUpdateEpisode,
   useDeleteEpisode,
   useReorderEpisode,
+  useProjectMembers,
+  useAddMember,
+  useRemoveMember,
+  useFAQs,
+  useCreateFAQ,
+  useUpdateFAQ,
+  useDeleteFAQ,
   ipKeys,
   type Episode,
+  type FAQ,
 } from "@/app/(site)/ips/_hooks/use-ip";
 import { useQueryClient } from "@tanstack/react-query";
 import { SUGGESTED_TAGS, PRESET_REWARDS, type IPRewardTier } from "@/app/(site)/ips/_data/ip";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 import { EpisodeDialog, type EpisodeDraft } from "./episode-dialog";
 import { SortableEpisodeRow } from "./episode-row";
+
+// ─── FAQ row ───────────────────────────────────────
+// Per-FAQ card with local question/answer state; flushes via the parent
+// `onSave` callback on input blur (only when the value actually changed).
+function FAQCard({
+  faq,
+  onSave,
+  onDelete,
+  labels,
+}: {
+  faq: FAQ;
+  onSave: (patch: Partial<Pick<FAQ, "question" | "answer">>) => void;
+  onDelete: () => void;
+  labels: {
+    question: string;
+    questionPlaceholder: string;
+    answer: string;
+    answerPlaceholder: string;
+    del: string;
+  };
+}) {
+  const [question, setQuestion] = useState(faq.question);
+  const [answer, setAnswer] = useState(faq.answer);
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-foreground">{labels.question}</label>
+        <Input
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onBlur={() => {
+            if (question !== faq.question) onSave({ question });
+          }}
+          placeholder={labels.questionPlaceholder}
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-foreground">{labels.answer}</label>
+        <Textarea
+          value={answer}
+          onChange={(e) => setAnswer(e.target.value)}
+          onBlur={() => {
+            if (answer !== faq.answer) onSave({ answer });
+          }}
+          placeholder={labels.answerPlaceholder}
+          rows={3}
+        />
+      </div>
+      <div className="flex justify-end">
+        <Button variant="outline" color="destructive" size="sm" onClick={onDelete}>
+          <IconTrash className="size-3.5" />
+          {labels.del}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 // ─── Episode → dialog adapter ──────────────────────
 // Episode (server shape) carries id / sort / createdAt / projectId; the
@@ -78,8 +143,6 @@ interface EditForm {
   tags: string[];
   // Future tabs
   promoVideo: string | null;
-  jobs: { role: string; description: string; profitRatio: string; earnings: string }[];
-  faqs: { question: string; answer: string }[];
   // Keep for UI compatibility
   story: string;
   whyThisIP: string;
@@ -106,8 +169,6 @@ const EMPTY_FORM: EditForm = {
   contact: "",
   tags: [],
   promoVideo: null,
-  jobs: [],
-  faqs: [],
   story: "",
   whyThisIP: "",
   fundingMode: "investment",
@@ -152,6 +213,7 @@ function Section({
 
 export default function IPEditPage({ id }: { id: string }) {
   const t = useTranslations("ipEdit");
+  const tc = useTranslations("common");
   const [activeTab, setActiveTab] = useState("basic");
   const [form, setForm] = useState<EditForm>(EMPTY_FORM);
   const [saved, setSaved] = useState(false);
@@ -175,6 +237,19 @@ export default function IPEditPage({ id }: { id: string }) {
   const { mutate: updateEpisodeMut } = useUpdateEpisode();
   const { mutate: deleteEpisodeMut } = useDeleteEpisode();
   const { mutate: reorderEpisodeMut } = useReorderEpisode();
+
+  // Team CRUD — list shipped, add/remove via dialog + per-row delete.
+  const { data: members = [] } = useProjectMembers(id);
+  const { mutate: addMemberMut } = useAddMember();
+  const { mutate: removeMemberMut } = useRemoveMember();
+
+  // FAQ CRUD — `useFAQs` is the source of truth; one local draft slot
+  // for new entries that haven't been saved yet.
+  const { data: faqs = [] } = useFAQs(id);
+  const { mutate: createFAQMut } = useCreateFAQ();
+  const { mutate: updateFAQMut } = useUpdateFAQ();
+  const { mutate: deleteFAQMut } = useDeleteFAQ();
+  const [faqDraft, setFaqDraft] = useState<{ question: string; answer: string } | null>(null);
 
   // Populate form when project data loads
   useEffect(() => {
@@ -347,19 +422,31 @@ export default function IPEditPage({ id }: { id: string }) {
     });
   }, [id, reorderEpisodeMut]);
 
-  // Job helpers
-  const addJob = () =>
-    update({
-      jobs: [...form.jobs, { role: "", description: "", profitRatio: "", earnings: "" }],
+  // FAQ helpers — `faqDraft` holds the single in-flight new entry; a
+  // saved FAQ shows up in `faqs` after createFAQMut succeeds and the
+  // draft slot is reset.
+  const saveFAQDraft = () => {
+    if (!faqDraft) return;
+    if (!faqDraft.question.trim() || !faqDraft.answer.trim()) {
+      toast.warning(t("faqRequireBoth"));
+      return;
+    }
+    createFAQMut(
+      {
+        projectId: Number(id),
+        question: faqDraft.question.trim(),
+        answer: faqDraft.answer.trim(),
+      },
+      { onSuccess: () => setFaqDraft(null) }
+    );
+  };
+  const updateFAQField = (faq: FAQ, patch: Partial<Pick<FAQ, "question" | "answer">>) => {
+    if (!patch.question?.trim() && !patch.answer?.trim()) return;
+    updateFAQMut({
+      id: faq.id,
+      projectId: faq.projectId,
+      ...patch,
     });
-  const removeJob = (i: number) => update({ jobs: form.jobs.filter((_, j) => j !== i) });
-  const updateJob = (
-    i: number,
-    patch: Partial<{ role: string; description: string; profitRatio: string; earnings: string }>
-  ) => {
-    const jobs = [...form.jobs];
-    jobs[i] = { ...jobs[i], ...patch };
-    update({ jobs });
   };
 
   // Reward helpers
@@ -713,62 +800,37 @@ export default function IPEditPage({ id }: { id: string }) {
 
               {/* Team Members */}
               <Section title={t("sectionMembers")} description={t("sectionMembersDesc")}>
-                {form.jobs.length === 0 ? (
+                {members.length === 0 ? (
                   <div className="rounded-xl border border-border bg-card p-6 text-center">
                     <p className="text-sm text-muted-foreground">{t("noMembers")}</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {form.jobs.map((job, i) => (
+                    {members.map((m, i) => (
                       <div
-                        key={i}
-                        className="flex items-start gap-4 rounded-xl border border-border bg-card p-4"
+                        key={m.id ?? m.userId ?? i}
+                        className="flex items-center gap-4 rounded-xl border border-border bg-card p-4"
                       >
                         <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-bold text-muted-foreground">
                           {String(i + 1).padStart(2, "0")}
                         </div>
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <Input
-                            value={job.role}
-                            onChange={(e) => updateJob(i, { role: e.target.value })}
-                            placeholder={t("rolePlaceholder")}
-                            className="h-8 text-sm font-medium"
-                          />
-                          <Textarea
-                            value={job.description}
-                            onChange={(e) => updateJob(i, { description: e.target.value })}
-                            placeholder={t("jobDescPlaceholder")}
-                            rows={2}
-                            className="min-h-14 text-sm"
-                          />
-                          <div className="flex gap-3">
-                            <div className="relative flex-1">
-                              <Input
-                                type="number"
-                                value={job.profitRatio}
-                                onChange={(e) => updateJob(i, { profitRatio: e.target.value })}
-                                placeholder={t("profitRatio")}
-                                className="h-8 pr-8 text-sm"
-                              />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                                %
-                              </span>
-                            </div>
-                            <Input
-                              type="number"
-                              value={job.earnings}
-                              onChange={(e) => updateJob(i, { earnings: e.target.value })}
-                              placeholder={t("estimatedEarnings")}
-                              className="h-8 flex-1 text-sm"
-                            />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium text-foreground">
+                            {m.nickName || m.userName || t("unnamed")}
                           </div>
+                          {m.roleName && (
+                            <div className="mt-0.5 text-xs text-muted-foreground">{m.roleName}</div>
+                          )}
                         </div>
                         <Button
                           variant="ghost"
                           color="muted"
                           size="icon-xs"
-                          onClick={() => removeJob(i)}
-                          className="mt-1 hover:text-destructive"
+                          onClick={() => {
+                            if (m.userId == null) return;
+                            removeMemberMut({ projectId: Number(id), userId: Number(m.userId) });
+                          }}
+                          className="hover:text-destructive"
                         >
                           <IconTrash className="size-4" />
                         </Button>
@@ -791,10 +853,20 @@ export default function IPEditPage({ id }: { id: string }) {
                 open={addMemberOpen}
                 onOpenChange={setAddMemberOpen}
                 onSubmit={(member: NewMember) => {
-                  addJob();
-                  const idx = form.jobs.length;
-                  updateJob(idx, { role: member.name, description: member.email });
-                  toast.success(t("memberAdded"));
+                  addMemberMut(
+                    {
+                      projectId: Number(id),
+                      email: member.email,
+                      name: member.name,
+                    },
+                    {
+                      onSuccess: () => {
+                        toast.success(t("memberAdded"));
+                        setAddMemberOpen(false);
+                      },
+                      onError: () => toast.error(t("addMemberFailed")),
+                    }
+                  );
                 }}
               />
             </>
@@ -803,67 +875,78 @@ export default function IPEditPage({ id }: { id: string }) {
           {/* ── FAQ ── */}
           {activeTab === "faq" && (
             <Section title={t("sectionFAQ")} description={t("sectionFAQDesc")}>
-              {(form.faqs ?? []).length > 0 && (
+              {/* Persisted FAQs — auto-save on input blur via updateFAQMut. */}
+              {faqs.length > 0 && (
                 <div className="space-y-4">
-                  {(form.faqs ?? []).map((faq, i) => (
-                    <div key={i} className="space-y-3 rounded-xl border border-border bg-card p-4">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-foreground">
-                          {t("faqQuestion")}
-                        </label>
-                        <Input
-                          value={faq.question}
-                          onChange={(e) => {
-                            const faqs = [...form.faqs];
-                            faqs[i] = { ...faqs[i], question: e.target.value };
-                            update({ faqs });
-                          }}
-                          placeholder={t("faqQuestionPlaceholder")}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-foreground">
-                          {t("faqAnswer")}
-                        </label>
-                        <Textarea
-                          value={faq.answer}
-                          onChange={(e) => {
-                            const faqs = [...form.faqs];
-                            faqs[i] = { ...faqs[i], answer: e.target.value };
-                            update({ faqs });
-                          }}
-                          placeholder={t("faqAnswerPlaceholder")}
-                          rows={3}
-                        />
-                      </div>
-                      <div className="flex justify-end">
-                        <Button
-                          variant="outline"
-                          color="destructive"
-                          size="sm"
-                          onClick={() =>
-                            update({ faqs: (form.faqs ?? []).filter((_, j) => j !== i) })
-                          }
-                        >
-                          <IconTrash className="size-3.5" />
-                          {t("faqDelete")}
-                        </Button>
-                      </div>
-                    </div>
+                  {faqs.map((faq) => (
+                    <FAQCard
+                      key={faq.id}
+                      faq={faq}
+                      onSave={(patch) => updateFAQField(faq, patch)}
+                      onDelete={() => deleteFAQMut({ id: faq.id, projectId: faq.projectId })}
+                      labels={{
+                        question: t("faqQuestion"),
+                        questionPlaceholder: t("faqQuestionPlaceholder"),
+                        answer: t("faqAnswer"),
+                        answerPlaceholder: t("faqAnswerPlaceholder"),
+                        del: t("faqDelete"),
+                      }}
+                    />
                   ))}
                 </div>
               )}
-              <Button
-                variant="outline"
-                color="muted"
-                className="w-full"
-                onClick={() =>
-                  update({ faqs: [...(form.faqs ?? []), { question: "", answer: "" }] })
-                }
-              >
-                <IconPlus className="size-4" />
-                {t("faqAdd")}
-              </Button>
+
+              {/* Local draft for the new FAQ — submit on Save. */}
+              {faqDraft && (
+                <div className="space-y-3 rounded-xl border border-dashed border-primary/40 bg-card p-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-foreground">
+                      {t("faqQuestion")}
+                    </label>
+                    <Input
+                      value={faqDraft.question}
+                      onChange={(e) => setFaqDraft({ ...faqDraft, question: e.target.value })}
+                      placeholder={t("faqQuestionPlaceholder")}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-foreground">
+                      {t("faqAnswer")}
+                    </label>
+                    <Textarea
+                      value={faqDraft.answer}
+                      onChange={(e) => setFaqDraft({ ...faqDraft, answer: e.target.value })}
+                      placeholder={t("faqAnswerPlaceholder")}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      color="muted"
+                      size="sm"
+                      onClick={() => setFaqDraft(null)}
+                    >
+                      {tc("cancel")}
+                    </Button>
+                    <Button size="sm" onClick={saveFAQDraft}>
+                      {tc("save")}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {!faqDraft && (
+                <Button
+                  variant="outline"
+                  color="muted"
+                  className="w-full"
+                  onClick={() => setFaqDraft({ question: "", answer: "" })}
+                >
+                  <IconPlus className="size-4" />
+                  {t("faqAdd")}
+                </Button>
+              )}
             </Section>
           )}
 

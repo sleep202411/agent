@@ -30,6 +30,7 @@ import {
   useProjectMembers,
   useProjectJobs,
   useProjectEpisodes,
+  useFAQs,
   type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
 
@@ -55,26 +56,13 @@ export default function IPDetailPage({ id }: { id: string }) {
   const { data: videoLink } = useProjectVideoLink(id);
   const { data: members } = useProjectMembers(id);
   useProjectJobs(id); // prefetch — surface in updates / hiring later
-  const { data: realEpisodes = [] } = useProjectEpisodes(id);
+  const { data: episodes = [] } = useProjectEpisodes(id);
+  const { data: faqs = [] } = useFAQs(id);
 
-  // Fully populated mock content for fields the backend doesn't expose yet.
-  // Each consumer below prefers real data and falls back to mock per-field
-  // so backend fields can land incrementally without breaking the demo.
+  // Mock content for fields the backend doesn't expose yet (story copy,
+  // hero key art, weekly updates). Per-field fallback so real values
+  // override mock without flicker once each backend field lands.
   const mock = mockIPDetailContent(id);
-  const episodes: Episode[] =
-    realEpisodes.length > 0
-      ? realEpisodes
-      : mock.episodes.map((e) => ({
-          id: e.id,
-          projectId: id,
-          title: e.title,
-          description: e.description,
-          videoUrl: e.videoUrl,
-          cover: e.cover,
-          duration: e.duration,
-          type: "linear",
-          sort: e.sort,
-        }));
 
   // Cinema hero pin: once the hero scrolls out of view, surface a compact
   // sticky action bar so the primary CTA is always reachable.
@@ -135,7 +123,7 @@ export default function IPDetailPage({ id }: { id: string }) {
             rating: 0,
           })),
     updates: mock.updates,
-    faqs: mock.faqs,
+    faqs: faqs.length > 0 ? faqs.map((f) => ({ q: f.question, a: f.answer })) : mock.faqs,
   };
 
   if (isLoading) {

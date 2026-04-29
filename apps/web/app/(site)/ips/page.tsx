@@ -10,13 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
 import { IPCinematicHero } from "@/app/(site)/ips/_components/ip-cinematic-hero";
 import { IPPlazaCard } from "@/app/(site)/ips/_components/ip-plaza-card";
-import {
-  useIPProjects,
-  useIPCategories,
-  useIPTags,
-  type IPProject,
-  type CategoryMap,
-} from "./_hooks/use-ip";
+import { useIPList, useIPTypes, useIPTagList, type IPProject } from "./_hooks/use-ip";
 
 // ─── Filter panel (shared between sidebar + sheet) ──
 
@@ -142,42 +136,44 @@ export default function IPPlazaPage() {
     return () => observer.disconnect();
   }, []);
 
-  // Server-side filtering: backend filters by `key` + `TypeId` + `tag`
-  // (legacy /vedio/project/search contract).
-  const { data: projectsData, isLoading: loading } = useIPProjects({
+  // Server-side filtering: backend filters by `key` + `typeId` + `tag`
+  // (new `/project/list` contract).
+  const { data: listData, isLoading: loading } = useIPList({
     page: 1,
     pageSize: 50,
     key: search,
     typeId: selectedTypeId,
     tag: selectedTagId,
   });
-  const { data: categoriesData } = useIPCategories();
-  const { data: tagsData } = useIPTags();
-  const projects = useMemo<IPProject[]>(() => projectsData?.list ?? [], [projectsData]);
-  const categories: CategoryMap = categoriesData ?? {};
+  const { data: typesData = [] } = useIPTypes();
+  const { data: tagsData = [] } = useIPTagList();
+  const projects = useMemo<IPProject[]>(() => listData?.list ?? [], [listData]);
+  // Card still expects the legacy `{ "<id>": "<name>" }` lookup map for
+  // the category badge under the title; build it from the flat list.
+  const categoriesMap = useMemo(
+    () => Object.fromEntries(typesData.map((tp) => [String(tp.id), tp.name])),
+    [typesData]
+  );
 
-  // Categories: "All" + each entry from /vedio/type/list
+  // Categories: "All" + each entry from `/vedio/project/type/list`.
   const categoryOptions = useMemo(
     () => [
       { id: "", name: t("allCategories") },
-      ...Object.entries(categories).map(([id, name]) => ({ id, name })),
+      ...typesData.map((tp) => ({ id: String(tp.id), name: tp.name })),
     ],
-    [categories, t]
+    [typesData, t]
   );
 
-  // Tags: "All" + tags scoped by selected category.
-  // tagsData.map is keyed by category NAME (legacy quirk); when no
-  // category is picked we flatten tagsData.all (deduped by id).
+  // Tags: "All" + tags scoped by selected category. The new contract gives
+  // each tag a `typeId` foreign key, so scoping is a flat filter — no more
+  // "look up category name to index `map`" gymnastics from the legacy shape.
   const tagOptions = useMemo(() => {
     const allOption = { id: "", name: t("allTags") };
-    if (!tagsData) return [allOption];
-    if (selectedTypeId) {
-      const categoryName = categories[selectedTypeId];
-      const scoped = (categoryName && tagsData.map?.[categoryName]) || {};
-      return [allOption, ...Object.entries(scoped).map(([id, name]) => ({ id, name }))];
-    }
-    return [allOption, ...Object.entries(tagsData.all ?? {}).map(([id, name]) => ({ id, name }))];
-  }, [tagsData, selectedTypeId, categories, t]);
+    const filtered = selectedTypeId
+      ? tagsData.filter((tg) => String(tg.typeId) === selectedTypeId)
+      : tagsData;
+    return [allOption, ...filtered.map((tg) => ({ id: String(tg.id), name: tg.name }))];
+  }, [tagsData, selectedTypeId, t]);
 
   // Selecting a category resets the tag (matches legacy: tag pool changes).
   const handleTypeChange = (typeId: string) => {
@@ -256,7 +252,7 @@ export default function IPPlazaPage() {
             ) : projects.length > 0 ? (
               <div className="columns-2 gap-6 sm:columns-3 lg:columns-3 xl:columns-4">
                 {projects.map((p) => (
-                  <IPPlazaCard key={p.id} project={p} categories={categories} />
+                  <IPPlazaCard key={p.id} project={p} categories={categoriesMap} />
                 ))}
               </div>
             ) : (
