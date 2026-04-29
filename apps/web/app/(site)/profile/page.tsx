@@ -14,11 +14,8 @@ import {
 } from "@/src/hooks/use-my-projects";
 import { updateProject, type Project } from "@/src/services/project";
 import { env } from "@/src/env";
-import { useKycAuthStatus } from "@/src/hooks/use-kyc";
-import { KycGateDialog } from "@/app/_components/kyc-gate-dialog";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
-import { PublishWorkDialog } from "./publish-work-dialog";
 
 export default function ProfilePage() {
   const t = useTranslations("profile");
@@ -164,16 +161,16 @@ function MyIPsTab() {
 function PersonalWorksTab() {
   const t = useTranslations("profile");
   const { data: works, isLoading } = useMyPersonalWorks();
-  const { data: kycStatus } = useKycAuthStatus();
-  const [publishOpen, setPublishOpen] = useState(false);
-  const [kycGateOpen, setKycGateOpen] = useState(false);
 
+  // Publish flow defers to legacy fizzdragon-web's full publish wizard
+  // (`pages/publicVideo/publicVideoPC`) — covers type / project / tags /
+  // banner / visibility / KYC. The Next.js app is iframe-embedded in
+  // legacy fizzdragon-web, so resolve against the configured parent
+  // origin and navigate the top frame.
   const requestPublish = () => {
-    if (kycStatus?.needAuth) {
-      setKycGateOpen(true);
-      return;
-    }
-    setPublishOpen(true);
+    if (typeof window === "undefined") return;
+    const target = `${env.PARENT_ORIGIN}/pages/publicVideo/publicVideoPC`;
+    (window.top ?? window).location.href = target;
   };
 
   if (isLoading) {
@@ -185,71 +182,67 @@ function PersonalWorksTab() {
   }
 
   return (
-    <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-        {/* Publish card */}
-        <button
-          type="button"
-          onClick={requestPublish}
-          className="overflow-hidden rounded-xl border border-dashed border-border bg-card text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-        >
-          <div className="flex aspect-video items-center justify-center bg-muted/30">
-            <div className="flex flex-col items-center gap-2">
-              <IconPlus className="size-8" />
-              <span className="text-sm font-medium">{t("publishWork")}</span>
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+      {/* Publish card */}
+      <button
+        type="button"
+        onClick={requestPublish}
+        className="overflow-hidden rounded-xl border border-dashed border-border bg-card text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+      >
+        <div className="flex aspect-video items-center justify-center bg-muted/30">
+          <div className="flex flex-col items-center gap-2">
+            <IconPlus className="size-8" />
+            <span className="text-sm font-medium">{t("publishWork")}</span>
+          </div>
+        </div>
+        <div className="p-3">
+          <div className="text-sm font-medium">&nbsp;</div>
+        </div>
+      </button>
+
+      {(works ?? []).map((work) => {
+        const title = work.title || work.introduction || "";
+        const videoPath = work.videoLink || "";
+        const bannerPath = work.videoBanner || "";
+        const coverUrl = bannerPath
+          ? bannerPath.startsWith("http")
+            ? bannerPath
+            : `${env.BANNER_BASE_URL}/${bannerPath.replace(/^\/+/, "")}`
+          : videoPath
+            ? videoPath.startsWith("http")
+              ? `${videoPath}?x-oss-process=video/snapshot,t_0,m_fast`
+              : `${env.OSS_BASE_URL}/${videoPath.replace(/^\/+/, "")}?x-oss-process=video/snapshot,t_0,m_fast`
+            : "";
+        const isReviewing = work.review === 0;
+
+        return (
+          <div
+            key={work.id}
+            className="group relative overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
+          >
+            {isReviewing && (
+              <div className="absolute right-2 top-2 z-10 rounded-full bg-yellow-500/80 px-2 py-0.5 text-[10px] font-medium text-white">
+                {t("reviewing")}
+              </div>
+            )}
+            <div className="aspect-video overflow-hidden bg-muted">
+              <img
+                src={coverUrl || env.DEFAULT_COVER_URL}
+                alt={title}
+                onError={(e) => {
+                  const img = e.currentTarget;
+                  if (img.src !== env.DEFAULT_COVER_URL) img.src = env.DEFAULT_COVER_URL;
+                }}
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <div className="p-3">
+              <div className="truncate text-sm font-medium">{title || t("noData")}</div>
             </div>
           </div>
-          <div className="p-3">
-            <div className="text-sm font-medium">&nbsp;</div>
-          </div>
-        </button>
-
-        {(works ?? []).map((work) => {
-          const title = work.title || work.introduction || "";
-          const videoPath = work.videoLink || "";
-          const bannerPath = work.videoBanner || "";
-          const coverUrl = bannerPath
-            ? bannerPath.startsWith("http")
-              ? bannerPath
-              : `${env.BANNER_BASE_URL}/${bannerPath.replace(/^\/+/, "")}`
-            : videoPath
-              ? videoPath.startsWith("http")
-                ? `${videoPath}?x-oss-process=video/snapshot,t_0,m_fast`
-                : `${env.OSS_BASE_URL}/${videoPath.replace(/^\/+/, "")}?x-oss-process=video/snapshot,t_0,m_fast`
-              : "";
-          const isReviewing = work.review === 0;
-
-          return (
-            <div
-              key={work.id}
-              className="group relative overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
-            >
-              {isReviewing && (
-                <div className="absolute right-2 top-2 z-10 rounded-full bg-yellow-500/80 px-2 py-0.5 text-[10px] font-medium text-white">
-                  {t("reviewing")}
-                </div>
-              )}
-              <div className="aspect-video overflow-hidden bg-muted">
-                <img
-                  src={coverUrl || env.DEFAULT_COVER_URL}
-                  alt={title}
-                  onError={(e) => {
-                    const img = e.currentTarget;
-                    if (img.src !== env.DEFAULT_COVER_URL) img.src = env.DEFAULT_COVER_URL;
-                  }}
-                  className="h-full w-full object-cover"
-                />
-              </div>
-              <div className="p-3">
-                <div className="truncate text-sm font-medium">{title || t("noData")}</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <PublishWorkDialog open={publishOpen} onOpenChange={setPublishOpen} />
-      <KycGateDialog open={kycGateOpen} onOpenChange={setKycGateOpen} />
-    </>
+        );
+      })}
+    </div>
   );
 }
 
