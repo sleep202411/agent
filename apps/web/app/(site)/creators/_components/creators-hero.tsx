@@ -46,9 +46,10 @@ export function CreatorsHero({ total }: CreatorsHeroProps) {
                 <button
                   type="button"
                   aria-label={t("groupQrTitle")}
-                  className="inline-flex size-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-emerald-300 backdrop-blur-md transition-colors hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                  className="inline-flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-medium text-emerald-300 backdrop-blur-md transition-colors hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
                 >
                   <IconBrandWechat className="size-5" />
+                  <span>{t("creatorCommunity")}</span>
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" className="w-64 gap-3 p-4">
