@@ -58,18 +58,9 @@ export function bearerHeader(): string {
 
 export const ipKeys = {
   all: ["ip"] as const,
-  projects: (filter: {
-    page: number;
-    pageSize: number;
-    key: string;
-    typeId: string;
-    tag: string;
-  }) => ["ip", "projects", filter] as const,
   list: (filter: { page: number; pageSize: number; key: string; typeId: string; tag: string }) =>
     ["ip", "list", filter] as const,
-  categories: ["ip", "categories"] as const,
   types: ["ip", "types"] as const,
-  tags: ["ip", "tags"] as const,
   tagList: ["ip", "tagList"] as const,
   detail: (id: string) => ["ip", "detail", id] as const,
   video: (id: string) => ["ip", "video", id] as const,

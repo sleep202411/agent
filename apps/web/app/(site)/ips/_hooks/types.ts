@@ -20,17 +20,8 @@ export interface IPProject {
   background: string | null;
 }
 
-/** Category map: { "1": "AIGC影视", "2": "热血动漫", ... } */
+/** `{ "<id>": "<name>" }` lookup map for the category badge under cards. */
 export type CategoryMap = Record<string, string>;
-
-export interface TagListResponse {
-  /** All tags: { "1": "AIGC影视", "11": "悬疑", ... } */
-  all: Record<string, string>;
-  /** Tags grouped by category name: { "AIGC影视": ["宫廷权谋", ...], ... } */
-  data: Record<string, string[]>;
-  /** Tag ID→name grouped by category name: { "AIGC影视": { "48": "宫廷权谋", ... }, ... } */
-  map: Record<string, Record<string, string>>;
-}
 
 export interface IPListResult {
   list: IPProject[];

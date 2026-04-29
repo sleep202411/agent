@@ -22,7 +22,6 @@ export type {
   IPType,
   IPTag,
   CategoryMap,
-  TagListResponse,
   Episode,
   VideoMeta,
   CreateEpisodeInput,
@@ -35,14 +34,7 @@ export type {
   ProjectJob,
 } from "./types";
 
-export {
-  useIPProjects,
-  useIPList,
-  useIPCategories,
-  useIPTags,
-  useIPTypes,
-  useIPTagList,
-} from "./use-ip-list";
+export { useIPList, useIPTypes, useIPTagList } from "./use-ip-list";
 
 export {
   useProjectDetail,

@@ -1,7 +1,7 @@
 /**
  * Episode CRUD + list (P0).
  *
- *   - `useProjectEpisodes`   — list (still stub until backend ships)
+ *   - `useProjectEpisodes`   — GET /vedio/project/episode/list
  *   - `useCreateEpisode`     — POST /project/episode/create
  *   - `useUpdateEpisode`     — POST /vedio/project/episode/update
  *   - `useDeleteEpisode`     — POST /project/episode/delete
@@ -16,13 +16,24 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { acceptLanguage, bearerHeader, ipKeys } from "./shared";
 import type { Episode, CreateEpisodeInput, UpdateEpisodeInput } from "./types";
 
-// TODO: backend endpoint not implemented yet — see ips/README.md.
-// When `GET /vedio/project/episode/list?projectId=xxx` lands, swap the
-// queryFn to a real fetcher and remove the empty-array stub.
+async function fetchEpisodes(projectId: string): Promise<Episode[]> {
+  const res = await fetch(
+    `/vedio/project/episode/list?projectId=${encodeURIComponent(projectId)}`,
+    {
+      credentials: "include",
+      headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
+    }
+  );
+  if (!res.ok) return [];
+  const json = (await res.json()) as { code: number; data: { list: Episode[] } | Episode[] };
+  if (Array.isArray(json.data)) return json.data;
+  return json.data?.list ?? [];
+}
+
 export function useProjectEpisodes(id: string) {
   return useQuery<Episode[]>({
     queryKey: ipKeys.episodes(id),
-    queryFn: async () => [],
+    queryFn: () => fetchEpisodes(id),
     enabled: !!id,
     staleTime: 1000 * 60,
   });

@@ -43,7 +43,7 @@ import {
   type FAQ,
 } from "@/app/(site)/ips/_hooks/use-ip";
 import { useQueryClient } from "@tanstack/react-query";
-import { SUGGESTED_TAGS, PRESET_REWARDS, type IPRewardTier } from "@/app/(site)/ips/_data/ip";
+import { SUGGESTED_TAGS } from "@/app/(site)/ips/_data/ip";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 import { EpisodeDialog, type EpisodeDraft } from "./episode-dialog";
 import { SortableEpisodeRow } from "./episode-row";
@@ -143,21 +143,12 @@ interface EditForm {
   tags: string[];
   // Future tabs
   promoVideo: string | null;
-  // Keep for UI compatibility
+  // Story tab — long-text fields not yet persisted server-side; kept in
+  // form state until backend extends `/project/update` to accept them.
   story: string;
   whyThisIP: string;
-  fundingMode: "investment" | "presale";
-  valuation: string;
-  sharesOffered: string;
-  totalShares: string;
-  deadline: string;
-  presalePrice: number;
-  fullPrice: number;
-  presaleTarget: number;
-  presaleDeadline: string;
-  rewards: IPRewardTier[];
+  // Trailer tab — local preview URL (resolved from project.bannerLink).
   coverImage: string | null;
-  projectType: string;
 }
 
 const EMPTY_FORM: EditForm = {
@@ -171,18 +162,7 @@ const EMPTY_FORM: EditForm = {
   promoVideo: null,
   story: "",
   whyThisIP: "",
-  fundingMode: "investment",
-  valuation: "",
-  sharesOffered: "",
-  totalShares: "",
-  deadline: "",
-  presalePrice: 0,
-  fullPrice: 0,
-  presaleTarget: 0,
-  presaleDeadline: "",
-  rewards: [],
   coverImage: null,
-  projectType: "",
 };
 
 // ─── Two-column section layout ──────────────────────
@@ -277,7 +257,6 @@ export default function IPEditPage({ id }: { id: string }) {
           ? project.bannerLink
           : `${env.BANNER_BASE_URL}/${project.bannerLink}`
         : null,
-      projectType: String(project.typeId ?? ""),
     }));
   }, [project]);
 
@@ -448,13 +427,6 @@ export default function IPEditPage({ id }: { id: string }) {
       ...patch,
     });
   };
-
-  // Reward helpers
-  const addReward = (r: IPRewardTier) => {
-    if (!form.rewards.some((rr) => rr.id === r.id)) update({ rewards: [...form.rewards, r] });
-  };
-  const removeReward = (rid: string) =>
-    update({ rewards: form.rewards.filter((r) => r.id !== rid) });
 
   return (
     <div className="flex flex-col bg-background">
@@ -946,203 +918,6 @@ export default function IPEditPage({ id }: { id: string }) {
                   <IconPlus className="size-4" />
                   {t("faqAdd")}
                 </Button>
-              )}
-            </Section>
-          )}
-
-          {/* ── Funding ── */}
-          {activeTab === "funding" && (
-            <>
-              <Section title={t("sectionFundingMode")} description={t("sectionFundingModeDesc")}>
-                <div className="flex gap-3">
-                  {(["investment", "presale"] as const).map((mode) => (
-                    <Button
-                      key={mode}
-                      variant={form.fundingMode === mode ? "soft" : "outline"}
-                      color={form.fundingMode === mode ? "primary" : "muted"}
-                      className="flex-1 py-3"
-                      onClick={() => update({ fundingMode: mode })}
-                    >
-                      {t(`mode_${mode}`)}
-                    </Button>
-                  ))}
-                </div>
-              </Section>
-
-              {form.fundingMode === "investment" ? (
-                <>
-                  <Section title={t("sectionValuation")} description={t("sectionValuationDesc")}>
-                    <Input
-                      type="number"
-                      value={form.valuation}
-                      onChange={(e) => update({ valuation: e.target.value })}
-                      placeholder="0"
-                      className="h-10"
-                    />
-                  </Section>
-                  <Section title={t("sectionShares")} description={t("sectionSharesDesc")}>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          {t("sharesOffered")}
-                        </label>
-                        <div className="relative">
-                          <Input
-                            type="number"
-                            value={form.sharesOffered}
-                            onChange={(e) => update({ sharesOffered: e.target.value })}
-                            className="h-9 pr-8"
-                          />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                            %
-                          </span>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          {t("totalShares")}
-                        </label>
-                        <Input
-                          type="number"
-                          value={form.totalShares}
-                          onChange={(e) => update({ totalShares: e.target.value })}
-                          className="h-9"
-                        />
-                      </div>
-                    </div>
-                  </Section>
-                  <Section title={t("sectionDeadline")} description={t("sectionDeadlineDesc")}>
-                    <Input
-                      type="date"
-                      value={form.deadline}
-                      onChange={(e) => update({ deadline: e.target.value })}
-                      className="h-10"
-                    />
-                  </Section>
-                </>
-              ) : (
-                <>
-                  <Section
-                    title={t("sectionPresalePrice")}
-                    description={t("sectionPresalePriceDesc")}
-                  >
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          {t("presalePrice")}
-                        </label>
-                        <Input
-                          type="number"
-                          value={form.presalePrice}
-                          onChange={(e) => update({ presalePrice: Number(e.target.value) || 0 })}
-                          className="h-9"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          {t("fullPrice")}
-                        </label>
-                        <Input
-                          type="number"
-                          value={form.fullPrice}
-                          onChange={(e) => update({ fullPrice: Number(e.target.value) || 0 })}
-                          className="h-9"
-                        />
-                      </div>
-                    </div>
-                  </Section>
-                  <Section
-                    title={t("sectionPresaleTarget")}
-                    description={t("sectionPresaleTargetDesc")}
-                  >
-                    <Input
-                      type="number"
-                      value={form.presaleTarget}
-                      onChange={(e) => update({ presaleTarget: Number(e.target.value) || 0 })}
-                      className="h-10"
-                    />
-                  </Section>
-                  <Section
-                    title={t("sectionDeadline")}
-                    description={t("sectionPresaleDeadlineDesc")}
-                  >
-                    <Input
-                      type="date"
-                      value={form.presaleDeadline}
-                      onChange={(e) => update({ presaleDeadline: e.target.value })}
-                      className="h-10"
-                    />
-                  </Section>
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── Rewards ── */}
-          {activeTab === "rewards" && (
-            <Section title={t("sectionRewards")} description={t("sectionRewardsDesc")}>
-              <div className="grid grid-cols-2 gap-3">
-                {PRESET_REWARDS.map((preset) => {
-                  const added = form.rewards.some((r) => r.id === preset.id);
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => (added ? removeReward(preset.id) : addReward(preset))}
-                      className={cn(
-                        "rounded-xl border p-3 text-left transition-all",
-                        added
-                          ? "border-primary/40 bg-primary/5"
-                          : "border-border bg-card hover:border-border/80"
-                      )}
-                    >
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-foreground">
-                          ¥{preset.amount} {preset.title}
-                        </span>
-                        {added && <span className="text-xs text-primary">{t("added")}</span>}
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {preset.perks.slice(0, 3).map((p) => (
-                          <span
-                            key={p}
-                            className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground"
-                          >
-                            {p}
-                          </span>
-                        ))}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              {form.rewards.length > 0 && (
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-foreground">
-                    {t("currentRewards")} ({form.rewards.length})
-                  </label>
-                  <div className="space-y-2">
-                    {form.rewards.map((r) => (
-                      <div
-                        key={r.id}
-                        className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
-                      >
-                        <span className="text-sm font-medium text-foreground">
-                          ¥{r.amount} {r.title}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          color="muted"
-                          size="icon-xs"
-                          onClick={() => removeReward(r.id)}
-                          className="hover:text-destructive"
-                        >
-                          <IconX className="size-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               )}
             </Section>
           )}
