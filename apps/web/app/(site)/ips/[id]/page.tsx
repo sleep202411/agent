@@ -12,25 +12,17 @@ import {
   IconHeart,
   IconLoader2,
   IconMessageCircle,
-  IconMovie,
   IconPlayerPlay,
   IconPlaylist,
   IconShare,
-  IconShoppingCart,
   IconStar,
-  IconTrendingUp,
   IconUsers,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
-import {
-  STAGE_CONFIG,
-  EMPTY_IP_DETAIL,
-  type IPDetail,
-  type IPStage,
-} from "@/app/(site)/ips/_data/ip";
+import { EMPTY_IP_DETAIL, type IPDetail } from "@/app/(site)/ips/_data/ip";
 import { mockIPDetailContent } from "@/app/(site)/ips/_data/ip-mock";
 import {
   useProjectDetail,
@@ -40,21 +32,6 @@ import {
   useProjectEpisodes,
   type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
-
-const STAGE_ICON: Record<IPStage, typeof IconTrendingUp> = {
-  investment: IconTrendingUp,
-  presale: IconShoppingCart,
-  producing: IconMovie,
-  released: IconCircleCheck,
-};
-
-// Stage-specific primary CTA for the sticky action bar.
-const STAGE_CTA_KEY: Record<IPStage, string> = {
-  investment: "subscribeNow",
-  presale: "preorderNow",
-  producing: "notifyMe",
-  released: "watchNow",
-};
 
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -161,9 +138,6 @@ export default function IPDetailPage({ id }: { id: string }) {
     faqs: mock.faqs,
   };
 
-  const stage = STAGE_CONFIG[ip.stage];
-  const StageIcon = STAGE_ICON[ip.stage];
-
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -215,17 +189,15 @@ export default function IPDetailPage({ id }: { id: string }) {
             <div className="truncate text-sm font-semibold text-foreground">
               {ip.title || t("detailUntitled")}
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className={cn("inline-flex items-center gap-1", stage.badge.split(" ")[0])}>
-                <StageIcon className="size-3" />
-                {t(stage.labelKey)}
-              </span>
-              {epCount > 0 && <span>· {t("detailEpisodeCount", { count: epCount })}</span>}
-            </div>
+            {epCount > 0 && (
+              <div className="text-[11px] text-muted-foreground">
+                {t("detailEpisodeCount", { count: epCount })}
+              </div>
+            )}
           </div>
-          <Button size="sm">
-            <IconPlayerPlay className="size-3.5" />
-            {t(STAGE_CTA_KEY[ip.stage])}
+          <Button size="sm" variant="outline" color="muted">
+            <IconBookmark className="size-3.5" />
+            {t("detailFollow")}
           </Button>
         </div>
       </div>
@@ -257,15 +229,6 @@ export default function IPDetailPage({ id }: { id: string }) {
 
             {/* Title + meta + CTAs */}
             <div className="space-y-3">
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium",
-                  stage.badge
-                )}
-              >
-                <StageIcon className="size-3.5" />
-                {t(stage.labelKey)}
-              </span>
               <div>
                 <h1 className="font-heading text-2xl font-bold text-foreground sm:text-3xl">
                   {ip.title || t("detailUntitled")}
