@@ -22,7 +22,6 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
-import { EMPTY_IP_DETAIL, type IPDetail } from "@/app/(site)/ips/_data/ip";
 import { mockIPDetailContent } from "@/app/(site)/ips/_data/ip-mock";
 import {
   useProjectDetail,
@@ -33,6 +32,58 @@ import {
   useFAQs,
   type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
+
+// ─── Detail-page rendering types ─────────────────────
+// Composed view: backend reads (project / members / episodes / FAQs) +
+// per-field mock fallback for not-yet-shipped fields (story / whyThisIP
+// / updates / tagline). Narrow to what the page actually renders.
+
+interface IPTeamMember {
+  name: string;
+  role: string;
+  avatar: string;
+  level: string;
+  projects: number;
+  rating: number;
+  certified?: boolean;
+}
+
+interface IPUpdate {
+  date: string;
+  title: string;
+  content: string;
+}
+
+interface IPFAQ {
+  q: string;
+  a: string;
+}
+
+interface IPDetail {
+  id: string;
+  title: string;
+  cover: string;
+  tagline: string;
+  story: string;
+  whyThisIP: string;
+  tags: string[];
+  team: IPTeamMember[];
+  updates: IPUpdate[];
+  faqs: IPFAQ[];
+}
+
+const EMPTY_IP_DETAIL: IPDetail = {
+  id: "",
+  title: "",
+  cover: "",
+  tagline: "",
+  story: "",
+  whyThisIP: "",
+  tags: [],
+  team: [],
+  updates: [],
+  faqs: [],
+};
 
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));

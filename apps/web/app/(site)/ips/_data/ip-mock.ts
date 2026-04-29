@@ -1,56 +1,16 @@
 /**
  * Deterministic mock content for the IP detail page (titles, story copy,
- * trailers, episode list, team, updates, FAQs). Used as a per-field
- * fallback while the corresponding backend fields are still being built;
- * delete each consumer as the real hooks land.
+ * trailers, team, updates, FAQs). Used as a per-field fallback while the
+ * corresponding backend fields are still being built; delete each
+ * consumer as the real hooks land.
  */
 
-// ─── Hash helpers ─────────────────────────────────────
-
-/** Simple deterministic 32-bit string hash (FNV-ish). Plenty for picking
- *  bucketed mock values per id. */
-function hashId(id: number | string): number {
-  const s = String(id);
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) | 0;
-  }
-  return Math.abs(h);
-}
+import { hashId } from "../_hooks/shared";
 
 /** Stable PRNG seeded by id+salt — gives different streams of values for
  *  different fields of the same project. */
 function seeded(id: number | string, salt: string, mod: number): number {
   return hashId(`${id}:${salt}`) % mod;
-}
-
-// ─── Tag helpers ──────────────────────────────────────
-
-/** Backend stores tags as a single string (comma / pipe / semi-colon /
- *  space separated, varies by data origin). Split tolerantly. */
-export function splitTags(raw: string | null | undefined): string[] {
-  if (!raw || typeof raw !== "string") return [];
-  return raw
-    .split(/[,|;、\s]+/)
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .slice(0, 3);
-}
-
-/** Stable color hash for an avatar fallback initial. */
-const AVATAR_COLORS = [
-  "bg-amber-500/20 text-amber-300",
-  "bg-rose-500/20 text-rose-300",
-  "bg-violet-500/20 text-violet-300",
-  "bg-emerald-500/20 text-emerald-300",
-  "bg-sky-500/20 text-sky-300",
-  "bg-fuchsia-500/20 text-fuchsia-300",
-];
-
-export function avatarFallbackTone(seed: string | number | null | undefined): string {
-  if (seed === null || seed === undefined) return AVATAR_COLORS[0];
-  return AVATAR_COLORS[hashId(String(seed)) % AVATAR_COLORS.length];
 }
 
 // ─── Detail-page mock content ────────────────────────

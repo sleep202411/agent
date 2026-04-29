@@ -93,3 +93,43 @@ export function userAvatarUrl(path?: string | null): string {
   const trimmed = path.startsWith("/") ? path.slice(1) : path;
   return `${base.replace(/\/+$/, "")}/${trimmed}`;
 }
+
+// ─── Misc utilities ─────────────────────────────────
+
+/** Backend stores tags as a single string (comma / pipe / semi-colon /
+ *  space / Chinese-comma separated). Split tolerantly, capped at 3. */
+export function splitTags(raw: string | null | undefined): string[] {
+  if (!raw || typeof raw !== "string") return [];
+  return raw
+    .split(/[,|;、\s]+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+/** Deterministic 32-bit string hash (FNV-ish). Plenty for picking
+ *  bucketed values (avatar colors, mock fixtures) per id. */
+export function hashId(id: number | string): number {
+  const s = String(id);
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) | 0;
+  }
+  return Math.abs(h);
+}
+
+const AVATAR_COLORS = [
+  "bg-amber-500/20 text-amber-300",
+  "bg-rose-500/20 text-rose-300",
+  "bg-violet-500/20 text-violet-300",
+  "bg-emerald-500/20 text-emerald-300",
+  "bg-sky-500/20 text-sky-300",
+  "bg-fuchsia-500/20 text-fuchsia-300",
+];
+
+/** Stable color hash for an avatar fallback initial. */
+export function avatarFallbackTone(seed: string | number | null | undefined): string {
+  if (seed === null || seed === undefined) return AVATAR_COLORS[0];
+  return AVATAR_COLORS[hashId(String(seed)) % AVATAR_COLORS.length];
+}
