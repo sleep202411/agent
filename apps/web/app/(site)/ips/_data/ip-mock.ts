@@ -85,27 +85,6 @@ const WHY_POOL = [
   "市面上的 AI 短剧大多在追逐流量爆点，质感和叙事都是牺牲品。这部作品想证明：节奏、人物、镜头语言，AI 都可以做到不输传统制作。",
 ];
 
-const EP_TITLES = [
-  "序章 · 觉醒",
-  "第一道光",
-  "迷雾下的城邦",
-  "命运的齿轮",
-  "失落的祷词",
-  "破晓之约",
-  "归途与岔路",
-  "最后的回响",
-  "白夜与灰烬",
-  "未完之歌",
-];
-
-const EP_DESC_POOL = [
-  "故事真正开始的地方。主角第一次意识到自己并非独自一人，但代价是失去了原本的庇护。",
-  "节奏放缓的一集，我们看到这个世界更柔软的部分 —— 也是接下来一切冲突的伏笔。",
-  "动作戏比例最重的一集。一场雨夜追逐贯穿全程，配乐由项目里两位作曲家联手完成。",
-  "几乎没有对白的实验性剧集。镜头跟着一只老猫走过整座城市，捎带交代了三条暗线。",
-  "本季最大的揭露落在结尾两分钟。请务必看到 staff 字幕跑完。",
-];
-
 const TEAM_NAMES_ROLES = [
   { name: "陈泽川", role: "总导演" },
   { name: "李墨然", role: "美术总监" },
@@ -193,16 +172,6 @@ function pick<T>(id: string | number, salt: string, pool: readonly T[]): T {
   return pool[seeded(id, salt, pool.length)];
 }
 
-export interface IPMockEpisode {
-  id: string;
-  title: string;
-  description: string;
-  videoUrl: string;
-  cover: string;
-  duration: number;
-  sort: number;
-}
-
 export interface IPMockTeamMember {
   name: string;
   role: string;
@@ -219,7 +188,6 @@ export interface IPMockDetailContent {
   tags: string[];
   story: string;
   whyThisIP: string;
-  episodes: IPMockEpisode[];
   team: IPMockTeamMember[];
   updates: { date: string; title: string; content: string }[];
   faqs: { q: string; a: string }[];
@@ -227,23 +195,9 @@ export interface IPMockDetailContent {
 
 export function mockIPDetailContent(id: string | number): IPMockDetailContent {
   const sid = String(id);
-  const epCount = 6 + seeded(sid, "epc", 5); // 6–10
   const teamCount = 3 + seeded(sid, "tc", 3); // 3–5
   const updatesCount = 2 + seeded(sid, "uc", 3); // 2–4
   const faqCount = 3 + seeded(sid, "fc", 3); // 3–5
-
-  const episodes: IPMockEpisode[] = Array.from({ length: epCount }, (_, i) => {
-    const sort = i + 1;
-    return {
-      id: `mock-ep-${sid}-${sort}`,
-      title: EP_TITLES[(seeded(sid, `ep-t-${sort}`, EP_TITLES.length) + i) % EP_TITLES.length],
-      description: pick(sid, `ep-d-${sort}`, EP_DESC_POOL),
-      videoUrl: SAMPLE_VIDEOS[(hashId(`${sid}-${sort}`) >>> 0) % SAMPLE_VIDEOS.length],
-      cover: picsum(`${sid}-ep-${sort}`, 640, 360),
-      duration: 240 + seeded(sid, `ep-dur-${sort}`, 1200), // 4 min – 24 min
-      sort,
-    };
-  });
 
   const team: IPMockTeamMember[] = Array.from({ length: teamCount }, (_, i) => {
     const member =
@@ -282,7 +236,6 @@ export function mockIPDetailContent(id: string | number): IPMockDetailContent {
     tags: pick(sid, "tags", TAG_POOL),
     story: pick(sid, "story", STORY_POOL),
     whyThisIP: pick(sid, "why", WHY_POOL),
-    episodes,
     team,
     updates,
     faqs,
