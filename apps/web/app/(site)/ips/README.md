@@ -6,6 +6,36 @@
 
 **P0 — 阻塞主流程**
 
+## ⚠️⚠️⚠️⚠️⚠️⚠️ 创建剧集
+
+`POST /vedio/project/episode/create`
+
+请求：
+
+| 字段        | 类型   | 必填 | 说明                                                   |
+| ----------- | ------ | ---- | ------------------------------------------------------ |
+| projectId   | string | ✓    | 所属 IP id                                             |
+| title       | string | ✓    |                                                        |
+| description | string | ✓    |                                                        |
+| videoUrl    | string | ✓    | OSS object key 或完整 URL                              |
+| cover       | string | ✓    | OSS object key 或完整 URL                              |
+| sort        | int    |      | ⚠️⚠️⚠️⚠️ 加个排序接口，用于排列剧集的第几集信息        |
+| videoMeta   | json   |      | `{ width, height, size, duration }`，`duration` 单位秒 |
+
+响应：
+
+| 字段        | 类型   |
+| ----------- | ------ |
+| id          | string |
+| projectId   | string |
+| title       | string |
+| description | string |
+| videoUrl    | string |
+| cover       | string |
+| duration    | int    |
+| sort        | int    |
+| createdAt   | string |
+
 ## ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️ 更新剧集
 
 `POST /vedio/project/episode/update`
@@ -381,36 +411,6 @@
 响应：`{ code: 0 }`。
 
 仅 `review = 2` 的 IP 可调用。
-
-## 创建剧集
-
-⚠️⚠️⚠️⚠️⚠️⚠️ `POST /vedio/project/episode/create`
-
-请求：
-
-| 字段        | 类型   | 必填 | 说明                                                   |
-| ----------- | ------ | ---- | ------------------------------------------------------ |
-| projectId   | string | ✓    | 所属 IP id                                             |
-| title       | string | ✓    |                                                        |
-| description | string | ✓    |                                                        |
-| videoUrl    | string | ✓    | OSS object key 或完整 URL                              |
-| cover       | string | ✓    | OSS object key 或完整 URL                              |
-| sort        | int    |      | ⚠️⚠️⚠️⚠️ 加个排序接口，用于排列剧集的第几集信息        |
-| videoMeta   | json   |      | `{ width, height, size, duration }`，`duration` 单位秒 |
-
-响应：
-
-| 字段        | 类型   |
-| ----------- | ------ |
-| id          | string |
-| projectId   | string |
-| title       | string |
-| description | string |
-| videoUrl    | string |
-| cover       | string |
-| duration    | int    |
-| sort        | int    |
-| createdAt   | string |
 
 ## 上传宣传片
 
