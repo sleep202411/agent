@@ -22,12 +22,10 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
-import { mockIPDetailContent } from "@/app/(site)/ips/_data/ip-mock";
 import {
   useProjectDetail,
   useProjectVideoLink,
   useProjectMembers,
-  useProjectJobs,
   useProjectEpisodes,
   useFAQs,
   type Episode,
@@ -48,12 +46,6 @@ interface IPTeamMember {
   certified?: boolean;
 }
 
-interface IPUpdate {
-  date: string;
-  title: string;
-  content: string;
-}
-
 interface IPFAQ {
   q: string;
   a: string;
@@ -68,7 +60,6 @@ interface IPDetail {
   whyThisIP: string;
   tags: string[];
   team: IPTeamMember[];
-  updates: IPUpdate[];
   faqs: IPFAQ[];
 }
 
@@ -81,7 +72,6 @@ const EMPTY_IP_DETAIL: IPDetail = {
   whyThisIP: "",
   tags: [],
   team: [],
-  updates: [],
   faqs: [],
 };
 
@@ -106,14 +96,8 @@ export default function IPDetailPage({ id }: { id: string }) {
   const { data: project, isLoading } = useProjectDetail(id);
   const { data: videoLink } = useProjectVideoLink(id);
   const { data: members } = useProjectMembers(id);
-  useProjectJobs(id); // prefetch — surface in updates / hiring later
   const { data: episodes = [] } = useProjectEpisodes(id);
   const { data: faqs = [] } = useFAQs(id);
-
-  // Mock content for fields the backend doesn't expose yet (story copy,
-  // hero key art, weekly updates). Per-field fallback so real values
-  // override mock without flicker once each backend field lands.
-  const mock = mockIPDetailContent(id);
 
   // Cinema hero pin: once the hero scrolls out of view, surface a compact
   // sticky action bar so the primary CTA is always reachable.
@@ -130,7 +114,9 @@ export default function IPDetailPage({ id }: { id: string }) {
     return () => observer.disconnect();
   }, []);
 
-  // Bridge real API → existing IPDetail shape; per-field fallback to mock.
+  // Bridge real API → IPDetail rendering shape. No mock fallback —
+  // missing fields (story / whyThisIP awaiting backend, no team yet,
+  // etc.) render as empty sections per the conditional JSX below.
   const realTags: string[] = (() => {
     try {
       const parsed = JSON.parse(project?.tag ?? "[]");
@@ -139,7 +125,7 @@ export default function IPDetailPage({ id }: { id: string }) {
       return [];
     }
   })();
-  const realTeam = (Array.isArray(members) ? members : []).map((m) => ({
+  const realTeam: IPTeamMember[] = (Array.isArray(members) ? members : []).map((m) => ({
     name: m.nickName || m.userName || "Member",
     role: m.roleName || "Team",
     avatar: m.avatar ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar}` : "",
@@ -151,29 +137,18 @@ export default function IPDetailPage({ id }: { id: string }) {
   const ip: IPDetail = {
     ...EMPTY_IP_DETAIL,
     id,
-    title: project?.name || mock.title,
-    tagline: project?.description || mock.tagline,
+    title: project?.name ?? "",
+    tagline: project?.description ?? "",
     cover: project?.bannerLink
       ? project.bannerLink.startsWith("http")
         ? project.bannerLink
         : `${env.BANNER_BASE_URL}/${project.bannerLink}`
-      : mock.cover,
-    story: project?.story || project?.background || mock.story,
-    whyThisIP: project?.whyThisIP || mock.whyThisIP,
-    tags: realTags.length > 0 ? realTags : mock.tags,
-    team:
-      realTeam.length > 0
-        ? realTeam
-        : mock.team.map((m) => ({
-            name: m.name,
-            role: m.role,
-            avatar: m.avatar,
-            level: m.level,
-            projects: 0,
-            rating: 0,
-          })),
-    updates: mock.updates,
-    faqs: faqs.length > 0 ? faqs.map((f) => ({ q: f.question, a: f.answer })) : mock.faqs,
+      : "",
+    story: project?.story ?? project?.background ?? "",
+    whyThisIP: project?.whyThisIP ?? "",
+    tags: realTags,
+    team: realTeam,
+    faqs: faqs.map((f) => ({ q: f.question, a: f.answer })),
   };
 
   if (isLoading) {
@@ -186,7 +161,7 @@ export default function IPDetailPage({ id }: { id: string }) {
 
   const aboutBody = [ip.story, ip.whyThisIP].filter(Boolean).join("\n\n");
   const epCount = episodes.length;
-  const trailerSrc = videoLink || mock.trailerUrl;
+  const trailerSrc = videoLink ?? "";
   const hasTrailer = !!trailerSrc;
   const heroMedia = hasTrailer ? trailerSrc : ip.cover;
 
@@ -372,26 +347,6 @@ export default function IPDetailPage({ id }: { id: string }) {
                           </div>
                         )}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {/* Updates */}
-            {ip.updates.length > 0 && (
-              <Section
-                icon={<IconBolt className="size-5 text-amber-400" />}
-                title={t("sectionUpdates")}
-              >
-                <div className="space-y-3">
-                  {ip.updates.map((update, i) => (
-                    <div key={i} className="rounded-xl border border-border bg-card p-4">
-                      <div className="mb-2 text-xs text-muted-foreground">{update.date}</div>
-                      <h4 className="mb-1 text-sm font-medium text-foreground">{update.title}</h4>
-                      <p className="text-xs leading-relaxed text-secondary-foreground">
-                        {update.content}
-                      </p>
                     </div>
                   ))}
                 </div>
