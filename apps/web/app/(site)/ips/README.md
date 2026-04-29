@@ -42,29 +42,42 @@
 
 ## 分类列表
 
-`GET /vedio/type/list`
+`GET /vedio/project/type/list`
 
 响应：
 
-| 字段 | 类型   | 说明                                                                   |
-| ---- | ------ | ---------------------------------------------------------------------- |
-| data | object | `{ "<id>": "<name>", ... }`，例 `{ "1": "AIGC影视", "2": "热血动漫" }` |
+| 字段 | 类型   |
+| ---- | ------ |
+| list | Type[] |
+
+`Type`：
+
+| 字段 | 类型   |
+| ---- | ------ |
+| id   | int    |
+| name | string |
 
 ## 标签列表
 
-`GET /vedio/type/tag/list`
+`GET /vedio/project/tag/list`
 
 响应：
 
-| 字段 | 类型   | 说明                                                                |
-| ---- | ------ | ------------------------------------------------------------------- |
-| all  | object | 所有标签：`{ "<id>": "<name>" }`                                    |
-| data | object | 按分类名分组：`{ "<categoryName>": ["<tagName>", ...] }`            |
-| map  | object | 按分类名 + tagId 分组：`{ "<categoryName>": { "<id>": "<name>" } }` |
+| 字段 | 类型  |
+| ---- | ----- |
+| list | Tag[] |
+
+`Tag`：
+
+| 字段   | 类型   | 说明                |
+| ------ | ------ | ------------------- |
+| id     | int    |                     |
+| name   | string |                     |
+| typeId | int    | 所属分类 id（外键） |
 
 ## 取宣传片播放链接
 
-`POST /vedio/play/project/getLink` `application/x-www-form-urlencoded`
+`POST /vedio/project/play-link` `application/x-www-form-urlencoded`
 
 请求：
 
@@ -80,7 +93,7 @@
 
 ## 上传宣传片
 
-`POST /content/project/upload/project/video/backup` `multipart/form-data`
+`POST /vedio/project/upload-video` `multipart/form-data`
 
 请求：
 
@@ -97,7 +110,7 @@
 
 ## 创建 IP
 
-`POST /project/create`
+`POST /vedio/project/create`
 
 请求：
 
@@ -118,7 +131,7 @@
 
 ## 编辑 IP
 
-`POST /project/update`
+`POST /vedio/project/update`
 
 请求：
 
@@ -140,7 +153,7 @@
 
 ## 提交审核
 
-`POST /project/submit`
+`POST /vedio/project/submit`
 
 请求：
 
@@ -154,7 +167,7 @@
 
 ## 上下架
 
-`POST /project/status/update`
+`POST /vedio/project/status/update`
 
 请求：
 
@@ -169,7 +182,7 @@
 
 ## IP 详情
 
-`POST /project/query`
+`POST /vedio/project/query`
 
 请求：
 
@@ -326,7 +339,7 @@
 
 ## 团队成员列表
 
-`POST /project/member/query`
+`POST /vedio/project/member/query`
 
 请求：
 
@@ -354,7 +367,7 @@
 
 ## 邀请成员
 
-`POST /project/member/invite`
+`POST /vedio/project/member/invite`
 
 请求：
 
@@ -370,7 +383,7 @@
 
 ## 移除成员
 
-`POST /project/member/remove`
+`POST /vedio/project/member/remove`
 
 请求：
 
@@ -383,7 +396,7 @@
 
 ## FAQ 列表
 
-`POST /project/faq/query`
+`POST /vedio/project/faq/query`
 
 请求：
 
@@ -409,7 +422,7 @@
 
 ## 创建 FAQ
 
-`POST /project/faq/create`
+`POST /vedio/project/faq/create`
 
 请求：
 
@@ -424,7 +437,7 @@
 
 ## 更新 FAQ
 
-`POST /project/faq/update`
+`POST /vedio/project/faq/update`
 
 请求：
 
@@ -439,7 +452,7 @@
 
 ## 删除 FAQ
 
-`POST /project/faq/delete`
+`POST /vedio/project/faq/delete`
 
 请求：
 
