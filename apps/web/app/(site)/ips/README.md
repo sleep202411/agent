@@ -8,7 +8,7 @@
 
 ## ⚠️⚠️⚠️⚠️⚠️⚠️ 创建剧集
 
-`POST /vedio/project/episode/create`
+`POST /project/episode/create`
 
 请求：
 
@@ -57,7 +57,7 @@
 
 ## ⚠️⚠️⚠️⚠️⚠️⚠️ 删除剧集
 
-`POST /vedio/project/episode/delete`
+`POST /project/episode/delete`
 
 请求：
 
@@ -108,6 +108,8 @@
 | createTime         | string |                                                          |
 
 ## ⚠️⚠️⚠️⚠️⚠️ 分类列表
+
+⚠️⚠️⚠️⚠️⚠️⚠️ 如果可以统一成 /project/type/list 就更好了
 
 `GET /vedio/project/type/list`
 
@@ -160,7 +162,7 @@
 
 ## ⚠️⚠️⚠️⚠️ 剧集排序
 
-`POST /vedio/project/episode/reorder`
+`POST /project/episode/reorder`
 
 请求：
 
@@ -268,6 +270,8 @@
 
 ## ⚠️⚠️⚠️⚠️ 标签列表
 
+⚠️⚠️ 如果可以统一成 /project/tag/list 就更好了
+
 `GET /vedio/project/tag/list`
 
 响应：
@@ -286,7 +290,7 @@
 
 ## ⚠️⚠️⚠️⚠️ Plaza 首页 — Featured 轮播
 
-`GET /vedio/project/plaza/featured`
+`GET /project/plaza/featured`
 
 ⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️⚠️ 可以加个字段标记，先手动从数据库中标记出 5 个 ，后面会在后台中提供对应的功能，用于运营管理
 
@@ -311,7 +315,7 @@
 
 ## ⚠️⚠️⚠️⚠️ Plaza 首页 — For You 横排
 
-`GET /vedio/project/plaza/for-you?page=1&pageSize=10`
+`GET /project/plaza/for-you?page=1&pageSize=10`
 
 先手动在数据中标记 6-10个，后续会在管理平台中支持这个功能
 
@@ -465,7 +469,7 @@
 | contact            | string |
 | tag                | string |
 | story - background | string |
-| whyThisIP          | string |
+| ⚠️⚠️⚠️⚠️ whyThisIP | string |
 | review             | int    |
 | projectStatus      | int    |
 | createTime         | string |
@@ -474,7 +478,7 @@
 
 ## 剧集列表
 
-`GET /vedio/project/episode/list?projectId=xxx`
+`GET /project/episode/list?projectId=xxx`
 
 响应：
 
