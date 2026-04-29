@@ -5,6 +5,7 @@
  */
 
 import { api } from "@/src/lib/api";
+import { defaultLocale, locales, type Locale } from "@/src/i18n/config";
 
 /**
  * Per-row info block as returned by `/user/list/user/info`. Mirrors the
@@ -49,16 +50,43 @@ interface CreatorListPayload {
   pageSize?: number;
 }
 
+export interface CreatorListResult {
+  list: CreatorRow[];
+  total: number;
+}
+
+function getAcceptLanguage(): Locale {
+  if (typeof document !== "undefined") {
+    const htmlLang = document.documentElement.lang;
+    if (htmlLang && locales.includes(htmlLang as Locale)) return htmlLang as Locale;
+  }
+  return defaultLocale;
+}
+
 /**
  * List users for the talent market. Backend expects
- * `application/x-www-form-urlencoded`, not JSON.
+ * `application/x-www-form-urlencoded`, not JSON, and returns the page
+ * data in `body.data` plus the total row count in `body.sum`. The
+ * shared api client only surfaces `body.data`, so this call drops down
+ * to raw `fetch` to keep `sum` for pagination.
  */
-export const listCreators = (params: CreatorListPayload = {}) => {
-  const form: Record<string, string> = {};
-  if (params.page !== undefined) form.page = String(params.page);
-  if (params.pageSize !== undefined) form.pageSize = String(params.pageSize);
-  return api.postForm<CreatorRow[]>("/user/list/user/info", form);
-};
+export async function listCreators(params: CreatorListPayload = {}): Promise<CreatorListResult> {
+  const form = new URLSearchParams();
+  if (params.page !== undefined) form.append("page", String(params.page));
+  if (params.pageSize !== undefined) form.append("pageSize", String(params.pageSize));
+  const res = await fetch("/user/list/user/info", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      "accept-language": getAcceptLanguage(),
+    },
+    body: form.toString(),
+  });
+  if (!res.ok) return { list: [], total: 0 };
+  const body = (await res.json()) as { data?: CreatorRow[]; sum?: number };
+  return { list: Array.isArray(body.data) ? body.data : [], total: body.sum ?? 0 };
+}
 
 /**
  * Fetch a single creator's basic info + level set, scoped by `userId`.

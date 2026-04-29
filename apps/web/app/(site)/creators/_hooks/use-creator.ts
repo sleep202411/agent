@@ -16,8 +16,13 @@
 
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { listCreators, getCreatorBasicInfo, type CreatorRow } from "@/src/services/creator";
+import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  listCreators,
+  getCreatorBasicInfo,
+  type CreatorListResult,
+  type CreatorRow,
+} from "@/src/services/creator";
 import {
   getUserPersonalWorks,
   getUserProjects,
@@ -94,11 +99,7 @@ function toCreator(row: CreatorRow | null | undefined): Creator | null {
   };
 }
 
-async function fetchCreators(): Promise<Creator[]> {
-  const rows = await listCreators({ page: 1, pageSize: 60 });
-  if (!Array.isArray(rows)) return [];
-  return rows.map(toCreator).filter((c): c is Creator => c !== null);
-}
+const PAGE_SIZE = 60;
 
 export const creatorKeys = {
   all: ["creator"] as const,
@@ -106,10 +107,47 @@ export const creatorKeys = {
   detail: (id: string) => ["creator", "detail", id] as const,
 };
 
+interface CreatorsView {
+  list: Creator[];
+  total: number;
+}
+
+/**
+ * Infinite-scroll list of creators. Each page fetches `PAGE_SIZE` rows;
+ * `total` comes from `sum` on the first page so the UI can show the
+ * authoritative total and stop fetching once `loaded.length >= total`.
+ */
 export function useCreators() {
-  return useQuery({
+  return useInfiniteQuery<
+    CreatorListResult,
+    Error,
+    CreatorsView,
+    ReturnType<typeof creatorKeys.list>,
+    number
+  >({
     queryKey: creatorKeys.list(),
-    queryFn: fetchCreators,
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => listCreators({ page: pageParam, pageSize: PAGE_SIZE }),
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((acc, p) => acc + p.list.length, 0);
+      if (lastPage.list.length === 0) return undefined;
+      if (lastPage.total > 0 && loaded >= lastPage.total) return undefined;
+      return allPages.length + 1;
+    },
+    select: (data) => {
+      const seen = new Set<string>();
+      const out: Creator[] = [];
+      for (const page of data.pages) {
+        for (const row of page.list) {
+          const c = toCreator(row);
+          if (!c || seen.has(c.id)) continue;
+          seen.add(c.id);
+          out.push(c);
+        }
+      }
+      const total = data.pages[0]?.total ?? out.length;
+      return { list: out, total };
+    },
   });
 }
 
@@ -124,9 +162,18 @@ export function useCreatorDetail(id: string) {
   return useQuery<Creator | null>({
     queryKey: ["creator", "detail", id],
     queryFn: async () => {
-      const cached = qc.getQueryData<Creator[]>(creatorKeys.list());
-      const fromCache = Array.isArray(cached) ? cached.find((c) => c.id === id) : undefined;
-      if (fromCache) return fromCache;
+      // The list cache stores the raw infinite-query envelope (pages + pageParams);
+      // flatten + map before searching so deep-link arrivals reuse a row already
+      // fetched by the talent-market grid.
+      const cached = qc.getQueryData<{ pages: CreatorListResult[] }>(creatorKeys.list());
+      if (cached?.pages) {
+        for (const page of cached.pages) {
+          for (const row of page.list) {
+            const mapped = toCreator(row);
+            if (mapped?.id === id) return mapped;
+          }
+        }
+      }
       if (!id) return null;
       const row = await getCreatorBasicInfo(id);
       return toCreator(row);
