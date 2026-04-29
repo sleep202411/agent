@@ -102,7 +102,6 @@ export default function IPDetailPage({ id }: { id: string }) {
     id,
     title: project?.name || mock.title,
     tagline: project?.description || mock.tagline,
-    desc: project?.description || "",
     cover: project?.bannerLink
       ? project.bannerLink.startsWith("http")
         ? project.bannerLink
