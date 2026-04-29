@@ -26,11 +26,34 @@ import {
   useUpdateProject,
   useProjectVideoLink,
   useUploadProjectVideo,
+  useProjectEpisodes,
+  useCreateEpisode,
+  useUpdateEpisode,
+  useDeleteEpisode,
+  useReorderEpisode,
+  ipKeys,
+  type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
+import { useQueryClient } from "@tanstack/react-query";
 import { SUGGESTED_TAGS, PRESET_REWARDS, type IPRewardTier } from "@/app/(site)/ips/_data/ip";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 import { EpisodeDialog, type EpisodeDraft } from "./episode-dialog";
 import { SortableEpisodeRow } from "./episode-row";
+
+// ─── Episode → dialog adapter ──────────────────────
+// Episode (server shape) carries id / sort / createdAt / projectId; the
+// dialog only needs the editable subset.
+function episodeToDraft(ep: Episode | undefined): EpisodeDraft | null {
+  if (!ep) return null;
+  return {
+    title: ep.title,
+    description: ep.description,
+    type: ep.type,
+    videoUrl: ep.videoUrl,
+    cover: ep.cover,
+    duration: ep.duration,
+  };
+}
 
 // ─── Tabs ────────────────────────────────────────────
 
@@ -55,14 +78,6 @@ interface EditForm {
   tags: string[];
   // Future tabs
   promoVideo: string | null;
-  episodes: {
-    title: string;
-    description: string;
-    type: "linear" | "interactive";
-    videoUrl: string;
-    cover: string;
-    duration: number;
-  }[];
   jobs: { role: string; description: string; profitRatio: string; earnings: string }[];
   faqs: { question: string; answer: string }[];
   // Keep for UI compatibility
@@ -91,7 +106,6 @@ const EMPTY_FORM: EditForm = {
   contact: "",
   tags: [],
   promoVideo: null,
-  episodes: [],
   jobs: [],
   faqs: [],
   story: "",
@@ -150,6 +164,17 @@ export default function IPEditPage({ id }: { id: string }) {
   const { data: videoLink } = useProjectVideoLink(id);
   const { mutate: doUploadVideo, isPending: uploadingVideo } = useUploadProjectVideo();
   const videoInputRef = useRef<HTMLInputElement>(null);
+
+  // Episode CRUD — `useProjectEpisodes` is the single source of truth for
+  // the list shown below; mutations invalidate `ipKeys.episodes(id)` so the
+  // list refetches after every change. No local form mirror — episodes
+  // persist independently of the IP-save button.
+  const queryClient = useQueryClient();
+  const { data: episodes = [] } = useProjectEpisodes(id);
+  const { mutate: createEpisodeMut } = useCreateEpisode();
+  const { mutate: updateEpisodeMut } = useUpdateEpisode();
+  const { mutate: deleteEpisodeMut } = useDeleteEpisode();
+  const { mutate: reorderEpisodeMut } = useReorderEpisode();
 
   // Populate form when project data loads
   useEffect(() => {
@@ -229,20 +254,46 @@ export default function IPEditPage({ id }: { id: string }) {
   };
   const removeTag = (tag: string) => update({ tags: form.tags.filter((t) => t !== tag) });
 
-  // Episode helpers
-  const removeEpisode = (i: number) =>
-    update({ episodes: form.episodes.filter((_, j) => j !== i) });
-  const upsertEpisode = (i: number | null, next: EditForm["episodes"][number]) => {
-    if (i === null) update({ episodes: [...form.episodes, next] });
-    else {
-      const eps = [...form.episodes];
-      eps[i] = next;
-      update({ episodes: eps });
+  // Episode helpers — backed by mutation hooks; the list above refetches
+  // automatically on success via `ipKeys.episodes(id)` invalidation.
+  const removeEpisode = (i: number) => {
+    const target = episodes[i];
+    if (!target) return;
+    deleteEpisodeMut({ id: target.id, projectId: id });
+  };
+  const upsertEpisode = (i: number | null, next: EpisodeDraft) => {
+    if (i === null || i < 0) {
+      createEpisodeMut({
+        projectId: id,
+        title: next.title,
+        description: next.description,
+        videoUrl: next.videoUrl,
+        cover: next.cover,
+        videoMeta: { duration: next.duration },
+      });
+      return;
     }
+    const target = episodes[i];
+    if (!target) return;
+    updateEpisodeMut({
+      id: target.id,
+      projectId: id,
+      title: next.title,
+      description: next.description,
+      videoUrl: next.videoUrl,
+      cover: next.cover,
+      videoMeta: { duration: next.duration },
+    });
   };
   // Drag-reorder buffer: dnd-kit fires onDragOver continuously; we batch
-  // the latest projected order and commit in onDragEnd.
-  const pendingReorderRef = useRef<EditForm["episodes"] | null>(null);
+  // the latest projected order and commit a single reorder mutation in
+  // onDragEnd. The optimistic setQueryData lets the UI reflect the new
+  // order immediately; if the backend call fails, the next refetch
+  // restores authoritative state. `originalRef` snapshots the order at
+  // drag-start so onDragEnd can diff against it (the live `episodes` value
+  // already reflects the optimistic mutation by then).
+  const pendingReorderRef = useRef<Episode[] | null>(null);
+  const originalReorderRef = useRef<Episode[] | null>(null);
   const handleEpisodeDragOver = useCallback(
     (event: unknown) => {
       const op = (
@@ -253,7 +304,10 @@ export default function IPEditPage({ id }: { id: string }) {
       const source = op?.source;
       const target = op?.target;
       if (!source || !target || source.id === target.id) return;
-      const list = pendingReorderRef.current ?? form.episodes;
+      if (originalReorderRef.current === null) {
+        originalReorderRef.current = episodes;
+      }
+      const list = pendingReorderRef.current ?? originalReorderRef.current ?? episodes;
       const fromIndex = Number(source.id);
       const toIndex = Number(target.id);
       if (
@@ -269,15 +323,29 @@ export default function IPEditPage({ id }: { id: string }) {
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
       pendingReorderRef.current = next;
+      // Optimistic: paint the new order before the mutation lands.
+      queryClient.setQueryData(ipKeys.episodes(id), next);
     },
-    [form.episodes]
+    [episodes, id, queryClient]
   );
   const handleEpisodeDragEnd = useCallback(() => {
-    if (pendingReorderRef.current) {
-      update({ episodes: pendingReorderRef.current });
-      pendingReorderRef.current = null;
-    }
-  }, [update]);
+    const finalOrder = pendingReorderRef.current;
+    const original = originalReorderRef.current;
+    pendingReorderRef.current = null;
+    originalReorderRef.current = null;
+    if (!finalOrder || !original) return;
+    const movedIndex = finalOrder.findIndex((ep, i) => ep.id !== original[i]?.id);
+    if (movedIndex === -1) return;
+    const moved = finalOrder[movedIndex];
+    // Backend convention: the moved video lands BEFORE the next neighbour;
+    // omit `beforeVideoId` when dropped at the tail.
+    const next = finalOrder[movedIndex + 1];
+    reorderEpisodeMut({
+      currentVideoId: moved.id,
+      beforeVideoId: next?.id,
+      projectId: id,
+    });
+  }, [id, reorderEpisodeMut]);
 
   // Job helpers
   const addJob = () =>
@@ -571,9 +639,9 @@ export default function IPEditPage({ id }: { id: string }) {
             <Section title={t("sectionEpisodes")} description={t("sectionEpisodesDesc")}>
               <DragDropProvider onDragOver={handleEpisodeDragOver} onDragEnd={handleEpisodeDragEnd}>
                 <div className="space-y-2">
-                  {form.episodes.map((ep, i) => (
+                  {episodes.map((ep, i) => (
                     <SortableEpisodeRow
-                      key={i}
+                      key={ep.id}
                       id={String(i)}
                       index={i}
                       episode={ep}
@@ -603,7 +671,7 @@ export default function IPEditPage({ id }: { id: string }) {
                 index={episodeDialogIndex}
                 initial={
                   episodeDialogIndex !== null && episodeDialogIndex >= 0
-                    ? form.episodes[episodeDialogIndex]
+                    ? episodeToDraft(episodes[episodeDialogIndex])
                     : null
                 }
                 onSubmit={(draft: EpisodeDraft) => {
