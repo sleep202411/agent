@@ -11,6 +11,7 @@ import {
   IconPlus,
   IconThumbDown,
   IconVolumeOff,
+  IconMovie,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
@@ -49,9 +50,34 @@ export function IPCinematicHero() {
     return () => window.clearTimeout(handle);
   }, [index, paused, total]);
 
-  // Backend not ready / empty result — render nothing rather than a
-  // broken empty-state card. Plaza listing below is unaffected.
-  if (total === 0) return null;
+  // Backend not ready / empty result — render a placeholder at the
+  // hero's full fixed height so the rail below doesn't jump up. Plaza
+  // listing further down is unaffected.
+  if (total === 0) {
+    return (
+      <section className="relative">
+        <div className="relative flex h-[100svh] w-full items-center justify-center overflow-hidden bg-black">
+          <div
+            aria-hidden
+            className="absolute inset-0"
+            style={{
+              backgroundImage:
+                "radial-gradient(ellipse 60% 60% at 50% 40%, hsl(42 95% 55% / 0.08) 0%, transparent 65%), radial-gradient(ellipse 40% 50% at 80% 80%, hsl(280 60% 55% / 0.06) 0%, transparent 60%)",
+            }}
+          />
+          <div className="relative z-10 flex flex-col items-center gap-3 px-6 text-center text-white/70">
+            <div className="inline-flex size-12 items-center justify-center rounded-full border border-white/10 bg-white/5">
+              <IconMovie className="size-5 text-amber-300/80" />
+            </div>
+            <h2 className="font-heading text-xl font-bold uppercase tracking-[0.18em] text-white sm:text-2xl">
+              {t("featuredEmptyTitle")}
+            </h2>
+            <p className="max-w-md text-sm text-white/55">{t("featuredEmptyBody")}</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const prev = () => setIndex((i) => (i - 1 + total) % total);
   const next = () => setIndex((i) => (i + 1) % total);
@@ -67,7 +93,7 @@ export function IPCinematicHero() {
       {/* Height is viewport-relative so the rail below stays in the first
           fold on standard laptop sizes; hard min/max keep it readable on
           tiny / huge screens. */}
-      <div className="relative h-[calc(100svh-220px)] max-h-170 min-h-[460px] w-full overflow-hidden bg-black">
+      <div className="relative h-[100svh] w-full overflow-hidden bg-black">
         {/* Crossfade between key arts */}
         {slides.map((s, i) => (
           // eslint-disable-next-line @next/next/no-img-element
