@@ -5,6 +5,7 @@
  * data/info/path extraction) is handled by the client automatically.
  */
 import { api } from "@/src/lib/api";
+import { env } from "@/src/env";
 
 // ─── Types ────────────────────────────────────────────
 
@@ -124,7 +125,34 @@ export const resetPassword = (email: string, pwd: string, code: string) =>
 
 // ─── Profile ──────────────────────────────────────────
 
-export const getUserInfo = () => api.get<UserInfo>("/user/query/user/info");
+/**
+ * Resolve a backend-relative asset path against an OSS base URL. Pass
+ * absolute URLs through unchanged; return undefined for empty input
+ * so consumers can render fallbacks.
+ */
+function resolveAssetUrl(path: string | null | undefined, base: string): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith("http")) return path;
+  return base ? `${base}/${path}` : undefined;
+}
+
+export interface UserInfoResolved extends UserInfo {
+  /** Full URL for the avatar (USER_BASE_URL || OSS_BASE_URL + headImg/avatar). */
+  headImgUrl?: string;
+  /** Full URL for the cover image (BANNER_BASE_URL + coverImage). */
+  coverImageUrl?: string;
+}
+
+export const getUserInfo = async (): Promise<UserInfoResolved> => {
+  const info = await api.get<UserInfo>("/user/query/user/info");
+  if (!info) return info as UserInfoResolved;
+  const avatarBase = env.USER_BASE_URL || env.OSS_BASE_URL;
+  return {
+    ...info,
+    headImgUrl: resolveAssetUrl(info.headImg ?? info.avatar, avatarBase),
+    coverImageUrl: resolveAssetUrl(info.coverImage, env.BANNER_BASE_URL),
+  };
+};
 
 export const updateUserInfo = (data: {
   nickName?: string;

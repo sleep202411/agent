@@ -4,8 +4,8 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { SiteUserMenu } from "@/components/layout/site-user-menu";
-import { useAppSelector, useAppDispatch } from "@/src/store";
-import { fetchUser, logout as logoutAction } from "@/src/store/slices/authSlice";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useLogout } from "@/src/hooks/use-logout";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
@@ -52,8 +52,8 @@ export function GlobalNav() {
     () => false
   );
 
-  const dispatch = useAppDispatch();
-  const user = useAppSelector((state) => state.auth.user);
+  const { user } = useCurrentUser();
+  const logout = useLogout();
 
   // Background fades in as the user scrolls past the first ~80px so the
   // hero backdrop sits behind a fully transparent nav at rest.
@@ -70,10 +70,6 @@ export function GlobalNav() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
-  useEffect(() => {
-    dispatch(fetchUser());
-  }, [dispatch]);
 
   // Hide on studio, project editor, and auth pages
   const shouldHide = HIDDEN_PATTERNS.some((pattern) => pathname.includes(pattern));
@@ -293,7 +289,7 @@ export function GlobalNav() {
                   type="button"
                   onClick={() => {
                     setMobileOpen(false);
-                    void dispatch(logoutAction());
+                    void logout();
                   }}
                   className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
                 >

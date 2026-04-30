@@ -15,9 +15,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useAppDispatch, useAppSelector } from "@/src/store";
-import { logout } from "@/src/store/slices/authSlice";
-import { env } from "@/src/env";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useLogout } from "@/src/hooks/use-logout";
 
 /**
  * Compact user widget for the public-site GlobalNav. Unlike the rich
@@ -28,21 +27,12 @@ import { env } from "@/src/env";
  */
 export function SiteUserMenu() {
   const tc = useTranslations("common");
-  const dispatch = useAppDispatch();
-  const user = useAppSelector((state) => state.auth.user);
+  const logout = useLogout();
+  const { user } = useCurrentUser();
   if (!user) return null;
 
   const displayName = user.nickname || "User";
-  // The auth slice stores the raw `headImg` path (e.g. "userAvatar/123.jpg").
-  // Match profile-header's resolver: skip prefix if already an absolute
-  // URL, otherwise prepend USER_BASE_URL with OSS_BASE_URL as fallback.
-  const avatarUrl = (() => {
-    const raw = user.avatar;
-    if (!raw) return undefined;
-    if (raw.startsWith("http")) return raw;
-    const base = env.USER_BASE_URL || env.OSS_BASE_URL;
-    return base ? `${base}/${raw}` : undefined;
-  })();
+  const avatarUrl = user.avatar;
   const initials = displayName.slice(0, 1).toUpperCase();
 
   return (
@@ -75,9 +65,7 @@ export function SiteUserMenu() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void dispatch(logout())}>
-              {tc("logout")}
-            </AlertDialogAction>
+            <AlertDialogAction onClick={() => void logout()}>{tc("logout")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

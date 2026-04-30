@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getUserInfo,
@@ -7,6 +8,7 @@ import {
   getCredits,
   getRecommendationCode,
   type UserInfo,
+  type UserInfoResolved,
 } from "@/src/services/user";
 
 // ─── Query Keys ───────────────────────────────────────
@@ -19,11 +21,55 @@ export const userKeys = {
 // ─── User Info ────────────────────────────────────────
 
 export function useUserInfo() {
-  return useQuery<UserInfo>({
+  return useQuery<UserInfoResolved>({
     queryKey: userKeys.info,
     queryFn: getUserInfo,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+}
+
+/**
+ * Normalized session-user shape consumed by nav menus & guards.
+ * Returns the same field names the now-removed Redux `auth.user`
+ * slice used to expose, so swapping `useAppSelector(...auth.user)`
+ * for `useCurrentUser().user` is a one-line change at each callsite.
+ *
+ * `avatar` / `cover` are resolved full URLs (USER_BASE_URL +
+ * headImg, BANNER_BASE_URL + coverImage). Components don't need to
+ * compose URLs locally any more.
+ */
+export interface CurrentUser {
+  id: string;
+  email: string;
+  nickname: string;
+  avatar?: string;
+  cover?: string;
+  userLevel?: string;
+  /** Escape hatch for fields not in the normalized projection. */
+  raw: UserInfoResolved;
+}
+
+export function useCurrentUser(): {
+  user: CurrentUser | null;
+  isLoading: boolean;
+  isFetched: boolean;
+} {
+  const { data, isLoading, isFetched } = useUserInfo();
+  const user = useMemo<CurrentUser | null>(() => {
+    if (!data) return null;
+    const id = data.id;
+    if (id === undefined || id === null) return null;
+    return {
+      id: String(id),
+      email: data.email ?? "",
+      nickname: data.nickName ?? data.userName ?? data.name ?? "",
+      avatar: data.headImgUrl,
+      cover: data.coverImageUrl,
+      userLevel: data.userLevel,
+      raw: data,
+    };
+  }, [data]);
+  return { user, isLoading, isFetched };
 }
 
 // ─── Credits ──────────────────────────────────────────

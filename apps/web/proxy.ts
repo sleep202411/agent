@@ -18,6 +18,7 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { isProtectedPath, SESSION_COOKIE_NAME } from "@/src/lib/auth/protected-paths";
 
 const LOCALES = ["en-US", "zh-HK", "zh-CN"] as const;
 const DEFAULT_LOCALE = "en-US";
@@ -42,6 +43,17 @@ export function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = `/${DEFAULT_LOCALE}${pathname === "/" ? "" : pathname}`;
     return NextResponse.redirect(url, 308);
+  }
+
+  // Auth gate: protected paths without a session cookie 307 to /login
+  // with the original (locale-prefixed) path stashed in `?redirect=`.
+  // Public paths fall through unchanged.
+  if (isProtectedPath(rewrittenPathname) && !request.cookies.get(SESSION_COOKIE_NAME)) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/${matchedLocale}/login`;
+    url.search = "";
+    url.searchParams.set("redirect", `${pathname}${search}`);
+    return NextResponse.redirect(url, 307);
   }
 
   // Prefix present → rewrite to the unprefixed path internally and
