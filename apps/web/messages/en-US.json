@@ -2708,15 +2708,284 @@
     "tagline": "A liquidity market that powers efficient trade and growth for creative content worldwide."
   },
   "home": {
-    "tagline": "Bring your stories to animated life.",
-    "subtitle": "Script → storyboard → render. AI agents handle the heavy lifting so you can focus on the story.",
-    "cta": "Start creating",
-    "secondaryCta": "See how it works",
-    "frames": {
-      "script": "Script",
-      "storyboard": "Storyboard",
-      "shot": "Shot",
-      "render": "Render"
+    "hero": {
+      "statusPill": "Happy Horse · now available",
+      "headlineLine1": "Stories start here.",
+      "headlineLine2": "Crews ship them.",
+      "subtitle": "Tools to make it. Crews to back it. An audience already waiting.",
+      "primaryCta": "Start now",
+      "secondaryCta": "Browse IPs"
+    },
+    "madeWithFizz": {
+      "eyebrow": "Made with FizzDragon",
+      "title": "Stories already in production.",
+      "subtitle": "IPs being built right now by the FizzDragon community. Click in to follow the process or back the project.",
+      "viewAll": "View all",
+      "byOwner": "by {name}"
+    },
+    "pillars": {
+      "eyebrow": "Three ways in",
+      "titleLine1": "One platform.",
+      "titleLine2": "Make. Connect. Show.",
+      "subtitle": "Whether you're making the story, finding a crew to make it with you, or following the next great IP — FizzDragon was built for all three.",
+      "items": {
+        "make": {
+          "title": "Make",
+          "body": "AI agents draft your story, storyboard the shots, voice the cast, and render every frame. You direct, they execute.",
+          "cta": "Start a project"
+        },
+        "connect": {
+          "title": "Connect",
+          "body": "Find writers, artists, voice talent, and directors. Form a crew, split the work, ship the project together.",
+          "cta": "Browse crews"
+        },
+        "show": {
+          "title": "Show",
+          "body": "Publish episodes, gather an audience, accept backers. The IP Plaza is where stories find their fans.",
+          "cta": "Visit IP Plaza"
+        }
+      }
+    },
+    "cast": {
+      "eyebrow": "Inside the crew",
+      "titleLine1": "Eleven agents.",
+      "titleLine2": "One coherent project.",
+      "subtitle": "Under the hood of every project, a supervisor agent routes your direction to specialists who share a single project bible — characters, scenes, and props stay consistent without you wrangling them.",
+      "footnote": "…plus Brief Analyzer, Script Splitter, Evaluator, and Story Editor working behind the scenes.",
+      "members": {
+        "storyOutliner": {
+          "name": "Story Outliner",
+          "role": "Reads your source material. Structures cast, settings, and props into a working bible."
+        },
+        "episodePlanner": {
+          "name": "Episode Planner",
+          "role": "Paces multi-episode arcs. Hooks, beats, and the exit on each one."
+        },
+        "scriptwriter": {
+          "name": "Scriptwriter",
+          "role": "Line-level dialogue and stage direction, faithful to the planner's beats."
+        },
+        "storyboardDesigner": {
+          "name": "Storyboard Designer",
+          "role": "Composes shots with camera moves, framing, and lensing notes."
+        },
+        "artDirector": {
+          "name": "Art Director",
+          "role": "Keeps style coherent across roles, scenes, and props from frame one."
+        },
+        "sceneAndPropDesigner": {
+          "name": "Scene & Prop Designer",
+          "role": "Builds the world your story lives in. Reusable across episodes."
+        }
+      }
+    },
+    "toolkit": {
+      "eyebrow": "What's inside",
+      "titleLine1": "A studio. A network.",
+      "titleLine2": "An audience.",
+      "subtitle": "The tools, the people, and the place where your work meets viewers — all in one platform.",
+      "items": {
+        "storyboardEditor": {
+          "title": "Storyboard editor",
+          "body": "An editor that thinks in shots — every cell holds prompts, references, generations, and notes."
+        },
+        "directorOnCall": {
+          "title": "Director on call",
+          "body": "A supervisor agent that knows your project and routes your asks to the right specialist."
+        },
+        "assetLibrary": {
+          "title": "Asset library",
+          "body": "Roles, scenes, props — searchable, reusable across every episode."
+        },
+        "crewWorkspace": {
+          "title": "Crew workspace",
+          "body": "Co-author with writers, artists, and voice talent. Split the work, see who's on what, ship together."
+        },
+        "ipPlaza": {
+          "title": "IP Plaza",
+          "body": "Publish your IP, gather a following, accept backers. Each episode gets its own listing and metrics."
+        }
+      }
+    },
+    "styleGallery": {
+      "eyebrow": "Style library",
+      "titleLine1": "One story,",
+      "titleLine2": "every look.",
+      "subtitle": "Render the same script in any visual language — anime, cinematic, watercolor, 3D. Pick a style, ship a series.",
+      "sidebarTitle": "Trending styles",
+      "sidebarBody": "Hover any thumbnail to preview it on the left. From classic painting to modern digital art — pick the look that fits your story.",
+      "cta": "Explore all 437+ styles",
+      "styles": {
+        "anime": "Anime",
+        "cinematic": "Cinematic",
+        "watercolor": "Watercolor",
+        "pixel": "Pixel art",
+        "pixar": "3D Pixar",
+        "comic": "Comic",
+        "noir": "Film noir",
+        "cyberpunk": "Cyberpunk",
+        "pastel": "Pastel",
+        "oil": "Oil painting",
+        "manga": "Manga",
+        "vapor": "Vaporwave"
+      }
+    },
+    "useCases": {
+      "eyebrow": "For every creator",
+      "title": "Built for every kind of story.",
+      "subtitle": "From series to social ads to lesson plans — FizzDragon adapts to your medium and your team.",
+      "tabs": {
+        "creative": "Creative",
+        "business": "Business",
+        "education": "Education"
+      },
+      "tryItNow": "Try it now",
+      "cards": {
+        "creative": {
+          "seriesCreators": {
+            "title": "Series creators",
+            "body": "Plan a multi-episode arc, render every frame, keep characters consistent across the season."
+          },
+          "webcomicArtists": {
+            "title": "Webcomic artists",
+            "body": "Turn scripts into paneled, lettered pages. Reuse cast and props across chapters."
+          },
+          "indieAnimators": {
+            "title": "Indie animators",
+            "body": "Storyboard, voice, lip-sync, and cut — without a studio behind you."
+          },
+          "musicAndShorts": {
+            "title": "Music & shorts",
+            "body": "Match cuts to beats. Drop a track, sketch a vibe, render the visuals in an afternoon."
+          }
+        },
+        "business": {
+          "brandFilms": {
+            "title": "Brand films",
+            "body": "Pitch decks, product reels, social cuts — script to render in an afternoon, on-brand the whole way."
+          },
+          "productLaunches": {
+            "title": "Product launches",
+            "body": "Animated explainers and demo cinematics for new features, without a video budget."
+          },
+          "socialAds": {
+            "title": "Social ads",
+            "body": "Spin up a dozen variations from one storyboard. Test cuts, swap looks, ship daily."
+          },
+          "investorPitches": {
+            "title": "Investor pitches",
+            "body": "Tell your story with cinematic visuals — narrative arc instead of bullet points."
+          }
+        },
+        "education": {
+          "courseVideos": {
+            "title": "Course videos",
+            "body": "Convert lesson plans into illustrated, voiced story videos. Any subject, any age group."
+          },
+          "historyAndCulture": {
+            "title": "History & culture",
+            "body": "Bring historical events and folk tales to life with period-accurate visuals."
+          },
+          "childrensStories": {
+            "title": "Children's stories",
+            "body": "Soft, illustrated, age-appropriate. Voice the characters, sync the mouths, share the link."
+          },
+          "trainingMaterial": {
+            "title": "Training material",
+            "body": "Onboarding, safety, compliance — narrative video instead of slide decks."
+          }
+        }
+      }
+    },
+    "testimonials": {
+      "eyebrow": "Praise",
+      "titleBefore": "What creators are saying about",
+      "titleAfter": ".",
+      "subtitle": "Hear from creators who use FizzDragon to ship professional visual content.",
+      "items": {
+        "sarahChen": {
+          "quote": "Just tried FizzDragon and I'm genuinely blown away. As someone who always wrestles with the storyboard pipeline, having an AI crew that actually understands shot composition is wild. It's the first AI animation tool I'd hand to my peers without caveats.",
+          "name": "Sarah Chen",
+          "role": "Indie animator"
+        },
+        "alexJohnson": {
+          "quote": "FizzDragon's text-to-video pipeline turns a paragraph into something I'd actually keep editing. The seamless asset library across episodes is the part nobody talks about.",
+          "name": "Alex Johnson",
+          "role": "Tech reviewer"
+        },
+        "michaelRodriguez": {
+          "quote": "Best video creation tool I've used this year. The agent system feels less like a toy and more like a small studio you can actually direct.",
+          "name": "Michael Rodriguez",
+          "role": "Video director"
+        },
+        "emmaThompson": {
+          "quote": "FizzDragon completely changed how I produce short content. The text-to-video flow is unbelievable — I describe a scene and have something I'd put on the timeline by lunch. The frame-level refinement is what sealed it for me.",
+          "name": "Emma Thompson",
+          "role": "Content creator"
+        },
+        "chrisPark": {
+          "quote": "Played with the video and image enhancement tools — the convenience for producing professional-grade content is real. This is the first time I haven't fought the model.",
+          "name": "Chris Park",
+          "role": "Freelance designer"
+        },
+        "davidKim": {
+          "quote": "FizzDragon flat-out changed my content workflow. Beginner-friendly UI, but the engine underneath is serious. I'd hand this to anyone building a series.",
+          "name": "David Kim",
+          "role": "Social media manager"
+        },
+        "jessicaMartinez": {
+          "quote": "It took a few lines of text and turned them into a high-quality video, and the editor felt familiar. As a digital content creator I've burned through a lot of tools — this is the one I keep coming back to.",
+          "name": "Jessica Martinez",
+          "role": "Digital content creator"
+        }
+      }
+    },
+    "faq": {
+      "eyebrow": "FAQ",
+      "title": "Questions, answered.",
+      "subtitle": "Everything you might want to know before pressing record on your first scene.",
+      "questions": {
+        "whatIs": {
+          "q": "What is FizzDragon?",
+          "a": "A platform for storytellers — three things in one. (1) An AI studio that drafts, storyboards, voices, and renders your work. (2) A crew network where writers, artists, and voice talent meet to ship projects together. (3) An IP Plaza where finished stories find their audience and backers."
+        },
+        "howCrewWorks": {
+          "q": "How does the AI crew actually work?",
+          "a": "A supervisor agent reads your project and routes each ask to the right specialist — Outliner, Episode Planner, Scriptwriter, Storyboard Designer, Art Director, and more. They share a project bible so characters, scenes, and props stay consistent across episodes."
+        },
+        "howLong": {
+          "q": "How long does it take to make something?",
+          "a": "About five minutes from idea to first frame. A single 60-second short typically renders in under fifteen minutes; a multi-episode arc can be planned and storyboarded in an afternoon."
+        },
+        "styles": {
+          "q": "What visual styles are supported?",
+          "a": "437+ and growing — anime, cinematic, watercolor, 3D Pixar, comic, noir, pixel art, vaporwave, and more. The same script can be rendered in any style without rewriting a single line."
+        },
+        "pricing": {
+          "q": "What about pricing and credits?",
+          "a": "Free to start. Each phase has a clear, predictable credit cost shown up-front — no surprise bills mid-render. Heavier renders (long-form video, lip sync) consume more credits; planning and scripting are nearly free."
+        },
+        "ownership": {
+          "q": "Do I own what I create?",
+          "a": "Yes. You retain rights to your scripts, storyboards, and final renders. Commercial use is allowed on paid plans."
+        },
+        "languages": {
+          "q": "What languages can I create in?",
+          "a": "Scripts and dialogue support English, 简体中文, and 繁體中文 today. Voice synthesis covers the same set with native-quality TTS, and more languages are on the roadmap."
+        }
+      },
+      "stillHaveQuestions": {
+        "title": "Still have questions?",
+        "body": "Drop us a line — we read every message.",
+        "cta": "Contact us"
+      }
+    },
+    "finalCta": {
+      "title": "Ready to make something worth watching?",
+      "subtitle": "Free to start. Bring the story, find the crew, meet the audience.",
+      "primaryCta": "Start creating",
+      "secondaryCta": "Browse IPs",
+      "timing": "About 5 minutes from idea to first frame."
     }
   }
 }

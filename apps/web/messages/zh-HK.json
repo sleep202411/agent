@@ -2708,15 +2708,284 @@
     "tagline": "一個為全球創意內容提供高效交易與賦能的流動性市場。"
   },
   "home": {
-    "tagline": "讓你的故事，動起來。",
-    "subtitle": "劇本 → 分鏡 → 成片。AI 幫你處理重活，你只管講好故事。",
-    "cta": "開始創作",
-    "secondaryCta": "看看怎麼做的",
-    "frames": {
-      "script": "劇本",
-      "storyboard": "分鏡",
-      "shot": "鏡頭",
-      "render": "成片"
+    "hero": {
+      "statusPill": "Happy Horse · 現已上線",
+      "headlineLine1": "故事從這裡開始。",
+      "headlineLine2": "團隊把它做出來。",
+      "subtitle": "工具幫你做，夥伴助你成，觀眾已經在等。",
+      "primaryCta": "立即開始",
+      "secondaryCta": "瀏覽 IP"
+    },
+    "madeWithFizz": {
+      "eyebrow": "用 FizzDragon 製作",
+      "title": "正在製作中的故事。",
+      "subtitle": "FizzDragon 社群正在打造的 IP。點擊進入追蹤進度或支持項目。",
+      "viewAll": "查看全部",
+      "byOwner": "by {name}"
+    },
+    "pillars": {
+      "eyebrow": "三種切入方式",
+      "titleLine1": "一個平台。",
+      "titleLine2": "做內容、組團隊、找觀眾。",
+      "subtitle": "無論你是想做故事、想找搭檔一起做、還是想追下一部好 IP——FizzDragon 三件事都覆蓋。",
+      "items": {
+        "make": {
+          "title": "做",
+          "body": "AI Agent 幫你寫腳本、畫分鏡、配音、渲染每一幀。你來導演，它們來執行。",
+          "cta": "開新項目"
+        },
+        "connect": {
+          "title": "組",
+          "body": "找編劇、畫師、配音、導演。組一支 crew，分工協作，一起把項目做出來。",
+          "cta": "瀏覽 Crew"
+        },
+        "show": {
+          "title": "傳",
+          "body": "發布劇集、聚集觀眾、接受 backer。IP Plaza 是故事和粉絲相遇的地方。",
+          "cta": "進入 IP Plaza"
+        }
+      }
+    },
+    "cast": {
+      "eyebrow": "團隊內幕",
+      "titleLine1": "11 位 Agent。",
+      "titleLine2": "一個連貫的項目。",
+      "subtitle": "每個項目背後，一位總管 Agent 把你的指令路由給各專家——它們共享同一份項目設定，人物、場景、道具的連貫性不需要你親自看著。",
+      "footnote": "……還有 Brief Analyzer、Script Splitter、Evaluator 和 Story Editor 在幕後默默配合。",
+      "members": {
+        "storyOutliner": {
+          "name": "Story Outliner",
+          "role": "通讀你的素材，把人物、場景、道具梳理成一份可工作的世界設定。"
+        },
+        "episodePlanner": {
+          "name": "Episode Planner",
+          "role": "把控多集結構。每集的鉤子、節奏、收尾都安排到位。"
+        },
+        "scriptwriter": {
+          "name": "Scriptwriter",
+          "role": "逐句對白與場景調度，忠實還原 planner 的節奏設計。"
+        },
+        "storyboardDesigner": {
+          "name": "Storyboard Designer",
+          "role": "構圖分鏡，包括鏡頭運動、畫面框選、鏡頭語言註釋。"
+        },
+        "artDirector": {
+          "name": "Art Director",
+          "role": "保證人物、場景、道具的視覺風格從第一幀起就統一。"
+        },
+        "sceneAndPropDesigner": {
+          "name": "Scene & Prop Designer",
+          "role": "搭建你故事所在的世界。跨集複用，越用越完善。"
+        }
+      }
+    },
+    "toolkit": {
+      "eyebrow": "裡面有什麼",
+      "titleLine1": "一間工作室、一張人脈網、",
+      "titleLine2": "一群在等你的觀眾。",
+      "subtitle": "工具、人、以及作品和觀眾相遇的地方——一個平台一併提供。",
+      "items": {
+        "storyboardEditor": {
+          "title": "分鏡編輯器",
+          "body": "以鏡頭為單位思考的編輯器——每個格子裡都有提示詞、參考圖、生成結果和備註。"
+        },
+        "directorOnCall": {
+          "title": "隨叫隨到的導演",
+          "body": "一位了解你項目的總管 Agent，把你的需求路由給最合適的專家。"
+        },
+        "assetLibrary": {
+          "title": "素材庫",
+          "body": "人物、場景、道具——可搜尋、跨集複用。"
+        },
+        "crewWorkspace": {
+          "title": "Crew 協作空間",
+          "body": "和編劇、畫師、配音一起共創。分工、看進度、一起出片。"
+        },
+        "ipPlaza": {
+          "title": "IP Plaza",
+          "body": "發布你的 IP，聚集粉絲，接受 backer。每集都有獨立頁面和數據。"
+        }
+      }
+    },
+    "styleGallery": {
+      "eyebrow": "風格庫",
+      "titleLine1": "同一個故事，",
+      "titleLine2": "無數種樣貌。",
+      "subtitle": "把同一份腳本渲染成任意視覺語言——動漫、電影、水彩、3D。選定風格，開拍系列。",
+      "sidebarTitle": "熱門風格",
+      "sidebarBody": "滑鼠懸停任一縮圖即可在左側預覽。從經典繪畫到現代數位藝術——挑選最契合你故事的樣貌。",
+      "cta": "瀏覽全部 437+ 種風格",
+      "styles": {
+        "anime": "動漫",
+        "cinematic": "電影感",
+        "watercolor": "水彩",
+        "pixel": "像素藝術",
+        "pixar": "3D 皮克斯",
+        "comic": "漫畫",
+        "noir": "黑色電影",
+        "cyberpunk": "賽博朋克",
+        "pastel": "粉彩",
+        "oil": "油畫",
+        "manga": "日漫",
+        "vapor": "蒸汽波"
+      }
+    },
+    "useCases": {
+      "eyebrow": "為每位創作者準備",
+      "title": "適合每一種故事。",
+      "subtitle": "從連續劇到社群廣告再到課程教案——FizzDragon 適配你的媒介和團隊。",
+      "tabs": {
+        "creative": "創作",
+        "business": "商業",
+        "education": "教育"
+      },
+      "tryItNow": "立即試用",
+      "cards": {
+        "creative": {
+          "seriesCreators": {
+            "title": "連續劇創作者",
+            "body": "規劃多集結構，渲染每一幀，讓人物在整季中保持一致。"
+          },
+          "webcomicArtists": {
+            "title": "網絡漫畫作者",
+            "body": "把腳本變成分格、嵌字的漫畫頁面。跨章節複用人物與道具。"
+          },
+          "indieAnimators": {
+            "title": "獨立動畫師",
+            "body": "分鏡、配音、對口型、剪輯——身後不需要一整間工作室。"
+          },
+          "musicAndShorts": {
+            "title": "音樂與短片",
+            "body": "把鏡頭對齊節拍。放一首曲子、勾勒氛圍、一個下午就能出畫面。"
+          }
+        },
+        "business": {
+          "brandFilms": {
+            "title": "品牌片",
+            "body": "路演影片、產品宣傳片、社群剪輯——一個下午從腳本到成片，全程不跑偏品牌調性。"
+          },
+          "productLaunches": {
+            "title": "新品發布",
+            "body": "為新功能製作動畫講解和演示影片，無需影片預算。"
+          },
+          "socialAds": {
+            "title": "社群廣告",
+            "body": "用一份分鏡衍生十幾個版本。測試剪輯、切換風格、每天上新。"
+          },
+          "investorPitches": {
+            "title": "投資路演",
+            "body": "用電影級視覺講故事——敘事弧線代替條目堆砌。"
+          }
+        },
+        "education": {
+          "courseVideos": {
+            "title": "課程影片",
+            "body": "把教案變成有插畫、有配音的故事影片。任何學科、任何年齡段。"
+          },
+          "historyAndCulture": {
+            "title": "歷史與人文",
+            "body": "用考據級視覺讓歷史事件和民間傳說鮮活起來。"
+          },
+          "childrensStories": {
+            "title": "兒童故事",
+            "body": "柔和的插畫、貼合年齡段。為角色配音、對齊口型，分享連結。"
+          },
+          "trainingMaterial": {
+            "title": "培訓素材",
+            "body": "新員工培訓、安全合規——用敘事影片代替簡報。"
+          }
+        }
+      }
+    },
+    "testimonials": {
+      "eyebrow": "好評",
+      "titleBefore": "創作者們怎麼評價",
+      "titleAfter": "。",
+      "subtitle": "聽聽用 FizzDragon 產出專業視覺內容的創作者怎麼說。",
+      "items": {
+        "sarahChen": {
+          "quote": "剛試了 FizzDragon，真的被驚到了。作為一個一直跟分鏡流程死磕的人，能用上一個真正懂構圖的 AI 團隊太爽了。這是我第一個會毫無保留推薦給同行的 AI 動畫工具。",
+          "name": "Sarah Chen",
+          "role": "獨立動畫師"
+        },
+        "alexJohnson": {
+          "quote": "FizzDragon 的文字轉影片流程能把一段文字變成我真願意繼續編輯的東西。跨集無縫的素材庫這一點，沒什麼人提到，但很關鍵。",
+          "name": "Alex Johnson",
+          "role": "科技測評人"
+        },
+        "michaelRodriguez": {
+          "quote": "今年用過最好的影片創作工具。這套 Agent 系統不像玩具，更像一間你能真正指揮的小工作室。",
+          "name": "Michael Rodriguez",
+          "role": "影片導演"
+        },
+        "emmaThompson": {
+          "quote": "FizzDragon 徹底改變了我做短片的方式。文字轉影片流程難以置信——我描述一個場景，午餐前就能拿到能直接上時間線的素材。最打動我的是逐幀精修。",
+          "name": "Emma Thompson",
+          "role": "內容創作者"
+        },
+        "chrisPark": {
+          "quote": "試了影片和圖像增強工具——出專業級內容的便利度是真的。這是我第一次沒有跟模型死磕。",
+          "name": "Chris Park",
+          "role": "自由設計師"
+        },
+        "davidKim": {
+          "quote": "FizzDragon 直接改變了我的內容工作流。新手友善的介面，底下的引擎卻很硬核。我會推薦給任何想做系列內容的人。",
+          "name": "David Kim",
+          "role": "社群媒體經理"
+        },
+        "jessicaMartinez": {
+          "quote": "幾行文字就能產出高質素影片，編輯器也很順手。作為數位內容創作者，我用過的工具數不勝數——這一個我會一直回來用。",
+          "name": "Jessica Martinez",
+          "role": "數位內容創作者"
+        }
+      }
+    },
+    "faq": {
+      "eyebrow": "常見問題",
+      "title": "你想問的，都在這裡。",
+      "subtitle": "在按下你第一場戲的錄製鍵之前，你可能想知道的一切。",
+      "questions": {
+        "whatIs": {
+          "q": "FizzDragon 是什麼？",
+          "a": "為講故事的人打造的平台，三件事合一：(1) AI 工作室——幫你寫腳本、畫分鏡、配音、渲染。(2) Crew 網絡——編劇、畫師、配音聚到一起，分工合作把項目做出來。(3) IP Plaza——成片找到觀眾和 backer 的地方。"
+        },
+        "howCrewWorks": {
+          "q": "AI 團隊是怎麼協作的？",
+          "a": "一位總管 Agent 通讀你的項目，把每個需求路由給對應的專家——Outliner、Episode Planner、Scriptwriter、Storyboard Designer、Art Director 等等。它們共享一份項目設定，所以人物、場景、道具在跨集時保持一致。"
+        },
+        "howLong": {
+          "q": "做出一個東西要多久？",
+          "a": "從想法到第一幀大約 5 分鐘。單條 60 秒短片通常 15 分鐘內能渲染完成；一個多集系列的策劃與分鏡可以在一個下午搞定。"
+        },
+        "styles": {
+          "q": "支援哪些視覺風格？",
+          "a": "437+ 種且持續增加——動漫、電影、水彩、3D 皮克斯、漫畫、黑色電影、像素、蒸汽波等等。同一份腳本無需改寫一句台詞即可換成任意風格渲染。"
+        },
+        "pricing": {
+          "q": "定價和積分怎麼算？",
+          "a": "免費起步。每個階段都有清晰、可預期的積分成本明確展示——渲染中途不會冒出意外帳單。重渲染（長影片、口型同步）消耗較多積分；策劃和寫腳本幾乎免費。"
+        },
+        "ownership": {
+          "q": "我對作品擁有所有權嗎？",
+          "a": "擁有。你保留腳本、分鏡和最終成片的權利。付費計劃允許商用。"
+        },
+        "languages": {
+          "q": "可以用哪些語言創作？",
+          "a": "腳本和對白當前支援 English、简体中文、繁體中文。配音覆蓋同樣三種語言，原生質素 TTS，更多語言在路線圖上。"
+        }
+      },
+      "stillHaveQuestions": {
+        "title": "還有問題？",
+        "body": "給我們留言——每一條我們都看。",
+        "cta": "聯絡我們"
+      }
+    },
+    "finalCta": {
+      "title": "準備好做點值得被看到的東西了嗎？",
+      "subtitle": "免費起步。帶上故事、找到搭檔、遇見觀眾。",
+      "primaryCta": "開始創作",
+      "secondaryCta": "瀏覽 IP",
+      "timing": "從想法到第一幀大約 5 分鐘。"
     }
   }
 }

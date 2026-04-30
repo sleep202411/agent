@@ -5,16 +5,18 @@ import { motion } from "motion/react";
 import {
   IconArrowRight,
   IconBook2,
+  IconBuildingStore,
   IconClock,
+  IconUsersGroup,
   IconWand,
   IconLayoutGrid,
   IconMessage2,
   IconLibrary,
-  IconMicrophone,
+  IconWorld,
   IconSparkles,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import { useLocale } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { Hero } from "./_components/hero";
@@ -25,68 +27,59 @@ import { Testimonials } from "./_components/testimonials";
 import { FAQ } from "./_components/faq";
 import { SmoothScroll } from "./_components/smooth-scroll";
 
-const CAST = [
-  {
-    name: "Story Outliner",
-    role: "Reads your source material. Structures cast, settings, and props into a working bible.",
-  },
-  {
-    name: "Episode Planner",
-    role: "Paces multi-episode arcs. Hooks, beats, and the exit on each one.",
-  },
-  {
-    name: "Scriptwriter",
-    role: "Line-level dialogue and stage direction, faithful to the planner's beats.",
-  },
-  {
-    name: "Storyboard Designer",
-    role: "Composes shots with camera moves, framing, and lensing notes.",
-  },
-  {
-    name: "Art Director",
-    role: "Keeps style coherent across roles, scenes, and props from frame one.",
-  },
-  {
-    name: "Scene & Prop Designer",
-    role: "Builds the world your story lives in. Reusable across episodes.",
-  },
+// Cast / toolkit are kept here as the source of truth for icons + grid
+// layout; visible text is read at render time from the home.* i18n
+// namespace via the `key` field. Adding a member: append the key here
+// and the matching entry in `home.cast.members.<key>` in messages/*.json.
+const CAST_KEYS = [
+  "storyOutliner",
+  "episodePlanner",
+  "scriptwriter",
+  "storyboardDesigner",
+  "artDirector",
+  "sceneAndPropDesigner",
 ] as const;
 
-const TOOLKIT = [
+const TOOLKIT_TILES = [
   {
+    key: "storyboardEditor",
     icon: IconLayoutGrid,
-    title: "Storyboard editor",
-    body: "An editor that thinks in shots — every cell holds prompts, references, generations, and notes.",
     span: "lg:col-span-2 lg:row-span-2",
   },
   {
+    key: "directorOnCall",
     icon: IconMessage2,
-    title: "Director on call",
-    body: "A supervisor agent that knows your project and routes your asks to the right specialist.",
     span: "lg:col-span-2",
   },
   {
+    key: "assetLibrary",
     icon: IconLibrary,
-    title: "Asset library",
-    body: "Roles, scenes, props — searchable, reusable across every episode.",
     span: "",
   },
   {
-    icon: IconMicrophone,
-    title: "Voice & lip sync",
-    body: "Voice every character, sync mouths to lines.",
+    key: "crewWorkspace",
+    icon: IconUsersGroup,
     span: "",
   },
   {
-    icon: IconSparkles,
-    title: "Predictable credits",
-    body: "Clear cost per phase. No surprise bills mid-render.",
+    key: "ipPlaza",
+    icon: IconWorld,
     span: "lg:col-span-2",
   },
+] as const;
+
+// Three pillars — Make / Connect / Show. Each maps to a destination
+// route so the CTA on the pillar card delivers the user into the
+// right product surface (workspace / crews directory / IP Plaza).
+const PILLARS = [
+  { key: "make", icon: IconSparkles, href: "/login" },
+  { key: "connect", icon: IconUsersGroup, href: "/crews" },
+  { key: "show", icon: IconBuildingStore, href: "/ips" },
 ] as const;
 
 export default function HomePage() {
   const locale = useLocale() as Locale;
+  const t = useTranslations("home");
 
   return (
     <SmoothScroll>
@@ -96,26 +89,78 @@ export default function HomePage() {
         <Hero />
         <MadeWithFizz />
 
-        {/* ─── The Cast ─────────────────────────────────────────────────── */}
+        {/* ─── Three Pillars: Make / Connect / Show ─────────────────────── */}
+        {/* Anchored at the top of the page so visitors immediately see
+            FizzDragon spans more than the AI tool — each pillar is a
+            different way to be on the platform, with its own destination
+            CTA. Order matches user-journey flow: make a thing → find
+            people to make it with → show it to an audience. */}
+        <section className="relative border-t border-border/40 px-6 py-32">
+          <div className="mx-auto max-w-6xl">
+            <SectionHeader
+              eyebrow={t("pillars.eyebrow")}
+              title={
+                <>
+                  {t("pillars.titleLine1")}
+                  <br />
+                  <span className="text-muted-foreground">{t("pillars.titleLine2")}</span>
+                </>
+              }
+              subtitle={t("pillars.subtitle")}
+            />
+
+            <div className="mt-20 grid gap-5 md:grid-cols-3">
+              {PILLARS.map((pillar, i) => (
+                <motion.div
+                  key={pillar.key}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-80px" }}
+                  transition={{ duration: 0.5, ease: "easeOut", delay: i * 0.08 }}
+                  className="group relative flex flex-col rounded-2xl border border-border/50 bg-gradient-to-br from-card/70 to-card/20 p-8 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-border"
+                >
+                  <div className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-foreground/10 to-foreground/[0.02] text-foreground/80">
+                    <pillar.icon className="size-5" />
+                  </div>
+                  <h3 className="mt-5 text-2xl font-semibold tracking-tight text-foreground">
+                    {t(`pillars.items.${pillar.key}.title`)}
+                  </h3>
+                  <p className="mt-3 flex-1 text-sm leading-relaxed text-muted-foreground sm:text-base">
+                    {t(`pillars.items.${pillar.key}.body`)}
+                  </p>
+                  <Link
+                    href={localizePath(pillar.href, locale)}
+                    className="mt-6 inline-flex items-center gap-1.5 self-start text-sm font-medium text-foreground transition-colors group-hover:text-primary"
+                  >
+                    {t(`pillars.items.${pillar.key}.cta`)}
+                    <IconArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Inside the AI crew ───────────────────────────────────────── */}
         <section className="relative border-t border-border/40 px-6 py-32">
           <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_50%_40%_at_50%_50%,hsl(var(--primary)/0.06),transparent_70%)]" />
           <div className="mx-auto max-w-6xl">
             <SectionHeader
-              eyebrow="Meet your crew"
+              eyebrow={t("cast.eyebrow")}
               title={
                 <>
-                  You're not directing one AI.
+                  {t("cast.titleLine1")}
                   <br />
-                  <span className="text-muted-foreground">You're directing a crew.</span>
+                  <span className="text-muted-foreground">{t("cast.titleLine2")}</span>
                 </>
               }
-              subtitle="Eleven specialist agents, each tuned for one job, talking to each other through a supervisor that takes your direction."
+              subtitle={t("cast.subtitle")}
             />
 
             <div className="mt-20 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {CAST.map((member, i) => (
+              {CAST_KEYS.map((memberKey, i) => (
                 <motion.div
-                  key={member.name}
+                  key={memberKey}
                   initial={{ opacity: 0, y: 16 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: "-80px" }}
@@ -126,18 +171,17 @@ export default function HomePage() {
                     <IconWand className="size-4" />
                   </div>
                   <h3 className="mt-4 text-base font-semibold tracking-tight text-foreground">
-                    {member.name}
+                    {t(`cast.members.${memberKey}.name`)}
                   </h3>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    {member.role}
+                    {t(`cast.members.${memberKey}.role`)}
                   </p>
                 </motion.div>
               ))}
             </div>
 
             <p className="mt-10 text-center text-sm text-muted-foreground/70">
-              …plus Brief Analyzer, Script Splitter, Evaluator, and Story Editor working behind the
-              scenes.
+              {t("cast.footnote")}
             </p>
           </div>
         </section>
@@ -146,21 +190,21 @@ export default function HomePage() {
         <section className="relative border-t border-border/40 px-6 py-32">
           <div className="mx-auto max-w-6xl">
             <SectionHeader
-              eyebrow="The studio"
+              eyebrow={t("toolkit.eyebrow")}
               title={
                 <>
-                  A studio that fits
+                  {t("toolkit.titleLine1")}
                   <br />
-                  <span className="text-muted-foreground">in your browser.</span>
+                  <span className="text-muted-foreground">{t("toolkit.titleLine2")}</span>
                 </>
               }
-              subtitle="Everything a creative team needs to ship — without needing a creative team."
+              subtitle={t("toolkit.subtitle")}
             />
 
             <div className="mt-20 grid auto-rows-[minmax(180px,auto)] grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {TOOLKIT.map((tile, i) => (
+              {TOOLKIT_TILES.map((tile, i) => (
                 <motion.div
-                  key={tile.title}
+                  key={tile.key}
                   initial={{ opacity: 0, scale: 0.96 }}
                   whileInView={{ opacity: 1, scale: 1 }}
                   viewport={{ once: true, margin: "-60px" }}
@@ -171,10 +215,10 @@ export default function HomePage() {
                     <tile.icon className="size-4" />
                   </div>
                   <h3 className="mt-4 text-lg font-semibold tracking-tight text-foreground">
-                    {tile.title}
+                    {t(`toolkit.items.${tile.key}.title`)}
                   </h3>
                   <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-                    {tile.body}
+                    {t(`toolkit.items.${tile.key}.body`)}
                   </p>
                 </motion.div>
               ))}
@@ -198,7 +242,7 @@ export default function HomePage() {
               transition={{ duration: 0.6, ease: "easeOut" }}
               className="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl md:text-6xl"
             >
-              Ready to direct your first crew?
+              {t("finalCta.title")}
             </motion.h2>
             <motion.p
               initial={{ opacity: 0, y: 12 }}
@@ -207,7 +251,7 @@ export default function HomePage() {
               transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}
               className="mx-auto mt-5 max-w-xl text-balance text-base text-muted-foreground sm:text-lg"
             >
-              Free to start. Bring your story, we'll bring the crew.
+              {t("finalCta.subtitle")}
             </motion.p>
             <motion.div
               initial={{ opacity: 0, y: 12 }}
@@ -218,20 +262,20 @@ export default function HomePage() {
             >
               <Button size="lg" asChild>
                 <Link href={localizePath("/login", locale)}>
-                  Start creating
+                  {t("finalCta.primaryCta")}
                   <IconArrowRight className="size-4" />
                 </Link>
               </Button>
               <Button size="lg" variant="outline" color="muted" asChild>
                 <Link href={localizePath("/ips", locale)}>
                   <IconBook2 className="size-4" />
-                  Browse IPs
+                  {t("finalCta.secondaryCta")}
                 </Link>
               </Button>
             </motion.div>
             <p className="mt-6 inline-flex items-center gap-1.5 text-xs text-muted-foreground/60">
               <IconClock className="size-3.5" />
-              About 5 minutes from idea to first frame.
+              {t("finalCta.timing")}
             </p>
           </div>
         </section>
