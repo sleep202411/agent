@@ -25,6 +25,7 @@ import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, type StoryosContext } from "../../lib/workspace-client";
 import { summarizeBatch } from "../../lib/batch-writer";
 import { getOutline, type StoryOutline } from "../../lib/outline";
+import { ensureOutline } from "../../lib/outline-deps";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 import {
   publishWorkflowCompleted,
@@ -125,12 +126,7 @@ const resolveInputStep = createStep({
     if (!runId) throw new Error("runId missing");
 
     const ctx = getContext(requestContext);
-    const record = await getOutline(ctx.projectId);
-    if (!record) {
-      throw new Error(
-        `scene_phase: no story outline cached for project ${ctx.projectId}. Run story_outline first.`
-      );
-    }
+    const record = await ensureOutline(ctx.projectId, { requiredBy: "scene_phase" });
     const sceneDesigner = mastra?.getAgent("sceneDesigner");
     if (!sceneDesigner) throw new Error("sceneDesigner agent not registered");
 

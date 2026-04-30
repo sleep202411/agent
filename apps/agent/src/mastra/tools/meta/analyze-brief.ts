@@ -19,7 +19,8 @@
  */
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { getRedis } from "../../lib/redis-client";
+import { resolveAttachmentText } from "../../lib/attachment-resolve";
+import { getContext } from "../../lib/workspace-client";
 import { robustStructuredGenerate } from "../../lib/robust-generate";
 import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/language";
 
@@ -67,19 +68,16 @@ export type AnalyzeBriefOutput = z.infer<typeof BriefShape>;
 // count needs the tail) has plenty of signal.
 const MAX_TEXT_CHARS = 50000;
 
-async function resolveText(input: { text?: string; textRef?: string }): Promise<string> {
+async function resolveText(
+  input: { text?: string; textRef?: string },
+  opts: { projectId?: string }
+): Promise<string> {
   if (input.text && input.text.trim().length > 0) {
     return input.text.trim().slice(0, MAX_TEXT_CHARS);
   }
   if (input.textRef && input.textRef.startsWith("att_")) {
-    const redis = getRedis();
-    const raw = await redis.get(`attachment:${input.textRef}`);
-    if (!raw) throw new Error(`Attachment ref not found or expired: ${input.textRef}`);
-    const parsed = JSON.parse(raw) as { text?: string };
-    if (typeof parsed.text !== "string") {
-      throw new Error(`Attachment ${input.textRef} has no text field`);
-    }
-    return parsed.text.trim().slice(0, MAX_TEXT_CHARS);
+    const text = await resolveAttachmentText(input.textRef, { projectId: opts.projectId });
+    return text.trim().slice(0, MAX_TEXT_CHARS);
   }
   throw new Error("analyze_brief: must supply `text` or `textRef`");
 }
@@ -132,7 +130,16 @@ export const analyzeBrief = createTool({
   }),
   outputSchema: BriefShape,
   execute: async ({ text, textRef, contentLanguage }, execCtx) => {
-    const resolvedText = await resolveText({ text, textRef });
+    // Pull projectId off the request context if present. analyze_brief often
+    // runs BEFORE a project exists (fresh-material flow), so projectId may
+    // be empty — resolveAttachmentText handles that gracefully (Redis-only).
+    let projectId: string | undefined;
+    try {
+      projectId = getContext(execCtx?.requestContext).projectId;
+    } catch {
+      projectId = undefined;
+    }
+    const resolvedText = await resolveText({ text, textRef }, { projectId });
     // analyze_brief runs before configure_params, so the supervisor often
     // can't supply a contentLanguage yet. Heuristic: sample the first ~2KB
     // of the material; ≥ 30% CJK → zh-CN, else en-US. This only kicks in

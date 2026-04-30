@@ -1,47 +1,10 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
-import { getRedis } from "../../lib/redis-client";
 import { getContext, type StoryosContext } from "../../lib/workspace-client";
+import { resolveAttachmentRefs } from "../../lib/attachment-resolve";
 import { startWorkflow } from "../../workflows/engine";
 import { estimateWorkflowCost, getUserBalance } from "../../lib/billing";
-
-/**
- * Recursively resolve attachment references embedded in the tool inputData.
- *
- * The NestJS preprocess caches large attachment text in Redis under
- * `attachment:<ref>` and asks the agent to pass `{textRef: "att_xxx"}` instead
- * of copying the text into the tool call (which would blow up the JSON). Here
- * we swap any `*Ref` field whose value starts with `att_` for the cached text
- * under the corresponding bare field name (e.g. textRef → text).
- */
-async function resolveAttachmentRefs(value: unknown): Promise<unknown> {
-  if (Array.isArray(value)) {
-    return Promise.all(value.map(resolveAttachmentRefs));
-  }
-  if (value === null || typeof value !== "object") return value;
-
-  const src = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  const redis = getRedis();
-  for (const [key, v] of Object.entries(src)) {
-    if (key.endsWith("Ref") && key.length > 3 && typeof v === "string" && v.startsWith("att_")) {
-      const raw = await redis.get(`attachment:${v}`);
-      if (!raw) {
-        throw new Error(`Attachment ref not found or expired: ${v}`);
-      }
-      const parsed = JSON.parse(raw) as { text?: string };
-      if (typeof parsed.text !== "string") {
-        throw new Error(`Attachment ${v} has no text field`);
-      }
-      const bareKey = key.slice(0, -"Ref".length);
-      out[bareKey] = parsed.text;
-    } else {
-      out[key] = await resolveAttachmentRefs(v);
-    }
-  }
-  return out;
-}
 
 export const invokeWorkflow = createTool({
   id: "invoke_workflow",
@@ -72,7 +35,7 @@ export const invokeWorkflow = createTool({
   execute: async ({ workflowName, inputData }, execCtx) => {
     const baseCtx = getContext(execCtx?.requestContext);
 
-    const resolvedInput = await resolveAttachmentRefs(inputData);
+    const resolvedInput = await resolveAttachmentRefs(inputData, { projectId: baseCtx.projectId });
     const resolvedObj =
       resolvedInput && typeof resolvedInput === "object" && !Array.isArray(resolvedInput)
         ? (resolvedInput as Record<string, unknown>)
