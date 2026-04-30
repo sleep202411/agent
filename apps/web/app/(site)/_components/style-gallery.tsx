@@ -13,12 +13,9 @@
  */
 
 import { useState } from "react";
-import Link from "next/link";
 import { motion } from "motion/react";
-import { IconArrowRight } from "@tabler/icons-react";
-import { useLocale, useTranslations } from "@/src/i18n/i18n";
-import { localizePath } from "@/src/i18n/locale-url";
-import type { Locale } from "@/src/i18n/config";
+import { IconSparkles } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 
 // Static layout: id → image. The visible label is read at render time
 // from `home.styleGallery.styles.<id>` so the same gallery localizes.
@@ -38,59 +35,31 @@ type StyleId =
 
 type Style = { id: StyleId; image: string };
 
+// Image hosting: own OSS at static.fizzspace.cn under static/pc/.
+// Same subject (a young woman with a dragon coiled around her on a
+// city rooftop at dusk) rendered in 12 styles — that's the section's
+// load-bearing claim ("one story, every look"), so the images need
+// to share a subject. Uploaded via the platform's public upload
+// endpoint; replace the OSS object to swap an image without touching
+// this file.
+const OSS_BASE = "https://static.fizzspace.cn/static/pc";
+
 const STYLES: Style[] = [
-  {
-    id: "anime",
-    image: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "cinematic",
-    image: "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "watercolor",
-    image: "https://images.unsplash.com/photo-1513366208864-87536b8bd7b4?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "pixel",
-    image: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "pixar",
-    image: "https://images.unsplash.com/photo-1608889825205-eebdb9fc5806?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "comic",
-    image: "https://images.unsplash.com/photo-1531259683007-016a7b628fc3?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "noir",
-    image: "https://images.unsplash.com/photo-1543722530-d2c3201371e7?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "cyberpunk",
-    image: "https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "pastel",
-    image: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "oil",
-    image: "https://images.unsplash.com/photo-1549289524-06cf8837ace5?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "manga",
-    image: "https://images.unsplash.com/photo-1605379399642-870262d3d051?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "vapor",
-    image: "https://images.unsplash.com/photo-1614851099175-e5b30eb6f696?w=1200&q=80&fit=crop",
-  },
+  { id: "anime", image: `${OSS_BASE}/home-style-anime.png` },
+  { id: "cinematic", image: `${OSS_BASE}/home-style-cinematic.png` },
+  { id: "watercolor", image: `${OSS_BASE}/home-style-watercolor.png` },
+  { id: "pixel", image: `${OSS_BASE}/home-style-pixel.png` },
+  { id: "pixar", image: `${OSS_BASE}/home-style-pixar.png` },
+  { id: "comic", image: `${OSS_BASE}/home-style-comic.png` },
+  { id: "noir", image: `${OSS_BASE}/home-style-noir.png` },
+  { id: "cyberpunk", image: `${OSS_BASE}/home-style-cyberpunk.png` },
+  { id: "pastel", image: `${OSS_BASE}/home-style-pastel.png` },
+  { id: "oil", image: `${OSS_BASE}/home-style-oil.png` },
+  { id: "manga", image: `${OSS_BASE}/home-style-manga.png` },
+  { id: "vapor", image: `${OSS_BASE}/home-style-vapor.png` },
 ];
 
 export function StyleGallery() {
-  const locale = useLocale() as Locale;
   const t = useTranslations("home");
   const [active, setActive] = useState<Style>(STYLES[0]);
   const activeName = t(`styleGallery.styles.${active.id}`);
@@ -193,13 +162,20 @@ export function StyleGallery() {
               })}
             </div>
 
-            <Link
-              href={localizePath("/login", locale)}
-              className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-6 py-4 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+            {/* Non-interactive count badge — used to be a Link to /login,
+                but the "browse all 437+ styles" promise wasn't actually
+                delivered post-click (login lands in workspace, not a
+                public style library). Demoting to a stat label keeps
+                the breadth-of-platform cue without the broken promise.
+                Restyle: subtle muted background + sparkle icon, NOT a
+                pill-button shape, so it doesn't read as clickable. */}
+            <div
+              className="mt-6 inline-flex items-center justify-center gap-2 self-start rounded-full border border-border/50 bg-card/40 px-5 py-3 text-sm font-medium text-muted-foreground"
+              aria-label={t("styleGallery.cta")}
             >
+              <IconSparkles className="size-4 text-amber-300/70" />
               {t("styleGallery.cta")}
-              <IconArrowRight className="size-4" />
-            </Link>
+            </div>
           </div>
         </div>
       </div>
