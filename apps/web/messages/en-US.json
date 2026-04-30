@@ -219,10 +219,12 @@
     "ipPlaza": "IP Plaza",
     "studioHall": "Crews",
     "creators": "Talent Market",
+    "course": "Academy",
     "news": "News",
     "workbench": "Workbench",
     "getStarted": "Get Started",
-    "language": "Language"
+    "language": "Language",
+    "menu": "Menu"
   },
   "auth": {
     "welcomeBack": "Welcome Back",
@@ -799,13 +801,41 @@
     "roadmap": "Project Roadmap",
     "teamMembers": "Team Members",
     "latestActivity": "Latest Activity",
-    "applyToJoin": "Apply to Join"
+    "applyToJoin": "Apply to Join",
+    "list": {
+      "pageTitle": "Find a Project",
+      "createProject": "Create Project",
+      "myProjects": "My Projects",
+      "filterAll": "All",
+      "jobPositions": "Open positions",
+      "join": "Join",
+      "loading": "Loading…",
+      "loadMore": "Load more",
+      "noMore": "No more projects",
+      "noData": "No projects yet — check back later.",
+      "notAvailable": "Anonymous"
+    },
+    "detail": {
+      "back": "Back",
+      "notFound": "Project not found",
+      "rolesTitle": "Open Roles",
+      "noRoles": "No roles posted yet.",
+      "applyJoin": "Apply to Join",
+      "alreadyApplied": "Application sent",
+      "ownProject": "Your project",
+      "contactLabel": "Contact",
+      "promoVideo": "Promotional Video",
+      "team": "Team",
+      "applySuccess": "Application submitted",
+      "applyFail": "Application failed, please try again"
+    }
   },
   "news": {
     "title": "FizzDragon Newsroom",
     "subtitle": "Stories, interviews and announcements from the AI-native film studio.",
     "subscribePlaceholder": "Enter your email",
     "subscribe": "Subscribe",
+    "subscribeSocialProof": "1,200,000 super viewers, investors, creators, schools, and other institutions have subscribed.",
     "tSubscribed": "Subscribed! We'll send updates to {{email}}.",
     "tInvalidEmail": "Please enter a valid email",
     "recent": "Recent blog posts",

@@ -219,10 +219,12 @@
     "ipPlaza": "IP 广场",
     "studioHall": "剧组大厅",
     "creators": "人才集市",
+    "course": "学院",
     "news": "新闻",
     "workbench": "工作台",
     "getStarted": "免费开始",
-    "language": "语言"
+    "language": "语言",
+    "menu": "菜单"
   },
   "auth": {
     "welcomeBack": "欢迎回来",
@@ -799,13 +801,41 @@
     "roadmap": "制作路线图",
     "teamMembers": "团队成员",
     "latestActivity": "最新动态",
-    "applyToJoin": "申请加入"
+    "applyToJoin": "申请加入",
+    "list": {
+      "pageTitle": "找项目",
+      "createProject": "创建项目",
+      "myProjects": "我的项目",
+      "filterAll": "全部",
+      "jobPositions": "招募岗位",
+      "join": "加入",
+      "loading": "加载中…",
+      "loadMore": "加载更多",
+      "noMore": "没有更多项目了",
+      "noData": "暂无项目",
+      "notAvailable": "匿名用户"
+    },
+    "detail": {
+      "back": "返回",
+      "notFound": "项目不存在",
+      "rolesTitle": "岗位要求",
+      "noRoles": "暂无招聘信息",
+      "applyJoin": "申请加入",
+      "alreadyApplied": "已申请",
+      "ownProject": "我的项目",
+      "contactLabel": "联系方式",
+      "promoVideo": "宣传推广片",
+      "team": "团队成员",
+      "applySuccess": "申请成功",
+      "applyFail": "申请失败，请稍后重试"
+    }
   },
   "news": {
     "title": "FizzDragon 新闻中心",
     "subtitle": "AI 原生电影工作室的故事、访谈与公告。",
     "subscribePlaceholder": "输入你的邮箱",
     "subscribe": "订阅",
+    "subscribeSocialProof": "已有 120 万 + 资深观众、投资人、创作者、院校等机构订阅。",
     "tSubscribed": "订阅成功！我们会把更新发送到 {{email}}。",
     "tInvalidEmail": "请输入有效的邮箱",
     "recent": "最新文章",

@@ -219,10 +219,12 @@
     "ipPlaza": "IP 廣場",
     "studioHall": "劇組大廳",
     "creators": "人才集市",
+    "course": "學院",
     "news": "新聞",
     "workbench": "工作台",
     "getStarted": "免費開始",
-    "language": "語言"
+    "language": "語言",
+    "menu": "選單"
   },
   "auth": {
     "welcomeBack": "歡迎回來",
@@ -799,13 +801,41 @@
     "roadmap": "製作路線圖",
     "teamMembers": "團隊成員",
     "latestActivity": "最新動態",
-    "applyToJoin": "申請加入"
+    "applyToJoin": "申請加入",
+    "list": {
+      "pageTitle": "找專案",
+      "createProject": "建立專案",
+      "myProjects": "我的專案",
+      "filterAll": "全部",
+      "jobPositions": "招募崗位",
+      "join": "加入",
+      "loading": "載入中…",
+      "loadMore": "載入更多",
+      "noMore": "沒有更多專案了",
+      "noData": "暫無專案",
+      "notAvailable": "匿名使用者"
+    },
+    "detail": {
+      "back": "返回",
+      "notFound": "專案不存在",
+      "rolesTitle": "崗位要求",
+      "noRoles": "暫無招聘資訊",
+      "applyJoin": "申請加入",
+      "alreadyApplied": "已申請",
+      "ownProject": "我的專案",
+      "contactLabel": "聯絡方式",
+      "promoVideo": "宣傳推廣片",
+      "team": "團隊成員",
+      "applySuccess": "申請成功",
+      "applyFail": "申請失敗，請稍後重試"
+    }
   },
   "news": {
     "title": "FizzDragon 新聞中心",
     "subtitle": "AI 原生電影工作室的故事、訪談與公告。",
     "subscribePlaceholder": "輸入你的電郵",
     "subscribe": "訂閱",
+    "subscribeSocialProof": "已有 120 萬 + 資深觀眾、投資人、創作者、院校等機構訂閱。",
     "tSubscribed": "訂閱成功！我們會把更新發送到 {{email}}。",
     "tInvalidEmail": "請輸入有效的電郵",
     "recent": "最新文章",

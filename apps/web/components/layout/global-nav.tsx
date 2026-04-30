@@ -10,7 +10,20 @@ import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { useTheme } from "next-themes";
-import { IconMoon, IconSun, IconLanguage, IconCheck } from "@tabler/icons-react";
+import {
+  IconMoon,
+  IconSun,
+  IconLanguage,
+  IconCheck,
+  IconBuildingStore,
+  IconUsersGroup,
+  IconUserSearch,
+  IconWand,
+  IconNews,
+  IconBook,
+  IconMenu2,
+  IconX,
+} from "@tabler/icons-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +56,12 @@ export function GlobalNav() {
   // Background fades in as the user scrolls past the first ~80px so the
   // hero backdrop sits behind a fully transparent nav at rest.
   const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);
     onScroll();
@@ -59,11 +78,14 @@ export function GlobalNav() {
   if (shouldHide) return null;
 
   const navItems = [
-    { href: "/ips", label: t("ipPlaza") },
-    { href: "/crews", label: t("studioHall") },
-    { href: "/creators", label: t("creators") },
-    { href: "/studio/projects", label: t("studio"), target: "_blank" as const },
-    { href: "/news", label: t("news") },
+    { href: "/ips", label: t("ipPlaza"), Icon: IconBuildingStore },
+    { href: "/crews", label: t("studioHall"), Icon: IconUsersGroup },
+    { href: "/creators", label: t("creators"), Icon: IconUserSearch },
+    { href: "/studio/projects", label: t("studio"), Icon: IconWand },
+    // Legacy uni-app route — flip to "/courses" once the native page in
+    // app/(site)/courses/ ships per its README migration plan.
+    { href: "/pages/course/course", label: t("course"), Icon: IconBook },
+    { href: "/news", label: t("news"), Icon: IconNews },
   ];
 
   const isActive = (href: string) => pathname.startsWith(href);
@@ -99,24 +121,35 @@ export function GlobalNav() {
           : "border-b border-transparent bg-transparent"
       )}
     >
-      <div className="mx-auto flex h-16 max-w-screen-2xl items-center gap-4 px-6">
+      <div className="mx-auto flex h-16 max-w-[1800px] items-center gap-4 px-6">
+        {/* Mobile hamburger */}
+        <button
+          type="button"
+          onClick={() => setMobileOpen((v) => !v)}
+          aria-label={t("menu")}
+          aria-expanded={mobileOpen}
+          className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground lg:hidden"
+        >
+          {mobileOpen ? <IconX className="size-5" /> : <IconMenu2 className="size-5" />}
+        </button>
+
         {/* Logo */}
         <Link href="/" className="flex shrink-0 items-center">
           <img src="/logo.png" alt="FizzDragon" className="h-6 w-auto object-contain" />
         </Link>
 
-        {/* Nav links */}
+        {/* Nav links (desktop) */}
         <nav className="ml-6 hidden flex-1 items-center gap-8 lg:flex">
-          {navItems.map(({ href, label, target }) => (
+          {navItems.map(({ href, label, Icon }) => (
             <Link
               key={href}
               href={href}
-              target={target}
               className={cn(
-                "text-sm transition-colors",
+                "inline-flex items-center gap-1.5 text-sm transition-colors",
                 isActive(href) ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
+              <Icon className="size-4" />
               {label}
             </Link>
           ))}
@@ -168,13 +201,49 @@ export function GlobalNav() {
             <button
               type="button"
               onClick={() => router.push(localizePath("/login", locale as Locale))}
-              className="ml-1 flex h-9 items-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
+              className="ml-1 hidden h-9 items-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10 sm:flex"
             >
               {t("getStarted")}
             </button>
           )}
         </div>
       </div>
+
+      {/* Mobile drawer */}
+      {mobileOpen && (
+        <div className="border-t border-border/50 bg-background/95 backdrop-blur-xl lg:hidden">
+          <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3">
+            {navItems.map(({ href, label, Icon }) => (
+              <Link
+                key={href}
+                href={href}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors",
+                  isActive(href)
+                    ? "bg-foreground/5 text-foreground"
+                    : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                )}
+              >
+                <Icon className="size-4" />
+                {label}
+              </Link>
+            ))}
+            {!user && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  router.push(localizePath("/login", locale as Locale));
+                }}
+                className="mt-2 flex h-10 items-center justify-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
+              >
+                {t("getStarted")}
+              </button>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }
