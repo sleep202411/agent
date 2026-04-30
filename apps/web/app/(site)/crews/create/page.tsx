@@ -1,19 +1,27 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   IconArrowLeft,
+  IconCalendar,
   IconChevronRight,
   IconCircleCheck,
-  IconMovie,
-  IconFileText,
-  IconUsers,
-  IconCalendar,
   IconCurrencyDollar,
+  IconFileText,
+  IconLoader2,
+  IconMovie,
+  IconUsers,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { useCreateCrew, type CreateCrewInput } from "@/app/(site)/crews/_hooks/use-crew";
 
 const PROJECT_TYPES = [
   "ebook",
@@ -54,7 +62,7 @@ const ALL_ROLES = [
   "asstProducer",
 ] as const;
 
-interface FormData {
+interface FormState {
   name: string;
   ipName: string;
   projectType: string;
@@ -66,6 +74,18 @@ interface FormData {
   rolesCount: Record<string, number>;
 }
 
+const EMPTY_FORM: FormState = {
+  name: "",
+  ipName: "",
+  projectType: "",
+  description: "",
+  deadline: "",
+  budgetRange: "",
+  startPhase: "preProduction",
+  roles: [],
+  rolesCount: {},
+};
+
 const STEPS = [
   { step: 1, labelKey: "csStepBasic" },
   { step: 2, labelKey: "csStepRoles" },
@@ -74,21 +94,13 @@ const STEPS = [
 
 export default function CreateCrewPage() {
   const t = useTranslations("crewCreate");
+  const router = useRouter();
   const [step, setStep] = useState(1);
-  const [submitted, setSubmitted] = useState(false);
-  const [form, setForm] = useState<FormData>({
-    name: "",
-    ipName: "",
-    projectType: "",
-    description: "",
-    deadline: "",
-    budgetRange: "",
-    startPhase: "preProduction",
-    roles: [],
-    rolesCount: {},
-  });
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
-  const update = useCallback((patch: Partial<FormData>) => {
+  const { mutate: createCrew, isPending: submitting } = useCreateCrew();
+
+  const update = useCallback((patch: Partial<FormState>) => {
     setForm((prev) => ({ ...prev, ...patch }));
   }, []);
 
@@ -106,25 +118,25 @@ export default function CreateCrewPage() {
 
   const canProceed = step === 1 ? form.name.trim().length > 0 && form.projectType.length > 0 : true;
 
-  if (submitted) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6">
-        <div className="flex size-16 items-center justify-center rounded-full bg-green-400/10">
-          <IconCircleCheck className="size-8 text-green-400" />
-        </div>
-        <h1 className="mt-6 text-2xl font-bold text-foreground">{t("csSuccessTitle")}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t("csSuccessDesc")}</p>
-        <div className="mt-8 flex items-center gap-3">
-          <Link
-            href="/crews"
-            className="rounded-xl border border-border bg-secondary px-6 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary/80"
-          >
-            {t("csBackToHall")}
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const handleSubmit = () => {
+    const payload: CreateCrewInput = {
+      name: form.name.trim(),
+      ipName: form.ipName.trim() || undefined,
+      description: form.description.trim() || undefined,
+      projectType: form.projectType,
+      deadline: form.deadline || undefined,
+      budgetRange: form.budgetRange.trim() || undefined,
+      startPhase: form.startPhase,
+      roles: form.roles.map((name) => ({ name, count: form.rolesCount[name] || 1 })),
+    };
+    createCrew(payload, {
+      onSuccess: ({ id }) => {
+        toast.success(t("csSuccessTitle"));
+        router.push(`/crews/${id}`);
+      },
+      onError: () => toast.error(t("csCreate")),
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -189,92 +201,74 @@ export default function CreateCrewPage() {
         {/* Step 1: Basic Info */}
         {step === 1 && (
           <div className="space-y-6">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-foreground">
+            <Field>
+              <FieldLabel>
                 <IconFileText className="mr-1 inline size-4" />
                 {t("csName")} <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="text"
+              </FieldLabel>
+              <Input
                 value={form.name}
                 onChange={(e) => update({ name: e.target.value })}
                 placeholder={t("csNamePlaceholder")}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-foreground">
-                {t("csIPName")}
-              </label>
-              <input
-                type="text"
+            </Field>
+
+            <Field>
+              <FieldLabel>{t("csIPName")}</FieldLabel>
+              <Input
                 value={form.ipName}
                 onChange={(e) => update({ ipName: e.target.value })}
                 placeholder={t("csIPNamePlaceholder")}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
-            </div>
-            <div>
-              <label className="mb-3 block text-sm font-medium text-foreground">
+            </Field>
+
+            <Field>
+              <FieldLabel>
                 {t("csProjectType")} <span className="text-destructive">*</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {PROJECT_TYPES.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => update({ projectType: type })}
-                    className={cn(
-                      "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                      form.projectType === type
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                    )}
-                  >
-                    {t(`csType_${type}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-foreground">
+              </FieldLabel>
+              <ChipGroup
+                items={PROJECT_TYPES.map((id) => ({ id, label: t(`csType_${id}`) }))}
+                selected={form.projectType}
+                onSelect={(id) => update({ projectType: id })}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel>
                 <IconFileText className="mr-1 inline size-4" />
                 {t("csDescription")}
-              </label>
-              <textarea
+              </FieldLabel>
+              <Textarea
                 value={form.description}
                 onChange={(e) => update({ description: e.target.value })}
                 placeholder={t("csDescPlaceholder")}
                 rows={4}
-                className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
-            </div>
+            </Field>
+
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
+              <Field>
+                <FieldLabel>
                   <IconCalendar className="mr-1 inline size-4" />
                   {t("csDeadline")}
-                </label>
-                <input
+                </FieldLabel>
+                <Input
                   type="date"
                   value={form.deadline}
                   onChange={(e) => update({ deadline: e.target.value })}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-foreground">
+              </Field>
+              <Field>
+                <FieldLabel>
                   <IconCurrencyDollar className="mr-1 inline size-4" />
                   {t("csBudgetRange")}
-                </label>
-                <input
-                  type="text"
+                </FieldLabel>
+                <Input
                   value={form.budgetRange}
                   onChange={(e) => update({ budgetRange: e.target.value })}
                   placeholder={t("csBudgetPlaceholder")}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
-              </div>
+              </Field>
             </div>
           </div>
         )}
@@ -282,51 +276,28 @@ export default function CreateCrewPage() {
         {/* Step 2: Phases & Roles */}
         {step === 2 && (
           <div className="space-y-6">
-            <div>
-              <label className="mb-3 block text-sm font-medium text-foreground">
-                {t("csStartPhase")}
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {PHASES.map((phase) => (
-                  <button
-                    key={phase}
-                    type="button"
-                    onClick={() => update({ startPhase: phase })}
-                    className={cn(
-                      "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                      form.startPhase === phase
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                    )}
-                  >
-                    {t(`csPhase_${phase}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="mb-3 block text-sm font-medium text-foreground">
+            <Field>
+              <FieldLabel>{t("csStartPhase")}</FieldLabel>
+              <ChipGroup
+                items={PHASES.map((id) => ({ id, label: t(`csPhase_${id}`) }))}
+                selected={form.startPhase}
+                onSelect={(id) => update({ startPhase: id })}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel>
                 <IconUsers className="mr-1 inline size-4" />
                 {t("csRecruitRoles")}
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {ALL_ROLES.map((role) => (
-                  <button
-                    key={role}
-                    type="button"
-                    onClick={() => toggleRole(role)}
-                    className={cn(
-                      "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-                      form.roles.includes(role)
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                    )}
-                  >
-                    {t(`csRole_${role}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
+              </FieldLabel>
+              <ChipGroup
+                multi
+                items={ALL_ROLES.map((id) => ({ id, label: t(`csRole_${id}`) }))}
+                selectedSet={form.roles}
+                onToggle={toggleRole}
+              />
+            </Field>
+
             {form.roles.length > 0 && (
               <div className="rounded-xl border border-border bg-card p-4">
                 <h3 className="mb-3 text-sm font-medium text-foreground">{t("csHeadcount")}</h3>
@@ -334,12 +305,12 @@ export default function CreateCrewPage() {
                   {form.roles.map((role) => (
                     <div key={role} className="flex items-center justify-between">
                       <span className="text-sm text-foreground">{t(`csRole_${role}`)}</span>
-                      <input
+                      <Input
                         type="number"
                         min={1}
                         value={form.rolesCount[role] || 1}
                         onChange={(e) => setRoleCount(role, parseInt(e.target.value) || 1)}
-                        className="w-20 rounded-lg border border-border bg-background px-2 py-1 text-center text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        className="w-20 text-center"
                       />
                     </div>
                   ))}
@@ -377,7 +348,7 @@ export default function CreateCrewPage() {
                 ))}
                 {form.roles.length > 0 && (
                   <div className="border-t border-border pt-2">
-                    <div className="mb-2 text-xs text-muted-foreground">{t("csHeadcount")}：</div>
+                    <FieldDescription className="mb-2">{t("csHeadcount")}：</FieldDescription>
                     {form.roles.map((role) => (
                       <div key={role} className="flex justify-between">
                         <span>{t(`csRole_${role}`)}</span>
@@ -402,36 +373,63 @@ export default function CreateCrewPage() {
         {/* Navigation */}
         <div className="mt-8 flex items-center justify-between border-t border-border pt-6">
           {step > 1 ? (
-            <button
-              type="button"
-              onClick={() => setStep((s) => s - 1)}
-              className="px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
+            <Button variant="ghost" color="muted" onClick={() => setStep((s) => s - 1)}>
               {t("csPrev")}
-            </button>
+            </Button>
           ) : (
             <div />
           )}
           {step < 3 ? (
-            <button
-              type="button"
-              onClick={() => setStep((s) => s + 1)}
-              disabled={!canProceed}
-              className="inline-flex items-center gap-1 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <Button onClick={() => setStep((s) => s + 1)} disabled={!canProceed}>
               {t("csNext")} <IconChevronRight className="size-4" />
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
-              onClick={() => setSubmitted(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <IconMovie className="size-4" /> {t("csCreate")}
-            </button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : (
+                <IconMovie className="size-4" />
+              )}
+              {t("csCreate")}
+            </Button>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Bits ───────────────────────────────────────────
+
+interface ChipGroupProps {
+  items: { id: string; label: string }[];
+  /** Single-select mode. */
+  selected?: string;
+  onSelect?: (id: string) => void;
+  /** Multi-select mode. */
+  multi?: boolean;
+  selectedSet?: string[];
+  onToggle?: (id: string) => void;
+}
+
+function ChipGroup({ items, selected, onSelect, multi, selectedSet, onToggle }: ChipGroupProps) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => {
+        const active = multi ? (selectedSet ?? []).includes(item.id) : selected === item.id;
+        return (
+          <Button
+            key={item.id}
+            type="button"
+            variant={active ? "soft" : "outline"}
+            color={active ? "primary" : "muted"}
+            size="sm"
+            onClick={() => (multi ? onToggle?.(item.id) : onSelect?.(item.id))}
+          >
+            {item.label}
+          </Button>
+        );
+      })}
     </div>
   );
 }

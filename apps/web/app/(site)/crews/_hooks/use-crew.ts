@@ -485,11 +485,25 @@ async function rejectApplicant({
   throw new Error("Applicant not found");
 }
 
-async function createCrew(data: {
+export interface CreateCrewInput {
   name: string;
   ipName?: string;
-  description: string;
-}): Promise<{ id: string }> {
+  description?: string;
+  /** Project category code, e.g. "basicAIDrama" / "premiumAd". */
+  projectType: string;
+  /** ISO date (YYYY-MM-DD). */
+  deadline?: string;
+  /** Free-form display string, e.g. "¥3k-8k". */
+  budgetRange?: string;
+  /** Initial production phase, e.g. "preProduction". */
+  startPhase: string;
+  /** Open roles to recruit. */
+  roles: { name: string; count: number }[];
+}
+
+async function createCrew(_input: CreateCrewInput): Promise<{ id: string }> {
+  // Mock until backend ships; mirrors the IP module pattern (no fallback —
+  // a real backend failure will surface via the mutation's onError).
   await delay(300);
   return { id: `s_${Date.now()}` };
 }
