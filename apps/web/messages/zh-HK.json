@@ -2640,18 +2640,25 @@
   },
   "footer": {
     "tagline": "AI 動畫與 IP 共創平台",
-    "ipPlaza": "IP 廣場",
-    "browseIPs": "瀏覽 IP",
-    "createIP": "建立 IP",
-    "studio": "工作室",
-    "myProjects": "我的專案",
-    "workbench": "工作台",
-    "account": "帳戶",
-    "profile": "個人主頁",
-    "settings": "設置",
-    "legal": "法律",
-    "terms": "服務條款",
-    "privacy": "隱私政策"
+    "platform": {
+      "title": "平台",
+      "plaza": "故事廣場",
+      "crews": "劇組",
+      "ips": "IP 廣場",
+      "workspace": "進入工作台"
+    },
+    "company": {
+      "title": "公司",
+      "about": "關於我們",
+      "creators": "創作者中心",
+      "contact": "聯絡我們"
+    },
+    "legal": {
+      "title": "法律",
+      "privacy": "隱私政策",
+      "terms": "服務條款",
+      "refund": "退款政策"
+    }
   },
   "kyc": {
     "identityVerification": "身份資訊認證",
@@ -2814,7 +2821,7 @@
       "subtitle": "把同一份腳本渲染成任意視覺語言——動漫、電影、水彩、3D。選定風格，開拍系列。",
       "sidebarTitle": "熱門風格",
       "sidebarBody": "滑鼠懸停任一縮圖即可在左側預覽。從經典繪畫到現代數位藝術——挑選最契合你故事的樣貌。",
-      "cta": "瀏覽全部 437+ 種風格",
+      "cta": "437+ 種風格 · 持續上新",
       "styles": {
         "anime": "動漫",
         "cinematic": "電影感",

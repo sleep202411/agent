@@ -2640,18 +2640,25 @@
   },
   "footer": {
     "tagline": "AI 动画与 IP 共创平台",
-    "ipPlaza": "IP 广场",
-    "browseIPs": "浏览 IP",
-    "createIP": "创建 IP",
-    "studio": "工作室",
-    "myProjects": "我的项目",
-    "workbench": "工作台",
-    "account": "账户",
-    "profile": "个人主页",
-    "settings": "设置",
-    "legal": "法律",
-    "terms": "服务条款",
-    "privacy": "隐私政策"
+    "platform": {
+      "title": "平台",
+      "plaza": "故事广场",
+      "crews": "剧组",
+      "ips": "IP 广场",
+      "workspace": "进入工作台"
+    },
+    "company": {
+      "title": "公司",
+      "about": "关于我们",
+      "creators": "创作者中心",
+      "contact": "联系我们"
+    },
+    "legal": {
+      "title": "法律",
+      "privacy": "隐私政策",
+      "terms": "服务条款",
+      "refund": "退款政策"
+    }
   },
   "kyc": {
     "identityVerification": "身份信息认证",
@@ -2814,7 +2821,7 @@
       "subtitle": "把同一份脚本渲染成任意视觉语言——动漫、电影、水彩、3D。选定风格，开拍系列。",
       "sidebarTitle": "热门风格",
       "sidebarBody": "鼠标悬停任一缩略图即可在左侧预览。从经典绘画到现代数字艺术——挑选最契合你故事的样貌。",
-      "cta": "浏览全部 437+ 种风格",
+      "cta": "437+ 种风格 · 持续上新",
       "styles": {
         "anime": "动漫",
         "cinematic": "电影感",
