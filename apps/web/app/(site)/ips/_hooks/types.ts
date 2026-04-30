@@ -168,10 +168,17 @@ export interface ProjectMember {
   userName?: string | null;
   nickName?: string | null;
   avatar?: string | null;
+  /** Backend `role` (int32). 0 = member, 8 = admin, 10 = owner — convention
+   *  shared with `app/projects/_components/project-team-dialog.tsx`. */
+  role?: number;
+  /** Free-form note attached when adding the member, visible to the team. */
+  remark?: string | null;
+  /** Legacy alias retained while older endpoints still echo `roleId`. */
   roleId?: number;
   roleName?: string | null;
   profitRatio?: number;
   guaranteedIncome?: number;
+  createTime?: string | null;
   [key: string]: unknown;
 }
 

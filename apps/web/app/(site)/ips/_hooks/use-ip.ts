@@ -62,7 +62,12 @@ export {
   useReorderEpisode,
 } from "./use-episodes";
 
-export { useProjectMembers, useAddMember, useRemoveMember } from "./use-members";
+export { useProjectMembers, useAddMember, useRemoveMember, MEMBER_ROLE } from "./use-members";
+export type { MemberRole } from "./use-members";
+export { useUserByEmail } from "./use-user-search";
+export type { UserLookupRow } from "./use-user-search";
+export { useProjectRoles } from "./use-roles";
+export type { ProjectRole } from "./use-roles";
 
 export { useFAQs, useCreateFAQ, useUpdateFAQ, useDeleteFAQ } from "./use-faqs";
 

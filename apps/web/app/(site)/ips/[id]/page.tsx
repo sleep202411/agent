@@ -135,14 +135,18 @@ export default function IPDetailPage() {
       return [];
     }
   })();
-  const realTeam: IPTeamMember[] = (Array.isArray(members) ? members : []).map((m) => ({
-    name: m.nickName || m.userName || "Member",
-    role: m.roleName || "Team",
-    avatar: m.avatar ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar}` : "",
-    level: "",
-    projects: 0,
-    rating: 0,
-  }));
+  const realTeam: IPTeamMember[] = (Array.isArray(members) ? members : []).map((m) => {
+    const role =
+      m.role === 10 ? "Owner" : m.role === 8 ? "Admin" : m.roleName || m.remark || "Member";
+    return {
+      name: m.nickName || m.userName || "Member",
+      role,
+      avatar: m.avatar ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar}` : "",
+      level: "",
+      projects: 0,
+      rating: 0,
+    };
+  });
 
   const ip: IPDetail = {
     ...EMPTY_IP_DETAIL,

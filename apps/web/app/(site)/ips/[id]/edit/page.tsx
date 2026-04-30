@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { VideoPlayer } from "@/components/media/video-player";
 import { env } from "@/src/env";
 import {
   useProjectDetail,
@@ -41,8 +42,13 @@ import {
   useDeleteFAQ,
   ipKeys,
   ipImageUrl,
+  userAvatarUrl,
+  MEMBER_ROLE,
+  useProjectRoles,
   type Episode,
   type FAQ,
+  type ProjectMember,
+  type ProjectRole,
 } from "@/app/(site)/ips/_hooks/use-ip";
 import { useQueryClient } from "@tanstack/react-query";
 import { SUGGESTED_TAGS } from "@/app/(site)/ips/_data/ip";
@@ -53,6 +59,100 @@ import { FaqDialog, type FaqDraft } from "./faq-dialog";
 import { SortableFaqRow } from "./faq-row";
 import { EditHero } from "./edit-hero";
 import { SparkDialog, type SparkPatch } from "./spark-dialog";
+
+// ─── Member row ────────────────────────────────────
+// Stateless presentation row for a team member: avatar + name + role
+// badge + remark + remove. The page provides labels because i18n lives
+// at the page boundary; helpers below map the wire `role` integer to a
+// label and a colour.
+function MemberRow({
+  member,
+  roleLabel,
+  roleTone,
+  canRemove,
+  onRemove,
+  labels,
+}: {
+  member: ProjectMember;
+  roleLabel: string;
+  roleTone: string;
+  canRemove: boolean;
+  onRemove: () => void;
+  labels: { remove: string };
+}) {
+  const display = member.nickName || member.userName || member.id || `#${member.userId ?? "?"}`;
+  const avatar = userAvatarUrl(member.avatar);
+  const initial = String(display).charAt(0).toUpperCase() || "?";
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+      <div
+        className={cn(
+          "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full",
+          avatar
+            ? "bg-muted"
+            : "bg-gradient-to-br from-primary/25 to-secondary/40 text-sm font-semibold text-primary"
+        )}
+      >
+        {avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatar} alt="" className="size-full object-cover" />
+        ) : (
+          initial
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{display}</span>
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset",
+              roleTone
+            )}
+          >
+            {roleLabel}
+          </span>
+        </div>
+        {member.remark && (
+          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{member.remark}</p>
+        )}
+      </div>
+      {canRemove && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onRemove}
+          className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+          aria-label={labels.remove}
+        >
+          <IconTrash className="size-3.5" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function getRoleLabel(
+  role: number | undefined,
+  roles: ProjectRole[],
+  t: (k: string) => string
+): string {
+  // Prefer the backend-supplied role name when the catalog has it. Fall
+  // back to the legacy hard-coded labels for projects whose role list
+  // hasn't loaded yet (or for owner/admin synthesized client-side).
+  if (role !== undefined) {
+    const fromCatalog = roles.find((r) => r.id === role);
+    if (fromCatalog) return fromCatalog.name;
+  }
+  if (role === MEMBER_ROLE.OWNER) return t("roleOwner");
+  if (role === MEMBER_ROLE.ADMIN) return t("roleAdmin");
+  return t("roleMember");
+}
+
+function getRoleTone(role: number | undefined): string {
+  if (role === MEMBER_ROLE.OWNER) return "bg-amber-500/15 text-amber-300 ring-amber-500/30";
+  if (role === MEMBER_ROLE.ADMIN) return "bg-violet-500/15 text-violet-300 ring-violet-500/30";
+  return "bg-muted/60 text-muted-foreground ring-border";
+}
 
 // ─── Episode → dialog adapter ──────────────────────
 // Episode (server shape) carries id / sort / createdAt / projectId; the
@@ -180,8 +280,10 @@ export default function IPEditPage() {
 
   // Team CRUD — list shipped, add/remove via dialog + per-row delete.
   const { data: members = [] } = useProjectMembers(id);
-  const { mutate: addMemberMut } = useAddMember();
+  const { data: roleCatalog = [] } = useProjectRoles();
+  const { mutateAsync: addMemberMut } = useAddMember();
   const { mutate: removeMemberMut } = useRemoveMember();
+  const [addingMember, setAddingMember] = useState(false);
 
   // FAQ CRUD — `useFAQs` is the source of truth. The dialog owns the
   // edit form; `faqDialogIndex` tracks which row is open (-1 = creating,
@@ -636,17 +738,26 @@ export default function IPEditPage() {
               <Section title={t("sectionTrailerVideo")} description={t("sectionTrailerVideoDesc")}>
                 {videoLink ? (
                   <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-border bg-black">
-                    <video
+                    <VideoPlayer
                       key={videoLink}
                       src={videoLink}
-                      controls
-                      playsInline
-                      className="h-full w-full object-contain"
+                      autoplay={false}
+                      className={cn(
+                        "size-full",
+                        "[&_.video-js]:size-full",
+                        "[&_.vjs-big-play-button]:size-12!",
+                        "[&_.vjs-big-play-button]:-mt-6! [&_.vjs-big-play-button]:-ml-6!",
+                        "[&_.vjs-big-play-button]:rounded-full!",
+                        "[&_.vjs-big-play-button]:border-0!",
+                        "[&_.vjs-big-play-button]:bg-black/60!",
+                        "[&_.vjs-big-play-button]:text-base! [&_.vjs-big-play-button]:leading-12!",
+                        "[&_.vjs-picture-in-picture-control]:hidden!"
+                      )}
                     />
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      className="absolute right-2 top-2 bg-black/60 text-white hover:bg-black/80"
+                      className="absolute right-2 top-2 z-10 bg-black/60 text-white hover:bg-black/80"
                       onClick={() => videoInputRef.current?.click()}
                       disabled={uploadingVideo}
                     >
@@ -890,67 +1001,68 @@ export default function IPEditPage() {
           {/* ── Team ── */}
           {activeTab === "team" && (
             <>
-              {/* Self Introduction */}
-              <Section title={t("sectionAbout")} description={t("sectionAboutDesc")}>
-                <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
-                  <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl font-bold text-primary">
-                    {form.title.slice(0, 1) || "?"}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold">{form.title || t("unnamed")}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">{t("creator")}</div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    onClick={() => setActiveTab("basic")}
-                  >
-                    {t("editProfile")}
-                  </Button>
-                </div>
-              </Section>
-
-              {/* Team Members */}
+              {/* Team Members — owner is synthesized at the top of the
+               *  list from `project.owner*` so the section is one
+               *  unified roster. The owner is never removable; backend
+               *  members that echo the owner id are deduplicated. */}
               <Section title={t("sectionMembers")} description={t("sectionMembersDesc")}>
-                {members.length === 0 ? (
-                  <div className="rounded-xl border border-border bg-card p-6 text-center">
-                    <p className="text-sm text-muted-foreground">{t("noMembers")}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {members.map((m, i) => (
-                      <div
-                        key={m.id ?? m.userId ?? i}
-                        className="flex items-center gap-4 rounded-xl border border-border bg-card p-4"
-                      >
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-bold text-muted-foreground">
-                          {String(i + 1).padStart(2, "0")}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-foreground">
-                            {m.nickName || m.userName || t("unnamed")}
-                          </div>
-                          {m.roleName && (
-                            <div className="mt-0.5 text-xs text-muted-foreground">{m.roleName}</div>
-                          )}
-                        </div>
-                        <Button
-                          variant="ghost"
-                          color="muted"
-                          size="icon-xs"
-                          onClick={() => {
-                            if (m.userId == null) return;
-                            removeMemberMut({ projectId: Number(id), userId: Number(m.userId) });
-                          }}
-                          className="hover:text-destructive"
-                        >
-                          <IconTrash className="size-4" />
-                        </Button>
+                {(() => {
+                  const ownerId = project?.ownerId;
+                  const ownerRow: ProjectMember | null =
+                    ownerId != null
+                      ? {
+                          userId: ownerId,
+                          userName: project?.ownerName ?? undefined,
+                          nickName: project?.ownerName ?? undefined,
+                          avatar: project?.ownerAvatar ?? undefined,
+                          role: MEMBER_ROLE.OWNER,
+                        }
+                      : null;
+                  const collaborators = members.filter(
+                    (m) => ownerId == null || m.userId !== ownerId
+                  );
+                  const rows: Array<{ member: ProjectMember; canRemove: boolean }> = [];
+                  if (ownerRow) rows.push({ member: ownerRow, canRemove: false });
+                  for (const m of collaborators) {
+                    rows.push({ member: m, canRemove: m.userId != null });
+                  }
+                  if (rows.length === 0) {
+                    return (
+                      <div className="rounded-xl border border-dashed border-border bg-card/40 px-4 py-10 text-center">
+                        <p className="text-sm text-muted-foreground">{t("noMembers")}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {rows.map(({ member: m, canRemove }, i) => (
+                        <MemberRow
+                          key={m.id ?? m.userId ?? i}
+                          member={m}
+                          roleLabel={getRoleLabel(m.role, roleCatalog, t)}
+                          roleTone={getRoleTone(m.role)}
+                          canRemove={canRemove}
+                          onRemove={() => {
+                            if (m.userId == null) return;
+                            removeMemberMut(
+                              { projectId: Number(id), userId: Number(m.userId) },
+                              {
+                                onSuccess: () => toast.success(tc("deleteSuccess")),
+                                onError: (err) =>
+                                  toast.error(
+                                    err instanceof Error && err.message
+                                      ? err.message
+                                      : tc("deleteFailed")
+                                  ),
+                              }
+                            );
+                          }}
+                          labels={{ remove: t("memberRemove") }}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
                 <Button
                   variant="outline"
                   color="muted"
@@ -965,21 +1077,29 @@ export default function IPEditPage() {
               <AddMemberDialog
                 open={addMemberOpen}
                 onOpenChange={setAddMemberOpen}
-                onSubmit={(member: NewMember) => {
-                  addMemberMut(
-                    {
+                existingUserIds={[
+                  ...(project?.ownerId != null ? [project.ownerId] : []),
+                  ...members.map((m) => m.userId).filter((v): v is number => typeof v === "number"),
+                ]}
+                busy={addingMember}
+                onSubmit={async (member: NewMember) => {
+                  setAddingMember(true);
+                  try {
+                    await addMemberMut({
                       projectId: Number(id),
-                      email: member.email,
-                      name: member.name,
-                    },
-                    {
-                      onSuccess: () => {
-                        toast.success(t("memberAdded"));
-                        setAddMemberOpen(false);
-                      },
-                      onError: () => toast.error(t("addMemberFailed")),
-                    }
-                  );
+                      userId: member.userId,
+                      role: member.role,
+                      remark: member.remark,
+                    });
+                    toast.success(t("memberAdded"));
+                    setAddMemberOpen(false);
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error && err.message ? err.message : t("addMemberFailed")
+                    );
+                  } finally {
+                    setAddingMember(false);
+                  }
                 }}
               />
             </>
