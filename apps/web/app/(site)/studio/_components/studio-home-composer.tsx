@@ -139,16 +139,17 @@ export function StudioHomeComposer() {
         <p className="text-sm text-muted-foreground sm:text-base">{t("studioHomeSubtitle")}</p>
       </div>
 
-      {/* Composer */}
-      <div
-        className={cn(
-          "relative w-full rounded-3xl p-px transition-all duration-500",
-          focused
-            ? "bg-gradient-to-r from-primary/70 via-fuchsia-400/60 to-primary/70 shadow-[0_0_32px_-8px_oklch(0.591_0.225_26.8/0.35)]"
-            : "bg-border"
-        )}
-      >
-        <div className="rounded-[calc(var(--radius-3xl)-1px)] bg-card">
+      {/* Composer — liquid glass over the hero video */}
+      <div className="relative w-full">
+        <div
+          className={cn(
+            "rounded-3xl bg-white/5 backdrop-blur-2xl backdrop-saturate-150 transition-all duration-500",
+            "ring-1 ring-inset",
+            focused
+              ? "ring-primary/60 shadow-[0_0_32px_-8px_oklch(0.591_0.225_26.8/0.45)]"
+              : "ring-white/15 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.5)]"
+          )}
+        >
           <textarea
             ref={textareaRef}
             value={prompt}
