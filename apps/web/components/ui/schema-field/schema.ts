@@ -468,7 +468,7 @@ const MODE_VIDEO_BASIC: AiModeConfig = {
     {
       key: "referenceImageUrl",
       source: "ref:referenceImages",
-      required: true,
+      // required: true,
       errorKey: "selectReferenceImage",
     },
   ],
