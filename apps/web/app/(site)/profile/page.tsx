@@ -15,6 +15,7 @@ import {
 import { updateProject, type Project } from "@/src/services/project";
 import { useProjectEditUrl } from "@/app/(site)/ips/_hooks/use-ip";
 import { env } from "@/src/env";
+import { RecruitmentStrip } from "@/app/(site)/studio/_components/recruitment-strip";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
 
@@ -35,8 +36,24 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-background text-foreground">
       <ProfileHeader userInfo={userInfo ?? null} onEditProfile={() => setEditOpen(true)} />
 
-      <div className="relative mx-auto max-w-5xl px-8">
-        <ProfileTabs userInfo={userInfo ?? null} />
+      <div className="relative mx-auto max-w-6xl space-y-12 px-4 pb-24 pt-10">
+        {/* OverviewTab renders its own section heading (Education) */}
+        <OverviewTab userInfo={userInfo ?? null} />
+
+        <ProfileSection title={t("personalWorks")}>
+          <PersonalWorksTab />
+        </ProfileSection>
+
+        <ProfileSection title={t("myIPs")}>
+          <MyIPsTab />
+        </ProfileSection>
+
+        <ProfileSection title={t("joinedCrews")}>
+          <JoinedTab />
+        </ProfileSection>
+
+        {/* RecruitmentStrip self-hides when there are no applicants. */}
+        <RecruitmentStrip />
       </div>
 
       <ProfileEditDialog open={editOpen} onOpenChange={setEditOpen} userInfo={userInfo ?? null} />
@@ -44,47 +61,14 @@ export default function ProfilePage() {
   );
 }
 
-// ─── Tabs ──────────────────────────────────────────────
-
-type ProfileTab = "overview" | "works" | "ips" | "joined";
-
-function ProfileTabs({ userInfo }: { userInfo: UserInfo | null }) {
-  const t = useTranslations("profile");
-  const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
-
-  const tabs: { key: ProfileTab; label: string }[] = [
-    { key: "overview", label: t("overview") },
-    { key: "works", label: t("personalWorks") },
-    { key: "ips", label: t("myIPs") },
-    { key: "joined", label: t("joinedCrews") },
-  ];
-
+function ProfileSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mt-6 pb-12">
-      <div className="flex items-center gap-1 border-b border-border">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={
-              activeTab === tab.key
-                ? "border-b-2 border-primary px-4 py-2.5 text-sm font-medium text-foreground"
-                : "border-b-2 border-transparent px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            }
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-6">
-        {activeTab === "overview" && <OverviewTab userInfo={userInfo} />}
-        {activeTab === "works" && <PersonalWorksTab />}
-        {activeTab === "ips" && <MyIPsTab />}
-        {activeTab === "joined" && <JoinedTab />}
-      </div>
-    </div>
+    <section>
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 

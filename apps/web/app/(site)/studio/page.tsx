@@ -3,7 +3,6 @@
 import { useRef } from "react";
 import DotField from "./_components/backgrounds/dot-field";
 import { ProjectsSection } from "./_components/projects-section";
-import { RecruitmentStrip } from "./_components/recruitment-strip";
 import { StickyComposerPill } from "./_components/sticky-composer-pill";
 import { StudioHomeComposer } from "./_components/studio-home-composer";
 
@@ -28,7 +27,6 @@ export default function StudioHomePage() {
           <StudioHomeComposer />
         </div>
         <ProjectsSection />
-        <RecruitmentStrip />
       </div>
       <StickyComposerPill heroRef={heroRef} />
     </>
