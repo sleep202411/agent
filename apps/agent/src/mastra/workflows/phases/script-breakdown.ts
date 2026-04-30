@@ -40,6 +40,21 @@ const KeyEventsSchema = z.preprocess(
   z.array(z.string().min(1)).min(1)
 );
 
+/**
+ * LLMs (especially DeepSeek/Qwen) frequently overshoot short-name caps,
+ * writing a full sentence where we asked for a label. Hard-failing the whole
+ * structured-output validation for one over-long name is way too brittle —
+ * we silently truncate at the cap so the run survives. Whitespace-trim first
+ * so leading/trailing spaces don't eat into the budget.
+ */
+function truncateName(maxLen: number) {
+  return (val: unknown) => {
+    if (typeof val !== "string") return val;
+    const trimmed = val.trim();
+    return trimmed.length > maxLen ? trimmed.slice(0, maxLen) : trimmed;
+  };
+}
+
 const ChapterSchema = z.object({
   chapterId: z.string().min(1),
   title: z.string().min(1).max(80),
@@ -50,7 +65,7 @@ const ChapterSchema = z.object({
 });
 
 const SubThreadSchema = z.object({
-  name: z.string().min(1).max(30),
+  name: z.preprocess(truncateName(30), z.string().min(1).max(30)),
   description: stringLike,
   linkedChapterIds: z.array(z.string()).optional(),
 });
@@ -80,7 +95,7 @@ const CastRosterEntrySchema = z.preprocess(
     };
   },
   z.object({
-    name: z.string().min(1).max(20),
+    name: z.preprocess(truncateName(20), z.string().min(1).max(20)),
     role: stringLike,
     arc: stringLike,
     firstAppearance: z.string().optional(),
@@ -101,7 +116,7 @@ const SettingsRosterEntrySchema = z.preprocess(
     };
   },
   z.object({
-    name: z.string().min(1).max(30),
+    name: z.preprocess(truncateName(30), z.string().min(1).max(30)),
     typeHint: stringLike,
     firstAppearance: z.string().optional(),
   })
@@ -121,7 +136,7 @@ const PropsRosterEntrySchema = z.preprocess(
     };
   },
   z.object({
-    name: z.string().min(1).max(30),
+    name: z.preprocess(truncateName(30), z.string().min(1).max(30)),
     typeHint: stringLike,
     firstAppearance: z.string().optional(),
   })
