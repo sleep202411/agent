@@ -103,7 +103,8 @@ export interface UpdateEpisodeInput {
 }
 
 export interface FAQ {
-  id: number;
+  /** Backend uses `faqId` (int64) — not `id`. */
+  faqId: number;
   projectId: number;
   question: string;
   answer: string;

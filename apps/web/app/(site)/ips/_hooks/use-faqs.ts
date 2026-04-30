@@ -1,31 +1,64 @@
 /**
- * FAQ CRUD (P1).
+ * FAQ CRUD.
  *
- *   - `useFAQs`        — POST /project/faq/query
- *   - `useCreateFAQ`   — POST /project/faq/create
+ *   - `useFAQs`        — GET  /project/faq/list?projectId=
+ *   - `useCreateFAQ`   — POST /project/faq/add
  *   - `useUpdateFAQ`   — POST /project/faq/update
  *   - `useDeleteFAQ`   — POST /project/faq/delete
+ *
+ * All four endpoints declare their fields as `(query)` in Swagger, i.e.
+ * Spring `@RequestParam`. Reads go on the URL; mutations send
+ * `application/x-www-form-urlencoded` via the shared `postForm` helper.
+ *
+ * The backend identifier is **`faqId`** (int64) — not `id`. Update and
+ * delete both require `faqId` AND `projectId`. Update additionally
+ * requires the full `question` + `answer` (no partial patches), so
+ * call sites pass the merged values, not just the changed field.
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { acceptLanguage, bearerHeader, ipKeys } from "./shared";
+import { acceptLanguage, bearerHeader, ipKeys, postForm } from "./shared";
 import type { FAQ } from "./types";
 
+interface WireFAQ {
+  faqId?: number | null;
+  id?: number | null;
+  projectId: number | null;
+  question: string | null;
+  answer: string | null;
+  sort: number | null;
+}
+
+function mapWireFAQ(w: WireFAQ): FAQ {
+  return {
+    faqId: (w.faqId ?? w.id ?? 0) as number,
+    projectId: w.projectId ?? 0,
+    question: w.question ?? "",
+    answer: w.answer ?? "",
+    sort: w.sort ?? 0,
+  };
+}
+
 async function fetchFAQs(projectId: string): Promise<FAQ[]> {
-  const res = await fetch("/project/faq/query", {
-    method: "POST",
+  const qs = new URLSearchParams({ projectId: String(projectId) });
+  const res = await fetch(`/project/faq/list?${qs.toString()}`, {
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
       "accept-language": acceptLanguage(),
       Authorization: bearerHeader(),
     },
-    body: JSON.stringify({ projectId: Number(projectId) }),
   });
-  if (!res.ok) return [];
-  const json = (await res.json()) as { code: number; data: { list: FAQ[] } | FAQ[] };
-  if (Array.isArray(json.data)) return json.data;
-  return json.data?.list ?? [];
+  if (!res.ok) throw new Error(`Fetch FAQs failed: HTTP ${res.status}`);
+  const json = (await res.json()) as {
+    code: number;
+    msg?: string;
+    data: WireFAQ[] | { list?: WireFAQ[] } | null;
+  };
+  if (json.code !== 0 && json.code !== 200) {
+    throw new Error(json.msg || "Fetch FAQs failed");
+  }
+  const rows = Array.isArray(json.data) ? json.data : (json.data?.list ?? []);
+  return rows.map(mapWireFAQ);
 }
 
 export function useFAQs(projectId: string) {
@@ -43,23 +76,19 @@ interface CreateFAQInput {
   sort?: number;
 }
 
-async function createFAQ(input: CreateFAQInput): Promise<{ id: number }> {
-  const res = await fetch("/project/faq/create", {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "accept-language": acceptLanguage(),
-      Authorization: bearerHeader(),
-    },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) throw new Error(`Create FAQ failed: HTTP ${res.status}`);
-  const json = (await res.json()) as { code: number; msg?: string; data: { id: number } };
-  if (json.code !== 0 && json.code !== 200) {
-    throw new Error(json.msg || "Create FAQ failed");
-  }
-  return json.data;
+async function createFAQ(input: CreateFAQInput): Promise<{ faqId: number }> {
+  const data: Record<string, string> = {
+    projectId: String(input.projectId),
+    question: input.question,
+    answer: input.answer,
+  };
+  if (input.sort != null) data.sort = String(input.sort);
+  const result = await postForm<{ faqId?: number; id?: number } | number | null>(
+    "/project/faq/add",
+    data
+  );
+  if (typeof result === "number") return { faqId: result };
+  return { faqId: (result?.faqId ?? result?.id ?? 0) as number };
 }
 
 export function useCreateFAQ() {
@@ -73,32 +102,22 @@ export function useCreateFAQ() {
 }
 
 interface UpdateFAQInput {
-  id: number;
-  /** Used only for cache invalidation; not part of the backend payload. */
+  faqId: number;
   projectId: number;
-  question?: string;
-  answer?: string;
+  question: string;
+  answer: string;
   sort?: number;
 }
 
 async function updateFAQ(input: UpdateFAQInput): Promise<void> {
-  const { projectId: _projectId, ...payload } = input;
-  void _projectId;
-  const res = await fetch("/project/faq/update", {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "accept-language": acceptLanguage(),
-      Authorization: bearerHeader(),
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`Update FAQ failed: HTTP ${res.status}`);
-  const json = (await res.json()) as { code: number; msg?: string };
-  if (json.code !== 0 && json.code !== 200) {
-    throw new Error(json.msg || "Update FAQ failed");
-  }
+  const data: Record<string, string> = {
+    faqId: String(input.faqId),
+    projectId: String(input.projectId),
+    question: input.question,
+    answer: input.answer,
+  };
+  if (input.sort != null) data.sort = String(input.sort);
+  await postForm<unknown>("/project/faq/update", data);
 }
 
 export function useUpdateFAQ() {
@@ -112,27 +131,15 @@ export function useUpdateFAQ() {
 }
 
 interface DeleteFAQInput {
-  id: number;
-  /** Used only for cache invalidation. */
+  faqId: number;
   projectId: number;
 }
 
 async function deleteFAQ(input: DeleteFAQInput): Promise<void> {
-  const res = await fetch("/project/faq/delete", {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "accept-language": acceptLanguage(),
-      Authorization: bearerHeader(),
-    },
-    body: JSON.stringify({ id: input.id }),
+  await postForm<unknown>("/project/faq/delete", {
+    faqId: String(input.faqId),
+    projectId: String(input.projectId),
   });
-  if (!res.ok) throw new Error(`Delete FAQ failed: HTTP ${res.status}`);
-  const json = (await res.json()) as { code: number; msg?: string };
-  if (json.code !== 0 && json.code !== 200) {
-    throw new Error(json.msg || "Delete FAQ failed");
-  }
 }
 
 export function useDeleteFAQ() {

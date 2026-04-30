@@ -67,3 +67,6 @@ export { useProjectMembers, useAddMember, useRemoveMember } from "./use-members"
 export { useFAQs, useCreateFAQ, useUpdateFAQ, useDeleteFAQ } from "./use-faqs";
 
 export { usePlazaFeatured, usePlazaForYou } from "./use-plaza";
+
+export { useSparkAnalyze, useSparkGenerateBanner } from "./use-spark";
+export type { SparkDraft } from "./use-spark";

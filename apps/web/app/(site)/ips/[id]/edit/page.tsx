@@ -49,63 +49,10 @@ import { SUGGESTED_TAGS } from "@/app/(site)/ips/_data/ip";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 import { EpisodeDialog, type EpisodeDraft } from "./episode-dialog";
 import { SortableEpisodeRow } from "./episode-row";
-
-// ─── FAQ row ───────────────────────────────────────
-// Per-FAQ card with local question/answer state; flushes via the parent
-// `onSave` callback on input blur (only when the value actually changed).
-function FAQCard({
-  faq,
-  onSave,
-  onDelete,
-  labels,
-}: {
-  faq: FAQ;
-  onSave: (patch: Partial<Pick<FAQ, "question" | "answer">>) => void;
-  onDelete: () => void;
-  labels: {
-    question: string;
-    questionPlaceholder: string;
-    answer: string;
-    answerPlaceholder: string;
-    del: string;
-  };
-}) {
-  const [question, setQuestion] = useState(faq.question);
-  const [answer, setAnswer] = useState(faq.answer);
-  return (
-    <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <div>
-        <label className="mb-1 block text-xs font-medium text-foreground">{labels.question}</label>
-        <Input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onBlur={() => {
-            if (question !== faq.question) onSave({ question });
-          }}
-          placeholder={labels.questionPlaceholder}
-        />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs font-medium text-foreground">{labels.answer}</label>
-        <Textarea
-          value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
-          onBlur={() => {
-            if (answer !== faq.answer) onSave({ answer });
-          }}
-          placeholder={labels.answerPlaceholder}
-          rows={3}
-        />
-      </div>
-      <div className="flex justify-end">
-        <Button variant="outline" color="destructive" size="sm" onClick={onDelete}>
-          <IconTrash className="size-3.5" />
-          {labels.del}
-        </Button>
-      </div>
-    </div>
-  );
-}
+import { FaqDialog, type FaqDraft } from "./faq-dialog";
+import { SortableFaqRow } from "./faq-row";
+import { EditHero } from "./edit-hero";
+import { SparkDialog, type SparkPatch } from "./spark-dialog";
 
 // ─── Episode → dialog adapter ──────────────────────
 // Episode (server shape) carries id / sort / createdAt / projectId; the
@@ -236,13 +183,26 @@ export default function IPEditPage() {
   const { mutate: addMemberMut } = useAddMember();
   const { mutate: removeMemberMut } = useRemoveMember();
 
-  // FAQ CRUD — `useFAQs` is the source of truth; one local draft slot
-  // for new entries that haven't been saved yet.
+  // FAQ CRUD — `useFAQs` is the source of truth. The dialog owns the
+  // edit form; `faqDialogIndex` tracks which row is open (-1 = creating,
+  // >=0 = editing). The expanded-answer accordion is independent.
   const { data: faqs = [] } = useFAQs(id);
-  const { mutate: createFAQMut } = useCreateFAQ();
-  const { mutate: updateFAQMut } = useUpdateFAQ();
+  const { mutateAsync: createFAQMut } = useCreateFAQ();
+  const { mutateAsync: updateFAQMut } = useUpdateFAQ();
   const { mutate: deleteFAQMut } = useDeleteFAQ();
-  const [faqDraft, setFaqDraft] = useState<{ question: string; answer: string } | null>(null);
+  const [faqDialogOpen, setFaqDialogOpen] = useState(false);
+  const [faqDialogIndex, setFaqDialogIndex] = useState<number | null>(null);
+
+  // Spark — AI brief analyzer. Lives behind a single dialog driven by
+  // `sparkOpen`. Result is a patch the dialog hands back via `onApply`,
+  // which we splice into form state without auto-saving (the hero's
+  // Save button is the explicit commit point).
+  const [sparkOpen, setSparkOpen] = useState(false);
+
+  // Publish/unpublish — toggles `projectStatus` 0 ↔ 8 via the existing
+  // `useUpdateProject` mutation. Tracked separately from form-save
+  // because the action has its own confirm + toast flow.
+  const [publishing, setPublishing] = useState(false);
 
   // Populate form when project data loads
   useEffect(() => {
@@ -343,6 +303,67 @@ export default function IPEditPage() {
     });
   }, [id, reorderEpisodeMut]);
 
+  // FAQ drag-reorder — same optimistic pattern as Episodes, but the
+  // backend has no dedicated reorder endpoint. We persist the new order
+  // by re-issuing `/project/faq/update` with the row's new `sort` index
+  // for every row whose position actually changed.
+  const pendingFaqReorderRef = useRef<FAQ[] | null>(null);
+  const originalFaqReorderRef = useRef<FAQ[] | null>(null);
+  const handleFaqDragOver = useCallback(
+    (event: unknown) => {
+      const op = (
+        event as {
+          operation?: { source?: { id: string | number }; target?: { id: string | number } };
+        }
+      ).operation;
+      const source = op?.source;
+      const target = op?.target;
+      if (!source || !target || source.id === target.id) return;
+      if (originalFaqReorderRef.current === null) {
+        originalFaqReorderRef.current = faqs;
+      }
+      const list = pendingFaqReorderRef.current ?? originalFaqReorderRef.current ?? faqs;
+      // Sortable rows are keyed by faqId (stable across reorders), so we
+      // map the dnd-kit ids back to current indexes by faqId lookup.
+      const sourceId = String(source.id);
+      const targetId = String(target.id);
+      const fromIndex = list.findIndex((f) => String(f.faqId) === sourceId);
+      const toIndex = list.findIndex((f) => String(f.faqId) === targetId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+      const next = [...list];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      pendingFaqReorderRef.current = next;
+      queryClient.setQueryData(ipKeys.faqs(id), next);
+    },
+    [faqs, id, queryClient]
+  );
+  const handleFaqDragEnd = useCallback(() => {
+    const finalOrder = pendingFaqReorderRef.current;
+    const original = originalFaqReorderRef.current;
+    pendingFaqReorderRef.current = null;
+    originalFaqReorderRef.current = null;
+    if (!finalOrder || !original) return;
+    if (finalOrder.every((f, i) => f.faqId === original[i]?.faqId)) return;
+    // Persist by updating every row whose new index changed its sort.
+    void Promise.all(
+      finalOrder.map((faq, idx) => {
+        if (faq.sort === idx) return null;
+        return updateFAQMut({
+          faqId: faq.faqId,
+          projectId: faq.projectId,
+          question: faq.question,
+          answer: faq.answer,
+          sort: idx,
+        });
+      })
+    ).catch((err) => {
+      toast.error(err instanceof Error && err.message ? err.message : tc("saveFailed"));
+      // Refetch authoritative state on failure.
+      queryClient.invalidateQueries({ queryKey: ipKeys.faqs(id) });
+    });
+  }, [id, queryClient, tc, updateFAQMut]);
+
   const handleSave = () => {
     if (!form.title.trim()) {
       toast.warning(t("nameRequired"));
@@ -368,6 +389,48 @@ export default function IPEditPage() {
         onError: () => toast.error(t("saveFailed")),
       }
     );
+  };
+
+  // Publish/unpublish — flip projectStatus 0 ↔ 8. Optimistic toast on
+  // success, refetch via React Query invalidation so the hero badge
+  // re-paints.
+  const handleTogglePublish = () => {
+    if (!project) return;
+    const isLive = project.projectStatus === 0;
+    const nextStatus = isLive ? 8 : 0;
+    setPublishing(true);
+    doUpdate(
+      { id: Number(id), projectStatus: nextStatus },
+      {
+        onSuccess: () => {
+          toast.success(isLive ? t("unpublishSuccess") : t("publishSuccess"));
+        },
+        onError: () => toast.error(t("publishFailed")),
+        onSettled: () => setPublishing(false),
+      }
+    );
+  };
+
+  // Spark patch application — caller-side merge into form state. We
+  // never auto-Save here; the user reviews on the page and hits Save
+  // when ready (matches the "AI proposes, user disposes" rule).
+  const applySparkPatch = (patch: SparkPatch) => {
+    setForm((prev) => ({
+      ...prev,
+      title: patch.name ?? prev.title,
+      description: patch.description ?? prev.description,
+      background: patch.background ?? prev.background,
+      story: patch.story ?? prev.story,
+      whyThisIP: patch.whyThisIP ?? prev.whyThisIP,
+      tags: patch.tags ?? prev.tags,
+      bannerLink: patch.bannerLink ?? prev.bannerLink,
+      coverImage: patch.bannerLink
+        ? patch.bannerLink.startsWith("http")
+          ? patch.bannerLink
+          : `${env.BANNER_BASE_URL}/${patch.bannerLink}`
+        : prev.coverImage,
+    }));
+    setSaved(false);
   };
 
   if (isLoading) {
@@ -433,36 +496,69 @@ export default function IPEditPage() {
     });
     toast.success(tc("saveSuccess"));
   };
-  // FAQ helpers — `faqDraft` holds the single in-flight new entry; a
-  // saved FAQ shows up in `faqs` after createFAQMut succeeds and the
-  // draft slot is reset.
-  const saveFAQDraft = () => {
-    if (!faqDraft) return;
-    if (!faqDraft.question.trim() || !faqDraft.answer.trim()) {
-      toast.warning(t("faqRequireBoth"));
+  // FAQ helpers — dialog-driven create/edit. `upsertFaq` resolves on
+  // success so the dialog can close itself and reject on failure so the
+  // dialog surfaces the inline error.
+  const openFaqCreate = () => {
+    setFaqDialogIndex(-1);
+    setFaqDialogOpen(true);
+  };
+  const openFaqEdit = (i: number) => {
+    setFaqDialogIndex(i);
+    setFaqDialogOpen(true);
+  };
+  const upsertFaq = async (i: number | null, next: FaqDraft): Promise<void> => {
+    if (i === null || i < 0) {
+      await createFAQMut({
+        projectId: Number(id),
+        question: next.question,
+        answer: next.answer,
+      });
+      toast.success(tc("saveSuccess"));
       return;
     }
-    createFAQMut(
-      {
-        projectId: Number(id),
-        question: faqDraft.question.trim(),
-        answer: faqDraft.answer.trim(),
-      },
-      { onSuccess: () => setFaqDraft(null) }
-    );
-  };
-  const updateFAQField = (faq: FAQ, patch: Partial<Pick<FAQ, "question" | "answer">>) => {
-    if (!patch.question?.trim() && !patch.answer?.trim()) return;
-    updateFAQMut({
-      id: faq.id,
-      projectId: faq.projectId,
-      ...patch,
+    const target = faqs[i];
+    if (!target) return;
+    await updateFAQMut({
+      faqId: target.faqId,
+      projectId: target.projectId,
+      question: next.question,
+      answer: next.answer,
+      sort: target.sort,
     });
+    toast.success(tc("saveSuccess"));
+  };
+  const removeFaq = (i: number) => {
+    const target = faqs[i];
+    if (!target) return;
+    deleteFAQMut(
+      { faqId: target.faqId, projectId: target.projectId },
+      {
+        onSuccess: () => toast.success(tc("deleteSuccess")),
+        onError: (err) =>
+          toast.error(err instanceof Error && err.message ? err.message : tc("deleteFailed")),
+      }
+    );
   };
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-background">
-      {/* Top tab nav */}
+      {/* Hero — IP banner + status + primary actions. The hero owns the
+       *  Save / Publish / Spark commands; the sticky tab nav below is
+       *  for tab navigation only. */}
+      <EditHero
+        title={form.title || project?.name || ""}
+        bannerLink={form.bannerLink || project?.bannerLink || ""}
+        projectStatus={project?.projectStatus}
+        saving={saving}
+        saved={saved}
+        publishing={publishing}
+        onSave={handleSave}
+        onTogglePublish={handleTogglePublish}
+        onSpark={() => setSparkOpen(true)}
+      />
+
+      {/* Sticky tab nav — navigation only. */}
       <div className="sticky top-14 z-30 border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/70">
         <div className="relative flex items-center justify-center px-6">
           <nav className="flex items-center gap-1 overflow-x-auto">
@@ -483,15 +579,24 @@ export default function IPEditPage() {
               </button>
             ))}
           </nav>
-          <div className="absolute right-6 flex shrink-0 items-center gap-2 py-2">
-            {saved && <span className="text-xs text-green-400">{t("saved")}</span>}
-            <Button size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
-              {t("save")}
-            </Button>
-          </div>
         </div>
       </div>
+
+      <SparkDialog
+        open={sparkOpen}
+        onOpenChange={setSparkOpen}
+        projectId={id}
+        current={{
+          name: form.title,
+          description: form.description,
+          background: form.background,
+          story: form.story,
+          whyThisIP: form.whyThisIP,
+          tags: form.tags,
+          bannerLink: form.bannerLink,
+        }}
+        onApply={applySparkPatch}
+      />
 
       {/* Content */}
       <div>
@@ -883,78 +988,46 @@ export default function IPEditPage() {
           {/* ── FAQ ── */}
           {activeTab === "faq" && (
             <Section title={t("sectionFAQ")} description={t("sectionFAQDesc")}>
-              {/* Persisted FAQs — auto-save on input blur via updateFAQMut. */}
-              {faqs.length > 0 && (
-                <div className="space-y-4">
-                  {faqs.map((faq) => (
-                    <FAQCard
-                      key={faq.id}
-                      faq={faq}
-                      onSave={(patch) => updateFAQField(faq, patch)}
-                      onDelete={() => deleteFAQMut({ id: faq.id, projectId: faq.projectId })}
-                      labels={{
-                        question: t("faqQuestion"),
-                        questionPlaceholder: t("faqQuestionPlaceholder"),
-                        answer: t("faqAnswer"),
-                        answerPlaceholder: t("faqAnswerPlaceholder"),
-                        del: t("faqDelete"),
-                      }}
-                    />
-                  ))}
-                </div>
+              {faqs.length > 0 ? (
+                <DragDropProvider onDragOver={handleFaqDragOver} onDragEnd={handleFaqDragEnd}>
+                  <div className="flex flex-col gap-3">
+                    {faqs.map((faq, i) => (
+                      <SortableFaqRow
+                        key={faq.faqId}
+                        id={String(faq.faqId)}
+                        index={i}
+                        faq={faq}
+                        onEdit={() => openFaqEdit(i)}
+                        onDelete={() => removeFaq(i)}
+                      />
+                    ))}
+                  </div>
+                </DragDropProvider>
+              ) : (
+                <p className="rounded-xl border border-dashed border-border bg-card/40 px-4 py-8 text-center text-sm text-muted-foreground">
+                  {t("faqEmpty")}
+                </p>
               )}
 
-              {/* Local draft for the new FAQ — submit on Save. */}
-              {faqDraft && (
-                <div className="space-y-3 rounded-xl border border-dashed border-primary/40 bg-card p-4">
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-foreground">
-                      {t("faqQuestion")}
-                    </label>
-                    <Input
-                      value={faqDraft.question}
-                      onChange={(e) => setFaqDraft({ ...faqDraft, question: e.target.value })}
-                      placeholder={t("faqQuestionPlaceholder")}
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-foreground">
-                      {t("faqAnswer")}
-                    </label>
-                    <Textarea
-                      value={faqDraft.answer}
-                      onChange={(e) => setFaqDraft({ ...faqDraft, answer: e.target.value })}
-                      placeholder={t("faqAnswerPlaceholder")}
-                      rows={3}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      color="muted"
-                      size="sm"
-                      onClick={() => setFaqDraft(null)}
-                    >
-                      {tc("cancel")}
-                    </Button>
-                    <Button size="sm" onClick={saveFAQDraft}>
-                      {tc("save")}
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <Button variant="outline" color="muted" className="w-full" onClick={openFaqCreate}>
+                <IconPlus className="size-4" />
+                {t("faqAdd")}
+              </Button>
 
-              {!faqDraft && (
-                <Button
-                  variant="outline"
-                  color="muted"
-                  className="w-full"
-                  onClick={() => setFaqDraft({ question: "", answer: "" })}
-                >
-                  <IconPlus className="size-4" />
-                  {t("faqAdd")}
-                </Button>
-              )}
+              <FaqDialog
+                open={faqDialogOpen}
+                onOpenChange={setFaqDialogOpen}
+                index={faqDialogIndex}
+                initial={
+                  faqDialogIndex !== null && faqDialogIndex >= 0
+                    ? {
+                        question: faqs[faqDialogIndex]?.question ?? "",
+                        answer: faqs[faqDialogIndex]?.answer ?? "",
+                      }
+                    : null
+                }
+                onSubmit={(draft) => upsertFaq(faqDialogIndex, draft)}
+              />
             </Section>
           )}
         </div>
