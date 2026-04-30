@@ -15,9 +15,6 @@ import {
   IconSun,
   IconLanguage,
   IconCheck,
-  IconBuildingStore,
-  IconUsersGroup,
-  IconUserSearch,
   IconWand,
   IconNews,
   IconBook,
@@ -75,10 +72,13 @@ export function GlobalNav() {
   const shouldHide = HIDDEN_PATTERNS.some((pattern) => pathname.includes(pattern));
   if (shouldHide) return null;
 
-  const navItems = [
-    { href: "/ips", label: t("ipPlaza"), Icon: IconBuildingStore },
-    { href: "/crews", label: t("studioHall"), Icon: IconUsersGroup },
-    { href: "/creators", label: t("creators"), Icon: IconUserSearch },
+  // Browse-style entries (IP / Crews / Creators) read as text-only labels;
+  // tool-style entries (Studio onward) keep their icon glyph as an affordance
+  // hint that they're an action surface, not a directory.
+  const navItems: { href: string; label: string; Icon?: typeof IconWand }[] = [
+    { href: "/ips", label: t("ipPlaza") },
+    { href: "/crews", label: t("studioHall") },
+    { href: "/creators", label: t("creators") },
     { href: "/studio/projects", label: t("studio"), Icon: IconWand },
     // Legacy uni-app route — flip to "/courses" once the native page in
     // app/(site)/courses/ ships per its README migration plan.
@@ -136,7 +136,7 @@ export function GlobalNav() {
                 isActive(href) ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Icon className="size-4" />
+              {Icon && <Icon className="size-4" />}
               {label}
             </Link>
           ))}
@@ -225,7 +225,7 @@ export function GlobalNav() {
                     : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
                 )}
               >
-                <Icon className="size-4" />
+                {Icon && <Icon className="size-4" />}
                 {label}
               </Link>
             ))}
