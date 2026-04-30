@@ -33,7 +33,7 @@ export const fetchUser = createAsyncThunk("auth/fetchUser", async () => {
         (typeof info.nickName === "string" && info.nickName) ||
         (typeof info.userName === "string" && info.userName) ||
         "",
-      avatar: typeof info.headImg === "string" ? info.headImg : undefined,
+      avatar: typeof info.avatar === "string" ? info.avatar : undefined,
       userLevel: typeof info.userLevel === "string" ? info.userLevel : undefined,
     } satisfies User;
   } catch {

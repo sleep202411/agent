@@ -42,6 +42,8 @@
     "backToOldVersion": "Back to Old Version",
     "upgrade": "Upgrade",
     "logout": "Log Out",
+    "logoutConfirmTitle": "Log out of FizzDragon?",
+    "logoutConfirmBody": "You'll need to sign in again to access your projects, crews, and saved work.",
     "generate": "Generate",
     "generating": "Generating...",
     "generateFailed": "Generation failed",
@@ -279,6 +281,8 @@
   },
   "ip": {
     "plaza": "IP Plaza",
+    "featuredEmptyTitle": "Featured IPs are on the way",
+    "featuredEmptyBody": "Editorial picks land here once the next slate is locked. Check back soon.",
     "subtitle": "IP Investment · Pre-order · Distribution",
     "heroSubtitle": "IP Investment · Pre-order · Distribution",
     "heroTitle1": "Invest in Great IPs",

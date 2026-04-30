@@ -42,6 +42,8 @@
     "backToOldVersion": "返回舊版",
     "upgrade": "升級",
     "logout": "登出",
+    "logoutConfirmTitle": "確定要登出嗎？",
+    "logoutConfirmBody": "登出後需要重新登入才能查看你的專案、劇組和已儲存的內容。",
     "generate": "生成",
     "generating": "生成中...",
     "generateFailed": "生成失敗",
@@ -279,6 +281,8 @@
   },
   "ip": {
     "plaza": "IP 廣場",
+    "featuredEmptyTitle": "精選 IP 即將上線",
+    "featuredEmptyBody": "下一檔精選片單確定後會在這裡展示，敬請期待。",
     "subtitle": "IP 投資 · 預售 · 發行",
     "heroSubtitle": "IP 投資 · 預售 · 發行",
     "heroTitle1": "投資優質 IP",

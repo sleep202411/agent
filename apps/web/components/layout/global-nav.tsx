@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { SiteUserMenu } from "@/components/layout/site-user-menu";
 import { useAppSelector, useAppDispatch } from "@/src/store";
-import { fetchUser } from "@/src/store/slices/authSlice";
+import { fetchUser, logout as logoutAction } from "@/src/store/slices/authSlice";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
@@ -21,8 +21,10 @@ import {
   IconWand,
   IconNews,
   IconBook,
-  IconMenu2,
   IconX,
+  IconDotsVertical,
+  IconUser,
+  IconLogout,
 } from "@tabler/icons-react";
 import {
   DropdownMenu,
@@ -122,17 +124,6 @@ export function GlobalNav() {
       )}
     >
       <div className="mx-auto flex h-16 max-w-[1800px] items-center gap-4 px-6">
-        {/* Mobile hamburger */}
-        <button
-          type="button"
-          onClick={() => setMobileOpen((v) => !v)}
-          aria-label={t("menu")}
-          aria-expanded={mobileOpen}
-          className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground lg:hidden"
-        >
-          {mobileOpen ? <IconX className="size-5" /> : <IconMenu2 className="size-5" />}
-        </button>
-
         {/* Logo */}
         <Link href="/" className="flex shrink-0 items-center">
           <img src="/logo.png" alt="FizzDragon" className="h-6 w-auto object-contain" />
@@ -155,8 +146,8 @@ export function GlobalNav() {
           ))}
         </nav>
 
-        {/* Right cluster — theme / language / CTA */}
-        <div className="ml-auto flex items-center gap-1">
+        {/* Right cluster — desktop: theme / language / CTA */}
+        <div className="ml-auto hidden items-center gap-1 lg:flex">
           <button
             type="button"
             onClick={toggleTheme}
@@ -201,15 +192,28 @@ export function GlobalNav() {
             <button
               type="button"
               onClick={() => router.push(localizePath("/login", locale as Locale))}
-              className="ml-1 hidden h-9 items-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10 sm:flex"
+              className="ml-1 flex h-9 items-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
             >
               {t("getStarted")}
             </button>
           )}
         </div>
+
+        {/* Right cluster — mobile: a single "more" button toggles the unified drawer below */}
+        <div className="ml-auto flex items-center lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileOpen((v) => !v)}
+            aria-label={t("menu")}
+            aria-expanded={mobileOpen}
+            className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {mobileOpen ? <IconX className="size-5" /> : <IconDotsVertical className="size-5" />}
+          </button>
+        </div>
       </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer — nav links + theme / language / account, all in one place */}
       {mobileOpen && (
         <div className="border-t border-border/50 bg-background/95 backdrop-blur-xl lg:hidden">
           <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3">
@@ -229,14 +233,82 @@ export function GlobalNav() {
                 {label}
               </Link>
             ))}
-            {!user && (
+
+            <div className="my-2 h-px bg-border/50" />
+
+            {/* Theme toggle */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+            >
+              {isDark ? <IconSun className="size-4" /> : <IconMoon className="size-4" />}
+              <span>{isDark ? "Light" : "Dark"}</span>
+            </button>
+
+            {/* Language */}
+            <div className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              {t("language")}
+            </div>
+            {LOCALE_OPTIONS.map((opt) => {
+              const current = opt.value === locale;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    switchLocale(opt.value);
+                  }}
+                  className={cn(
+                    "flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors",
+                    current
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                  )}
+                >
+                  <span className="inline-flex items-center gap-3">
+                    <IconLanguage className="size-4" />
+                    {opt.label}
+                  </span>
+                  {current && <IconCheck className="size-4 text-primary" />}
+                </button>
+              );
+            })}
+
+            <div className="my-2 h-px bg-border/50" />
+
+            {/* Account */}
+            {user ? (
+              <>
+                <Link
+                  href={localizePath("/profile", locale as Locale)}
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+                >
+                  <IconUser className="size-4" />
+                  <span>{user.nickname || "Profile"}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    void dispatch(logoutAction());
+                  }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+                >
+                  <IconLogout className="size-4" />
+                  <span>Logout</span>
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
                 onClick={() => {
                   setMobileOpen(false);
                   router.push(localizePath("/login", locale as Locale));
                 }}
-                className="mt-2 flex h-10 items-center justify-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
+                className="mt-1 flex h-10 items-center justify-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
               >
                 {t("getStarted")}
               </button>

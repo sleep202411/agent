@@ -42,6 +42,8 @@
     "backToOldVersion": "返回旧版",
     "upgrade": "升级",
     "logout": "退出登录",
+    "logoutConfirmTitle": "确定要退出登录吗？",
+    "logoutConfirmBody": "退出后需要重新登录才能查看你的项目、剧组和已保存的内容。",
     "generate": "生成",
     "generating": "生成中...",
     "generateFailed": "生成失败",
@@ -279,6 +281,8 @@
   },
   "ip": {
     "plaza": "IP 广场",
+    "featuredEmptyTitle": "精选 IP 即将上线",
+    "featuredEmptyBody": "下一档精选片单确定后会在这里展示，敬请期待。",
     "subtitle": "IP 投资 · 预售 · 发行",
     "heroSubtitle": "IP 投资 · 预售 · 发行",
     "heroTitle1": "投资优质 IP",
