@@ -3,7 +3,7 @@
  *
  *   - `useIPList`       — POST /project/list (JSON, data.{list,total,...})
  *   - `useIPTypes`      — GET /vedio/project/type/list (flat [{id, name}])
- *   - `useIPTagList`    — GET /vedio/project/tag/list (flat [{id, name, typeId}])
+ *   - `useIPTagList`    — GET /vedio/type/tag/list (flat [{id, name, typeId}])
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -12,6 +12,41 @@ import type { IPProject, IPListResult, IPType, IPTag } from "./types";
 
 // ─── /project/list ──────────────────────────────────
 
+// Backend wire shape for `/project/list` rows. Diverges from the
+// UI-facing `IPProject` (renames: title → name, introduction →
+// description, creator → ownerName, videoBanner → bannerLink, …).
+interface WireProject {
+  id: number | null;
+  projectId: number;
+  title: string | null;
+  introduction: string | null;
+  creator: string | null;
+  videoBanner: string | null;
+  contact: string | null;
+  tags: string | null;
+  viewStatus: number | null;
+  createTime: string | null;
+}
+
+function mapWireProject(w: WireProject): IPProject {
+  return {
+    id: w.projectId,
+    ownerId: 0,
+    ownerName: w.creator ?? "",
+    ownerAvatar: "",
+    name: w.title ?? "",
+    typeId: 0,
+    bannerLink: w.videoBanner ?? "",
+    videoLink: null,
+    description: w.introduction ?? "",
+    createTime: w.createTime ?? "",
+    projectStatus: w.viewStatus ?? 0,
+    contact: w.contact ?? "",
+    tag: w.tags,
+    background: null,
+  };
+}
+
 async function fetchIPList(params: {
   page: number;
   pageSize: number;
@@ -19,28 +54,35 @@ async function fetchIPList(params: {
   typeId: string;
   tag: string;
 }): Promise<IPListResult> {
-  const res = await fetch("/project/list", {
+  // Backend takes page / pageSize as query params (Swagger §queryProject).
+  // key / typeId / tag aren't surfaced yet — kept in the hook signature so
+  // the call sites don't change once filters are wired in.
+  const qs = new URLSearchParams({
+    page: String(params.page),
+    pageSize: String(params.pageSize),
+  });
+  const res = await fetch(`/project/list?${qs.toString()}`, {
     method: "POST",
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
       "accept-language": acceptLanguage(),
       Authorization: bearerHeader(),
     },
-    body: JSON.stringify(params),
   });
   if (!res.ok) {
     return { list: [], total: 0, currentPage: params.page, pageSize: params.pageSize };
   }
   const json = (await res.json()) as {
     code: number;
-    data: { list: IPProject[]; total: number; currentPage: number; pageSize: number };
+    data: WireProject[];
+    sum: number;
   };
+  const rows = Array.isArray(json.data) ? json.data : [];
   return {
-    list: json.data?.list ?? [],
-    total: json.data?.total ?? 0,
-    currentPage: json.data?.currentPage ?? params.page,
-    pageSize: json.data?.pageSize ?? params.pageSize,
+    list: rows.map(mapWireProject),
+    total: json.sum ?? rows.length,
+    currentPage: params.page,
+    pageSize: params.pageSize,
   };
 }
 
@@ -62,7 +104,7 @@ export function useIPList(params?: {
   });
 }
 
-// ─── /vedio/project/type/list, /vedio/project/tag/list ────
+// ─── /vedio/project/type/list, /vedio/type/tag/list ────
 
 async function fetchTypeList(): Promise<IPType[]> {
   const res = await fetch("/vedio/project/type/list", {
@@ -75,7 +117,7 @@ async function fetchTypeList(): Promise<IPType[]> {
 }
 
 async function fetchTagList(): Promise<IPTag[]> {
-  const res = await fetch("/vedio/project/tag/list", {
+  const res = await fetch("/vedio/type/tag/list", {
     credentials: "include",
     headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
   });

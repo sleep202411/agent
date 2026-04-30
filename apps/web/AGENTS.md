@@ -80,30 +80,37 @@ app/(site)/ips/
 
 - Types and constants only the feature uses (`IPItem`, `IPDetail`,
   `STAGE_CONFIG`, `PRESET_REWARDS`, …).
-- React Query hook wrappers and cache keys for endpoints the feature
-  consumes — even when the underlying service function is shared.
-- Fetchers for endpoints only the feature talks to.
+- React Query hook wrappers and cache keys for the endpoints the
+  feature consumes.
+- The fetcher implementations themselves — wire URL, request shape,
+  response parsing.
 
 **What stays in `src/` (app-level shared infrastructure):**
 
-- `src/services/<domain>.ts` — transport-level service functions reused
-  across multiple features (e.g., `updateProject` is called by both
-  `(site)/ips/[id]/edit` and `(site)/profile`). The service stays
-  shared; each feature wraps it in its own hook.
-- `src/hooks/` — hooks for genuinely cross-cutting domains (auth, current
-  user, certification, KYC). Don't put a hook here unless two or more
-  features need it.
 - `src/lib/`, `src/i18n/`, `src/env.ts`, `src/store/` — universal app
-  plumbing.
+  plumbing (transport client, env config, redux, i18n).
+- `src/hooks/` — hooks for genuinely cross-cutting domains (auth,
+  current user, certification, KYC). Don't put a hook here unless two
+  or more features already need it.
 
-**The rule of thumb:** does a second feature already need this? If yes,
-shared. If no, feature-private — promote to `src/` later if a real second
-consumer appears, don't predict sharing in advance.
+**The rule of thumb:** **feature-private wins, even if it duplicates
+code.** If two features end up calling the same backend endpoint, each
+owns its own fetcher, types, and cache keys. Promotion to `src/`
+happens only when someone makes an explicit decision to share — never
+preemptively. Two divergent local copies are cheaper than one shared
+abstraction that's wrong for both callers.
 
-**Older code under `src/hooks/` (e.g., `use-my-projects`, `use-episodes`,
-`use-worlds`) predates this convention.** Those will be migrated into
-their respective features over time. Until then expect a mix; for new
-work, follow the IP layout.
+This is a deliberate inversion of the usual DRY instinct. The rationale:
+shared service modules in `src/services/` accreted IP-specific shapes
+that other consumers (profile, creators) accidentally couplied to,
+making it impossible to evolve the IP wire contract without breaking
+unrelated features. Feature-local fetchers eliminate that
+cross-coupling at the cost of some line duplication.
+
+**Older code under `src/hooks/` and `src/services/`** predates this
+convention. It still works for the consumers it has, but new work
+should never reach into it; build feature-local instead. Migrate the
+old code only when its current consumer is being refactored anyway.
 
 ## Dev
 

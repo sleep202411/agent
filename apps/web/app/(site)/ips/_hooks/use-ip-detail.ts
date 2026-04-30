@@ -1,48 +1,103 @@
 /**
  * IP detail-page reads + project-level mutations.
  *
- *   - `useProjectDetail`        — full IP record
- *   - `useProjectVideoLink`     — promo-video signed URL (legacy endpoint)
- *   - `useProjectJobs`          — recruiting posts
- *   - `useUpdateProject`        — wraps shared `src/services/project.ts`
- *   - `useUploadProjectVideo`   — promo-video upload
+ *   - `useProjectDetail`        — POST /project/query (form-encoded)
+ *   - `useProjectVideoLink`     — POST /vedio/play/project/getLink
+ *   - `useProjectJobs`          — POST /project/job/find/jobs
+ *   - `useUpdateProject`        — POST /project/update (form-encoded)
+ *   - `useUploadProjectVideo`   — multipart /content/project/upload/project/video/backup
  *
  * Episode reads / member reads / FAQ reads live in their own files.
+ *
+ * Fetchers are inlined here (and only here) — the IP feature owns its
+ * full data layer. If another feature later needs the same shapes,
+ * it should redefine them locally rather than importing from us.
  */
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  getProjectDetail,
-  getProjectVideoLink,
-  getProjectJobs,
-  uploadProjectVideo,
-  updateProject,
-} from "@/src/services/project";
-import { ipKeys } from "./shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ipKeys, postForm } from "./shared";
 import type { Project, ProjectJob } from "./types";
+
+// ─── Reads ─────────────────────────────────────────────
+
+async function fetchProjectDetail(projectId: string): Promise<Project> {
+  return postForm<Project>("/project/query", { projectId });
+}
+
+async function fetchProjectVideoLink(projectId: string): Promise<string> {
+  return postForm<string>("/vedio/play/project/getLink", { id: projectId });
+}
+
+async function fetchProjectJobs(projectId: string): Promise<ProjectJob[]> {
+  const res = await postForm<ProjectJob[] | { list?: ProjectJob[] }>("/project/job/find/jobs", {
+    projectId,
+  });
+  if (Array.isArray(res)) return res;
+  return res?.list ?? [];
+}
 
 export function useProjectDetail(id: string) {
   return useQuery<Project>({
     queryKey: ipKeys.detail(id),
-    queryFn: () => getProjectDetail(id),
+    queryFn: () => fetchProjectDetail(id),
     enabled: !!id,
   });
 }
 
-export function useProjectVideoLink(id: string) {
+export function useProjectVideoLink(id: string, enabled: boolean = true) {
   return useQuery<string>({
     queryKey: ipKeys.video(id),
-    queryFn: () => getProjectVideoLink(id),
-    enabled: !!id,
+    queryFn: () => fetchProjectVideoLink(id),
+    enabled: !!id && enabled,
   });
 }
 
 export function useProjectJobs(id: string) {
   return useQuery<ProjectJob[]>({
     queryKey: ipKeys.jobs(id),
-    queryFn: () => getProjectJobs(id),
+    queryFn: () => fetchProjectJobs(id),
     enabled: !!id,
   });
+}
+
+// ─── Mutations ─────────────────────────────────────────
+
+interface UpdateProjectInput {
+  id: number | string;
+  name?: string;
+  typeId?: string | number;
+  description?: string;
+  background?: string;
+  bannerLink?: string;
+  contact?: string;
+  tag?: string;
+  projectStatus?: number;
+}
+
+async function updateProject(input: UpdateProjectInput): Promise<unknown> {
+  const body = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, String(v ?? "")]));
+  return postForm("/project/update", body);
+}
+
+async function uploadProjectVideo({
+  projectId,
+  file,
+}: {
+  projectId: string;
+  file: File;
+}): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("projectId", projectId);
+  const res = await fetch("/content/project/upload/project/video/backup", {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
+  const json = (await res.json()) as { code?: number; msg?: string; data?: string; path?: string };
+  if (json.code !== 200) throw new Error(json.msg || "Upload failed");
+  return json.data ?? json.path ?? "";
 }
 
 export function useUpdateProject() {
@@ -59,8 +114,7 @@ export function useUpdateProject() {
 export function useUploadProjectVideo() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, file }: { projectId: string; file: File }) =>
-      uploadProjectVideo(projectId, file),
+    mutationFn: uploadProjectVideo,
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ipKeys.video(variables.projectId) });
     },

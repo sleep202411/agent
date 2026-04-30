@@ -118,6 +118,58 @@ export interface RailItem {
   episodes: number;
 }
 
-// Re-export shared project types so IP code only ever imports from
-// `_hooks/use-ip`.
-export type { Project, ProjectMember, ProjectJob } from "@/src/services/project";
+// ─── Project / member / job shapes (feature-private) ──────────
+//
+// These used to live in `@/src/services/project.ts` because multiple
+// features read them. The IP feature now owns its own copy so it can
+// evolve without breaking profile / creators / use-my-projects.
+// If another feature later needs the same shape, it should redefine
+// it locally — duplication is cheaper than a brittle shared dep.
+
+export interface Project {
+  id: number;
+  ownerId?: number;
+  ownerName?: string | null;
+  ownerAvatar?: string | null;
+  name: string;
+  typeId?: number;
+  bannerLink?: string | null;
+  videoLink?: string | null;
+  description?: string | null;
+  /** 0=normal, 1=archived. */
+  projectStatus?: number;
+  contact?: string | null;
+  tag?: string | null;
+  background?: string | null;
+  createTime?: string;
+  // Future fields (pending backend).
+  story?: string | null;
+  whyThisIP?: string | null;
+  targetEpisodes?: number | null;
+}
+
+export interface ProjectMember {
+  id?: number;
+  userId?: number;
+  userName?: string | null;
+  nickName?: string | null;
+  avatar?: string | null;
+  roleId?: number;
+  roleName?: string | null;
+  profitRatio?: number;
+  guaranteedIncome?: number;
+  [key: string]: unknown;
+}
+
+export interface ProjectJob {
+  id?: number;
+  projectId?: number;
+  roleId?: number;
+  roleName?: string | null;
+  jobDescription?: string | null;
+  profitRatio?: number;
+  estimatedEarnings?: number;
+  /** 0=open, 1=closed. */
+  status?: number;
+  [key: string]: unknown;
+}

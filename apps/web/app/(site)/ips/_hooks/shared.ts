@@ -54,6 +54,59 @@ export function bearerHeader(): string {
   return `Bearer ${match?.[1] ?? ""}`;
 }
 
+// ─── Fetch helpers (feature-private) ────────────────
+//
+// Java endpoints accept either form-encoded bodies (most legacy
+// controllers) or JSON bodies. These two helpers let the IP fetchers
+// stay terse without depending on `src/lib/api`. Each unwraps the
+// `{code, msg, data}` envelope and surfaces a real Error on failure
+// so React Query reports `isError`.
+
+export interface ApiEnvelope<T> {
+  code: number;
+  msg?: string;
+  data?: T;
+}
+
+function commonHeaders(): Record<string, string> {
+  return {
+    "accept-language": acceptLanguage(),
+    Authorization: bearerHeader(),
+  };
+}
+
+function unwrap<T>(json: ApiEnvelope<T>, fallbackErr: string): T {
+  if (json.code !== 0 && json.code !== 200) {
+    throw new Error(json.msg || fallbackErr);
+  }
+  return json.data as T;
+}
+
+export async function postForm<T>(path: string, data: Record<string, string>): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      ...commonHeaders(),
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    },
+    body: new URLSearchParams(data).toString(),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return unwrap<T>(await res.json(), `POST ${path} failed`);
+}
+
+export async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "include",
+    headers: { ...commonHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return unwrap<T>(await res.json(), `POST ${path} failed`);
+}
+
 // ─── Query keys ─────────────────────────────────────
 
 export const ipKeys = {

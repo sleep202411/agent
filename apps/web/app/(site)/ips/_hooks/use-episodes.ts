@@ -2,7 +2,7 @@
  * Episode CRUD + list (P0).
  *
  *   - `useProjectEpisodes`   — GET /vedio/project/episode/list
- *   - `useCreateEpisode`     — POST /project/episode/create
+ *   - `useCreateEpisode`     — POST /vedio/add/project/episode
  *   - `useUpdateEpisode`     — POST /vedio/project/episode/update
  *   - `useDeleteEpisode`     — POST /project/episode/delete
  *   - `useReorderEpisode`    — POST /project/episode/reorder
@@ -40,7 +40,20 @@ export function useProjectEpisodes(id: string) {
 }
 
 async function createEpisode(input: CreateEpisodeInput): Promise<Episode> {
-  const res = await fetch("/project/episode/create", {
+  // Wire shape diverges from the UI-facing input: backend renames
+  // description → introduction, videoUrl → videoLink, cover → videoBanner,
+  // sort → videoNumber, and stringifies videoMeta. tags / other /
+  // viewStatus / sort itself are unused — backend defaults them.
+  const body = {
+    projectId: Number(input.projectId),
+    title: input.title,
+    introduction: input.description,
+    videoBanner: input.cover,
+    videoLink: input.videoUrl,
+    videoNumber: input.sort ?? 0,
+    videometa: input.videoMeta ? JSON.stringify(input.videoMeta) : "",
+  };
+  const res = await fetch("/vedio/add/project/episode", {
     method: "POST",
     credentials: "include",
     headers: {
@@ -48,7 +61,7 @@ async function createEpisode(input: CreateEpisodeInput): Promise<Episode> {
       "accept-language": acceptLanguage(),
       Authorization: bearerHeader(),
     },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     throw new Error(`Create episode failed: HTTP ${res.status}`);

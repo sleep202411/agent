@@ -7,14 +7,22 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getProjectMembers } from "@/src/services/project";
-import { acceptLanguage, bearerHeader, ipKeys } from "./shared";
+import { acceptLanguage, bearerHeader, ipKeys, postJson } from "./shared";
 import type { ProjectMember } from "./types";
+
+async function fetchProjectMembers(projectId: string): Promise<ProjectMember[]> {
+  const res = await postJson<ProjectMember[] | { list?: ProjectMember[] }>(
+    "/project/member/query",
+    { projectId }
+  );
+  if (Array.isArray(res)) return res;
+  return res?.list ?? [];
+}
 
 export function useProjectMembers(id: string) {
   return useQuery<ProjectMember[]>({
     queryKey: ipKeys.members(id),
-    queryFn: () => getProjectMembers(id),
+    queryFn: () => fetchProjectMembers(id),
     enabled: !!id,
   });
 }
