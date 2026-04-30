@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { VideoPlayer } from "@/components/media/video-player";
 import {
   IconArrowLeft,
@@ -19,6 +20,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import { useAppSelector } from "@/src/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
@@ -90,14 +92,19 @@ function totalRuntime(eps: Episode[]): string {
 
 // ─── Page ────────────────────────────────────────────
 
-export default function IPDetailPage({ id }: { id: string }) {
+export default function IPDetailPage() {
   const t = useTranslations("ip");
+  const { id } = useParams<{ id: string }>();
 
   const { data: project, isLoading } = useProjectDetail(id);
-  const { data: videoLink } = useProjectVideoLink(id);
+  const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
   const { data: members } = useProjectMembers(id);
   const { data: episodes = [] } = useProjectEpisodes(id);
   const { data: faqs = [] } = useFAQs(id);
+
+  const currentUserId = useAppSelector((s) => s.auth.user?.id);
+  const isOwner =
+    !!currentUserId && project?.ownerId != null && String(project.ownerId) === currentUserId;
 
   // Cinema hero pin: once the hero scrolls out of view, surface a compact
   // sticky action bar so the primary CTA is always reachable.
@@ -176,12 +183,14 @@ export default function IPDetailPage({ id }: { id: string }) {
           <IconArrowLeft className="size-4" />
           {t("detailBackToPlaza")}
         </Link>
-        <Link
-          href={`/ips/${id}/edit`}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
-        >
-          {t("detailManage")}
-        </Link>
+        {isOwner && (
+          <Link
+            href={`/ips/${id}/edit`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+          >
+            {t("detailManage")}
+          </Link>
+        )}
       </div>
 
       {/* ── Sticky action bar (after hero) ─────────────── */}
@@ -369,6 +378,7 @@ export default function IPDetailPage({ id }: { id: string }) {
             <EpisodesSidebar
               episodes={episodes}
               ipId={id}
+              isOwner={isOwner}
               totalRuntime={totalRuntime(episodes)}
               t={t}
             />
@@ -422,11 +432,13 @@ function Prose({ text }: { text: string }) {
 function EpisodesSidebar({
   episodes,
   ipId,
+  isOwner,
   totalRuntime,
   t,
 }: {
   episodes: Episode[];
   ipId: string;
+  isOwner: boolean;
   totalRuntime: string;
   t: ReturnType<typeof useTranslations>;
 }) {
@@ -442,12 +454,14 @@ function EpisodesSidebar({
             </p>
           )}
         </div>
-        <Link
-          href={`/ips/${ipId}/edit?tab=episodes`}
-          className="rounded-md text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {t("detailManage")}
-        </Link>
+        {isOwner && (
+          <Link
+            href={`/ips/${ipId}/edit?tab=episodes`}
+            className="rounded-md text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {t("detailManage")}
+          </Link>
+        )}
       </div>
 
       {/* List */}
@@ -455,12 +469,14 @@ function EpisodesSidebar({
         <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
           <IconPlaylist className="size-8 text-muted-foreground/40" />
           <p className="text-xs text-muted-foreground">{t("detailNoEpisodes")}</p>
-          <Link
-            href={`/ips/${ipId}/edit?tab=episodes`}
-            className="rounded-md bg-secondary px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary/70"
-          >
-            {t("detailManageEpisodes")}
-          </Link>
+          {isOwner && (
+            <Link
+              href={`/ips/${ipId}/edit?tab=episodes`}
+              className="rounded-md bg-secondary px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary/70"
+            >
+              {t("detailManageEpisodes")}
+            </Link>
+          )}
         </div>
       ) : (
         <div className="max-h-[640px] divide-y divide-border/40 overflow-y-auto">

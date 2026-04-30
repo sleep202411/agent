@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useParams } from "next/navigation";
 import {
   IconFileText,
   IconBook,
@@ -191,7 +192,8 @@ function Section({
 
 // ─── Component ───────────────────────────────────────
 
-export default function IPEditPage({ id }: { id: string }) {
+export default function IPEditPage() {
+  const { id } = useParams<{ id: string }>();
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
   const [activeTab, setActiveTab] = useState("basic");
@@ -203,7 +205,7 @@ export default function IPEditPage({ id }: { id: string }) {
 
   const { data: project, isLoading } = useProjectDetail(id);
   const { mutate: doUpdate, isPending: saving } = useUpdateProject();
-  const { data: videoLink } = useProjectVideoLink(id);
+  const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
   const { mutate: doUploadVideo, isPending: uploadingVideo } = useUploadProjectVideo();
   const videoInputRef = useRef<HTMLInputElement>(null);
 

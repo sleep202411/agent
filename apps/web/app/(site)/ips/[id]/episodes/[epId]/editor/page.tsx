@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo } from "react";
+import { useParams } from "next/navigation";
 import {
   ReactFlow,
   Background,
@@ -35,8 +36,9 @@ const INITIAL_EDGES: Edge[] = [];
 
 const NODE_TYPES = { video: VideoNodeMemo };
 
-export default function InteractiveEditorPage({ id, epId }: { id: string; epId: string }) {
+export default function InteractiveEditorPage() {
   const t = useTranslations("interactiveEditor");
+  const { id, epId } = useParams<{ id: string; epId: string }>();
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState(INITIAL_EDGES);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
