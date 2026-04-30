@@ -306,6 +306,41 @@ export async function getLatestArtifact<T = unknown>(
   return row ? rowToRecord<T>(row) : null;
 }
 
+/**
+ * Look up the latest artifact whose `meta.attachmentRef` matches `ref`.
+ *
+ * Used by `attachment-resolve` so that a stale Redis attachment ref
+ * (1-hour TTL) can still resolve to the original uploaded text — we
+ * write a `user_doc` artifact on first resolution and read it back on
+ * subsequent resolutions after Redis evicts. Scoped to (projectId, kind)
+ * because attachment refs are project-scoped in the chat session.
+ *
+ * Uses SQLite `json_extract` so the meta field doesn't need its own
+ * column. Index-less, but `user_doc` artifacts per project are 1-2
+ * rows in practice; full scan within the project partition is fine.
+ */
+export async function findArtifactByAttachmentRef<T = unknown>(
+  projectId: string,
+  kind: ArtifactKind | string,
+  ref: string
+): Promise<ArtifactRecord<T> | null> {
+  await ensureSchema();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT id, project_id, kind, version, source, parent_id,
+                 content, meta, status, created_at, updated_at
+            FROM project_workflow_artifact
+           WHERE project_id = ?
+             AND kind = ?
+             AND json_extract(meta, '$.attachmentRef') = ?
+           ORDER BY version DESC
+           LIMIT 1`,
+    args: [projectId, kind, ref],
+  });
+  const row = result.rows[0] as unknown as DbRow | undefined;
+  return row ? rowToRecord<T>(row) : null;
+}
+
 /** All artifacts for a project, newest first (across all kinds). */
 export async function listProjectArtifacts(projectId: string): Promise<ArtifactRecord[]> {
   await ensureSchema();
