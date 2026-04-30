@@ -37,6 +37,7 @@ import {
 } from "../lib/drafts";
 import { reportProgress, throwIfCancelled } from "./engine";
 import { getContext, javaRequest } from "../lib/workspace-client";
+import { putOutline, type StoryOutline } from "../lib/outline";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -321,6 +322,50 @@ function scriptToTiptapHtml(text: string): string {
   return paragraphs.join("\n");
 }
 
+/**
+ * Synthesize a minimal StoryOutline from a successfully-parsed user
+ * script so downstream phases (script_phase / role_phase /
+ * episode_phase / prop_phase / scene_phase) that hard-depend on
+ * `getOutline(projectId)` don't blow up with "no story outline cached"
+ * the moment a user takes the docx-direct path.
+ *
+ * The shape is intentionally skeletal — we only know what parse_script
+ * gave us (a list of episode titles + introductions + raw source text).
+ * Cast / settings / props stay empty; downstream phases that need richer
+ * fields can either run brief_analyzer to enrich, or fall back to the
+ * empty default. The artifact's `source: "parse_script"` lets any future
+ * enrichment step detect synthetic outlines vs. real story_outline runs.
+ */
+function buildSyntheticOutline(
+  committed: Array<{ serverId: string; title: string }>,
+  rawText: string,
+  episodeMeta: Map<string, { introduction: string }>
+): StoryOutline {
+  const trimmedText = rawText.trim();
+  // Cap at 500 chars so the summary stays card-friendly. The real
+  // story_outline persona produces something tighter, but a verbatim
+  // head of the source is at least faithful to the user's input.
+  const summary = trimmedText.length > 500 ? `${trimmedText.slice(0, 500).trim()}…` : trimmedText;
+
+  return {
+    storySummary: summary,
+    genre: "",
+    tone: "",
+    structure: committed.map((ep, idx) => ({
+      chapterId: ep.serverId,
+      title: ep.title,
+      summary: episodeMeta.get(ep.serverId)?.introduction ?? "",
+      keyEvents: [],
+      emotion: "",
+      hookToNext: idx < committed.length - 1 ? committed[idx + 1].title : undefined,
+    })),
+    threads: { main: "", subs: [] },
+    cast: [],
+    settings: [],
+    props: [],
+  };
+}
+
 const applyDecisionStep = createStep({
   id: "apply_decision",
   inputSchema: z.object({
@@ -505,6 +550,37 @@ const applyDecisionStep = createStep({
           : "partial_failure";
 
     if (failed.length === 0) await deleteAllDrafts(runId);
+
+    // Synthesize a skeleton story outline so downstream phases (which all
+    // gate on `getOutline(projectId)`) find SOMETHING when the user takes
+    // the docx-direct path. Best-effort: a failure here must not roll back
+    // the parse_script commit. See `buildSyntheticOutline` for shape and
+    // why most fields end up empty.
+    if (committed.length > 0) {
+      try {
+        const introByServerId = new Map(
+          accepts
+            .filter((d) => serverIdByDraftRef.has(d.clientRefId))
+            .map((d) => [
+              serverIdByDraftRef.get(d.clientRefId)!,
+              { introduction: d.data.introduction },
+            ])
+        );
+        const synthetic = buildSyntheticOutline(committed, rawInput.text, introByServerId);
+        await putOutline(projectId, synthetic, {
+          runId,
+          // Distinct hash so a real story_outline run later can detect
+          // "this outline came from parse_script, please overwrite".
+          sourceHash: `parse_script:${runId}`,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[parse_script] synthetic outline write failed (non-fatal):`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
 
     const endLabel = `Split committed: ${committed.length} ok / ${failed.length} failed`;
     await reportProgress(runId, {
