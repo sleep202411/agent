@@ -4,8 +4,12 @@ import { useState } from "react";
 import { IconEdit, IconArrowDown, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { useUserInfo } from "@/src/hooks/use-user";
+import { AUTH_STATUS } from "@/src/services/certification";
+import { KycRequiredAlert } from "@/components/auth/kyc-required-alert";
 import { parseEducation, type UserInfo } from "@/src/services/user";
 import {
   useMyProjects,
@@ -145,17 +149,21 @@ function MyIPsTab() {
 
 function PersonalWorksTab() {
   const t = useTranslations("profile");
+  const router = useRouter();
+  const locale = useLocale() as Locale;
   const { data: works, isLoading } = useMyPersonalWorks();
+  const { data: userInfo } = useUserInfo();
+  const [kycAlertOpen, setKycAlertOpen] = useState(false);
 
-  // Publish flow defers to the legacy fizzdragon-web wizard
-  // (`/pages/publicVideo/publicVideoPC`) — covers type / project /
-  // tags / banner / visibility / KYC. Legacy now ships as part of
-  // this Next app's `public/` (see scripts/sync-legacy.mjs), so the
-  // jump is same-origin: the next.config.ts fallback rewrite serves
-  // `legacy.html` and the legacy SPA's history router routes.
+  // Click-time gate: don't navigate to /publish if the user can't
+  // actually finish the flow. Dialog routes to /kyc on confirm; cancel
+  // leaves them where they are.
   const requestPublish = () => {
-    if (typeof window === "undefined") return;
-    window.location.href = "/pages/publicVideo/publicVideoPC";
+    if (userInfo?.authStatus !== AUTH_STATUS.APPROVED) {
+      setKycAlertOpen(true);
+      return;
+    }
+    router.push(localizePath("/publish", locale));
   };
 
   if (isLoading) {
@@ -227,6 +235,8 @@ function PersonalWorksTab() {
           </div>
         );
       })}
+
+      <KycRequiredAlert open={kycAlertOpen} onOpenChange={setKycAlertOpen} />
     </div>
   );
 }

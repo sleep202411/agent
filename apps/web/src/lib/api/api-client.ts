@@ -264,7 +264,12 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   unauthorizedHandler = handler;
 }
 
-function notifyUnauthorized() {
+/**
+ * Trigger the registered unauthorized handler. Exported so raw fetch
+ * callsites (multipart uploads, SSE, etc.) that bypass the api-client
+ * can still hook into the global "session expired" flow on 401.
+ */
+export function notifyUnauthorized() {
   try {
     unauthorizedHandler?.();
   } catch {
