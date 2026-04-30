@@ -309,7 +309,12 @@ function ProjectCard({ project }: { project: Project }) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              router.push(`/ips/${project.id}/edit`);
+              // The new /ips/[id]/edit page isn't finished yet; until it
+              // ships, hand "Edit IP" off to the legacy fizzdragon-web
+              // editor at PARENT_ORIGIN. Drop this once the new edit
+              // route is feature-complete.
+              const origin = env.PARENT_ORIGIN || window.location.origin;
+              window.location.href = `${origin}/pages/createProject/createProject?projectId=${project.id}`;
             }}
             className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
