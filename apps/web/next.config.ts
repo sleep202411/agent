@@ -20,17 +20,26 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   async rewrites() {
-    return [
-      // NestJS server (strip /aurora prefix)
-      { source: "/aurora/:path*", destination: `${SERVER_URL}/:path*` },
-      // Java Studio service
-      { source: "/api/:path*", destination: `${JAVA_STUDIO_URL}/api/:path*` },
-      { source: "/anon/:path*", destination: `${JAVA_STUDIO_URL}/anon/:path*` },
-      // Java Content service
-      { source: "/user/:path*", destination: `${JAVA_CONTENT_URL}/user/:path*` },
-      { source: "/project/:path*", destination: `${JAVA_CONTENT_URL}/project/:path*` },
-      { source: "/vedio/:path*", destination: `${JAVA_CONTENT_URL}/vedio/:path*` },
-    ];
+    return {
+      beforeFiles: [],
+      afterFiles: [
+        // NestJS server (strip /aurora prefix)
+        { source: "/aurora/:path*", destination: `${SERVER_URL}/:path*` },
+        // Java Studio service
+        { source: "/api/:path*", destination: `${JAVA_STUDIO_URL}/api/:path*` },
+        { source: "/anon/:path*", destination: `${JAVA_STUDIO_URL}/anon/:path*` },
+        // Java Content service
+        { source: "/user/:path*", destination: `${JAVA_CONTENT_URL}/user/:path*` },
+        { source: "/project/:path*", destination: `${JAVA_CONTENT_URL}/project/:path*` },
+        { source: "/vedio/:path*", destination: `${JAVA_CONTENT_URL}/vedio/:path*` },
+      ],
+      // Strangler-fig fallback for the legacy fizzdragon-web (uni-app
+      // H5). Anything Next can't resolve to a page or static asset
+      // falls through to `public/legacy.html`; the legacy bundle's
+      // history router takes over on the client. Sync the build via
+      // `npm run legacy:sync` (see scripts/sync-legacy.mjs).
+      fallback: [{ source: "/:path*", destination: "/legacy.html" }],
+    };
   },
 };
 

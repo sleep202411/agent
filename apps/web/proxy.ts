@@ -57,7 +57,11 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Skip Next internals, static assets, and API proxy paths
-    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|.*\\..*).*)",
+    // Skip Next internals, static assets, API proxy paths, and the
+    // unmigrated legacy fizzdragon-web routes (everything under
+    // /pages/*). Legacy URLs must not get the /<locale>/ prefix
+    // because the legacy history router reads window.location.pathname
+    // directly and doesn't know about our locale convention.
+    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|pages|.*\\..*).*)",
   ],
 };

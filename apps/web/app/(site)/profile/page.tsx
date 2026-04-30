@@ -163,15 +163,15 @@ function PersonalWorksTab() {
   const t = useTranslations("profile");
   const { data: works, isLoading } = useMyPersonalWorks();
 
-  // Publish flow defers to legacy fizzdragon-web's full publish wizard
-  // (`pages/publicVideo/publicVideoPC`) — covers type / project / tags /
-  // banner / visibility / KYC. The Next.js app is iframe-embedded in
-  // legacy fizzdragon-web, so resolve against the configured parent
-  // origin and navigate the top frame.
+  // Publish flow defers to the legacy fizzdragon-web wizard
+  // (`/pages/publicVideo/publicVideoPC`) — covers type / project /
+  // tags / banner / visibility / KYC. Legacy now ships as part of
+  // this Next app's `public/` (see scripts/sync-legacy.mjs), so the
+  // jump is same-origin: the next.config.ts fallback rewrite serves
+  // `legacy.html` and the legacy SPA's history router routes.
   const requestPublish = () => {
     if (typeof window === "undefined") return;
-    const target = `${env.PARENT_ORIGIN}/pages/publicVideo/publicVideoPC`;
-    (window.top ?? window).location.href = target;
+    window.location.href = "/pages/publicVideo/publicVideoPC";
   };
 
   if (isLoading) {
