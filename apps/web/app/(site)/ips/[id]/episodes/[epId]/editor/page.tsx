@@ -27,6 +27,7 @@ import {
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { VideoNodeMemo } from "@/app/(site)/ips/_components/interactive-node";
+import { useProjectEditUrl } from "@/app/(site)/ips/_hooks/use-ip";
 import type { VideoNode, VideoNodeData } from "@/app/(site)/ips/_data/interactive";
 import type { Edge } from "@xyflow/react";
 
@@ -39,6 +40,7 @@ const NODE_TYPES = { video: VideoNodeMemo };
 export default function InteractiveEditorPage() {
   const t = useTranslations("interactiveEditor");
   const { id, epId } = useParams<{ id: string; epId: string }>();
+  const editUrl = useProjectEditUrl(id);
   const [nodes, setNodes, onNodesChange] = useNodesState(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState(INITIAL_EDGES);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -106,7 +108,7 @@ export default function InteractiveEditorPage() {
       <div className="flex items-center justify-between border-b border-border bg-card px-4 py-2.5">
         <div className="flex items-center gap-3">
           <a
-            href={`/ips/${id}/edit`}
+            href={editUrl}
             className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
           >
             <IconArrowLeft className="size-4" />

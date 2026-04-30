@@ -45,16 +45,25 @@ export interface IPTag {
 // Public-facing episode shape, mirroring what the backend will return per
 // `apps/web/app/(site)/ips/README.md §1`. Distinct from `EpisodeDraft` in
 // the editor (which carries client-side upload state).
+//
+// **`videoLink` is an opaque wire identifier, not a playable URL.** It
+// is the OSS object key the backend stores; treat it as an opaque
+// string round-tripped on update to preserve attachment when the user
+// only edits other fields. Use `useEpisodeVideoLink(episode.id)` to
+// resolve a directly-playable URL via `/vedio/play/getLink`.
 export interface Episode {
   id: string;
   projectId: string;
   title: string;
   description: string;
-  videoUrl: string;
-  cover: string;
+  /** Opaque wire identifier — round-trip on update; resolve to a
+   *  playable URL via `useEpisodeVideoLink(episode.id)` when needed. */
+  videoLink: string;
+  /** Wire-format OSS object key. Pass through `ipImageUrl()` at the
+   *  render site to get a directly-loadable `<img src>`. */
+  videoBanner: string;
   duration: number;
-  type: "linear" | "interactive";
-  sort: number;
+  videoNumber: number;
   createdAt?: string;
 }
 
@@ -70,10 +79,12 @@ export interface CreateEpisodeInput {
   projectId: string;
   title: string;
   description: string;
-  videoUrl: string;
-  cover: string;
+  /** Wire-format OSS object key (persisted as `videoLink`). */
+  videoLink: string;
+  /** Wire-format OSS object key (persisted as `videoBanner`). */
+  videoBanner: string;
   /** Episode order; backend defaults to `max(existing)+1` if omitted. */
-  sort?: number;
+  videoNumber?: number;
   /** Browser-probed metadata; backend may persist or ignore. */
   videoMeta?: VideoMeta;
 }
@@ -83,9 +94,11 @@ export interface UpdateEpisodeInput {
   projectId: string;
   title?: string;
   description?: string;
-  videoUrl?: string;
-  cover?: string;
-  sort?: number;
+  /** Wire-format OSS object key. Pass through unchanged when not editing
+   *  the attachment — omitting risks the backend nulling the field. */
+  videoLink?: string;
+  videoBanner?: string;
+  videoNumber?: number;
   videoMeta?: VideoMeta;
 }
 

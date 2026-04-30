@@ -120,6 +120,7 @@ export const ipKeys = {
   members: (id: string) => ["ip", "members", id] as const,
   jobs: (id: string) => ["ip", "jobs", id] as const,
   episodes: (id: string) => ["ip", "episodes", id] as const,
+  episodeVideo: (episodeId: string) => ["ip", "episodeVideo", episodeId] as const,
   faqs: (id: string) => ["ip", "faqs", id] as const,
   plazaFeatured: ["ip", "plaza", "featured"] as const,
   plazaForYou: (page: number, pageSize: number) =>
@@ -133,6 +134,19 @@ export function ipImageUrl(path?: string | null): string {
   if (!path) return "";
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
   return `${env.BANNER_BASE_URL}/${path}`;
+}
+
+// ─── Legacy URL helpers ─────────────────────────────
+//
+// The new IP edit page (`/ips/[id]/edit`) isn't finished yet. Until it
+// ships, every user-facing "edit IP" entry point in the platform should
+// keep landing on the legacy fizzdragon-web edit page so we don't drop
+// people into a half-built UI on production. Drop this helper (and the
+// callers) once the new edit page is feature-complete.
+
+export function legacyProjectEditUrl(projectId: string | number): string {
+  const origin = env.PARENT_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "");
+  return `${origin}/pages/createProject/createProject?projectId=${projectId}`;
 }
 
 /** Convert a relative user-avatar path to a full URL. User avatars live on

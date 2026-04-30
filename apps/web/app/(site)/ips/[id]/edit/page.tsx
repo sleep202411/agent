@@ -40,6 +40,7 @@ import {
   useUpdateFAQ,
   useDeleteFAQ,
   ipKeys,
+  ipImageUrl,
   type Episode,
   type FAQ,
 } from "@/app/(site)/ips/_hooks/use-ip";
@@ -108,16 +109,26 @@ function FAQCard({
 
 // ─── Episode → dialog adapter ──────────────────────
 // Episode (server shape) carries id / sort / createdAt / projectId; the
-// dialog only needs the editable subset.
+// dialog only needs the editable subset. videoLink (wire) round-trips
+// unchanged so non-attachment edits don't null the field; videoUrl
+// (display) starts empty and the dialog resolves it via
+// `useEpisodeVideoLink(ep.id)` for playback.
 function episodeToDraft(ep: Episode | undefined): EpisodeDraft | null {
   if (!ep) return null;
   return {
     title: ep.title,
     description: ep.description,
-    type: ep.type,
-    videoUrl: ep.videoUrl,
-    cover: ep.cover,
+    videoLink: ep.videoLink,
+    videoUrl: "",
+    videoBanner: ep.videoBanner,
+    coverUrl: ipImageUrl(ep.videoBanner),
     duration: ep.duration,
+    // Backend doesn't currently echo these on the Episode shape; the
+    // dialog's auto-probe effect re-derives width/height from the video
+    // URL on open. Size is only knowable when the user re-uploads.
+    width: 0,
+    height: 0,
+    size: 0,
   };
 }
 
@@ -215,8 +226,8 @@ export default function IPEditPage() {
   // persist independently of the IP-save button.
   const queryClient = useQueryClient();
   const { data: episodes = [] } = useProjectEpisodes(id);
-  const { mutate: createEpisodeMut } = useCreateEpisode();
-  const { mutate: updateEpisodeMut } = useUpdateEpisode();
+  const { mutateAsync: createEpisodeMut } = useCreateEpisode();
+  const { mutateAsync: updateEpisodeMut } = useUpdateEpisode();
   const { mutate: deleteEpisodeMut } = useDeleteEpisode();
   const { mutate: reorderEpisodeMut } = useReorderEpisode();
 
@@ -267,80 +278,6 @@ export default function IPEditPage() {
     setSaved(false);
   }, []);
 
-  const handleSave = () => {
-    if (!form.title.trim()) {
-      toast.warning(t("nameRequired"));
-      return;
-    }
-    doUpdate(
-      {
-        id: Number(id),
-        name: form.title.trim(),
-        typeId: form.typeId,
-        description: form.description,
-        background: form.background,
-        bannerLink: form.bannerLink,
-        contact: form.contact,
-        tag: JSON.stringify(form.tags.map(Number).filter(Boolean)),
-      },
-      {
-        onSuccess: () => {
-          toast.success(t("saveSuccess"));
-          setSaved(true);
-          setTimeout(() => setSaved(false), 2000);
-        },
-        onError: () => toast.error(t("saveFailed")),
-      }
-    );
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
-        <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  // Tag helpers
-  const addTag = (tag: string) => {
-    const trimmed = tag.trim();
-    if (!trimmed || form.tags.length >= 10 || form.tags.includes(trimmed)) return;
-    update({ tags: [...form.tags, trimmed] });
-  };
-  const removeTag = (tag: string) => update({ tags: form.tags.filter((t) => t !== tag) });
-
-  // Episode helpers — backed by mutation hooks; the list above refetches
-  // automatically on success via `ipKeys.episodes(id)` invalidation.
-  const removeEpisode = (i: number) => {
-    const target = episodes[i];
-    if (!target) return;
-    deleteEpisodeMut({ id: target.id, projectId: id });
-  };
-  const upsertEpisode = (i: number | null, next: EpisodeDraft) => {
-    if (i === null || i < 0) {
-      createEpisodeMut({
-        projectId: id,
-        title: next.title,
-        description: next.description,
-        videoUrl: next.videoUrl,
-        cover: next.cover,
-        videoMeta: { duration: next.duration },
-      });
-      return;
-    }
-    const target = episodes[i];
-    if (!target) return;
-    updateEpisodeMut({
-      id: target.id,
-      projectId: id,
-      title: next.title,
-      description: next.description,
-      videoUrl: next.videoUrl,
-      cover: next.cover,
-      videoMeta: { duration: next.duration },
-    });
-  };
   // Drag-reorder buffer: dnd-kit fires onDragOver continuously; we batch
   // the latest projected order and commit a single reorder mutation in
   // onDragEnd. The optimistic setQueryData lets the UI reflect the new
@@ -348,6 +285,9 @@ export default function IPEditPage() {
   // restores authoritative state. `originalRef` snapshots the order at
   // drag-start so onDragEnd can diff against it (the live `episodes` value
   // already reflects the optimistic mutation by then).
+  //
+  // These hooks must live above the `if (isLoading) return …` guard so
+  // the hook order stays stable across renders (Rules of Hooks).
   const pendingReorderRef = useRef<Episode[] | null>(null);
   const originalReorderRef = useRef<Episode[] | null>(null);
   const handleEpisodeDragOver = useCallback(
@@ -403,6 +343,96 @@ export default function IPEditPage() {
     });
   }, [id, reorderEpisodeMut]);
 
+  const handleSave = () => {
+    if (!form.title.trim()) {
+      toast.warning(t("nameRequired"));
+      return;
+    }
+    doUpdate(
+      {
+        id: Number(id),
+        name: form.title.trim(),
+        typeId: form.typeId,
+        description: form.description,
+        background: form.background,
+        bannerLink: form.bannerLink,
+        contact: form.contact,
+        tag: JSON.stringify(form.tags.map(Number).filter(Boolean)),
+      },
+      {
+        onSuccess: () => {
+          toast.success(t("saveSuccess"));
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2000);
+        },
+        onError: () => toast.error(t("saveFailed")),
+      }
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
+        <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Tag helpers
+  const addTag = (tag: string) => {
+    const trimmed = tag.trim();
+    if (!trimmed || form.tags.length >= 10 || form.tags.includes(trimmed)) return;
+    update({ tags: [...form.tags, trimmed] });
+  };
+  const removeTag = (tag: string) => update({ tags: form.tags.filter((t) => t !== tag) });
+
+  // Episode helpers — backed by mutation hooks; the list above refetches
+  // automatically on success via `ipKeys.episodes(id)` invalidation.
+  const removeEpisode = (i: number) => {
+    const target = episodes[i];
+    if (!target) return;
+    deleteEpisodeMut(
+      { id: target.id, projectId: id },
+      {
+        onSuccess: () => toast.success(tc("deleteSuccess")),
+        onError: (err) =>
+          toast.error(err instanceof Error && err.message ? err.message : tc("deleteFailed")),
+      }
+    );
+  };
+  const upsertEpisode = async (i: number | null, next: EpisodeDraft): Promise<void> => {
+    const videoMeta = {
+      duration: next.duration,
+      width: next.width || undefined,
+      height: next.height || undefined,
+      size: next.size || undefined,
+    };
+
+    if (i === null || i < 0) {
+      await createEpisodeMut({
+        projectId: id,
+        title: next.title,
+        description: next.description,
+        videoLink: next.videoLink,
+        videoBanner: next.videoBanner,
+        videoMeta,
+      });
+      toast.success(tc("saveSuccess"));
+      return;
+    }
+    const target = episodes[i];
+    if (!target) return;
+    await updateEpisodeMut({
+      id: target.id,
+      projectId: id,
+      title: next.title,
+      description: next.description,
+      videoLink: next.videoLink,
+      videoBanner: next.videoBanner,
+      videoMeta,
+    });
+    toast.success(tc("saveSuccess"));
+  };
   // FAQ helpers — `faqDraft` holds the single in-flight new entry; a
   // saved FAQ shows up in `faqs` after createFAQMut succeeds and the
   // draft slot is reset.
@@ -431,7 +461,7 @@ export default function IPEditPage() {
   };
 
   return (
-    <div className="flex flex-col bg-background">
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-background">
       {/* Top tab nav */}
       <div className="sticky top-14 z-30 border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/70">
         <div className="relative flex items-center justify-center px-6">
@@ -706,7 +736,6 @@ export default function IPEditPage() {
                       id={String(i)}
                       index={i}
                       episode={ep}
-                      ipId={id}
                       onClick={() => setEpisodeDialogIndex(i)}
                       onDelete={() => removeEpisode(i)}
                     />
@@ -735,8 +764,13 @@ export default function IPEditPage() {
                     ? episodeToDraft(episodes[episodeDialogIndex])
                     : null
                 }
-                onSubmit={(draft: EpisodeDraft) => {
-                  upsertEpisode(
+                episodeId={
+                  episodeDialogIndex !== null && episodeDialogIndex >= 0
+                    ? episodes[episodeDialogIndex]?.id
+                    : undefined
+                }
+                onSubmit={async (draft: EpisodeDraft) => {
+                  await upsertEpisode(
                     episodeDialogIndex !== null && episodeDialogIndex >= 0
                       ? episodeDialogIndex
                       : null,

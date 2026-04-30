@@ -30,6 +30,8 @@ import {
   useProjectMembers,
   useProjectEpisodes,
   useFAQs,
+  useProjectEditUrl,
+  ipImageUrl,
   type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
 
@@ -105,6 +107,7 @@ export default function IPDetailPage() {
   const currentUserId = useAppSelector((s) => s.auth.user?.id);
   const isOwner =
     !!currentUserId && project?.ownerId != null && String(project.ownerId) === currentUserId;
+  const editUrl = useProjectEditUrl(id);
 
   // Cinema hero pin: once the hero scrolls out of view, surface a compact
   // sticky action bar so the primary CTA is always reachable.
@@ -184,12 +187,12 @@ export default function IPDetailPage() {
           {t("detailBackToPlaza")}
         </Link>
         {isOwner && (
-          <Link
-            href={`/ips/${id}/edit`}
+          <a
+            href={editUrl}
             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
           >
             {t("detailManage")}
-          </Link>
+          </a>
         )}
       </div>
 
@@ -377,7 +380,7 @@ export default function IPDetailPage() {
           <aside className="lg:sticky lg:top-20 lg:self-start">
             <EpisodesSidebar
               episodes={episodes}
-              ipId={id}
+              editUrl={editUrl}
               isOwner={isOwner}
               totalRuntime={totalRuntime(episodes)}
               t={t}
@@ -431,13 +434,13 @@ function Prose({ text }: { text: string }) {
 
 function EpisodesSidebar({
   episodes,
-  ipId,
+  editUrl,
   isOwner,
   totalRuntime,
   t,
 }: {
   episodes: Episode[];
-  ipId: string;
+  editUrl: string;
   isOwner: boolean;
   totalRuntime: string;
   t: ReturnType<typeof useTranslations>;
@@ -455,12 +458,12 @@ function EpisodesSidebar({
           )}
         </div>
         {isOwner && (
-          <Link
-            href={`/ips/${ipId}/edit?tab=episodes`}
+          <a
+            href={editUrl}
             className="rounded-md text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             {t("detailManage")}
-          </Link>
+          </a>
         )}
       </div>
 
@@ -470,12 +473,12 @@ function EpisodesSidebar({
           <IconPlaylist className="size-8 text-muted-foreground/40" />
           <p className="text-xs text-muted-foreground">{t("detailNoEpisodes")}</p>
           {isOwner && (
-            <Link
-              href={`/ips/${ipId}/edit?tab=episodes`}
+            <a
+              href={editUrl}
               className="rounded-md bg-secondary px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary/70"
             >
               {t("detailManageEpisodes")}
-            </Link>
+            </a>
           )}
         </div>
       ) : (
@@ -488,9 +491,9 @@ function EpisodesSidebar({
             >
               {/* Thumb */}
               <div className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-md bg-muted/40">
-                {ep.cover ? (
+                {ep.videoBanner ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ep.cover} alt="" className="size-full object-cover" />
+                  <img src={ipImageUrl(ep.videoBanner)} alt="" className="size-full object-cover" />
                 ) : (
                   <div className="flex size-full items-center justify-center">
                     <IconPlaylist className="size-4 text-muted-foreground/30" />
@@ -509,7 +512,7 @@ function EpisodesSidebar({
               {/* Title + EP marker */}
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-[10px] font-semibold tabular-nums tracking-wider text-muted-foreground">
-                  EP {String(ep.sort || i + 1).padStart(2, "0")}
+                  EP {String(ep.videoNumber || i + 1).padStart(2, "0")}
                 </div>
                 <div className="mt-0.5 line-clamp-2 text-xs font-medium text-foreground">
                   {ep.title}

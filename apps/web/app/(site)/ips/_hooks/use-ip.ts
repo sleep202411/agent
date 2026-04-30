@@ -15,7 +15,16 @@
  *   - `use-plaza.ts`      — Plaza homepage Featured + For You (P1)
  */
 
-export { ipKeys, ipImageUrl, userAvatarUrl, splitTags, avatarFallbackTone, hashId } from "./shared";
+export {
+  ipKeys,
+  ipImageUrl,
+  userAvatarUrl,
+  splitTags,
+  avatarFallbackTone,
+  hashId,
+  legacyProjectEditUrl,
+} from "./shared";
+export { useProjectEditUrl } from "./use-project-edit-url";
 export type {
   IPProject,
   IPListResult,
@@ -46,6 +55,7 @@ export {
 
 export {
   useProjectEpisodes,
+  useEpisodeVideoLink,
   useCreateEpisode,
   useUpdateEpisode,
   useDeleteEpisode,

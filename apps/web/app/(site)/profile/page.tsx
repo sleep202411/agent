@@ -13,6 +13,7 @@ import {
   useMyPersonalWorks,
 } from "@/src/hooks/use-my-projects";
 import { updateProject, type Project } from "@/src/services/project";
+import { useProjectEditUrl } from "@/app/(site)/ips/_hooks/use-ip";
 import { env } from "@/src/env";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
@@ -282,6 +283,7 @@ function JoinedTab() {
 function ProjectCard({ project }: { project: Project }) {
   const t = useTranslations("profile");
   const router = useRouter();
+  const editUrl = useProjectEditUrl(project.id);
   const bannerUrl = project.bannerLink
     ? project.bannerLink.startsWith("http")
       ? project.bannerLink
@@ -309,7 +311,7 @@ function ProjectCard({ project }: { project: Project }) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              router.push(`/ips/${project.id}/edit`);
+              window.location.href = editUrl;
             }}
             className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
