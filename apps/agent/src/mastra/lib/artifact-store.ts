@@ -34,6 +34,50 @@
 
 import { createClient, type Client } from "@libsql/client";
 
+// ─── Errors ────────────────────────────────────────────────────────────
+
+/**
+ * Thrown when a phase's required upstream artifact isn't available. Carries
+ * the kind and project id so the supervisor / UI / logs can react
+ * programmatically instead of regex-matching error strings.
+ *
+ * Use the `code` field as the stable identifier — message text is for
+ * humans and may be translated.
+ */
+export class MissingArtifactError extends Error {
+  readonly code = "MISSING_ARTIFACT" as const;
+  readonly projectId: string;
+  readonly kind: ArtifactKind | string;
+  /** Phase that needed the artifact, e.g. "script_phase". */
+  readonly requiredBy: string;
+  /** Hint for the supervisor: which workflow can produce this kind. */
+  readonly producedBy: string[];
+
+  constructor(input: {
+    projectId: string;
+    kind: ArtifactKind | string;
+    requiredBy: string;
+    producedBy?: string[];
+    detail?: string;
+  }) {
+    const producers = input.producedBy ?? [];
+    const message =
+      `${input.requiredBy}: missing artifact "${input.kind}" for project ${input.projectId}` +
+      (producers.length ? ` (run one of: ${producers.join(", ")} first)` : "") +
+      (input.detail ? ` — ${input.detail}` : "");
+    super(message);
+    this.name = "MissingArtifactError";
+    this.projectId = input.projectId;
+    this.kind = input.kind;
+    this.requiredBy = input.requiredBy;
+    this.producedBy = producers;
+  }
+}
+
+export function isMissingArtifactError(err: unknown): err is MissingArtifactError {
+  return err instanceof MissingArtifactError;
+}
+
 // ─── Types ─────────────────────────────────────────────────────────────
 
 export type ArtifactKind =
