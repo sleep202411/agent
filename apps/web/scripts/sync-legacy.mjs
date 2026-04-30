@@ -113,12 +113,88 @@ async function main() {
     console.log(`[sync-legacy] ${label}: ${srcAbs} → ${dstAbs}`);
   }
 
-  // Copy index.html verbatim — paths inside (`/assets/...`,
-  // `/static/...`) all resolve under the public/ layout we just wrote.
+  // Copy index.html with a small `<style>` injection that hides the
+  // legacy fizzdragon-web's own AppLayout navbar + footer. The platform
+  // is the only consumer of this bundle now (strangler-fig), so legacy
+  // pages should render as bare content; users navigate via the platform
+  // chrome on native Next.js routes.
+  //
+  // Selectors come from the compiled scoped CSS:
+  //   data-v-7f5ea766 → AppLayout navbar component
+  //                     (.pc-navbar / .navbar-fixed / .mobile-menu-overlay …)
+  //   data-v-c2d26263 → AppLayout footer component
+  //                     (.footer-container)
+  // Using attribute selectors catches every element in those components,
+  // which is what we want — the whole subtree should disappear.
+  //
+  // !important defends against the bundle's own `display: flex` rules
+  // that would otherwise win on the wrappers due to specificity ties.
   const html = await readFile(indexSrc, "utf-8");
+
+  // 1) Hide the legacy AppLayout navbar + footer. The platform is the
+  //    only consumer of this bundle now (strangler-fig), and the
+  //    catch-all page in `app/(site)/[...legacyPath]/page.tsx` wraps
+  //    legacy content with the platform's GlobalNav + SiteFooter via
+  //    iframe — so legacy's own chrome would just duplicate.
+  //
+  //    Selectors come from the compiled scoped CSS:
+  //      data-v-7f5ea766 → AppLayout navbar component
+  //      data-v-c2d26263 → AppLayout footer component
+  const HIDE_CHROME_STYLE = `
+    <style id="fizz-legacy-hide-chrome">
+      [data-v-7f5ea766] { display: none !important; }
+      [data-v-c2d26263] { display: none !important; }
+    </style>
+  `;
+
+  // 2) Strip the `/__legacy` URL prefix BEFORE the legacy bundle loads.
+  //    next.config rewrites `/__legacy/:path*` → `/legacy.html`, so the
+  //    iframe's window.location.pathname looks like
+  //    `/__legacy/pages/foo`. The legacy uni-app history router reads
+  //    pathname directly and doesn't know about our prefix — without
+  //    this rewrite it routes to `/__legacy/pages/foo` and 404s.
+  //
+  //    history.replaceState fires synchronously and updates pathname
+  //    to `/pages/foo` before the bundle's main script even parses.
+  //    Wrapped in a try/catch because `replaceState` can throw under
+  //    sandboxed iframe edge cases — better to fall through with the
+  //    raw URL than block the whole page.
+  const STRIP_LEGACY_PREFIX_SCRIPT = `
+    <script>
+      (function () {
+        try {
+          var p = window.location.pathname;
+          var prefix = "/__legacy";
+          if (p.indexOf(prefix) === 0) {
+            var rest = p.slice(prefix.length) || "/";
+            window.history.replaceState(
+              null,
+              "",
+              rest + window.location.search + window.location.hash
+            );
+          }
+        } catch (err) {
+          /* eslint-disable-next-line no-console */
+          console.warn("[fizz-legacy] could not strip /__legacy prefix:", err);
+        }
+      })();
+    </script>
+  `;
+
+  // The strip script must run BEFORE the bundle script tag is even
+  // parsed — otherwise the legacy bundle's router could observe the
+  // wrong pathname during its early init. Inject it right after the
+  // opening <head> tag so it's the first thing the parser sees.
+  // The hide-chrome style is order-insensitive; append it before
+  // </head>.
+  let patched = html.replace(/<head>/i, `<head>${STRIP_LEGACY_PREFIX_SCRIPT}`);
+  if (patched === html) {
+    fail(`could not find <head> tag in ${indexSrc} — refusing to write legacy.html without prefix-stripper`);
+  }
+  patched = patched.replace(/<\/head>/i, `${HIDE_CHROME_STYLE}</head>`);
   const indexDst = resolve(PUBLIC_DIR, "legacy.html");
-  await writeFile(indexDst, html, "utf-8");
-  console.log(`[sync-legacy] index: ${indexSrc} → ${indexDst}`);
+  await writeFile(indexDst, patched, "utf-8");
+  console.log(`[sync-legacy] index: ${indexSrc} → ${indexDst} (chrome hidden, prefix stripper injected)`);
 
   console.log("[sync-legacy] done.");
 }

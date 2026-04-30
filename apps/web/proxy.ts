@@ -57,11 +57,14 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Skip Next internals, static assets, API proxy paths, and the
-    // unmigrated legacy fizzdragon-web routes (everything under
-    // /pages/*). Legacy URLs must not get the /<locale>/ prefix
-    // because the legacy history router reads window.location.pathname
-    // directly and doesn't know about our locale convention.
-    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|pages|.*\\..*).*)",
+    // Skip Next internals, static assets, and API proxy paths. We DO
+    // run the locale proxy on legacy paths (`/pages/*` etc.) now that
+    // legacy renders inside the platform's `(site)` layout via a
+    // catch-all page — they need the locale prefix to land in that
+    // layout. The iframe-internal URL `/__legacy/*` is excluded
+    // because that path is rewritten directly to public/legacy.html
+    // by next.config; locale wrapping there would corrupt the
+    // pathname the legacy bundle reads.
+    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|__legacy|.*\\..*).*)",
   ],
 };

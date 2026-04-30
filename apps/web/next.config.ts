@@ -32,13 +32,21 @@ const nextConfig: NextConfig = {
         { source: "/user/:path*", destination: `${JAVA_CONTENT_URL}/user/:path*` },
         { source: "/project/:path*", destination: `${JAVA_CONTENT_URL}/project/:path*` },
         { source: "/vedio/:path*", destination: `${JAVA_CONTENT_URL}/vedio/:path*` },
+        // Legacy iframe content endpoint. The catch-all page in
+        // `app/(site)/[...legacyPath]/page.tsx` builds an iframe whose
+        // src is `/__legacy/<original-path>`; this rewrite returns the
+        // bundled `public/legacy.html` for any such URL. The legacy
+        // bundle then strips the `/__legacy` prefix client-side (see
+        // scripts/sync-legacy.mjs) so its history router reads the
+        // intended pathname.
+        { source: "/__legacy/:path*", destination: "/legacy.html" },
       ],
-      // Strangler-fig fallback for the legacy fizzdragon-web (uni-app
-      // H5). Anything Next can't resolve to a page or static asset
-      // falls through to `public/legacy.html`; the legacy bundle's
-      // history router takes over on the client. Sync the build via
-      // `npm run legacy:sync` (see scripts/sync-legacy.mjs).
-      fallback: [{ source: "/:path*", destination: "/legacy.html" }],
+      // Strangler-fig fallback: any unmatched URL falls into the
+      // catch-all page under `(site)`, which renders the legacy app
+      // inside an iframe so the platform's GlobalNav + SiteFooter
+      // wrap it. The page itself routes via Next.js — no rewrite
+      // needed here.
+      fallback: [],
     };
   },
 };
