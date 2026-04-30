@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconChevronDown,
   IconDeviceFloppy,
+  IconLanguage,
   IconLoader2,
   IconTrash,
   IconWand,
@@ -55,6 +56,10 @@ import { CharacterReferenceUploader } from "./character-reference-uploader";
 import { VoicePickerDialog } from "./character-voice-picker";
 import { AssetAiRecordPanel, type AssetAiRecordPanelHandle } from "../asset-ai-record-panel";
 import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
+import {
+  detectPromptLanguage,
+  translateVideoPrompt,
+} from "../../storyboard/ai-generator/video-dialog/expand-video-prompt";
 
 function createEmptyForm(): CharacterFormState {
   return {
@@ -108,10 +113,12 @@ export function CharacterEditDialog({
 }) {
   const t = useTranslations("character");
   const tc = useTranslations("common");
+  const ts = useTranslations("storyboard");
   const [formData, setFormData] = useState<CharacterFormState>(createEmptyForm());
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [threeViewLoading, setThreeViewLoading] = useState(false);
+  const [translating, setTranslating] = useState(false);
   const { models: cachedVoiceModels } = useRawAiModels(AI_MODEL_PATHS.voice);
   const voiceModels = cachedVoiceModels as RawAiModel[];
   const { models: imageModels } = useAiModels("/api/ai/image/generate/basic");
@@ -259,6 +266,34 @@ export function CharacterEditDialog({
       setThreeViewLoading(false);
     }
   }, [formData.id, formData.prompt, roleImagePath, t, tc]);
+
+  const handleTranslatePrompt = useCallback(async () => {
+    if (translating) return;
+    const typed = (formData.prompt ?? "").trim();
+    if (!typed) {
+      toast.error(ts("translatePromptEmpty"));
+      return;
+    }
+    setTranslating(true);
+    try {
+      const sourceLang = detectPromptLanguage(typed);
+      const targetLang = sourceLang === "zh" ? "en" : "zh";
+      const translated = await translateVideoPrompt({
+        prompt: typed,
+        sourceLang,
+        targetLang,
+      });
+      setFormData((current) => ({ ...current, prompt: translated }));
+      toast.success(
+        ts(targetLang === "en" ? "translatePromptSuccessToEn" : "translatePromptSuccessToZh")
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      toast.error(`${ts("translatePromptFailed")}: ${msg}`);
+    } finally {
+      setTranslating(false);
+    }
+  }, [formData.prompt, translating, ts]);
 
   const handleSave = useCallback(async () => {
     const trimmedName = formData.name.trim();
@@ -608,17 +643,33 @@ export function CharacterEditDialog({
                     ordering. Writing to formData.prompt is shared with
                     the 全局提示图 generator on the left. */}
                 <div className="shrink-0 flex flex-col gap-2 rounded-xl border border-border/40 bg-muted transition-colors focus-within:border-primary/30">
-                  <Textarea
-                    value={formData.prompt}
-                    onChange={(event) => updateForm({ prompt: event.target.value })}
-                    placeholder={tc("promptPlaceholder")}
-                    // 1000 instead of 500 — the Seedance template alone is
-                    // ~200 chars and gets appended to whatever base prompt
-                    // the user already has. 500 would silently clip the tail.
-                    maxLength={1000}
-                    rows={6}
-                    className="h-32 p-4 resize-none border-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
-                  />
+                  <div className="relative">
+                    <Textarea
+                      value={formData.prompt}
+                      onChange={(event) => updateForm({ prompt: event.target.value })}
+                      placeholder={tc("promptPlaceholder")}
+                      // 1000 instead of 500 — the Seedance template alone is
+                      // ~200 chars and gets appended to whatever base prompt
+                      // the user already has. 500 would silently clip the tail.
+                      maxLength={1000}
+                      rows={6}
+                      className="h-32 p-4 pr-24 resize-none border-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleTranslatePrompt()}
+                      disabled={translating || !formData.prompt?.trim()}
+                      title={ts("translatePromptTooltip")}
+                      className="absolute right-2 top-2 inline-flex shrink-0 items-center gap-1 rounded-md border border-border/40 bg-background/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {translating ? (
+                        <IconLoader2 className="size-3 animate-spin" />
+                      ) : (
+                        <IconLanguage className="size-3" />
+                      )}
+                      {ts("translatePromptButton")}
+                    </button>
+                  </div>
                   <div className="flex items-center justify-between p-2">
                     <div className="flex items-center gap-2">
                       <ModelPicker
