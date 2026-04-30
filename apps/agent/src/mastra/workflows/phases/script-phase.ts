@@ -17,7 +17,7 @@ import {
 } from "../../lib/drafts";
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
-import { getOutline } from "../../lib/outline";
+import { ensureOutline } from "../../lib/outline-deps";
 import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/language";
 import {
   publishWorkflowCompleted,
@@ -87,12 +87,7 @@ const resolveInputStep = createStep({
   execute: async ({ inputData, requestContext }) => {
     const ctx = getContext(requestContext);
     const projectId = ctx.projectId;
-    const record = await getOutline(projectId);
-    if (!record) {
-      throw new Error(
-        `script_phase: no story outline cached for project ${projectId}. Run story_outline first.`
-      );
-    }
+    const record = await ensureOutline(projectId, { requiredBy: "script_phase" });
     const skeleton = record.outline;
 
     const listed = await javaRequest<{

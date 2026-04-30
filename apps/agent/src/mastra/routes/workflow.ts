@@ -15,7 +15,7 @@ import { ConfirmRequestSchema } from "@repo/shared/workflow";
 import { getDraft, listDrafts, patchDraft } from "../lib/drafts";
 import { cancelWorkflow, resumeWorkflow, startWorkflow } from "../workflows/engine";
 import { getMeta } from "../workflows/engine/state";
-import { getRedis } from "../lib/redis-client";
+import { resolveAttachmentRefs } from "../lib/attachment-resolve";
 import { WORKFLOW_NAMES, type WorkflowName } from "../lib/redis-keys";
 import type { StoryosContext } from "../lib/workspace-client";
 import { generateProjectCover } from "../tools/meta/generate-project-cover";
@@ -25,38 +25,6 @@ import { applyPropDrafts } from "../workflows/phases/prop-phase";
 import { applyEpisodeDrafts } from "../workflows/phases/episode-phase";
 import { applyScriptDrafts } from "../workflows/phases/script-phase";
 import { applyStoryboardDrafts } from "../workflows/phases/storyboard-phase";
-
-/**
- * Resolve attachment refs in workflow inputData: any `*Ref` field whose
- * value is `att_xxx` gets swapped for the cached text under the bare
- * field name (e.g. `textRef` → `text`). Mirrors the logic in
- * `invoke_workflow` tool so the `/workflow/start` endpoint (used by
- * Nest's CONFIRM_WORKFLOW / PROJECT_PARAMS_CONFIRMED short-circuits)
- * treats attachment refs consistently.
- */
-async function resolveAttachmentRefs(value: unknown): Promise<unknown> {
-  if (Array.isArray(value)) {
-    return Promise.all(value.map(resolveAttachmentRefs));
-  }
-  if (value === null || typeof value !== "object") return value;
-  const src = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  const redis = getRedis();
-  for (const [key, v] of Object.entries(src)) {
-    if (key.endsWith("Ref") && key.length > 3 && typeof v === "string" && v.startsWith("att_")) {
-      const raw = await redis.get(`attachment:${v}`);
-      if (!raw) throw new Error(`Attachment ref not found or expired: ${v}`);
-      const parsed = JSON.parse(raw) as { text?: string };
-      if (typeof parsed.text !== "string") {
-        throw new Error(`Attachment ${v} has no text field`);
-      }
-      out[key.slice(0, -"Ref".length)] = parsed.text;
-    } else {
-      out[key] = await resolveAttachmentRefs(v);
-    }
-  }
-  return out;
-}
 
 /**
  * Inject context-derived fields (projectId / worldId / episodeId /
@@ -138,7 +106,9 @@ export const workflowRoutes = [
       }
       let resolvedInputData: Record<string, unknown>;
       try {
-        resolvedInputData = (await resolveAttachmentRefs(rawInputData)) as Record<string, unknown>;
+        resolvedInputData = (await resolveAttachmentRefs(rawInputData, {
+          projectId: ctx.projectId,
+        })) as Record<string, unknown>;
       } catch (err) {
         throw new HTTPException(400, {
           message: err instanceof Error ? err.message : String(err),
