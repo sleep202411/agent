@@ -1,13 +1,12 @@
 "use client";
 
-import { useAppSelector } from "@/src/store";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { TaskPanel } from "./task-panel";
 
-/** Dev fallback user ID — matches server DEV_USER.id */
 const DEV_USER_ID = "62";
 
 export function TaskPanelConnected() {
-  const user = useAppSelector((s) => s.auth.user);
+  const user = useCurrentUser();
   const userId = user?.id ?? DEV_USER_ID;
 
   return <TaskPanel userId={userId} />;

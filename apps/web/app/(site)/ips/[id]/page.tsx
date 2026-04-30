@@ -20,7 +20,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useAppSelector } from "@/src/store";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
@@ -104,7 +104,7 @@ export default function IPDetailPage() {
   const { data: episodes = [] } = useProjectEpisodes(id);
   const { data: faqs = [] } = useFAQs(id);
 
-  const currentUserId = useAppSelector((s) => s.auth.user?.id);
+  const currentUserId = useCurrentUser()?.id;
   const isOwner =
     !!currentUserId && project?.ownerId != null && String(project.ownerId) === currentUserId;
   const editUrl = useProjectEditUrl(id);

@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/src/store";
 import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import { backendApi } from "@/src/lib/api";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import type { ProjectOptionItem, V1ProjectMember } from "@/src/types/workspace";
 
 // ─── Constants ──────────────────────────────────────────
@@ -173,24 +174,9 @@ interface ProjectTeamDialogProps {
 export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDialogProps) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
-  const currentUser = useAppSelector((s) => s.auth.user);
+  const currentUser = useCurrentUser();
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (currentUser?.id) {
-      setCurrentUserId(String(currentUser.id));
-      return;
-    }
-    // auth slice may not have user — fetch from API
-    fetch("/user/query/user/info", { credentials: "include" })
-      .then((res) => res.json())
-      .then((body) => {
-        const info = body?.info ?? body?.data?.info ?? body?.data;
-        if (info?.id) setCurrentUserId(String(info.id));
-      })
-      .catch(() => {});
-  }, [currentUser?.id]);
+  const currentUserId = currentUser?.id ?? null;
 
   const [activeTab, setActiveTab] = useState<"members" | "invite">("members");
   const [loading, setLoading] = useState(false);
