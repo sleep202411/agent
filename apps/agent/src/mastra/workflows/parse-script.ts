@@ -38,6 +38,7 @@ import {
 import { reportProgress, throwIfCancelled } from "./engine";
 import { getContext, javaRequest } from "../lib/workspace-client";
 import { putOutline, type StoryOutline } from "../lib/outline";
+import { putArtifact } from "../lib/artifact-store";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -577,6 +578,33 @@ const applyDecisionStep = createStep({
         // eslint-disable-next-line no-console
         console.warn(
           `[parse_script] synthetic outline write failed (non-fatal):`,
+          err instanceof Error ? err.message : err
+        );
+      }
+
+      // Persist the raw user-uploaded source as a `user_doc` artifact so
+      // downstream stages and the supervisor can detect "this project's
+      // material came from a docx upload" — useful for analytics, future
+      // enrichment passes (e.g. brief_analyzer running over the original
+      // text), and for letting the supervisor explain provenance to the
+      // user. Independent of the synthetic outline above; either may
+      // succeed without the other.
+      try {
+        await putArtifact({
+          projectId,
+          kind: "user_doc",
+          source: "parse_script",
+          content: {
+            text: rawInput.text,
+            episodeCount: committed.length,
+            committedEpisodeIds: committed.map((c) => c.serverId),
+          },
+          meta: { runId },
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[parse_script] user_doc artifact write failed (non-fatal):`,
           err instanceof Error ? err.message : err
         );
       }
