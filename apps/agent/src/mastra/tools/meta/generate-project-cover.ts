@@ -199,7 +199,7 @@ async function writeCoverPrompt(opts: {
   // workflow stack. Same underlying endpoint as before.
   try {
     const { text } = await generateText({
-      model: createDeepSeekModel("deepseek-v4-pro"),
+      model: createDeepSeekModel("deepseek-v4-flash"),
       system:
         "You generate concise image prompts for Flux models. Reply in English only, 1 sentence, no explanation, no markdown, no surrounding quotes.",
       prompt: userMsg,

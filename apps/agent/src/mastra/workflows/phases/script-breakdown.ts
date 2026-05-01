@@ -32,6 +32,20 @@ const stringLike = z.preprocess((val) => {
   return val;
 }, z.string().min(1));
 
+/**
+ * "Optional string" that also tolerates explicit `null` from the LLM.
+ * `z.string().optional()` rejects null — but DeepSeek v4-pro routinely
+ * writes `null` for fields it considered-but-skipped (e.g. last chapter's
+ * `hookToNext`), where v4-flash tends to omit the key entirely. Rather
+ * than tune around model differences, accept either shape and normalise
+ * to `undefined` so downstream consumers see a single missing-value
+ * representation.
+ */
+const optionalString = z
+  .string()
+  .nullish()
+  .transform((v) => (v == null || v === "" ? undefined : v));
+
 const KeyEventsSchema = z.preprocess(
   (val) => {
     if (typeof val === "string") return val.split(/[、,，]\s*/).filter(Boolean);
@@ -61,7 +75,7 @@ const ChapterSchema = z.object({
   summary: stringLike,
   keyEvents: KeyEventsSchema,
   emotion: stringLike,
-  hookToNext: z.string().optional(),
+  hookToNext: optionalString,
 });
 
 const SubThreadSchema = z.object({
@@ -98,7 +112,7 @@ const CastRosterEntrySchema = z.preprocess(
     name: z.preprocess(truncateName(20), z.string().min(1).max(20)),
     role: stringLike,
     arc: stringLike,
-    firstAppearance: z.string().optional(),
+    firstAppearance: optionalString,
   })
 );
 
@@ -118,7 +132,7 @@ const SettingsRosterEntrySchema = z.preprocess(
   z.object({
     name: z.preprocess(truncateName(30), z.string().min(1).max(30)),
     typeHint: stringLike,
-    firstAppearance: z.string().optional(),
+    firstAppearance: optionalString,
   })
 );
 
@@ -138,7 +152,7 @@ const PropsRosterEntrySchema = z.preprocess(
   z.object({
     name: z.preprocess(truncateName(30), z.string().min(1).max(30)),
     typeHint: stringLike,
-    firstAppearance: z.string().optional(),
+    firstAppearance: optionalString,
   })
 );
 
@@ -164,16 +178,16 @@ export const ScriptBreakdownInputSchema = z.object({
    * "走完整资产" path, where user already has episodes in DB and just
    * wants skeleton extracted from them).
    */
-  text: z.string().optional(),
+  text: optionalString,
   /** Optional user hint to steer tone / genre ("爱情喜剧" / "悬疑惊悚" etc.) */
-  styleHint: z.string().optional(),
+  styleHint: optionalString,
   /**
    * Output language for the generated skeleton (chapter titles, cast
    * name-hints, settings names, thread summaries). Resolved by the
    * supervisor from project dialogLanguage / user locale; defaults to
    * English when omitted.
    */
-  contentLanguage: z.string().optional(),
+  contentLanguage: optionalString,
 });
 
 /** Pulls committed episode scripts from Java and concats them into the
