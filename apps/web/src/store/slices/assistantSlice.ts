@@ -29,6 +29,7 @@ import {
   getAssistantToolName,
   isAssistantInteractiveToolName,
   isAssistantToolPart,
+  readMostRecentProjectParam,
 } from "@/src/lib/assistant/assistant-types";
 import type { RootState, AppDispatch } from "@/src/store/index";
 import {
@@ -475,34 +476,13 @@ function buildWorkspaceContext(state: RootState, projectId: string): AssistantWo
       if (raw && raw.length > 0) dialogLanguage = raw;
     } catch {}
   }
-  // shotsPerEpisode — no Java column; localStorage is authoritative. Keep
-  // undefined on failure so the agent falls back to its default 15-40.
-  let shotsPerEpisode: number | undefined;
-  if (typeof window !== "undefined") {
-    try {
-      const raw = window.localStorage.getItem(`fizzos:shots-per-episode:${projectId}`);
-      if (raw) {
-        const n = Number(raw);
-        if (Number.isFinite(n) && n >= 5 && n <= 60) shotsPerEpisode = n;
-      }
-    } catch {}
-  }
-  // targetEpisodeCount — same localStorage-only story as shotsPerEpisode.
-  // Prefer the Redux projectDetail mirror (populated on form submit), fall
-  // back to localStorage for reloads where Redux was cleared.
-  let targetEpisodeCount: number | undefined =
-    typeof detail?.targetEpisodeCount === "number" && detail.targetEpisodeCount > 0
-      ? detail.targetEpisodeCount
-      : undefined;
-  if (targetEpisodeCount === undefined && typeof window !== "undefined") {
-    try {
-      const raw = window.localStorage.getItem(`fizzos:episode-count:${projectId}`);
-      if (raw) {
-        const n = Number(raw);
-        if (Number.isFinite(n) && n >= 1) targetEpisodeCount = n;
-      }
-    } catch {}
-  }
+  // shotsPerEpisode + targetEpisodeCount — Java has no column. Read the
+  // user's most recent ProjectParamsForm submission directly from chat
+  // history (embedded in the tool-require_project_params output). Single
+  // source-of-truth, no Redux/localStorage mirroring.
+  const messages = state.assistant.projects[projectId]?.messages ?? [];
+  const shotsPerEpisode = readMostRecentProjectParam(messages, "shotsPerEpisode");
+  const targetEpisodeCount = readMostRecentProjectParam(messages, "targetEpisodeCount");
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
@@ -1017,12 +997,26 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
 
     const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
 
+    // Embed the user's chosen params in the tool output so chat history is
+    // the single source-of-truth for params Java doesn't persist
+    // (targetEpisodeCount, shotsPerEpisode). Workflow dispatch reads them
+    // back via readMostRecentProjectParam — no Redux/localStorage mirror.
     const messagesWithToolResult = current.messages.map((message) =>
       message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === toolCallId)
         ? cloneMessageWithToolResult(message, {
             toolCallId,
             toolName: "require_project_params",
-            output: { confirmed: true, autoConfirmed: false },
+            output: {
+              confirmed: true,
+              autoConfirmed: false,
+              ...(params.targetEpisodeCount != null
+                ? { targetEpisodeCount: params.targetEpisodeCount }
+                : {}),
+              ...(params.shotsPerEpisode != null
+                ? { shotsPerEpisode: params.shotsPerEpisode }
+                : {}),
+              ...(params.dialogLanguage ? { dialogLanguage: params.dialogLanguage } : {}),
+            },
           })
         : message
     );
@@ -1036,6 +1030,10 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
 
     dispatch(commitToolResult({ projectId, messages: nextMessages, toolCallId }));
 
+    // Mirror only the Java-persisted params into Redux detail — Java owns
+    // aspectRatioType / chapterLength / stylePainting / dialogLanguage. The
+    // client-only params (targetEpisodeCount, shotsPerEpisode) live solely
+    // in chat history above.
     const projectDetail = selectCurrentInstance(getState()).detail;
     dispatch(
       setProjectDetail({
@@ -1044,12 +1042,6 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
         chapterLength: params.chapterLength,
         stylePainting: params.stylePainting,
         dialogLanguage: params.dialogLanguage,
-        // Client-side only — Java doesn't persist this yet. See
-        // project-params-form.tsx:loadEpisodeCount for the localStorage
-        // mirror that survives reload.
-        ...(params.targetEpisodeCount != null
-          ? { targetEpisodeCount: params.targetEpisodeCount }
-          : {}),
       })
     );
 

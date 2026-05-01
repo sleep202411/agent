@@ -42,6 +42,7 @@ import {
   WORKFLOW_PERSONA,
 } from "./workflow-shared";
 import type { AssistantToolInvocation } from "@/src/lib/assistant/assistant-types";
+import { readMostRecentProjectParam } from "@/src/lib/assistant/assistant-types";
 import type { Draft, WorkflowName } from "@/src/lib/workflow/workflow-client";
 import type {
   WorkflowCompletedOutput,
@@ -537,7 +538,12 @@ export function WorkflowCompletedCard({
     projectId ? (s.project.instances[projectId]?.worldId ?? null) : null
   );
   const targetEpisodeCount = useAppSelector((s) =>
-    projectId ? s.project.instances[projectId]?.detail?.targetEpisodeCount : undefined
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "targetEpisodeCount"
+        )
+      : undefined
   );
   useSyncActiveWorkflow(isActive, output.runId, output.workflowName, "completed");
   // See suspended card: useState isn't synchronous, so a double-click
@@ -715,7 +721,12 @@ export function WorkflowFailedCard({
     projectId ? (s.project.instances[projectId]?.worldId ?? null) : null
   );
   const targetEpisodeCount = useAppSelector((s) =>
-    projectId ? s.project.instances[projectId]?.detail?.targetEpisodeCount : undefined
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "targetEpisodeCount"
+        )
+      : undefined
   );
   // Read the project's currently-tracked active workflow so we can guard
   // the retry button. When a user clicks "重新拆解" / similar, the

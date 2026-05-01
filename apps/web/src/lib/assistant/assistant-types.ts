@@ -295,3 +295,36 @@ export function getAssistantMessageText(message: AssistantMessage) {
     .join("\n\n")
     .trim();
 }
+
+/**
+ * Reverse-scan the message stream for the most recent
+ * `tool-require_project_params` invocation whose output carries the requested
+ * numeric key, and return that value.
+ *
+ * Why: `targetEpisodeCount` and `shotsPerEpisode` aren't persisted by Java —
+ * the user's last submitted form value is the only authoritative source.
+ * Embedding the values into the tool output (see
+ * `confirmProjectParamsFromForm`) makes chat history the single
+ * source-of-truth and removes the Redux/localStorage mirror dance that
+ * silently dropped values on refetch.
+ */
+export function readMostRecentProjectParam(
+  messages: AssistantMessage[],
+  key: "targetEpisodeCount" | "shotsPerEpisode"
+): number | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const parts = messages[i]?.parts ?? [];
+    for (const part of parts) {
+      if (
+        part.type === "tool-require_project_params" &&
+        part.state === "output-available" &&
+        part.output &&
+        typeof part.output === "object"
+      ) {
+        const v = (part.output as Record<string, unknown>)[key];
+        if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+      }
+    }
+  }
+  return undefined;
+}

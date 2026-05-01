@@ -5,6 +5,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
 import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import { confirmProjectParamsFromForm } from "@/src/store/slices/assistantSlice";
+import { readMostRecentProjectParam } from "@/src/lib/assistant/assistant-types";
 import {
   ProjectParamsForm,
   isProjectParamsComplete,
@@ -54,7 +55,15 @@ export function ToolRequireParamsCard({
   const dispatch = useAppDispatch();
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
   const projectId = useAppSelector((s) => s.project.currentProjectId);
-  const complete = isProjectParamsComplete(detail);
+  const targetEpisodeCount = useAppSelector((s) =>
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "targetEpisodeCount"
+        )
+      : undefined
+  );
+  const complete = isProjectParamsComplete(detail, targetEpisodeCount);
   const autoConfirmedRef = useRef(false);
 
   useEffect(() => {

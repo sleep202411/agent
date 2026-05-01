@@ -95,15 +95,16 @@ export interface ConfirmProjectParamsPayload {
   stylePainting: string;
   dialogLanguage: string;
   /**
-   * Target number of episodes the user wants. Currently NOT persisted by
-   * Nest/Java — kept client-side (localStorage + Redux projectDetail) and
-   * read by buildInputData when dispatching episode_phase.
+   * Target number of episodes the user wants. NOT persisted by Java — the
+   * value is embedded into the `tool-require_project_params` tool output so
+   * chat history is the single source-of-truth (read via
+   * `readMostRecentProjectParam` at every workflow dispatch).
    */
   targetEpisodeCount?: number;
   /**
-   * Target number of shots per episode for storyboard_phase. Same client-side
-   * persistence story as targetEpisodeCount — not written to Java (no column
-   * there yet), kept in localStorage + threaded into storyboard_phase input.
+   * Target number of shots per episode for storyboard_phase. Same chat-
+   * history-as-source-of-truth story as targetEpisodeCount — not written to
+   * Java, threaded into storyboard_phase via workspaceContext.
    */
   shotsPerEpisode?: number;
   /**

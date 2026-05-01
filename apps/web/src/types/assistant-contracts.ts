@@ -120,17 +120,18 @@ export interface AssistantWorkspaceSelection {
   /** Project's chosen visual style id (from projectDetail.stylePainting). */
   stylePainting?: string | null;
   /**
-   * Target shots per episode for storyboard_phase. localStorage-only; Java
-   * has no column for it. Flows assistantSlice.buildWorkspaceContext →
-   * server → x-storyos-context → StoryosContext.shotsPerEpisode.
+   * Target shots per episode for storyboard_phase. Read from chat history
+   * (most recent ProjectParamsForm submission embedded in the
+   * `tool-require_project_params` tool output) — Java has no column.
+   * Flows assistantSlice.buildWorkspaceContext → server → x-storyos-context
+   * → StoryosContext.shotsPerEpisode.
    */
   shotsPerEpisode?: number | null;
   /**
-   * Target number of episodes the user wants. Same client-side-only
-   * persistence as shotsPerEpisode — Java has no column yet, so we re-send
-   * on every submit and mirror in localStorage. Used by supervisor to
-   * plumb into parse_script / episode_phase / main_flow / script_*_flow
-   * inputData.
+   * Target number of episodes the user wants. Same chat-history-as-source-
+   * of-truth story as shotsPerEpisode — Java has no column. Used by
+   * supervisor to plumb into parse_script / episode_phase / main_flow /
+   * script_*_flow inputData.
    */
   targetEpisodeCount?: number | null;
   videoPromptStyle?: "default" | "seedance";
