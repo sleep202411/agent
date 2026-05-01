@@ -420,6 +420,45 @@ const PERSPECTIVE_OPTIONS = "平视 / 俯视 / 仰视 / 鸟瞰 / 倾斜 / 航拍
 const MOVEMENT_OPTIONS =
   "固定镜头 / 推镜头 / 拉镜头 / 左移镜头 / 右移镜头 / 左摇镜头 / 右摇镜头 / 升镜头 / 降镜头 / 上摇镜头 / 下摇镜头 / 左旋镜头 / 右旋镜头 / 晃动镜头 / 变焦推进 / 变焦拉远 / 场景镜头";
 
+/**
+ * Pick the image_prompt template card by dialogLanguage. We deliberately
+ * show ONE template (not both) — historically the prompt listed English
+ * + Chinese examples back-to-back, and the LLM took the union: English
+ * field labels with Chinese enum tokens slipped in (`Shot size: 中景.
+ * Angle: 平视. Lens: 50mm.`). Showing only the matching template
+ * eliminates that cross-mixing and roughly halves the prompt size.
+ *
+ * Returned shape: array of strings ready to splice into buildPrompt's
+ * line list. Each language has its own field label set + vocabulary.
+ */
+function imagePromptTemplateLines(dialogLanguage?: string): string[] {
+  const isChinese = !!dialogLanguage?.toLowerCase().startsWith("zh");
+  if (isChinese) {
+    return [
+      "  ```",
+      "  画面描述：<主体 + 环境 + 材质细节 + 空间位置关系（前景-中景-后景）+ 光影效果 + 可见物理现象；不写角色连续动作链>",
+      "  景别：<大远景 / 全景 / 中景 / 近景 / 特写 / 极特写>",
+      "  拍摄角度：<俯拍 / 仰拍 / 平视 / 鸟瞰 / 过肩>",
+      "  镜头焦距：<14mm 超广角 / 24mm 广角 / 50mm 标准 / 85mm 中长焦>",
+      "  构图：<对角线 / 引导线 / 中心 / 三分法>",
+      "  光影：<暖光 / 冷光 / 逆光 / 侧光 / 黄金时刻 / 蓝调时刻 / ...>",
+      "  画面氛围：<情绪与质感，一句话>",
+      "  ```",
+    ];
+  }
+  return [
+    "  ```",
+    "  Visual: <subject + environment + material detail + spatial layout (foreground - midground - background) + lighting + visible physical phenomena; do NOT write a chain of character actions>",
+    "  Shot size: <extreme wide / wide / medium / close / close-up / extreme close-up>",
+    "  Angle: <high angle / low angle / eye level / bird's eye / over-the-shoulder>",
+    "  Lens: <14mm ultra-wide / 24mm wide / 50mm standard / 85mm short telephoto>",
+    "  Composition: <diagonal / leading lines / centered / rule of thirds>",
+    "  Lighting: <warm / cool / backlit / sidelit / golden hour / blue hour / ...>",
+    "  Mood: <emotion + texture, one sentence>",
+    "  ```",
+  ];
+}
+
 function buildPrompt(
   ep: z.infer<typeof EpisodeScriptRef>,
   sceneNames: string[],
@@ -427,6 +466,7 @@ function buildPrompt(
   dialogLanguage?: string
 ): string {
   const langLabel = storyboardDialogLanguageLabel(dialogLanguage);
+  const imageTemplateLines = imagePromptTemplateLines(dialogLanguage);
   // Target shot count — respect the user's pick with ±3 wiggle so LLM has
   // room to breathe without blowing past the tail-laziness zone. Falls
   // back to 15-40 when the value wasn't propagated (shouldn't happen
@@ -462,8 +502,7 @@ function buildPrompt(
     "```",
     ...sceneBlock,
     "Output language:",
-    `- **The \`dialogue\` field (lines + narration) must be in ${langLabel}.**`,
-    "- `description` / `image_prompt` / `video_prompt` should default to English; if the project context provides a `dialogLanguage`, follow it for consistency.",
+    `- **All of \`dialogue\`, \`description\`, \`image_prompt\`, and \`video_prompt\` MUST be written in ${langLabel}.** Do not mix English and Chinese tokens in the same field.`,
     "",
     "Each row in `rows` must follow these field rules strictly:",
     sceneRule,
@@ -474,26 +513,9 @@ function buildPrompt(
     // that produced 20-60 char prompts; now forcing structured field cards
     // at 120-220 chars for image, three-part structure for video.
     "- **image_prompt** — **single-frame** image-generation prompt, structured multi-line card, **120-220 characters / ~80-150 English words**. Strict field order:",
-    "  English example:",
-    "  ```",
-    "  Visual: <subject + environment + material detail + spatial layout (foreground - midground - background) + lighting + visible physical phenomena; do NOT write a chain of character actions>",
-    "  Shot size: <extreme wide / wide / medium / close / close-up / extreme close-up>",
-    "  Angle: <high angle / low angle / eye level / bird's eye / over-the-shoulder>",
-    "  Lens: <14mm ultra-wide / 24mm wide / 50mm standard / 85mm short telephoto>",
-    "  Composition: <diagonal / leading lines / centered / rule of thirds>",
-    "  Lighting: <warm / cool / backlit / sidelit / golden hour / blue hour / ...>",
-    "  Mood: <emotion + texture, one sentence>",
-    "  ```",
-    "  Chinese example (when `dialogLanguage = zh-CN`):",
-    "  ```",
-    "  画面描述：<主体 + 环境 + 材质细节 + 空间位置关系（前景-中景-后景）+ 光影效果 + 可见物理现象；不写角色连续动作链>",
-    "  景别：<大远景 / 全景 / 中景 / 近景 / 特写 / 极特写>",
-    "  拍摄角度：<俯拍 / 仰拍 / 平视 / 鸟瞰 / 过肩>",
-    "  镜头焦距：<14mm 超广角 / 24mm 广角 / 50mm 标准 / 85mm 中长焦>",
-    "  构图：<对角线 / 引导线 / 中心 / 三分法>",
-    "  光影：<暖光 / 冷光 / 逆光 / 侧光 / 黄金时刻 / 蓝调时刻 / ...>",
-    "  画面氛围：<情绪与质感，一句话>",
-    "  ```",
+    ...imageTemplateLines,
+    `  ⚠️ **Hard rule**: image_prompt MUST be in ${langLabel} ONLY — never mix English field labels with Chinese values (or vice versa).`,
+    "  ⚠️ **Hard rule**: image_prompt MUST NOT contain the literal enum vocabulary used by the `shot_size` / `perspective` / `movement` columns (e.g. `中景` / `特写` / `平视` / `俯视` / `固定镜头` / `推镜头`). Those values belong only to their dedicated columns; image_prompt describes visual content in natural prose using the field card above.",
     "  Blocking is mandatory: if a key prop / character / door / table / light source appears, write its relative position (left / right / foreground / background / inside the doorframe / end of the corridor). **Do not** add style/quality tokens (cinematic / 8K / photorealistic / masterpiece) — the project's `stylePainting` is appended downstream.",
     "- **video_prompt** — motion video prompt, **strict three-part structure** (A / B / C, one line each):",
     "  ```",
