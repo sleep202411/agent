@@ -115,6 +115,39 @@ export type AssistantConversationState = ReturnType<typeof createEmptyConversati
 
 const EMPTY_CONVERSATION = createEmptyConversation();
 
+/**
+ * Defense-in-depth: collapse any duplicate message-id entries in a
+ * conversation's messages array down to one (the first occurrence).
+ *
+ * Each individual reducer already finds-and-replaces by id, so the
+ * common path produces unique ids. This guard exists to absorb upstream
+ * race conditions we don't fully control:
+ *   - The backend's `wf_<runId>_<workflowName>_<status>` message publish
+ *     does a get-then-add-or-update which is non-atomic; two near-
+ *     simultaneous emitters (e.g. cancelWorkflow's immediate publish
+ *     and the worker's finalizeCancelled) can both observe "no
+ *     existing" and each emit a `message_added` event for the same id.
+ *   - Server-side history responses have, on rare occasions, returned
+ *     the same id twice when the underlying Redis read straddled a
+ *     write.
+ *
+ * Without this, React's reconciler logs "Encountered two children with
+ * the same key" warnings and falls back to position-based diffing,
+ * which can cause unstable re-mounts. The helper is O(N) and runs only
+ * on the same conversation arrays we're already producing — no extra
+ * traversal beyond the existing reducer cost.
+ */
+function dedupMessagesById<T extends { id: string }>(messages: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const m of messages) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push(m);
+  }
+  return out;
+}
+
 function isImageMime(mimeType?: string) {
   return Boolean(mimeType?.startsWith("image/"));
 }
@@ -1224,10 +1257,11 @@ export const assistantSlice = createSlice({
       const { projectId, message } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       const index = current.messages.findIndex((item) => item.id === message.id);
-      const messages =
+      const messages = dedupMessagesById(
         index >= 0
           ? current.messages.map((item, i) => (i === index ? message : item))
-          : [...current.messages, message];
+          : [...current.messages, message]
+      );
       const pendingToolUi = buildPendingToolUi(messages);
       // When an interactive tool is detected, stop showing "sending" state
       // so the tool card buttons become actionable immediately.
@@ -1336,10 +1370,11 @@ export const assistantSlice = createSlice({
     ) => {
       const { projectId, message } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
-      const messages =
+      const messages = dedupMessagesById(
         message && !current.messages.some((item) => item.id === message.id)
           ? [...current.messages, message]
-          : current.messages;
+          : current.messages
+      );
       state.projects[projectId] = {
         ...current,
         messages,
@@ -1387,12 +1422,13 @@ export const assistantSlice = createSlice({
       const incomingEmpty = messages.length === 0;
       const localHasContent = current.messages.length > 1;
       const welcomeMsg = createWelcomeMessage();
-      const nextMessages =
+      const nextMessages = dedupMessagesById(
         incomingEmpty && localHasContent
           ? current.messages
           : messages.length > 0
             ? [welcomeMsg, ...messages]
-            : [welcomeMsg];
+            : [welcomeMsg]
+      );
       state.projects[projectId] = {
         ...current,
         messages: nextMessages,
