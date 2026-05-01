@@ -1715,9 +1715,12 @@
     "workflowCancelledAnnounce": "「{label}」已取消。",
     "workflowConfirmPrompt": "已生成，請確認是否滿意？",
     "workflowCompletedPrompt": "已完成，請確認是否滿意？",
+    "workflowStateQueued": "排隊中",
     "workflowStateRunning": "規劃中",
     "workflowStateCommitting": "入庫中",
     "workflowStateDone": "規劃完成",
+    "workflowQueuePositionNext": "馬上就到你 —— 有空閒資源時立刻開始。",
+    "workflowQueuePositionAhead": "前面還有 {count} 個任務 —— 等他們處理完就輪到你。",
     "workflowResultStorySummary": "故事梗概",
     "workflowResultChapters": "{count} 個章節",
     "workflowResultCast": "{count} 位角色",
@@ -1796,6 +1799,9 @@
       "failed": "失敗",
       "cancelled": "已取消"
     },
+    "workflowHintCancelled": "隨時可以重新發起這個任務。",
+    "workflowHintFailedRetryable": "可以點擊下方的「重試」按鈕重新發起，也可以重新發送訊息描述需求。",
+    "workflowHintFailedNonRetryable": "請重新發送訊息描述需求 —— 單純重試這次沒辦法恢復。",
     "workflowError": {
       "upstream_rate_limit": "服務繁忙，請稍後重試",
       "upstream_timeout": "回應超時，請重試",

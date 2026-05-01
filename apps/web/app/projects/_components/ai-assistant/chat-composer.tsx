@@ -11,6 +11,8 @@ import {
 } from "@/src/store/slices/assistantSlice";
 import { cn } from "@/lib/utils";
 import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
+import { useWorkflowHeartbeat } from "@/src/hooks/use-workflow-heartbeat";
+import { useWorkflowCancelOnLeave } from "@/src/hooks/use-workflow-cancel-on-leave";
 import type {
   AssistantAttachment,
   AssistantToolInvocation,
@@ -72,6 +74,17 @@ export function ChatComposer({
   const activeWorkflow = useAppSelector((s) =>
     projectId ? s.assistant.projects[projectId]?.activeWorkflow : null
   );
+  // Liveness signal for the agent's reaper: ping every 10s while the
+  // chat is open so a queued/running run keeps its worker slot. When
+  // the user leaves the page, sendBeacon fires an immediate cancel —
+  // the reaper covers anything sendBeacon misses. Both hooks no-op
+  // when runId is missing, so always safe to call.
+  const heartbeatRunId =
+    activeWorkflow && (activeWorkflow.status === "queued" || activeWorkflow.status === "running")
+      ? activeWorkflow.runId
+      : null;
+  useWorkflowHeartbeat(heartbeatRunId, projectId);
+  useWorkflowCancelOnLeave(heartbeatRunId, projectId);
   // Only swap into the "working" pill when the workflow is actively running
   // or queued — if it's suspended (HITL), the user must interact with the
   // workflow card's draft-review UI, composer stays hidden behind toolCard
@@ -94,9 +107,16 @@ export function ChatComposer({
   };
 
   if (workingPillVisible && activeWorkflow) {
+    // Pill label tracks status: "排队中" while waiting for a worker
+    // slot, "工作中..." once a worker has actually picked up the job.
+    // The detailed position number lives on the WorkflowQueuedCard in
+    // the chat history; the pill stays terse so it doesn't compete
+    // with the card for attention.
+    const pillLabel =
+      activeWorkflow.status === "queued" ? t("workflowStateQueued") : t("aiWorking");
     return (
       <div className="pb-2">
-        <WorkingPill runId={activeWorkflow.runId} projectId={projectId} label={t("aiWorking")} />
+        <WorkingPill runId={activeWorkflow.runId} projectId={projectId} label={pillLabel} />
         <p className="mt-2 text-center text-[11px] text-muted-foreground/50">{t("aiDisclaimer")}</p>
       </div>
     );

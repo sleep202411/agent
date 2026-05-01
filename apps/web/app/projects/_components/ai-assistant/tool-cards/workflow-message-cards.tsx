@@ -47,6 +47,7 @@ import type {
   WorkflowCompletedOutput,
   WorkflowFailedOutput,
   WorkflowProgressOutput,
+  WorkflowQueuedOutput,
   WorkflowSuspendedOutput,
 } from "@repo/shared";
 
@@ -169,6 +170,51 @@ function ProgressBar({
         className={cn("h-full transition-all", barClass)}
         style={{ width: `${Math.min(100, (current / total) * 100)}%` }}
       />
+    </div>
+  );
+}
+
+// ─── workflow_queued (mutates in place as queue advances) ─────────────
+
+/**
+ * Soft "you're in line" card. Server publishes one of these the
+ * moment a run enters BullMQ, then re-publishes whenever the queue
+ * advances (other runs finish, this run's position drops). Once a
+ * worker actually picks up the job, server stops emitting queued and
+ * `WorkflowProgressCard` takes over — same `runId`, different message
+ * type, so the UI smoothly transitions without an empty gap.
+ *
+ * Position is 0-indexed: `0` means "next to run", `>0` means "N runs
+ * ahead". We render slightly different copy for `0` vs `>0` so the
+ * user perceives the difference between "almost yours" and "still
+ * waiting", without leaning on a numeric estimate of remaining time
+ * (which would be hard to keep accurate).
+ */
+export function WorkflowQueuedCard({
+  part,
+  isActive,
+}: {
+  part: AssistantToolInvocation;
+  isActive: boolean;
+}) {
+  const output = (part.output ?? {}) as Partial<WorkflowQueuedOutput>;
+  const t = useTranslations("ai");
+  useSyncActiveWorkflow(isActive, output.runId, output.workflowName, "queued");
+  if (!output.workflowName) return null;
+  const position = output.position ?? 0;
+  const stateLabel = t("workflowStateQueued");
+  const detail =
+    position === 0
+      ? t("workflowQueuePositionNext")
+      : t("workflowQueuePositionAhead", { count: position });
+
+  return (
+    <div className="w-full">
+      <CardHeader workflowName={output.workflowName} stateLabel={stateLabel} progress={undefined} />
+      <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+        <IconLoader2 className="size-3.5 animate-spin opacity-60" />
+        <span>{detail}</span>
+      </p>
     </div>
   );
 }
@@ -633,16 +679,18 @@ export function WorkflowFailedCard({
   const label = t(`workflowPhase.${output.terminalStatus}`);
   const workflowLabelText = t(WORKFLOW_LABEL_KEYS[output.workflowName] ?? "workflowGeneric");
 
-  // Tone the card down when it's a cancellation: cancellations are usually
-  // user- or supervisor-initiated (e.g., "重新拆解" triggers a cancel +
-  // re-dispatch internally), not real errors. Keep destructive red for
-  // genuine `failed` status so true LLM/network failures still stand out.
+  // Soft tone across both terminal-not-OK states. Stacked red cards
+  // were noisy when stale runs piled up. Now: label + body sit at
+  // muted-foreground (legible but not alarming), and a small icon
+  // tint differentiates cancelled (gray) vs failed (amber) — enough
+  // to distinguish at a glance without shouting. Error text stays at
+  // foreground/85 so debugging copy is fully readable.
   const isCancelled = output.terminalStatus === "cancelled";
-  const labelTone = isCancelled ? "text-muted-foreground" : "text-destructive/90";
-  const bodyTone = isCancelled ? "text-muted-foreground/80" : "text-destructive/80";
-  const copyBtnTone = isCancelled
-    ? "text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground/80"
-    : "text-destructive/60 hover:bg-destructive/10 hover:text-destructive/80";
+  const labelTone = "text-foreground/80";
+  const bodyTone = "text-muted-foreground";
+  const errorTextTone = "text-foreground/85";
+  const iconTone = isCancelled ? "text-muted-foreground/60" : "text-amber-500/70";
+  const copyBtnTone = "text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground/80";
 
   const handleRetry = () => {
     if (!projectId || !output.workflowName || !isActive) return;
@@ -677,8 +725,8 @@ export function WorkflowFailedCard({
         className={cn("mt-1 flex items-start gap-1.5 text-[12px]", bodyTone)}
         title={output.error}
       >
-        <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-        <span className="flex-1">{output.error || label}</span>
+        <IconAlertCircle className={cn("mt-0.5 size-3.5 shrink-0", iconTone)} />
+        <span className={cn("flex-1", errorTextTone)}>{output.error || label}</span>
         {output.error && (
           <button
             type="button"
@@ -690,6 +738,19 @@ export function WorkflowFailedCard({
           </button>
         )}
       </div>
+      {/* Soft next-step hint. Picks copy by terminal status + retryability:
+          cancelled → "feel free to start again"; failed retryable → "click
+          Retry below or send a new message"; failed non-retryable (e.g.
+          schema validation) → "Retry won't help, please send a new
+          message". Keeps the user moving forward instead of staring at
+          a bare error string. */}
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground/80">
+        {isCancelled
+          ? t("workflowHintCancelled")
+          : output.retryable
+            ? t("workflowHintFailedRetryable")
+            : t("workflowHintFailedNonRetryable")}
+      </p>
       {output.retryable && (
         <div className="mt-3">
           <ActionButton

@@ -1715,9 +1715,12 @@
     "workflowCancelledAnnounce": "\"{label}\" was cancelled.",
     "workflowConfirmPrompt": "Generated — does it look right?",
     "workflowCompletedPrompt": "Done — happy with the result?",
+    "workflowStateQueued": "Queued",
     "workflowStateRunning": "Planning",
     "workflowStateCommitting": "Saving",
     "workflowStateDone": "Planning done",
+    "workflowQueuePositionNext": "You're next in line — a worker will pick this up shortly.",
+    "workflowQueuePositionAhead": "{count} task ahead of you — we'll pick yours up as soon as a slot frees.",
     "workflowResultStorySummary": "Story summary",
     "workflowResultChapters": "{count} chapters",
     "workflowResultCast": "{count} characters",
@@ -1796,6 +1799,9 @@
       "failed": "Failed",
       "cancelled": "Cancelled"
     },
+    "workflowHintCancelled": "Feel free to start the task again whenever you're ready.",
+    "workflowHintFailedRetryable": "You can click Retry below, or send a new message describing what you'd like.",
+    "workflowHintFailedNonRetryable": "Please send a new message describing what you'd like — Retry alone won't recover from this one.",
     "workflowError": {
       "upstream_rate_limit": "Service busy — please retry shortly",
       "upstream_timeout": "Request timed out — please retry",
