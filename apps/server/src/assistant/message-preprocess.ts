@@ -121,8 +121,27 @@ async function fetchBinary(url: string): Promise<Buffer> {
 
 async function extractFromDocx(url: string): Promise<string> {
   const buf = await fetchBinary(url);
-  const result = await mammoth.extractRawText({ buffer: buf });
-  return result.value.trim();
+  // Use convertToHtml instead of extractRawText so soft line breaks (<w:br/>)
+  // surface as line boundaries — extractRawText silently swallows them, which
+  // collapses scripts authored as one mega-paragraph + 2000+ <br>s into a
+  // single flat string. Empirically this is the difference between 1 line
+  // and 1986 lines for screenplays that use soft returns between scene
+  // headings (very common with film-script docx exports).
+  //
+  // After conversion: turn each </p> and <br> into \n, drop everything else,
+  // decode the four entity escapes mammoth emits. Plain text out, paragraph
+  // structure preserved — downstream parse_script's line-numbered prompt
+  // gets meaningful chunks instead of one giant blob.
+  const result = await mammoth.convertToHtml({ buffer: buf });
+  const plain = result.value
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+  return plain.trim();
 }
 
 async function extractFromPdf(url: string): Promise<string> {
