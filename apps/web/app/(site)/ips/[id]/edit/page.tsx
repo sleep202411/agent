@@ -650,7 +650,6 @@ export default function IPEditPage() {
        *  for tab navigation only. */}
       <EditHero
         title={form.title || project?.name || ""}
-        bannerLink={form.bannerLink || project?.bannerLink || ""}
         projectStatus={project?.projectStatus}
         saving={saving}
         saved={saved}
@@ -702,7 +701,7 @@ export default function IPEditPage() {
 
       {/* Content */}
       <div>
-        <div className="mx-auto max-w-screen-lg px-6">
+        <div className="mx-auto max-w-6xl px-4">
           {/* ── Basic ── */}
           {/* ── Media ── */}
           {activeTab === "trailer" && (

@@ -21,12 +21,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { ipImageUrl } from "@/app/(site)/ips/_hooks/use-ip";
 
 interface EditHeroProps {
   /** Display-only — the hero never edits these directly. */
   title: string;
-  bannerLink: string;
   /** `0` = listed/Live, `8` = unlisted/Archived. Anything else falls
    *  through to "unknown" so we don't surface a wrong status. */
   projectStatus: number | undefined;
@@ -40,7 +38,6 @@ interface EditHeroProps {
 
 export function EditHero({
   title,
-  bannerLink,
   projectStatus,
   saving,
   saved,
@@ -66,25 +63,8 @@ export function EditHero({
       ? "bg-amber-500/15 text-amber-300 ring-amber-500/30"
       : "bg-muted text-muted-foreground ring-border";
 
-  const cover = ipImageUrl(bannerLink);
-
   return (
     <div className="relative overflow-hidden border-b border-border bg-card">
-      {/* Background art */}
-      <div className="absolute inset-0">
-        {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover} alt="" className="size-full object-cover" />
-        ) : (
-          <div className="size-full bg-gradient-to-br from-violet-900/30 via-indigo-900/30 to-slate-900" />
-        )}
-        {/* Strong scrim so action panel + title stay legible regardless
-         *  of underlying art. The right side gets an extra wash so the
-         *  glassy action panel reads against bright/busy backdrops. */}
-        <div className="absolute inset-0 bg-gradient-to-r from-background/85 via-background/55 to-background/85" />
-        <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-background/70 to-transparent" />
-      </div>
-
       <div className="relative flex w-full flex-col gap-6 px-6 py-8 sm:py-10 md:flex-row md:items-end md:justify-between">
         {/* Left — eyebrow + title + status */}
         <div className="min-w-0 flex-1 space-y-3">
@@ -114,26 +94,16 @@ export function EditHero({
         </div>
 
         {/* Right — action panel */}
-        <div className="flex shrink-0 flex-col gap-2 rounded-2xl border border-border/70 bg-card/60 p-3 backdrop-blur supports-backdrop-filter:bg-card/40 sm:flex-row sm:items-center md:flex-col md:items-stretch md:p-3">
+        <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
           <Button
             size="sm"
-            onClick={onSave}
-            disabled={saving}
+            variant="outline"
+            color="muted"
+            onClick={onSpark}
             className="min-w-[8rem] justify-center"
           >
-            {saving ? (
-              <>
-                <IconLoader2 className="size-3.5 animate-spin" />
-                {t("heroSaving")}
-              </>
-            ) : saved ? (
-              <>
-                <IconCheck className="size-3.5" />
-                {t("heroSaved")}
-              </>
-            ) : (
-              t("heroSave")
-            )}
+            <IconSparkles className="size-3.5 text-primary" />
+            {t("spark")}
           </Button>
 
           <Button
@@ -156,13 +126,23 @@ export function EditHero({
 
           <Button
             size="sm"
-            variant="outline"
-            color="muted"
-            onClick={onSpark}
+            onClick={onSave}
+            disabled={saving}
             className="min-w-[8rem] justify-center"
           >
-            <IconSparkles className="size-3.5 text-primary" />
-            {t("spark")}
+            {saving ? (
+              <>
+                <IconLoader2 className="size-3.5 animate-spin" />
+                {t("heroSaving")}
+              </>
+            ) : saved ? (
+              <>
+                <IconCheck className="size-3.5" />
+                {t("heroSaved")}
+              </>
+            ) : (
+              t("heroSave")
+            )}
           </Button>
         </div>
       </div>
