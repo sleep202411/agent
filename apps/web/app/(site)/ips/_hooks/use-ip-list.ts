@@ -3,7 +3,7 @@
  *
  *   - `useIPList`       — POST /project/list (JSON, data.{list,total,...})
  *   - `useIPTypes`      — GET /vedio/project/type/list (flat [{id, name}])
- *   - `useIPTagList`    — GET /vedio/type/tag/list (flat [{id, name, typeId}])
+ *   - `useIPTagList`    — GET /vedio/type/tag/list (flat [{id, name}] from `all`)
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -116,14 +116,26 @@ async function fetchTypeList(): Promise<IPType[]> {
   return Array.isArray(json.data) ? json.data : [];
 }
 
+/**
+ * `/vedio/type/tag/list` returns three parallel views of the same dictionary:
+ *   - `all`: `{ [id]: name }`              flat lookup of every category + tag
+ *   - `data`: `{ [category]: name[] }`     names grouped by category
+ *   - `map`: `{ [category]: { [id]: name } }`  ids grouped by category
+ *
+ * IP Plaza only needs the flat list (filter chips, search facets), so we
+ * read `all` and emit `{ id, name }[]`. The category→tag relationship in
+ * `map` is intentionally ignored — if a future feature needs it, add a
+ * sibling fetcher rather than overloading this one.
+ */
 async function fetchTagList(): Promise<IPTag[]> {
   const res = await fetch("/vedio/type/tag/list", {
     credentials: "include",
     headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
   });
   if (!res.ok) return [];
-  const json = (await res.json()) as { code: number; data: IPTag[] };
-  return Array.isArray(json.data) ? json.data : [];
+  const json = (await res.json()) as { code: number; all?: Record<string, string> };
+  const all = json.all ?? {};
+  return Object.entries(all).map(([id, name]) => ({ id: Number(id), name }));
 }
 
 export function useIPTypes() {

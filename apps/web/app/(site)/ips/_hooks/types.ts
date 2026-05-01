@@ -38,8 +38,6 @@ export interface IPType {
 export interface IPTag {
   id: number;
   name: string;
-  /** Foreign key into `IPType.id`. */
-  typeId: number;
 }
 
 // Public-facing episode shape, mirroring what the backend will return per

@@ -164,21 +164,26 @@ export default function IPPlazaPage() {
     [typesData, t]
   );
 
-  // Tags: "All" + tags scoped by selected category. The new contract gives
-  // each tag a `typeId` foreign key, so scoping is a flat filter — no more
-  // "look up category name to index `map`" gymnastics from the legacy shape.
+  // Tags: "All" + every tag from `/vedio/type/tag/list`'s `all` field
+  // (flat dictionary of every category + tag the backend knows). We
+  // intentionally don't narrow the tag pool by selected type — the
+  // single endpoint we consume doesn't carry the type→tag relationship.
+  // If product wants category-scoped tags later, add a separate
+  // fetcher that reads `map` rather than overloading this one.
   const tagOptions = useMemo(() => {
     const allOption = { id: "", name: t("allTags") };
-    const filtered = selectedTypeId
-      ? tagsData.filter((tg) => String(tg.typeId) === selectedTypeId)
-      : tagsData;
-    return [allOption, ...filtered.map((tg) => ({ id: String(tg.id), name: tg.name }))];
-  }, [tagsData, selectedTypeId, t]);
+    return [...tagsData.map((tg) => ({ id: String(tg.id), name: tg.name }))].reduce(
+      (acc, opt) => (acc.find((x) => x.id === opt.id) ? acc : [...acc, opt]),
+      [allOption]
+    );
+  }, [tagsData, t]);
 
-  // Selecting a category resets the tag (matches legacy: tag pool changes).
   const handleTypeChange = (typeId: string) => {
     if (typeId === selectedTypeId) return;
     setSelectedTypeId(typeId);
+    // Tag pool no longer narrows by type, but resetting tag on type
+    // change still feels right: switching "Genre" then keeping a tag
+    // tied to the previous genre is confusing UX.
     setSelectedTagId("");
   };
 
