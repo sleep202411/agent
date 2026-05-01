@@ -217,14 +217,37 @@ const generateStep = createStep({
         dialogLanguage,
       });
 
-      const response = await scriptwriter.generate(prompt, {
-        structuredOutput: {
-          schema: z.object({ content: z.string().min(50) }),
-          errorStrategy: "warn",
-        },
-      });
+      const personaProvider = process.env.STORYOS_PERSONA_PROVIDER ?? "(unset)";
+      const personaModel = process.env.STORYOS_PERSONA_MODEL ?? "(default)";
+      console.log(
+        `[script-phase] write.start runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} promptChars=${prompt.length} title=${JSON.stringify(ep.title)}`
+      );
+
+      let response;
+      try {
+        response = await scriptwriter.generate(prompt, {
+          structuredOutput: {
+            schema: z.object({ content: z.string().min(50) }),
+            errorStrategy: "warn",
+          },
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        const cause =
+          err instanceof Error && (err as { cause?: unknown }).cause
+            ? JSON.stringify((err as { cause?: unknown }).cause, null, 2).slice(0, 800)
+            : undefined;
+        console.error(
+          `[script-phase] write.LLM_FAILED runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} → ${detail}`
+        );
+        if (cause) console.error(`[script-phase] write.LLM_FAILED cause: ${cause}`);
+        throw err;
+      }
       const obj = response.object as { content?: string } | undefined;
       const content = (obj?.content ?? response.text ?? "").trim();
+      console.log(
+        `[script-phase] write.LLM_OK runId=${runId} ep=${i + 1}/${total} contentChars=${content.length} hasObject=${obj?.content ? "yes" : "no"}`
+      );
 
       if (content) {
         const clientRefId = randomUUID();

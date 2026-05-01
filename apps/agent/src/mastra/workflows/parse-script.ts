@@ -150,15 +150,46 @@ const splitStep = createStep({
       .filter(Boolean)
       .join("\n");
 
-    const response = await splitter.generate(prompt, {
-      structuredOutput: {
-        schema: z.object({ episodes: z.array(SplitEntry) }),
-        errorStrategy: "strict",
-      },
-    });
+    const personaProvider = process.env.STORYOS_PERSONA_PROVIDER ?? "(unset)";
+    const personaModel = process.env.STORYOS_PERSONA_MODEL ?? "(default)";
+    console.log(
+      `[parse-script] split.start runId=${runId} provider=${personaProvider} model=${personaModel} promptChars=${prompt.length} totalLines=${totalLines} target=${inputData.targetEpisodeCount}`
+    );
+
+    let response;
+    try {
+      response = await splitter.generate(prompt, {
+        structuredOutput: {
+          schema: z.object({ episodes: z.array(SplitEntry) }),
+          errorStrategy: "strict",
+        },
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      const cause =
+        err instanceof Error && (err as { cause?: unknown }).cause
+          ? JSON.stringify((err as { cause?: unknown }).cause, null, 2).slice(0, 800)
+          : undefined;
+      console.error(
+        `[parse-script] split.LLM_FAILED runId=${runId} provider=${personaProvider} model=${personaModel} → ${detail}`
+      );
+      if (cause) console.error(`[parse-script] split.LLM_FAILED cause: ${cause}`);
+      if (stack) console.error(`[parse-script] split.LLM_FAILED stack:\n${stack}`);
+      throw err;
+    }
+
     const rawEpisodes =
       (response.object as { episodes?: z.infer<typeof SplitEntry>[] } | undefined)?.episodes ?? [];
+    console.log(
+      `[parse-script] split.LLM_OK runId=${runId} returnedEpisodes=${rawEpisodes.length} sampleTitle=${JSON.stringify(rawEpisodes[0]?.title ?? "")}`
+    );
     if (rawEpisodes.length === 0) {
+      console.error(
+        `[parse-script] split.NO_EPISODES runId=${runId} response.text=${JSON.stringify(
+          (response as { text?: string }).text?.slice(0, 500) ?? "(no .text)"
+        )}`
+      );
       throw new Error("scriptSplitter returned no episodes");
     }
 

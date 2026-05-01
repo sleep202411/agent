@@ -284,6 +284,12 @@ const generateStep = createStep({
     const runOne = async (i: number) => {
       await throwIfCancelled(runId);
       const ep = inputData.episodes[i];
+      const personaProvider = process.env.STORYOS_PERSONA_PROVIDER ?? "(unset)";
+      const personaModel = process.env.STORYOS_PERSONA_MODEL ?? "(default)";
+      const builtPrompt = buildPrompt(ep, inputData.sceneNames, shotsPerEpisode, dialogLanguage);
+      console.log(
+        `[storyboard-phase] gen.start runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} promptChars=${builtPrompt.length} title=${JSON.stringify(ep.title)}`
+      );
       try {
         // errorStrategy: "strict" still bubbles genuinely malformed output
         // (bad JSON, wrong top-level shape). But individual rows with
@@ -291,17 +297,17 @@ const generateStep = createStep({
         // lenient on those fields (see StoryboardRow doc) and we drop
         // bad rows below. Previously strict mode killed a whole 30-shot
         // episode because DeepSeek's row 31 was missing `description`.
-        const response = await storyboarder.generate(
-          buildPrompt(ep, inputData.sceneNames, shotsPerEpisode, dialogLanguage),
-          {
-            structuredOutput: {
-              schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
-              errorStrategy: "strict",
-            },
-          }
-        );
+        const response = await storyboarder.generate(builtPrompt, {
+          structuredOutput: {
+            schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
+            errorStrategy: "strict",
+          },
+        });
         const rawRows =
           (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? [];
+        console.log(
+          `[storyboard-phase] gen.LLM_OK runId=${runId} ep=${i + 1}/${total} rawRows=${rawRows.length}`
+        );
 
         // Drop rows that can't carry their own weight (missing scene or
         // description) and renumber — DeepSeek's tail-laziness creates
@@ -339,6 +345,14 @@ const generateStep = createStep({
         generatedByIndex[i] = { clientRefId, episodeId: ep.episodeId, title: ep.title, rows };
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
+        const cause =
+          err instanceof Error && (err as { cause?: unknown }).cause
+            ? JSON.stringify((err as { cause?: unknown }).cause, null, 2).slice(0, 800)
+            : undefined;
+        console.error(
+          `[storyboard-phase] gen.LLM_FAILED runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} → ${reason}`
+        );
+        if (cause) console.error(`[storyboard-phase] gen.LLM_FAILED cause: ${cause}`);
         errorsByIndex[i] = reason;
       } finally {
         // Increment under the single-threaded event loop — no races.
