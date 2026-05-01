@@ -67,17 +67,21 @@ function envOrDefault(name: string, fallback: string): string {
 // `DEEPSEEK_BASE_URL` env override is preserved so we can repoint at a
 // proxy / mirror without code changes.
 
-// Strict two-model union — we deliberately only support v4-pro and
-// v4-flash. v4-pro for high-reasoning / long-form persona work
-// (scriptwriter, brief-analyzer); v4-flash for structure-recognition
-// / fast-iteration work (splitter, storyboarder) where its 94 tps and
-// looser format constraints matter more than v4-pro's nuance.
+// Strict single-model union — we standardised on v4-flash everywhere
+// (94 tps, looser-but-good-enough JSON schema following, lower cost)
+// after a 2026-05-02 prod-com incident where the silent v4-pro default
+// emitted `null` for optional fields that v4-flash would have just
+// omitted, breaking strict zod parsers downstream. v4-pro stays
+// reachable through the @ai-sdk/deepseek provider directly if a
+// future use case justifies it; the platform-wide default is flash.
 // Older aliases (deepseek-chat / deepseek-reasoner / deepseek-v3.x)
-// are intentionally rejected at the type level so a stale env var
-// doesn't silently land us on a slower model.
-type DeepSeekModelId = "deepseek-v4-pro" | "deepseek-v4-flash";
+// stay rejected at the type level so a stale env var doesn't silently
+// land us on a slower model.
+type DeepSeekModelId = "deepseek-v4-flash";
 
-export function createDeepSeekModel(modelId: DeepSeekModelId = "deepseek-v4-pro"): LanguageModelV3 {
+export function createDeepSeekModel(
+  modelId: DeepSeekModelId = "deepseek-v4-flash"
+): LanguageModelV3 {
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
@@ -237,7 +241,7 @@ export function defaultRouterModel(): LanguageModelV3 {
   if (provider !== "anthropic" && provider !== "alibaba") return base;
   // Fallback target must exist *before* the first primary call so a
   // mid-turn fallback doesn't crash on "DeepSeek not configured".
-  const fallback = createDeepSeekModel("deepseek-v4-pro");
+  const fallback = createDeepSeekModel("deepseek-v4-flash");
   return hardenRouterModel(base, fallback);
 }
 
@@ -282,7 +286,7 @@ function pickProviderModel(providerEnv: string, modelEnv: string): LanguageModel
   if (provider === "alibaba") return createAlibabaModel(model || "qwen3-max");
   if (provider === "anthropic") return createAnthropicModel(model || "claude-sonnet-4-5");
   if (provider === "deepseek") {
-    return createDeepSeekModel((model as DeepSeekModelId | undefined) || "deepseek-v4-pro");
+    return createDeepSeekModel((model as DeepSeekModelId | undefined) || "deepseek-v4-flash");
   }
   throw new Error(
     `Unknown ${providerEnv}: "${provider}". Expected: deepseek | alibaba | anthropic | azure.`
