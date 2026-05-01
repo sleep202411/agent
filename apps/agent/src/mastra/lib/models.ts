@@ -12,12 +12,35 @@
  *   import { defaultRouterModel, rolePersonaModel } from '../lib/models';
  *   new Agent({ model: defaultRouterModel(), ... })
  */
+import { wrapLanguageModel } from "ai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createAzure } from "@ai-sdk/azure";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import { hardenRouterModel } from "./model-hardening";
+import { hardenRouterModel, requestTimeoutMiddleware } from "./model-hardening";
+
+// Persona LLM call timeout. The router hardening stack already has its
+// own (claude-tier-tuned) timeout in `hardenRouterModel`; persona calls
+// don't go through that stack, so without this knob a slow / hung
+// DeepSeek (or Qwen) response leaves the workflow step waiting
+// indefinitely — `parse_script` has been seen stuck on splitter for
+// 3+ minutes with no LLM_OK / LLM_FAILED log because of exactly this.
+//
+// 180s default = 3× the upper end of normal persona latency (60s for
+// large structured output like splitter's 30-episode JSON). Beyond
+// 180s the request is genuinely hung; surfacing that as a failed step
+// (with a useful retry button) is strictly better than blocking a
+// worker slot forever.
+//
+// Soft cancel only — the underlying fetch keeps running until DeepSeek
+// finally returns or the network drops; we just stop awaiting it. A
+// proper AbortSignal-threaded cancel would need provider-side support
+// and is tracked separately. The benefit here is the workflow doesn't
+// hang, not that we save tokens on the orphaned call.
+const PERSONA_REQUEST_TIMEOUT_MS = Number(
+  process.env.STORYOS_PERSONA_REQUEST_TIMEOUT_MS ?? 180_000
+);
 
 /**
  * Env var reader that treats empty/whitespace strings as missing. Crucial
@@ -44,7 +67,15 @@ function envOrDefault(name: string, fallback: string): string {
 // `DEEPSEEK_BASE_URL` env override is preserved so we can repoint at a
 // proxy / mirror without code changes.
 
-type DeepSeekModelId = "deepseek-v4-pro";
+// Strict two-model union — we deliberately only support v4-pro and
+// v4-flash. v4-pro for high-reasoning / long-form persona work
+// (scriptwriter, brief-analyzer); v4-flash for structure-recognition
+// / fast-iteration work (splitter, storyboarder) where its 94 tps and
+// looser format constraints matter more than v4-pro's nuance.
+// Older aliases (deepseek-chat / deepseek-reasoner / deepseek-v3.x)
+// are intentionally rejected at the type level so a stale env var
+// doesn't silently land us on a slower model.
+type DeepSeekModelId = "deepseek-v4-pro" | "deepseek-v4-flash";
 
 export function createDeepSeekModel(modelId: DeepSeekModelId = "deepseek-v4-pro"): LanguageModelV3 {
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
@@ -214,9 +245,20 @@ export function defaultRouterModel(): LanguageModelV3 {
  * Persona agents (role-designer, scriptwriter, storyboarder, etc).
  * Same strict selection as defaultRouterModel, via STORYOS_PERSONA_PROVIDER
  * and STORYOS_PERSONA_MODEL.
+ *
+ * Wraps the resolved model with `requestTimeoutMiddleware` so a slow or
+ * hung provider response doesn't pin a workflow step indefinitely.
+ * Router models go through their own `hardenRouterModel` stack which
+ * already includes a timeout; persona models bypass that stack (no rate
+ * limit / circuit breaker by design — DeepSeek's gateway self-throttles)
+ * but still need the timeout layer.
  */
 export function defaultPersonaModel(): LanguageModelV3 {
-  return pickProviderModel("STORYOS_PERSONA_PROVIDER", "STORYOS_PERSONA_MODEL");
+  const base = pickProviderModel("STORYOS_PERSONA_PROVIDER", "STORYOS_PERSONA_MODEL");
+  return wrapLanguageModel({
+    model: base,
+    middleware: [requestTimeoutMiddleware(PERSONA_REQUEST_TIMEOUT_MS)],
+  });
 }
 
 /**
