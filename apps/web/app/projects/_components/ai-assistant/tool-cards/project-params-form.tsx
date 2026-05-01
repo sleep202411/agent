@@ -39,36 +39,11 @@ function getAspectPreview(label: string): { w: number; h: number } {
   return { w: Math.round(w * scale), h: Math.round(h * scale) };
 }
 
-const DIALOG_LANGUAGE_STORAGE_KEY = (projectId: string) => `fizzos:dialog-language:${projectId}`;
 const EPISODE_COUNT_MIN = 2;
 const EPISODE_COUNT_MAX = 40;
 const SHOTS_PER_EPISODE_MIN = 5;
 const SHOTS_PER_EPISODE_MAX = 60;
 const SHOTS_PER_EPISODE_DEFAULT = 20;
-
-/**
- * Load the project's chosen dialog language (zh-CN / zh-HK / en-US). Falls
- * back to undefined if nothing's stored. Currently NOT persisted by Java —
- * ProjectParamsForm keeps the authoritative copy in localStorage so all
- * downstream workflow invocations can route the value through
- * workspaceContext.dialogLanguage.
- */
-export function loadDialogLanguage(projectId: string): string | undefined {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const raw = window.localStorage.getItem(DIALOG_LANGUAGE_STORAGE_KEY(projectId));
-    return raw && raw.length > 0 ? raw : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveDialogLanguage(projectId: string, value: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(DIALOG_LANGUAGE_STORAGE_KEY(projectId), value);
-  } catch {}
-}
 
 /** True once aspect/length/style + episode count are all set. Mirror of
  * `isProjectParamsComplete` in `packages/shared/src/project-params.ts` — web
@@ -153,6 +128,14 @@ export function ProjectParamsForm({
         )
       : undefined
   );
+  const lastDialogLanguage = useAppSelector((s) =>
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "dialogLanguage"
+        )
+      : undefined
+  );
 
   const [dictionaries, setDictionaries] = useState<ProjectDictionaries | null>(null);
   const [loadingDict, setLoadingDict] = useState(true);
@@ -170,7 +153,7 @@ export function ProjectParamsForm({
     detail?.stylePainting || suggested?.stylePainting || ""
   );
   const [dialogLanguage, setDialogLanguage] = useState(
-    detail?.dialogLanguage || suggested?.dialogLanguage || "zh-CN"
+    lastDialogLanguage || suggested?.dialogLanguage || "zh-CN"
   );
   const [episodeCount, setEpisodeCount] = useState<string>(() => {
     if (lastTargetEpisodeCount != null) return String(lastTargetEpisodeCount);
@@ -227,9 +210,6 @@ export function ProjectParamsForm({
     if (!canSubmit) {
       toast.error(t("paramsFormMissing"));
       return;
-    }
-    if (detail?.id) {
-      saveDialogLanguage(detail.id, dialogLanguage);
     }
     onSubmitted?.({
       aspectRatioType,

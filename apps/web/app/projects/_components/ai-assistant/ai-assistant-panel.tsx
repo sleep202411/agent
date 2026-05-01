@@ -168,12 +168,16 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
     () =>
       messages.filter((m) => {
         if (!Array.isArray(m.parts) || m.parts.length === 0) return true;
-        // Keep the message if ANY part is something other than a "done"
-        // workflow_progress. A message whose ONLY content is a 100% progress
-        // part is the one we want to drop.
+        // Keep the message if ANY part is renderable. We drop messages
+        // whose ONLY parts are noise:
+        //   - 100%-progress workflow_progress (terminal card right after
+        //     it carries the final state, this would just duplicate)
+        //   - workflow_queued (queue depth lives in the composer pill,
+        //     not in chat history — see selectQueuedRuns + ChatComposer)
         return m.parts.some((part) => {
           if (!part || typeof part !== "object") return true;
           const p = part as { type?: unknown; output?: unknown };
+          if (p.type === "tool-workflow_queued") return false;
           if (p.type !== "tool-workflow_progress") return true;
           const out = p.output as { current?: unknown; total?: unknown } | undefined;
           const current = typeof out?.current === "number" ? out.current : 0;

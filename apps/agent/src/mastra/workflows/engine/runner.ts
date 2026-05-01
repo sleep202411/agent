@@ -118,6 +118,35 @@ export async function cancelWorkflow(runId: string): Promise<void> {
   await requestCancel(runId);
   await setStatus(runId, "cancelled");
 
+  // Drop the run's BullMQ job if it's still waiting — otherwise the queue
+  // depth (and every other queued run's `position`) stays inflated until
+  // the worker eventually picks it up and the workflow's first
+  // throwIfCancelled finalizes it. Active jobs are left to terminate
+  // cooperatively via requestCancel (yanking an active job mid-run
+  // skips its cleanup hooks). Resume jobs use a different jobId pattern
+  // (`resume-{runId}-{ts}`); covered by the waiting-list scan below.
+  try {
+    const queue = getQueue();
+    const initial = await queue.getJob(`run-${runId}`);
+    if (initial) {
+      const state = await initial.getState();
+      if (state === "waiting" || state === "delayed") {
+        await initial.remove();
+      }
+    }
+    const waiting = await queue.getWaiting();
+    for (const job of waiting) {
+      const id = String(job.id ?? "");
+      if (!id.startsWith("resume-")) continue;
+      const data = job.data as { runId?: string } | undefined;
+      if (data?.runId === runId) await job.remove();
+    }
+  } catch (err) {
+    console.warn(
+      `[runner] failed to remove BullMQ job(s) for cancelled ${runId}: ${err instanceof Error ? err.message : err}`
+    );
+  }
+
   // Publish workflow_failed chat message immediately so the frontend's
   // composer pill can clear right away. The worker's later
   // finalizeCancelled (when throwIfCancelled fires mid-run) will publish
@@ -132,6 +161,17 @@ export async function cancelWorkflow(runId: string): Promise<void> {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`[runner] publishWorkflowFailed(cancelled) failed for ${runId}:`, err);
+  }
+
+  // Re-broadcast positions so every still-queued run's card decrements.
+  // Without this, cancelling run #2 leaves run #3..N showing their
+  // original positions until the next dispatch / completion event.
+  try {
+    await broadcastQueuePositions();
+  } catch (err) {
+    console.warn(
+      `[runner] broadcastQueuePositions on cancel failed: ${err instanceof Error ? err.message : err}`
+    );
   }
 }
 

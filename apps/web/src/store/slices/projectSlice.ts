@@ -42,12 +42,6 @@ export interface ProjectDetail {
   aspectRatio?: string;
   aspectRatioType?: string;
   stylePainting?: string;
-  /**
-   * Dialog language for generated scripts. Java schema addition pending —
-   * we send it on update already so it starts persisting the moment Java
-   * adds the column.
-   */
-  dialogLanguage?: string;
   type?: number;
   episode?: number;
   chapterLength?: number;

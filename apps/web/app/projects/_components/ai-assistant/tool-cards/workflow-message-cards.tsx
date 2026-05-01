@@ -48,7 +48,6 @@ import type {
   WorkflowCompletedOutput,
   WorkflowFailedOutput,
   WorkflowProgressOutput,
-  WorkflowQueuedOutput,
   WorkflowSuspendedOutput,
 } from "@repo/shared";
 
@@ -178,46 +177,21 @@ function ProgressBar({
 // ─── workflow_queued (mutates in place as queue advances) ─────────────
 
 /**
- * Soft "you're in line" card. Server publishes one of these the
- * moment a run enters BullMQ, then re-publishes whenever the queue
- * advances (other runs finish, this run's position drops). Once a
- * worker actually picks up the job, server stops emitting queued and
- * `WorkflowProgressCard` takes over — same `runId`, different message
- * type, so the UI smoothly transitions without an empty gap.
+ * Queued-card render is intentionally a no-op. Queue depth is transient
+ * state, not history — the chat persists `tool-workflow_queued` parts in
+ * Redis so reload can derive the queue without a server round-trip, but
+ * we surface that derivation through the composer pill (see
+ * `selectQueuedRuns` + `ChatComposer.WorkingPill`), not as N stacked
+ * cards. The `ai-assistant-panel.tsx` filter drops messages whose only
+ * content is a queued part so the chat doesn't even render an empty
+ * persona-pill bubble for them; this null return is a defensive
+ * fallback for any path that bypasses the panel-level filter.
  *
- * Position is 0-indexed: `0` means "next to run", `>0` means "N runs
- * ahead". We render slightly different copy for `0` vs `>0` so the
- * user perceives the difference between "almost yours" and "still
- * waiting", without leaning on a numeric estimate of remaining time
- * (which would be hard to keep accurate).
+ * The component name + export survive so any saved chat history with
+ * stale renderer references still resolves.
  */
-export function WorkflowQueuedCard({
-  part,
-  isActive,
-}: {
-  part: AssistantToolInvocation;
-  isActive: boolean;
-}) {
-  const output = (part.output ?? {}) as Partial<WorkflowQueuedOutput>;
-  const t = useTranslations("ai");
-  useSyncActiveWorkflow(isActive, output.runId, output.workflowName, "queued");
-  if (!output.workflowName) return null;
-  const position = output.position ?? 0;
-  const stateLabel = t("workflowStateQueued");
-  const detail =
-    position === 0
-      ? t("workflowQueuePositionNext")
-      : t("workflowQueuePositionAhead", { count: position });
-
-  return (
-    <div className="w-full">
-      <CardHeader workflowName={output.workflowName} stateLabel={stateLabel} progress={undefined} />
-      <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
-        <IconLoader2 className="size-3.5 animate-spin opacity-60" />
-        <span>{detail}</span>
-      </p>
-    </div>
-  );
+export function WorkflowQueuedCard(_props: { part: AssistantToolInvocation; isActive: boolean }) {
+  return null;
 }
 
 // ─── workflow_progress (mutates in place) ─────────────────────────────

@@ -33,20 +33,29 @@ import { useEffect } from "react";
 import { cancelWorkflowOnLeave } from "@/src/lib/workflow/workflow-client";
 
 export function useWorkflowCancelOnLeave(
-  runId: string | null | undefined,
+  runIds: string[],
   projectId: string | null | undefined
 ): void {
+  // Same stable-key trick as useWorkflowHeartbeat: avoid effect rebuild
+  // on every render when the set is unchanged.
+  const depKey = [...runIds].sort().join(",");
   useEffect(() => {
-    if (!runId || !projectId) return;
+    if (!projectId || runIds.length === 0) return;
     if (typeof window === "undefined") return;
 
     const onPageHide = (): void => {
-      cancelWorkflowOnLeave(runId, projectId);
+      // Fan out one beacon per runId. sendBeacon is fire-and-forget so
+      // there's no useful aggregation to do — the browser will queue
+      // them all on its way out.
+      for (const runId of runIds) {
+        cancelWorkflowOnLeave(runId, projectId);
+      }
     };
 
     window.addEventListener("pagehide", onPageHide);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
     };
-  }, [runId, projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, projectId]);
 }

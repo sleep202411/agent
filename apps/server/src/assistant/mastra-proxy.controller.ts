@@ -925,10 +925,13 @@ export class MastraProxyController {
 
     // Canned ack. Keep it dry — the workflow card the engine publishes
     // next (workflow_started / workflow_progress) carries the actual
-    // name, so repeating it here would just add noise.
-    const ackText = WORKFLOW_ACK_LABELS[forceEnterWorkflow.workflowName]
-      ? `已派发${WORKFLOW_ACK_LABELS[forceEnterWorkflow.workflowName]}。`
-      : '已派发。';
+    // name, so repeating it here would just add noise. Locale-aware so
+    // zh-HK / zh-TW users get traditional characters and en-* users
+    // get an English ack instead of mixed-script noise.
+    const ackText = buildDispatchAck(
+      forceEnterWorkflow.workflowName,
+      acceptLanguage,
+    );
     const ackId = randomUUID();
     await this.store.addMessage(projectId, {
       id: ackId,
@@ -1179,10 +1182,11 @@ export class MastraProxyController {
 }
 
 /**
- * Workflow name → Chinese label for the canned "已派发X" ack. Add more
- * entries here as new workflows become button-triggerable. Missing
- * entries just fall back to "已派发。" which is fine — the workflow
- * card that follows carries the real name.
+ * Workflow name → label for the canned dispatch ack ("已派发X"). One map
+ * per locale variant — keeps the simplified-Chinese (zh-CN) defaults but
+ * switches to traditional Chinese (zh-HK/zh-TW) and English (en-*) when
+ * the request's Accept-Language asks for it. Missing entries fall back
+ * to a bare ack — the workflow card that follows carries the real name.
  */
 const WORKFLOW_ACK_LABELS: Record<string, string> = {
   story_outline: '素材分析',
@@ -1202,6 +1206,62 @@ const WORKFLOW_ACK_LABELS: Record<string, string> = {
   batch_create_asset: '资产录入',
   script_edit: '剧本修改',
 };
+
+const WORKFLOW_ACK_LABELS_HK: Record<string, string> = {
+  story_outline: '素材分析',
+  parse_script: '劇本切分',
+  role_phase: '角色設計',
+  role_image_phase: '角色主圖',
+  scene_phase: '場景設計',
+  scene_image_phase: '場景參考圖',
+  prop_phase: '道具設計',
+  prop_image_phase: '道具參考圖',
+  episode_phase: '分集規劃',
+  script_phase: '劇本寫作',
+  storyboard_phase: '分鏡生成',
+  role_design: '角色設計',
+  scene_design: '場景設計',
+  prop_design: '道具設計',
+  batch_create_asset: '資產錄入',
+  script_edit: '劇本修改',
+};
+
+const WORKFLOW_ACK_LABELS_EN: Record<string, string> = {
+  story_outline: 'story outline',
+  parse_script: 'script parsing',
+  role_phase: 'character design',
+  role_image_phase: 'character portraits',
+  scene_phase: 'scene design',
+  scene_image_phase: 'scene references',
+  prop_phase: 'prop design',
+  prop_image_phase: 'prop references',
+  episode_phase: 'episode planning',
+  script_phase: 'script writing',
+  storyboard_phase: 'storyboard generation',
+  role_design: 'character design',
+  scene_design: 'scene design',
+  prop_design: 'prop design',
+  batch_create_asset: 'asset import',
+  script_edit: 'script editing',
+};
+
+function buildDispatchAck(
+  workflowName: string,
+  acceptLanguage: string,
+): string {
+  const tag = (acceptLanguage.split(',')[0] ?? '').trim().toLowerCase();
+  if (tag.startsWith('zh-hk') || tag.startsWith('zh-tw')) {
+    const label = WORKFLOW_ACK_LABELS_HK[workflowName];
+    return label ? `已派發${label}。` : '已派發。';
+  }
+  if (tag.startsWith('en')) {
+    const label = WORKFLOW_ACK_LABELS_EN[workflowName];
+    return label ? `Dispatched: ${label}.` : 'Dispatched.';
+  }
+  // zh-CN / zh / unknown → simplified default
+  const label = WORKFLOW_ACK_LABELS[workflowName];
+  return label ? `已派发${label}。` : '已派发。';
+}
 
 /** Aspect-ratio id → human-readable label (used in params ack narration). */
 const ASPECT_LABELS: Record<string, string> = {

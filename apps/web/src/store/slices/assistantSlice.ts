@@ -466,21 +466,13 @@ function buildWorkspaceContext(state: RootState, projectId: string): AssistantWo
   const inst = state.project.instances[projectId] ?? selectCurrentInstance(state);
   const videoPromptStyle = state.assistant.projects[projectId]?.videoPromptStyle ?? "default";
   const detail = inst.detail;
-  // Language + style are project-level params the user sets in
-  // ProjectParamsForm. dialogLanguage isn't persisted by Java yet — read the
-  // localStorage mirror as a fallback for reloaded sessions.
-  let dialogLanguage: string | null | undefined = detail?.dialogLanguage;
-  if (!dialogLanguage && typeof window !== "undefined") {
-    try {
-      const raw = window.localStorage.getItem(`fizzos:dialog-language:${projectId}`);
-      if (raw && raw.length > 0) dialogLanguage = raw;
-    } catch {}
-  }
-  // shotsPerEpisode + targetEpisodeCount — Java has no column. Read the
-  // user's most recent ProjectParamsForm submission directly from chat
-  // history (embedded in the tool-require_project_params output). Single
-  // source-of-truth, no Redux/localStorage mirroring.
+  // dialogLanguage / shotsPerEpisode / targetEpisodeCount — Java has no
+  // column for any of them. Read the user's most recent ProjectParamsForm
+  // submission directly from chat history (embedded in the
+  // tool-require_project_params output). Single source-of-truth, no
+  // Redux/localStorage mirroring.
   const messages = state.assistant.projects[projectId]?.messages ?? [];
+  const dialogLanguage = readMostRecentProjectParam(messages, "dialogLanguage");
   const shotsPerEpisode = readMostRecentProjectParam(messages, "shotsPerEpisode");
   const targetEpisodeCount = readMostRecentProjectParam(messages, "targetEpisodeCount");
   return {
@@ -1031,9 +1023,9 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
     dispatch(commitToolResult({ projectId, messages: nextMessages, toolCallId }));
 
     // Mirror only the Java-persisted params into Redux detail — Java owns
-    // aspectRatioType / chapterLength / stylePainting / dialogLanguage. The
-    // client-only params (targetEpisodeCount, shotsPerEpisode) live solely
-    // in chat history above.
+    // aspectRatioType / chapterLength / stylePainting. The client-only
+    // params (targetEpisodeCount, shotsPerEpisode, dialogLanguage) live
+    // solely in chat history above.
     const projectDetail = selectCurrentInstance(getState()).detail;
     dispatch(
       setProjectDetail({
@@ -1041,7 +1033,6 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
         aspectRatioType: params.aspectRatioType,
         chapterLength: params.chapterLength,
         stylePainting: params.stylePainting,
-        dialogLanguage: params.dialogLanguage,
       })
     );
 
@@ -1529,3 +1520,126 @@ export const selectAssistantConversation = (
   if (!projectId) return EMPTY_CONVERSATION;
   return state.assistant.projects[projectId] ?? EMPTY_CONVERSATION;
 };
+
+/**
+ * Resolve the list of runs whose most recent lifecycle state in chat history
+ * is still `workflow_queued`. The queue depth in the composer pill, the
+ * "cancel all queued" stop button, and any future queue UI all read off
+ * this single derivation. Per-run queued cards are intentionally NOT
+ * rendered in chat (they're transient state, not history) — keeping all the
+ * queue truth in one selector means there's nothing to keep in sync between
+ * Redux state, DOM, and the WS feed.
+ *
+ * Algorithm: walk messages in arrival order, remember the latest workflow_*
+ * tool-part type seen for each runId. A runId is "still queued" iff its
+ * latest part is `tool-workflow_queued` — once a `_progress` / `_completed`
+ * / `_failed` / `_suspended` lands later for the same runId, the run has
+ * left the waiting list.
+ *
+ * O(N) over total parts; messages array is the same one already iterated by
+ * the renderer, so no extra read cost in practice. Memoize at the consumer
+ * if you need stable reference equality across re-renders.
+ */
+/**
+ * Pure derivation: given a messages list, return the runs whose most recent
+ * lifecycle state is still `workflow_queued`. Stateless + side-effect-free
+ * so callers can `useMemo([messages])` and get reference stability across
+ * renders. (A `useAppSelector` returning a freshly-allocated array per call
+ * trips React-Redux's identity warning + re-renders the pill on every
+ * dispatch — see the 1006 WS-flap incident from 2026-05-01.)
+ */
+export function deriveQueuedRuns(
+  messages: AssistantMessage[]
+): Array<{ runId: string; workflowName: WorkflowName }> {
+  // Resolve each runId's "winning" lifecycle phase by PRIORITY, not by
+  // array order. Terminal (failed/completed) beats active
+  // (progress/suspended) beats queued, regardless of which message ID
+  // happened to land first in the chat-msgs list.
+  //
+  // Why priority over arrival order: chat-publisher writes via
+  // `addOrUpdateChatMessage` which rpushes only on first SET NX success.
+  // Under racing parallel cancels (e.g. cancelAllQueuedRuns fans out N
+  // calls), one cancel's `broadcastQueuePositions` can publish a queued
+  // msg for a sibling runId AFTER that sibling's own cancelWorkflow has
+  // already published its cancelled msg — leaving the chat list with
+  // [cancelled, ..., queued] order for the same runId. Confirmed
+  // 2026-05-01 from a live debug session: 6 cancelled runIds all had
+  // lifecycle ["failed","queued"] but the runs were genuinely terminated
+  // server-side. Array-order derivation pinned the pill at "排隊中 · 6"
+  // forever.
+  const RANK: Record<string, number> = {
+    "tool-workflow_failed": 3,
+    "tool-workflow_completed": 3,
+    "tool-workflow_suspended": 2,
+    "tool-workflow_progress": 2,
+    "tool-workflow_queued": 1,
+  };
+  const winnerByRunId = new Map<string, { type: string; workflowName: string; rank: number }>();
+  for (const msg of messages) {
+    if (!Array.isArray(msg.parts)) continue;
+    for (const part of msg.parts) {
+      if (!part || typeof part !== "object") continue;
+      const p = part as {
+        type?: string;
+        output?: { runId?: string; workflowName?: string };
+      };
+      if (typeof p.type !== "string" || !p.type.startsWith("tool-workflow_")) continue;
+      const rank = RANK[p.type] ?? 0;
+      if (rank === 0) continue;
+      const runId = p.output?.runId;
+      const workflowName = p.output?.workflowName;
+      if (!runId || !workflowName) continue;
+      const existing = winnerByRunId.get(runId);
+      if (!existing || rank > existing.rank) {
+        winnerByRunId.set(runId, { type: p.type, workflowName, rank });
+      }
+    }
+  }
+  const out: Array<{ runId: string; workflowName: WorkflowName }> = [];
+  for (const [runId, info] of winnerByRunId) {
+    if (info.type === "tool-workflow_queued") {
+      out.push({ runId, workflowName: info.workflowName as WorkflowName });
+    }
+  }
+  return out;
+}
+
+/** Convenience selector — for non-component callers that don't have a
+ *  messages reference handy. Components should prefer
+ *  `useMemo(() => deriveQueuedRuns(messages), [messages])` so the resulting
+ *  array's identity is stable across renders. */
+export function selectQueuedRuns(
+  state: { assistant: AssistantStoreState },
+  projectId: string | null | undefined
+): Array<{ runId: string; workflowName: WorkflowName }> {
+  if (!projectId) return [];
+  const messages = state.assistant.projects[projectId]?.messages ?? [];
+  return deriveQueuedRuns(messages);
+}
+
+/**
+ * Cancel every run whose latest lifecycle state is queued. Used by the
+ * composer pill's stop button when there's no active running run — most
+ * users who pressed stop in that state want "stop everything I queued",
+ * not "remove just the head". Best-effort per-run: one failed cancel
+ * doesn't block the rest. Server-side cleans up BullMQ waiting list +
+ * re-broadcasts queue positions per cancel call.
+ */
+export const cancelAllQueuedRuns = createAsyncThunk<
+  void,
+  { projectId: string },
+  { state: RootState; dispatch: AppDispatch }
+>("assistant/cancelAllQueuedRuns", async ({ projectId }, { getState }) => {
+  const queued = selectQueuedRuns(getState(), projectId);
+  if (queued.length === 0) return;
+  await Promise.allSettled(
+    queued.map(({ runId }) =>
+      cancelWorkflow(runId, projectId).catch((err) => {
+        console.warn(
+          `[cancelAllQueuedRuns] cancel ${runId} failed:`,
+          err instanceof Error ? err.message : err
+        );
+      })
+    )
+  );
+});

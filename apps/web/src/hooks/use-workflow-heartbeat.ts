@@ -28,12 +28,24 @@ import { heartbeatWorkflow } from "@/src/lib/workflow/workflow-client";
 
 const HEARTBEAT_INTERVAL_MS = 10_000;
 
-export function useWorkflowHeartbeat(
-  runId: string | null | undefined,
-  projectId: string | null | undefined
-): void {
+/**
+ * Pings the agent's `/workflow/:runId/heartbeat` for every non-terminal
+ * run the user is presently watching, so the reaper knows they're still
+ * around. Accepts an array — when the user has multiple queued runs (the
+ * pill says "排隊中 · N"), every one of them needs liveness, not just
+ * the latest. Without that, all but the most-recently-mounted card got
+ * reaped after 30s and the user's pill silently dropped to 0.
+ *
+ * The dep on `runIds.join(',')` keeps the effect from teardown-and-rebuild
+ * on every render — only when the actual set of live runs changes.
+ */
+export function useWorkflowHeartbeat(runIds: string[], projectId: string | null | undefined): void {
+  // Stable signature for the dep array: order doesn't affect liveness, so
+  // sort before joining to avoid spurious teardown when callers pass the
+  // same set in a different order.
+  const depKey = [...runIds].sort().join(",");
   useEffect(() => {
-    if (!runId || !projectId) return;
+    if (!projectId || runIds.length === 0) return;
     if (typeof document === "undefined") return;
 
     let timer: number | null = null;
@@ -42,7 +54,12 @@ export function useWorkflowHeartbeat(
     const fire = (): void => {
       if (cancelled) return;
       if (document.visibilityState !== "visible") return;
-      void heartbeatWorkflow(runId, projectId);
+      // Best-effort fan-out: each request is idempotent (lastHeartbeatAt
+      // = max(now, prev)), so a partial failure just delays one run's
+      // grace deadline by 10s — the next tick covers it.
+      for (const runId of runIds) {
+        void heartbeatWorkflow(runId, projectId);
+      }
     };
 
     const start = (): void => {
@@ -76,5 +93,6 @@ export function useWorkflowHeartbeat(
       document.removeEventListener("visibilitychange", onVisibilityChange);
       stop();
     };
-  }, [runId, projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, projectId]);
 }

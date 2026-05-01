@@ -114,7 +114,8 @@ export interface AssistantWorkspaceSelection {
    * Project's chosen dialogue language — distinct from `locale`. User picks
    * it in ProjectParamsForm; downstream workflows (script_phase,
    * storyboard_phase) use this to decide what language to generate dialogue
-   * in. Not persisted to Java yet — client mirrors it in localStorage.
+   * in. Not persisted to Java — read from chat history (most recent
+   * `tool-require_project_params` output) via readMostRecentProjectParam.
    */
   dialogLanguage?: string | null;
   /** Project's chosen visual style id (from projectDetail.stylePainting). */

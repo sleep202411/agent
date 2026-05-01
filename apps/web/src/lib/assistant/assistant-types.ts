@@ -299,11 +299,11 @@ export function getAssistantMessageText(message: AssistantMessage) {
 /**
  * Reverse-scan the message stream for the most recent
  * `tool-require_project_params` invocation whose output carries the requested
- * numeric key, and return that value.
+ * key, and return that value.
  *
- * Why: `targetEpisodeCount` and `shotsPerEpisode` aren't persisted by Java —
- * the user's last submitted form value is the only authoritative source.
- * Embedding the values into the tool output (see
+ * Why: `targetEpisodeCount`, `shotsPerEpisode`, and `dialogLanguage` aren't
+ * persisted by Java — the user's last submitted form value is the only
+ * authoritative source. Embedding the values into the tool output (see
  * `confirmProjectParamsFromForm`) makes chat history the single
  * source-of-truth and removes the Redux/localStorage mirror dance that
  * silently dropped values on refetch.
@@ -311,7 +311,15 @@ export function getAssistantMessageText(message: AssistantMessage) {
 export function readMostRecentProjectParam(
   messages: AssistantMessage[],
   key: "targetEpisodeCount" | "shotsPerEpisode"
-): number | undefined {
+): number | undefined;
+export function readMostRecentProjectParam(
+  messages: AssistantMessage[],
+  key: "dialogLanguage"
+): string | undefined;
+export function readMostRecentProjectParam(
+  messages: AssistantMessage[],
+  key: "targetEpisodeCount" | "shotsPerEpisode" | "dialogLanguage"
+): number | string | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const parts = messages[i]?.parts ?? [];
     for (const part of parts) {
@@ -322,7 +330,11 @@ export function readMostRecentProjectParam(
         typeof part.output === "object"
       ) {
         const v = (part.output as Record<string, unknown>)[key];
-        if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+        if (key === "dialogLanguage") {
+          if (typeof v === "string" && v.length > 0) return v;
+        } else {
+          if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+        }
       }
     }
   }
