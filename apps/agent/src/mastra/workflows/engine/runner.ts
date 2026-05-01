@@ -16,7 +16,7 @@ import {
   setStatus,
 } from "./state";
 import { getQueue } from "./queue";
-import { publishWorkflowFailed } from "../../lib/workflow-messages";
+import { broadcastQueuePositions, publishWorkflowFailed } from "../../lib/workflow-messages";
 import type { ResumeJobData, RunJobData, WorkflowMeta } from "./types";
 
 export async function startWorkflow(input: {
@@ -34,6 +34,11 @@ export async function startWorkflow(input: {
     status: "queued",
     startedAt: now,
     updatedAt: now,
+    // Seed heartbeat so the reaper grants the full grace window before
+    // considering this run abandoned. Without this, a fresh run could be
+    // reaped on the very first reaper tick if the client's first
+    // heartbeat hasn't landed yet.
+    lastHeartbeatAt: now,
   };
   await putMeta(meta);
 
@@ -45,6 +50,20 @@ export async function startWorkflow(input: {
   };
   // BullMQ rejects `:` in custom job ids, so we use `-` as the separator.
   await getQueue().add("run", jobData, { jobId: `run-${runId}` });
+
+  // Re-broadcast queue positions so the brand-new run gets its initial
+  // queued card, and any older waiting runs see their position field
+  // refreshed if anything shifted. Best-effort — broadcastQueuePositions
+  // swallows per-publish failures internally; an outer guard here keeps
+  // dispatch atomic if the broadcast layer itself goes sideways.
+  try {
+    await broadcastQueuePositions();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[runner] broadcastQueuePositions on dispatch failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 
   return { runId };
 }

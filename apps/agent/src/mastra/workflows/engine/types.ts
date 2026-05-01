@@ -42,6 +42,16 @@ export type WorkflowMeta = {
   suspendPayload?: unknown;
   /** Populated when status=completed — workflow's final output. */
   result?: unknown;
+  /**
+   * Last time the owning client signalled it was still watching this run.
+   * Used by the stale-run reaper: if a queued/running run hasn't been
+   * heartbeated in HEARTBEAT_GRACE_MS, the reaper assumes the user closed
+   * the page and cancels the run to free its worker slot.
+   *
+   * Set to `startedAt` at dispatch so a fresh run has the full grace
+   * window before it's eligible for reaping.
+   */
+  lastHeartbeatAt?: number;
 };
 
 /**

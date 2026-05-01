@@ -23,7 +23,9 @@ try {
 }
 
 const { mastra } = await import("./mastra/index.js");
-const { startWorker, startImageWorker } = await import("./mastra/workflows/engine/index.js");
+const { startWorker, startImageWorker, startReaper } =
+  await import("./mastra/workflows/engine/index.js");
+const { broadcastQueuePositions } = await import("./mastra/lib/workflow-messages.js");
 
 // Alias ALIBABA_API_KEY to DASHSCOPE_API_KEY before any Mastra LLM call —
 // same shim as the API server's index.ts so the worker uses the same model.
@@ -43,6 +45,12 @@ const worker = startWorker({ mastra, concurrency });
 const imageConcurrency = Number(process.env.IMAGE_WORKER_CONCURRENCY ?? 1);
 const imageWorker = startImageWorker({ concurrency: imageConcurrency });
 
+// Stale-run reaper: scans queued/running workflow runs every ~15s and
+// cancels any whose client hasn't sent a heartbeat in 30s. Frees worker
+// slots when users close the page mid-run; without it a single rude
+// disconnect would pin a slot until BullMQ stalled-job recovery (minutes).
+const reaper = startReaper();
+
 worker.on("ready", () => {
   // eslint-disable-next-line no-console
   console.log(`[storyos-worker] ready (concurrency=${concurrency})`);
@@ -53,14 +61,29 @@ worker.on("error", (err) => {
   console.error("[storyos-worker] error:", err);
 });
 
+// Whenever a job leaves the queue (success or failure), every other
+// waiting run's position shifts down by one. Re-broadcast so cards
+// animate `position: N → N-1` smoothly. Fire-and-forget — broadcaster
+// already swallows per-publish failures internally.
+const onJobLeftQueue = (jobId: string | undefined): void => {
+  void broadcastQueuePositions().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[storyos-worker] queue rebroadcast after job ${jobId ?? "?"} failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+  });
+};
+
 worker.on("failed", (job, err) => {
   // eslint-disable-next-line no-console
   console.error(`[storyos-worker] job ${job?.id} failed:`, err?.message ?? err);
+  onJobLeftQueue(job?.id);
 });
 
 worker.on("completed", (job) => {
   // eslint-disable-next-line no-console
   console.log(`[storyos-worker] job ${job.id} completed`);
+  onJobLeftQueue(job.id);
 });
 
 imageWorker.on("ready", () => {
@@ -79,6 +102,7 @@ imageWorker.on("completed", (job) => {
 async function shutdown(signal: string): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`[storyos-worker] received ${signal}, draining…`);
+  reaper.stop();
   await Promise.all([worker.close(), imageWorker.close()]);
   process.exit(0);
 }

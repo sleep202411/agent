@@ -35,6 +35,28 @@ const BaseWorkflowOutput = z.object({
   workflowName: WorkflowNameEnum,
 });
 
+// ─── queued ───────────────────────────────────────────────────────────
+//
+// Emitted while a run is waiting in BullMQ for a worker slot. `position`
+// is 0-indexed against the queue *for this workflow*: 0 means "next",
+// >0 means "you have N runs ahead of you". Re-emitted under the same
+// deterministic message id (`wf_{runId}_queued`) every time the queue
+// advances so the card animates from "前面 3 个" → "前面 2 个" without
+// chat list churn. Once the worker actually picks up the job we stop
+// publishing queued events; the workflow_progress stream takes over.
+
+export const WorkflowQueuedOutputSchema = BaseWorkflowOutput.extend({
+  /** 0-indexed position. 0 = next to run; >0 = N runs ahead. */
+  position: z.number().int().nonnegative(),
+  /**
+   * Optional rough wait estimate in ms. Computed from a recent rolling
+   * average of completed runs of this workflowName × position. Frontend
+   * is free to ignore — the headline UX is `position`, not the time.
+   */
+  estimatedWaitMs: z.number().int().nonnegative().optional(),
+});
+export type WorkflowQueuedOutput = z.infer<typeof WorkflowQueuedOutputSchema>;
+
 // ─── progress ─────────────────────────────────────────────────────────
 
 export const WorkflowProgressOutputSchema = BaseWorkflowOutput.extend({
@@ -199,6 +221,7 @@ export type WorkflowFailedOutput = z.infer<typeof WorkflowFailedOutputSchema>;
 // ─── tool-name union (client-side router) ─────────────────────────────
 
 export const WORKFLOW_MESSAGE_TOOL_NAMES = [
+  "workflow_queued",
   "workflow_progress",
   "workflow_suspended",
   "workflow_completed",

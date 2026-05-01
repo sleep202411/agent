@@ -6,9 +6,11 @@ export {
   listWorkflowsByWorkspace,
   patchMeta,
   putMeta,
+  recordHeartbeat,
   requestCancel,
   setStatus,
 } from "./state";
+export { startReaper, tickOnce, HEARTBEAT_GRACE_MS, type ReaperHandle } from "./reaper";
 export {
   cancelWorkflow,
   getWorkflowStatus,
@@ -18,6 +20,7 @@ export {
   startWorkflow,
 } from "./runner";
 export { QUEUE_NAME, getQueue } from "./queue";
+export { getQueuePosition, snapshotWaitingRuns, type QueuedRunSnapshot } from "./queue-position";
 export { startWorker, type WorkflowEngineWorker } from "./worker";
 export {
   IMAGE_QUEUE_NAME,
