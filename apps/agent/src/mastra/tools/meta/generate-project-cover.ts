@@ -14,7 +14,9 @@
  *   {skipped: true}. Supervisor can safely always call this after params.
  */
 import { createTool } from "@mastra/core/tools";
+import { generateText } from "ai";
 import { z } from "zod";
+import { createDeepSeekModel } from "../../lib/models";
 import { getRedis } from "../../lib/redis-client";
 import { getContext, javaRequest } from "../../lib/workspace-client";
 
@@ -191,37 +193,29 @@ async function writeCoverPrompt(opts: {
     .filter(Boolean)
     .join("\n");
 
-  const resp = await fetch("https://api.deepseek.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You generate concise image prompts for Flux models. Reply in English only, 1 sentence, no explanation, no markdown, no surrounding quotes.",
-        },
-        { role: "user", content: userMsg },
-      ],
-      max_tokens: 180,
+  // Routed through the official @ai-sdk/deepseek provider via
+  // `createDeepSeekModel` so error mapping + future features (reasoning
+  // content, prefix completion) are consistent with the rest of the
+  // workflow stack. Same underlying endpoint as before.
+  try {
+    const { text } = await generateText({
+      model: createDeepSeekModel("deepseek-v4-pro"),
+      system:
+        "You generate concise image prompts for Flux models. Reply in English only, 1 sentence, no explanation, no markdown, no surrounding quotes.",
+      prompt: userMsg,
+      maxOutputTokens: 180,
       temperature: 0.7,
-    }),
-  });
-  if (!resp.ok) {
-    throw new Error(`DeepSeek prompt gen failed: HTTP ${resp.status}`);
+    });
+    const cleaned = text.trim();
+    return (
+      cleaned ||
+      `cinematic movie poster, ${opts.aspectRatio}, dramatic composition, no text, no watermark`
+    );
+  } catch (err) {
+    throw new Error(
+      `DeepSeek prompt gen failed: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
-  const body = (await resp.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const text = body.choices?.[0]?.message?.content?.trim() ?? "";
-  return (
-    text ||
-    `cinematic movie poster, ${opts.aspectRatio}, dramatic composition, no text, no watermark`
-  );
 }
 
 async function callReplicateFluxSchnell(

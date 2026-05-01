@@ -15,6 +15,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createAzure } from "@ai-sdk/azure";
+import { createDeepSeek } from "@ai-sdk/deepseek";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { hardenRouterModel } from "./model-hardening";
 
@@ -30,23 +31,33 @@ function envOrDefault(name: string, fallback: string): string {
   return v && v.trim().length > 0 ? v : fallback;
 }
 
-// ─── DeepSeek (OpenAI-compatible) ─────────────────────────────────────
+// ─── DeepSeek (official @ai-sdk/deepseek provider) ───────────────────
+//
+// Switched off `createOpenAICompatible` and onto Vercel's first-party
+// `@ai-sdk/deepseek` provider. Underlying HTTP API is the same
+// (`api.deepseek.com/v1/chat/completions`), but the official provider:
+//   - surfaces `deepseek-reasoner`'s `reasoning_content` (chain-of-thought)
+//     under `providerMetadata.deepseek.reasoning` instead of swallowing it
+//   - maps DeepSeek's error shapes to AI SDK's structured errors
+//   - keeps DeepSeek-specific features (prefix completion, FIM) reachable
+//     when we want them later
+// `DEEPSEEK_BASE_URL` env override is preserved so we can repoint at a
+// proxy / mirror without code changes.
 
-type DeepSeekModelId = "deepseek-chat" | "deepseek-reasoner";
+type DeepSeekModelId = "deepseek-v4-pro";
 
-export function createDeepSeekModel(modelId: DeepSeekModelId = "deepseek-chat"): LanguageModelV3 {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+export function createDeepSeekModel(modelId: DeepSeekModelId = "deepseek-v4-pro"): LanguageModelV3 {
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
-      "DEEPSEEK_API_KEY is not set. DeepSeek uses the OpenAI-compatible API at https://api.deepseek.com."
+      "DEEPSEEK_API_KEY is not set. DeepSeek uses the official @ai-sdk/deepseek provider against https://api.deepseek.com."
     );
   }
-  const provider = createOpenAICompatible({
-    name: "deepseek",
-    baseURL: envOrDefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
+  const provider = createDeepSeek({
     apiKey,
+    // baseURL: envOrDefault("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"),
   });
-  return provider.chatModel(modelId);
+  return provider(modelId);
 }
 
 // ─── Alibaba DashScope (Qwen, via OpenAI-compatible endpoint) ────────
@@ -195,12 +206,7 @@ export function defaultRouterModel(): LanguageModelV3 {
   if (provider !== "anthropic" && provider !== "alibaba") return base;
   // Fallback target must exist *before* the first primary call so a
   // mid-turn fallback doesn't crash on "DeepSeek not configured".
-  const fallback = createDeepSeekModel(
-    (process.env.STORYOS_ROUTER_FALLBACK_MODEL as
-      | "deepseek-chat"
-      | "deepseek-reasoner"
-      | undefined) ?? "deepseek-chat"
-  );
+  const fallback = createDeepSeekModel("deepseek-v4-pro");
   return hardenRouterModel(base, fallback);
 }
 
@@ -234,7 +240,7 @@ function pickProviderModel(providerEnv: string, modelEnv: string): LanguageModel
   if (provider === "alibaba") return createAlibabaModel(model || "qwen3-max");
   if (provider === "anthropic") return createAnthropicModel(model || "claude-sonnet-4-5");
   if (provider === "deepseek") {
-    return createDeepSeekModel((model as DeepSeekModelId | undefined) || "deepseek-chat");
+    return createDeepSeekModel((model as DeepSeekModelId | undefined) || "deepseek-v4-pro");
   }
   throw new Error(
     `Unknown ${providerEnv}: "${provider}". Expected: deepseek | alibaba | anthropic | azure.`
