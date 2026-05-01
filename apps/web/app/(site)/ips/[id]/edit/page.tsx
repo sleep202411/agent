@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import {
   IconFileText,
-  IconBook,
   IconVideo,
   IconPlaylist,
   IconUsers,
@@ -19,6 +18,16 @@ import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { VideoPlayer } from "@/components/media/video-player";
@@ -31,7 +40,6 @@ import {
   useProjectEpisodes,
   useCreateEpisode,
   useUpdateEpisode,
-  useDeleteEpisode,
   useReorderEpisode,
   useProjectMembers,
   useAddMember,
@@ -52,13 +60,14 @@ import {
 } from "@/app/(site)/ips/_hooks/use-ip";
 import { useQueryClient } from "@tanstack/react-query";
 import { SUGGESTED_TAGS } from "@/app/(site)/ips/_data/ip";
+import { uploadIPBanner } from "@/app/(site)/ips/_hooks/uploads";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 import { EpisodeDialog, type EpisodeDraft } from "./episode-dialog";
 import { SortableEpisodeRow } from "./episode-row";
 import { FaqDialog, type FaqDraft } from "./faq-dialog";
 import { SortableFaqRow } from "./faq-row";
 import { EditHero } from "./edit-hero";
-import { SparkDialog, type SparkPatch } from "./spark-dialog";
+import { SparkDialog } from "./spark-dialog";
 
 // ─── Member row ────────────────────────────────────
 // Stateless presentation row for a team member: avatar + name + role
@@ -184,7 +193,6 @@ function episodeToDraft(ep: Episode | undefined): EpisodeDraft | null {
 const TABS = [
   { id: "basic", labelKey: "editBasic", icon: IconFileText },
   { id: "trailer", labelKey: "editTrailer", icon: IconVideo },
-  { id: "story", labelKey: "editStory", icon: IconBook },
   { id: "episodes", labelKey: "editEpisodes", icon: IconPlaylist },
   { id: "team", labelKey: "editTeam", icon: IconUsers },
   { id: "faq", labelKey: "editFAQ", icon: IconFileText },
@@ -202,10 +210,6 @@ interface EditForm {
   tags: string[];
   // Future tabs
   promoVideo: string | null;
-  // Story tab — long-text fields not yet persisted server-side; kept in
-  // form state until backend extends `/project/update` to accept them.
-  story: string;
-  whyThisIP: string;
   // Trailer tab — local preview URL (resolved from project.bannerLink).
   coverImage: string | null;
 }
@@ -219,8 +223,6 @@ const EMPTY_FORM: EditForm = {
   contact: "",
   tags: [],
   promoVideo: null,
-  story: "",
-  whyThisIP: "",
   coverImage: null,
 };
 
@@ -254,18 +256,26 @@ export default function IPEditPage() {
   const { id } = useParams<{ id: string }>();
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
+  const tEp = useTranslations("episode");
   const [activeTab, setActiveTab] = useState("basic");
   const [form, setForm] = useState<EditForm>(EMPTY_FORM);
   const [saved, setSaved] = useState(false);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   // Episode dialog: null = closed, -1 = creating, otherwise editing index
   const [episodeDialogIndex, setEpisodeDialogIndex] = useState<number | null>(null);
+  // Episode delete confirm: backend isn't wired yet, so confirm just
+  // pins the action button into a permanent loading state until the
+  // user dismisses the dialog.
+  const [deleteEpisodeIndex, setDeleteEpisodeIndex] = useState<number | null>(null);
+  const [deletingEpisode, setDeletingEpisode] = useState(false);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const { mutate: doUpdate, isPending: saving } = useUpdateProject();
   const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
   const { mutate: doUploadVideo, isPending: uploadingVideo } = useUploadProjectVideo();
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   // Episode CRUD — `useProjectEpisodes` is the single source of truth for
   // the list shown below; mutations invalidate `ipKeys.episodes(id)` so the
@@ -275,7 +285,6 @@ export default function IPEditPage() {
   const { data: episodes = [] } = useProjectEpisodes(id);
   const { mutateAsync: createEpisodeMut } = useCreateEpisode();
   const { mutateAsync: updateEpisodeMut } = useUpdateEpisode();
-  const { mutate: deleteEpisodeMut } = useDeleteEpisode();
   const { mutate: reorderEpisodeMut } = useReorderEpisode();
 
   // Team CRUD — list shipped, add/remove via dialog + per-row delete.
@@ -513,28 +522,6 @@ export default function IPEditPage() {
     );
   };
 
-  // Spark patch application — caller-side merge into form state. We
-  // never auto-Save here; the user reviews on the page and hits Save
-  // when ready (matches the "AI proposes, user disposes" rule).
-  const applySparkPatch = (patch: SparkPatch) => {
-    setForm((prev) => ({
-      ...prev,
-      title: patch.name ?? prev.title,
-      description: patch.description ?? prev.description,
-      background: patch.background ?? prev.background,
-      story: patch.story ?? prev.story,
-      whyThisIP: patch.whyThisIP ?? prev.whyThisIP,
-      tags: patch.tags ?? prev.tags,
-      bannerLink: patch.bannerLink ?? prev.bannerLink,
-      coverImage: patch.bannerLink
-        ? patch.bannerLink.startsWith("http")
-          ? patch.bannerLink
-          : `${env.BANNER_BASE_URL}/${patch.bannerLink}`
-        : prev.coverImage,
-    }));
-    setSaved(false);
-  };
-
   if (isLoading) {
     return (
       <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
@@ -554,16 +541,7 @@ export default function IPEditPage() {
   // Episode helpers — backed by mutation hooks; the list above refetches
   // automatically on success via `ipKeys.episodes(id)` invalidation.
   const removeEpisode = (i: number) => {
-    const target = episodes[i];
-    if (!target) return;
-    deleteEpisodeMut(
-      { id: target.id, projectId: id },
-      {
-        onSuccess: () => toast.success(tc("deleteSuccess")),
-        onError: (err) =>
-          toast.error(err instanceof Error && err.message ? err.message : tc("deleteFailed")),
-      }
-    );
+    setDeleteEpisodeIndex(i);
   };
   const upsertEpisode = async (i: number | null, next: EpisodeDraft): Promise<void> => {
     const videoMeta = {
@@ -683,21 +661,7 @@ export default function IPEditPage() {
         </div>
       </div>
 
-      <SparkDialog
-        open={sparkOpen}
-        onOpenChange={setSparkOpen}
-        projectId={id}
-        current={{
-          name: form.title,
-          description: form.description,
-          background: form.background,
-          story: form.story,
-          whyThisIP: form.whyThisIP,
-          tags: form.tags,
-          bannerLink: form.bannerLink,
-        }}
-        onApply={applySparkPatch}
-      />
+      <SparkDialog open={sparkOpen} onOpenChange={setSparkOpen} projectId={id} />
 
       {/* Content */}
       <div>
@@ -713,16 +677,40 @@ export default function IPEditPage() {
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      className="absolute right-2 top-2 bg-black/60 text-white hover:bg-black/80"
-                      onClick={() => update({ coverImage: null })}
+                      className="absolute right-2 top-10 bg-black/60 text-white hover:bg-black/80"
+                      onClick={() => update({ coverImage: null, bannerLink: "" })}
+                      disabled={uploadingCover}
                     >
                       <IconX className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className="absolute right-2 top-2 bg-black/60 text-white hover:bg-black/80"
+                      onClick={() => coverInputRef.current?.click()}
+                      disabled={uploadingCover}
+                    >
+                      {uploadingCover ? (
+                        <IconLoader2 className="size-4 animate-spin" />
+                      ) : (
+                        <IconUpload className="size-4" />
+                      )}
                     </Button>
                   </div>
                 ) : (
                   <div className="flex aspect-video w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-border">
-                    <Button variant="outline" color="muted" size="sm">
-                      <IconUpload className="size-3.5" />
+                    <Button
+                      variant="outline"
+                      color="muted"
+                      size="sm"
+                      onClick={() => coverInputRef.current?.click()}
+                      disabled={uploadingCover}
+                    >
+                      {uploadingCover ? (
+                        <IconLoader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <IconUpload className="size-3.5" />
+                      )}
                       {t("uploadImage")}
                     </Button>
                     <p className="mt-2 text-xs text-muted-foreground">{t("imageDropHint")}</p>
@@ -731,6 +719,32 @@ export default function IPEditPage() {
                     </p>
                   </div>
                 )}
+                <input
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    e.target.value = "";
+                    setUploadingCover(true);
+                    try {
+                      const asset = await uploadIPBanner(file, { projectId: id });
+                      const previewUrl = asset.path.startsWith("http")
+                        ? asset.path
+                        : `${env.BANNER_BASE_URL}/${asset.path}`;
+                      update({ bannerLink: asset.path, coverImage: previewUrl });
+                      toast.success(tc("uploadSuccess"));
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error && err.message ? err.message : tc("uploadFailed")
+                      );
+                    } finally {
+                      setUploadingCover(false);
+                    }
+                  }}
+                />
               </Section>
 
               {/* Trailer video */}
@@ -911,35 +925,6 @@ export default function IPEditPage() {
             </>
           )}
 
-          {/* ── Story ── */}
-          {activeTab === "story" && (
-            <>
-              <Section title={t("sectionStory")} description={t("sectionStoryDesc")}>
-                <Textarea
-                  value={form.story}
-                  onChange={(e) => update({ story: e.target.value.slice(0, 2000) })}
-                  rows={10}
-                  className="min-h-48"
-                />
-                <span className="block text-right text-xs text-muted-foreground">
-                  {form.story.length}/2000
-                </span>
-              </Section>
-
-              <Section title={t("sectionWhyThisIP")} description={t("sectionWhyThisIPDesc")}>
-                <Textarea
-                  value={form.whyThisIP}
-                  onChange={(e) => update({ whyThisIP: e.target.value.slice(0, 1000) })}
-                  rows={5}
-                  className="min-h-28"
-                />
-                <span className="block text-right text-xs text-muted-foreground">
-                  {form.whyThisIP.length}/1000
-                </span>
-              </Section>
-            </>
-          )}
-
           {/* ── Episodes ── */}
           {activeTab === "episodes" && (
             <Section title={t("sectionEpisodes")} description={t("sectionEpisodesDesc")}>
@@ -974,6 +959,7 @@ export default function IPEditPage() {
                   if (!v) setEpisodeDialogIndex(null);
                 }}
                 index={episodeDialogIndex}
+                projectId={id}
                 initial={
                   episodeDialogIndex !== null && episodeDialogIndex >= 0
                     ? episodeToDraft(episodes[episodeDialogIndex])
@@ -994,6 +980,40 @@ export default function IPEditPage() {
                   setEpisodeDialogIndex(null);
                 }}
               />
+
+              <AlertDialog
+                open={deleteEpisodeIndex !== null}
+                onOpenChange={(v) => {
+                  if (!v) {
+                    setDeleteEpisodeIndex(null);
+                    setDeletingEpisode(false);
+                  }
+                }}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{tEp("deleteEpisode")}</AlertDialogTitle>
+                    <AlertDialogDescription>{tEp("deleteEpisodeConfirm")}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deletingEpisode}>{tc("cancel")}</AlertDialogCancel>
+                    <AlertDialogAction
+                      color="destructive"
+                      disabled={deletingEpisode}
+                      onClick={(e) => {
+                        // Backend not wired up yet — pin the button in a
+                        // loading state so the click feels handled but no
+                        // request is sent. User must cancel to escape.
+                        e.preventDefault();
+                        setDeletingEpisode(true);
+                      }}
+                    >
+                      {deletingEpisode ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
+                      {tc("confirm")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </Section>
           )}
 
@@ -1086,7 +1106,7 @@ export default function IPEditPage() {
                   try {
                     await addMemberMut({
                       projectId: Number(id),
-                      userId: member.userId,
+                      email: member.email,
                       role: member.role,
                       remark: member.remark,
                     });

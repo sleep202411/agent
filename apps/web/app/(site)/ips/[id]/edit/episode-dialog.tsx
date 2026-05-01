@@ -80,8 +80,12 @@ interface EpisodeDialogProps {
   onOpenChange: (open: boolean) => void;
   initial: EpisodeDraft | null;
   index: number | null; // -1 = creating; >=0 = editing
+  /** Project id — required by the presigned-URL endpoint. */
+  projectId: string;
   /** Episode id for edit mode — used to resolve the playable URL via
-   *  `/vedio/play/getLink`. Undefined for create. */
+   *  `/vedio/play/getLink`, and passed as `videoId` to the upload
+   *  endpoint when re-uploading an existing episode's source. Undefined
+   *  for create. */
   episodeId?: string;
   /**
    * Resolve to close the dialog; reject (or throw) to keep it open and
@@ -166,6 +170,7 @@ export function EpisodeDialog({
   onOpenChange,
   initial,
   index,
+  projectId,
   episodeId,
   onSubmit,
 }: EpisodeDialogProps) {
@@ -288,7 +293,7 @@ export function EpisodeDialog({
 
     setUploadingVideo(true);
     try {
-      const uploaded = await uploadEpisodeVideo(file);
+      const uploaded = await uploadEpisodeVideo(file, { projectId, videoId: episodeId });
       update({ videoLink: uploaded.path });
       toast.success(tc("uploadSuccess"));
     } catch (err) {

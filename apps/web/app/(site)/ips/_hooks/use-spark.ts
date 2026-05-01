@@ -1,33 +1,37 @@
 /**
  * Spark — AI-assisted IP draft generator.
  *
- *   - `useSparkAnalyze`     — POST /api/ai/chat/analyze/project-brief
- *                             (multipart: file)  →  SparkDraft
- *   - `useSparkGenerateBanner` — POST /api/ai/chat/generate/project-banner
- *                                (json: { prompt, projectId }) → bannerLink (OSS key)
+ *   - `useSparkAnalyze` — POST /aurora/spark/analyze (multipart: file)
+ *                          → SparkDraft { name, description, tags }
  *
- * Both endpoints are owned by the agent backend. The UI flow is
- * deliberately "AI proposes, user disposes": the analyze call returns a
- * structured draft that the dialog renders as per-field checkable
- * suggestions; nothing is persisted until the user clicks Save in the
- * underlying edit form. Banner generation is opt-in and runs as a
- * separate step inside the dialog.
+ * Owned by the Nest agent backend (`/aurora/*` is proxied to
+ * `SERVER_URL` in `next.config.ts`). Field set is intentionally narrow:
+ * Spark proposes `name` / `description` / `tags`, the user reviews +
+ * edits in the dialog, and the dialog itself commits via
+ * `useUpdateProject`. No persisted state lives here.
+ *
+ * Banner generation, story / whyThisIP / background fields are out of
+ * scope for now — the backend doesn't support them. Reintroduce as
+ * sibling hooks when those endpoints land.
  */
 
 import { useMutation } from "@tanstack/react-query";
 
-/** Fields the analyzer is willing to propose. Every field is optional —
- *  the user might upload a brief that only mentions some of them. */
+/** Subset of IP fields the analyzer is willing to propose. Every field
+ *  is optional — the user might upload a brief that only mentions some
+ *  of them. `bannerPrompt` is internal and never shown verbatim to the
+ *  user; the dialog hands it to the banner generator on demand. */
 export interface SparkDraft {
   name?: string;
   description?: string;
-  background?: string;
-  story?: string;
-  whyThisIP?: string;
   tags?: string[];
-  /** Suggested image-generation prompt the user can run separately. */
   bannerPrompt?: string;
 }
+
+/** Limit picked to be friendly for typical novel/script uploads while
+ *  still bounding worst-case parse cost. Files above this should be
+ *  rejected client-side with a clear error. */
+export const SPARK_MAX_BYTES = 20 * 1024 * 1024;
 
 async function analyzeBrief(file: File): Promise<SparkDraft> {
   const formData = new FormData();
@@ -38,7 +42,7 @@ async function analyzeBrief(file: File): Promise<SparkDraft> {
   const timer = setTimeout(() => controller.abort(), 300_000);
   let res: Response;
   try {
-    res = await fetch("/api/ai/chat/analyze/project-brief", {
+    res = await fetch("/aurora/spark/analyze", {
       method: "POST",
       credentials: "include",
       body: formData,
@@ -67,6 +71,15 @@ export function useSparkAnalyze() {
   return useMutation({ mutationFn: analyzeBrief });
 }
 
+// ─── Banner generator ────────────────────────────────
+//
+// Goes direct to Java's existing `/api/ai/chat/generate/project-banner`
+// endpoint (the same one used by the legacy publish flow). Returns the
+// OSS path Spark dialog plugs into the project's `bannerLink` field on
+// Apply. We don't proxy through Nest because Java already owns image
+// generation, OSS upload, and billing attribution — adding a hop would
+// only mean another place that can fail.
+
 interface GenerateBannerInput {
   projectId: string | number;
   prompt: string;
@@ -91,9 +104,9 @@ async function generateBanner(input: GenerateBannerInput): Promise<string> {
     data?: string | { bannerLink?: string; path?: string } | null;
   };
   const ok = body.success === true || body.code === 0 || body.code === 200;
-  if (!ok) throw new Error(body.msg || body.message || "Generation failed");
+  if (!ok) throw new Error(body.msg || body.message || "Banner generation failed");
   const data = body.data;
-  if (!data) throw new Error("Empty response");
+  if (!data) throw new Error("Empty banner response");
   if (typeof data === "string") return data;
   return data.bannerLink ?? data.path ?? "";
 }

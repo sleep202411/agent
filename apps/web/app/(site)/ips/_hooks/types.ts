@@ -154,9 +154,7 @@ export interface Project {
   tag?: string | null;
   background?: string | null;
   createTime?: string;
-  // Future fields (pending backend).
-  story?: string | null;
-  whyThisIP?: string | null;
+  // Future field (pending backend).
   targetEpisodes?: number | null;
 }
 

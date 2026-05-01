@@ -36,29 +36,52 @@ export interface UploadedAsset {
 
 async function requestSignedUrl(
   endpoint: string,
-  body: Record<string, unknown>
+  query: Record<string, string | number | undefined>
 ): Promise<SignedUrlResponse> {
-  const res = await fetch(endpoint, {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+  }
+  const url = qs.toString() ? `${endpoint}?${qs.toString()}` : endpoint;
+  const res = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
       "accept-language": acceptLanguage(),
       Authorization: bearerHeader(),
     },
-    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`getUploadUrl failed: HTTP ${res.status}`);
-  const json = (await res.json()) as { code?: number; msg?: string; data?: SignedUrlResponse };
-  if (json.code !== 0 && json.code !== 200) {
-    throw new Error(json.msg || "getUploadUrl failed");
+  const json = (await res.json()) as {
+    code?: number | string;
+    msg?: string;
+    message?: string;
+    success?: boolean;
+    data?: SignedUrlResponse;
+  };
+  // Envelope varies across endpoints: the IP banner endpoint returns
+  // `{code: 200, msg, data}`; older Java endpoints return
+  // `{success: true, code: "0", message, data}`. Accept either as OK.
+  const codeNum = typeof json.code === "string" ? Number(json.code) : json.code;
+  const ok = json.success === true || codeNum === 0 || codeNum === 200;
+  if (!ok) {
+    throw new Error(json.message || json.msg || "getUploadUrl failed");
   }
   return json.data ?? {};
 }
 
 function extractStoragePath(signedUrl: string): string {
   const url = new URL(signedUrl);
-  return url.pathname.replace(/^\//, "");
+  // Pathname comes URL-encoded (`%20`, `%E2%80%A6`); decode so the key we
+  // persist matches what the backend sees (`13/My Banner.png` vs.
+  // `13/My%20Banner.png`). Wrap the decode so a malformed input doesn't
+  // crash the upload.
+  const raw = url.pathname.replace(/^\//, "");
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 async function putBytesToOss(info: SignedUrlResponse, file: File): Promise<string> {
@@ -81,18 +104,27 @@ function composeResult(file: File, path: string): UploadedAsset {
 
 // ─── Public uploaders ──────────────────────────────────
 //
-// Backend dedicated endpoints for episode video / image are still
-// pending. Until they ship, route everything through the generic
-// `/api/user/file/getUploadUrl` with a per-asset `uploadType` tag.
-// When the dedicated endpoints land, swap the URL inside the matching
-// helper — call sites don't change.
+// IP banner + episode video each have their own dedicated presigned-URL
+// endpoint (`/vedio/getuploadurl/project/banner` / `…/project/video/`),
+// both scoped to a project (and optionally an existing video) via query
+// params. Episode cover still rides the legacy generic uploader.
+
+interface UploadEpisodeVideoInput {
+  /** Project this episode belongs to (required). */
+  projectId: number | string;
+  /** Existing episode/video id when re-uploading; omit on first upload. */
+  videoId?: number | string;
+}
 
 /** Episode source video. */
-export async function uploadEpisodeVideo(file: File): Promise<UploadedAsset> {
-  // TODO: swap to `/vedio/episode/getUploadUrl` (or whatever backend ships).
-  const info = await requestSignedUrl("/api/user/file/getUploadUrl", {
+export async function uploadEpisodeVideo(
+  file: File,
+  input: UploadEpisodeVideoInput
+): Promise<UploadedAsset> {
+  const info = await requestSignedUrl("/vedio/getuploadurl/project/video/", {
     fileName: file.name || `episode_video_${Date.now()}`,
-    uploadType: "PROJECT",
+    projectId: input.projectId,
+    videoId: input.videoId,
   });
   const path = await putBytesToOss(info, file);
   return composeResult(file, path);
@@ -109,11 +141,23 @@ export async function uploadEpisodeCover(file: File): Promise<UploadedAsset> {
   return composeResult(file, path);
 }
 
+interface UploadIPBannerInput {
+  /** Project this banner belongs to (required by backend). */
+  projectId: number | string;
+  /** Optional video id — when set, banner is scoped to that video
+   *  (e.g., a specific episode cover) instead of the project hero. */
+  videoId?: number | string;
+}
+
 /** IP-level banner (cover image used on the plaza card and detail hero). */
-export async function uploadIPBanner(file: File): Promise<UploadedAsset> {
-  const info = await requestSignedUrl("/api/user/file/getUploadUrl", {
+export async function uploadIPBanner(
+  file: File,
+  input: UploadIPBannerInput
+): Promise<UploadedAsset> {
+  const info = await requestSignedUrl("/vedio/getuploadurl/project/banner", {
     fileName: file.name || `ip_banner_${Date.now()}`,
-    uploadType: "PROJECT",
+    projectId: input.projectId,
+    videoId: input.videoId,
   });
   const path = await putBytesToOss(info, file);
   return composeResult(file, path);

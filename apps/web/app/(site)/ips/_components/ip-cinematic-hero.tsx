@@ -3,13 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  IconBookmark,
   IconBolt,
   IconChevronLeft,
   IconChevronRight,
   IconPlayerPlay,
   IconPlus,
-  IconThumbDown,
   IconVolumeOff,
   IconMovie,
 } from "@tabler/icons-react";
@@ -134,7 +132,7 @@ export function IPCinematicHero() {
               <span>{t("detailEpisodeCount", { count: slide.episodes })}</span>
             </div>
             {slide.description && (
-              <p className="mt-4 max-w-xl text-sm leading-relaxed text-white/85 sm:text-base">
+              <p className="mt-4 line-clamp-3 max-w-xl text-sm leading-relaxed text-white/85 sm:text-base">
                 {slide.description}
               </p>
             )}
@@ -146,27 +144,6 @@ export function IPCinematicHero() {
                 <IconPlayerPlay className="size-4 fill-current" />
                 {t("detailViewProfile")}
               </Link>
-              <button
-                type="button"
-                aria-label="Not interested"
-                className="inline-flex size-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/85 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
-              >
-                <IconThumbDown className="size-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Add to list"
-                className="inline-flex size-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/85 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
-              >
-                <IconPlus className="size-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Bookmark"
-                className="inline-flex size-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white/85 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
-              >
-                <IconBookmark className="size-4" />
-              </button>
             </div>
             {slide.tags.length > 0 && (
               <div className="mt-4 flex flex-wrap items-center text-[11px] text-white/55">

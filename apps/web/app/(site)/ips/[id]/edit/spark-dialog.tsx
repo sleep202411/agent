@@ -1,16 +1,33 @@
 "use client";
 
+/**
+ * Spark dialog — two-step AI-assisted IP draft.
+ *
+ *   step 1 "upload"     drop zone / picker (≤ SPARK_MAX_BYTES, .pdf .doc .docx .txt .md)
+ *                       on file pick → auto POST /aurora/spark/analyze
+ *   step 2 "review"     editable form (title / description / tags) seeded
+ *                       with the AI suggestion. Apply → POST /project/update,
+ *                       invalidate the project detail query (the parent
+ *                       form re-syncs via its hydrate effect), close dialog.
+ *
+ * Field set is intentionally narrow (title / description / tags) —
+ * matches the Nest endpoint's contract. Reintroduce extra fields here
+ * only when the backend grows them.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  IconAlertCircle,
   IconLoader2,
+  IconRefresh,
   IconSparkles,
   IconUpload,
-  IconRefresh,
-  IconAlertCircle,
+  IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogBody,
@@ -22,9 +39,11 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
   ipImageUrl,
+  SPARK_MAX_BYTES,
+  useIPTagList,
   useSparkAnalyze,
   useSparkGenerateBanner,
-  type SparkDraft,
+  useUpdateProject,
 } from "@/app/(site)/ips/_hooks/use-ip";
 
 const SPARK_HERO_URL = encodeURI(
@@ -32,142 +51,121 @@ const SPARK_HERO_URL = encodeURI(
 );
 
 const ACCEPT = ".pdf,.doc,.docx,.txt,.md,application/pdf,text/plain,text/markdown";
-const MAX_BYTES = 20 * 1024 * 1024;
-
-/** Snapshot of the current form values the dialog needs to diff against
- *  the AI suggestion, plus the slot Spark fills if the user generates a
- *  banner. The dialog is read-only against this snapshot — the parent
- *  applies the chosen patch on Apply via `onApply`. */
-export interface SparkCurrent {
-  name: string;
-  description: string;
-  background: string;
-  story: string;
-  whyThisIP: string;
-  tags: string[];
-  bannerLink: string;
-}
-
-/** Keys the dialog can apply onto the parent's form state. Banner is a
- *  separate field because Spark uploads its generated image to OSS and
- *  surfaces only the wire `bannerLink` (an OSS key, not a full URL). */
-export type SparkPatch = Partial<{
-  name: string;
-  description: string;
-  background: string;
-  story: string;
-  whyThisIP: string;
-  tags: string[];
-  bannerLink: string;
-}>;
 
 interface SparkDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
-  current: SparkCurrent;
-  onApply: (patch: SparkPatch) => void;
 }
 
 type Phase = "upload" | "analyzing" | "review" | "error";
 
-interface FieldRow {
-  key: keyof SparkCurrent;
-  labelKey: string;
-  current: string | string[];
-  suggested: string | string[];
-  /** True when the suggestion is non-empty AND differs from current. */
-  hasChange: boolean;
+interface DraftForm {
+  name: string;
+  description: string;
+  /** Tag IDs picked from the backend catalog. AI returns names (strings);
+   *  on analyze we fuzzy-match them to backend tags and pre-select the
+   *  matched IDs. Anything that didn't match is surfaced separately
+   *  as an info hint so the user knows what was dropped. */
+  tagIds: number[];
+  /** Hidden English image-gen prompt the AI produced alongside the
+   *  metadata. Never displayed verbatim; only used as input to the
+   *  banner-generation call. */
+  bannerPrompt: string;
+  /** OSS path of the generated banner image (relative key, not URL).
+   *  Empty until the user clicks "Generate". Sent to /project/update
+   *  on Apply when set. */
+  bannerLink: string;
 }
 
-function eqValue(a: string | string[], b: string | string[]): boolean {
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    return a.every((v, i) => v === b[i]);
-  }
-  return a === b;
+const EMPTY_DRAFT: DraftForm = {
+  name: "",
+  description: "",
+  tagIds: [],
+  bannerPrompt: "",
+  bannerLink: "",
+};
+
+/** Case + whitespace-insensitive match. Chinese punctuation also folded
+ *  in case Qwen returns "科幻、悬疑" style joined entries. */
+function normalize(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[\s　]/g, "");
 }
 
-function isEmpty(v: string | string[]): boolean {
-  if (Array.isArray(v)) return v.length === 0;
-  return !v.trim();
+function bytesToMB(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(0);
 }
 
-function buildRows(current: SparkCurrent, draft: SparkDraft): FieldRow[] {
-  const map: Array<[keyof SparkCurrent, string, string | string[], string | string[] | undefined]> =
-    [
-      ["name", "sparkFieldName", current.name, draft.name],
-      ["description", "sparkFieldDescription", current.description, draft.description],
-      ["background", "sparkFieldBackground", current.background, draft.background],
-      ["story", "sparkFieldStory", current.story, draft.story],
-      ["whyThisIP", "sparkFieldWhyThisIP", current.whyThisIP, draft.whyThisIP],
-      ["tags", "sparkFieldTags", current.tags, draft.tags],
-    ];
-  return map.map(([key, labelKey, cur, sug]) => {
-    const suggested = sug ?? (Array.isArray(cur) ? [] : "");
-    return {
-      key,
-      labelKey,
-      current: cur,
-      suggested,
-      hasChange: !isEmpty(suggested) && !eqValue(cur, suggested),
-    };
-  });
-}
-
-export function SparkDialog({ open, onOpenChange, projectId, current, onApply }: SparkDialogProps) {
+export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps) {
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
 
   const [phase, setPhase] = useState<Phase>("upload");
   const [errorMsg, setErrorMsg] = useState<string>("");
-  const [draft, setDraft] = useState<SparkDraft | null>(null);
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [generatedBanner, setGeneratedBanner] = useState<string>("");
-  const [includeBanner, setIncludeBanner] = useState(false);
+  const [draft, setDraft] = useState<DraftForm>(EMPTY_DRAFT);
+  /** Names AI proposed that didn't map to any backend tag. Surfaced as
+   *  a small info hint so the user understands why their suggestion
+   *  count dropped — and can ask the platform to add them later. */
+  const [unmatchedTagNames, setUnmatchedTagNames] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const analyze = useSparkAnalyze();
   const generateBanner = useSparkGenerateBanner();
+  const update = useUpdateProject();
+  const { data: tagCatalog = [] } = useIPTagList();
 
-  // Reset on open. The parent unmounts the dialog when closed via key,
-  // but we also reset internal state so re-opening starts fresh.
+  // Quick lookup: normalized tag name → backend id. Built once per
+  // catalog change. Catalog is small (~80 entries) so the cost is
+  // trivial, but the lookup runs once per AI response and once per
+  // badge render, so caching matters.
+  const tagByName = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const tag of tagCatalog) map.set(normalize(tag.name), tag.id);
+    return map;
+  }, [tagCatalog]);
+
+  // Reset on open. Without this, a previous Apply leaves stale draft
+  // values in state when the user re-opens the dialog.
   useEffect(() => {
     if (!open) return;
     setPhase("upload");
     setErrorMsg("");
-    setDraft(null);
-    setSelected({});
-    setGeneratedBanner("");
-    setIncludeBanner(false);
+    setDraft(EMPTY_DRAFT);
+    setUnmatchedTagNames([]);
   }, [open]);
 
-  const rows = useMemo<FieldRow[]>(() => {
-    if (!draft) return [];
-    return buildRows(current, draft);
-  }, [current, draft]);
-
-  // Default-check every field that actually carries a change. Empty
-  // suggestions or unchanged ones default to off so the user isn't
-  // tricked into a no-op apply.
-  useEffect(() => {
-    if (!draft) return;
-    const next: Record<string, boolean> = {};
-    for (const row of rows) next[row.key] = row.hasChange;
-    setSelected(next);
-  }, [draft, rows]);
-
   const handleFile = async (file: File) => {
-    if (file.size > MAX_BYTES) {
-      toast.error(tc("uploadTooLarge"));
+    if (file.size > SPARK_MAX_BYTES) {
+      toast.error(t("sparkFileTooLarge", { mb: bytesToMB(SPARK_MAX_BYTES) }));
       return;
     }
     setPhase("analyzing");
     setErrorMsg("");
     try {
       const result = await analyze.mutateAsync(file);
-      setDraft(result);
+      // Match AI's free-form tag names against the backend catalog.
+      // De-dupe and preserve the catalog's id-order on the picked set
+      // so the selected badges read consistently no matter what order
+      // Qwen returned them in.
+      const matchedIds = new Set<number>();
+      const unmatched: string[] = [];
+      for (const name of result.tags ?? []) {
+        const id = tagByName.get(normalize(name));
+        if (id !== undefined) matchedIds.add(id);
+        else if (name.trim()) unmatched.push(name.trim());
+      }
+      setDraft({
+        name: result.name ?? "",
+        description: result.description ?? "",
+        tagIds: Array.from(matchedIds),
+        bannerPrompt: result.bannerPrompt ?? "",
+        bannerLink: "",
+      });
+      setUnmatchedTagNames(unmatched);
       setPhase("review");
     } catch (err) {
       setErrorMsg(err instanceof Error && err.message ? err.message : t("sparkAnalyzeFailed"));
@@ -176,61 +174,62 @@ export function SparkDialog({ open, onOpenChange, projectId, current, onApply }:
   };
 
   const handleGenerateBanner = async () => {
-    if (!draft?.bannerPrompt) return;
+    if (!draft.bannerPrompt) {
+      toast.warning(t("sparkBannerNoPrompt"));
+      return;
+    }
     try {
-      const banner = await generateBanner.mutateAsync({
+      const link = await generateBanner.mutateAsync({
         projectId,
         prompt: draft.bannerPrompt,
       });
-      if (!banner) throw new Error("Empty banner");
-      setGeneratedBanner(banner);
-      setIncludeBanner(true);
+      if (!link) throw new Error("Empty banner");
+      setDraft((d) => ({ ...d, bannerLink: link }));
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : t("sparkBannerFailed"));
+      const msg = err instanceof Error ? err.message : "";
+      toast.error(msg || t("sparkBannerFailed"));
     }
   };
 
-  const applicableCount = useMemo(() => {
-    let n = 0;
-    for (const row of rows) {
-      if (selected[row.key] && row.hasChange) n++;
-    }
-    if (includeBanner && generatedBanner) n++;
-    return n;
-  }, [rows, selected, includeBanner, generatedBanner]);
+  const toggleTag = (id: number) => {
+    setDraft((d) =>
+      d.tagIds.includes(id)
+        ? { ...d, tagIds: d.tagIds.filter((x) => x !== id) }
+        : { ...d, tagIds: [...d.tagIds, id] }
+    );
+  };
 
   const handleApply = () => {
-    if (applicableCount === 0) {
-      toast.warning(t("sparkNoSelection"));
+    const name = draft.name.trim();
+    if (!name) {
+      toast.warning(t("nameRequired"));
       return;
     }
-    const patch: SparkPatch = {};
-    for (const row of rows) {
-      if (!selected[row.key] || !row.hasChange) continue;
-      const v = row.suggested;
-      switch (row.key) {
-        case "name":
-        case "description":
-        case "background":
-        case "story":
-        case "whyThisIP":
-          if (typeof v === "string") patch[row.key] = v;
-          break;
-        case "tags":
-          if (Array.isArray(v)) patch.tags = v;
-          break;
-        case "bannerLink":
-          // handled separately
-          break;
+    update.mutate(
+      {
+        id: Number(projectId),
+        name,
+        description: draft.description.trim(),
+        // Backend expects `tag` as `JSON.stringify(numericIds[])` —
+        // the same shape the manual edit page uses on Save.
+        tag: JSON.stringify(draft.tagIds),
+        // Only include bannerLink when the user actually generated one
+        // — passing an empty string here would clear an existing banner
+        // and that's never the user's intent inside Spark.
+        ...(draft.bannerLink ? { bannerLink: draft.bannerLink } : {}),
+      },
+      {
+        onSuccess: () => {
+          toast.success(t("sparkApplied"));
+          onOpenChange(false);
+        },
+        onError: (err) => {
+          const msg = err instanceof Error ? err.message : "";
+          toast.error(msg || t("saveFailed"));
+        },
       }
-    }
-    if (includeBanner && generatedBanner) patch.bannerLink = generatedBanner;
-    onApply(patch);
-    toast.success(t("sparkApplied", { count: applicableCount }));
-    onOpenChange(false);
+    );
   };
-
-  const hasAnySuggestion = rows.some((r) => r.hasChange) || !!draft?.bannerPrompt;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -265,7 +264,9 @@ export function SparkDialog({ open, onOpenChange, projectId, current, onApply }:
             >
               <IconUpload className="size-8" />
               <span className="text-sm font-medium">{t("sparkDropzoneTitle")}</span>
-              <span className="text-xs text-muted-foreground/70">{t("sparkDropzoneHint")}</span>
+              <span className="text-xs text-muted-foreground/70">
+                {t("sparkDropzoneHint", { mb: bytesToMB(SPARK_MAX_BYTES) })}
+              </span>
             </button>
           )}
 
@@ -289,103 +290,144 @@ export function SparkDialog({ open, onOpenChange, projectId, current, onApply }:
             </div>
           )}
 
-          {phase === "review" && draft && (
-            <div className="space-y-4">
-              {!hasAnySuggestion ? (
-                <div className="rounded-xl border border-dashed border-border bg-card/40 px-4 py-10 text-center text-sm text-muted-foreground">
-                  {t("sparkNoSuggestions")}
+          {phase === "review" && (
+            <div className="space-y-5">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{t("sparkReviewTitle")}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("sparkReviewDesc")}</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-foreground">
+                  {t("sparkFieldName")}
+                </label>
+                <Input
+                  value={draft.name}
+                  onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value.slice(0, 80) }))}
+                  className="h-10"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-foreground">
+                  {t("sparkFieldDescription")}
+                </label>
+                <Textarea
+                  value={draft.description}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, description: e.target.value.slice(0, 500) }))
+                  }
+                  rows={4}
+                />
+                <span className="block text-right text-xs text-muted-foreground">
+                  {draft.description.length}/500
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between">
+                  <label className="block text-xs font-semibold text-foreground">
+                    {t("sparkFieldTags")}
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    {t("sparkTagsSelected", { count: draft.tagIds.length })}
+                  </span>
                 </div>
-              ) : (
-                <>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{t("sparkReviewTitle")}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{t("sparkReviewDesc")}</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    {rows.map((row) => (
-                      <FieldDiffRow
-                        key={row.key as string}
-                        row={row}
-                        checked={!!selected[row.key]}
-                        onCheckedChange={(c) =>
-                          setSelected((s) => ({ ...s, [row.key]: c && row.hasChange }))
-                        }
-                        labels={{
-                          label: t(row.labelKey),
-                          current: t("sparkCurrent"),
-                          suggested: t("sparkSuggested"),
-                        }}
-                      />
-                    ))}
-                  </div>
-
-                  {!!draft.bannerPrompt && (
-                    <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">
-                          {t("sparkBannerSection")}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">{t("sparkBannerHint")}</p>
-                      </div>
-                      <div className="rounded-md bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
-                        {draft.bannerPrompt}
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className="flex aspect-video w-32 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/40">
-                          {generatedBanner ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={ipImageUrl(generatedBanner)}
-                              alt=""
-                              className="size-full object-cover"
-                            />
-                          ) : current.bannerLink ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={ipImageUrl(current.bannerLink)}
-                              alt=""
-                              className="size-full object-cover opacity-50"
-                            />
-                          ) : (
-                            <IconSparkles className="size-5 text-muted-foreground/50" />
-                          )}
-                        </div>
-                        <div className="flex-1 space-y-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            color="muted"
-                            onClick={handleGenerateBanner}
-                            disabled={generateBanner.isPending}
-                          >
-                            {generateBanner.isPending ? (
-                              <>
-                                <IconLoader2 className="size-3.5 animate-spin" />
-                                {t("sparkGeneratingBanner")}
-                              </>
-                            ) : (
-                              <>
-                                <IconSparkles className="size-3.5" />
-                                {t("sparkGenerateBanner")}
-                              </>
+                {tagCatalog.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+                    {t("sparkTagsCatalogEmpty")}
+                  </p>
+                ) : (
+                  <div className="max-h-44 overflow-y-auto rounded-md border border-border bg-card/40 p-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {tagCatalog.map((tag) => {
+                        const active = draft.tagIds.includes(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => toggleTag(tag.id)}
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                              active
+                                ? "bg-primary/15 text-primary ring-1 ring-inset ring-primary/40"
+                                : "bg-muted/40 text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                             )}
-                          </Button>
-                          {generatedBanner && (
-                            <label className="flex items-center gap-2 text-xs text-foreground">
-                              <Checkbox
-                                checked={includeBanner}
-                                onCheckedChange={(c) => setIncludeBanner(c === true)}
-                              />
-                              {t("sparkBannerReady")}
-                            </label>
-                          )}
-                        </div>
-                      </div>
+                          >
+                            {tag.name}
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
-                </>
-              )}
+                  </div>
+                )}
+                {unmatchedTagNames.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("sparkTagsUnmatched", {
+                      names: unmatchedTagNames.join("、"),
+                    })}
+                  </p>
+                )}
+              </div>
+
+              {/* Banner — opt-in, generated from the hidden English
+               *  bannerPrompt the analyzer produced. Empty preview
+               *  square + button when nothing's been generated yet. */}
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-foreground">
+                  {t("sparkFieldBanner")}
+                </label>
+                <div className="flex items-start gap-3">
+                  <div className="aspect-video w-44 shrink-0 overflow-hidden rounded-md border border-border bg-muted/40">
+                    {draft.bannerLink ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={ipImageUrl(draft.bannerLink)}
+                        alt=""
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex size-full items-center justify-center text-muted-foreground/50">
+                        <IconSparkles className="size-6" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      color="muted"
+                      onClick={handleGenerateBanner}
+                      disabled={generateBanner.isPending || !draft.bannerPrompt}
+                    >
+                      {generateBanner.isPending ? (
+                        <>
+                          <IconLoader2 className="size-3.5 animate-spin" />
+                          {t("sparkBannerGenerating")}
+                        </>
+                      ) : (
+                        <>
+                          <IconSparkles className="size-3.5" />
+                          {draft.bannerLink ? t("sparkBannerRegenerate") : t("sparkBannerGenerate")}
+                        </>
+                      )}
+                    </Button>
+                    <p className="text-xs text-muted-foreground">{t("sparkBannerHint")}</p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft(EMPTY_DRAFT);
+                  setPhase("upload");
+                }}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <IconX className="size-3" />
+                {t("sparkRestart")}
+              </button>
             </div>
           )}
         </DialogBody>
@@ -395,14 +437,18 @@ export function SparkDialog({ open, onOpenChange, projectId, current, onApply }:
             variant="outline"
             color="muted"
             onClick={() => onOpenChange(false)}
-            disabled={phase === "analyzing"}
+            disabled={phase === "analyzing" || update.isPending}
           >
             {tc("cancel")}
           </Button>
           {phase === "review" && (
-            <Button onClick={handleApply} disabled={applicableCount === 0}>
-              <IconSparkles className="size-3.5" />
-              {t("sparkApply")} {applicableCount > 0 ? `(${applicableCount})` : ""}
+            <Button onClick={handleApply} disabled={update.isPending || !draft.name.trim()}>
+              {update.isPending ? (
+                <IconLoader2 className="size-3.5 animate-spin" />
+              ) : (
+                <IconSparkles className="size-3.5" />
+              )}
+              {t("sparkApply")}
             </Button>
           )}
         </DialogFooter>
@@ -420,63 +466,5 @@ export function SparkDialog({ open, onOpenChange, projectId, current, onApply }:
         />
       </DialogContent>
     </Dialog>
-  );
-}
-
-function FieldDiffRow({
-  row,
-  checked,
-  onCheckedChange,
-  labels,
-}: {
-  row: FieldRow;
-  checked: boolean;
-  onCheckedChange: (c: boolean) => void;
-  labels: { label: string; current: string; suggested: string };
-}) {
-  const renderValue = (v: string | string[]): string => {
-    if (Array.isArray(v)) return v.length > 0 ? v.join(", ") : "—";
-    return v.trim() || "—";
-  };
-  return (
-    <div
-      className={cn(
-        "flex items-start gap-3 rounded-xl border p-3 transition-colors",
-        row.hasChange ? "border-border bg-card" : "border-border/40 bg-card/40 opacity-60"
-      )}
-    >
-      <Checkbox
-        className="mt-0.5"
-        checked={checked && row.hasChange}
-        onCheckedChange={(c) => onCheckedChange(c === true)}
-        disabled={!row.hasChange}
-      />
-      <div className="min-w-0 flex-1 space-y-2">
-        <p className="text-xs font-semibold text-foreground">{labels.label}</p>
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="space-y-1">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
-              {labels.current}
-            </p>
-            <p className="line-clamp-3 whitespace-pre-wrap text-muted-foreground">
-              {renderValue(row.current)}
-            </p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-[10px] uppercase tracking-wide text-primary/70">
-              {labels.suggested}
-            </p>
-            <p
-              className={cn(
-                "line-clamp-3 whitespace-pre-wrap",
-                row.hasChange ? "text-foreground" : "text-muted-foreground"
-              )}
-            >
-              {renderValue(row.suggested)}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }

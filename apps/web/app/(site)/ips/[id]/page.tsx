@@ -6,9 +6,10 @@ import { useParams } from "next/navigation";
 import { VideoPlayer } from "@/components/media/video-player";
 import {
   IconArrowLeft,
-  IconBolt,
+  IconBook,
   IconBookmark,
   IconChevronDown,
+  IconChevronRight,
   IconCircleCheck,
   IconHeart,
   IconLoader2,
@@ -16,13 +17,11 @@ import {
   IconPlayerPlay,
   IconPlaylist,
   IconShare,
-  IconStar,
   IconUsers,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
 import {
   useProjectDetail,
@@ -35,18 +34,10 @@ import {
   type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
 
-// ─── Detail-page rendering types ─────────────────────
-// Composed view: backend reads (project / members / episodes / FAQs) +
-// per-field mock fallback for not-yet-shipped fields (story / whyThisIP
-// / updates / tagline). Narrow to what the page actually renders.
-
 interface IPTeamMember {
   name: string;
   role: string;
   avatar: string;
-  level: string;
-  projects: number;
-  rating: number;
   certified?: boolean;
 }
 
@@ -54,30 +45,6 @@ interface IPFAQ {
   q: string;
   a: string;
 }
-
-interface IPDetail {
-  id: string;
-  title: string;
-  cover: string;
-  tagline: string;
-  story: string;
-  whyThisIP: string;
-  tags: string[];
-  team: IPTeamMember[];
-  faqs: IPFAQ[];
-}
-
-const EMPTY_IP_DETAIL: IPDetail = {
-  id: "",
-  title: "",
-  cover: "",
-  tagline: "",
-  story: "",
-  whyThisIP: "",
-  tags: [],
-  team: [],
-  faqs: [],
-};
 
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -92,8 +59,6 @@ function totalRuntime(eps: Episode[]): string {
   return formatDuration(eps.reduce((acc, e) => acc + (e.duration || 0), 0));
 }
 
-// ─── Page ────────────────────────────────────────────
-
 export default function IPDetailPage() {
   const t = useTranslations("ip");
   const { id } = useParams<{ id: string }>();
@@ -104,29 +69,16 @@ export default function IPDetailPage() {
   const { data: episodes = [] } = useProjectEpisodes(id);
   const { data: faqs = [] } = useFAQs(id);
 
-  const currentUserId = useCurrentUser()?.id;
+  const currentUserId = useCurrentUser().user?.id;
   const isOwner =
     !!currentUserId && project?.ownerId != null && String(project.ownerId) === currentUserId;
   const editUrl = useProjectEditUrl(id);
 
-  // Cinema hero pin: once the hero scrolls out of view, surface a compact
-  // sticky action bar so the primary CTA is always reachable.
-  const heroSentinelRef = useRef<HTMLDivElement>(null);
-  const [showStickyBar, setShowStickyBar] = useState(false);
-  useEffect(() => {
-    const node = heroSentinelRef.current;
-    if (!node) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setShowStickyBar(!entry.isIntersecting),
-      { rootMargin: "-56px 0px 0px 0px", threshold: 0 }
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+  // Section-nav scrollspy state. Active key is set on click; intersection
+  // observer keeps it in sync as the user scrolls naturally.
+  const [activeSection, setActiveSection] = useState<string>("story");
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  // Bridge real API → IPDetail rendering shape. No mock fallback —
-  // missing fields (story / whyThisIP awaiting backend, no team yet,
-  // etc.) render as empty sections per the conditional JSX below.
   const realTags: string[] = (() => {
     try {
       const parsed = JSON.parse(project?.tag ?? "[]");
@@ -135,34 +87,55 @@ export default function IPDetailPage() {
       return [];
     }
   })();
-  const realTeam: IPTeamMember[] = (Array.isArray(members) ? members : []).map((m) => {
+  const team: IPTeamMember[] = (Array.isArray(members) ? members : []).map((m) => {
     const role =
       m.role === 10 ? "Owner" : m.role === 8 ? "Admin" : m.roleName || m.remark || "Member";
     return {
       name: m.nickName || m.userName || "Member",
       role,
       avatar: m.avatar ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar}` : "",
-      level: "",
-      projects: 0,
-      rating: 0,
     };
   });
+  const ipFaqs: IPFAQ[] = faqs.map((f) => ({ q: f.question, a: f.answer }));
 
-  const ip: IPDetail = {
-    ...EMPTY_IP_DETAIL,
-    id,
-    title: project?.name ?? "",
-    tagline: project?.description ?? "",
-    cover: project?.bannerLink
-      ? project.bannerLink.startsWith("http")
-        ? project.bannerLink
-        : `${env.BANNER_BASE_URL}/${project.bannerLink}`
-      : "",
-    story: project?.story ?? project?.background ?? "",
-    whyThisIP: project?.whyThisIP ?? "",
-    tags: realTags,
-    team: realTeam,
-    faqs: faqs.map((f) => ({ q: f.question, a: f.answer })),
+  const title = project?.name ?? "";
+  const tagline = project?.description ?? "";
+  const story = project?.background ?? "";
+  const cover = project?.bannerLink
+    ? project.bannerLink.startsWith("http")
+      ? project.bannerLink
+      : `${env.BANNER_BASE_URL}/${project.bannerLink}`
+    : "";
+
+  // Sections only render when data exists; the nav mirrors the same set so
+  // we never link to an empty anchor.
+  const sections: { key: string; label: string }[] = [
+    story ? { key: "story", label: t("detailStoryTitle") } : null,
+    team.length > 0 ? { key: "team", label: t("detailCreativeTeam") } : null,
+    ipFaqs.length > 0 ? { key: "faq", label: t("sectionFAQ") } : null,
+  ].filter(Boolean) as { key: string; label: string }[];
+
+  useEffect(() => {
+    if (sections.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visible?.target instanceof HTMLElement) {
+          const key = visible.target.dataset.sectionKey;
+          if (key) setActiveSection(key);
+        }
+      },
+      { rootMargin: "-30% 0px -60% 0px", threshold: [0, 0.25, 0.5, 1] }
+    );
+    Object.values(sectionRefs.current).forEach((el) => el && observer.observe(el));
+    return () => observer.disconnect();
+  }, [sections.length]);
+
+  const scrollToSection = (key: string) => {
+    setActiveSection(key);
+    sectionRefs.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   if (isLoading) {
@@ -173,223 +146,188 @@ export default function IPDetailPage() {
     );
   }
 
-  const aboutBody = [ip.story, ip.whyThisIP].filter(Boolean).join("\n\n");
-  const epCount = episodes.length;
   const trailerSrc = videoLink ?? "";
   const hasTrailer = !!trailerSrc;
-  const heroMedia = hasTrailer ? trailerSrc : ip.cover;
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ── Top toolbar ─────────────────────────────────── */}
-      <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-6 pt-6">
+      {/* Back link */}
+      <div className="mx-auto max-w-screen-2xl px-6 pt-4">
         <Link
           href="/ips"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <IconArrowLeft className="size-4" />
           {t("detailBackToPlaza")}
         </Link>
-        {isOwner && (
-          <a
-            href={editUrl}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
-          >
-            {t("detailManage")}
-          </a>
-        )}
       </div>
 
-      {/* ── Sticky action bar (after hero) ─────────────── */}
-      <div
-        className={cn(
-          "sticky top-14 z-30 border-b border-border bg-background/85 backdrop-blur transition-all duration-200",
-          showStickyBar
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none -translate-y-2 opacity-0"
-        )}
-      >
-        <div className="mx-auto flex max-w-screen-2xl items-center gap-3 px-6 py-2.5">
-          {ip.cover && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={ip.cover} alt="" className="size-9 shrink-0 rounded-md object-cover" />
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold text-foreground">
-              {ip.title || t("detailUntitled")}
-            </div>
-            {epCount > 0 && (
-              <div className="text-[11px] text-muted-foreground">
-                {t("detailEpisodeCount", { count: epCount })}
-              </div>
-            )}
+      {/* Hero */}
+      <div className="mx-auto max-w-screen-2xl px-6 py-6">
+        <div className="mb-8 text-center">
+          <h1 className="mb-2 text-4xl font-bold text-foreground">
+            {title || t("detailUntitled")}
+          </h1>
+          {tagline && <p className="mb-3 text-sm text-muted-foreground">{tagline}</p>}
+          <div className="mb-3 flex items-center justify-center gap-3">
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-400/10 px-2.5 py-1 text-xs font-medium text-green-400">
+              <IconCircleCheck className="size-3.5" />
+              {t("detailReleased")}
+            </span>
           </div>
-          <Button size="sm" variant="outline" color="muted">
-            <IconBookmark className="size-3.5" />
-            {t("detailFollow")}
-          </Button>
+          {realTags.length > 0 && (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {realTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary"
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Body ───────────────────────────────────────── */}
-      <div className="mx-auto max-w-screen-2xl px-6 pt-12 pb-16">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-10">
-          <div className="min-w-0 space-y-8">
-            {/* Trailer player — Video.js v8 with `fluid: true` locks the
-              wrapper to the video's intrinsic aspect ratio. */}
-            {hasTrailer ? (
-              <VideoPlayer
-                src={trailerSrc}
-                autoplay={false}
-                className="overflow-hidden rounded-2xl ring-1 ring-border/50"
-              />
-            ) : (
-              <div className="relative aspect-video overflow-hidden rounded-2xl bg-muted/40 ring-1 ring-border/50">
-                {ip.cover ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ip.cover} alt={ip.title} className="size-full object-cover" />
-                ) : (
-                  <div className="flex size-full items-center justify-center">
-                    <IconPlaylist className="size-12 text-muted-foreground/30" />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Title + meta + CTAs */}
-            <div className="space-y-3">
-              <div>
-                <h1 className="font-heading text-2xl font-bold text-foreground sm:text-3xl">
-                  {ip.title || t("detailUntitled")}
-                </h1>
-                {ip.tagline && <p className="mt-1.5 text-sm text-muted-foreground">{ip.tagline}</p>}
-              </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                {epCount > 0 && (
-                  <>
-                    <span>{t("detailEpisodeCount", { count: epCount })}</span>
-                    <span className="text-muted-foreground/40">·</span>
-                    <span>{totalRuntime(episodes)}</span>
-                  </>
-                )}
-              </div>
-              {ip.tags.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {ip.tags.slice(0, 6).map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] text-primary"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
+      {/* Two-column body */}
+      <div className="mx-auto max-w-screen-2xl px-6 pb-12">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+          {/* LEFT */}
+          <div className="space-y-8 lg:col-span-2">
+            {/* Trailer / cover */}
+            <div className="aspect-video w-full overflow-hidden rounded-xl bg-secondary">
+              {hasTrailer ? (
+                <VideoPlayer src={trailerSrc} autoplay={false} className="size-full" />
+              ) : cover ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={cover} alt={title} className="size-full object-cover" />
+              ) : (
+                <div className="flex size-full items-center justify-center">
+                  <IconPlaylist className="size-12 text-muted-foreground/30" />
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Button variant="outline" color="muted">
-                  <IconBookmark className="size-4" />
-                  {t("detailFollow")}
-                </Button>
-                <Button variant="ghost" color="muted" size="icon-sm" aria-label={t("share")}>
-                  <IconShare className="size-4" />
-                </Button>
-                <Button variant="ghost" color="muted" size="icon-sm" aria-label={t("detailLike")}>
-                  <IconHeart className="size-4" />
-                </Button>
-              </div>
-              {/* Sentinel for sticky action bar */}
-              <div ref={heroSentinelRef} aria-hidden className="h-px w-px" />
             </div>
 
-            {/* About */}
-            {aboutBody && (
-              <Section
-                icon={<IconBolt className="size-5 text-amber-400" />}
-                title={t("detailAboutTitle")}
-              >
-                <Prose text={aboutBody} />
-              </Section>
+            {/* Sticky section nav */}
+            {sections.length > 0 && (
+              <div className="sticky top-14 z-40 -mx-6 border-b border-border bg-background px-6">
+                <div className="flex items-center gap-0 overflow-x-auto">
+                  {sections.map((section) => (
+                    <button
+                      key={section.key}
+                      type="button"
+                      onClick={() => scrollToSection(section.key)}
+                      className={cn(
+                        "shrink-0 border-b-2 px-5 py-3 text-sm font-medium transition-colors",
+                        activeSection === section.key
+                          ? "border-primary text-primary"
+                          : "border-transparent text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {section.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
 
-            {/* Team */}
-            {ip.team.length > 0 && (
-              <Section
-                icon={<IconUsers className="size-5 text-violet-400" />}
-                title={t("detailCreativeTeam")}
-                count={ip.team.length}
+            {/* Story */}
+            {story && (
+              <div
+                data-section-key="story"
+                ref={(el) => {
+                  sectionRefs.current.story = el;
+                }}
               >
+                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                  <IconBook className="size-5 text-primary" />
+                  {t("detailStoryTitle")}
+                </h2>
+                <Prose text={story} />
+              </div>
+            )}
+
+            {/* Creative Team */}
+            {team.length > 0 && (
+              <div
+                data-section-key="team"
+                ref={(el) => {
+                  sectionRefs.current.team = el;
+                }}
+              >
+                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                  <IconUsers className="size-5 text-purple-400" />
+                  {t("detailCreativeTeam")}
+                </h2>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {ip.team.map((member) => (
+                  {team.map((member) => (
                     <div
                       key={member.name}
-                      className="flex items-start gap-3 rounded-xl border border-border bg-card p-3.5"
+                      className="flex items-start gap-3 rounded-xl border border-border bg-card p-4"
                     >
-                      <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-base">
+                      <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-lg">
                         {member.avatar?.startsWith("http") ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={member.avatar} alt="" className="size-full object-cover" />
                         ) : (
-                          member.avatar || member.name?.[0] || "?"
+                          (member.name?.[0] ?? "?").toUpperCase()
                         )}
                       </div>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="mb-0.5 flex items-center gap-1.5">
                           <span className="truncate text-sm font-medium text-foreground">
                             {member.name}
                           </span>
-                          {member.level && (
-                            <span className="rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">
-                              {member.level}
-                            </span>
-                          )}
                           {member.certified && (
                             <IconCircleCheck className="size-3 text-green-400" />
                           )}
                         </div>
                         <div className="text-xs text-primary">{member.role}</div>
-                        {(member.projects > 0 || member.rating > 0) && (
-                          <div className="mt-1 flex items-center gap-3 text-[10px] text-muted-foreground">
-                            {member.projects > 0 && (
-                              <span>
-                                {member.projects} {t("detailProjects")}
-                              </span>
-                            )}
-                            {member.rating > 0 && (
-                              <span className="flex items-center gap-0.5">
-                                <IconStar className="size-2.5 fill-accent text-accent" />
-                                {member.rating}
-                              </span>
-                            )}
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))}
                 </div>
-              </Section>
+              </div>
             )}
 
             {/* FAQ */}
-            {ip.faqs.length > 0 && (
-              <Section
-                icon={<IconMessageCircle className="size-5 text-cyan-400" />}
-                title={t("sectionFAQ")}
+            {ipFaqs.length > 0 && (
+              <div
+                data-section-key="faq"
+                ref={(el) => {
+                  sectionRefs.current.faq = el;
+                }}
               >
-                <FaqList faqs={ip.faqs} />
-              </Section>
+                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                  <IconMessageCircle className="size-5 text-cyan-400" />
+                  {t("sectionFAQ")}
+                </h2>
+                <FaqList faqs={ipFaqs} />
+              </div>
             )}
           </div>
 
-          {/* ── Right column: Episodes ────────────────── */}
-          <aside className="lg:sticky lg:top-20 lg:self-start">
-            <EpisodesSidebar
-              episodes={episodes}
-              editUrl={editUrl}
-              isOwner={isOwner}
-              totalRuntime={totalRuntime(episodes)}
-              t={t}
-            />
-          </aside>
+          {/* RIGHT */}
+          <div>
+            <div className="space-y-4 lg:sticky lg:top-28">
+              {team.length > 0 && <RailTeam team={team} t={t} />}
+              <ReleasedPanel
+                episodes={episodes}
+                runtime={totalRuntime(episodes)}
+                editUrl={editUrl}
+                isOwner={isOwner}
+                t={t}
+              />
+              <RailShare title={title} t={t} />
+              <RailProducer
+                ownerId={project?.ownerId}
+                name={project?.ownerName ?? ""}
+                avatar={project?.ownerAvatar ?? ""}
+                t={t}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -397,31 +335,6 @@ export default function IPDetailPage() {
 }
 
 // ─── Subcomponents ───────────────────────────────────
-
-function Section({
-  icon,
-  title,
-  count,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  count?: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <div className="mb-4 flex items-center gap-2">
-        {icon}
-        <h2 className="text-base font-semibold text-foreground">{title}</h2>
-        {typeof count === "number" && count > 0 && (
-          <span className="text-xs text-muted-foreground">({count})</span>
-        )}
-      </div>
-      {children}
-    </section>
-  );
-}
 
 function Prose({ text }: { text: string }) {
   const paragraphs = text.split(/\n\n+/);
@@ -436,44 +349,28 @@ function Prose({ text }: { text: string }) {
   );
 }
 
-function EpisodesSidebar({
+function ReleasedPanel({
   episodes,
+  runtime,
   editUrl,
   isOwner,
-  totalRuntime,
   t,
 }: {
   episodes: Episode[];
+  runtime: string;
   editUrl: string;
   isOwner: boolean;
-  totalRuntime: string;
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-foreground">{t("detailEpisodesTitle")}</h2>
-          {episodes.length > 0 && (
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              {t("detailEpisodeCount", { count: episodes.length })} · {totalRuntime}
-            </p>
-          )}
-        </div>
-        {isOwner && (
-          <a
-            href={editUrl}
-            className="rounded-md text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            {t("detailManage")}
-          </a>
-        )}
+    <div className="rounded-xl border border-green-400/20 bg-card p-5">
+      <div className="mb-3 flex items-center gap-2">
+        <IconCircleCheck className="size-5 text-green-400" />
+        <h3 className="text-sm font-bold text-foreground">{t("detailPurchaseWatch")}</h3>
       </div>
 
-      {/* List */}
       {episodes.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-lg bg-secondary/40 px-4 py-8 text-center">
           <IconPlaylist className="size-8 text-muted-foreground/40" />
           <p className="text-xs text-muted-foreground">{t("detailNoEpisodes")}</p>
           {isOwner && (
@@ -486,47 +383,160 @@ function EpisodesSidebar({
           )}
         </div>
       ) : (
-        <div className="max-h-[640px] divide-y divide-border/40 overflow-y-auto">
-          {episodes.map((ep, i) => (
-            <button
-              key={ep.id || i}
-              type="button"
-              className="group flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-secondary/40"
-            >
-              {/* Thumb */}
-              <div className="relative aspect-video w-24 shrink-0 overflow-hidden rounded-md bg-muted/40">
-                {ep.videoBanner ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ipImageUrl(ep.videoBanner)} alt="" className="size-full object-cover" />
-                ) : (
-                  <div className="flex size-full items-center justify-center">
-                    <IconPlaylist className="size-4 text-muted-foreground/30" />
+        <>
+          <p className="mb-3 text-[11px] text-muted-foreground">
+            {t("detailEpisodeCount", { count: episodes.length })} · {runtime}
+          </p>
+          <div className="space-y-2">
+            {episodes.map((ep, i) => (
+              <div
+                key={ep.id || i}
+                className="flex items-center justify-between gap-2 rounded-lg bg-secondary/50 p-2.5"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground">
+                    {String(ep.videoNumber || i + 1).padStart(2, "0")}
                   </div>
-                )}
-                <span className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 transition-opacity group-hover:opacity-100">
-                  <IconPlayerPlay className="size-5 text-white drop-shadow" />
-                </span>
-                {ep.duration > 0 && (
-                  <span className="absolute bottom-0.5 right-0.5 rounded bg-black/70 px-1 py-px text-[9px] font-medium text-white">
-                    {formatDuration(ep.duration)}
-                  </span>
-                )}
-              </div>
-
-              {/* Title + EP marker */}
-              <div className="min-w-0 flex-1">
-                <div className="font-mono text-[10px] font-semibold tabular-nums tracking-wider text-muted-foreground">
-                  EP {String(ep.videoNumber || i + 1).padStart(2, "0")}
+                  <span className="truncate text-xs text-foreground">{ep.title}</span>
                 </div>
-                <div className="mt-0.5 line-clamp-2 text-xs font-medium text-foreground">
-                  {ep.title}
-                </div>
+                <button
+                  type="button"
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
+                >
+                  <IconPlayerPlay className="size-3" />
+                  {t("detailPlay")}
+                </button>
               </div>
-            </button>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
+  );
+}
+
+function RailTeam({ team, t }: { team: IPTeamMember[]; t: ReturnType<typeof useTranslations> }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <h3 className="mb-3 text-sm font-semibold text-foreground">{t("detailCreativeTeam")}</h3>
+      <div className="space-y-3">
+        {team.map((member) => (
+          <div key={member.name} className="flex items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-sm">
+              {member.avatar?.startsWith("http") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={member.avatar} alt="" className="size-full object-cover" />
+              ) : (
+                (member.name?.[0] ?? "?").toUpperCase()
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-xs font-medium text-foreground">{member.name}</span>
+                {member.certified && <IconCircleCheck className="size-3 text-green-400" />}
+              </div>
+              <span className="text-[10px] text-muted-foreground">{member.role}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RailShare({ title, t }: { title: string; t: ReturnType<typeof useTranslations> }) {
+  const [copied, setCopied] = useState(false);
+  const handleShare = async () => {
+    if (typeof window === "undefined") return;
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* clipboard denied — silent noop. */
+    }
+  };
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <h3 className="mb-3 text-sm font-semibold text-foreground">{t("detailShare")}</h3>
+      <p className="mb-3 text-xs text-muted-foreground">{t("detailShareHint", { title })}</p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleShare}
+          className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-secondary py-2 text-xs text-foreground transition-colors hover:bg-secondary/80"
+        >
+          {copied ? (
+            <>
+              <IconCircleCheck className="size-3.5 text-green-400" />
+              {t("detailShareCopied")}
+            </>
+          ) : (
+            <>
+              <IconShare className="size-3.5" />
+              {t("detailShare")}
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-secondary py-2 text-xs text-foreground transition-colors hover:bg-secondary/80"
+        >
+          <IconHeart className="size-3.5" />
+          {t("detailLike")}
+        </button>
+        <button
+          type="button"
+          className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-secondary py-2 text-xs text-foreground transition-colors hover:bg-secondary/80"
+        >
+          <IconBookmark className="size-3.5" />
+          {t("detailFollow")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RailProducer({
+  ownerId,
+  name,
+  avatar,
+  t,
+}: {
+  ownerId: string | number | undefined;
+  name: string;
+  avatar: string;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  if (!name && !avatar) return null;
+  const avatarUrl = avatar
+    ? avatar.startsWith("http")
+      ? avatar
+      : `${env.USER_BASE_URL || env.OSS_BASE_URL}/${avatar}`
+    : "";
+  const href = ownerId != null ? `/profile/${ownerId}` : "#";
+  return (
+    <Link
+      href={href}
+      className="block rounded-xl border border-border bg-card p-4 transition-all hover:border-primary/30"
+    >
+      <h3 className="mb-3 text-sm font-semibold text-foreground">{t("detailProducer")}</h3>
+      <div className="flex items-center gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-base font-semibold text-foreground/80">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt="" className="size-full object-cover" />
+          ) : (
+            (name?.[0] ?? "?").toUpperCase()
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-foreground">{name || "—"}</div>
+          <span className="text-xs text-muted-foreground">{t("detailProducerLabel")}</span>
+        </div>
+        <IconChevronRight className="size-4 text-muted-foreground" />
+      </div>
+    </Link>
   );
 }
 
@@ -539,7 +549,7 @@ function FaqList({ faqs }: { faqs: { q: string; a: string }[] }) {
           <button
             type="button"
             onClick={() => setOpen(open === i ? null : i)}
-            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/40"
+            className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-secondary"
           >
             <span className="text-sm font-medium text-foreground">{faq.q}</span>
             <IconChevronDown

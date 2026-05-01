@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
 import { IPCinematicHero } from "@/app/(site)/ips/_components/ip-cinematic-hero";
 import { IPPlazaCard } from "@/app/(site)/ips/_components/ip-plaza-card";
-import { useIPList, useIPTypes, useIPTagList, type IPProject } from "./_hooks/use-ip";
+import { useIPList, useIPTypes, type IPProject } from "./_hooks/use-ip";
 
 // ─── Filter panel (shared between sidebar + sheet) ──
 
@@ -18,22 +18,16 @@ interface FilterPanelProps {
   search: string;
   onSearchChange: (value: string) => void;
   categoryOptions: { id: string; name: string }[];
-  tagOptions: { id: string; name: string }[];
   selectedTypeId: string;
-  selectedTagId: string;
   onTypeChange: (id: string) => void;
-  onTagChange: (id: string) => void;
 }
 
 function FilterPanel({
   search,
   onSearchChange,
   categoryOptions,
-  tagOptions,
   selectedTypeId,
-  selectedTagId,
   onTypeChange,
-  onTagChange,
 }: FilterPanelProps) {
   const t = useTranslations("ip");
 
@@ -77,35 +71,6 @@ function FilterPanel({
           })}
         </ul>
       </div>
-
-      {/* Tags — chips, only meaningful inside a category */}
-      {selectedTypeId && tagOptions.length > 1 && (
-        <div>
-          <h3 className="mb-2.5 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {t("tagsLabel")}
-          </h3>
-          <div className="flex flex-wrap gap-1.5 px-2">
-            {tagOptions.map((opt) => {
-              const active = selectedTagId === opt.id;
-              return (
-                <button
-                  key={opt.id || "all"}
-                  type="button"
-                  onClick={() => onTagChange(opt.id)}
-                  className={cn(
-                    "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                    active
-                      ? "bg-white text-black"
-                      : "bg-white/4 text-muted-foreground hover:bg-white/8 hover:text-foreground"
-                  )}
-                >
-                  {opt.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -116,7 +81,6 @@ export default function IPPlazaPage() {
   const t = useTranslations("ip");
   const [search, setSearch] = useState("");
   const [selectedTypeId, setSelectedTypeId] = useState("");
-  const [selectedTagId, setSelectedTagId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 
@@ -136,17 +100,16 @@ export default function IPPlazaPage() {
     return () => observer.disconnect();
   }, []);
 
-  // Server-side filtering: backend filters by `key` + `typeId` + `tag`
-  // (new `/project/list` contract).
+  // Server-side filtering: backend filters by `key` + `typeId`. Tag
+  // filter was removed from the UI — the IP plaza is a category-first
+  // discovery surface and the tag chip rail just added noise.
   const { data: listData, isLoading: loading } = useIPList({
     page: 1,
     pageSize: 50,
     key: search,
     typeId: selectedTypeId,
-    tag: selectedTagId,
   });
   const { data: typesData = [] } = useIPTypes();
-  const { data: tagsData = [] } = useIPTagList();
   const projects = useMemo<IPProject[]>(() => listData?.list ?? [], [listData]);
   // Card still expects the legacy `{ "<id>": "<name>" }` lookup map for
   // the category badge under the title; build it from the flat list.
@@ -155,7 +118,7 @@ export default function IPPlazaPage() {
     [typesData]
   );
 
-  // Categories: "All" + each entry from `/vedio/project/type/list`.
+  // Categories: "All" + each entry from `/vedio/type/list`.
   const categoryOptions = useMemo(
     () => [
       { id: "", name: t("allCategories") },
@@ -164,39 +127,13 @@ export default function IPPlazaPage() {
     [typesData, t]
   );
 
-  // Tags: "All" + every tag from `/vedio/type/tag/list`'s `all` field
-  // (flat dictionary of every category + tag the backend knows). We
-  // intentionally don't narrow the tag pool by selected type — the
-  // single endpoint we consume doesn't carry the type→tag relationship.
-  // If product wants category-scoped tags later, add a separate
-  // fetcher that reads `map` rather than overloading this one.
-  const tagOptions = useMemo(() => {
-    const allOption = { id: "", name: t("allTags") };
-    return [...tagsData.map((tg) => ({ id: String(tg.id), name: tg.name }))].reduce(
-      (acc, opt) => (acc.find((x) => x.id === opt.id) ? acc : [...acc, opt]),
-      [allOption]
-    );
-  }, [tagsData, t]);
-
-  const handleTypeChange = (typeId: string) => {
-    if (typeId === selectedTypeId) return;
-    setSelectedTypeId(typeId);
-    // Tag pool no longer narrows by type, but resetting tag on type
-    // change still feels right: switching "Genre" then keeping a tag
-    // tied to the previous genre is confusing UX.
-    setSelectedTagId("");
-  };
-
   const filterPanel = (
     <FilterPanel
       search={search}
       onSearchChange={setSearch}
       categoryOptions={categoryOptions}
-      tagOptions={tagOptions}
       selectedTypeId={selectedTypeId}
-      selectedTagId={selectedTagId}
-      onTypeChange={handleTypeChange}
-      onTagChange={setSelectedTagId}
+      onTypeChange={setSelectedTypeId}
     />
   );
 
@@ -268,7 +205,6 @@ export default function IPPlazaPage() {
                   type="button"
                   onClick={() => {
                     setSelectedTypeId("");
-                    setSelectedTagId("");
                     setSearch("");
                   }}
                   className="mt-3 text-xs text-primary hover:underline"

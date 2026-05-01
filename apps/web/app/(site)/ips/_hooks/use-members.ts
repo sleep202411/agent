@@ -2,14 +2,13 @@
  * Project team — list / add / remove members.
  *
  *   - `useProjectMembers`  — GET  /project/ip/member/list?projectId=
- *   - `useAddMember`       — POST /project/ip/member/add (form: projectId, userId, role, remark)
+ *   - `useAddMember`       — POST /project/ip/member/add/email (query: emial, projectId, role, remark)
  *   - `useRemoveMember`    — POST /project/ip/member/remove (form: projectId, userId)
  *
- * The backend identifies a teammate by **`userId`** (int64), not by
- * email / name — so the add flow is a two-step picker: the dialog calls
- * `/user/list/user/info` to find a real user, then submits with role
- * (`Role.MEMBER` = 0 / `Role.ADMIN` = 8 by convention) and a free-form
- * `remark` (visible to the team).
+ * Backend collapsed the previous `userId`-based add into an email-based
+ * one (and the `emial` query-param typo is theirs, not ours). The dialog
+ * still does an email → user lookup so we can preview who's about to be
+ * added, but the submit only needs the raw email.
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -81,19 +80,31 @@ export function useProjectMembers(id: string) {
 
 interface AddMemberInput {
   projectId: number;
-  userId: number;
+  email: string;
   role: number;
   remark?: string;
 }
 
 async function addMember(input: AddMemberInput): Promise<void> {
-  const data: Record<string, string> = {
+  const qs = new URLSearchParams({
+    emial: input.email,
     projectId: String(input.projectId),
-    userId: String(input.userId),
     role: String(input.role),
-  };
-  if (input.remark) data.remark = input.remark;
-  await postForm<unknown>("/project/ip/member/add", data);
+  });
+  if (input.remark) qs.set("remark", input.remark);
+  const res = await fetch(`/project/ip/member/add/email?${qs.toString()}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "accept-language": acceptLanguage(),
+      Authorization: bearerHeader(),
+    },
+  });
+  if (!res.ok) throw new Error(`Add member failed: HTTP ${res.status}`);
+  const json = (await res.json()) as { code: number; msg?: string };
+  if (json.code !== 0 && json.code !== 200) {
+    throw new Error(json.msg || "Add member failed");
+  }
 }
 
 export function useAddMember() {

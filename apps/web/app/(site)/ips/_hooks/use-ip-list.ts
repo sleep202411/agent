@@ -106,14 +106,20 @@ export function useIPList(params?: {
 
 // ─── /vedio/project/type/list, /vedio/type/tag/list ────
 
+/**
+ * `/vedio/type/list` returns `{ code, data: { [id]: name } }` — same
+ * `id → name` object map shape as `/vedio/type/tag/list` `all`. We
+ * flatten to `{ id, name }[]` so the filter rail can iterate naturally.
+ */
 async function fetchTypeList(): Promise<IPType[]> {
-  const res = await fetch("/vedio/project/type/list", {
+  const res = await fetch("/vedio/type/list", {
     credentials: "include",
     headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
   });
   if (!res.ok) return [];
-  const json = (await res.json()) as { code: number; data: IPType[] };
-  return Array.isArray(json.data) ? json.data : [];
+  const json = (await res.json()) as { code: number; data?: Record<string, string> };
+  const data = json.data ?? {};
+  return Object.entries(data).map(([id, name]) => ({ id: Number(id), name }));
 }
 
 /**
