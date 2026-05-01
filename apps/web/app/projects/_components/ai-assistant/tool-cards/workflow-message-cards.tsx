@@ -633,6 +633,17 @@ export function WorkflowFailedCard({
   const label = t(`workflowPhase.${output.terminalStatus}`);
   const workflowLabelText = t(WORKFLOW_LABEL_KEYS[output.workflowName] ?? "workflowGeneric");
 
+  // Tone the card down when it's a cancellation: cancellations are usually
+  // user- or supervisor-initiated (e.g., "重新拆解" triggers a cancel +
+  // re-dispatch internally), not real errors. Keep destructive red for
+  // genuine `failed` status so true LLM/network failures still stand out.
+  const isCancelled = output.terminalStatus === "cancelled";
+  const labelTone = isCancelled ? "text-muted-foreground" : "text-destructive/90";
+  const bodyTone = isCancelled ? "text-muted-foreground/80" : "text-destructive/80";
+  const copyBtnTone = isCancelled
+    ? "text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground/80"
+    : "text-destructive/60 hover:bg-destructive/10 hover:text-destructive/80";
+
   const handleRetry = () => {
     if (!projectId || !output.workflowName || !isActive) return;
     void dispatch(
@@ -661,9 +672,9 @@ export function WorkflowFailedCard({
 
   return (
     <div className="w-full text-[13px]">
-      <div className="font-semibold text-destructive/90">{label}</div>
+      <div className={cn("font-semibold", labelTone)}>{label}</div>
       <div
-        className="mt-1 flex items-start gap-1.5 text-[12px] text-destructive/80"
+        className={cn("mt-1 flex items-start gap-1.5 text-[12px]", bodyTone)}
         title={output.error}
       >
         <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
@@ -672,7 +683,7 @@ export function WorkflowFailedCard({
           <button
             type="button"
             onClick={copyError}
-            className="mt-0.5 shrink-0 rounded p-0.5 text-destructive/60 hover:bg-destructive/10 hover:text-destructive/80"
+            className={cn("mt-0.5 shrink-0 rounded p-0.5", copyBtnTone)}
             title={tc("copyError")}
           >
             <IconCopy className="size-3" />
