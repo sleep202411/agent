@@ -42,6 +42,7 @@ import {
   WORKFLOW_PERSONA,
 } from "./workflow-shared";
 import type { AssistantToolInvocation } from "@/src/lib/assistant/assistant-types";
+import { readMostRecentProjectParam } from "@/src/lib/assistant/assistant-types";
 import type { Draft, WorkflowName } from "@/src/lib/workflow/workflow-client";
 import type {
   WorkflowCompletedOutput,
@@ -171,6 +172,26 @@ function ProgressBar({
       />
     </div>
   );
+}
+
+// ─── workflow_queued (mutates in place as queue advances) ─────────────
+
+/**
+ * Queued-card render is intentionally a no-op. Queue depth is transient
+ * state, not history — the chat persists `tool-workflow_queued` parts in
+ * Redis so reload can derive the queue without a server round-trip, but
+ * we surface that derivation through the composer pill (see
+ * `selectQueuedRuns` + `ChatComposer.WorkingPill`), not as N stacked
+ * cards. The `ai-assistant-panel.tsx` filter drops messages whose only
+ * content is a queued part so the chat doesn't even render an empty
+ * persona-pill bubble for them; this null return is a defensive
+ * fallback for any path that bypasses the panel-level filter.
+ *
+ * The component name + export survive so any saved chat history with
+ * stale renderer references still resolves.
+ */
+export function WorkflowQueuedCard(_props: { part: AssistantToolInvocation; isActive: boolean }) {
+  return null;
 }
 
 // ─── workflow_progress (mutates in place) ─────────────────────────────
@@ -314,6 +335,13 @@ export function WorkflowSuspendedCard({
 
   const [actionBusy, setActionBusy] = useState<null | "accept" | "revise">(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // parse_script-only: when the project already has episodes from a
+  // prior run, the suspend payload reports `existingEpisodeCount > 0`
+  // and we surface a toggle. Default mode is "append" (legacy behaviour
+  // / safer for partial test data); user picks "replace" only when they
+  // want to wipe stale episodes from earlier experiments.
+  const existingEpisodeCount = output.existingEpisodeCount ?? 0;
+  const [replaceExisting, setReplaceExisting] = useState(false);
   // Synchronous re-entry guard. `actionBusy` is useState and its update
   // isn't observable inside the same render pass, so a fast double-click
   // would slip through the `if (actionBusy) return` check and dispatch
@@ -342,6 +370,7 @@ export function WorkflowSuspendedCard({
           runId,
           userLabel: formatAcceptUserLabel(output, t),
           approved: true,
+          ...(existingEpisodeCount > 0 ? { replaceExisting } : {}),
         })
       );
     } catch (e) {
@@ -397,6 +426,48 @@ export function WorkflowSuspendedCard({
         tone="amber"
       />
       {drafts.length > 0 && <DraftSummary drafts={drafts} t={t} />}
+      {existingEpisodeCount > 0 && (
+        <div className="mt-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-[12px]">
+          <div className="font-medium text-foreground/85">
+            {t("parseScriptExistingTitle", { count: existingEpisodeCount })}
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            {t("parseScriptExistingHint")}
+          </p>
+          <div className="mt-2 flex flex-col gap-1.5">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name={`parse-script-mode-${runId}`}
+                checked={!replaceExisting}
+                onChange={() => setReplaceExisting(false)}
+                disabled={actionBusy !== null || !isActive}
+                className="mt-0.5"
+              />
+              <span className="text-foreground/85">
+                {t("parseScriptModeAppend")}
+                <span className="ml-1 text-muted-foreground">{t("parseScriptModeAppendHint")}</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name={`parse-script-mode-${runId}`}
+                checked={replaceExisting}
+                onChange={() => setReplaceExisting(true)}
+                disabled={actionBusy !== null || !isActive}
+                className="mt-0.5"
+              />
+              <span className="text-foreground/85">
+                {t("parseScriptModeReplace")}
+                <span className="ml-1 text-muted-foreground">
+                  {t("parseScriptModeReplaceHint", { count: existingEpisodeCount })}
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
       <div className="mt-3 flex flex-col gap-2">
         <div className="text-[13px] font-medium text-foreground/90">
           {t("workflowConfirmPrompt")}
@@ -441,7 +512,12 @@ export function WorkflowCompletedCard({
     projectId ? (s.project.instances[projectId]?.worldId ?? null) : null
   );
   const targetEpisodeCount = useAppSelector((s) =>
-    projectId ? s.project.instances[projectId]?.detail?.targetEpisodeCount : undefined
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "targetEpisodeCount"
+        )
+      : undefined
   );
   useSyncActiveWorkflow(isActive, output.runId, output.workflowName, "completed");
   // See suspended card: useState isn't synchronous, so a double-click
@@ -619,8 +695,30 @@ export function WorkflowFailedCard({
     projectId ? (s.project.instances[projectId]?.worldId ?? null) : null
   );
   const targetEpisodeCount = useAppSelector((s) =>
-    projectId ? s.project.instances[projectId]?.detail?.targetEpisodeCount : undefined
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "targetEpisodeCount"
+        )
+      : undefined
   );
+  // Read the project's currently-tracked active workflow so we can guard
+  // the retry button. When a user clicks "重新拆解" / similar, the
+  // supervisor often runs cancel_workflow on the old run + invoke_workflow
+  // on a fresh run as a single semantic action; the cancelled-card from
+  // the old run lingers in chat history with its retry button armed. If
+  // the user clicks Retry there, we'd happily fire run #3 *concurrently*
+  // with the supervisor's already-in-flight run #2 — burning LLM tokens
+  // for a result no one will see and racing draft writes against each
+  // other in Java. Disable the button (and short-circuit the handler)
+  // whenever a queued/running successor exists for this project.
+  const activeWorkflow = useAppSelector((s) =>
+    projectId ? s.assistant.projects[projectId]?.activeWorkflow : null
+  );
+  const hasInFlightSuccessor =
+    !!activeWorkflow &&
+    activeWorkflow.runId !== output.runId &&
+    (activeWorkflow.status === "queued" || activeWorkflow.status === "running");
   useSyncActiveWorkflow(
     isActive,
     output.runId,
@@ -630,11 +728,46 @@ export function WorkflowFailedCard({
 
   if (!output.workflowName || !output.terminalStatus) return null;
 
+  // Suppress orphan cancellation cards entirely when a successor for the
+  // same project is already in flight. Real-world trigger: user clicks
+  // "重新拆解" / similar, the supervisor cancels run #1 and immediately
+  // dispatches run #2; the cancellation event for #1 lands in chat
+  // history *after* the new "Start Workflow" message because both are
+  // ordered by emit time. Visually it looks like run #2 was cancelled,
+  // which is exactly the confusion users reported. The supervisor's
+  // own narration ("已取消上一次任务，重新拆解") already explains the
+  // hand-off, so dropping the dead-end card is lossless.
+  //
+  // Genuine `failed` cards are NEVER suppressed — those carry actionable
+  // error info and the retryable / non-retryable affordances. Only
+  // `cancelled` shadowed by a successor disappears.
+  if (output.terminalStatus === "cancelled" && hasInFlightSuccessor) return null;
+
   const label = t(`workflowPhase.${output.terminalStatus}`);
   const workflowLabelText = t(WORKFLOW_LABEL_KEYS[output.workflowName] ?? "workflowGeneric");
 
+  // Soft tone across both terminal-not-OK states. Stacked red cards
+  // were noisy when stale runs piled up. Now: label + body sit at
+  // muted-foreground (legible but not alarming), and a small icon
+  // tint differentiates cancelled (gray) vs failed (amber) — enough
+  // to distinguish at a glance without shouting. Error text stays at
+  // foreground/85 so debugging copy is fully readable.
+  const isCancelled = output.terminalStatus === "cancelled";
+  const labelTone = "text-foreground/80";
+  const bodyTone = "text-muted-foreground";
+  const errorTextTone = "text-foreground/85";
+  const iconTone = isCancelled ? "text-muted-foreground/60" : "text-amber-500/70";
+  const copyBtnTone = "text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground/80";
+
   const handleRetry = () => {
     if (!projectId || !output.workflowName || !isActive) return;
+    if (hasInFlightSuccessor) {
+      // Defensive: should be impossible because the button is also
+      // disabled in this state, but guard the dispatch path so a
+      // double-click / stale state can't slip a duplicate run through.
+      toast.info(t("workflowHintRetryHasSuccessor"));
+      return;
+    }
     void dispatch(
       startWorkflowFromButton({
         projectId,
@@ -661,30 +794,45 @@ export function WorkflowFailedCard({
 
   return (
     <div className="w-full text-[13px]">
-      <div className="font-semibold text-destructive/90">{label}</div>
+      <div className={cn("font-semibold", labelTone)}>{label}</div>
       <div
-        className="mt-1 flex items-start gap-1.5 text-[12px] text-destructive/80"
+        className={cn("mt-1 flex items-start gap-1.5 text-[12px]", bodyTone)}
         title={output.error}
       >
-        <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-        <span className="flex-1">{output.error || label}</span>
+        <IconAlertCircle className={cn("mt-0.5 size-3.5 shrink-0", iconTone)} />
+        <span className={cn("flex-1", errorTextTone)}>{output.error || label}</span>
         {output.error && (
           <button
             type="button"
             onClick={copyError}
-            className="mt-0.5 shrink-0 rounded p-0.5 text-destructive/60 hover:bg-destructive/10 hover:text-destructive/80"
+            className={cn("mt-0.5 shrink-0 rounded p-0.5", copyBtnTone)}
             title={tc("copyError")}
           >
             <IconCopy className="size-3" />
           </button>
         )}
       </div>
+      {/* Soft next-step hint. Picks copy by terminal status + retryability:
+          cancelled → "feel free to start again"; failed retryable → "click
+          Retry below or send a new message"; failed non-retryable (e.g.
+          schema validation) → "Retry won't help, please send a new
+          message". Keeps the user moving forward instead of staring at
+          a bare error string. */}
+      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground/80">
+        {hasInFlightSuccessor
+          ? t("workflowHintRetryHasSuccessor")
+          : isCancelled
+            ? t("workflowHintCancelled")
+            : output.retryable
+              ? t("workflowHintFailedRetryable")
+              : t("workflowHintFailedNonRetryable")}
+      </p>
       {output.retryable && (
         <div className="mt-3">
           <ActionButton
             variant="secondary"
             onClick={handleRetry}
-            disabled={!projectId || !isActive}
+            disabled={!projectId || !isActive || hasInFlightSuccessor}
             icon={<IconRefresh className="size-4" />}
           >
             {t("workflowActionRetry")}

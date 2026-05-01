@@ -89,11 +89,21 @@ const ResumeSchema = z.object({
   approved: z.boolean(),
   feedback: z.string().optional(),
   acceptedClientRefIds: z.array(z.string()).optional(),
+  /**
+   * When true, apply_decision deletes the project's existing episodes
+   * (and their downstream scripts/storyboards as Java cascades) before
+   * persisting this batch. Surfaced via the HITL card's "替换 / 追加"
+   * toggle, populated only when the suspend payload reported a non-
+   * zero `existingEpisodeCount`.
+   */
+  replaceExisting: z.boolean().optional(),
 });
 
 const SuspendSchema = z.object({
   runId: z.string(),
   episodeCount: z.number(),
+  /** Echoed for the HITL UI so the toggle binds without an extra fetch. */
+  existingEpisodeCount: z.number().optional(),
   phase: z.literal("parse_script"),
 });
 
@@ -150,15 +160,46 @@ const splitStep = createStep({
       .filter(Boolean)
       .join("\n");
 
-    const response = await splitter.generate(prompt, {
-      structuredOutput: {
-        schema: z.object({ episodes: z.array(SplitEntry) }),
-        errorStrategy: "strict",
-      },
-    });
+    const personaProvider = process.env.STORYOS_PERSONA_PROVIDER ?? "(unset)";
+    const personaModel = process.env.STORYOS_PERSONA_MODEL ?? "(default)";
+    console.log(
+      `[parse-script] split.start runId=${runId} provider=${personaProvider} model=${personaModel} promptChars=${prompt.length} totalLines=${totalLines} target=${inputData.targetEpisodeCount}`
+    );
+
+    let response;
+    try {
+      response = await splitter.generate(prompt, {
+        structuredOutput: {
+          schema: z.object({ episodes: z.array(SplitEntry) }),
+          errorStrategy: "strict",
+        },
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      const cause =
+        err instanceof Error && (err as { cause?: unknown }).cause
+          ? JSON.stringify((err as { cause?: unknown }).cause, null, 2).slice(0, 800)
+          : undefined;
+      console.error(
+        `[parse-script] split.LLM_FAILED runId=${runId} provider=${personaProvider} model=${personaModel} → ${detail}`
+      );
+      if (cause) console.error(`[parse-script] split.LLM_FAILED cause: ${cause}`);
+      if (stack) console.error(`[parse-script] split.LLM_FAILED stack:\n${stack}`);
+      throw err;
+    }
+
     const rawEpisodes =
       (response.object as { episodes?: z.infer<typeof SplitEntry>[] } | undefined)?.episodes ?? [];
+    console.log(
+      `[parse-script] split.LLM_OK runId=${runId} returnedEpisodes=${rawEpisodes.length} sampleTitle=${JSON.stringify(rawEpisodes[0]?.title ?? "")}`
+    );
     if (rawEpisodes.length === 0) {
+      console.error(
+        `[parse-script] split.NO_EPISODES runId=${runId} response.text=${JSON.stringify(
+          (response as { text?: string }).text?.slice(0, 500) ?? "(no .text)"
+        )}`
+      );
       throw new Error("scriptSplitter returned no episodes");
     }
 
@@ -277,6 +318,26 @@ const waitConfirmationStep = createStep({
         entityType: "episode",
         statuses: ["pending"],
       });
+      // Query Java for the project's current episode count so the HITL
+      // card can offer an append-vs-replace toggle. Test sessions tend
+      // to accumulate stale episodes from earlier parse_script runs;
+      // without surfacing the count, users have no way to clear them
+      // beyond manually deleting episode-by-episode in the studio.
+      // Soft-fail: a Java hiccup just hides the toggle (UI defaults to
+      // append, which is the legacy behaviour).
+      let existingEpisodeCount = 0;
+      try {
+        const listed = await javaRequest<{ list?: Array<{ id: string | number }> }>(
+          ctx,
+          "/api/user/world/list/episode",
+          { data: { productId: ctx.projectId, page: 1, pageSize: 999 } }
+        );
+        existingEpisodeCount = (listed.list ?? []).length;
+      } catch (err) {
+        console.warn(
+          `[parse-script] existing episode count lookup failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
       // No nextAction — after approval parse_script's completion emits a
       // 2-option nextSteps card (full-asset path vs straight-to-storyboard)
       // for the user to pick downstream. The suspended card button should
@@ -296,10 +357,12 @@ const waitConfirmationStep = createStep({
         ],
         totalDraftCount: drafts.length,
         estimatedCost: drafts.length * PRICES.parseScriptPerEpisode,
+        ...(existingEpisodeCount > 0 ? { existingEpisodeCount } : {}),
       });
       return await suspend({
         runId,
         episodeCount: inputData.draftCount,
+        existingEpisodeCount,
         phase: "parse_script" as const,
       });
     }
@@ -373,6 +436,7 @@ const applyDecisionStep = createStep({
     approved: z.boolean(),
     feedback: z.string().optional(),
     acceptedClientRefIds: z.array(z.string()).optional(),
+    replaceExisting: z.boolean().optional(),
   }),
   outputSchema: ParseScriptOutputSchema,
   stateSchema: StateSchema,
@@ -424,6 +488,72 @@ const applyDecisionStep = createStep({
       .sort((a, b) => a.data.sortHint - b.data.sortHint);
 
     for (const it of accepts) await markDraftCommitting(runId, it.clientRefId);
+
+    // ── Phase A0 (optional): wipe existing episodes when user opted in ──
+    // Triggered from the HITL card's "替换" toggle (vs the default
+    // "追加"). We delete every existing episode before the upsert so
+    // the project ends with exactly the new batch. Soft-fails per
+    // record: a Java hiccup on one delete doesn't cascade — the new
+    // batch still upserts and the user gets an explanatory warning
+    // line in the workflow's progress label. Java's downstream
+    // tables (scripts / storyboards / shots) cascade-delete with the
+    // episode, so this fully clears the old run.
+    if (inputData.replaceExisting) {
+      try {
+        const listed = await javaRequest<{ list?: Array<{ id: string | number }> }>(
+          ctx,
+          "/api/user/world/list/episode",
+          { data: { productId: projectId, page: 1, pageSize: 999 } }
+        );
+        const ids = (listed.list ?? []).map((e) => String(e.id)).filter(Boolean);
+        const totalToDelete = ids.length;
+        if (totalToDelete > 0) {
+          const wipeLabel = `Replacing existing episodes: 0/${totalToDelete}`;
+          await reportProgress(runId, {
+            stepId: "parse_script.commit.wipe",
+            current: 0,
+            total: totalToDelete,
+            label: wipeLabel,
+          });
+          await publishWorkflowProgress(ctx.projectId, runId, "parse_script", "committing", {
+            current: 0,
+            total: totalToDelete,
+            label: wipeLabel,
+          });
+          let wiped = 0;
+          let wipeFailed = 0;
+          for (const epId of ids) {
+            try {
+              await javaRequest<unknown>(
+                ctx,
+                `/api/user/world/delete/episode?id=${encodeURIComponent(epId)}`
+              );
+              wiped += 1;
+            } catch (err) {
+              wipeFailed += 1;
+              console.warn(
+                `[parse-script] replaceExisting: delete episode ${epId} failed: ${err instanceof Error ? err.message : String(err)}`
+              );
+            }
+            await publishWorkflowProgress(ctx.projectId, runId, "parse_script", "committing", {
+              current: wiped + wipeFailed,
+              total: totalToDelete,
+              label: `Replacing existing episodes: ${wiped + wipeFailed}/${totalToDelete}`,
+            });
+          }
+          console.log(
+            `[parse-script] replaceExisting: wiped ${wiped}/${totalToDelete} (failed=${wipeFailed})`
+          );
+        }
+      } catch (err) {
+        // Listing failed — skip wipe, proceed with append (safer
+        // default than aborting the whole commit). Surface in logs
+        // so the divergence from user intent is auditable.
+        console.warn(
+          `[parse-script] replaceExisting: list lookup failed, falling back to append: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
 
     // ── Phase A: batch upsert episode metadata ──
     const episodeStartLabel = `Saving metadata for ${accepts.length} episodes…`;

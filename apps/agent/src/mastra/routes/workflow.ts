@@ -14,7 +14,7 @@ import { HTTPException } from "hono/http-exception";
 import { ConfirmRequestSchema } from "@repo/shared/workflow";
 import { getDraft, listDrafts, patchDraft } from "../lib/drafts";
 import { cancelWorkflow, resumeWorkflow, startWorkflow } from "../workflows/engine";
-import { getMeta } from "../workflows/engine/state";
+import { getMeta, recordHeartbeat } from "../workflows/engine/state";
 import { resolveAttachmentRefs } from "../lib/attachment-resolve";
 import { WORKFLOW_NAMES, type WorkflowName } from "../lib/redis-keys";
 import type { StoryosContext } from "../lib/workspace-client";
@@ -135,6 +135,32 @@ export const workflowRoutes = [
     },
   }),
 
+  // ─── POST /workflow/:runId/heartbeat ──────────────────────────────
+  // Light-weight liveness ping from the web client. Stamps
+  // `lastHeartbeatAt` on the run's meta. The reaper reads this on
+  // each tick and cancels runs whose client has stopped pinging
+  // (page closed / tab hidden / connection died) — releasing the
+  // worker slot for the next user. Body is ignored; trust the URL
+  // parameter and the upstream auth context.
+  //
+  // Designed to be called every 10s while the chat is open. Any
+  // failure (Redis transient error, run already terminal) is a
+  // silent 200 — the client doesn't act on heartbeat results, so
+  // surfacing transport errors would only generate user-visible
+  // noise for an internal bookkeeping concern.
+  registerApiRoute("/workflow/:runId/heartbeat", {
+    method: "POST",
+    handler: async (c) => {
+      const runId = c.req.param("runId");
+      try {
+        await recordHeartbeat(runId);
+      } catch {
+        /* swallow — see route comment */
+      }
+      return c.json({ ok: true });
+    },
+  }),
+
   // ─── POST /workflow/:runId/confirm ────────────────────────────────
   // HITL approval button. Routes based on which phase the run belongs to:
   //   - Post-Stage-C phases (scene_phase, …) → call the phase's apply
@@ -194,6 +220,10 @@ export const workflowRoutes = [
           approved: body.approved,
           feedback: body.feedback,
           acceptedClientRefIds: body.acceptedClientRefIds,
+          // parse_script-only opt-in to wipe existing episodes before
+          // commit. Forwarded as part of resumeData so wait_confirmation
+          // returns it downstream into apply_decision.
+          ...(body.replaceExisting !== undefined ? { replaceExisting: body.replaceExisting } : {}),
         },
         ctx,
       });

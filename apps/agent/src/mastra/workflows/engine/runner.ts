@@ -16,7 +16,7 @@ import {
   setStatus,
 } from "./state";
 import { getQueue } from "./queue";
-import { publishWorkflowFailed } from "../../lib/workflow-messages";
+import { broadcastQueuePositions, publishWorkflowFailed } from "../../lib/workflow-messages";
 import type { ResumeJobData, RunJobData, WorkflowMeta } from "./types";
 
 export async function startWorkflow(input: {
@@ -34,6 +34,11 @@ export async function startWorkflow(input: {
     status: "queued",
     startedAt: now,
     updatedAt: now,
+    // Seed heartbeat so the reaper grants the full grace window before
+    // considering this run abandoned. Without this, a fresh run could be
+    // reaped on the very first reaper tick if the client's first
+    // heartbeat hasn't landed yet.
+    lastHeartbeatAt: now,
   };
   await putMeta(meta);
 
@@ -45,6 +50,20 @@ export async function startWorkflow(input: {
   };
   // BullMQ rejects `:` in custom job ids, so we use `-` as the separator.
   await getQueue().add("run", jobData, { jobId: `run-${runId}` });
+
+  // Re-broadcast queue positions so the brand-new run gets its initial
+  // queued card, and any older waiting runs see their position field
+  // refreshed if anything shifted. Best-effort — broadcastQueuePositions
+  // swallows per-publish failures internally; an outer guard here keeps
+  // dispatch atomic if the broadcast layer itself goes sideways.
+  try {
+    await broadcastQueuePositions();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[runner] broadcastQueuePositions on dispatch failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 
   return { runId };
 }
@@ -99,6 +118,35 @@ export async function cancelWorkflow(runId: string): Promise<void> {
   await requestCancel(runId);
   await setStatus(runId, "cancelled");
 
+  // Drop the run's BullMQ job if it's still waiting — otherwise the queue
+  // depth (and every other queued run's `position`) stays inflated until
+  // the worker eventually picks it up and the workflow's first
+  // throwIfCancelled finalizes it. Active jobs are left to terminate
+  // cooperatively via requestCancel (yanking an active job mid-run
+  // skips its cleanup hooks). Resume jobs use a different jobId pattern
+  // (`resume-{runId}-{ts}`); covered by the waiting-list scan below.
+  try {
+    const queue = getQueue();
+    const initial = await queue.getJob(`run-${runId}`);
+    if (initial) {
+      const state = await initial.getState();
+      if (state === "waiting" || state === "delayed") {
+        await initial.remove();
+      }
+    }
+    const waiting = await queue.getWaiting();
+    for (const job of waiting) {
+      const id = String(job.id ?? "");
+      if (!id.startsWith("resume-")) continue;
+      const data = job.data as { runId?: string } | undefined;
+      if (data?.runId === runId) await job.remove();
+    }
+  } catch (err) {
+    console.warn(
+      `[runner] failed to remove BullMQ job(s) for cancelled ${runId}: ${err instanceof Error ? err.message : err}`
+    );
+  }
+
   // Publish workflow_failed chat message immediately so the frontend's
   // composer pill can clear right away. The worker's later
   // finalizeCancelled (when throwIfCancelled fires mid-run) will publish
@@ -113,6 +161,17 @@ export async function cancelWorkflow(runId: string): Promise<void> {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`[runner] publishWorkflowFailed(cancelled) failed for ${runId}:`, err);
+  }
+
+  // Re-broadcast positions so every still-queued run's card decrements.
+  // Without this, cancelling run #2 leaves run #3..N showing their
+  // original positions until the next dispatch / completion event.
+  try {
+    await broadcastQueuePositions();
+  } catch (err) {
+    console.warn(
+      `[runner] broadcastQueuePositions on cancel failed: ${err instanceof Error ? err.message : err}`
+    );
   }
 }
 

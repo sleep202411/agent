@@ -143,6 +143,7 @@ import {
   WorkflowCompletedCard,
   WorkflowFailedCard,
   WorkflowProgressCard,
+  WorkflowQueuedCard,
   WorkflowSuspendedCard,
 } from "./tool-cards/workflow-message-cards";
 import { ToolRequireParamsCard } from "./tool-cards/tool-require-params-card";
@@ -510,6 +511,15 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 // Each phase transition = a separate assistant message, so
                 // these render as independent cards and only the current
                 // one mutates (via message_updated) as it progresses.
+                if (toolName === "workflow_queued") {
+                  return (
+                    <WorkflowQueuedCard
+                      key={`${message.id}-${part.toolCallId}-wf-queued`}
+                      part={part}
+                      isActive={!!isLastAssistant}
+                    />
+                  );
+                }
                 if (toolName === "workflow_progress") {
                   return (
                     <WorkflowProgressCard

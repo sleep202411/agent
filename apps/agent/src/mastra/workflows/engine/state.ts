@@ -65,6 +65,25 @@ export async function setStatus(
   return patchMeta(runId, { status, ...completed, ...extras });
 }
 
+// ─── Heartbeat ──────────────────────────────────────────────────────────
+//
+// Frontend pings periodically while the user has the chat open. Reaper
+// scans queued/running runs and cancels any whose lastHeartbeatAt is
+// older than HEARTBEAT_GRACE_MS — releasing the worker slot for the
+// next user.
+//
+// Stored as a single field on WorkflowMeta (not a separate Redis key)
+// because it must be transactionally visible alongside status — reaper
+// reads {status, lastHeartbeatAt} and decides to cancel; mixing two
+// keys would race against status transitions.
+
+export async function recordHeartbeat(runId: string, ts: number = Date.now()): Promise<void> {
+  // Cheap: patchMeta only writes if meta exists; if the run already
+  // terminated (completed/failed/cancelled) the heartbeat is a noop —
+  // the merged.completedAt won't be touched by `patchMeta` overlay.
+  await patchMeta(runId, { lastHeartbeatAt: ts });
+}
+
 // ─── Cancel flag ────────────────────────────────────────────────────────
 
 /** Call from HTTP handler to request cancellation. Worker picks up via isCancelled(). */

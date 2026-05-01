@@ -58,6 +58,9 @@ export function NewsList({ articles }: { articles: NewsItem[] }) {
               {t("subscribe")}
             </button>
           </form>
+          <p className="mx-auto mt-3 max-w-md text-xs text-muted-foreground/70">
+            {t("subscribeSocialProof")}
+          </p>
         </header>
 
         {articles.length === 0 ? (

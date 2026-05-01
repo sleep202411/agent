@@ -364,7 +364,7 @@ function raceWithTimeout<T>(fn: () => PromiseLike<T>, timeoutMs: number): Promis
   });
 }
 
-function requestTimeoutMiddleware(timeoutMs: number): LanguageModelV3Middleware {
+export function requestTimeoutMiddleware(timeoutMs: number): LanguageModelV3Middleware {
   return {
     specificationVersion: "v3",
     wrapGenerate: async ({ doGenerate }) => raceWithTimeout(doGenerate, timeoutMs),
@@ -562,6 +562,7 @@ export interface HardeningStats {
 }
 
 let sharedConfig: Required<HardenConfig> | null = null;
+let hardeningInitLogged = false;
 
 export function getHardeningStats(): HardeningStats | null {
   if (!sharedLimiter || !sharedBreaker || !sharedFallbackCounter || !sharedConfig) {
@@ -595,14 +596,22 @@ export function hardenRouterModel(
   const { limiter, breaker, counter } = getSharedState(merged);
   const log = makeLogger();
 
-  log.info(
-    `claude hardening: concurrency=${merged.maxConcurrency} ` +
-      `queueTimeout=${merged.queueTimeoutMs}ms maxDepth=${merged.queueMaxDepth} ` +
-      `circuitThreshold=${merged.circuitFailureThreshold} ` +
-      `cooldown=${merged.circuitCooldownMs}ms ` +
-      `requestTimeout=${merged.requestTimeoutMs}ms ` +
-      `fallback=${fallback.provider}/${fallback.modelId}`
-  );
+  // Each agent (supervisor + ~5 personas) wraps its model on every
+  // instantiation, so this factory fires dozens of times per request
+  // path. Log the init line once per process — subsequent calls
+  // reuse the same shared limiter / breaker / counter via
+  // getSharedState, so re-printing identical config is pure noise.
+  if (!hardeningInitLogged) {
+    log.info(
+      `init: concurrency=${merged.maxConcurrency} ` +
+        `queueTimeout=${merged.queueTimeoutMs}ms maxDepth=${merged.queueMaxDepth} ` +
+        `circuitThreshold=${merged.circuitFailureThreshold} ` +
+        `cooldown=${merged.circuitCooldownMs}ms ` +
+        `requestTimeout=${merged.requestTimeoutMs}ms ` +
+        `fallback=${fallback.provider}/${fallback.modelId}`
+    );
+    hardeningInitLogged = true;
+  }
 
   return wrapLanguageModel({
     model: primary,

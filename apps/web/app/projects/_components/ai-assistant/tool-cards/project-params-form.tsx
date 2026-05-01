@@ -12,6 +12,7 @@ import type { ConfirmProjectParamsPayload } from "@/src/lib/assistant/assistant-
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import type { ProjectDictionaries } from "@/src/types/workspace";
+import { readMostRecentProjectParam } from "@/src/lib/assistant/assistant-types";
 
 const DIALOG_LANGUAGE_OPTIONS: Array<{ value: string; labelKey: string }> = [
   { value: "zh-CN", labelKey: "paramsDialogLanguageSimplifiedChinese" },
@@ -38,105 +39,31 @@ function getAspectPreview(label: string): { w: number; h: number } {
   return { w: Math.round(w * scale), h: Math.round(h * scale) };
 }
 
-const EPISODE_COUNT_STORAGE_KEY = (projectId: string) => `fizzos:episode-count:${projectId}`;
-const DIALOG_LANGUAGE_STORAGE_KEY = (projectId: string) => `fizzos:dialog-language:${projectId}`;
-const SHOTS_PER_EPISODE_STORAGE_KEY = (projectId: string) =>
-  `fizzos:shots-per-episode:${projectId}`;
 const EPISODE_COUNT_MIN = 2;
 const EPISODE_COUNT_MAX = 40;
 const SHOTS_PER_EPISODE_MIN = 5;
 const SHOTS_PER_EPISODE_MAX = 60;
 const SHOTS_PER_EPISODE_DEFAULT = 20;
 
-export function loadEpisodeCount(projectId: string): number | undefined {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const raw = window.localStorage.getItem(EPISODE_COUNT_STORAGE_KEY(projectId));
-    if (!raw) return undefined;
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n < EPISODE_COUNT_MIN || n > EPISODE_COUNT_MAX) {
-      return undefined;
-    }
-    return n;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveEpisodeCount(projectId: string, value: number): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(EPISODE_COUNT_STORAGE_KEY(projectId), String(value));
-  } catch {
-    // storage quota / private mode — not fatal, just lose the value on reload
-  }
-}
-
-/**
- * Load the project's chosen dialog language (zh-CN / zh-HK / en-US). Falls
- * back to undefined if nothing's stored. Currently NOT persisted by Java —
- * ProjectParamsForm keeps the authoritative copy in localStorage so all
- * downstream workflow invocations can route the value through
- * workspaceContext.dialogLanguage.
- */
-export function loadDialogLanguage(projectId: string): string | undefined {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const raw = window.localStorage.getItem(DIALOG_LANGUAGE_STORAGE_KEY(projectId));
-    return raw && raw.length > 0 ? raw : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveDialogLanguage(projectId: string, value: string): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(DIALOG_LANGUAGE_STORAGE_KEY(projectId), value);
-  } catch {}
-}
-
-/**
- * Target number of shots per episode — used by storyboard_phase to decide
- * how many shot rows to generate per episode. localStorage-only (Java has
- * no column for it yet); threaded into storyboard_phase input via
- * workspaceContext on each invoke.
- */
-export function loadShotsPerEpisode(projectId: string): number | undefined {
-  if (typeof window === "undefined") return undefined;
-  try {
-    const raw = window.localStorage.getItem(SHOTS_PER_EPISODE_STORAGE_KEY(projectId));
-    if (!raw) return undefined;
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n < SHOTS_PER_EPISODE_MIN || n > SHOTS_PER_EPISODE_MAX) {
-      return undefined;
-    }
-    return n;
-  } catch {
-    return undefined;
-  }
-}
-
-export function saveShotsPerEpisode(projectId: string, value: number): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(SHOTS_PER_EPISODE_STORAGE_KEY(projectId), String(value));
-  } catch {}
-}
-
 /** True once aspect/length/style + episode count are all set. Mirror of
  * `isProjectParamsComplete` in `packages/shared/src/project-params.ts` — web
  * app deliberately doesn't depend on @repo/shared, so keep both in sync when
- * changing the rule. */
-export function isProjectParamsComplete(detail: ProjectDetail | null | undefined): boolean {
+ * changing the rule.
+ *
+ * `targetEpisodeCount` lives in chat history (not Java), so the caller
+ * resolves it via `readMostRecentProjectParam` and passes it in. */
+export function isProjectParamsComplete(
+  detail: ProjectDetail | null | undefined,
+  targetEpisodeCount?: number
+): boolean {
   if (!detail) return false;
   return Boolean(
     detail.aspectRatioType &&
     typeof detail.chapterLength === "number" &&
     detail.chapterLength > 0 &&
     detail.stylePainting &&
-    typeof detail.targetEpisodeCount === "number" &&
-    detail.targetEpisodeCount >= EPISODE_COUNT_MIN
+    typeof targetEpisodeCount === "number" &&
+    targetEpisodeCount >= EPISODE_COUNT_MIN
   );
 }
 
@@ -181,6 +108,34 @@ export function ProjectParamsForm({
   const t = useTranslations("ai");
   const tp = useTranslations("project");
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
+  // Initial values for the two non-Java params come from the user's most
+  // recent ProjectParamsForm submission, which lives in chat history (see
+  // confirmProjectParamsFromForm — embeds them on the tool output).
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
+  const lastTargetEpisodeCount = useAppSelector((s) =>
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "targetEpisodeCount"
+        )
+      : undefined
+  );
+  const lastShotsPerEpisode = useAppSelector((s) =>
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "shotsPerEpisode"
+        )
+      : undefined
+  );
+  const lastDialogLanguage = useAppSelector((s) =>
+    projectId
+      ? readMostRecentProjectParam(
+          s.assistant.projects[projectId]?.messages ?? [],
+          "dialogLanguage"
+        )
+      : undefined
+  );
 
   const [dictionaries, setDictionaries] = useState<ProjectDictionaries | null>(null);
   const [loadingDict, setLoadingDict] = useState(true);
@@ -198,19 +153,16 @@ export function ProjectParamsForm({
     detail?.stylePainting || suggested?.stylePainting || ""
   );
   const [dialogLanguage, setDialogLanguage] = useState(
-    detail?.dialogLanguage || suggested?.dialogLanguage || "zh-CN"
+    lastDialogLanguage || suggested?.dialogLanguage || "zh-CN"
   );
   const [episodeCount, setEpisodeCount] = useState<string>(() => {
-    if (detail?.targetEpisodeCount != null) return String(detail.targetEpisodeCount);
-    const stored = detail?.id ? loadEpisodeCount(detail.id) : undefined;
-    if (stored != null) return String(stored);
+    if (lastTargetEpisodeCount != null) return String(lastTargetEpisodeCount);
     if (suggested?.targetEpisodeCount != null) return String(suggested.targetEpisodeCount);
     return "";
   });
-  const [shotsPerEpisode, setShotsPerEpisode] = useState<string>(() => {
-    const stored = detail?.id ? loadShotsPerEpisode(detail.id) : undefined;
-    return stored != null ? String(stored) : String(SHOTS_PER_EPISODE_DEFAULT);
-  });
+  const [shotsPerEpisode, setShotsPerEpisode] = useState<string>(() =>
+    lastShotsPerEpisode != null ? String(lastShotsPerEpisode) : String(SHOTS_PER_EPISODE_DEFAULT)
+  );
 
   useEffect(() => {
     let active = true;
@@ -258,11 +210,6 @@ export function ProjectParamsForm({
     if (!canSubmit) {
       toast.error(t("paramsFormMissing"));
       return;
-    }
-    if (detail?.id) {
-      saveEpisodeCount(detail.id, episodeCountNum);
-      saveDialogLanguage(detail.id, dialogLanguage);
-      saveShotsPerEpisode(detail.id, shotsPerEpisodeNum);
     }
     onSubmitted?.({
       aspectRatioType,

@@ -29,6 +29,7 @@ import {
   getAssistantToolName,
   isAssistantInteractiveToolName,
   isAssistantToolPart,
+  readMostRecentProjectParam,
 } from "@/src/lib/assistant/assistant-types";
 import type { RootState, AppDispatch } from "@/src/store/index";
 import {
@@ -114,6 +115,39 @@ function createEmptyConversation() {
 export type AssistantConversationState = ReturnType<typeof createEmptyConversation>;
 
 const EMPTY_CONVERSATION = createEmptyConversation();
+
+/**
+ * Defense-in-depth: collapse any duplicate message-id entries in a
+ * conversation's messages array down to one (the first occurrence).
+ *
+ * Each individual reducer already finds-and-replaces by id, so the
+ * common path produces unique ids. This guard exists to absorb upstream
+ * race conditions we don't fully control:
+ *   - The backend's `wf_<runId>_<workflowName>_<status>` message publish
+ *     does a get-then-add-or-update which is non-atomic; two near-
+ *     simultaneous emitters (e.g. cancelWorkflow's immediate publish
+ *     and the worker's finalizeCancelled) can both observe "no
+ *     existing" and each emit a `message_added` event for the same id.
+ *   - Server-side history responses have, on rare occasions, returned
+ *     the same id twice when the underlying Redis read straddled a
+ *     write.
+ *
+ * Without this, React's reconciler logs "Encountered two children with
+ * the same key" warnings and falls back to position-based diffing,
+ * which can cause unstable re-mounts. The helper is O(N) and runs only
+ * on the same conversation arrays we're already producing — no extra
+ * traversal beyond the existing reducer cost.
+ */
+function dedupMessagesById<T extends { id: string }>(messages: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const m of messages) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push(m);
+  }
+  return out;
+}
 
 function isImageMime(mimeType?: string) {
   return Boolean(mimeType?.startsWith("image/"));
@@ -432,44 +466,15 @@ function buildWorkspaceContext(state: RootState, projectId: string): AssistantWo
   const inst = state.project.instances[projectId] ?? selectCurrentInstance(state);
   const videoPromptStyle = state.assistant.projects[projectId]?.videoPromptStyle ?? "default";
   const detail = inst.detail;
-  // Language + style are project-level params the user sets in
-  // ProjectParamsForm. dialogLanguage isn't persisted by Java yet — read the
-  // localStorage mirror as a fallback for reloaded sessions.
-  let dialogLanguage: string | null | undefined = detail?.dialogLanguage;
-  if (!dialogLanguage && typeof window !== "undefined") {
-    try {
-      const raw = window.localStorage.getItem(`fizzos:dialog-language:${projectId}`);
-      if (raw && raw.length > 0) dialogLanguage = raw;
-    } catch {}
-  }
-  // shotsPerEpisode — no Java column; localStorage is authoritative. Keep
-  // undefined on failure so the agent falls back to its default 15-40.
-  let shotsPerEpisode: number | undefined;
-  if (typeof window !== "undefined") {
-    try {
-      const raw = window.localStorage.getItem(`fizzos:shots-per-episode:${projectId}`);
-      if (raw) {
-        const n = Number(raw);
-        if (Number.isFinite(n) && n >= 5 && n <= 60) shotsPerEpisode = n;
-      }
-    } catch {}
-  }
-  // targetEpisodeCount — same localStorage-only story as shotsPerEpisode.
-  // Prefer the Redux projectDetail mirror (populated on form submit), fall
-  // back to localStorage for reloads where Redux was cleared.
-  let targetEpisodeCount: number | undefined =
-    typeof detail?.targetEpisodeCount === "number" && detail.targetEpisodeCount > 0
-      ? detail.targetEpisodeCount
-      : undefined;
-  if (targetEpisodeCount === undefined && typeof window !== "undefined") {
-    try {
-      const raw = window.localStorage.getItem(`fizzos:episode-count:${projectId}`);
-      if (raw) {
-        const n = Number(raw);
-        if (Number.isFinite(n) && n >= 1) targetEpisodeCount = n;
-      }
-    } catch {}
-  }
+  // dialogLanguage / shotsPerEpisode / targetEpisodeCount — Java has no
+  // column for any of them. Read the user's most recent ProjectParamsForm
+  // submission directly from chat history (embedded in the
+  // tool-require_project_params output). Single source-of-truth, no
+  // Redux/localStorage mirroring.
+  const messages = state.assistant.projects[projectId]?.messages ?? [];
+  const dialogLanguage = readMostRecentProjectParam(messages, "dialogLanguage");
+  const shotsPerEpisode = readMostRecentProjectParam(messages, "shotsPerEpisode");
+  const targetEpisodeCount = readMostRecentProjectParam(messages, "targetEpisodeCount");
   return {
     worldId: inst.worldId,
     episodeId: inst.activeEpisodeId,
@@ -908,11 +913,16 @@ export const confirmWorkflowFromButton = createAsyncThunk<
     userLabel: string;
     approved: boolean;
     feedback?: string;
+    /** parse_script-only opt-in to wipe existing episodes before this batch. */
+    replaceExisting?: boolean;
   },
   { state: RootState; dispatch: AppDispatch }
 >(
   "assistant/confirmWorkflowFromButton",
-  async ({ projectId, runId, userLabel, approved, feedback }, { dispatch, getState }) => {
+  async (
+    { projectId, runId, userLabel, approved, feedback, replaceExisting },
+    { dispatch, getState }
+  ) => {
     abortProjectStream(projectId);
     dispatch(ensureProject(projectId));
 
@@ -934,7 +944,12 @@ export const confirmWorkflowFromButton = createAsyncThunk<
         messages: nextMessages,
         workspaceContext,
         signal: abortController.signal,
-        confirmWorkflow: { runId, approved, feedback },
+        confirmWorkflow: {
+          runId,
+          approved,
+          feedback,
+          ...(replaceExisting !== undefined ? { replaceExisting } : {}),
+        },
       });
     } catch (err) {
       if (abortController.signal.aborted) return;
@@ -974,12 +989,26 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
 
     const current = getState().assistant.projects[projectId] ?? createEmptyConversation();
 
+    // Embed the user's chosen params in the tool output so chat history is
+    // the single source-of-truth for params Java doesn't persist
+    // (targetEpisodeCount, shotsPerEpisode). Workflow dispatch reads them
+    // back via readMostRecentProjectParam — no Redux/localStorage mirror.
     const messagesWithToolResult = current.messages.map((message) =>
       message.parts.some((part) => isAssistantToolPart(part) && part.toolCallId === toolCallId)
         ? cloneMessageWithToolResult(message, {
             toolCallId,
             toolName: "require_project_params",
-            output: { confirmed: true, autoConfirmed: false },
+            output: {
+              confirmed: true,
+              autoConfirmed: false,
+              ...(params.targetEpisodeCount != null
+                ? { targetEpisodeCount: params.targetEpisodeCount }
+                : {}),
+              ...(params.shotsPerEpisode != null
+                ? { shotsPerEpisode: params.shotsPerEpisode }
+                : {}),
+              ...(params.dialogLanguage ? { dialogLanguage: params.dialogLanguage } : {}),
+            },
           })
         : message
     );
@@ -993,6 +1022,10 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
 
     dispatch(commitToolResult({ projectId, messages: nextMessages, toolCallId }));
 
+    // Mirror only the Java-persisted params into Redux detail — Java owns
+    // aspectRatioType / chapterLength / stylePainting. The client-only
+    // params (targetEpisodeCount, shotsPerEpisode, dialogLanguage) live
+    // solely in chat history above.
     const projectDetail = selectCurrentInstance(getState()).detail;
     dispatch(
       setProjectDetail({
@@ -1000,13 +1033,6 @@ export const confirmProjectParamsFromForm = createAsyncThunk<
         aspectRatioType: params.aspectRatioType,
         chapterLength: params.chapterLength,
         stylePainting: params.stylePainting,
-        dialogLanguage: params.dialogLanguage,
-        // Client-side only — Java doesn't persist this yet. See
-        // project-params-form.tsx:loadEpisodeCount for the localStorage
-        // mirror that survives reload.
-        ...(params.targetEpisodeCount != null
-          ? { targetEpisodeCount: params.targetEpisodeCount }
-          : {}),
       })
     );
 
@@ -1224,10 +1250,11 @@ export const assistantSlice = createSlice({
       const { projectId, message } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
       const index = current.messages.findIndex((item) => item.id === message.id);
-      const messages =
+      const messages = dedupMessagesById(
         index >= 0
           ? current.messages.map((item, i) => (i === index ? message : item))
-          : [...current.messages, message];
+          : [...current.messages, message]
+      );
       const pendingToolUi = buildPendingToolUi(messages);
       // When an interactive tool is detected, stop showing "sending" state
       // so the tool card buttons become actionable immediately.
@@ -1336,10 +1363,11 @@ export const assistantSlice = createSlice({
     ) => {
       const { projectId, message } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
-      const messages =
+      const messages = dedupMessagesById(
         message && !current.messages.some((item) => item.id === message.id)
           ? [...current.messages, message]
-          : current.messages;
+          : current.messages
+      );
       state.projects[projectId] = {
         ...current,
         messages,
@@ -1387,12 +1415,13 @@ export const assistantSlice = createSlice({
       const incomingEmpty = messages.length === 0;
       const localHasContent = current.messages.length > 1;
       const welcomeMsg = createWelcomeMessage();
-      const nextMessages =
+      const nextMessages = dedupMessagesById(
         incomingEmpty && localHasContent
           ? current.messages
           : messages.length > 0
             ? [welcomeMsg, ...messages]
-            : [welcomeMsg];
+            : [welcomeMsg]
+      );
       state.projects[projectId] = {
         ...current,
         messages: nextMessages,
@@ -1491,3 +1520,126 @@ export const selectAssistantConversation = (
   if (!projectId) return EMPTY_CONVERSATION;
   return state.assistant.projects[projectId] ?? EMPTY_CONVERSATION;
 };
+
+/**
+ * Resolve the list of runs whose most recent lifecycle state in chat history
+ * is still `workflow_queued`. The queue depth in the composer pill, the
+ * "cancel all queued" stop button, and any future queue UI all read off
+ * this single derivation. Per-run queued cards are intentionally NOT
+ * rendered in chat (they're transient state, not history) — keeping all the
+ * queue truth in one selector means there's nothing to keep in sync between
+ * Redux state, DOM, and the WS feed.
+ *
+ * Algorithm: walk messages in arrival order, remember the latest workflow_*
+ * tool-part type seen for each runId. A runId is "still queued" iff its
+ * latest part is `tool-workflow_queued` — once a `_progress` / `_completed`
+ * / `_failed` / `_suspended` lands later for the same runId, the run has
+ * left the waiting list.
+ *
+ * O(N) over total parts; messages array is the same one already iterated by
+ * the renderer, so no extra read cost in practice. Memoize at the consumer
+ * if you need stable reference equality across re-renders.
+ */
+/**
+ * Pure derivation: given a messages list, return the runs whose most recent
+ * lifecycle state is still `workflow_queued`. Stateless + side-effect-free
+ * so callers can `useMemo([messages])` and get reference stability across
+ * renders. (A `useAppSelector` returning a freshly-allocated array per call
+ * trips React-Redux's identity warning + re-renders the pill on every
+ * dispatch — see the 1006 WS-flap incident from 2026-05-01.)
+ */
+export function deriveQueuedRuns(
+  messages: AssistantMessage[]
+): Array<{ runId: string; workflowName: WorkflowName }> {
+  // Resolve each runId's "winning" lifecycle phase by PRIORITY, not by
+  // array order. Terminal (failed/completed) beats active
+  // (progress/suspended) beats queued, regardless of which message ID
+  // happened to land first in the chat-msgs list.
+  //
+  // Why priority over arrival order: chat-publisher writes via
+  // `addOrUpdateChatMessage` which rpushes only on first SET NX success.
+  // Under racing parallel cancels (e.g. cancelAllQueuedRuns fans out N
+  // calls), one cancel's `broadcastQueuePositions` can publish a queued
+  // msg for a sibling runId AFTER that sibling's own cancelWorkflow has
+  // already published its cancelled msg — leaving the chat list with
+  // [cancelled, ..., queued] order for the same runId. Confirmed
+  // 2026-05-01 from a live debug session: 6 cancelled runIds all had
+  // lifecycle ["failed","queued"] but the runs were genuinely terminated
+  // server-side. Array-order derivation pinned the pill at "排隊中 · 6"
+  // forever.
+  const RANK: Record<string, number> = {
+    "tool-workflow_failed": 3,
+    "tool-workflow_completed": 3,
+    "tool-workflow_suspended": 2,
+    "tool-workflow_progress": 2,
+    "tool-workflow_queued": 1,
+  };
+  const winnerByRunId = new Map<string, { type: string; workflowName: string; rank: number }>();
+  for (const msg of messages) {
+    if (!Array.isArray(msg.parts)) continue;
+    for (const part of msg.parts) {
+      if (!part || typeof part !== "object") continue;
+      const p = part as {
+        type?: string;
+        output?: { runId?: string; workflowName?: string };
+      };
+      if (typeof p.type !== "string" || !p.type.startsWith("tool-workflow_")) continue;
+      const rank = RANK[p.type] ?? 0;
+      if (rank === 0) continue;
+      const runId = p.output?.runId;
+      const workflowName = p.output?.workflowName;
+      if (!runId || !workflowName) continue;
+      const existing = winnerByRunId.get(runId);
+      if (!existing || rank > existing.rank) {
+        winnerByRunId.set(runId, { type: p.type, workflowName, rank });
+      }
+    }
+  }
+  const out: Array<{ runId: string; workflowName: WorkflowName }> = [];
+  for (const [runId, info] of winnerByRunId) {
+    if (info.type === "tool-workflow_queued") {
+      out.push({ runId, workflowName: info.workflowName as WorkflowName });
+    }
+  }
+  return out;
+}
+
+/** Convenience selector — for non-component callers that don't have a
+ *  messages reference handy. Components should prefer
+ *  `useMemo(() => deriveQueuedRuns(messages), [messages])` so the resulting
+ *  array's identity is stable across renders. */
+export function selectQueuedRuns(
+  state: { assistant: AssistantStoreState },
+  projectId: string | null | undefined
+): Array<{ runId: string; workflowName: WorkflowName }> {
+  if (!projectId) return [];
+  const messages = state.assistant.projects[projectId]?.messages ?? [];
+  return deriveQueuedRuns(messages);
+}
+
+/**
+ * Cancel every run whose latest lifecycle state is queued. Used by the
+ * composer pill's stop button when there's no active running run — most
+ * users who pressed stop in that state want "stop everything I queued",
+ * not "remove just the head". Best-effort per-run: one failed cancel
+ * doesn't block the rest. Server-side cleans up BullMQ waiting list +
+ * re-broadcasts queue positions per cancel call.
+ */
+export const cancelAllQueuedRuns = createAsyncThunk<
+  void,
+  { projectId: string },
+  { state: RootState; dispatch: AppDispatch }
+>("assistant/cancelAllQueuedRuns", async ({ projectId }, { getState }) => {
+  const queued = selectQueuedRuns(getState(), projectId);
+  if (queued.length === 0) return;
+  await Promise.allSettled(
+    queued.map(({ runId }) =>
+      cancelWorkflow(runId, projectId).catch((err) => {
+        console.warn(
+          `[cancelAllQueuedRuns] cancel ${runId} failed:`,
+          err instanceof Error ? err.message : err
+        );
+      })
+    )
+  );
+});

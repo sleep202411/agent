@@ -161,3 +161,44 @@ export async function cancelWorkflow(runId: string, projectId: string): Promise<
   if (!response.ok) throw new WorkflowApiError(response.status, await readError(response));
   return (await response.json()) as { ok: true };
 }
+
+/**
+ * Liveness ping — frontend posts every ~10s while the chat is open.
+ * Backend's reaper cancels runs whose heartbeats have gone stale,
+ * freeing worker slots for the next user. Best-effort: errors are
+ * swallowed so a transient 502 / network blip doesn't trigger UI
+ * noise; the next tick will retry.
+ */
+export async function heartbeatWorkflow(runId: string, projectId: string): Promise<void> {
+  const url = `/aurora/workflow/${encodeURIComponent(runId)}/heartbeat`;
+  await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId }),
+  }).catch(() => {
+    /* heartbeat is best-effort; let the next tick retry */
+  });
+}
+
+/**
+ * Best-effort cancel emitted from `pagehide`. Uses navigator.sendBeacon
+ * (the only reliable way to fire a request as the page unloads), so
+ * the browser doesn't drop it on the floor like fetch typically does.
+ * `projectId` rides as a query param because sendBeacon's body
+ * Content-Type is unreliable across browsers.
+ */
+export function cancelWorkflowOnLeave(runId: string, projectId: string): void {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return;
+  const qs = new URLSearchParams({ projectId }).toString();
+  const url = `/aurora/workflow/${encodeURIComponent(runId)}/cancel-on-leave?${qs}`;
+  // sendBeacon needs a non-empty payload of some kind to dispatch
+  // reliably across browsers; an empty string works on most, but a
+  // Blob with type text/plain is the most portable choice.
+  const blob = new Blob([""], { type: "text/plain" });
+  try {
+    navigator.sendBeacon(url, blob);
+  } catch {
+    /* sendBeacon may throw on quota / scheme issues; nothing to do here */
+  }
+}

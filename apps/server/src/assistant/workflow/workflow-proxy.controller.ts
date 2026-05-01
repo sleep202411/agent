@@ -192,4 +192,73 @@ export class WorkflowProxyController {
       body: JSON.stringify({}),
     });
   }
+
+  // ─── Liveness heartbeat ────────────────────────────────────────────
+  // Frontend pings every ~10s while the chat is open. Stamps the
+  // run's lastHeartbeatAt; if the client stops pinging, the agent's
+  // reaper cancels the run after a grace window. Hot path — keep the
+  // controller body trivial and never throw on transient upstream
+  // hiccups (frontend doesn't act on the result either way).
+  @Post(':runId/heartbeat')
+  async heartbeat(
+    @Param('runId') runId: string,
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = String(body?.projectId ?? '');
+    if (!projectId)
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    const context = this.buildContext(user, { projectId });
+    try {
+      return await this.forward(
+        `/workflow/${encodeURIComponent(runId)}/heartbeat`,
+        {
+          method: 'POST',
+          headers: this.buildHeaders(req, context, true),
+          body: JSON.stringify({}),
+        },
+      );
+    } catch (err) {
+      // Heartbeat is best-effort: if Mastra is down for a moment, we
+      // shouldn't surface a 502 to the client (it polls every 10s, the
+      // next tick will likely succeed). Log and return ok so the
+      // client's retry loop doesn't pile up alerts.
+      this.logger.warn(
+        `[heartbeat] upstream error for runId=${runId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { ok: false };
+    }
+  }
+
+  // ─── Cancel-on-leave (sendBeacon target) ───────────────────────────
+  // Browser fires this from `pagehide` via navigator.sendBeacon when
+  // the user closes the tab / navigates away. sendBeacon's payload is
+  // a Blob (Content-Type usually defaults to text/plain when given a
+  // string), so we decouple this from the regular cancel route which
+  // expects a JSON body with projectId. Here projectId comes from the
+  // URL via a query param — sendBeacon makes that the only reliable
+  // way to pass auxiliary data without depending on body parsing.
+  //
+  // The semantics are identical to /:runId/cancel — same Mastra
+  // upstream call. We just tolerate sendBeacon's body quirks.
+  @Post(':runId/cancel-on-leave')
+  async cancelOnLeave(
+    @Param('runId') runId: string,
+    @Req() req: Request,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const projectId = String(req.query?.projectId ?? '');
+    if (!projectId)
+      throw new HttpException(
+        'projectId query param required',
+        HttpStatus.BAD_REQUEST,
+      );
+    const context = this.buildContext(user, { projectId });
+    return this.forward(`/workflow/${encodeURIComponent(runId)}/cancel`, {
+      method: 'POST',
+      headers: this.buildHeaders(req, context, true),
+      body: JSON.stringify({}),
+    });
+  }
 }

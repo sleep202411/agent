@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { IconLoader2, IconPlayerStopFilled } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppDispatch, useAppSelector } from "@/src/store";
@@ -8,9 +8,13 @@ import {
   clearActiveWorkflow,
   sendUserMessage,
   submitConfigureParams,
+  cancelAllQueuedRuns,
+  deriveQueuedRuns,
 } from "@/src/store/slices/assistantSlice";
 import { cn } from "@/lib/utils";
 import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
+import { useWorkflowHeartbeat } from "@/src/hooks/use-workflow-heartbeat";
+import { useWorkflowCancelOnLeave } from "@/src/hooks/use-workflow-cancel-on-leave";
 import type {
   AssistantAttachment,
   AssistantToolInvocation,
@@ -72,12 +76,54 @@ export function ChatComposer({
   const activeWorkflow = useAppSelector((s) =>
     projectId ? s.assistant.projects[projectId]?.activeWorkflow : null
   );
-  // Only swap into the "working" pill when the workflow is actively running
-  // or queued — if it's suspended (HITL), the user must interact with the
-  // workflow card's draft-review UI, composer stays hidden behind toolCard
-  // regardless. If it's terminal, composer goes back to normal.
+  // Queue truth — derived from chat history, not Redux state. Chat queued
+  // cards are intentionally not rendered (transient state shouldn't pollute
+  // history); the pill is the single surface that exposes "you have N runs
+  // waiting in line".
+  //
+  // Read messages off Redux (stable reference until the conversation actually
+  // mutates), then derive the queued list with useMemo so the resulting
+  // array's identity is stable across re-renders. A naive
+  // `useAppSelector(s => deriveQueuedRuns(messages))` returns a fresh array
+  // every call and trips React-Redux's "selector returned a different
+  // result" warning — that warning manifested 2026-05-01 alongside flapping
+  // chat-events WS (1006 closes), where excessive pill re-renders correlated
+  // with effect-cleanup-driven WS reconnects.
+  const messages = useAppSelector((s) =>
+    projectId ? (s.assistant.projects[projectId]?.messages ?? null) : null
+  );
+  const queuedRuns = useMemo(() => deriveQueuedRuns(messages ?? []), [messages]);
+  const queuedCount = queuedRuns.length;
+  // Liveness signal for the agent's reaper: ping every 10s for EVERY
+  // non-terminal run the user is currently watching, not just the
+  // active one. The user can have N queued runs (pill = "排隊中 · N");
+  // each has its own reaper deadline and needs its own heartbeat,
+  // otherwise the queue silently shrinks 30s after dispatch.
+  const liveRunIds = useMemo(() => {
+    const set = new Set<string>(queuedRuns.map((r) => r.runId));
+    if (
+      activeWorkflow &&
+      (activeWorkflow.status === "queued" ||
+        activeWorkflow.status === "running" ||
+        activeWorkflow.status === "suspended")
+    ) {
+      set.add(activeWorkflow.runId);
+    }
+    return [...set];
+  }, [queuedRuns, activeWorkflow]);
+  useWorkflowHeartbeat(liveRunIds, projectId);
+  useWorkflowCancelOnLeave(liveRunIds, projectId);
+  // Show the working pill whenever EITHER:
+  //   - an `activeWorkflow` is queued/running (running drives the
+  //     "工作中" label, queued is rare since chat queued cards no longer
+  //     mount the useSyncActiveWorkflow hook)
+  //   - or `queuedCount > 0` (chat history has runs whose latest state is
+  //     still queued — this is the new common path now that queued cards
+  //     don't render and don't drive activeWorkflow)
   const workingPillVisible =
-    !!activeWorkflow && (activeWorkflow.status === "queued" || activeWorkflow.status === "running");
+    (!!activeWorkflow &&
+      (activeWorkflow.status === "queued" || activeWorkflow.status === "running")) ||
+    queuedCount > 0;
 
   const dispatch = useAppDispatch();
   const handleSubmitConfigureParams = (toolCallId: string, values: Record<string, unknown>) => {
@@ -93,10 +139,28 @@ export function ChatComposer({
     void dispatch(sendUserMessage(projectId));
   };
 
-  if (workingPillVisible && activeWorkflow) {
+  if (workingPillVisible) {
+    // Three pill modes, in priority order:
+    //   1. Active run is running         → "工作中..." + stop cancels just it
+    //   2. Active run is queued OR no
+    //      active and queue is non-empty → "排队中 · N" + stop cancels ALL queued
+    //   3. (impossible — workingPillVisible guards against this)
+    // The composer-style "running" stop targets one runId; the queued
+    // stop targets the whole waiting list, which is what users actually
+    // want when they pressed N retry buttons in a row and changed their
+    // mind. The label includes the count so they don't have to count
+    // chat cards (there are none anymore).
+    const isRunning = activeWorkflow?.status === "running";
+    const pillLabel = isRunning
+      ? t("aiWorking")
+      : queuedCount > 0
+        ? `${t("workflowStateQueued")} · ${queuedCount}`
+        : t("workflowStateQueued");
+    const stopMode: "single" | "all-queued" = isRunning ? "single" : "all-queued";
+    const stopRunId = isRunning ? activeWorkflow!.runId : null;
     return (
       <div className="pb-2">
-        <WorkingPill runId={activeWorkflow.runId} projectId={projectId} label={t("aiWorking")} />
+        <WorkingPill mode={stopMode} runId={stopRunId} projectId={projectId} label={pillLabel} />
         <p className="mt-2 text-center text-[11px] text-muted-foreground/50">{t("aiDisclaimer")}</p>
       </div>
     );
@@ -266,11 +330,21 @@ function renderToolCard(
 // ─── Working pill (replaces composer while workflow is running) ───────
 
 function WorkingPill({
+  mode,
   runId,
   projectId,
   label,
 }: {
-  runId: string;
+  /**
+   * - `single`: cancel only `runId` (the in-flight running run). Matches
+   *   the legacy stop-pill behavior.
+   * - `all-queued`: cancel every run whose latest lifecycle state is
+   *   queued. Used when the pill represents the queue rather than an
+   *   active run.
+   */
+  mode: "single" | "all-queued";
+  /** Required when `mode === "single"`; ignored otherwise. */
+  runId: string | null;
   projectId: string | null;
   label: string;
 }) {
@@ -280,13 +354,23 @@ function WorkingPill({
   const handleStop = async () => {
     if (!projectId || stopping) return;
     setStopping(true);
-    // Optimistic: swap the composer back to input immediately. The backend
-    // publish of workflow_failed will follow asynchronously and also clear
-    // via useSyncActiveWorkflow, but we don't want the user staring at a
-    // spinner for the few hundred ms it takes to round-trip.
-    dispatch(clearActiveWorkflow({ projectId, runId }));
     try {
-      await cancelWorkflow(runId, projectId);
+      if (mode === "single" && runId) {
+        // Optimistic: swap the composer back to input immediately. The
+        // backend publish of workflow_failed will follow asynchronously
+        // and also clear via useSyncActiveWorkflow, but we don't want
+        // the user staring at a spinner for the few hundred ms it takes
+        // to round-trip.
+        dispatch(clearActiveWorkflow({ projectId, runId }));
+        await cancelWorkflow(runId, projectId);
+      } else {
+        // Queue-mode stop. The thunk fires N parallel cancels (one per
+        // queued runId) and each cancel publishes its own
+        // workflow_failed(cancelled) so chat history stays consistent;
+        // selectQueuedRuns naturally drops them as their latest state
+        // flips to failed.
+        await dispatch(cancelAllQueuedRuns({ projectId })).unwrap();
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {

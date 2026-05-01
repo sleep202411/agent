@@ -11,6 +11,7 @@ import {
   WorkflowCompletedOutputSchema,
   WorkflowFailedOutputSchema,
   WorkflowProgressOutputSchema,
+  WorkflowQueuedOutputSchema,
   WorkflowSuspendedOutputSchema,
   type WorkflowCompletedOutput,
   type WorkflowFailedOutput,
@@ -18,14 +19,10 @@ import {
   type WorkflowMessageToolName,
   type WorkflowName,
   type WorkflowProgressOutput,
+  type WorkflowQueuedOutput,
   type WorkflowSuspendedOutput,
 } from "@repo/shared";
-import {
-  addChatMessage,
-  getChatMessage,
-  updateChatMessage,
-  type StoredMessage,
-} from "./chat-publisher";
+import { addOrUpdateChatMessage, type StoredMessage } from "./chat-publisher";
 import { getRedis } from "./redis-client";
 
 /**
@@ -73,6 +70,12 @@ export async function getLastActiveWorkflow(runId: string): Promise<WorkflowName
 // row in the timeline while still letting the agent emit repeated
 // updates on the same slot (same runId + workflowName + phase → update).
 
+function queuedId(runId: string, workflowName: WorkflowName): string {
+  // No phase suffix — there's only ever one queued slot per (run, workflow).
+  // Idempotent updates on this id animate position 5 → 4 → 3 → … → 0
+  // in place, no chat list churn.
+  return `wf_${runId}_${workflowName}_queued`;
+}
 function progressId(runId: string, workflowName: WorkflowName, phase: WorkflowMacroPhase): string {
   return `wf_${runId}_${workflowName}_progress_${phase}`;
 }
@@ -117,6 +120,67 @@ function buildMessage(
 // ─── Public emitters ─────────────────────────────────────────────────
 
 /**
+ * Emit or mutate the queued-position message for a run waiting in
+ * BullMQ. First call adds the message; subsequent calls (as the queue
+ * advances and other runs finish) update the same message id so the
+ * card animates `position: 3 → 2 → 1 → 0` in place. Once the worker
+ * actually picks up the job, callers stop publishing queued and the
+ * `workflow_progress` stream takes over.
+ */
+export async function publishWorkflowQueued(
+  projectId: string,
+  runId: string,
+  workflowName: WorkflowName,
+  extra: Omit<WorkflowQueuedOutput, "runId" | "workflowName">
+): Promise<void> {
+  await recordActiveWorkflow(runId, workflowName);
+  const id = queuedId(runId, workflowName);
+  const output = WorkflowQueuedOutputSchema.parse({
+    runId,
+    workflowName,
+    ...extra,
+  });
+  const message = buildMessage(id, "workflow_queued", output, runId);
+  await addOrUpdateChatMessage(projectId, message);
+}
+
+/**
+ * Snapshot the current BullMQ waiting queue and emit `workflow_queued`
+ * for every run still waiting. Called from two lifecycle points:
+ *   - runner.startWorkflow, just after enqueue (so the brand-new run
+ *     gets its initial position card; older runs get a refreshed
+ *     position if any is implicitly displaced)
+ *   - worker job-completion / failure / cancel (the queue head moved,
+ *     every other run's position shifted down by one)
+ *
+ * Failures during publish are non-fatal — a missed broadcast just
+ * means a slightly stale UI count, which the next queue movement will
+ * correct on the next broadcast.
+ */
+export async function broadcastQueuePositions(): Promise<void> {
+  // Lazy import to avoid agent <-> engine module cycles. The
+  // workflow-messages module is loaded by every step that emits
+  // progress, so importing engine eagerly would tug too much in.
+  const { snapshotWaitingRuns } = await import("../workflows/engine/queue-position");
+  const snapshot = await snapshotWaitingRuns();
+  await Promise.all(
+    snapshot.map(async ({ projectId, runId, workflowName, position }) => {
+      try {
+        await publishWorkflowQueued(projectId, runId, workflowName as WorkflowName, {
+          position,
+        });
+      } catch (err) {
+        // Best-effort — log but never throw out of a broadcast loop.
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[workflow-messages] broadcastQueuePositions: publish failed for runId=${runId}: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    })
+  );
+}
+
+/**
  * Emit or mutate the progress message for a given macro-phase.
  *
  * First call for (runId, phase) → addMessage
@@ -142,12 +206,7 @@ export async function publishWorkflowProgress(
     ...extra,
   });
   const message = buildMessage(id, "workflow_progress", output, runId);
-  const existing = await getChatMessage(projectId, id);
-  if (existing) {
-    await updateChatMessage(projectId, message);
-  } else {
-    await addChatMessage(projectId, message);
-  }
+  await addOrUpdateChatMessage(projectId, message);
 }
 
 export async function publishWorkflowSuspended(
@@ -162,7 +221,7 @@ export async function publishWorkflowSuspended(
     workflowName,
     ...extra,
   });
-  await addChatMessage(
+  await addOrUpdateChatMessage(
     projectId,
     buildMessage(suspendedId(runId, workflowName), "workflow_suspended", output, runId)
   );
@@ -179,7 +238,7 @@ export async function publishWorkflowCompleted(
     workflowName,
     ...extra,
   });
-  await addChatMessage(
+  await addOrUpdateChatMessage(
     projectId,
     buildMessage(completedId(runId, workflowName), "workflow_completed", output, runId)
   );
@@ -196,7 +255,7 @@ export async function publishWorkflowFailed(
     workflowName,
     ...extra,
   });
-  await addChatMessage(
+  await addOrUpdateChatMessage(
     projectId,
     buildMessage(
       failedId(runId, workflowName, output.terminalStatus),

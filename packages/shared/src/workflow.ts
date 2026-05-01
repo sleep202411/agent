@@ -49,5 +49,13 @@ export const ConfirmRequestSchema = z.object({
    * one bubble instead of fragmenting into a sibling message.
    */
   emitLifecycleMessage: z.boolean().optional(),
+  /**
+   * parse_script-only opt-in: when true, the apply step deletes the
+   * project's existing episodes before writing this batch's drafts. When
+   * false / omitted, episodes are appended (legacy behaviour). The HITL
+   * card surfaces this toggle only when the suspended payload reports a
+   * non-zero `existingEpisodeCount`. Other phases ignore the field.
+   */
+  replaceExisting: z.boolean().optional(),
 });
 export type ConfirmRequest = z.infer<typeof ConfirmRequestSchema>;
