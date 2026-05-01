@@ -79,6 +79,14 @@ export interface ConfirmWorkflowPayload {
   approved: boolean;
   /** Free-form feedback when approved=false. */
   feedback?: string;
+  /**
+   * parse_script-only opt-in: when true, the apply step deletes the
+   * project's existing episodes before persisting this batch (Java
+   * cascades the wipe to scripts/storyboards). Surfaced via the HITL
+   * card's "替换 / 追加" toggle, only when the suspended payload carries
+   * a non-zero existingEpisodeCount.
+   */
+  replaceExisting?: boolean;
 }
 
 export interface ConfirmProjectParamsPayload {

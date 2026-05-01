@@ -360,6 +360,13 @@ export function WorkflowSuspendedCard({
 
   const [actionBusy, setActionBusy] = useState<null | "accept" | "revise">(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // parse_script-only: when the project already has episodes from a
+  // prior run, the suspend payload reports `existingEpisodeCount > 0`
+  // and we surface a toggle. Default mode is "append" (legacy behaviour
+  // / safer for partial test data); user picks "replace" only when they
+  // want to wipe stale episodes from earlier experiments.
+  const existingEpisodeCount = output.existingEpisodeCount ?? 0;
+  const [replaceExisting, setReplaceExisting] = useState(false);
   // Synchronous re-entry guard. `actionBusy` is useState and its update
   // isn't observable inside the same render pass, so a fast double-click
   // would slip through the `if (actionBusy) return` check and dispatch
@@ -388,6 +395,7 @@ export function WorkflowSuspendedCard({
           runId,
           userLabel: formatAcceptUserLabel(output, t),
           approved: true,
+          ...(existingEpisodeCount > 0 ? { replaceExisting } : {}),
         })
       );
     } catch (e) {
@@ -443,6 +451,48 @@ export function WorkflowSuspendedCard({
         tone="amber"
       />
       {drafts.length > 0 && <DraftSummary drafts={drafts} t={t} />}
+      {existingEpisodeCount > 0 && (
+        <div className="mt-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-[12px]">
+          <div className="font-medium text-foreground/85">
+            {t("parseScriptExistingTitle", { count: existingEpisodeCount })}
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            {t("parseScriptExistingHint")}
+          </p>
+          <div className="mt-2 flex flex-col gap-1.5">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name={`parse-script-mode-${runId}`}
+                checked={!replaceExisting}
+                onChange={() => setReplaceExisting(false)}
+                disabled={actionBusy !== null || !isActive}
+                className="mt-0.5"
+              />
+              <span className="text-foreground/85">
+                {t("parseScriptModeAppend")}
+                <span className="ml-1 text-muted-foreground">{t("parseScriptModeAppendHint")}</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name={`parse-script-mode-${runId}`}
+                checked={replaceExisting}
+                onChange={() => setReplaceExisting(true)}
+                disabled={actionBusy !== null || !isActive}
+                className="mt-0.5"
+              />
+              <span className="text-foreground/85">
+                {t("parseScriptModeReplace")}
+                <span className="ml-1 text-muted-foreground">
+                  {t("parseScriptModeReplaceHint", { count: existingEpisodeCount })}
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
       <div className="mt-3 flex flex-col gap-2">
         <div className="text-[13px] font-medium text-foreground/90">
           {t("workflowConfirmPrompt")}

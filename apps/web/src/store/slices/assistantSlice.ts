@@ -941,11 +941,16 @@ export const confirmWorkflowFromButton = createAsyncThunk<
     userLabel: string;
     approved: boolean;
     feedback?: string;
+    /** parse_script-only opt-in to wipe existing episodes before this batch. */
+    replaceExisting?: boolean;
   },
   { state: RootState; dispatch: AppDispatch }
 >(
   "assistant/confirmWorkflowFromButton",
-  async ({ projectId, runId, userLabel, approved, feedback }, { dispatch, getState }) => {
+  async (
+    { projectId, runId, userLabel, approved, feedback, replaceExisting },
+    { dispatch, getState }
+  ) => {
     abortProjectStream(projectId);
     dispatch(ensureProject(projectId));
 
@@ -967,7 +972,12 @@ export const confirmWorkflowFromButton = createAsyncThunk<
         messages: nextMessages,
         workspaceContext,
         signal: abortController.signal,
-        confirmWorkflow: { runId, approved, feedback },
+        confirmWorkflow: {
+          runId,
+          approved,
+          feedback,
+          ...(replaceExisting !== undefined ? { replaceExisting } : {}),
+        },
       });
     } catch (err) {
       if (abortController.signal.aborted) return;

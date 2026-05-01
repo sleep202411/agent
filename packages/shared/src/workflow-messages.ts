@@ -118,6 +118,14 @@ export const WorkflowSuspendedOutputSchema = BaseWorkflowOutput.extend({
   estimatedCost: z.number().int().nonnegative().optional(),
   /** What happens if user clicks Accept. Absent on terminal phases. */
   nextAction: WorkflowNextActionSchema.optional(),
+  /**
+   * parse_script-only hint: how many episodes already exist in the
+   * project at the moment of suspension. When >0, the HITL card surfaces
+   * an "append vs. replace" toggle so users can clear stale episodes
+   * from earlier test runs instead of accumulating them. Other phases
+   * leave this absent.
+   */
+  existingEpisodeCount: z.number().int().nonnegative().optional(),
 });
 export type WorkflowSuspendedOutput = z.infer<typeof WorkflowSuspendedOutputSchema>;
 

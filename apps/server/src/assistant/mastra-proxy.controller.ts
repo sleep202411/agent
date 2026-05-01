@@ -47,6 +47,8 @@ type MastraChatBody = {
     runId?: unknown;
     approved?: unknown;
     feedback?: unknown;
+    /** parse_script-only opt-in to wipe existing episodes before commit. */
+    replaceExisting?: unknown;
   };
   /**
    * User clicked "儲存並繼續" on the ProjectParamsForm. Nest saves to Java and
@@ -143,6 +145,10 @@ export class MastraProxyController {
             feedback:
               typeof body.confirmWorkflow.feedback === 'string'
                 ? body.confirmWorkflow.feedback
+                : undefined,
+            replaceExisting:
+              typeof body.confirmWorkflow.replaceExisting === 'boolean'
+                ? body.confirmWorkflow.replaceExisting
                 : undefined,
           }
         : undefined;
@@ -650,6 +656,7 @@ export class MastraProxyController {
       runId: string;
       approved: boolean;
       feedback: string | undefined;
+      replaceExisting: boolean | undefined;
     };
     user: AuthUser;
     req: Request;
@@ -707,6 +714,12 @@ export class MastraProxyController {
         body: JSON.stringify({
           approved: confirmWorkflow.approved,
           feedback: confirmWorkflow.feedback,
+          // parse_script-only opt-in to wipe existing episodes before
+          // commit. Other phases ignore it; pass-through keeps Nest
+          // workflow-agnostic.
+          ...(confirmWorkflow.replaceExisting !== undefined
+            ? { replaceExisting: confirmWorkflow.replaceExisting }
+            : {}),
           // Tell the agent NOT to side-channel-emit workflow_completed /
           // workflow_failed: we'll embed the returned payload into our own
           // synthetic message below so the card + any follow-up text live

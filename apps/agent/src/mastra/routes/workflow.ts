@@ -220,6 +220,10 @@ export const workflowRoutes = [
           approved: body.approved,
           feedback: body.feedback,
           acceptedClientRefIds: body.acceptedClientRefIds,
+          // parse_script-only opt-in to wipe existing episodes before
+          // commit. Forwarded as part of resumeData so wait_confirmation
+          // returns it downstream into apply_decision.
+          ...(body.replaceExisting !== undefined ? { replaceExisting: body.replaceExisting } : {}),
         },
         ctx,
       });
