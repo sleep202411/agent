@@ -129,8 +129,16 @@ export function useCreators() {
     initialPageParam: 1,
     queryFn: ({ pageParam }) => listCreators({ page: pageParam, pageSize: PAGE_SIZE }),
     getNextPageParam: (lastPage, allPages) => {
+      // Stop conditions, in order:
+      //   1. Last page came back empty — definitely no more rows.
+      //   2. Last page came back short (< PAGE_SIZE) — backend's `sum`
+      //      sometimes overstates the real row count (soft-deleted /
+      //      filtered users still counted). A short page is the most
+      //      reliable "we hit the end" signal; trust it over `sum`.
+      //   3. Loaded count has reached the reported `sum` and `sum` > 0.
       const loaded = allPages.reduce((acc, p) => acc + p.list.length, 0);
       if (lastPage.list.length === 0) return undefined;
+      if (lastPage.list.length < PAGE_SIZE) return undefined;
       if (lastPage.total > 0 && loaded >= lastPage.total) return undefined;
       return allPages.length + 1;
     },

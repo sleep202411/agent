@@ -96,10 +96,13 @@ export function CreatorsHero({ total }: CreatorsHeroProps) {
             {t("heroSubtitle")}
           </p>
 
-          <div className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-amber-400" />
-            <strong className="text-foreground">{total}</strong>
-            <span>{t("openCountSuffix")}</span>
+          <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <span className="size-1.5 rounded-full bg-amber-400" />
+              <strong className="text-foreground">{total}</strong>
+              <span>{t("openCountSuffix")}</span>
+            </div>
+            <span className="text-xs text-muted-foreground/70">{t("openCountCap")}</span>
           </div>
         </div>
       </div>
