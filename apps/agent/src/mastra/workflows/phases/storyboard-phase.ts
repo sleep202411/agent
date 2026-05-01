@@ -65,12 +65,14 @@ const StoryboardRow = z.object({
    * Scene — prefer a worldscene name so the frontend can linkify via
    * `<mention>`. Optional at schema level (not `.min(1)`) because DeepSeek
    * drops this field on tail rows of long structured outputs (~rows 29-32
-   * of a 30-40 row ask). generateStep filters out rows missing scene OR
-   * description before committing — a row lacking either is unusable in
-   * the editor anyway, so dropping it is lossless.
+   * of a 30-40 row ask). Rows with a missing scene are kept (commit step
+   * leaves the SCENE cell empty for the user to fill in the editor); only
+   * rows missing `description` are dropped in generateStep.
    */
   scene: z.string().optional(),
-  /** Description — same laziness caveat as `scene`. */
+  /** Description — required for the row to survive generateStep's filter.
+   *  Without it the editor shows a blank row and image_prompt has nothing
+   *  to fall back to. */
   description: z.string().optional(),
   /** Image prompt — visual-token string fed to image model. */
   image_prompt: z.string().optional().default(""),
@@ -309,13 +311,16 @@ const generateStep = createStep({
           `[storyboard-phase] gen.LLM_OK runId=${runId} ep=${i + 1}/${total} rawRows=${rawRows.length}`
         );
 
-        // Drop rows that can't carry their own weight (missing scene or
-        // description) and renumber — DeepSeek's tail-laziness creates
-        // gaps like shot_no "1"..."30","32" that would otherwise confuse
-        // the commit step's scene backfill. Filtering before .slice(60)
-        // doesn't matter since DeepSeek rarely goes past 40.
+        // Drop rows that have no description — without a description the
+        // shot is unusable downstream (image_prompt can't be backfilled,
+        // editor shows a blank row). Missing `scene` is tolerated: the
+        // commit step's scene-column writer (`commitSceneColumn`) already
+        // skips such rows and just leaves the SCENE cell empty for the
+        // user to fill in the editor — a much better outcome than
+        // throwing the whole episode away. Confirmed 2026-04-23 incident:
+        // 25/26 rows dropped solely on missing-scene → whole step failed.
         const rows = rawRows
-          .filter((r) => !!r.scene?.trim() && !!r.description?.trim())
+          .filter((r) => !!r.description?.trim())
           .slice(0, 60)
           .map((row, idx) => ({
             ...row,
@@ -332,7 +337,7 @@ const generateStep = createStep({
         if (rows.length < 5) {
           const dropped = rawRows.length - rows.length;
           throw new Error(
-            `storyboarder returned only ${rows.length} usable rows for episode "${ep.title}" (dropped ${dropped} with missing scene/description).`
+            `storyboarder returned only ${rows.length} usable rows for episode "${ep.title}" (dropped ${dropped} with missing description).`
           );
         }
 
