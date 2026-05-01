@@ -162,3 +162,68 @@ export async function getChatMessage(
     return null;
   }
 }
+
+/**
+ * Atomic add-or-update for messages with a deterministic id (e.g. the
+ * workflow lifecycle messages keyed by `wf_<runId>_<workflowName>_<status>`).
+ *
+ * Replaces the legacy get-then-add-or-update pattern that two near-
+ * concurrent emitters could race on:
+ *
+ *     Emitter A: getChatMessage → null → addChatMessage (rpush + set)
+ *     Emitter B: getChatMessage → null → addChatMessage (rpush + set)
+ *                                       ^^^^^ duplicate id appended!
+ *
+ * Both winning the existence check means two `message_added` events
+ * land at the client AND two entries appear in the per-project message
+ * id list. The frontend dedup absorbs the symptom, but the duplicate
+ * rpush still wastes a Redis slot.
+ *
+ * Atomicity here is via Redis `SET ... NX EX`: only one caller can
+ * succeed in creating the message blob; that caller is the unique
+ * "added" emitter and is the only one that rpush'es the id list.
+ * Late-arriving callers see NX fail, fall through to a plain SET
+ * (overwrite) + `message_updated`, which is the correct semantics —
+ * they're updating an existing message, not adding a new one.
+ *
+ * Both branches still emit a WS event so the frontend's update path
+ * stays informed; the difference is the event type the client uses
+ * to decide whether to expect a new chat row or patch an existing one.
+ */
+export async function addOrUpdateChatMessage(
+  projectId: string,
+  message: StoredMessage
+): Promise<{ added: boolean }> {
+  const { redis } = getClients();
+  const blob = JSON.stringify(message);
+  // SET NX only succeeds if the key does not exist; otherwise returns null.
+  // Atomic against itself — no two concurrent callers can both see "OK".
+  const created = await redis.set(
+    keyMsg(projectId, message.id),
+    blob,
+    "EX",
+    DEFAULT_TTL_SECONDS,
+    "NX"
+  );
+  if (created === "OK") {
+    // We're the unique emitter for the "added" event AND the unique
+    // writer to the id list. rpush is safe here because we know nobody
+    // else has already pushed this id.
+    await redis.rpush(keyMsgs(projectId), message.id);
+    await touch(projectId);
+    await publish(projectId, {
+      type: "message_added",
+      data: { messageId: message.id, message },
+    });
+    return { added: true };
+  }
+  // Lost the create race (or message already existed from a prior turn).
+  // Overwrite + publish update — same effect as updateChatMessage.
+  await redis.set(keyMsg(projectId, message.id), blob, "EX", DEFAULT_TTL_SECONDS);
+  await touch(projectId);
+  await publish(projectId, {
+    type: "message_updated",
+    data: { messageId: message.id, message },
+  });
+  return { added: false };
+}

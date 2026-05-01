@@ -22,12 +22,7 @@ import {
   type WorkflowQueuedOutput,
   type WorkflowSuspendedOutput,
 } from "@repo/shared";
-import {
-  addChatMessage,
-  getChatMessage,
-  updateChatMessage,
-  type StoredMessage,
-} from "./chat-publisher";
+import { addOrUpdateChatMessage, type StoredMessage } from "./chat-publisher";
 import { getRedis } from "./redis-client";
 
 /**
@@ -146,12 +141,7 @@ export async function publishWorkflowQueued(
     ...extra,
   });
   const message = buildMessage(id, "workflow_queued", output, runId);
-  const existing = await getChatMessage(projectId, id);
-  if (existing) {
-    await updateChatMessage(projectId, message);
-  } else {
-    await addChatMessage(projectId, message);
-  }
+  await addOrUpdateChatMessage(projectId, message);
 }
 
 /**
@@ -216,12 +206,7 @@ export async function publishWorkflowProgress(
     ...extra,
   });
   const message = buildMessage(id, "workflow_progress", output, runId);
-  const existing = await getChatMessage(projectId, id);
-  if (existing) {
-    await updateChatMessage(projectId, message);
-  } else {
-    await addChatMessage(projectId, message);
-  }
+  await addOrUpdateChatMessage(projectId, message);
 }
 
 export async function publishWorkflowSuspended(
@@ -236,7 +221,7 @@ export async function publishWorkflowSuspended(
     workflowName,
     ...extra,
   });
-  await addChatMessage(
+  await addOrUpdateChatMessage(
     projectId,
     buildMessage(suspendedId(runId, workflowName), "workflow_suspended", output, runId)
   );
@@ -253,7 +238,7 @@ export async function publishWorkflowCompleted(
     workflowName,
     ...extra,
   });
-  await addChatMessage(
+  await addOrUpdateChatMessage(
     projectId,
     buildMessage(completedId(runId, workflowName), "workflow_completed", output, runId)
   );
@@ -270,7 +255,7 @@ export async function publishWorkflowFailed(
     workflowName,
     ...extra,
   });
-  await addChatMessage(
+  await addOrUpdateChatMessage(
     projectId,
     buildMessage(
       failedId(runId, workflowName, output.terminalStatus),
