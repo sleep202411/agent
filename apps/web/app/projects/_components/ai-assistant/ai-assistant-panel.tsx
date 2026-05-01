@@ -26,6 +26,7 @@ import {
   appendMessageChunk,
   finalizeMessage,
   finalizeTurnOnIdle,
+  markAgentWorking,
   streamError,
 } from "@/src/store/slices/assistantSlice";
 import { ensureSession, closeSession } from "@/src/lib/assistant/chat-session";
@@ -81,6 +82,15 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
       onAgentState: (state) => {
         if (state === "idle") {
           void dispatch(finalizeTurnOnIdle(projectId));
+        } else if (state === "working") {
+          // Re-arm the loading indicator: Mastra's multi-step
+          // supervisor flips between working ↔ idle for every LLM
+          // call within a single user turn, and the transient idle
+          // already cleared `sending`. Without re-asserting here, the
+          // 2nd / 3rd LLM call in a turn (e.g. analyze_brief →
+          // configure_params → invoke_workflow) renders no loading
+          // indicator at all.
+          dispatch(markAgentWorking({ projectId }));
         } else if (state === "failed") {
           dispatch(streamError({ projectId, error: "Agent run failed" }));
         }
