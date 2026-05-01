@@ -972,6 +972,9 @@ export async function applyStoryboardDrafts(
         },
         timeoutMs: 300_000,
       });
+      console.log(
+        `[storyboard_phase] save.OK runId=${runId} ep=${i + 1}/${accepts.length} episodeId=${d.data.episodeId} shots=${d.data.rows.length} title=${JSON.stringify(d.data.title)}`
+      );
 
       // Backfill scene column with worldscene ids (soft-failing).
       try {
@@ -1001,6 +1004,9 @@ export async function applyStoryboardDrafts(
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[storyboard_phase] save.FAILED runId=${runId} ep=${i + 1}/${accepts.length} episodeId=${d.data.episodeId} title=${JSON.stringify(d.data.title)} → ${message}`
+      );
       await markDraftFailed(runId, d.clientRefId, message);
       failed.push({
         episodeId: d.data.episodeId,
@@ -1010,6 +1016,10 @@ export async function applyStoryboardDrafts(
     }
     i += 1;
   }
+
+  console.log(
+    `[storyboard_phase] commit.summary runId=${runId} ok=${committed.length} failed=${failed.length} of ${accepts.length}`
+  );
 
   const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
   if (failed.length === 0) await deleteAllDrafts(runId);
