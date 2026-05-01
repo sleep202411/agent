@@ -1801,6 +1801,7 @@
     },
     "workflowHintCancelled": "Feel free to start the task again whenever you're ready.",
     "workflowHintFailedRetryable": "You can click Retry below, or send a new message describing what you'd like.",
+    "workflowHintRetryHasSuccessor": "Another run for this task is already in progress — Retry is paused so the same work doesn't run twice.",
     "workflowHintFailedNonRetryable": "Please send a new message describing what you'd like — Retry alone won't recover from this one.",
     "workflowError": {
       "upstream_rate_limit": "Service busy — please retry shortly",

@@ -667,6 +667,23 @@ export function WorkflowFailedCard({
   const targetEpisodeCount = useAppSelector((s) =>
     projectId ? s.project.instances[projectId]?.detail?.targetEpisodeCount : undefined
   );
+  // Read the project's currently-tracked active workflow so we can guard
+  // the retry button. When a user clicks "重新拆解" / similar, the
+  // supervisor often runs cancel_workflow on the old run + invoke_workflow
+  // on a fresh run as a single semantic action; the cancelled-card from
+  // the old run lingers in chat history with its retry button armed. If
+  // the user clicks Retry there, we'd happily fire run #3 *concurrently*
+  // with the supervisor's already-in-flight run #2 — burning LLM tokens
+  // for a result no one will see and racing draft writes against each
+  // other in Java. Disable the button (and short-circuit the handler)
+  // whenever a queued/running successor exists for this project.
+  const activeWorkflow = useAppSelector((s) =>
+    projectId ? s.assistant.projects[projectId]?.activeWorkflow : null
+  );
+  const hasInFlightSuccessor =
+    !!activeWorkflow &&
+    activeWorkflow.runId !== output.runId &&
+    (activeWorkflow.status === "queued" || activeWorkflow.status === "running");
   useSyncActiveWorkflow(
     isActive,
     output.runId,
@@ -694,6 +711,13 @@ export function WorkflowFailedCard({
 
   const handleRetry = () => {
     if (!projectId || !output.workflowName || !isActive) return;
+    if (hasInFlightSuccessor) {
+      // Defensive: should be impossible because the button is also
+      // disabled in this state, but guard the dispatch path so a
+      // double-click / stale state can't slip a duplicate run through.
+      toast.info(t("workflowHintRetryHasSuccessor"));
+      return;
+    }
     void dispatch(
       startWorkflowFromButton({
         projectId,
@@ -745,18 +769,20 @@ export function WorkflowFailedCard({
           message". Keeps the user moving forward instead of staring at
           a bare error string. */}
       <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground/80">
-        {isCancelled
-          ? t("workflowHintCancelled")
-          : output.retryable
-            ? t("workflowHintFailedRetryable")
-            : t("workflowHintFailedNonRetryable")}
+        {hasInFlightSuccessor
+          ? t("workflowHintRetryHasSuccessor")
+          : isCancelled
+            ? t("workflowHintCancelled")
+            : output.retryable
+              ? t("workflowHintFailedRetryable")
+              : t("workflowHintFailedNonRetryable")}
       </p>
       {output.retryable && (
         <div className="mt-3">
           <ActionButton
             variant="secondary"
             onClick={handleRetry}
-            disabled={!projectId || !isActive}
+            disabled={!projectId || !isActive || hasInFlightSuccessor}
             icon={<IconRefresh className="size-4" />}
           >
             {t("workflowActionRetry")}

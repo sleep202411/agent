@@ -1801,6 +1801,7 @@
     },
     "workflowHintCancelled": "隨時可以重新發起這個任務。",
     "workflowHintFailedRetryable": "可以點擊下方的「重試」按鈕重新發起，也可以重新發送訊息描述需求。",
+    "workflowHintRetryHasSuccessor": "已經有一個新的任務在跑了 —— 暫停重試，避免重複執行同一份工作。",
     "workflowHintFailedNonRetryable": "請重新發送訊息描述需求 —— 單純重試這次沒辦法恢復。",
     "workflowError": {
       "upstream_rate_limit": "服務繁忙，請稍後重試",
