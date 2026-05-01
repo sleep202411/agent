@@ -468,7 +468,6 @@ const MODE_VIDEO_BASIC: AiModeConfig = {
     {
       key: "referenceImageUrl",
       source: "ref:referenceImages",
-      required: true,
       errorKey: "selectReferenceImage",
     },
   ],
@@ -508,7 +507,6 @@ const MODE_VIDEO_MULTI_REFERENCE: AiModeConfig = {
     {
       key: "refImageUrls",
       source: "refArray:multiRefImages",
-      required: true,
       errorKey: "uploadReferenceImage",
     },
     { key: "objOrBg", source: "refTags:multiRefImages" },
@@ -555,7 +553,6 @@ const MODE_VIDEO_REPAINT: AiModeConfig = {
     {
       key: "videoUrl",
       source: "ref:repaintRefVideos",
-      required: true,
       errorKey: "selectVideoFirst",
     },
     { key: "controlCondition", source: "setting:controlCondition" },
