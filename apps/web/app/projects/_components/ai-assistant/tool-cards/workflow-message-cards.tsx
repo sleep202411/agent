@@ -693,6 +693,21 @@ export function WorkflowFailedCard({
 
   if (!output.workflowName || !output.terminalStatus) return null;
 
+  // Suppress orphan cancellation cards entirely when a successor for the
+  // same project is already in flight. Real-world trigger: user clicks
+  // "重新拆解" / similar, the supervisor cancels run #1 and immediately
+  // dispatches run #2; the cancellation event for #1 lands in chat
+  // history *after* the new "Start Workflow" message because both are
+  // ordered by emit time. Visually it looks like run #2 was cancelled,
+  // which is exactly the confusion users reported. The supervisor's
+  // own narration ("已取消上一次任务，重新拆解") already explains the
+  // hand-off, so dropping the dead-end card is lossless.
+  //
+  // Genuine `failed` cards are NEVER suppressed — those carry actionable
+  // error info and the retryable / non-retryable affordances. Only
+  // `cancelled` shadowed by a successor disappears.
+  if (output.terminalStatus === "cancelled" && hasInFlightSuccessor) return null;
+
   const label = t(`workflowPhase.${output.terminalStatus}`);
   const workflowLabelText = t(WORKFLOW_LABEL_KEYS[output.workflowName] ?? "workflowGeneric");
 
