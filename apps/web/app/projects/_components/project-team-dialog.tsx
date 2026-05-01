@@ -174,7 +174,7 @@ interface ProjectTeamDialogProps {
 export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDialogProps) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
-  const currentUser = useCurrentUser();
+  const { user: currentUser } = useCurrentUser();
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const currentUserId = currentUser?.id ?? null;
 

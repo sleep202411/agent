@@ -39,6 +39,7 @@ const TEAM_HERO_URL = encodeURI(
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface NewMember {
+  email: string;
   userId: number;
   /** Snapshot for the optimistic toast — the persisted member row comes
    *  back from `useProjectMembers` after the mutation lands. */
@@ -117,6 +118,7 @@ export function AddMemberDialog({
   const handleSubmit = async () => {
     if (!found || alreadyOnTeam) return;
     await onSubmit({
+      email: found.email || debouncedEmail,
       userId: found.userId,
       userName: found.name,
       avatar: found.avatar,

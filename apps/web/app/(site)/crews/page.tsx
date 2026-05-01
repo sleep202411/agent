@@ -9,7 +9,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IconMovie, IconPlus, IconSpeakerphone, IconStar, IconUsers } from "@tabler/icons-react";
+import { IconMovie, IconUsers } from "@tabler/icons-react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -83,26 +83,6 @@ export default function CrewsPage() {
             <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
               {tCrew("heroDesc")}
             </p>
-            <div className="mb-5 flex flex-wrap items-center gap-3">
-              <Link
-                href={localizePath("/crews/create", locale)}
-                className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90"
-              >
-                <IconPlus className="size-4" /> {tCrew("createStudio")}
-              </Link>
-              <Link
-                href={localizePath("/crews/create", locale)}
-                className="flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition-colors hover:bg-accent/20"
-              >
-                <IconSpeakerphone className="size-4" /> {tCrew("postRoles")}
-              </Link>
-              <Link
-                href={localizePath("/studio/projects", locale)}
-                className="flex items-center gap-2 rounded-xl border border-border bg-secondary px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary/80"
-              >
-                <IconStar className="size-4 text-accent" /> {tCrew("myWorkbench")}
-              </Link>
-            </div>
             <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
               {(landing?.stats ?? PLATFORM_STATS).map((s) => (
                 <span key={s.labelKey}>
@@ -115,7 +95,7 @@ export default function CrewsPage() {
       </div>
 
       {/* ── Browse ──────────────────────────────────────────────────── */}
-      <div className="mx-auto max-w-[1800px] px-6 pb-24 pt-8">
+      <div className="mx-auto max-w-7xl px-6 pb-24 pt-8">
         {/* Role pills */}
         {roles.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -139,7 +119,7 @@ export default function CrewsPage() {
         )}
 
         {/* Project grid */}
-        <div className="mt-8 grid grid-cols-2 justify-items-start gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 [&>*]:w-full [&>*]:max-w-[300px]">
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {isLoading ? (
             <CardSkeleton count={10} />
           ) : items.length === 0 ? (
