@@ -1379,6 +1379,36 @@ export const assistantSlice = createSlice({
       };
     },
 
+    /**
+     * Re-arm the "AI is replying" indicator when the WS reports the
+     * supervisor is back at work mid-turn. Mastra's multi-step
+     * supervisor flips `agent_state` between `working` ↔ `idle` between
+     * every LLM call within a single user turn (LLM call → tool exec →
+     * LLM call → tool exec → …). The transient `idle` already drives
+     * `finalizeAssistantMessage`, which clears `sending`; without this
+     * reducer the indicator goes dark for the second-and-later LLM
+     * calls of the turn even though the agent is actively working.
+     *
+     * Confirmed 2026-05-02 against the "upload script + ask to break
+     * it down" flow: narrative text → analyze_brief → configure_params
+     * → invoke_workflow takes 3 distinct LLM calls; only the first one
+     * showed loading in chat.
+     */
+    markAgentWorking: (state, action: PayloadAction<{ projectId: string }>) => {
+      const { projectId } = action.payload;
+      const current = state.projects[projectId];
+      if (!current) return;
+      // Don't reactivate the indicator while a pending interactive tool
+      // is awaiting user input — the tool card is the actionable
+      // surface, a "AI is replying" banner stacked above it is just
+      // visual noise. Once the user submits the tool result,
+      // `commitToolResult` re-sets `sending=true` for the next LLM
+      // turn.
+      if (current.pendingToolUi.length > 0) return;
+      if (current.sending && current.streaming) return;
+      state.projects[projectId] = { ...current, sending: true, streaming: true };
+    },
+
     streamError: (state, action: PayloadAction<{ projectId: string; error: string }>) => {
       const { projectId, error } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
@@ -1493,6 +1523,7 @@ export const {
   appendMessageChunk,
   finalizeMessage,
   finalizeAssistantMessage,
+  markAgentWorking,
   streamError,
   setHistory,
   markHistoryLoaded,
