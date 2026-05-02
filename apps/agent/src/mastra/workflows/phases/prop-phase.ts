@@ -33,6 +33,13 @@ import {
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
 import { publishEntityEvent } from "../../lib/entity-events";
+import { robustStructuredGenerate, mapStructuredOutputError } from "../../lib/robust-generate";
+import {
+  putGenFailed,
+  readGenFailed,
+  clearGenFailed,
+  type GenFailedEntry,
+} from "../../lib/gen-failed";
 import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
@@ -59,6 +66,8 @@ const PropDesignSchema = z.object({
 export const PropPhaseInputSchema = z.object({
   worldId: z.string().min(1),
   feedback: z.string().optional(),
+  /** Scoped retry — see role-phase doc for rationale. */
+  onlyPropNames: z.array(z.string()).optional(),
 });
 
 export const PropPhaseOutputSchema = z.object({
@@ -128,52 +137,74 @@ const resolveInputStep = createStep({
     const propDesigner = mastra?.getAgent("propDesigner");
     if (!propDesigner) throw new Error("propDesigner agent not registered");
 
-    const propsRoster = record.outline.props ?? [];
-    if (propsRoster.length === 0) {
+    const fullRoster = record.outline.props ?? [];
+    if (fullRoster.length === 0) {
       return { worldId: inputData.worldId, props: [] };
     }
+    const onlySet = inputData.onlyPropNames?.length ? new Set(inputData.onlyPropNames) : null;
+    const propsRoster = onlySet ? fullRoster.filter((p) => onlySet.has(p.name)) : fullRoster;
+    if (propsRoster.length === 0) {
+      throw new Error(
+        `prop_phase: onlyPropNames=${JSON.stringify(inputData.onlyPropNames)} matched no roster entry`
+      );
+    }
+    const total = propsRoster.length;
 
     const props: z.infer<typeof PropDesignSchema>[] = [];
-    for (let i = 0; i < propsRoster.length; i++) {
+    const genFailed: GenFailedEntry[] = [];
+    for (let i = 0; i < total; i++) {
       const entry = propsRoster[i];
       await throwIfCancelled(runId);
       const label = `Prop Designer is elaborating "${entry.name}"…`;
       await reportProgress(runId, {
         stepId: "prop_phase.elaborate",
         current: i,
-        total: propsRoster.length,
+        total,
         label,
       });
       await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "planning", {
         current: i,
-        total: propsRoster.length,
+        total,
         label,
       });
       const prompt = buildElaboratePrompt(record.outline, entry, inputData.feedback);
-      const response = await propDesigner.generate(prompt, {
-        structuredOutput: {
-          schema: PropDesignSchema,
-          errorStrategy: "warn",
-        },
-      });
-      const designed = response.object as z.infer<typeof PropDesignSchema> | undefined;
-      if (!designed) {
-        // eslint-disable-next-line no-console
-        console.warn(`[prop_phase] propDesigner returned no design for ${entry.name}, skipping`);
-        continue;
+      type Designed = z.infer<typeof PropDesignSchema>;
+      try {
+        const { object: designed } = await robustStructuredGenerate<Designed>({
+          agent: propDesigner,
+          prompt,
+          schema: PropDesignSchema as unknown as z.ZodType<Designed>,
+          tag: `prop-designer-${runId}-${i + 1}`,
+          isEmpty: (obj) => !obj || !obj.appearance,
+        });
+        props.push({ ...designed, name: entry.name });
+      } catch (err) {
+        const reason = mapStructuredOutputError(err, `道具设计 (${entry.name})`);
+        console.error(`[prop_phase] LLM_FAILED runId=${runId} prop="${entry.name}" → ${reason}`);
+        genFailed.push({ id: entry.name, title: entry.name, reason });
       }
-      props.push({ ...designed, name: entry.name });
     }
-    const doneLabel = `Prop design done: ${props.length}`;
+    if (props.length === 0 && genFailed.length > 0) {
+      throw new Error(genFailed[0]?.reason ?? `道具设计失败：所有 ${total} 个道具都未能生成。`);
+    }
+    if (genFailed.length > 0) {
+      await putGenFailed(runId, genFailed);
+      console.warn(
+        `[prop_phase] PARTIAL runId=${runId} ok=${props.length}/${total} failed=${genFailed.length}`
+      );
+    } else {
+      await clearGenFailed(runId);
+    }
+    const doneLabel = `Prop design done: ${props.length}/${total}`;
     await reportProgress(runId, {
       stepId: "prop_phase.elaborate",
       current: props.length,
-      total: propsRoster.length,
+      total,
       label: doneLabel,
     });
     await publishWorkflowProgress(ctx.projectId, runId, "prop_phase", "planning", {
       current: props.length,
-      total: propsRoster.length,
+      total,
       label: doneLabel,
     });
     return { worldId: inputData.worldId, props };
@@ -411,9 +442,13 @@ export async function applyPropDrafts(
     }
   }
 
+  const genFailed = await readGenFailed(runId);
+  await clearGenFailed(runId);
+
   const summary = summarizeBatch(results);
-  const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
-  if (outcome === "committed") await deleteAllDrafts(runId);
+  const totalFailed = summary.failed + genFailed.length;
+  const outcome = totalFailed === 0 ? ("committed" as const) : ("partial_failure" as const);
+  if (totalFailed === 0) await deleteAllDrafts(runId);
 
   if (committed.length > 0) {
     await publishEntityEvent(ctx, {
@@ -423,7 +458,7 @@ export async function applyPropDrafts(
     });
   }
 
-  const endLabel = `Props committed: ${committed.length} ok / ${failed.length} failed`;
+  const endLabel = `Props committed: ${committed.length} ok / ${totalFailed} failed`;
   await reportProgress(runId, {
     stepId: "prop_phase.commit",
     current: committed.length,
@@ -440,34 +475,58 @@ export async function applyPropDrafts(
     outcome === "committed" ? "propPhaseSummaryCommitted" : "propPhaseSummaryPartial";
   const summaryParams = {
     count: committed.length,
-    failed: failed.length,
-    total: items.length,
+    failed: totalFailed,
+    total: items.length + genFailed.length,
   };
   const logMessage =
     outcome === "committed"
       ? `committed ${committed.length} props`
-      : `partial failure: ${committed.length} ok, ${failed.length} failed`;
+      : `partial failure: ${committed.length} ok, ${totalFailed} failed (gen=${genFailed.length} save=${failed.length})`;
 
+  const baseNextSteps = [
+    {
+      workflowName: "prop_image_phase" as const,
+      labelKey: "workflowNextContinueToPropImages" as const,
+      variant: (genFailed.length > 0 ? "secondary" : "primary") as "primary" | "secondary",
+      inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
+    },
+    {
+      workflowName: "episode_phase" as const,
+      labelKey: "workflowNextSkipToEpisodes" as const,
+      variant: "secondary" as const,
+    },
+  ];
+  const nextSteps =
+    genFailed.length > 0
+      ? [
+          {
+            workflowName: "prop_phase" as const,
+            labelKey: "workflowRetryFailedProps" as const,
+            variant: "primary" as const,
+            inputData: { onlyPropNames: genFailed.map((f) => f.id) },
+          },
+          ...baseNextSteps,
+        ]
+      : baseNextSteps;
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "prop_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
-    failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+    failed: [
+      ...failed.map((f) => ({
+        clientRefId: f.clientRefId,
+        reason: f.reason,
+        title: f.name,
+      })),
+      ...genFailed.map((f) => ({
+        clientRefId: f.id,
+        reason: f.reason,
+        title: f.title,
+      })),
+    ],
     summaryKey,
     summaryParams,
-    nextSteps: [
-      {
-        workflowName: "prop_image_phase",
-        labelKey: "workflowNextContinueToPropImages",
-        variant: "primary",
-        inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
-      },
-      {
-        workflowName: "episode_phase",
-        labelKey: "workflowNextSkipToEpisodes",
-        variant: "secondary",
-      },
-    ],
+    nextSteps,
   };
   if (emitLifecycleMessage) {
     await publishWorkflowCompleted(ctx.projectId, runId, "prop_phase", {

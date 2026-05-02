@@ -54,10 +54,10 @@ Five settings: \`targetEpisodeCount\` / \`chapterLength\` / \`shotsPerEpisode\` 
 
 \`\`\`
 [
-  { key: "targetEpisodeCount", label: "Episode count",     type: "number", defaultValue: 10, suffix: "episodes", min: 1, max: 60 },
-  { key: "chapterLength",      label: "Episode length",    type: "number", defaultValue: 3,  suffix: "min",      min: 1, max: 30 },
-  { key: "shotsPerEpisode",    label: "Shots per episode", type: "number", defaultValue: 20, suffix: "shots",    min: 5, max: 60 },
-  { key: "stylePainting",      label: "Art style",         type: "select", defaultValue: "realistic",
+  { key: "targetEpisodeCount", label: "Episode count",     type: "number", suffix: "episodes", min: 1, max: 60 },
+  { key: "chapterLength",      label: "Episode length",    type: "number", suffix: "min",      min: 1, max: 30 },
+  { key: "shotsPerEpisode",    label: "Shots per episode", type: "number", suffix: "shots",    min: 5, max: 60 },
+  { key: "stylePainting",      label: "Art style",         type: "select",
     options: [
       { label: "Realistic",   value: "realistic" },
       { label: "Cinematic",   value: "cinematic" },
@@ -65,7 +65,7 @@ Five settings: \`targetEpisodeCount\` / \`chapterLength\` / \`shotsPerEpisode\` 
       { label: "Chinese ink", value: "chinese_ink" },
       { label: "Cyberpunk",   value: "cyberpunk" }
     ] },
-  { key: "dialogLanguage",     label: "Dialog language",   type: "select", defaultValue: "zh-CN",
+  { key: "dialogLanguage",     label: "Dialog language",   type: "select",
     options: [
       { label: "Simplified Chinese",  value: "zh-CN" },
       { label: "Traditional Chinese", value: "zh-HK" },
@@ -76,14 +76,14 @@ Five settings: \`targetEpisodeCount\` / \`chapterLength\` / \`shotsPerEpisode\` 
 // the web side (see tool-cards/tool-params-card.tsx FIELD_LABEL_I18N /
 // OPTION_LABEL_I18N / SUFFIX_I18N). These English labels act as safe
 // fallbacks for any client that doesn't map a key, and keep the prompt
-// locale-agnostic.
+// locale-agnostic. **Do not pass \`defaultValue\`** — let the user pick.
 \`\`\`
 
 After \`configure_params\` is submitted, the frontend pushes the values to you as a **separate user message** in this canonical (English-keyed, locale-stable) format:
 
 \`Params set: {"targetEpisodeCount":12,"chapterLength":5,"shotsPerEpisode":25,"stylePainting":"Japanese Anime Style","dialogLanguage":"zh-CN"}\`
 
-Everything after the colon is strict JSON — **parse it directly, then immediately invoke_workflow with all five fields in inputData**. No follow-up questions, no chit-chat. The same tool-call round will also include the \`configure_params\` \`{confirmed: true}\` result (no values); that's just an HITL close signal — values **must** come from the \`Params set:\` user message.
+Everything after the colon is strict JSON. **You don't need to copy these values into \`invoke_workflow\` inputData** — the server already reads the \`Params set:\` message into the request context and re-injects the canonical values into every workflow's inputData. Passing them anyway is harmless (server ignores LLM copies for these 5 keys), but it's safer to leave them out so a transcription mistake (e.g. user picked 11 but you write 10) cannot leak through.
 
 (The legacy \`require_project_params\` tool is still registered but **don't call it** — it conflicts with this session-level model.)
 

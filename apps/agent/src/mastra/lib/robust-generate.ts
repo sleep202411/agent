@@ -137,3 +137,46 @@ export async function robustStructuredGenerate<T>(
     }`
   );
 }
+
+/**
+ * Map an LLM-pipeline error into a user-facing reason string.
+ *
+ * Why: Mastra's structuredOutput layer surfaces Zod / parser errors as
+ * `Structured output validation failed: - root: Required` (or similar
+ * `path.to.field: Required` lists). Those strings are user-hostile —
+ * they leak schema vocabulary, look like a server crash, and offer no
+ * recovery hint. We catch them at the workflow boundary and rewrite to
+ * actionable Chinese ("AI 暂时无响应，请稍后重试") so the
+ * workflow_failed card and supervisor reasoning both stay friendly.
+ *
+ * Falls through unmodified for non-LLM-format errors (Java HTTP failures,
+ * timeouts, cancel) so those keep their specific diagnostics.
+ *
+ * @param err  The thrown error from a structuredOutput / robustStructuredGenerate path.
+ * @param what Short noun describing the step ("脚本拆分", "分镜生成", …).
+ *             Embedded in the user-facing message.
+ */
+export function mapStructuredOutputError(err: unknown, what: string): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  // Mastra's strict-mode Zod fail.
+  if (/Structured output validation failed/i.test(raw) || /:\s*Required\b/i.test(raw)) {
+    return `${what}失败：AI 模型暂时无响应或返回不完整，请稍后重试。`;
+  }
+  // robustStructuredGenerate gave up after both attempts.
+  if (/agent returned empty output on both attempts/i.test(raw)) {
+    return `${what}失败：AI 模型连续两次返回空响应，请稍后重试。`;
+  }
+  // Persona request timeout middleware.
+  if (/persona request timed out|REQUEST_TIMEOUT|aborted/i.test(raw)) {
+    return `${what}失败：AI 响应超时，请稍后重试。`;
+  }
+  // Provider-side rate limit / 429.
+  if (/429\b|rate.?limit|too many requests/i.test(raw)) {
+    return `${what}失败：AI 服务限流，请稍后重试。`;
+  }
+  // Provider-side balance exhausted (DeepSeek / Qwen returned 402).
+  if (/insufficient balance|402\b|balance.*exhaust/i.test(raw)) {
+    return `${what}失败：AI 服务额度不足，请联系管理员。`;
+  }
+  return raw;
+}

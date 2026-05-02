@@ -23,6 +23,13 @@ import { summarizeBatch } from "../../lib/batch-writer";
 import { type StoryOutline } from "../../lib/outline";
 import { ensureOutline } from "../../lib/outline-deps";
 import { stylePaintingHint } from "../../lib/style-painting";
+import { robustStructuredGenerate, mapStructuredOutputError } from "../../lib/robust-generate";
+import {
+  putGenFailed,
+  readGenFailed,
+  clearGenFailed,
+  type GenFailedEntry,
+} from "../../lib/gen-failed";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 import {
   publishWorkflowCompleted,
@@ -52,6 +59,15 @@ export const RolePhaseInputSchema = z.object({
   worldId: z.string().min(1),
   /** User feedback from a prior revise round — steers roleDesigner. */
   feedback: z.string().optional(),
+  /**
+   * Scoped retry: when a prior run partially failed, the completion card
+   * exposes a "重试失败的角色" button that re-runs only the cast members
+   * whose LLM elaborate step failed last time. Their names are sent here
+   * (matched against `outline.cast[].name`) so we don't repay for the
+   * 14 successful ones. Empty / unset = generate every character in the
+   * roster (default behaviour).
+   */
+  onlyCharacterNames: z.array(z.string()).optional(),
 });
 
 export const RolePhaseOutputSchema = z.object({
@@ -123,25 +139,39 @@ const resolveInputStep = createStep({
     const roleDesigner = mastra?.getAgent("roleDesigner");
     if (!roleDesigner) throw new Error("roleDesigner agent not registered");
 
-    const cast = record.outline.cast ?? [];
-    if (cast.length === 0) {
+    const fullCast = record.outline.cast ?? [];
+    if (fullCast.length === 0) {
       throw new Error("role_phase: story outline has empty cast roster");
     }
+    // Scoped retry: only elaborate the named subset when the caller
+    // (typically the previous run's "重试失败的角色" nextSteps button)
+    // passes it. Empty / unset = generate every character.
+    const onlySet = inputData.onlyCharacterNames?.length
+      ? new Set(inputData.onlyCharacterNames)
+      : null;
+    const cast = onlySet ? fullCast.filter((c) => onlySet.has(c.name)) : fullCast;
+    if (cast.length === 0) {
+      throw new Error(
+        `role_phase: onlyCharacterNames=${JSON.stringify(inputData.onlyCharacterNames)} matched no roster entry`
+      );
+    }
+    const total = cast.length;
 
     const characters: z.infer<typeof CharacterSchema>[] = [];
-    for (let i = 0; i < cast.length; i++) {
+    const genFailed: GenFailedEntry[] = [];
+    for (let i = 0; i < total; i++) {
       const entry = cast[i];
       await throwIfCancelled(runId);
       const label = `Character Designer is elaborating "${entry.name}"…`;
       await reportProgress(runId, {
         stepId: "role_phase.elaborate",
         current: i,
-        total: cast.length,
+        total,
         label,
       });
       await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "planning", {
         current: i,
-        total: cast.length,
+        total,
         label,
       });
       const prompt = buildElaboratePrompt(
@@ -150,34 +180,58 @@ const resolveInputStep = createStep({
         inputData.feedback,
         ctx.stylePainting
       );
-      const response = await roleDesigner.generate(prompt, {
-        structuredOutput: {
-          schema: CharacterSchema,
-          errorStrategy: "strict",
-        },
-      });
-      const designed = response.object as z.infer<typeof CharacterSchema> | undefined;
-      if (!designed) {
-        throw new Error(`roleDesigner returned no design for ${entry.name}`);
+      type DesignedRole = z.infer<typeof CharacterSchema>;
+      try {
+        const { object: designed } = await robustStructuredGenerate<DesignedRole>({
+          agent: roleDesigner,
+          prompt,
+          schema: CharacterSchema as unknown as z.ZodType<DesignedRole>,
+          tag: `role-designer-${runId}-${i + 1}`,
+          isEmpty: (obj) => !obj || !obj.appearance,
+        });
+        characters.push({
+          name: entry.name,
+          role: entry.role,
+          appearance: designed.appearance,
+          personality: designed.personality,
+          prompt: designed.prompt,
+        });
+      } catch (err) {
+        // Partial-success: don't bring down the whole phase for one
+        // character's LLM flake. Record the failure and continue;
+        // applyRoleDrafts will surface it on the completion card with
+        // a scoped "重试失败的角色" button (uses onlyCharacterNames).
+        const reason = mapStructuredOutputError(err, `角色设计 (${entry.name})`);
+        console.error(`[role_phase] LLM_FAILED runId=${runId} char="${entry.name}" → ${reason}`);
+        genFailed.push({ id: entry.name, title: entry.name, reason });
       }
-      characters.push({
-        name: entry.name,
-        role: entry.role,
-        appearance: designed.appearance,
-        personality: designed.personality,
-        prompt: designed.prompt,
-      });
     }
-    const doneLabel = `Character design done: ${cast.length}`;
+
+    if (characters.length === 0) {
+      // Every character failed — nothing to suspend on. Surface the
+      // first sanitized reason as the workflow_failed message.
+      throw new Error(genFailed[0]?.reason ?? `角色设计失败：所有 ${total} 个角色都未能生成。`);
+    }
+
+    if (genFailed.length > 0) {
+      await putGenFailed(runId, genFailed);
+      console.warn(
+        `[role_phase] PARTIAL runId=${runId} ok=${characters.length}/${total} failed=${genFailed.length} (proceeding with successes)`
+      );
+    } else {
+      await clearGenFailed(runId);
+    }
+
+    const doneLabel = `Character design done: ${characters.length}/${total}`;
     await reportProgress(runId, {
       stepId: "role_phase.elaborate",
-      current: cast.length,
-      total: cast.length,
+      current: characters.length,
+      total,
       label: doneLabel,
     });
     await publishWorkflowProgress(ctx.projectId, runId, "role_phase", "planning", {
-      current: cast.length,
-      total: cast.length,
+      current: characters.length,
+      total,
       label: doneLabel,
     });
     return { worldId: inputData.worldId, characters };
@@ -397,9 +451,15 @@ export async function applyRoleDrafts(
     }
   }
 
+  // Characters whose LLM elaborate-step failed in resolveInputStep
+  // (separate from Java-save failures tracked in `failed` above).
+  const genFailed = await readGenFailed(runId);
+  await clearGenFailed(runId);
+
   const summary = summarizeBatch(results);
-  const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
-  if (outcome === "committed") await deleteAllDrafts(runId);
+  const totalFailed = summary.failed + genFailed.length;
+  const outcome = totalFailed === 0 ? ("committed" as const) : ("partial_failure" as const);
+  if (totalFailed === 0) await deleteAllDrafts(runId);
 
   if (committed.length > 0) {
     await publishEntityEvent(ctx, {
@@ -409,7 +469,7 @@ export async function applyRoleDrafts(
     });
   }
 
-  const endLabel = `Characters committed: ${committed.length} ok / ${failed.length} failed`;
+  const endLabel = `Characters committed: ${committed.length} ok / ${totalFailed} failed`;
   await reportProgress(runId, {
     stepId: "role_phase.commit",
     current: committed.length,
@@ -426,36 +486,63 @@ export async function applyRoleDrafts(
     outcome === "committed" ? "rolePhaseSummaryCommitted" : "rolePhaseSummaryPartial";
   const summaryParams = {
     count: committed.length,
-    failed: failed.length,
-    total: items.length,
+    failed: totalFailed,
+    total: items.length + genFailed.length,
   };
   const logMessage =
     outcome === "committed"
       ? `committed ${committed.length} roles`
-      : `partial failure: ${committed.length} ok, ${failed.length} failed`;
+      : `partial failure: ${committed.length} ok, ${totalFailed} failed (gen=${genFailed.length} save=${failed.length})`;
+
+  // Standard nextSteps (continue to image phase / skip to scenes), plus
+  // a scoped retry button when LLM-gen failed for some characters. The
+  // retry-failed entry comes first so it's the primary action — fixing
+  // the partial failure typically matters more than moving forward.
+  const baseNextSteps = [
+    {
+      workflowName: "role_image_phase" as const,
+      labelKey: "workflowNextContinueToRoleImages" as const,
+      variant: (genFailed.length > 0 ? "secondary" : "primary") as "primary" | "secondary",
+      inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
+    },
+    {
+      workflowName: "scene_phase" as const,
+      labelKey: "workflowNextSkipToScenes" as const,
+      variant: "secondary" as const,
+    },
+  ];
+  const nextSteps =
+    genFailed.length > 0
+      ? [
+          {
+            workflowName: "role_phase" as const,
+            labelKey: "workflowRetryFailedCharacters" as const,
+            variant: "primary" as const,
+            inputData: { onlyCharacterNames: genFailed.map((f) => f.id) },
+          },
+          ...baseNextSteps,
+        ]
+      : baseNextSteps;
 
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "role_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
-    failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+    failed: [
+      ...failed.map((f) => ({
+        clientRefId: f.clientRefId,
+        reason: f.reason,
+        title: f.name,
+      })),
+      ...genFailed.map((f) => ({
+        clientRefId: f.id,
+        reason: f.reason,
+        title: f.title,
+      })),
+    ],
     summaryKey,
     summaryParams,
-    nextSteps: [
-      {
-        workflowName: "role_image_phase",
-        labelKey: "workflowNextContinueToRoleImages",
-        variant: "primary",
-        // Scope image generation to the roles we just committed, not
-        // every role historically missing an imgPath.
-        inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
-      },
-      {
-        workflowName: "scene_phase",
-        labelKey: "workflowNextSkipToScenes",
-        variant: "secondary",
-      },
-    ],
+    nextSteps,
   };
   if (emitLifecycleMessage) {
     await publishWorkflowCompleted(ctx.projectId, runId, "role_phase", {

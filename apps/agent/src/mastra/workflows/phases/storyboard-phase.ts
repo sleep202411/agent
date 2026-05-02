@@ -21,6 +21,13 @@ import {
 import { reportProgress, throwIfCancelled } from "../engine";
 import { getContext, javaRequest, type StoryosContext } from "../../lib/workspace-client";
 import { resolveSceneIdByName } from "../../lib/storyboard-ids";
+import { robustStructuredGenerate, mapStructuredOutputError } from "../../lib/robust-generate";
+import {
+  putGenFailed,
+  readGenFailed,
+  clearGenFailed,
+  type GenFailedEntry,
+} from "../../lib/gen-failed";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -293,20 +300,33 @@ const generateStep = createStep({
         `[storyboard-phase] gen.start runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} promptChars=${builtPrompt.length} title=${JSON.stringify(ep.title)}`
       );
       try {
-        // errorStrategy: "strict" still bubbles genuinely malformed output
-        // (bad JSON, wrong top-level shape). But individual rows with
-        // missing scene/description no longer throw — the schema is
-        // lenient on those fields (see StoryboardRow doc) and we drop
-        // bad rows below. Previously strict mode killed a whole 30-shot
-        // episode because DeepSeek's row 31 was missing `description`.
-        const response = await storyboarder.generate(builtPrompt, {
-          structuredOutput: {
-            schema: z.object({ rows: z.array(StoryboardRow).min(5) }),
-            errorStrategy: "strict",
+        // Use robustStructuredGenerate for the same reason episode-planner
+        // does: DeepSeek occasionally returns an empty / unparseable response
+        // ("root: Required") under load. Strict mode would throw and we'd
+        // lose the whole episode; the helper switches to "warn" + checks
+        // emptiness ourselves, retries once with a stricter JSON-only
+        // postfix (often unsticks the model), and dumps raw output to /tmp
+        // for post-mortem when both attempts fail. Previous incident
+        // (2026-05-02): 1/18 → 3/18 storyboards failing with `root:
+        // Required`; plain throw-and-retry caught some but not all.
+        //
+        // isEmpty: any of (a) no rows, (b) <5 rows after our drop-no-
+        // description filter — same floor as the old strict schema's
+        // .min(5). Lets attempt 2 fire on partial responses too, not
+        // just totally-empty ones.
+        type ParsedRows = { rows: z.infer<typeof StoryboardRow>[] };
+        const { object: parsed } = await robustStructuredGenerate<ParsedRows>({
+          agent: storyboarder,
+          prompt: builtPrompt,
+          schema: z.object({ rows: z.array(StoryboardRow) }) as unknown as z.ZodType<ParsedRows>,
+          tag: `storyboarder-${runId}-ep${i + 1}`,
+          isEmpty: (obj) => {
+            const rs = obj?.rows ?? [];
+            const usable = rs.filter((r) => !!r.description?.trim()).length;
+            return usable < 5;
           },
         });
-        const rawRows =
-          (response.object as { rows?: z.infer<typeof StoryboardRow>[] } | undefined)?.rows ?? [];
+        const rawRows = parsed.rows ?? [];
         console.log(
           `[storyboard-phase] gen.LLM_OK runId=${runId} ep=${i + 1}/${total} rawRows=${rawRows.length}`
         );
@@ -349,16 +369,20 @@ const generateStep = createStep({
         });
         generatedByIndex[i] = { clientRefId, episodeId: ep.episodeId, title: ep.title, rows };
       } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
+        const rawReason = err instanceof Error ? err.message : String(err);
         const cause =
           err instanceof Error && (err as { cause?: unknown }).cause
             ? JSON.stringify((err as { cause?: unknown }).cause, null, 2).slice(0, 800)
             : undefined;
         console.error(
-          `[storyboard-phase] gen.LLM_FAILED runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} → ${reason}`
+          `[storyboard-phase] gen.LLM_FAILED runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} → ${rawReason}`
         );
         if (cause) console.error(`[storyboard-phase] gen.LLM_FAILED cause: ${cause}`);
-        errorsByIndex[i] = reason;
+        // Sanitize Zod / Mastra structured-output noise into actionable
+        // Chinese before storing — this string ends up on the completion
+        // card under "重试失败的剧集" so it has to read like product copy,
+        // not like a server stacktrace.
+        errorsByIndex[i] = mapStructuredOutputError(err, `第 ${i + 1} 集分镜生成`);
       } finally {
         // Increment under the single-threaded event loop — no races.
         completedCount += 1;
@@ -389,18 +413,38 @@ const generateStep = createStep({
     });
     await Promise.all(workers);
 
-    // Fail the step if ANY episode failed — current behavior matches the
-    // old serial loop (which would throw on first failure). Parallel just
-    // means we surface ALL failures for diagnostics, not just the first.
-    const failedCount = errorsByIndex.filter((e) => e !== null).length;
-    if (failedCount > 0) {
+    // Partial-success behaviour: only abort the run when *every* episode
+    // failed (nothing to suspend on). Otherwise stash the failed episodes
+    // in Redis so applyStoryboardDrafts can surface them on the completion
+    // card with a "重试这 N 集" affordance, and let the user review the
+    // successful drafts now. Saves the user from re-paying for 17 good
+    // LLM calls just because 1 randomly returned `root: Required`.
+    const failedEntries: GenFailedEntry[] = [];
+    for (let idx = 0; idx < total; idx++) {
+      const reason = errorsByIndex[idx];
+      if (!reason) continue;
+      const ep = inputData.episodes[idx];
+      failedEntries.push({ id: ep.episodeId, title: ep.title, reason });
+    }
+    const generated = generatedByIndex.filter((g): g is GeneratedEntry => g !== null);
+
+    if (generated.length === 0) {
       const firstError = errorsByIndex.find((e): e is string => e !== null) ?? "unknown";
       throw new Error(
-        `storyboard generation failed for ${failedCount}/${total} episodes. First error: ${firstError}`
+        `storyboard generation failed for ${failedEntries.length}/${total} episodes. First error: ${firstError}`
       );
     }
 
-    const generated = generatedByIndex.filter((g): g is GeneratedEntry => g !== null);
+    if (failedEntries.length > 0) {
+      await putGenFailed(runId, failedEntries);
+      console.warn(
+        `[storyboard-phase] gen.PARTIAL runId=${runId} ok=${generated.length}/${total} failed=${failedEntries.length} (proceeding with successes)`
+      );
+    } else {
+      // Defensive: clear any stale entry from a prior run reusing this id.
+      await clearGenFailed(runId);
+    }
+
     const totalShots = generated.reduce((sum, g) => sum + g.rows.length, 0);
 
     return { episodeCount: generated.length, totalShots };
@@ -1044,12 +1088,22 @@ export async function applyStoryboardDrafts(
     i += 1;
   }
 
+  // Episodes whose LLM generation failed (separate from Java-save failures
+  // tracked in `failed` above). Stashed by generateStep when partial
+  // successes were committed instead of aborting the whole run.
+  const genFailed = await readGenFailed(runId);
+
   console.log(
-    `[storyboard_phase] commit.summary runId=${runId} ok=${committed.length} failed=${failed.length} of ${accepts.length}`
+    `[storyboard_phase] commit.summary runId=${runId} ok=${committed.length} failed=${failed.length} of ${accepts.length} genFailed=${genFailed.length}`
   );
 
-  const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
+  const totalFailed = failed.length + genFailed.length;
+  const outcome = totalFailed === 0 ? ("committed" as const) : ("partial_failure" as const);
   if (failed.length === 0) await deleteAllDrafts(runId);
+  // Always clear the side-channel after this commit consumes it; even on
+  // partial outcome we don't want it leaking into a subsequent re-run of
+  // the same runId (shouldn't happen, but defensive).
+  await clearGenFailed(runId);
 
   if (committed.length > 0) {
     await publishEntityEvent(ctx, {
@@ -1059,7 +1113,7 @@ export async function applyStoryboardDrafts(
     });
   }
 
-  const endLabel = `Storyboards committed: ${committed.length} ok / ${failed.length} failed`;
+  const endLabel = `Storyboards committed: ${committed.length} ok / ${totalFailed} failed`;
   await reportProgress(runId, {
     stepId: "storyboard_phase.commit",
     current: committed.length,
@@ -1077,23 +1131,60 @@ export async function applyStoryboardDrafts(
   // log string (server logs / metrics only, never shown to the user).
   const summaryKey =
     outcome === "committed" ? "storyboardPhaseSummaryCommitted" : "storyboardPhaseSummaryPartial";
+  // `total` reflects the original episode count we were asked to storyboard
+  // (commit accepts + LLM-gen failures), so the partial-summary string can
+  // say "保存 17/18 集分镜（1 集生成失败）" rather than just "1/17".
   const summaryParams =
     outcome === "committed"
       ? { count: committed.length }
-      : { failed: failed.length, total: accepts.length };
+      : {
+          count: committed.length,
+          failed: totalFailed,
+          total: accepts.length + genFailed.length,
+        };
   const logMessage =
     outcome === "committed"
       ? `committed ${committed.length} episodes' storyboards`
-      : `partial failure: ${failed.length}/${accepts.length}`;
+      : `partial failure: ${totalFailed}/${accepts.length + genFailed.length} (gen=${genFailed.length} save=${failed.length})`;
 
-  // Terminal workflow — no nextSteps (storyboard is the end of the chain).
+  // Retry affordance: when LLM-gen failed for some episodes, expose a
+  // "重新生成失败的 N 集" button on the completion card. `inputData.
+  // onlyEpisodeIds` scopes the next storyboard_phase run to just those
+  // episodes (storyboard input schema already supports this filter), so
+  // the user doesn't pay to regenerate the 17 good ones.
+  const nextSteps =
+    genFailed.length > 0
+      ? [
+          {
+            workflowName: "storyboard_phase" as const,
+            labelKey: "workflowRetryFailedEpisodes" as const,
+            variant: "primary" as const,
+            inputData: { onlyEpisodeIds: genFailed.map((f) => f.id) },
+          },
+        ]
+      : undefined;
+
+  // Terminal workflow on full success — partial-failure path adds a single
+  // "retry just the failed episodes" nextSteps entry above.
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "storyboard_phase",
     committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
-    failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
+    failed: [
+      ...failed.map((f) => ({
+        clientRefId: f.episodeId,
+        reason: f.reason,
+        title: f.title,
+      })),
+      ...genFailed.map((f) => ({
+        clientRefId: f.id,
+        reason: f.reason,
+        title: f.title,
+      })),
+    ],
     summaryKey,
     summaryParams,
+    ...(nextSteps ? { nextSteps } : {}),
   };
   if (emitLifecycleMessage) {
     await publishWorkflowCompleted(ctx.projectId, runId, "storyboard_phase", {
@@ -1101,6 +1192,7 @@ export async function applyStoryboardDrafts(
       failed: completionPayload.failed,
       summaryKey: completionPayload.summaryKey,
       summaryParams: completionPayload.summaryParams,
+      ...(nextSteps ? { nextSteps } : {}),
     });
   }
 

@@ -39,6 +39,7 @@ import { reportProgress, throwIfCancelled } from "./engine";
 import { getContext, javaRequest } from "../lib/workspace-client";
 import { putOutline, type StoryOutline } from "../lib/outline";
 import { putArtifact } from "../lib/artifact-store";
+import { robustStructuredGenerate, mapStructuredOutputError } from "../lib/robust-generate";
 import {
   publishWorkflowCompleted,
   publishWorkflowFailed,
@@ -53,8 +54,11 @@ export const ParseScriptInputSchema = z.object({
   projectId: z.string().min(1),
   /** Raw script text. Resolved from textRef by invoke_workflow. */
   text: z.string().min(1),
-  /** Target number of episodes to split into. */
-  targetEpisodeCount: z.number().int().min(1).max(60).default(10),
+  /** Target number of episodes to split into. Server (invoke_workflow /
+   *  /workflow/start) injects this from chat-history-derived ctx; if it's
+   *  missing here something upstream silently dropped the user's choice
+   *  — fail loud rather than fall back to a fixed default. */
+  targetEpisodeCount: z.number().int().min(1).max(60),
   /** Optional user feedback for a revise pass. */
   feedback: z.string().optional(),
 });
@@ -182,42 +186,37 @@ const splitStep = createStep({
       `[parse-script] split.start runId=${runId} provider=${personaProvider} model=${personaModel} promptChars=${prompt.length} totalLines=${totalLines} target=${inputData.targetEpisodeCount}`
     );
 
-    let response;
+    // Was: errorStrategy: "strict" + manual try/catch + post-empty-check.
+    // That path bubbled DeepSeek's empty-response failures as
+    // "Structured output validation failed: - root: Required" all the way
+    // to the user. Switched to robustStructuredGenerate (warn + retry +
+    // raw-dump) so the same flake gets silently absorbed by attempt 2's
+    // strict-JSON postfix in the ~95% case, and only surfaces as a
+    // user-friendly "AI 暂时无响应，请稍后重试" via the mapStructuredOutputError
+    // wrapper if both attempts truly fail.
+    type ParsedSplit = { episodes: z.infer<typeof SplitEntry>[] };
+    let rawEpisodes: z.infer<typeof SplitEntry>[];
     try {
-      response = await splitter.generate(prompt, {
-        structuredOutput: {
-          schema: z.object({ episodes: z.array(SplitEntry) }),
-          errorStrategy: "strict",
-        },
+      const { object: parsed } = await robustStructuredGenerate<ParsedSplit>({
+        agent: splitter,
+        prompt,
+        schema: z.object({ episodes: z.array(SplitEntry) }) as unknown as z.ZodType<ParsedSplit>,
+        tag: `script-splitter-${runId}`,
+        isEmpty: (obj) => !obj?.episodes || obj.episodes.length === 0,
       });
+      rawEpisodes = parsed.episodes;
     } catch (err) {
       const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       const stack = err instanceof Error ? err.stack : undefined;
-      const cause =
-        err instanceof Error && (err as { cause?: unknown }).cause
-          ? JSON.stringify((err as { cause?: unknown }).cause, null, 2).slice(0, 800)
-          : undefined;
       console.error(
         `[parse-script] split.LLM_FAILED runId=${runId} provider=${personaProvider} model=${personaModel} → ${detail}`
       );
-      if (cause) console.error(`[parse-script] split.LLM_FAILED cause: ${cause}`);
       if (stack) console.error(`[parse-script] split.LLM_FAILED stack:\n${stack}`);
-      throw err;
+      throw new Error(mapStructuredOutputError(err, "脚本拆分"));
     }
-
-    const rawEpisodes =
-      (response.object as { episodes?: z.infer<typeof SplitEntry>[] } | undefined)?.episodes ?? [];
     console.log(
       `[parse-script] split.LLM_OK runId=${runId} returnedEpisodes=${rawEpisodes.length} sampleTitle=${JSON.stringify(rawEpisodes[0]?.title ?? "")}`
     );
-    if (rawEpisodes.length === 0) {
-      console.error(
-        `[parse-script] split.NO_EPISODES runId=${runId} response.text=${JSON.stringify(
-          (response as { text?: string }).text?.slice(0, 500) ?? "(no .text)"
-        )}`
-      );
-      throw new Error("scriptSplitter returned no episodes");
-    }
 
     // Clamp line ranges to [1, totalLines] and enforce strict ordering —
     // DeepSeek occasionally returns overlapping / reversed ranges when
