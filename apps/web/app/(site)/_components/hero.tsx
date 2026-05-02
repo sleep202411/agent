@@ -11,6 +11,7 @@
  */
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { IconArrowRight } from "@tabler/icons-react";
 import { BlurText } from "@/components/ui/blur-text";
@@ -22,25 +23,45 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 
-// Primary backdrop. Hand-generated artwork uploaded to OSS via the
-// public/upload/static endpoint; served from static.fizzspace.cn.
-// To swap: drop a new image into the same OSS path or replace the URL.
-const HERO_IMAGE =
+// Primary backdrop — looping muted videos served from the OSS static
+// CDN (same bucket as HERO_POSTER). The pool is randomized on mount;
+// until the random pick lands the <video> shows the poster so the
+// section is never blank. The poster also serves as the fallback if
+// autoplay is blocked. To swap a clip: re-upload to the same path via
+// the `/content/public/upload/static` endpoint with `dir=pc`.
+const HERO_VIDEOS = [
+  "https://static.fizzspace.cn/static/pc/hero-bg-1.mp4",
+  "https://static.fizzspace.cn/static/pc/hero-bg-2.mp4",
+] as const;
+const HERO_POSTER =
   "https://static.fizzspace.cn/static/pc/ChatGPT%20Image%202026%E5%B9%B44%E6%9C%8827%E6%97%A5%2012_25_56.png";
 
 export function Hero() {
   const locale = useLocale() as Locale;
   const t = useTranslations("home");
 
+  // Pick the video on mount only — server-rendered HTML omits `src` so
+  // the SSR/CSR markup stays identical (no hydration mismatch). The
+  // poster covers the moment between hydration and the effect firing.
+  const [videoSrc, setVideoSrc] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    setVideoSrc(HERO_VIDEOS[Math.floor(Math.random() * HERO_VIDEOS.length)]);
+  }, []);
+
   return (
     <section className="relative h-screen min-h-[680px] overflow-hidden">
-      {/* Backdrop — slow Ken Burns scaling */}
-      <motion.img
-        src={HERO_IMAGE}
-        alt=""
-        initial={{ scale: 1.05 }}
-        animate={{ scale: 1.18 }}
-        transition={{ duration: 24, ease: "linear", repeat: Infinity, repeatType: "reverse" }}
+      {/* Backdrop — looping silent video. autoPlay+muted+playsInline are
+          required together for autoplay on iOS Safari + Chrome data-saver. */}
+      <video
+        key={videoSrc ?? "poster"}
+        src={videoSrc}
+        poster={HERO_POSTER}
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="auto"
+        aria-hidden="true"
         className="absolute inset-0 size-full object-cover"
       />
 
