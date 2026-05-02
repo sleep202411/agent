@@ -59,9 +59,25 @@ export const ParseScriptInputSchema = z.object({
   feedback: z.string().optional(),
 });
 
+/**
+ * Trim overly-long LLM outputs at the schema boundary instead of
+ * hard-failing the whole batch. DeepSeek occasionally writes
+ * 35-50-char titles even after we ask for ≤30 — usually the extra
+ * content is just clarifying parentheses we can drop. Failing 1 of 18
+ * episodes for that is way more disruptive than a truncated title the
+ * user can edit afterward.
+ */
+function clampString(maxLen: number) {
+  return (val: unknown) => {
+    if (typeof val !== "string") return val;
+    const trimmed = val.trim();
+    return trimmed.length > maxLen ? trimmed.slice(0, maxLen) : trimmed;
+  };
+}
+
 const SplitEntry = z.object({
-  title: z.string().min(1).max(30),
-  introduction: z.string().min(1).max(400),
+  title: z.preprocess(clampString(30), z.string().min(1).max(30)),
+  introduction: z.preprocess(clampString(400), z.string().min(1).max(400)),
   /** 1-based inclusive line number (into the source). */
   startLine: z.coerce.number().int().min(1),
   endLine: z.coerce.number().int().min(1),
