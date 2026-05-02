@@ -187,6 +187,22 @@
   }
 }
 
+/*
+ * Partner-logo marquee — used by `app/(site)/_components/partners-marquee.tsx`.
+ * The track holds two copies of the logo list back-to-back; translating
+ * by exactly -50% loops seamlessly because the second copy lines up
+ * pixel-perfect with the first. Reverse direction is opted into via
+ * `animation-direction: reverse` on the second row in the component.
+ */
+@keyframes partners-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

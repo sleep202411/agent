@@ -21,6 +21,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { Hero } from "./_components/hero";
 import { MadeWithFizz } from "./_components/made-with-fizz";
+import { PartnersMarquee } from "./_components/partners-marquee";
 import { StyleGallery } from "./_components/style-gallery";
 import { UseCases } from "./_components/use-cases";
 import { Testimonials } from "./_components/testimonials";
@@ -229,6 +230,7 @@ export default function HomePage() {
         <StyleGallery />
         <UseCases />
         <Testimonials />
+        <PartnersMarquee />
         <FAQ />
 
         {/* ─── Final CTA ────────────────────────────────────────────────── */}

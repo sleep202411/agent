@@ -60,24 +60,30 @@ export function TagSelectorModal({
         <p className="text-xs text-muted-foreground">{t("maxSelectTags", { max: MAX_TAGS })}</p>
 
         <div className="-mx-1 flex max-h-[50vh] flex-wrap gap-2 overflow-y-auto px-1 py-2">
-          {tags.map((tag) => {
-            const active = draft.includes(tag.id);
-            return (
-              <button
-                key={tag.id}
-                type="button"
-                onClick={() => toggle(tag.id)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-sm transition-colors",
-                  active
-                    ? "border-primary/50 bg-primary/15 text-primary"
-                    : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
-                )}
-              >
-                {tag.name}
-              </button>
-            );
-          })}
+          {tags.length === 0 ? (
+            <p className="w-full py-6 text-center text-xs text-muted-foreground">
+              {t("noTagsAvailable")}
+            </p>
+          ) : (
+            tags.map((tag) => {
+              const active = draft.includes(tag.id);
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  onClick={() => toggle(tag.id)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-sm transition-colors",
+                    active
+                      ? "border-primary/50 bg-primary/15 text-primary"
+                      : "border-border bg-secondary/40 text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+                  )}
+                >
+                  {tag.name}
+                </button>
+              );
+            })
+          )}
         </div>
 
         <DialogFooter>

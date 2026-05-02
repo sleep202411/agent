@@ -3,70 +3,27 @@
  * `pages/publicVideo/publicVideoPC.vue` flow but only the personal
  * branch — team-video is intentionally out of scope.
  *
- *   GET  /vedio/type/tag/list             — { all: { typeId: catName }, map: { catName: { tagId: name } } }
  *   POST /vedio/create/personal/video     — { title, introduction, tags, viewStatus } → id
  *   POST /vedio/update/personal/video     — { id, title, introduction, tags, viewStatus }
  *   POST /content/vedio/upload/personal/video/backup  — multipart { id, file }
  *   POST /content/personal/uploadBanner               — multipart { id, file }
  *
  * Pre-resolved helpers in `@/src/services/project.ts` are reused
- * for create / update / upload-video. Tag fetch + banner upload are
- * feature-local because no other surface needs them yet.
+ * for create / update / upload-video. The tag-list reader (used by
+ * both this page and the IP plaza filter chips) lives in shared
+ * `src/hooks/use-tag-list` so both surfaces hit the same React Query
+ * cache.
  */
 
-import { useMemo } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, notifyUnauthorized } from "@/src/lib/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { notifyUnauthorized } from "@/src/lib/api";
 import {
   createPersonalWork,
   updatePersonalWork,
   uploadPersonalVideo,
 } from "@/src/services/project";
 
-export interface Tag {
-  id: number;
-  name: string;
-  /** Category name the tag came from (e.g. "情感", "悬疑"). */
-  category: string;
-}
-
-/**
- * Raw shape of `/vedio/type/tag/list`. The whole envelope (no `data`
- * field) is returned, so api-client passes the full body through.
- *
- *   all: { [typeId]: categoryName }              — typeId → category label
- *   map: { [categoryName]: { [tagId]: name } }   — category → its tags
- */
-interface RawTagListResponse {
-  all?: Record<string, string>;
-  map?: Record<string, Record<string, string>>;
-}
-
-const tagKeys = {
-  list: ["publish", "tags"] as const,
-};
-
-/**
- * Returns a flat list of every tag across every category. Personal
- * videos don't filter by project type — the legacy page mirrored
- * this same flatten when `videoType === 'personal'`.
- */
-export function useTagList() {
-  return useQuery({
-    queryKey: tagKeys.list,
-    queryFn: async () => {
-      const data = await api.get<RawTagListResponse>("/vedio/type/tag/list");
-      const tags: Tag[] = [];
-      for (const [category, group] of Object.entries(data?.map ?? {})) {
-        for (const [idStr, name] of Object.entries(group ?? {})) {
-          tags.push({ id: Number(idStr), name, category });
-        }
-      }
-      return tags;
-    },
-    staleTime: 10 * 60 * 1000,
-  });
-}
+export { useTagList, tagListKeys, type Tag } from "@/src/hooks/use-tag-list";
 
 export function useCreatePersonalVideo() {
   const qc = useQueryClient();
@@ -152,21 +109,3 @@ export function useUploadPersonalCover() {
 
 /** Convenience: max number of tags a user can pick. Mirrors legacy. */
 export const MAX_TAGS = 5;
-
-/** All keys in one place so a future "publish drafts" feature can invalidate. */
-export const publishKeys = {
-  tags: tagKeys.list,
-};
-
-/** Re-export for callers that want the raw flat tag list utility. */
-export type { RawTagListResponse };
-
-/** Stable memo helper so consumers can sort once instead of every render. */
-export function useSortedTags() {
-  const { data, ...rest } = useTagList();
-  const sorted = useMemo(
-    () => [...(data ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
-    [data]
-  );
-  return { tags: sorted, ...rest };
-}

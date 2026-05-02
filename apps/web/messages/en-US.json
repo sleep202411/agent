@@ -2578,6 +2578,7 @@
     "modifyTag": "Edit tags",
     "selectTagTitle": "Select tags",
     "maxSelectTags": "You can pick up to {max} tags",
+    "noTagsAvailable": "No tags available right now.",
     "uploadVideo": "Upload Video",
     "uploadVideoCover": "Upload Cover",
     "uploadVideoFile": "Click to choose an MP4 file (max 5GB)",
@@ -3110,6 +3111,11 @@
       "primaryCta": "Start creating",
       "secondaryCta": "Browse IPs",
       "timing": "About 5 minutes from idea to first frame."
+    },
+    "partners": {
+      "eyebrow": "Partners & Press",
+      "title": "Backed, broadcast, and built with",
+      "subtitle": "Accelerators, publishers, broadcasters, and studios collaborating with FizzDragon to bring AI-assisted storytelling to global audiences."
     }
   }
 }

@@ -3,7 +3,9 @@
  *
  *   - `useIPList`       — POST /project/list (JSON, data.{list,total,...})
  *   - `useIPTypes`      — GET /vedio/project/type/list (flat [{id, name}])
- *   - `useIPTagList`    — GET /vedio/type/tag/list (flat [{id, name}] from `all`)
+ *   - `useIPTagList`    — alias to `src/hooks/use-tag-list#useTagList`
+ *                          (shared with /publish so both surfaces hit
+ *                           the same React Query cache)
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -122,28 +124,6 @@ async function fetchTypeList(): Promise<IPType[]> {
   return Object.entries(data).map(([id, name]) => ({ id: Number(id), name }));
 }
 
-/**
- * `/vedio/type/tag/list` returns three parallel views of the same dictionary:
- *   - `all`: `{ [id]: name }`              flat lookup of every category + tag
- *   - `data`: `{ [category]: name[] }`     names grouped by category
- *   - `map`: `{ [category]: { [id]: name } }`  ids grouped by category
- *
- * IP Plaza only needs the flat list (filter chips, search facets), so we
- * read `all` and emit `{ id, name }[]`. The category→tag relationship in
- * `map` is intentionally ignored — if a future feature needs it, add a
- * sibling fetcher rather than overloading this one.
- */
-async function fetchTagList(): Promise<IPTag[]> {
-  const res = await fetch("/vedio/type/tag/list", {
-    credentials: "include",
-    headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
-  });
-  if (!res.ok) return [];
-  const json = (await res.json()) as { code: number; all?: Record<string, string> };
-  const all = json.all ?? {};
-  return Object.entries(all).map(([id, name]) => ({ id: Number(id), name }));
-}
-
 export function useIPTypes() {
   return useQuery<IPType[]>({
     queryKey: ipKeys.types,
@@ -152,10 +132,13 @@ export function useIPTypes() {
   });
 }
 
-export function useIPTagList() {
-  return useQuery<IPTag[]>({
-    queryKey: ipKeys.tagList,
-    queryFn: fetchTagList,
-    staleTime: 1000 * 60 * 30,
-  });
-}
+/**
+ * IP Plaza filter chips. Delegates to the shared `useTagList` so this
+ * page and `/publish` share the same React Query cache — visiting
+ * either page warms the chip list for the other.
+ *
+ * `IPTag` and the shared `Tag` type are structurally identical
+ * (`{ id: number; name: string }`); the alias is kept so existing
+ * call sites that import `IPTag` from this barrel don't need touching.
+ */
+export { useTagList as useIPTagList } from "@/src/hooks/use-tag-list";

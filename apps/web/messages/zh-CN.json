@@ -2578,6 +2578,7 @@
     "modifyTag": "修改标签",
     "selectTagTitle": "选择标签",
     "maxSelectTags": "最多可选择 {max} 个标签",
+    "noTagsAvailable": "暂无可选标签。",
     "uploadVideo": "上传视频",
     "uploadVideoCover": "上传封面",
     "uploadVideoFile": "点击选择 MP4 文件（最大 5GB）",
@@ -3110,6 +3111,11 @@
       "primaryCta": "开始创作",
       "secondaryCta": "浏览 IP",
       "timing": "从想法到第一帧大约 5 分钟。"
+    },
+    "partners": {
+      "eyebrow": "合作伙伴 & 媒体报道",
+      "title": "携手前行，被全球看见",
+      "subtitle": "加速器、出版方、电视台与制作公司，与 FizzDragon 一同把 AI 辅助创作带给全球观众。"
     }
   }
 }
