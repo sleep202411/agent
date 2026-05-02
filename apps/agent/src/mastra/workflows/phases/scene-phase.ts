@@ -34,6 +34,13 @@ import {
   publishWorkflowSuspended,
 } from "../../lib/workflow-messages";
 import { publishEntityEvent } from "../../lib/entity-events";
+import { robustStructuredGenerate, mapStructuredOutputError } from "../../lib/robust-generate";
+import {
+  putGenFailed,
+  readGenFailed,
+  clearGenFailed,
+  type GenFailedEntry,
+} from "../../lib/gen-failed";
 import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
@@ -63,6 +70,8 @@ const SceneDesignSchema = z.object({
 export const ScenePhaseInputSchema = z.object({
   worldId: z.string().min(1),
   feedback: z.string().optional(),
+  /** Scoped retry — see role-phase doc for rationale. */
+  onlySceneNames: z.array(z.string()).optional(),
 });
 
 export const ScenePhaseOutputSchema = z.object({
@@ -130,55 +139,74 @@ const resolveInputStep = createStep({
     const sceneDesigner = mastra?.getAgent("sceneDesigner");
     if (!sceneDesigner) throw new Error("sceneDesigner agent not registered");
 
-    const settings = record.outline.settings ?? [];
-    if (settings.length === 0) {
+    const fullSettings = record.outline.settings ?? [];
+    if (fullSettings.length === 0) {
       throw new Error("scene_phase: story outline has empty settings roster");
     }
+    const onlySet = inputData.onlySceneNames?.length ? new Set(inputData.onlySceneNames) : null;
+    const settings = onlySet ? fullSettings.filter((s) => onlySet.has(s.name)) : fullSettings;
+    if (settings.length === 0) {
+      throw new Error(
+        `scene_phase: onlySceneNames=${JSON.stringify(inputData.onlySceneNames)} matched no roster entry`
+      );
+    }
+    const total = settings.length;
 
     const scenes: z.infer<typeof SceneDesignSchema>[] = [];
-    for (let i = 0; i < settings.length; i++) {
+    const genFailed: GenFailedEntry[] = [];
+    for (let i = 0; i < total; i++) {
       const entry = settings[i];
       await throwIfCancelled(runId);
       const label = `Scene Designer is elaborating "${entry.name}"…`;
       await reportProgress(runId, {
         stepId: "scene_phase.elaborate",
         current: i,
-        total: settings.length,
+        total,
         label,
       });
       await publishWorkflowProgress(ctx.projectId, runId, "scene_phase", "planning", {
         current: i,
-        total: settings.length,
+        total,
         label,
       });
       const prompt = buildElaboratePrompt(record.outline, entry, inputData.feedback);
-      const response = await sceneDesigner.generate(prompt, {
-        structuredOutput: {
-          schema: SceneDesignSchema,
-          errorStrategy: "warn",
-        },
-      });
-      const designed = response.object as z.infer<typeof SceneDesignSchema> | undefined;
-      if (!designed) {
-        // eslint-disable-next-line no-console
-        console.warn(`[scene_phase] sceneDesigner returned no design for ${entry.name}, skipping`);
-        continue;
+      type Designed = z.infer<typeof SceneDesignSchema>;
+      try {
+        const { object: designed } = await robustStructuredGenerate<Designed>({
+          agent: sceneDesigner,
+          prompt,
+          schema: SceneDesignSchema as unknown as z.ZodType<Designed>,
+          tag: `scene-designer-${runId}-${i + 1}`,
+          isEmpty: (obj) => !obj || !obj.setting,
+        });
+        scenes.push({ ...designed, name: entry.name }); // force roster name
+      } catch (err) {
+        const reason = mapStructuredOutputError(err, `场景设计 (${entry.name})`);
+        console.error(`[scene_phase] LLM_FAILED runId=${runId} scene="${entry.name}" → ${reason}`);
+        genFailed.push({ id: entry.name, title: entry.name, reason });
       }
-      scenes.push({ ...designed, name: entry.name }); // force roster name
     }
     if (scenes.length === 0) {
-      throw new Error("scene_phase: sceneDesigner returned no designs for any setting");
+      throw new Error(genFailed[0]?.reason ?? `场景设计失败：所有 ${total} 个场景都未能生成。`);
     }
-    const doneLabel = `Scene design done: ${scenes.length}`;
+    if (genFailed.length > 0) {
+      await putGenFailed(runId, genFailed);
+      console.warn(
+        `[scene_phase] PARTIAL runId=${runId} ok=${scenes.length}/${total} failed=${genFailed.length}`
+      );
+    } else {
+      await clearGenFailed(runId);
+    }
+    const doneLabel = `Scene design done: ${scenes.length}/${total}`;
     await reportProgress(runId, {
       stepId: "scene_phase.elaborate",
       current: scenes.length,
-      total: settings.length,
+      total,
       label: doneLabel,
     });
     await publishWorkflowProgress(ctx.projectId, runId, "scene_phase", "planning", {
       current: scenes.length,
-      total: settings.length,
+      total,
       label: doneLabel,
     });
     return { worldId: inputData.worldId, scenes };
@@ -412,9 +440,13 @@ export async function applySceneDrafts(
     }
   }
 
+  const genFailed = await readGenFailed(runId);
+  await clearGenFailed(runId);
+
   const summary = summarizeBatch(results);
-  const outcome = summary.failed === 0 ? ("committed" as const) : ("partial_failure" as const);
-  if (outcome === "committed") await deleteAllDrafts(runId);
+  const totalFailed = summary.failed + genFailed.length;
+  const outcome = totalFailed === 0 ? ("committed" as const) : ("partial_failure" as const);
+  if (totalFailed === 0) await deleteAllDrafts(runId);
 
   if (committed.length > 0) {
     await publishEntityEvent(ctx, {
@@ -424,7 +456,7 @@ export async function applySceneDrafts(
     });
   }
 
-  const endLabel = `Scenes committed: ${committed.length} ok / ${failed.length} failed`;
+  const endLabel = `Scenes committed: ${committed.length} ok / ${totalFailed} failed`;
   await reportProgress(runId, {
     stepId: "scene_phase.commit",
     current: committed.length,
@@ -441,48 +473,66 @@ export async function applySceneDrafts(
     outcome === "committed" ? "scenePhaseSummaryCommitted" : "scenePhaseSummaryPartial";
   const summaryParams = {
     count: committed.length,
-    failed: failed.length,
-    total: items.length,
+    failed: totalFailed,
+    total: items.length + genFailed.length,
   };
   const logMessage =
     outcome === "committed"
       ? `committed ${committed.length} scenes`
-      : `partial failure: ${committed.length} ok, ${failed.length} failed`;
+      : `partial failure: ${committed.length} ok, ${totalFailed} failed (gen=${genFailed.length} save=${failed.length})`;
 
-  // Only offer the "skip to props" secondary when the outline actually has
-  // prop entries. Story_outline frequently returns props=[] for stories
-  // without explicit item mentions — clicking the button in that state
-  // just lands the user on a "no-props auto-skip" card, which wastes a
-  // click and erodes trust in the button meaning. Fallback to the next
-  // natural step (episodes) when there's nothing to design in props.
   const outlineRecord = await getOutline(ctx.projectId);
   const hasProps = (outlineRecord?.outline.props?.length ?? 0) > 0;
+  const baseNextSteps = [
+    {
+      workflowName: "scene_image_phase" as const,
+      labelKey: "workflowNextContinueToSceneImages" as const,
+      variant: (genFailed.length > 0 ? "secondary" : "primary") as "primary" | "secondary",
+      inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
+    },
+    hasProps
+      ? {
+          workflowName: "prop_phase" as const,
+          labelKey: "workflowNextSkipToProps" as const,
+          variant: "secondary" as const,
+        }
+      : {
+          workflowName: "episode_phase" as const,
+          labelKey: "workflowNextSkipToEpisodes" as const,
+          variant: "secondary" as const,
+        },
+  ];
+  const nextSteps =
+    genFailed.length > 0
+      ? [
+          {
+            workflowName: "scene_phase" as const,
+            labelKey: "workflowRetryFailedScenes" as const,
+            variant: "primary" as const,
+            inputData: { onlySceneNames: genFailed.map((f) => f.id) },
+          },
+          ...baseNextSteps,
+        ]
+      : baseNextSteps;
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "scene_phase",
     committed: committed.map((c) => ({ serverId: c.serverId, title: c.name })),
-    failed: failed.map((f) => ({ clientRefId: f.clientRefId, reason: f.reason })),
+    failed: [
+      ...failed.map((f) => ({
+        clientRefId: f.clientRefId,
+        reason: f.reason,
+        title: f.name,
+      })),
+      ...genFailed.map((f) => ({
+        clientRefId: f.id,
+        reason: f.reason,
+        title: f.title,
+      })),
+    ],
     summaryKey,
     summaryParams,
-    nextSteps: [
-      {
-        workflowName: "scene_image_phase",
-        labelKey: "workflowNextContinueToSceneImages",
-        variant: "primary",
-        inputData: { onlyAssetIds: committed.map((c) => c.serverId) },
-      },
-      hasProps
-        ? {
-            workflowName: "prop_phase" as const,
-            labelKey: "workflowNextSkipToProps",
-            variant: "secondary" as const,
-          }
-        : {
-            workflowName: "episode_phase" as const,
-            labelKey: "workflowNextSkipToEpisodes",
-            variant: "secondary" as const,
-          },
-    ],
+    nextSteps,
   };
   if (emitLifecycleMessage) {
     await publishWorkflowCompleted(ctx.projectId, runId, "scene_phase", {

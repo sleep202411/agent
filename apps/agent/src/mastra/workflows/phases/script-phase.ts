@@ -27,6 +27,13 @@ import {
 } from "../../lib/workflow-messages";
 import { publishEntityEvent } from "../../lib/entity-events";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
+import { robustStructuredGenerate, mapStructuredOutputError } from "../../lib/robust-generate";
+import {
+  putGenFailed,
+  readGenFailed,
+  clearGenFailed,
+  type GenFailedEntry,
+} from "../../lib/gen-failed";
 import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
@@ -185,6 +192,9 @@ const generateStep = createStep({
     let totalChars = 0;
     let completed = 0;
     const castBlock = buildCastBlock(inputData.characters);
+    // Per-index error slots — preserves input order regardless of which
+    // worker finishes when. Same pattern as storyboard-phase.
+    const errorsByIndex: Array<string | null> = new Array(total).fill(null);
 
     const startLabel = `Scriptwriter drafting scripts (${total} episodes)`;
     await reportProgress(runId, {
@@ -223,30 +233,36 @@ const generateStep = createStep({
         `[script-phase] write.start runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} promptChars=${prompt.length} title=${JSON.stringify(ep.title)}`
       );
 
-      let response;
+      // Soft-fail per-episode: a transient root: Required / empty
+      // response on episode 5 should not torch the 17 successful drafts
+      // either side of it. robustStructuredGenerate handles the silent
+      // retry-with-postfix cycle; mapStructuredOutputError sanitises the
+      // reason text for the completion card.
+      type Drafted = { content: string };
+      let content = "";
       try {
-        response = await scriptwriter.generate(prompt, {
-          structuredOutput: {
-            schema: z.object({ content: z.string().min(50) }),
-            errorStrategy: "warn",
-          },
+        const { object } = await robustStructuredGenerate<Drafted>({
+          agent: scriptwriter,
+          prompt,
+          schema: z.object({ content: z.string().min(50) }) as unknown as z.ZodType<Drafted>,
+          tag: `scriptwriter-${runId}-ep${i + 1}`,
+          isEmpty: (obj) => !obj?.content || obj.content.trim().length < 50,
         });
+        content = (object.content ?? "").trim();
       } catch (err) {
-        const detail = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        const reason = mapStructuredOutputError(err, `第 ${i + 1} 集剧本生成`);
         const cause =
           err instanceof Error && (err as { cause?: unknown }).cause
             ? JSON.stringify((err as { cause?: unknown }).cause, null, 2).slice(0, 800)
             : undefined;
         console.error(
-          `[script-phase] write.LLM_FAILED runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} → ${detail}`
+          `[script-phase] write.LLM_FAILED runId=${runId} ep=${i + 1}/${total} provider=${personaProvider} model=${personaModel} → ${reason}`
         );
         if (cause) console.error(`[script-phase] write.LLM_FAILED cause: ${cause}`);
-        throw err;
+        errorsByIndex[i] = reason;
       }
-      const obj = response.object as { content?: string } | undefined;
-      const content = (obj?.content ?? response.text ?? "").trim();
       console.log(
-        `[script-phase] write.LLM_OK runId=${runId} ep=${i + 1}/${total} contentChars=${content.length} hasObject=${obj?.content ? "yes" : "no"}`
+        `[script-phase] write.LLM_OK runId=${runId} ep=${i + 1}/${total} contentChars=${content.length}`
       );
 
       if (content) {
@@ -286,10 +302,39 @@ const generateStep = createStep({
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
+    // Aggregate per-index failures into a stable list. Same shape as
+    // storyboard / role / scene / prop phases — applyScriptDrafts reads
+    // it back from Redis and surfaces the failed episodes on the
+    // completion card with a "重试失败的剧集" button (scoped via
+    // `episodeIds`, which scriptPhase already supports).
+    const genFailed: GenFailedEntry[] = [];
+    for (let idx = 0; idx < total; idx++) {
+      const reason = errorsByIndex[idx];
+      if (!reason) continue;
+      const ep = inputData.episodes[idx];
+      genFailed.push({ id: ep.episodeId, title: ep.title, reason });
+    }
+
     const committedDrafts = await listDrafts(runId, {
       entityType: "script",
       statuses: ["pending"],
     });
+
+    if (committedDrafts.length === 0) {
+      // Nothing to suspend on — surface the first sanitized reason as
+      // the workflow_failed message rather than emit an empty draft set.
+      throw new Error(genFailed[0]?.reason ?? `剧本生成失败：所有 ${total} 集都未能生成。`);
+    }
+
+    if (genFailed.length > 0) {
+      await putGenFailed(runId, genFailed);
+      console.warn(
+        `[script-phase] PARTIAL runId=${runId} ok=${committedDrafts.length}/${total} failed=${genFailed.length}`
+      );
+    } else {
+      await clearGenFailed(runId);
+    }
+
     return { generatedCount: committedDrafts.length, totalChars };
   },
 });
@@ -554,7 +599,13 @@ export async function applyScriptDrafts(
     }
   }
 
-  const outcome = failed.length === 0 ? ("committed" as const) : ("partial_failure" as const);
+  // Episodes whose LLM generation failed in generateStep (separate from
+  // Java-save failures tracked in `failed` above).
+  const genFailed = await readGenFailed(runId);
+  await clearGenFailed(runId);
+
+  const totalFailedCount = failed.length + genFailed.length;
+  const outcome = totalFailedCount === 0 ? ("committed" as const) : ("partial_failure" as const);
 
   if (committed.length > 0) {
     await publishEntityEvent(ctx, {
@@ -564,7 +615,7 @@ export async function applyScriptDrafts(
     });
   }
 
-  const endLabel = `Scripts saved: ${committed.length} succeeded / ${failed.length} failed`;
+  const endLabel = `Scripts saved: ${committed.length} succeeded / ${totalFailedCount} failed`;
   await reportProgress(runId, {
     stepId: "script_phase.commit",
     current: committed.length,
@@ -577,12 +628,12 @@ export async function applyScriptDrafts(
     label: endLabel,
   });
 
-  // Total failure (0 committed, all failed) = the phase failed, not just
-  // "partial done". Emitting a completion card with a misleading "Continue
-  // to storyboard" next-step would invite the user to proceed on top of
+  // Total failure (0 committed) = the phase failed, not just "partial
+  // done". Emitting a completion card with a misleading "Continue to
+  // storyboard" next-step would invite the user to proceed on top of
   // zero data. Route through the failed-card path instead so the user
   // gets a Retry affordance and no false "continue" option.
-  const totalFailure = committed.length === 0 && failed.length > 0;
+  const totalFailure = committed.length === 0 && totalFailedCount > 0;
 
   const summaryKey = totalFailure
     ? "scriptPhaseSummaryTotalFailure"
@@ -591,24 +642,22 @@ export async function applyScriptDrafts(
       : "scriptPhaseSummaryPartial";
   const summaryParams = {
     count: committed.length,
-    failed: failed.length,
-    total: accepts.length,
+    failed: totalFailedCount,
+    total: accepts.length + genFailed.length,
   };
   const logMessage = totalFailure
-    ? `total failure: ${failed.length}/${accepts.length}`
+    ? `total failure: ${totalFailedCount}/${accepts.length + genFailed.length}`
     : outcome === "committed"
       ? `committed ${committed.length} scripts`
-      : `partial: ${committed.length}/${accepts.length}, ${failed.length} failed`;
+      : `partial: ${committed.length}/${accepts.length + genFailed.length}, ${totalFailedCount} failed (gen=${genFailed.length} save=${failed.length})`;
 
   if (totalFailure) {
-    const firstReason = failed[0]?.reason ?? "Java batch write failed entirely";
+    const firstReason =
+      failed[0]?.reason ?? genFailed[0]?.reason ?? "Java batch write failed entirely";
     const failurePayload: WorkflowFailedOutput = {
       runId,
       workflowName: "script_phase",
       terminalStatus: "failed",
-      // User-facing error is rendered by the workflow failure card, which
-      // also has its own locale-aware rendering; we just pass a compact
-      // English log-style string here.
       error: `${logMessage} (first reason: ${firstReason})`,
       retryable: true,
     };
@@ -622,32 +671,58 @@ export async function applyScriptDrafts(
     return {
       outcome,
       committedCount: 0,
-      failedCount: failed.length,
+      failedCount: totalFailedCount,
       message: logMessage,
       completion: null,
       failure: failurePayload,
     };
   }
 
+  // When LLM-gen failed for some episodes, expose a primary "重试失败
+  // 的剧集" button on the completion card. `inputData.episodeIds` scopes
+  // the next script_phase run to just those episodes (script_phase input
+  // schema already supports this filter), so the user doesn't pay to
+  // regenerate the N successful ones.
+  const baseNextSteps = [
+    {
+      workflowName: "storyboard_phase" as const,
+      labelKey: "workflowNextContinueToStoryboard" as const,
+      variant: (genFailed.length > 0 ? "secondary" : "primary") as "primary" | "secondary",
+      inputData: { onlyEpisodeIds: committed.map((c) => c.episodeId) },
+    },
+  ];
+  const nextSteps =
+    genFailed.length > 0
+      ? [
+          {
+            workflowName: "script_phase" as const,
+            labelKey: "workflowRetryFailedEpisodes" as const,
+            variant: "primary" as const,
+            inputData: { episodeIds: genFailed.map((f) => f.id) },
+          },
+          ...baseNextSteps,
+        ]
+      : baseNextSteps;
+
   const completionPayload: WorkflowCompletedOutput = {
     runId,
     workflowName: "script_phase",
     committed: committed.map((c) => ({ serverId: c.episodeId, title: c.title })),
-    failed: failed.map((f) => ({ clientRefId: f.episodeId, reason: f.reason })),
+    failed: [
+      ...failed.map((f) => ({
+        clientRefId: f.episodeId,
+        reason: f.reason,
+        title: f.title,
+      })),
+      ...genFailed.map((f) => ({
+        clientRefId: f.id,
+        reason: f.reason,
+        title: f.title,
+      })),
+    ],
     summaryKey,
     summaryParams,
-    nextSteps: [
-      {
-        workflowName: "storyboard_phase",
-        labelKey: "workflowNextContinueToStoryboard",
-        variant: "primary",
-        // Scope storyboard generation to the episodes we just wrote scripts
-        // for. Without this, storyboard_phase walks every episode with a
-        // committed script in Java — including historical ones from earlier
-        // runs the user isn't asking to redo.
-        inputData: { onlyEpisodeIds: committed.map((c) => c.episodeId) },
-      },
-    ],
+    nextSteps,
   };
   if (emitLifecycleMessage) {
     await publishWorkflowCompleted(ctx.projectId, runId, "script_phase", {
@@ -662,7 +737,7 @@ export async function applyScriptDrafts(
   return {
     outcome,
     committedCount: committed.length,
-    failedCount: failed.length,
+    failedCount: totalFailedCount,
     message: logMessage,
     completion: completionPayload,
     failure: null,

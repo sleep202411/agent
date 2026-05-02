@@ -44,7 +44,7 @@ async function handleRun(mastra: Mastra, job: Job<RunJobData, unknown, "run">): 
   const { runId, workflowName, inputData, ctx } = job.data;
 
   if (await isCancelled(runId)) {
-    await finalizeCancelled(runId, workflowName, ctx.projectId);
+    await finalizeCancelled(runId, workflowName, ctx.projectId, inputData);
     return;
   }
 
@@ -58,9 +58,9 @@ async function handleRun(mastra: Mastra, job: Job<RunJobData, unknown, "run">): 
       inputData,
       requestContext: buildRequestContext(ctx, runId),
     });
-    await applyResult(runId, result, workflowName, ctx.projectId);
+    await applyResult(runId, result, workflowName, ctx.projectId, inputData);
   } catch (err) {
-    await applyError(runId, err, workflowName, ctx.projectId);
+    await applyError(runId, err, workflowName, ctx.projectId, inputData);
   }
 }
 
@@ -71,6 +71,8 @@ async function handleResume(
   const { runId, workflowName, resumeData, stepId, ctx } = job.data;
 
   if (await isCancelled(runId)) {
+    // Resume jobs don't carry the original inputData; the failed-card
+    // retry path will fall back to chat-history replay if it's missing.
     await finalizeCancelled(runId, workflowName, ctx.projectId);
     return;
   }
@@ -99,10 +101,18 @@ async function handleResume(
  * forever because useSyncActiveWorkflow only clears on workflow_failed/completed
  * card renders.
  */
+/**
+ * `inputData` (when supplied) is stamped on the workflow_failed event so
+ * the Failed card's "重试" button can preserve scoped retries — e.g. a
+ * storyboard run started with `onlyEpisodeIds: [ep5]` should re-fire
+ * with the same scope on click, not silently widen back to all 18
+ * episodes via chat-history replay.
+ */
 async function finalizeCancelled(
   runId: string,
   workflowName: WorkflowName,
-  projectId: string
+  projectId: string,
+  inputData?: unknown
 ): Promise<void> {
   await setStatus(runId, "cancelled");
   await clearCancel(runId);
@@ -111,6 +121,7 @@ async function finalizeCancelled(
       terminalStatus: "cancelled",
       error: "User cancelled",
       retryable: true,
+      ...(isPlainObject(inputData) ? { inputData } : {}),
     });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -123,7 +134,8 @@ async function finalizeFailed(
   workflowName: WorkflowName,
   projectId: string,
   error: string,
-  classification: ReturnType<typeof classifyError>
+  classification: ReturnType<typeof classifyError>,
+  inputData?: unknown
 ): Promise<void> {
   try {
     await publishWorkflowFailed(projectId, runId, workflowName, {
@@ -131,11 +143,16 @@ async function finalizeFailed(
       error,
       classification,
       retryable: classification !== "content_policy" && classification !== "invalid_input",
+      ...(isPlainObject(inputData) ? { inputData } : {}),
     });
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`[worker] publishWorkflowFailed(failed) failed for ${runId}:`, err);
   }
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
 }
 
 function getWorkflow(mastra: Mastra, name: string) {
@@ -174,7 +191,8 @@ async function applyResult(
   runId: string,
   result: unknown,
   workflowName: WorkflowName,
-  projectId: string
+  projectId: string,
+  inputData?: unknown
 ): Promise<void> {
   // We keep this boundary loose: Mastra's WorkflowResult type varies with
   // generic parameters and evolves across minor versions. We care about the
@@ -200,7 +218,7 @@ async function applyResult(
     const failingWorkflow = await resolveFailingWorkflow(runId, r.error, workflowName);
     await setStatus(runId, "failed", { error: message, errorClassification: classification });
     await clearCancel(runId);
-    await finalizeFailed(runId, failingWorkflow, projectId, message, classification);
+    await finalizeFailed(runId, failingWorkflow, projectId, message, classification, inputData);
     return;
   }
   // tripwire / paused / anything unexpected — log and mark failed so the run
@@ -210,17 +228,18 @@ async function applyResult(
     error: unexpectedMsg,
     errorClassification: "unknown",
   });
-  await finalizeFailed(runId, workflowName, projectId, unexpectedMsg, "unknown");
+  await finalizeFailed(runId, workflowName, projectId, unexpectedMsg, "unknown", inputData);
 }
 
 async function applyError(
   runId: string,
   err: unknown,
   workflowName: WorkflowName,
-  projectId: string
+  projectId: string,
+  inputData?: unknown
 ): Promise<void> {
   if (err instanceof WorkflowCancelledError) {
-    await finalizeCancelled(runId, workflowName, projectId);
+    await finalizeCancelled(runId, workflowName, projectId, inputData);
     return;
   }
   const message = formatWorkflowError(err);
@@ -228,7 +247,7 @@ async function applyError(
   const failingWorkflow = await resolveFailingWorkflow(runId, err, workflowName);
   await setStatus(runId, "failed", { error: message, errorClassification: classification });
   await clearCancel(runId);
-  await finalizeFailed(runId, failingWorkflow, projectId, message, classification);
+  await finalizeFailed(runId, failingWorkflow, projectId, message, classification, inputData);
 }
 
 /**

@@ -110,6 +110,18 @@ export const K = {
     assertSafeId(runId, "runId");
     return `workflow:run:${runId}:resume_payload`;
   },
+  /**
+   * Per-run side-channel for entities whose LLM generation failed during
+   * a phase that still proceeded with partial successes. Used by all 5
+   * partial-success phases (storyboard / role / scene / prop / script).
+   * Read by the matching applyXDrafts at commit time so the completion
+   * card can surface "N 项生成失败 — 重试这 N 项" with a scoped retry.
+   * JSON-encoded `{ id, title, reason }[]` — see lib/gen-failed.ts.
+   */
+  workflowGenFailed: (runId: string) => {
+    assertSafeId(runId, "runId");
+    return `workflow:run:${runId}:gen_failed`;
+  },
 
   // ─── Workflow indices (sorted sets by startedAt) ──────────────────
   workflowRunsByUser: (userId: string) => {

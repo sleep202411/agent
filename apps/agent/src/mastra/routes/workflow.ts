@@ -27,28 +27,33 @@ import { applyScriptDrafts } from "../workflows/phases/script-phase";
 import { applyStoryboardDrafts } from "../workflows/phases/storyboard-phase";
 
 /**
- * Inject context-derived fields (projectId / worldId / episodeId /
- * targetEpisodeCount) into inputData unless caller already provided them.
- * Mirrors `invoke_workflow` tool's auto-injection so /workflow/start
- * produces inputData that passes phase workflow schemas (which require
- * these IDs).
+ * Inject context-derived fields (projectId / worldId / episodeId / 5 gen
+ * params) into inputData. Ctx is authoritative (chat-history-as-source-of-
+ * truth — see invoke-workflow.ts for the full rationale): if ctx has a
+ * value, it overrides whatever the caller passed for that field. Caller
+ * may still set fields ctx doesn't know about (textRef, episodeIds, …).
  */
 function injectContextDefaults(
   workflowName: WorkflowName,
   inputData: Record<string, unknown>,
   ctx: StoryosContext
 ): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = { ...inputData };
+  delete sanitized.targetEpisodeCount;
+  delete sanitized.shotsPerEpisode;
+  delete sanitized.stylePainting;
+  delete sanitized.dialogLanguage;
   const needsEpisodeCount = workflowName === "episode_phase" || workflowName === "parse_script";
   return {
     projectId: ctx.projectId,
     ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
     ...(ctx.episodeId ? { episodeId: ctx.episodeId } : {}),
+    ...sanitized,
     ...(needsEpisodeCount &&
     typeof ctx.targetEpisodeCount === "number" &&
     ctx.targetEpisodeCount > 0
       ? { targetEpisodeCount: ctx.targetEpisodeCount }
       : {}),
-    ...inputData,
   };
 }
 
@@ -62,6 +67,26 @@ function requireContext(c: import("hono").Context): StoryosContext {
       message: "missing userId/projectId in requestContext",
     });
   }
+  const tecRaw = rc?.get("targetEpisodeCount");
+  const tec =
+    typeof tecRaw === "number" && Number.isFinite(tecRaw) && tecRaw > 0
+      ? tecRaw
+      : typeof tecRaw === "string" && tecRaw.trim()
+        ? (() => {
+            const n = Number(tecRaw);
+            return Number.isFinite(n) && n > 0 ? n : undefined;
+          })()
+        : undefined;
+  const speRaw = rc?.get("shotsPerEpisode");
+  const spe =
+    typeof speRaw === "number" && Number.isFinite(speRaw) && speRaw > 0
+      ? speRaw
+      : typeof speRaw === "string" && speRaw.trim()
+        ? (() => {
+            const n = Number(speRaw);
+            return Number.isFinite(n) && n > 0 ? n : undefined;
+          })()
+        : undefined;
   return {
     cookie: cookie ?? "",
     userId,
@@ -70,6 +95,10 @@ function requireContext(c: import("hono").Context): StoryosContext {
     episodeId: rc?.get("episodeId") as string | undefined,
     locale: rc?.get("locale") as string | undefined,
     acceptLanguage: rc?.get("acceptLanguage") as string | undefined,
+    targetEpisodeCount: tec,
+    shotsPerEpisode: spe,
+    stylePainting: rc?.get("stylePainting") as string | undefined,
+    dialogLanguage: rc?.get("dialogLanguage") as string | undefined,
   };
 }
 

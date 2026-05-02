@@ -170,8 +170,21 @@ export type WorkflowCommittedItem = z.infer<typeof WorkflowCommittedItemSchema>;
 export const WorkflowCompletedOutputSchema = BaseWorkflowOutput.extend({
   /** What actually made it into Java. */
   committed: z.array(WorkflowCommittedItemSchema),
-  /** Optional "this failed" items for partial_failure cases. */
-  failed: z.array(z.object({ clientRefId: z.string(), reason: z.string() })).optional(),
+  /**
+   * Optional "this failed" items for partial_failure cases.
+   * `title` (when present) is rendered on the partial-failure completion
+   * card so the user can tell which entities need a re-run — e.g.
+   * "第 5 集 / 第 12 集" instead of just "2 项失败".
+   */
+  failed: z
+    .array(
+      z.object({
+        clientRefId: z.string(),
+        reason: z.string(),
+        title: z.string().optional(),
+      })
+    )
+    .optional(),
   /** Short human-readable summary (matches old workflow output `message`). */
   summary: z.string().optional(),
   /**
@@ -223,6 +236,16 @@ export const WorkflowFailedOutputSchema = BaseWorkflowOutput.extend({
   /** Loose string matching the existing ErrorClassification; UI maps to label. */
   classification: z.string().optional(),
   retryable: z.boolean(),
+  /**
+   * The inputData this run was originally started with. Used by the
+   * Failed card's "重试" button to preserve scoped retries — e.g. a
+   * storyboard run started with `onlyEpisodeIds: [ep5]` (because a
+   * prior run's "重试失败的剧集" button) should re-fire with the same
+   * scope when it itself fails, not silently widen back to all 18
+   * episodes via chat-history replay. Optional so older clients that
+   * don't carry it through still work.
+   */
+  inputData: z.record(z.string(), z.unknown()).optional(),
 });
 export type WorkflowFailedOutput = z.infer<typeof WorkflowFailedOutputSchema>;
 

@@ -20,6 +20,7 @@ import { getContext, javaRequest, type StoryosContext } from "../../lib/workspac
 import { publishWorkflowCompleted, publishWorkflowProgress } from "../../lib/workflow-messages";
 import { PRICES, deductCredits, phaseDeductKey } from "../../lib/billing";
 import { contentLanguageInstruction, resolveContentLanguage } from "../../lib/language";
+import { robustStructuredGenerate, mapStructuredOutputError } from "../../lib/robust-generate";
 
 // ─── Schemas ───────────────────────────────────────────────────────────
 
@@ -294,68 +295,32 @@ const analyzeStep = createStep({
     // eslint-disable-next-line no-console
     console.log(`[script_breakdown] storyEditor prompt length: ${prompt.length} chars`);
 
-    // DeepSeek (especially v4-pro) intermittently returns an empty
-    // structured-output object — zod then fails with `root: Required`.
-    // The model is healthy on the *next* call ~95% of the time, so a
-    // single retry silently recovers most of these without surfacing a
-    // failure card. Two attempts max: any third failure is real (key
-    // misconfig / model down / prompt refusal) and shouldn't keep
-    // burning tokens.
-    const MAX_ATTEMPTS = 2;
-    let response: Awaited<ReturnType<typeof storyEditor.generate>>;
-    let lastErr: unknown;
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        response = await storyEditor.generate(prompt, {
-          structuredOutput: {
-            schema: BreakdownShape,
-            // Surface schema-mismatch errors instead of silently returning
-            // undefined — otherwise we only see "no cast" with no cause.
-            errorStrategy: "strict",
-          },
-        });
-        if (attempt > 1) {
-          console.log(
-            `[script_breakdown] storyEditor recovered on attempt ${attempt}/${MAX_ATTEMPTS}`
-          );
-        }
-        lastErr = undefined;
-        break;
-      } catch (err) {
-        lastErr = err;
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(
-          `[script_breakdown] storyEditor attempt ${attempt}/${MAX_ATTEMPTS} failed: ${msg}`
-        );
-        if (attempt === MAX_ATTEMPTS) break;
-        // Tiny backoff so we don't hammer DeepSeek on the rare case
-        // they're throttling us. 500ms is enough for a transient.
-        await new Promise((r) => setTimeout(r, 500));
-      }
-    }
-    if (lastErr) {
+    // Was: bespoke 2-attempt retry around strict-mode structuredOutput.
+    // Replaced with the shared robustStructuredGenerate helper (warn mode
+    // + retry-with-strict-postfix + raw dump) so this call site benefits
+    // from the same root: Required → silent retry recovery as
+    // episode-planner / storyboard / script-splitter, plus the
+    // mapStructuredOutputError wrapper rewrites the user-facing error to
+    // "AI 模型暂时无响应，请稍后重试" instead of leaking Zod vocabulary.
+    type BreakdownResult = z.infer<typeof BreakdownShape>;
+    let result: BreakdownResult;
+    try {
+      const { object } = await robustStructuredGenerate<BreakdownResult>({
+        agent: storyEditor,
+        prompt,
+        schema: BreakdownShape as unknown as z.ZodType<BreakdownResult>,
+        tag: `story-editor-${runId ?? "norun"}`,
+        isEmpty: (obj) => !obj || !obj.cast || obj.cast.length === 0,
+      });
+      result = object;
+    } catch (err) {
       // eslint-disable-next-line no-console
       console.error(
         "[script_breakdown] storyEditor.generate exhausted retries:",
-        lastErr instanceof Error ? lastErr.message : lastErr,
-        lastErr instanceof Error ? lastErr.stack : undefined
+        err instanceof Error ? err.message : err,
+        err instanceof Error ? err.stack : undefined
       );
-      throw lastErr;
-    }
-    response = response!;
-
-    const result = response.object as z.infer<typeof BreakdownShape> | undefined;
-    if (!result || !result.cast || result.cast.length === 0) {
-      // eslint-disable-next-line no-console
-      console.error(
-        "[script_breakdown] storyEditor returned no cast. Raw response keys:",
-        Object.keys(response ?? {}),
-        "text head:",
-        typeof response.text === "string" ? response.text.slice(0, 500) : "(no .text)",
-        "object:",
-        JSON.stringify(response.object ?? null).slice(0, 500)
-      );
-      throw new Error("storyEditor returned no cast — skeleton extraction failed");
+      throw new Error(mapStructuredOutputError(err, "故事骨架提取"));
     }
 
     if (runId) {

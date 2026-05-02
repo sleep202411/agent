@@ -641,6 +641,29 @@ export function WorkflowCompletedCard({
                 : t("workflowCommittedSummary", { count: committedCount })))}
         </span>
       </div>
+      {/* Show specific failed titles when partial — lets user know which
+          entities need attention without opening any other panel. Cap at
+          5 to keep the card compact; rest collapse into "+N more". */}
+      {partial && output.failed && output.failed.length > 0 && (
+        <div className="mt-1.5 ml-5 text-[11.5px] text-amber-500/85">
+          {(() => {
+            const titled = output.failed.filter(
+              (f): f is { clientRefId: string; reason: string; title: string } =>
+                typeof f.title === "string" && f.title.length > 0
+            );
+            if (titled.length === 0) return null;
+            const head = titled.slice(0, 5).map((f) => f.title);
+            const more = titled.length - head.length;
+            return (
+              <span>
+                {t("workflowFailedItemsLabel")}
+                {head.join("、")}
+                {more > 0 ? t("workflowFailedItemsMore", { count: more }) : null}
+              </span>
+            );
+          })()}
+        </div>
+      )}
       {/* Workflow-specific structured result panel (章节/角色/场景 for
           story_outline; extend the switch below as other workflows grow
           inline summaries). */}
@@ -784,21 +807,35 @@ export function WorkflowFailedCard({
       toast.info(t("workflowHintRetryHasSuccessor"));
       return;
     }
+    // Prefer the failed run's own inputData (stamped by the worker on
+    // workflow_failed) over chat-history replay. Critical for retry
+    // chain integrity — when the user previously clicked "重试失败的剧集"
+    // and that scoped run *itself* failed, the original
+    // tool-invoke_workflow in chat history was scoped to ALL 18
+    // episodes, so a chat-history replay would silently widen the
+    // retry back to 18. The worker stamps `inputData: { onlyEpisodeIds:
+    // [ep5] }` directly on the failure event so this path stays scoped.
+    const replayed = buildInputData(
+      output.workflowName,
+      {
+        projectId,
+        worldId,
+        targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
+      },
+      undefined,
+      messages ?? undefined
+    );
+    const fromFailedEvent = output.inputData ?? null;
+    const finalInputData =
+      fromFailedEvent && typeof fromFailedEvent === "object"
+        ? { ...replayed, ...fromFailedEvent }
+        : replayed;
     void dispatch(
       startWorkflowFromButton({
         projectId,
         userLabel: t("workflowRetryLabel", { name: workflowLabelText }),
         workflowName: output.workflowName,
-        inputData: buildInputData(
-          output.workflowName,
-          {
-            projectId,
-            worldId,
-            targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
-          },
-          undefined,
-          messages ?? undefined
-        ),
+        inputData: finalInputData,
       })
     );
   };

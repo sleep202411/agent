@@ -41,17 +41,45 @@ export const invokeWorkflow = createTool({
         ? (resolvedInput as Record<string, unknown>)
         : {};
 
-    // Post-configure_params model: LLM collects generation-time settings
-    // (targetEpisodeCount / chapterLength / shotsPerEpisode / stylePainting /
-    // dialogLanguage) via `configure_params` tool, remembers via its own
-    // chat history, passes them into each `invoke_workflow` call's inputData.
-    // Lift them OUT of inputData into the request context so existing phase
-    // workflows reading `ctx.stylePainting` etc. continue to work unchanged.
-    const genParamOverrides = extractGenParamOverrides(resolvedObj);
-    const ctx: StoryosContext = { ...baseCtx, ...genParamOverrides };
+    // Chat-history-as-source-of-truth: the 5 generation-time params
+    // (targetEpisodeCount / shotsPerEpisode / stylePainting / dialogLanguage,
+    // plus chapterLength which doesn't ride on ctx) live in chat history
+    // (`Params set: {JSON}` user message), are read by the web client into
+    // `workspaceContext`, forwarded as `x-storyos-context`, and seed
+    // `requestContext` for this turn — so `baseCtx` already has the
+    // canonical values. The LLM is asked to echo them in inputData but
+    // historically miscopies (e.g. user picked 11, LLM passes 10 from
+    // schema-example priming). Treat ctx as authoritative: strip these
+    // params from `resolvedObj` and re-inject from ctx below.
+    const llmOverrides = extractGenParamOverrides(resolvedObj);
+    const sanitizedResolvedObj: Record<string, unknown> = { ...resolvedObj };
+    delete sanitizedResolvedObj.targetEpisodeCount;
+    delete sanitizedResolvedObj.shotsPerEpisode;
+    delete sanitizedResolvedObj.stylePainting;
+    delete sanitizedResolvedObj.dialogLanguage;
+    // ctx values from chat history win over anything the LLM passed.
+    // Fall back to LLM's value only when ctx doesn't have one (rare path,
+    // e.g. very first invoke before configure_params is submitted).
+    const ctx: StoryosContext = {
+      ...baseCtx,
+      targetEpisodeCount: baseCtx.targetEpisodeCount ?? llmOverrides.targetEpisodeCount,
+      shotsPerEpisode: baseCtx.shotsPerEpisode ?? llmOverrides.shotsPerEpisode,
+      stylePainting: baseCtx.stylePainting ?? llmOverrides.stylePainting,
+      dialogLanguage: baseCtx.dialogLanguage ?? llmOverrides.dialogLanguage,
+    };
+    if (
+      typeof llmOverrides.targetEpisodeCount === "number" &&
+      typeof baseCtx.targetEpisodeCount === "number" &&
+      llmOverrides.targetEpisodeCount !== baseCtx.targetEpisodeCount
+    ) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[invoke_workflow] ${workflowName} inputData.targetEpisodeCount=${llmOverrides.targetEpisodeCount} but ctx (from chat history)=${baseCtx.targetEpisodeCount}; ctx wins.`
+      );
+    }
 
-    // Credit preflight: estimate cost + check balance. Uses ctx (with
-    // overrides) so LLM-declared targetEpisodeCount lands in the estimate.
+    // Credit preflight: estimate cost + check balance. Uses ctx (chat-history
+    // canonical) so the estimate matches what will actually be planned.
     const estimated = estimateWorkflowCost(
       workflowName as WorkflowName,
       null,
@@ -69,26 +97,28 @@ export const invokeWorkflow = createTool({
       }
     }
 
-    // Auto-inject targetEpisodeCount for phases that plan/slice episodes
-    // if LLM omitted it but ctx has a value (from configure_params).
+    // Re-inject the 5 gen params from ctx into inputData. Spread AFTER
+    // sanitizedResolvedObj so ctx wins. Phase workflows that read
+    // `inputData.targetEpisodeCount` (episode_phase / parse_script) thus
+    // see the chat-history value, not the LLM's.
     const needsEpisodeCount = workflowName === "episode_phase" || workflowName === "parse_script";
-    const injectedEpisodeCount =
+    const ctxInjections: Record<string, unknown> = {};
+    if (
       needsEpisodeCount &&
-      !("targetEpisodeCount" in resolvedObj) &&
       typeof ctx.targetEpisodeCount === "number" &&
       ctx.targetEpisodeCount > 0
-        ? { targetEpisodeCount: ctx.targetEpisodeCount }
-        : {};
+    ) {
+      ctxInjections.targetEpisodeCount = ctx.targetEpisodeCount;
+    }
 
     // Supervisor doesn't see projectId / worldId (they live in requestContext),
     // so inject them automatically before the workflow validates its input.
-    // Preserve anything the LLM explicitly passed — don't clobber overrides.
     const injected = {
       projectId: ctx.projectId,
       ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
       ...(ctx.episodeId ? { episodeId: ctx.episodeId } : {}),
-      ...injectedEpisodeCount,
-      ...resolvedObj,
+      ...sanitizedResolvedObj,
+      ...ctxInjections,
     };
 
     const { runId } = await startWorkflow({
