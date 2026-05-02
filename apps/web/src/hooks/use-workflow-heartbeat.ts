@@ -7,13 +7,22 @@
  * the next person.
  *
  * Lifecycle decisions:
- *   - Only ticks while `runId` is set AND `document.visibilityState`
- *     is "visible". Hidden tabs (background tabs, locked screen) are
- *     treated as "user not watching" — beat stops and the reaper
- *     reclaims the slot. The 30s grace window is plenty for users to
- *     re-focus the tab without losing their run.
- *   - On reconnect (visibility flips back to "visible"), fires an
- *     immediate beat so the run isn't a tick away from being reaped.
+ *   - Ticks every HEARTBEAT_INTERVAL_MS regardless of tab visibility.
+ *     We previously only ticked when `document.visibilityState` was
+ *     "visible", treating hidden tabs as "user walked away". That broke
+ *     the very common multi-tab pattern: same user, two tabs, two
+ *     different projects, one runs role_phase / parse_script for 5-10
+ *     min while the user works on the other. Switching to the other
+ *     tab silenced heartbeats → reaper killed the run 30s later.
+ *     Confirmed 2026-05-02 from prod-com worker logs (6 runs reaped at
+ *     idleMs ≈ 30-43s right after a user multi-tabbed).
+ *   - "Genuine user gone" cases still terminate naturally because the
+ *     JS execution context disappears: tab closed → `pagehide` +
+ *     `useWorkflowCancelOnLeave` sendBeacon; browser killed / OS
+ *     suspended / power-off → process dies, interval stops, reaper
+ *     reaps within grace. The visibility check was protecting against
+ *     a scenario that doesn't actually happen — alive-tab-but-user-
+ *     gone is bounded by browser auto-throttling within minutes.
  *   - Cleanup on unmount / runId change clears the interval; the
  *     next mount restarts it.
  *
@@ -46,14 +55,11 @@ export function useWorkflowHeartbeat(runIds: string[], projectId: string | null 
   const depKey = [...runIds].sort().join(",");
   useEffect(() => {
     if (!projectId || runIds.length === 0) return;
-    if (typeof document === "undefined") return;
 
-    let timer: number | null = null;
     let cancelled = false;
 
     const fire = (): void => {
       if (cancelled) return;
-      if (document.visibilityState !== "visible") return;
       // Best-effort fan-out: each request is idempotent (lastHeartbeatAt
       // = max(now, prev)), so a partial failure just delays one run's
       // grace deadline by 10s — the next tick covers it.
@@ -62,36 +68,15 @@ export function useWorkflowHeartbeat(runIds: string[], projectId: string | null 
       }
     };
 
-    const start = (): void => {
-      if (timer != null) return;
-      // Send one immediately so the agent records us as active without
-      // waiting a full interval after mount / re-focus.
-      fire();
-      timer = window.setInterval(fire, HEARTBEAT_INTERVAL_MS);
-    };
-
-    const stop = (): void => {
-      if (timer != null) {
-        window.clearInterval(timer);
-        timer = null;
-      }
-    };
-
-    const onVisibilityChange = (): void => {
-      if (document.visibilityState === "visible") {
-        start();
-      } else {
-        stop();
-      }
-    };
-
-    if (document.visibilityState === "visible") start();
-    document.addEventListener("visibilitychange", onVisibilityChange);
+    // Send one immediately so the agent records us as active without
+    // waiting a full interval after mount.
+    fire();
+    const timer =
+      typeof window !== "undefined" ? window.setInterval(fire, HEARTBEAT_INTERVAL_MS) : null;
 
     return () => {
       cancelled = true;
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      stop();
+      if (timer != null && typeof window !== "undefined") window.clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [depKey, projectId]);
