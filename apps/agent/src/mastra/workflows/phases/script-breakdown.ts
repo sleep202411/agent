@@ -294,25 +294,55 @@ const analyzeStep = createStep({
     // eslint-disable-next-line no-console
     console.log(`[script_breakdown] storyEditor prompt length: ${prompt.length} chars`);
 
+    // DeepSeek (especially v4-pro) intermittently returns an empty
+    // structured-output object — zod then fails with `root: Required`.
+    // The model is healthy on the *next* call ~95% of the time, so a
+    // single retry silently recovers most of these without surfacing a
+    // failure card. Two attempts max: any third failure is real (key
+    // misconfig / model down / prompt refusal) and shouldn't keep
+    // burning tokens.
+    const MAX_ATTEMPTS = 2;
     let response: Awaited<ReturnType<typeof storyEditor.generate>>;
-    try {
-      response = await storyEditor.generate(prompt, {
-        structuredOutput: {
-          schema: BreakdownShape,
-          // Surface schema-mismatch errors instead of silently returning
-          // undefined — otherwise we only see "no cast" with no cause.
-          errorStrategy: "strict",
-        },
-      });
-    } catch (err) {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        response = await storyEditor.generate(prompt, {
+          structuredOutput: {
+            schema: BreakdownShape,
+            // Surface schema-mismatch errors instead of silently returning
+            // undefined — otherwise we only see "no cast" with no cause.
+            errorStrategy: "strict",
+          },
+        });
+        if (attempt > 1) {
+          console.log(
+            `[script_breakdown] storyEditor recovered on attempt ${attempt}/${MAX_ATTEMPTS}`
+          );
+        }
+        lastErr = undefined;
+        break;
+      } catch (err) {
+        lastErr = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[script_breakdown] storyEditor attempt ${attempt}/${MAX_ATTEMPTS} failed: ${msg}`
+        );
+        if (attempt === MAX_ATTEMPTS) break;
+        // Tiny backoff so we don't hammer DeepSeek on the rare case
+        // they're throttling us. 500ms is enough for a transient.
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    if (lastErr) {
       // eslint-disable-next-line no-console
       console.error(
-        "[script_breakdown] storyEditor.generate threw:",
-        err instanceof Error ? err.message : err,
-        err instanceof Error ? err.stack : undefined
+        "[script_breakdown] storyEditor.generate exhausted retries:",
+        lastErr instanceof Error ? lastErr.message : lastErr,
+        lastErr instanceof Error ? lastErr.stack : undefined
       );
-      throw err;
+      throw lastErr;
     }
+    response = response!;
 
     const result = response.object as z.infer<typeof BreakdownShape> | undefined;
     if (!result || !result.cast || result.cast.length === 0) {

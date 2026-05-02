@@ -519,6 +519,11 @@ export function WorkflowCompletedCard({
         )
       : undefined
   );
+  // chat history → buildInputData replays the supervisor's prior
+  // invoke_workflow inputData (textRef etc.)
+  const messages = useAppSelector((s) =>
+    projectId ? (s.assistant.projects[projectId]?.messages ?? null) : null
+  );
   useSyncActiveWorkflow(isActive, output.runId, output.workflowName, "completed");
   // See suspended card: useState isn't synchronous, so a double-click
   // could spawn two next-step workflows before the first call returns.
@@ -534,11 +539,16 @@ export function WorkflowCompletedCard({
     if (dispatchedRef.current) return;
     if (!projectId || !isActive) return;
     dispatchedRef.current = true;
-    const defaults = buildInputData(next.workflowName, {
-      projectId,
-      worldId,
-      targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
-    });
+    const defaults = buildInputData(
+      next.workflowName,
+      {
+        projectId,
+        worldId,
+        targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
+      },
+      undefined,
+      messages ?? undefined
+    );
     // next.inputData (set by the previous workflow's completion payload)
     // takes precedence so a phase can scope the next step — e.g.
     // episode_phase passes `{ episodeIds: [...] }` so script_phase only
@@ -702,6 +712,12 @@ export function WorkflowFailedCard({
         )
       : undefined
   );
+  // chat history → buildInputData replays the supervisor's prior
+  // invoke_workflow inputData (textRef etc.) so retries don't drop
+  // supervisor-injected fields.
+  const messages = useAppSelector((s) =>
+    projectId ? (s.assistant.projects[projectId]?.messages ?? null) : null
+  );
   // Read the project's currently-tracked active workflow so we can guard
   // the retry button. When a user clicks "重新拆解" / similar, the
   // supervisor often runs cancel_workflow on the old run + invoke_workflow
@@ -773,11 +789,16 @@ export function WorkflowFailedCard({
         projectId,
         userLabel: t("workflowRetryLabel", { name: workflowLabelText }),
         workflowName: output.workflowName,
-        inputData: buildInputData(output.workflowName, {
-          projectId,
-          worldId,
-          targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
-        }),
+        inputData: buildInputData(
+          output.workflowName,
+          {
+            projectId,
+            worldId,
+            targetEpisodeCount: typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
+          },
+          undefined,
+          messages ?? undefined
+        ),
       })
     );
   };

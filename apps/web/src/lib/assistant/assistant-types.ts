@@ -340,3 +340,43 @@ export function readMostRecentProjectParam(
   }
   return undefined;
 }
+
+/**
+ * Reverse-scan the message stream for the supervisor's most recent
+ * `invoke_workflow` call against `targetWorkflowName`, and return the
+ * `inputData` it passed.
+ *
+ * Why: `invoke_workflow` is the single ground-truth point where the
+ * supervisor decides what fields a phase needs to start (textRef from a
+ * docx attachment, feedback from a previous suspended run, …). When the
+ * user clicks "重試" / "繼續" on a workflow card, the frontend's
+ * `buildInputData` would otherwise have to rebuild that payload from
+ * scratch — and any field the supervisor injected (textRef, episodeIds,
+ * etc.) would silently drop, leaving the workflow to fail with
+ * `Invalid input data: text: Required`. Replaying the prior payload
+ * ensures retries / next-step buttons preserve the original intent.
+ *
+ * Returns `undefined` if no prior invoke_workflow exists for that
+ * workflow name (e.g. the user is dispatching it for the first time).
+ */
+export function findMostRecentInvokeInput(
+  messages: AssistantMessage[],
+  targetWorkflowName: string
+): Record<string, unknown> | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const parts = messages[i]?.parts ?? [];
+    for (const part of parts) {
+      if (part.type !== "tool-invoke_workflow") continue;
+      // Both `input` (LLM-supplied) and `output` (with the resolved
+      // runId) carry the workflowName; we trust whichever is present.
+      const input = (part as { input?: unknown }).input;
+      if (!input || typeof input !== "object") continue;
+      const obj = input as Record<string, unknown>;
+      if (obj.workflowName !== targetWorkflowName) continue;
+      const inputData = obj.inputData;
+      if (!inputData || typeof inputData !== "object" || Array.isArray(inputData)) continue;
+      return inputData as Record<string, unknown>;
+    }
+  }
+  return undefined;
+}

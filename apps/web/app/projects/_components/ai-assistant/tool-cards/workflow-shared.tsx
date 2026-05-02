@@ -20,6 +20,10 @@ import { toast } from "sonner";
 import { useAppSelector } from "@/src/store";
 import { updateDraftData, type Draft, type WorkflowName } from "@/src/lib/workflow/workflow-client";
 import {
+  findMostRecentInvokeInput,
+  type AssistantMessage,
+} from "@/src/lib/assistant/assistant-types";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -671,16 +675,51 @@ function DraftDetailDialog({
 // value the user picked in the form.
 const DEFAULT_TARGET_EPISODE_COUNT = 10;
 
+/**
+ * Build the inputData payload for a button-triggered workflow dispatch
+ * (retry / next-step / continue buttons).
+ *
+ * Layered resolution, in this order — later layers win:
+ *   1. Workflow-specific minimum required scaffold (projectId, worldId, …)
+ *   2. **Replay of the supervisor's previous `invoke_workflow` for this
+ *      workflowName from chat history**, if any. This recovers fields the
+ *      supervisor injected on the original dispatch — most importantly
+ *      `textRef` for parse_script / story_outline, which the frontend has
+ *      no other way to know about. Without this layer, retry buttons for
+ *      these workflows fail with `text: Required` because the original
+ *      attachment is forgotten the moment the supervisor's turn ends.
+ *   3. Caller-supplied `feedback` (the user said "redo with X")
+ *
+ * Layer 2 is the single architectural fix for the "every retry button
+ * sometimes silently drops fields" class of bugs. Adding a new
+ * supervisor-injected field to a workflow's inputSchema no longer
+ * requires a parallel frontend change — the replay covers it.
+ */
 export function buildInputData(
   workflowName: WorkflowName,
   ctx: { projectId: string; worldId?: string | null; targetEpisodeCount?: number | null },
-  feedback?: string
+  feedback?: string,
+  messages?: AssistantMessage[]
 ): Record<string, unknown> {
+  // Layer 2: replay the supervisor's last inputData for this workflow.
+  // Strip projectId/worldId/episodeId — Mastra's `/workflow/start` route
+  // re-injects them from the request context, and ctx is the source of
+  // truth for the current selection (e.g. user switched worldId).
+  const replay = messages ? findMostRecentInvokeInput(messages, workflowName) : undefined;
+  const baseFromReplay: Record<string, unknown> = {};
+  if (replay) {
+    for (const [k, v] of Object.entries(replay)) {
+      if (k === "projectId" || k === "worldId" || k === "episodeId") continue;
+      baseFromReplay[k] = v;
+    }
+  }
+
   switch (workflowName) {
     case "role_phase":
     case "scene_phase":
     case "prop_phase":
       return {
+        ...baseFromReplay,
         ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
         ...(feedback ? { feedback } : {}),
       };
@@ -688,21 +727,39 @@ export function buildInputData(
     case "scene_image_phase":
     case "prop_image_phase":
       // No required inputs — workflow reads committed entries from Java.
-      return feedback ? { feedback } : {};
+      return { ...baseFromReplay, ...(feedback ? { feedback } : {}) };
     case "episode_phase":
       return {
+        ...baseFromReplay,
         projectId: ctx.projectId,
         targetEpisodeCount:
           typeof ctx.targetEpisodeCount === "number" && ctx.targetEpisodeCount > 0
             ? ctx.targetEpisodeCount
-            : DEFAULT_TARGET_EPISODE_COUNT,
+            : typeof baseFromReplay.targetEpisodeCount === "number" &&
+                baseFromReplay.targetEpisodeCount > 0
+              ? (baseFromReplay.targetEpisodeCount as number)
+              : DEFAULT_TARGET_EPISODE_COUNT,
         ...(feedback ? { feedback } : {}),
       };
     case "script_phase":
-      return { projectId: ctx.projectId, ...(feedback ? { feedback } : {}) };
     case "storyboard_phase":
-      return { projectId: ctx.projectId, ...(feedback ? { feedback } : {}) };
+      return {
+        ...baseFromReplay,
+        projectId: ctx.projectId,
+        ...(feedback ? { feedback } : {}),
+      };
+    case "parse_script":
+    case "story_outline":
+      // These two workflows REQUIRE `text` or `textRef` — supervisor
+      // resolved that on first dispatch from the user's attachment. Layer
+      // 2 (replay) is mandatory here; without it, retries fail with
+      // `text: Required` / `no text provided and no committed episodes`.
+      return {
+        ...baseFromReplay,
+        projectId: ctx.projectId,
+        ...(feedback ? { feedback } : {}),
+      };
     default:
-      return feedback ? { feedback } : {};
+      return { ...baseFromReplay, ...(feedback ? { feedback } : {}) };
   }
 }
