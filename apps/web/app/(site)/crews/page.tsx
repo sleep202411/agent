@@ -205,7 +205,10 @@ function ProjectCard({
   const banner = item.project.bannerLink
     ? `${env.BANNER_BASE_URL}/${item.project.bannerLink}`
     : env.DEFAULT_COVER_URL;
-  const avatar = item.owner.avatar ? `${env.USER_BASE_URL}/${item.owner.avatar}` : "";
+  // Backend can return `owner: null` for crews whose owner row was
+  // soft-deleted or never linked. Guard both reads so the card still
+  // renders with the fallback nickname instead of crashing the list.
+  const avatar = item.owner?.avatar ? `${env.USER_BASE_URL}/${item.owner.avatar}` : "";
   const detailHref = localizePath(`/crews/${item.project.id}`, locale);
 
   const jobCount = (item.jobs ?? []).filter((j) => roleById.has(j.roleId)).length;
@@ -240,7 +243,7 @@ function ProjectCard({
           ) : (
             <div className="size-4 rounded-full bg-muted" />
           )}
-          <span className="truncate">{item.owner.nickName || fallbackOwner}</span>
+          <span className="truncate">{item.owner?.nickName || fallbackOwner}</span>
         </div>
 
         {tags.length > 0 && (
