@@ -119,6 +119,7 @@ export const ipKeys = {
   video: (id: string) => ["ip", "video", id] as const,
   members: (id: string) => ["ip", "members", id] as const,
   jobs: (id: string) => ["ip", "jobs", id] as const,
+  legacyJobsByRole: (roleId: string) => ["ip", "legacy-jobs-by-role", roleId] as const,
   episodes: (id: string) => ["ip", "episodes", id] as const,
   episodeVideo: (episodeId: string) => ["ip", "episodeVideo", episodeId] as const,
   faqs: (id: string) => ["ip", "faqs", id] as const,

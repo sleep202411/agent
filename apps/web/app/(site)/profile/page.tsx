@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { IconEdit, IconArrowDown, IconLoader2, IconPlus } from "@tabler/icons-react";
+import {
+  IconEdit,
+  IconArrowDown,
+  IconLoader2,
+  IconPlus,
+  IconExternalLink,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
@@ -11,6 +18,17 @@ import { useUserInfo } from "@/src/hooks/use-user";
 import { AUTH_STATUS } from "@/src/services/certification";
 import { KycRequiredAlert } from "@/components/auth/kyc-required-alert";
 import { parseEducation, type UserInfo } from "@/src/services/user";
+import {
+  SOCIAL_PLATFORMS,
+  useExperience,
+  useSocials,
+  useDeleteExperience,
+  useDeleteSocial,
+  type ExperienceEntry,
+  type SocialLink,
+} from "./_hooks/use-profile-extras";
+import { ExperienceDialog } from "./experience-dialog";
+import { SocialDialog } from "./social-dialog";
 import {
   useMyProjects,
   useMyJoinedProjects,
@@ -43,6 +61,9 @@ export default function ProfilePage() {
       <div className="relative mx-auto max-w-6xl space-y-12 px-4 pb-24 pt-10">
         {/* OverviewTab renders its own section heading (Education) */}
         <OverviewTab userInfo={userInfo ?? null} />
+
+        <ExperienceTab />
+        <SocialsTab />
 
         <ProfileSection title={t("personalWorks")}>
           <PersonalWorksTab />
@@ -111,6 +132,220 @@ function OverviewTab({ userInfo }: { userInfo: UserInfo | null }) {
         )}
       </section>
     </div>
+  );
+}
+
+// ─── Experience Tab ───────────────────────────────────
+
+/**
+ * Editable list of work-experience entries. Add button opens the
+ * dedicated `ExperienceDialog`; each row exposes inline edit / delete.
+ * Mirrors the FAQ tab pattern over in `app/(site)/ips/[id]/edit/page.tsx`
+ * — the section heading sits next to the Add CTA so users discover the
+ * empty-state action without scrolling into the card stack.
+ */
+function ExperienceTab() {
+  const t = useTranslations("profile");
+  const { data: experience = [] } = useExperience();
+  const { mutate: deleteEntry } = useDeleteExperience();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<ExperienceEntry | null>(null);
+
+  const handleAdd = () => {
+    setEditing(null);
+    setDialogOpen(true);
+  };
+  const handleEdit = (entry: ExperienceEntry) => {
+    setEditing(entry);
+    setDialogOpen(true);
+  };
+  const handleDelete = (entry: ExperienceEntry) => {
+    if (entry.id === undefined) return;
+    if (!window.confirm(t("experienceConfirmDelete"))) return;
+    deleteEntry(entry.id, {
+      onSuccess: () => toast.success(t("updateSuccess")),
+      onError: () => toast.error(t("updateFailed")),
+    });
+  };
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("experience")}
+        </h2>
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <IconPlus className="size-3.5" />
+          {t("addExperience")}
+        </button>
+      </div>
+      {experience.length === 0 ? (
+        <p className="text-sm text-muted-foreground/70">{t("experienceEmpty")}</p>
+      ) : (
+        <ul className="space-y-2">
+          {experience.map((entry, i) => {
+            const range = [entry.startDate, entry.endDate || t("present")]
+              .filter(Boolean)
+              .join(" – ");
+            const head = [entry.title, entry.company].filter(Boolean).join(" · ");
+            return (
+              <li
+                key={entry.id ?? i}
+                className="group rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    {head && <div className="font-medium">{head}</div>}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                      {range && <span>{range}</span>}
+                      {entry.location && (
+                        <>
+                          {range && <span>·</span>}
+                          <span>{entry.location}</span>
+                        </>
+                      )}
+                    </div>
+                    {entry.description && (
+                      <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-secondary-foreground">
+                        {entry.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(entry)}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label={t("edit")}
+                    >
+                      <IconEdit className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(entry)}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                      aria-label={t("delete")}
+                      disabled={entry.id === undefined}
+                    >
+                      <IconTrash className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <ExperienceDialog open={dialogOpen} onOpenChange={setDialogOpen} initial={editing} />
+    </section>
+  );
+}
+
+// ─── Socials Tab ──────────────────────────────────────
+
+function SocialsTab() {
+  const t = useTranslations("profile");
+  const { data: socials = [] } = useSocials();
+  const { mutate: deleteEntry } = useDeleteSocial();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<SocialLink | null>(null);
+
+  const handleAdd = () => {
+    setEditing(null);
+    setDialogOpen(true);
+  };
+  const handleEdit = (entry: SocialLink) => {
+    setEditing(entry);
+    setDialogOpen(true);
+  };
+  const handleDelete = (entry: SocialLink) => {
+    if (entry.id === undefined) return;
+    if (!window.confirm(t("socialConfirmDelete"))) return;
+    deleteEntry(entry.id, {
+      onSuccess: () => toast.success(t("updateSuccess")),
+      onError: () => toast.error(t("updateFailed")),
+    });
+  };
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("socials")}
+        </h2>
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <IconPlus className="size-3.5" />
+          {t("addSocial")}
+        </button>
+      </div>
+      {socials.length === 0 ? (
+        <p className="text-sm text-muted-foreground/70">{t("socialsEmpty")}</p>
+      ) : (
+        <ul className="flex flex-wrap gap-2">
+          {socials.map((entry, i) => {
+            const meta = SOCIAL_PLATFORMS.find((p) => p.id === entry.platform);
+            const labelKey = meta?.labelKey ?? "socialPlatform_website";
+            const isUrl = /^https?:\/\//i.test(entry.url);
+            return (
+              <li
+                key={entry.id ?? i}
+                className="group inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
+              >
+                {isUrl ? (
+                  <a
+                    href={entry.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 transition-colors hover:text-primary"
+                  >
+                    <span className="text-xs font-medium text-foreground">{t(labelKey)}</span>
+                    <span className="max-w-[200px] truncate text-[11px] text-muted-foreground">
+                      {entry.url}
+                    </span>
+                    <IconExternalLink className="size-3 text-muted-foreground" />
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="text-xs font-medium text-foreground">{t(labelKey)}</span>
+                    <span className="max-w-[200px] truncate text-[11px] text-muted-foreground">
+                      {entry.url}
+                    </span>
+                  </span>
+                )}
+                <span className="ml-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(entry)}
+                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label={t("edit")}
+                  >
+                    <IconEdit className="size-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(entry)}
+                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                    aria-label={t("delete")}
+                    disabled={entry.id === undefined}
+                  >
+                    <IconTrash className="size-3" />
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <SocialDialog open={dialogOpen} onOpenChange={setDialogOpen} initial={editing} />
+    </section>
   );
 }
 

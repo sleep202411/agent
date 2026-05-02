@@ -49,6 +49,7 @@ export {
   useProjectDetail,
   useProjectVideoLink,
   useProjectJobs,
+  useLegacyJobsByRole,
   useUpdateProject,
   useUploadProjectVideo,
 } from "./use-ip-detail";

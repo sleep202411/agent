@@ -25,15 +25,6 @@ const EPISODE_HERO_URL = encodeURI(
   "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 21_22_58.png"
 );
 
-// Sample fixtures used as default values when creating a NEW episode so
-// QA can save end-to-end without having to upload anything. Editing an
-// existing episode keeps its real values. Drop these once the upload
-// flow is verified end-to-end on staging.
-const SAMPLE_VIDEO_URL = encodeURI("https://static.fizzspace.cn/static/pc/1777541432954.mp4");
-const SAMPLE_COVER_URL = encodeURI(
-  "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月30日 10_30_15.png"
-);
-
 export interface EpisodeDraft {
   title: string;
   description: string;
@@ -65,10 +56,10 @@ export interface EpisodeDraft {
 const EMPTY_DRAFT: EpisodeDraft = {
   title: "",
   description: "",
-  videoLink: SAMPLE_VIDEO_URL,
-  videoUrl: SAMPLE_VIDEO_URL,
-  videoBanner: SAMPLE_COVER_URL,
-  coverUrl: SAMPLE_COVER_URL,
+  videoLink: "",
+  videoUrl: "",
+  videoBanner: "",
+  coverUrl: "",
   duration: 0,
   width: 0,
   height: 0,
@@ -96,19 +87,17 @@ interface EpisodeDialogProps {
 }
 
 // Browser-side metadata probe: loads a <video> off-DOM to read duration +
-// dimensions + first-frame thumbnail. Works for direct video files (mp4/webm)
-// when CORS allows. For platform links (YouTube/Bilibili) backend yt-dlp is
-// the right call — TODO once Nest endpoint exists.
+// dimensions. Cover thumbnails are intentionally NOT extracted here —
+// the cover slot is owned exclusively by user-uploaded files (so the
+// wire `videoBanner` and the visible `coverUrl` stay in lockstep).
 async function probeVideo(src: string): Promise<{
   duration: number;
   width: number;
   height: number;
-  cover: string;
 } | null> {
   return new Promise((resolve) => {
     const video = document.createElement("video");
     video.preload = "metadata";
-    video.crossOrigin = "anonymous";
     video.muted = true;
     video.playsInline = true;
     video.src = src;
@@ -118,9 +107,7 @@ async function probeVideo(src: string): Promise<{
       video.removeAttribute("src");
       video.load();
     };
-    const finish = (
-      result: { duration: number; width: number; height: number; cover: string } | null
-    ) => {
+    const finish = (result: { duration: number; width: number; height: number } | null) => {
       if (settled) return;
       settled = true;
       cleanup();
@@ -129,35 +116,11 @@ async function probeVideo(src: string): Promise<{
 
     video.onerror = () => finish(null);
     video.onloadedmetadata = () => {
-      const duration = Math.round(video.duration || 0);
-      const width = video.videoWidth;
-      const height = video.videoHeight;
-      // Try to grab a frame at 1s for cover; fall back to 0 if too short.
-      const seekTo = duration > 1 ? 1 : 0;
-      video.currentTime = seekTo;
-      video.onseeked = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            finish({ duration, width, height, cover: "" });
-            return;
-          }
-          ctx.drawImage(video, 0, 0, width, height);
-          // toDataURL throws if canvas is tainted (cross-origin without CORS).
-          let cover = "";
-          try {
-            cover = canvas.toDataURL("image/jpeg", 0.7);
-          } catch {
-            cover = "";
-          }
-          finish({ duration, width, height, cover });
-        } catch {
-          finish({ duration, width, height, cover: "" });
-        }
-      };
+      finish({
+        duration: Math.round(video.duration || 0),
+        width: video.videoWidth,
+        height: video.videoHeight,
+      });
     };
 
     // Hard timeout — some sources stall forever.
@@ -185,6 +148,12 @@ export function EpisodeDialog({
   const [coverDragOver, setCoverDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Persistent inline error per slot. Toast alone disappears in seconds —
+  // without these the upload-failed state visually mirrors success (the
+  // local blob preview stays mounted), and the user only learns the upload
+  // didn't land when Save is rejected for an empty wire ref.
+  const [videoError, setVideoError] = useState<string | null>(null);
+  const [coverError, setCoverError] = useState<string | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const fileObjectUrlRef = useRef<string>("");
@@ -195,6 +164,8 @@ export function EpisodeDialog({
       setDraft(initial ?? EMPTY_DRAFT);
       setSubmitError(null);
       setSubmitting(false);
+      setVideoError(null);
+      setCoverError(null);
     }
   }, [open, initial]);
 
@@ -212,8 +183,8 @@ export function EpisodeDialog({
   }, [wantsPlayLink, playLinkQuery.data]);
 
   // Probe duration for any pre-filled videoUrl that didn't go through
-  // `handleVideoFile` (the SAMPLE_VIDEO_URL fixture, or an existing
-  // episode being edited that the backend stored without metadata).
+  // `handleVideoFile` — i.e. an existing episode being edited that the
+  // backend stored without metadata.
   useEffect(() => {
     if (!open) return;
     if (!draft.videoUrl || draft.duration > 0) return;
@@ -228,9 +199,6 @@ export function EpisodeDialog({
               duration: meta.duration,
               width: d.width || meta.width,
               height: d.height || meta.height,
-              // Probe gives a data: URL — display-only hint until the
-              // user uploads a real cover (videoBanner stays empty).
-              coverUrl: d.coverUrl || meta.cover,
             }
       );
     });
@@ -267,8 +235,6 @@ export function EpisodeDialog({
       duration: meta.duration,
       width: meta.width,
       height: meta.height,
-      // Probe gives a data: URL — display-only hint, doesn't populate videoBanner.
-      coverUrl: d.coverUrl || meta.cover,
     }));
   };
 
@@ -288,6 +254,7 @@ export function EpisodeDialog({
     if (fileObjectUrlRef.current) URL.revokeObjectURL(fileObjectUrlRef.current);
     const localUrl = URL.createObjectURL(file);
     fileObjectUrlRef.current = localUrl;
+    setVideoError(null);
     update({ videoUrl: localUrl, videoLink: "", size: file.size });
     void probeAndApply(localUrl);
 
@@ -297,7 +264,19 @@ export function EpisodeDialog({
       update({ videoLink: uploaded.path });
       toast.success(tc("uploadSuccess"));
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : tc("uploadFailed"));
+      // Failure path: scrub the blob preview so the slot visibly returns to
+      // the empty dropzone — without this the played-back video looks
+      // identical to a successful upload, and the user only finds out at
+      // Save time that nothing landed in OSS. Persistent inline error
+      // survives the toast disappearing.
+      const message = err instanceof Error && err.message ? err.message : tc("uploadFailed");
+      if (fileObjectUrlRef.current) {
+        URL.revokeObjectURL(fileObjectUrlRef.current);
+        fileObjectUrlRef.current = "";
+      }
+      update({ videoUrl: "", videoLink: "", duration: 0, width: 0, height: 0, size: 0 });
+      setVideoError(message);
+      toast.error(message);
     } finally {
       setUploadingVideo(false);
     }
@@ -315,16 +294,26 @@ export function EpisodeDialog({
     if (coverObjectUrlRef.current) URL.revokeObjectURL(coverObjectUrlRef.current);
     const localUrl = URL.createObjectURL(file);
     coverObjectUrlRef.current = localUrl;
+    setCoverError(null);
     update({ coverUrl: localUrl, videoBanner: "" });
 
     setUploadingCover(true);
     try {
-      const uploaded = await uploadEpisodeCover(file);
+      const uploaded = await uploadEpisodeCover(file, { projectId, videoId: episodeId });
       // Persist the OSS path; UI keeps using the blob preview until then.
       update({ videoBanner: uploaded.path });
       toast.success(tc("uploadSuccess"));
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : tc("uploadFailed"));
+      // See handleVideoFile — scrub preview + persist inline error so the
+      // slot truly reflects "nothing got saved".
+      const message = err instanceof Error && err.message ? err.message : tc("uploadFailed");
+      if (coverObjectUrlRef.current) {
+        URL.revokeObjectURL(coverObjectUrlRef.current);
+        coverObjectUrlRef.current = "";
+      }
+      update({ coverUrl: "", videoBanner: "" });
+      setCoverError(message);
+      toast.error(message);
     } finally {
       setUploadingCover(false);
     }
@@ -347,10 +336,10 @@ export function EpisodeDialog({
       toast.warning(t("epVideoRequired"));
       return;
     }
-    if (!draft.videoBanner.trim()) {
-      toast.warning(t("epCoverRequired"));
-      return;
-    }
+    // Cover is currently optional — backend's banner presigned-URL
+    // endpoint is throwing SignatureDoesNotMatch (tracked separately),
+    // so we let users save without a cover and re-add the requirement
+    // once the upload path is unblocked.
     setSubmitError(null);
     setSubmitting(true);
     try {
@@ -435,10 +424,21 @@ export function EpisodeDialog({
                       "[&_.vjs-picture-in-picture-control]:hidden!"
                     )}
                   />
+                  {/* Overlay while OSS upload is still in flight — without
+                      this the local blob preview reads as "done" the
+                      instant the user picks the file, even though wire
+                      `videoLink` won't land until the PUT returns. */}
+                  {uploadingVideo && (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
+                      <IconLoader2 className="size-5 animate-spin" />
+                      <span className="text-[11px] font-medium">{tc("uploading")}</span>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => update({ videoUrl: "", videoLink: "", duration: 0 })}
-                    className="absolute right-1.5 top-1.5 z-10 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                    disabled={uploadingVideo}
+                    className="absolute right-1.5 top-1.5 z-30 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <IconX className="size-3.5" />
                   </button>
@@ -502,22 +502,34 @@ export function EpisodeDialog({
                   e.target.value = "";
                 }}
               />
-              <FieldDescription>{t("epVideoHelp")}</FieldDescription>
+              {videoError ? (
+                <p className="text-[11px] text-destructive">{videoError}</p>
+              ) : (
+                <FieldDescription>{t("epVideoHelp")}</FieldDescription>
+              )}
             </Field>
 
-            {/* Cover */}
+            {/* Cover — temporarily optional, see handleSave for context. */}
             <Field>
-              <FieldLabel>
-                {t("epCoverLabel")} <span className="text-destructive">*</span>
-              </FieldLabel>
+              <FieldLabel>{t("epCoverLabel")}</FieldLabel>
               {draft.coverUrl ? (
                 <div className="relative aspect-video overflow-hidden rounded-lg bg-muted/50">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={draft.coverUrl} alt="" className="size-full object-cover" />
+                  {/* See video overlay above — same rationale: don't lie
+                      about upload completion just because the local blob
+                      paints instantly. */}
+                  {uploadingCover && (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
+                      <IconLoader2 className="size-5 animate-spin" />
+                      <span className="text-[11px] font-medium">{tc("uploading")}</span>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => update({ coverUrl: "", videoBanner: "" })}
-                    className="absolute right-1.5 top-1.5 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                    disabled={uploadingCover}
+                    className="absolute right-1.5 top-1.5 z-30 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <IconX className="size-3.5" />
                   </button>
@@ -569,7 +581,11 @@ export function EpisodeDialog({
                   e.target.value = "";
                 }}
               />
-              <FieldDescription>{t("epCoverHelp")}</FieldDescription>
+              {coverError ? (
+                <p className="text-[11px] text-destructive">{coverError}</p>
+              ) : (
+                <FieldDescription>{t("epCoverHelp")}</FieldDescription>
+              )}
             </Field>
           </div>
         </DialogBody>

@@ -30,9 +30,12 @@ import {
   useProjectEpisodes,
   useFAQs,
   useProjectEditUrl,
+  useEpisodeVideoLink,
+  useLegacyJobsByRole,
   ipImageUrl,
   type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
+import type { ProjectJob } from "@/app/(site)/ips/_hooks/types";
 
 interface IPTeamMember {
   name: string;
@@ -68,6 +71,12 @@ export default function IPDetailPage() {
   const { data: members } = useProjectMembers(id);
   const { data: episodes = [] } = useProjectEpisodes(id);
   const { data: faqs = [] } = useFAQs(id);
+  // Legacy job-recruitment compat — when the old `/project/job/project/list`
+  // endpoint returns rows for this project's roleId, surface a "岗位招聘"
+  // tab so users with historical postings can still see them. Brand-new
+  // projects never have legacy data so this stays an empty array and the
+  // tab is hidden.
+  const { data: legacyJobs = [] } = useLegacyJobsByRole(id);
 
   const currentUserId = useCurrentUser().user?.id;
   const isOwner =
@@ -78,6 +87,17 @@ export default function IPDetailPage() {
   // observer keeps it in sync as the user scrolls naturally.
   const [activeSection, setActiveSection] = useState<string>("story");
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Currently-playing episode. `null` = no episode picked yet, player
+  // falls back to the project trailer (`videoLink`). Resolution of the
+  // playable URL is async and goes through `/vedio/play/getLink` (the
+  // wire `videoLink` on the episode is an internal OSS key, not directly
+  // playable from the browser).
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
+  const { data: episodePlayUrl, isFetching: episodeUrlLoading } = useEpisodeVideoLink(
+    selectedEpisodeId ?? "",
+    !!selectedEpisodeId
+  );
 
   const realTags: string[] = (() => {
     try {
@@ -112,6 +132,7 @@ export default function IPDetailPage() {
   const sections: { key: string; label: string }[] = [
     story ? { key: "story", label: t("detailStoryTitle") } : null,
     team.length > 0 ? { key: "team", label: t("detailCreativeTeam") } : null,
+    legacyJobs.length > 0 ? { key: "jobs", label: t("detailJobRecruitment") } : null,
     ipFaqs.length > 0 ? { key: "faq", label: t("sectionFAQ") } : null,
   ].filter(Boolean) as { key: string; label: string }[];
 
@@ -147,6 +168,11 @@ export default function IPDetailPage() {
   }
 
   const trailerSrc = videoLink ?? "";
+  // Selected episode wins; trailer is the fallback. While the episode
+  // play link is being resolved we briefly show no src — the player
+  // shows a spinner overlay (see below) so the user knows the click
+  // landed.
+  const playerSrc = selectedEpisodeId ? (episodePlayUrl ?? "") : trailerSrc;
   const hasTrailer = !!trailerSrc;
 
   return (
@@ -196,15 +222,32 @@ export default function IPDetailPage() {
           {/* LEFT */}
           <div className="space-y-8 lg:col-span-2">
             {/* Trailer / cover */}
-            <div className="aspect-video w-full overflow-hidden rounded-xl bg-secondary">
-              {hasTrailer ? (
-                <VideoPlayer src={trailerSrc} autoplay={false} className="size-full" />
+            <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-secondary">
+              {playerSrc ? (
+                <VideoPlayer
+                  // Force remount when src swaps episodes — video.js
+                  // doesn't reliably reload mid-playback otherwise.
+                  key={playerSrc}
+                  src={playerSrc}
+                  autoplay={!!selectedEpisodeId}
+                  className="size-full"
+                />
               ) : cover ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={cover} alt={title} className="size-full object-cover" />
               ) : (
                 <div className="flex size-full items-center justify-center">
                   <IconPlaylist className="size-12 text-muted-foreground/30" />
+                </div>
+              )}
+              {/* Episode-link resolution spinner. Shown only while the
+                  user just clicked Play and we're awaiting
+                  /vedio/play/getLink — the underlying VideoPlayer is
+                  unmounted (no src yet) so a separate overlay is the
+                  only progress signal. */}
+              {selectedEpisodeId && episodeUrlLoading && !episodePlayUrl && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60">
+                  <IconLoader2 className="size-7 animate-spin text-white/80" />
                 </div>
               )}
             </div>
@@ -291,6 +334,23 @@ export default function IPDetailPage() {
               </div>
             )}
 
+            {/* Legacy job recruitment — only rendered when historical
+                data exists for this project. See useLegacyJobsByRole. */}
+            {legacyJobs.length > 0 && (
+              <div
+                data-section-key="jobs"
+                ref={(el) => {
+                  sectionRefs.current.jobs = el;
+                }}
+              >
+                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                  <IconBookmark className="size-5 text-amber-400" />
+                  {t("detailJobRecruitment")}
+                </h2>
+                <LegacyJobsList jobs={legacyJobs} t={t} />
+              </div>
+            )}
+
             {/* FAQ */}
             {ipFaqs.length > 0 && (
               <div
@@ -317,6 +377,16 @@ export default function IPDetailPage() {
                 runtime={totalRuntime(episodes)}
                 editUrl={editUrl}
                 isOwner={isOwner}
+                selectedEpisodeId={selectedEpisodeId}
+                onSelectEpisode={(epId) => {
+                  setSelectedEpisodeId(epId);
+                  // Bring the player back into view on small/medium
+                  // screens — the right rail sits below the player on
+                  // mobile so a click would otherwise scroll nothing.
+                  if (typeof window !== "undefined") {
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }
+                }}
                 t={t}
               />
               <RailShare title={title} t={t} />
@@ -354,12 +424,16 @@ function ReleasedPanel({
   runtime,
   editUrl,
   isOwner,
+  selectedEpisodeId,
+  onSelectEpisode,
   t,
 }: {
   episodes: Episode[];
   runtime: string;
   editUrl: string;
   isOwner: boolean;
+  selectedEpisodeId: string | null;
+  onSelectEpisode: (episodeId: string) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
@@ -388,26 +462,55 @@ function ReleasedPanel({
             {t("detailEpisodeCount", { count: episodes.length })} · {runtime}
           </p>
           <div className="space-y-2">
-            {episodes.map((ep, i) => (
-              <div
-                key={ep.id || i}
-                className="flex items-center justify-between gap-2 rounded-lg bg-secondary/50 p-2.5"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="flex size-7 shrink-0 items-center justify-center rounded bg-secondary text-[10px] font-bold text-muted-foreground">
-                    {String(ep.videoNumber || i + 1).padStart(2, "0")}
-                  </div>
-                  <span className="truncate text-xs text-foreground">{ep.title}</span>
-                </div>
-                <button
-                  type="button"
-                  className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-primary/10 px-2.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/20"
+            {episodes.map((ep, i) => {
+              const epId = ep.id ? String(ep.id) : "";
+              const isPlaying = !!epId && epId === selectedEpisodeId;
+              return (
+                <div
+                  key={epId || i}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-lg p-2.5 transition-colors",
+                    isPlaying ? "bg-primary/15 ring-1 ring-primary/40" : "bg-secondary/50"
+                  )}
                 >
-                  <IconPlayerPlay className="size-3" />
-                  {t("detailPlay")}
-                </button>
-              </div>
-            ))}
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div
+                      className={cn(
+                        "flex size-7 shrink-0 items-center justify-center rounded text-[10px] font-bold",
+                        isPlaying
+                          ? "bg-primary/30 text-primary"
+                          : "bg-secondary text-muted-foreground"
+                      )}
+                    >
+                      {String(ep.videoNumber || i + 1).padStart(2, "0")}
+                    </div>
+                    <span
+                      className={cn(
+                        "truncate text-xs",
+                        isPlaying ? "font-medium text-primary" : "text-foreground"
+                      )}
+                    >
+                      {ep.title}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => epId && onSelectEpisode(epId)}
+                    disabled={!epId || isPlaying}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-0.5 rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors",
+                      isPlaying
+                        ? "cursor-default bg-primary/20 text-primary"
+                        : "bg-primary/10 text-primary hover:bg-primary/20",
+                      "disabled:cursor-not-allowed"
+                    )}
+                  >
+                    <IconPlayerPlay className="size-3" />
+                    {isPlaying ? t("detailNowPlaying") : t("detailPlay")}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </>
       )}
@@ -537,6 +640,54 @@ function RailProducer({
         <IconChevronRight className="size-4 text-muted-foreground" />
       </div>
     </Link>
+  );
+}
+
+/**
+ * Renders legacy job postings returned by the old
+ * `/project/job/project/list` endpoint. Kept intentionally minimal —
+ * we have no design for this surface, the goal is just to *expose* the
+ * historical data so users with old projects don't lose visibility.
+ * Field shape per `ProjectJob` in `_hooks/types.ts`.
+ */
+function LegacyJobsList({
+  jobs,
+  t,
+}: {
+  jobs: ProjectJob[];
+  t: ReturnType<typeof useTranslations>;
+}) {
+  return (
+    <div className="space-y-2">
+      {jobs.map((job, i) => {
+        const title = job.roleName || `#${job.roleId ?? i + 1}`;
+        const desc = typeof job.jobDescription === "string" ? job.jobDescription.trim() : "";
+        const profitParts: string[] = [];
+        if (typeof job.profitRatio === "number" && job.profitRatio > 0) {
+          profitParts.push(t("detailJobProfitRatio", { ratio: job.profitRatio }));
+        }
+        if (typeof job.estimatedEarnings === "number" && job.estimatedEarnings > 0) {
+          profitParts.push(t("detailJobEstimatedEarnings", { amount: job.estimatedEarnings }));
+        }
+        return (
+          <div key={job.id ?? i} className="rounded-xl border border-border bg-card p-4">
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-foreground">{title}</span>
+              {profitParts.length > 0 && (
+                <span className="shrink-0 text-[11px] text-amber-400">
+                  {profitParts.join(" · ")}
+                </span>
+              )}
+            </div>
+            {desc && (
+              <p className="text-xs leading-relaxed text-secondary-foreground whitespace-pre-line">
+                {desc}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

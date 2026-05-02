@@ -12,6 +12,7 @@ import {
   IconPlus,
   IconTrash,
   IconLoader2,
+  IconBookmark,
 } from "@tabler/icons-react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { toast } from "sonner";
@@ -48,6 +49,7 @@ import {
   useCreateFAQ,
   useUpdateFAQ,
   useDeleteFAQ,
+  useLegacyJobsByRole,
   ipKeys,
   ipImageUrl,
   userAvatarUrl,
@@ -198,6 +200,19 @@ const TABS = [
   { id: "faq", labelKey: "editFAQ", icon: IconFileText },
 ] as const;
 
+/**
+ * Optional 6th tab — only injected when the legacy
+ * `/project/job/project/list` endpoint returns rows for this project.
+ * Pre-existing projects with hiring data on the old shape need a
+ * surface to view it; brand-new projects never have legacy data so
+ * the tab stays hidden and the nav reads as before.
+ */
+const LEGACY_JOBS_TAB = {
+  id: "jobs" as const,
+  labelKey: "editJobRecruitment" as const,
+  icon: IconBookmark,
+};
+
 // ─── Form type ──────────────────────────────────────
 
 interface EditForm {
@@ -273,6 +288,10 @@ export default function IPEditPage() {
   const { mutate: doUpdate, isPending: saving } = useUpdateProject();
   const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
   const { mutate: doUploadVideo, isPending: uploadingVideo } = useUploadProjectVideo();
+  // Legacy job-recruitment compat — only surface the optional 6th tab
+  // when historical data exists for this project. See useLegacyJobsByRole.
+  const { data: legacyJobs = [] } = useLegacyJobsByRole(id);
+  const visibleTabs = legacyJobs.length > 0 ? [...TABS, LEGACY_JOBS_TAB] : TABS;
   const videoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -641,7 +660,7 @@ export default function IPEditPage() {
       <div className="sticky top-14 z-30 border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/70">
         <div className="relative flex items-center justify-center px-6">
           <nav className="flex items-center gap-1 overflow-x-auto">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -1167,6 +1186,48 @@ export default function IPEditPage() {
                 }
                 onSubmit={(draft) => upsertFaq(faqDialogIndex, draft)}
               />
+            </Section>
+          )}
+
+          {/* ── Legacy job recruitment ──
+              Read-only view of historical hiring data fetched from the
+              old `/project/job/project/list` endpoint. Tab is only mounted
+              when `legacyJobs.length > 0` (see `visibleTabs` above), so
+              this `activeTab === "jobs"` branch is unreachable for
+              brand-new projects. */}
+          {activeTab === "jobs" && (
+            <Section title={t("editJobRecruitment")} description={t("editJobRecruitmentDesc")}>
+              <div className="space-y-2">
+                {legacyJobs.map((job, i) => {
+                  const title = job.roleName || `#${job.roleId ?? i + 1}`;
+                  const desc =
+                    typeof job.jobDescription === "string" ? job.jobDescription.trim() : "";
+                  const tag: string[] = [];
+                  if (typeof job.profitRatio === "number" && job.profitRatio > 0) {
+                    tag.push(t("editJobProfitRatio", { ratio: job.profitRatio }));
+                  }
+                  if (typeof job.estimatedEarnings === "number" && job.estimatedEarnings > 0) {
+                    tag.push(t("editJobEstimatedEarnings", { amount: job.estimatedEarnings }));
+                  }
+                  return (
+                    <div key={job.id ?? i} className="rounded-xl border border-border bg-card p-4">
+                      <div className="mb-1 flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-foreground">{title}</span>
+                        {tag.length > 0 && (
+                          <span className="shrink-0 text-[11px] text-amber-400">
+                            {tag.join(" · ")}
+                          </span>
+                        )}
+                      </div>
+                      {desc && (
+                        <p className="whitespace-pre-line text-xs leading-relaxed text-secondary-foreground">
+                          {desc}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </Section>
           )}
         </div>

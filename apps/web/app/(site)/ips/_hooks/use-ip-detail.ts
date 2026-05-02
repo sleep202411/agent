@@ -36,6 +36,40 @@ async function fetchProjectJobs(projectId: string): Promise<ProjectJob[]> {
   return res?.list ?? [];
 }
 
+/**
+ * Legacy project-job query (`/project/job/project/list` aka
+ * `queryProjectByrole`). Kept around solely so the IP detail page can
+ * detect projects whose hiring data lives in the old shape and surface
+ * a "岗位招聘" tab for them. Once historical data is migrated to the
+ * new `/project/job/find/jobs` shape this hook + the conditional tab
+ * can be deleted.
+ *
+ * `roleId` is required by the endpoint; we feed it the projectId by
+ * default since that's how the legacy data was keyed. Adjust here if
+ * a different scoping field turns out to match the historical wire.
+ */
+async function fetchLegacyJobsByRole(
+  roleId: number | string,
+  page: number,
+  pageSize: number
+): Promise<ProjectJob[]> {
+  const res = await postForm<ProjectJob[] | { list?: ProjectJob[] }>("/project/job/project/list", {
+    page: String(page),
+    pageSize: String(pageSize),
+    roleId: String(roleId),
+  });
+  if (Array.isArray(res)) return res;
+  return res?.list ?? [];
+}
+
+export function useLegacyJobsByRole(roleId: number | string | undefined, enabled: boolean = true) {
+  return useQuery<ProjectJob[]>({
+    queryKey: ipKeys.legacyJobsByRole(String(roleId ?? "")),
+    queryFn: () => fetchLegacyJobsByRole(roleId!, 1, 20),
+    enabled: !!roleId && enabled,
+  });
+}
+
 export function useProjectDetail(id: string) {
   return useQuery<Project>({
     queryKey: ipKeys.detail(id),
