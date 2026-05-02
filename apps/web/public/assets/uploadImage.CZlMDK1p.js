@@ -1,0 +1,1 @@
+import{ab as e,s,aa as a}from"./index-WLNnZSMC.js";const t=async(t={})=>{try{const{count:s=1,sourceType:a=["album","camera"],sizeType:c=["compressed"]}=t,o=await e({count:s,sourceType:a,sizeType:c});return!o.tempFilePaths||o.tempFilePaths.length,o.tempFilePaths}catch(c){if("chooseImage:fail cancel"===c.errMsg)return[];throw s({title:a(c.message),icon:"none"}),c}};export{t as u};

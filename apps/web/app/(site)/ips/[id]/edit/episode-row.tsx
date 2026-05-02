@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  IconFileText,
   IconGripVertical,
   IconPencil,
+  IconPlayerPlayFilled,
   IconPlaylist,
   IconTrash,
 } from "@tabler/icons-react";
@@ -11,13 +11,12 @@ import { useSortable } from "@dnd-kit/react/sortable";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import type { EpisodeDraft } from "./episode-dialog";
+import { ipImageUrl, type Episode } from "@/app/(site)/ips/_hooks/use-ip";
 
 interface SortableEpisodeRowProps {
   id: string;
   index: number;
-  episode: EpisodeDraft;
-  ipId: string;
+  episode: Episode;
   onClick: () => void;
   onDelete: () => void;
 }
@@ -26,34 +25,30 @@ export function SortableEpisodeRow({
   id,
   index,
   episode,
-  ipId,
   onClick,
   onDelete,
 }: SortableEpisodeRowProps) {
   const t = useTranslations("ipEdit");
   const { ref, handleRef, isDragging } = useSortable({ id, index });
 
+  const coverUrl = ipImageUrl(episode.videoBanner);
+  const hasCover = !!coverUrl;
+  const hasVideo = !!episode.videoLink;
   const subtitle = (() => {
-    if (!episode.videoUrl) return t("epVideoMissing");
-    const parts: string[] = [];
-    if (episode.duration > 0) parts.push(formatDuration(episode.duration));
+    if (!hasVideo) return t("epVideoMissing");
     const desc = episode.description?.trim();
-    if (desc) parts.push(desc);
-    return parts.length > 0 ? parts.join(" · ") : t("epVideoLinked");
+    return desc || t("epVideoLinked");
   })();
 
   return (
     <div
       ref={ref}
       className={cn(
-        "group relative overflow-hidden rounded-xl border bg-card transition-colors",
-        episode.type === "interactive"
-          ? "border-violet-400/20 bg-violet-400/5 hover:border-violet-400/40"
-          : "border-border/70 hover:border-primary/30",
+        "group relative overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-primary/30",
         isDragging && "opacity-50 shadow-lg"
       )}
     >
-      {/* Top strip — drag, EP marker, type chip, edit/delete */}
+      {/* Top strip — drag, EP marker, edit/delete */}
       <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-muted/30 px-2 py-1">
         <div className="flex items-center gap-1.5">
           <div
@@ -66,24 +61,12 @@ export function SortableEpisodeRow({
           <span className="font-mono text-[11px] font-semibold tabular-nums tracking-wider text-muted-foreground">
             EP {String(index + 1).padStart(2, "0")}
           </span>
-          {episode.type === "interactive" && (
-            <span className="rounded bg-violet-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-violet-400">
-              {t("typeInteractive")}
-            </span>
-          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           <Button variant="ghost" size="icon-xs" onClick={onClick}>
             <IconPencil className="size-3.5" />
           </Button>
-          {episode.type === "interactive" && (
-            <Button variant="ghost" size="icon-xs" asChild>
-              <a href={`/ips/${ipId}/episodes/${index + 1}/editor`}>
-                <IconFileText className="size-3.5" />
-              </a>
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="icon-xs"
@@ -101,13 +84,30 @@ export function SortableEpisodeRow({
         onClick={onClick}
         className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
       >
-        {/* Thumbnail */}
-        <div className="flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/50">
-          {episode.cover ? (
+        {/* Thumbnail — videoBanner cover + play affordance + duration badge.
+         *  Live preview would need /vedio/play/getLink per row (the wire
+         *  videoLink isn't directly playable), so the list stays cheap and
+         *  playback is deferred to the edit dialog / fullscreen viewer. */}
+        <div className="relative flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted/50">
+          {hasCover ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={episode.cover} alt="" className="size-full object-cover" />
+            <img src={coverUrl} alt="" className="size-full object-cover" />
           ) : (
             <IconPlaylist className="size-6 text-muted-foreground/30" />
+          )}
+
+          {hasVideo && (
+            <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/15">
+              <span className="flex size-6 items-center justify-center rounded-full bg-black/55 text-white/90 shadow-sm backdrop-blur-sm transition-transform group-hover:scale-110">
+                <IconPlayerPlayFilled className="size-3 translate-x-px" />
+              </span>
+            </span>
+          )}
+
+          {episode.duration > 0 && (
+            <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-black/65 px-1 py-0.5 text-[10px] font-medium tabular-nums text-white/95">
+              {formatDuration(episode.duration)}
+            </span>
           )}
         </div>
 

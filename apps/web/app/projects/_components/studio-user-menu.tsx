@@ -23,8 +23,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useAppDispatch, useAppSelector } from "@/src/store";
-import { logout } from "@/src/store/slices/authSlice";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useLogout } from "@/src/hooks/use-logout";
 
 interface StudioUserMenuProps {
   credits?: number;
@@ -35,8 +35,8 @@ interface StudioUserMenuProps {
 
 export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: StudioUserMenuProps) {
   const tc = useTranslations("common");
-  const dispatch = useAppDispatch();
-  const user = useAppSelector((state) => state.auth.user);
+  const logout = useLogout();
+  const { user } = useCurrentUser();
   const { theme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(
     () => () => {},
@@ -170,7 +170,7 @@ export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: Studi
 
         {/* Logout */}
         <div className="py-1">
-          <DropdownMenuItem className="px-4" onClick={() => void dispatch(logout())}>
+          <DropdownMenuItem className="px-4" onClick={() => void logout()}>
             <IconLogout className="size-4" />
             {tc("logout")}
           </DropdownMenuItem>

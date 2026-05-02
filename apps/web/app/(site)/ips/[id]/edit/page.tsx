@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useParams } from "next/navigation";
 import {
   IconFileText,
-  IconBook,
   IconVideo,
   IconPlaylist,
   IconUsers,
@@ -12,36 +12,206 @@ import {
   IconPlus,
   IconTrash,
   IconLoader2,
+  IconBookmark,
 } from "@tabler/icons-react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { VideoPlayer } from "@/components/media/video-player";
 import { env } from "@/src/env";
 import {
   useProjectDetail,
   useUpdateProject,
   useProjectVideoLink,
   useUploadProjectVideo,
+  useProjectEpisodes,
+  useCreateEpisode,
+  useUpdateEpisode,
+  useReorderEpisode,
+  useProjectMembers,
+  useAddMember,
+  useRemoveMember,
+  useFAQs,
+  useCreateFAQ,
+  useUpdateFAQ,
+  useDeleteFAQ,
+  useLegacyJobsByRole,
+  ipKeys,
+  ipImageUrl,
+  userAvatarUrl,
+  MEMBER_ROLE,
+  useProjectRoles,
+  type Episode,
+  type FAQ,
+  type ProjectMember,
+  type ProjectRole,
 } from "@/app/(site)/ips/_hooks/use-ip";
-import { SUGGESTED_TAGS, PRESET_REWARDS, type IPRewardTier } from "@/app/(site)/ips/_data/ip";
+import { useQueryClient } from "@tanstack/react-query";
+import { SUGGESTED_TAGS } from "@/app/(site)/ips/_data/ip";
+import { uploadIPBanner } from "@/app/(site)/ips/_hooks/uploads";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 import { EpisodeDialog, type EpisodeDraft } from "./episode-dialog";
 import { SortableEpisodeRow } from "./episode-row";
+import { FaqDialog, type FaqDraft } from "./faq-dialog";
+import { SortableFaqRow } from "./faq-row";
+import { EditHero } from "./edit-hero";
+import { SparkDialog } from "./spark-dialog";
+
+// ─── Member row ────────────────────────────────────
+// Stateless presentation row for a team member: avatar + name + role
+// badge + remark + remove. The page provides labels because i18n lives
+// at the page boundary; helpers below map the wire `role` integer to a
+// label and a colour.
+function MemberRow({
+  member,
+  roleLabel,
+  roleTone,
+  canRemove,
+  onRemove,
+  labels,
+}: {
+  member: ProjectMember;
+  roleLabel: string;
+  roleTone: string;
+  canRemove: boolean;
+  onRemove: () => void;
+  labels: { remove: string };
+}) {
+  const display = member.nickName || member.userName || member.id || `#${member.userId ?? "?"}`;
+  const avatar = userAvatarUrl(member.avatar);
+  const initial = String(display).charAt(0).toUpperCase() || "?";
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+      <div
+        className={cn(
+          "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full",
+          avatar
+            ? "bg-muted"
+            : "bg-gradient-to-br from-primary/25 to-secondary/40 text-sm font-semibold text-primary"
+        )}
+      >
+        {avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatar} alt="" className="size-full object-cover" />
+        ) : (
+          initial
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{display}</span>
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset",
+              roleTone
+            )}
+          >
+            {roleLabel}
+          </span>
+        </div>
+        {member.remark && (
+          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{member.remark}</p>
+        )}
+      </div>
+      {canRemove && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onRemove}
+          className="text-muted-foreground hover:bg-red-500/10 hover:text-red-500"
+          aria-label={labels.remove}
+        >
+          <IconTrash className="size-3.5" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function getRoleLabel(
+  role: number | undefined,
+  roles: ProjectRole[],
+  t: (k: string) => string
+): string {
+  // Prefer the backend-supplied role name when the catalog has it. Fall
+  // back to the legacy hard-coded labels for projects whose role list
+  // hasn't loaded yet (or for owner/admin synthesized client-side).
+  if (role !== undefined) {
+    const fromCatalog = roles.find((r) => r.id === role);
+    if (fromCatalog) return fromCatalog.name;
+  }
+  if (role === MEMBER_ROLE.OWNER) return t("roleOwner");
+  if (role === MEMBER_ROLE.ADMIN) return t("roleAdmin");
+  return t("roleMember");
+}
+
+function getRoleTone(role: number | undefined): string {
+  if (role === MEMBER_ROLE.OWNER) return "bg-amber-500/15 text-amber-300 ring-amber-500/30";
+  if (role === MEMBER_ROLE.ADMIN) return "bg-violet-500/15 text-violet-300 ring-violet-500/30";
+  return "bg-muted/60 text-muted-foreground ring-border";
+}
+
+// ─── Episode → dialog adapter ──────────────────────
+// Episode (server shape) carries id / sort / createdAt / projectId; the
+// dialog only needs the editable subset. videoLink (wire) round-trips
+// unchanged so non-attachment edits don't null the field; videoUrl
+// (display) starts empty and the dialog resolves it via
+// `useEpisodeVideoLink(ep.id)` for playback.
+function episodeToDraft(ep: Episode | undefined): EpisodeDraft | null {
+  if (!ep) return null;
+  return {
+    title: ep.title,
+    description: ep.description,
+    videoLink: ep.videoLink,
+    videoUrl: "",
+    videoBanner: ep.videoBanner,
+    coverUrl: ipImageUrl(ep.videoBanner),
+    duration: ep.duration,
+    // Backend doesn't currently echo these on the Episode shape; the
+    // dialog's auto-probe effect re-derives width/height from the video
+    // URL on open. Size is only knowable when the user re-uploads.
+    width: 0,
+    height: 0,
+    size: 0,
+  };
+}
 
 // ─── Tabs ────────────────────────────────────────────
 
 const TABS = [
   { id: "basic", labelKey: "editBasic", icon: IconFileText },
   { id: "trailer", labelKey: "editTrailer", icon: IconVideo },
-  { id: "story", labelKey: "editStory", icon: IconBook },
   { id: "episodes", labelKey: "editEpisodes", icon: IconPlaylist },
   { id: "team", labelKey: "editTeam", icon: IconUsers },
   { id: "faq", labelKey: "editFAQ", icon: IconFileText },
 ] as const;
+
+/**
+ * Optional 6th tab — only injected when the legacy
+ * `/project/job/project/list` endpoint returns rows for this project.
+ * Pre-existing projects with hiring data on the old shape need a
+ * surface to view it; brand-new projects never have legacy data so
+ * the tab stays hidden and the nav reads as before.
+ */
+const LEGACY_JOBS_TAB = {
+  id: "jobs" as const,
+  labelKey: "editJobRecruitment" as const,
+  icon: IconBookmark,
+};
 
 // ─── Form type ──────────────────────────────────────
 
@@ -55,31 +225,8 @@ interface EditForm {
   tags: string[];
   // Future tabs
   promoVideo: string | null;
-  episodes: {
-    title: string;
-    description: string;
-    type: "linear" | "interactive";
-    videoUrl: string;
-    cover: string;
-    duration: number;
-  }[];
-  jobs: { role: string; description: string; profitRatio: string; earnings: string }[];
-  faqs: { question: string; answer: string }[];
-  // Keep for UI compatibility
-  story: string;
-  whyThisIP: string;
-  fundingMode: "investment" | "presale";
-  valuation: string;
-  sharesOffered: string;
-  totalShares: string;
-  deadline: string;
-  presalePrice: number;
-  fullPrice: number;
-  presaleTarget: number;
-  presaleDeadline: string;
-  rewards: IPRewardTier[];
+  // Trailer tab — local preview URL (resolved from project.bannerLink).
   coverImage: string | null;
-  projectType: string;
 }
 
 const EMPTY_FORM: EditForm = {
@@ -91,23 +238,7 @@ const EMPTY_FORM: EditForm = {
   contact: "",
   tags: [],
   promoVideo: null,
-  episodes: [],
-  jobs: [],
-  faqs: [],
-  story: "",
-  whyThisIP: "",
-  fundingMode: "investment",
-  valuation: "",
-  sharesOffered: "",
-  totalShares: "",
-  deadline: "",
-  presalePrice: 0,
-  fullPrice: 0,
-  presaleTarget: 0,
-  presaleDeadline: "",
-  rewards: [],
   coverImage: null,
-  projectType: "",
 };
 
 // ─── Two-column section layout ──────────────────────
@@ -136,20 +267,72 @@ function Section({
 
 // ─── Component ───────────────────────────────────────
 
-export default function IPEditPage({ id }: { id: string }) {
+export default function IPEditPage() {
+  const { id } = useParams<{ id: string }>();
   const t = useTranslations("ipEdit");
+  const tc = useTranslations("common");
+  const tEp = useTranslations("episode");
   const [activeTab, setActiveTab] = useState("basic");
   const [form, setForm] = useState<EditForm>(EMPTY_FORM);
   const [saved, setSaved] = useState(false);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   // Episode dialog: null = closed, -1 = creating, otherwise editing index
   const [episodeDialogIndex, setEpisodeDialogIndex] = useState<number | null>(null);
+  // Episode delete confirm: backend isn't wired yet, so confirm just
+  // pins the action button into a permanent loading state until the
+  // user dismisses the dialog.
+  const [deleteEpisodeIndex, setDeleteEpisodeIndex] = useState<number | null>(null);
+  const [deletingEpisode, setDeletingEpisode] = useState(false);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const { mutate: doUpdate, isPending: saving } = useUpdateProject();
-  const { data: videoLink } = useProjectVideoLink(id);
+  const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
   const { mutate: doUploadVideo, isPending: uploadingVideo } = useUploadProjectVideo();
+  // Legacy job-recruitment compat — only surface the optional 6th tab
+  // when historical data exists for this project. See useLegacyJobsByRole.
+  const { data: legacyJobs = [] } = useLegacyJobsByRole(id);
+  const visibleTabs = legacyJobs.length > 0 ? [...TABS, LEGACY_JOBS_TAB] : TABS;
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
+
+  // Episode CRUD — `useProjectEpisodes` is the single source of truth for
+  // the list shown below; mutations invalidate `ipKeys.episodes(id)` so the
+  // list refetches after every change. No local form mirror — episodes
+  // persist independently of the IP-save button.
+  const queryClient = useQueryClient();
+  const { data: episodes = [] } = useProjectEpisodes(id);
+  const { mutateAsync: createEpisodeMut } = useCreateEpisode();
+  const { mutateAsync: updateEpisodeMut } = useUpdateEpisode();
+  const { mutate: reorderEpisodeMut } = useReorderEpisode();
+
+  // Team CRUD — list shipped, add/remove via dialog + per-row delete.
+  const { data: members = [] } = useProjectMembers(id);
+  const { data: roleCatalog = [] } = useProjectRoles();
+  const { mutateAsync: addMemberMut } = useAddMember();
+  const { mutate: removeMemberMut } = useRemoveMember();
+  const [addingMember, setAddingMember] = useState(false);
+
+  // FAQ CRUD — `useFAQs` is the source of truth. The dialog owns the
+  // edit form; `faqDialogIndex` tracks which row is open (-1 = creating,
+  // >=0 = editing). The expanded-answer accordion is independent.
+  const { data: faqs = [] } = useFAQs(id);
+  const { mutateAsync: createFAQMut } = useCreateFAQ();
+  const { mutateAsync: updateFAQMut } = useUpdateFAQ();
+  const { mutate: deleteFAQMut } = useDeleteFAQ();
+  const [faqDialogOpen, setFaqDialogOpen] = useState(false);
+  const [faqDialogIndex, setFaqDialogIndex] = useState<number | null>(null);
+
+  // Spark — AI brief analyzer. Lives behind a single dialog driven by
+  // `sparkOpen`. Result is a patch the dialog hands back via `onApply`,
+  // which we splice into form state without auto-saving (the hero's
+  // Save button is the explicit commit point).
+  const [sparkOpen, setSparkOpen] = useState(false);
+
+  // Publish/unpublish — toggles `projectStatus` 0 ↔ 8 via the existing
+  // `useUpdateProject` mutation. Tracked separately from form-save
+  // because the action has its own confirm + toast flow.
+  const [publishing, setPublishing] = useState(false);
 
   // Populate form when project data loads
   useEffect(() => {
@@ -177,7 +360,6 @@ export default function IPEditPage({ id }: { id: string }) {
           ? project.bannerLink
           : `${env.BANNER_BASE_URL}/${project.bannerLink}`
         : null,
-      projectType: String(project.typeId ?? ""),
     }));
   }, [project]);
 
@@ -185,6 +367,132 @@ export default function IPEditPage({ id }: { id: string }) {
     setForm((prev) => ({ ...prev, ...patch }));
     setSaved(false);
   }, []);
+
+  // Drag-reorder buffer: dnd-kit fires onDragOver continuously; we batch
+  // the latest projected order and commit a single reorder mutation in
+  // onDragEnd. The optimistic setQueryData lets the UI reflect the new
+  // order immediately; if the backend call fails, the next refetch
+  // restores authoritative state. `originalRef` snapshots the order at
+  // drag-start so onDragEnd can diff against it (the live `episodes` value
+  // already reflects the optimistic mutation by then).
+  //
+  // These hooks must live above the `if (isLoading) return …` guard so
+  // the hook order stays stable across renders (Rules of Hooks).
+  const pendingReorderRef = useRef<Episode[] | null>(null);
+  const originalReorderRef = useRef<Episode[] | null>(null);
+  const handleEpisodeDragOver = useCallback(
+    (event: unknown) => {
+      const op = (
+        event as {
+          operation?: { source?: { id: string | number }; target?: { id: string | number } };
+        }
+      ).operation;
+      const source = op?.source;
+      const target = op?.target;
+      if (!source || !target || source.id === target.id) return;
+      if (originalReorderRef.current === null) {
+        originalReorderRef.current = episodes;
+      }
+      const list = pendingReorderRef.current ?? originalReorderRef.current ?? episodes;
+      const fromIndex = Number(source.id);
+      const toIndex = Number(target.id);
+      if (
+        Number.isNaN(fromIndex) ||
+        Number.isNaN(toIndex) ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex === toIndex
+      ) {
+        return;
+      }
+      const next = [...list];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      pendingReorderRef.current = next;
+      // Optimistic: paint the new order before the mutation lands.
+      queryClient.setQueryData(ipKeys.episodes(id), next);
+    },
+    [episodes, id, queryClient]
+  );
+  const handleEpisodeDragEnd = useCallback(() => {
+    const finalOrder = pendingReorderRef.current;
+    const original = originalReorderRef.current;
+    pendingReorderRef.current = null;
+    originalReorderRef.current = null;
+    if (!finalOrder || !original) return;
+    const movedIndex = finalOrder.findIndex((ep, i) => ep.id !== original[i]?.id);
+    if (movedIndex === -1) return;
+    const moved = finalOrder[movedIndex];
+    // Backend convention: the moved video lands BEFORE the next neighbour;
+    // omit `beforeVideoId` when dropped at the tail.
+    const next = finalOrder[movedIndex + 1];
+    reorderEpisodeMut({
+      currentVideoId: moved.id,
+      beforeVideoId: next?.id,
+      projectId: id,
+    });
+  }, [id, reorderEpisodeMut]);
+
+  // FAQ drag-reorder — same optimistic pattern as Episodes, but the
+  // backend has no dedicated reorder endpoint. We persist the new order
+  // by re-issuing `/project/faq/update` with the row's new `sort` index
+  // for every row whose position actually changed.
+  const pendingFaqReorderRef = useRef<FAQ[] | null>(null);
+  const originalFaqReorderRef = useRef<FAQ[] | null>(null);
+  const handleFaqDragOver = useCallback(
+    (event: unknown) => {
+      const op = (
+        event as {
+          operation?: { source?: { id: string | number }; target?: { id: string | number } };
+        }
+      ).operation;
+      const source = op?.source;
+      const target = op?.target;
+      if (!source || !target || source.id === target.id) return;
+      if (originalFaqReorderRef.current === null) {
+        originalFaqReorderRef.current = faqs;
+      }
+      const list = pendingFaqReorderRef.current ?? originalFaqReorderRef.current ?? faqs;
+      // Sortable rows are keyed by faqId (stable across reorders), so we
+      // map the dnd-kit ids back to current indexes by faqId lookup.
+      const sourceId = String(source.id);
+      const targetId = String(target.id);
+      const fromIndex = list.findIndex((f) => String(f.faqId) === sourceId);
+      const toIndex = list.findIndex((f) => String(f.faqId) === targetId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+      const next = [...list];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      pendingFaqReorderRef.current = next;
+      queryClient.setQueryData(ipKeys.faqs(id), next);
+    },
+    [faqs, id, queryClient]
+  );
+  const handleFaqDragEnd = useCallback(() => {
+    const finalOrder = pendingFaqReorderRef.current;
+    const original = originalFaqReorderRef.current;
+    pendingFaqReorderRef.current = null;
+    originalFaqReorderRef.current = null;
+    if (!finalOrder || !original) return;
+    if (finalOrder.every((f, i) => f.faqId === original[i]?.faqId)) return;
+    // Persist by updating every row whose new index changed its sort.
+    void Promise.all(
+      finalOrder.map((faq, idx) => {
+        if (faq.sort === idx) return null;
+        return updateFAQMut({
+          faqId: faq.faqId,
+          projectId: faq.projectId,
+          question: faq.question,
+          answer: faq.answer,
+          sort: idx,
+        });
+      })
+    ).catch((err) => {
+      toast.error(err instanceof Error && err.message ? err.message : tc("saveFailed"));
+      // Refetch authoritative state on failure.
+      queryClient.invalidateQueries({ queryKey: ipKeys.faqs(id) });
+    });
+  }, [id, queryClient, tc, updateFAQMut]);
 
   const handleSave = () => {
     if (!form.title.trim()) {
@@ -213,6 +521,26 @@ export default function IPEditPage({ id }: { id: string }) {
     );
   };
 
+  // Publish/unpublish — flip projectStatus 0 ↔ 8. Optimistic toast on
+  // success, refetch via React Query invalidation so the hero badge
+  // re-paints.
+  const handleTogglePublish = () => {
+    if (!project) return;
+    const isLive = project.projectStatus === 0;
+    const nextStatus = isLive ? 8 : 0;
+    setPublishing(true);
+    doUpdate(
+      { id: Number(id), projectStatus: nextStatus },
+      {
+        onSuccess: () => {
+          toast.success(isLive ? t("unpublishSuccess") : t("publishSuccess"));
+        },
+        onError: () => toast.error(t("publishFailed")),
+        onSettled: () => setPublishing(false),
+      }
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
@@ -229,85 +557,110 @@ export default function IPEditPage({ id }: { id: string }) {
   };
   const removeTag = (tag: string) => update({ tags: form.tags.filter((t) => t !== tag) });
 
-  // Episode helpers
-  const removeEpisode = (i: number) =>
-    update({ episodes: form.episodes.filter((_, j) => j !== i) });
-  const upsertEpisode = (i: number | null, next: EditForm["episodes"][number]) => {
-    if (i === null) update({ episodes: [...form.episodes, next] });
-    else {
-      const eps = [...form.episodes];
-      eps[i] = next;
-      update({ episodes: eps });
-    }
+  // Episode helpers — backed by mutation hooks; the list above refetches
+  // automatically on success via `ipKeys.episodes(id)` invalidation.
+  const removeEpisode = (i: number) => {
+    setDeleteEpisodeIndex(i);
   };
-  // Drag-reorder buffer: dnd-kit fires onDragOver continuously; we batch
-  // the latest projected order and commit in onDragEnd.
-  const pendingReorderRef = useRef<EditForm["episodes"] | null>(null);
-  const handleEpisodeDragOver = useCallback(
-    (event: unknown) => {
-      const op = (
-        event as {
-          operation?: { source?: { id: string | number }; target?: { id: string | number } };
-        }
-      ).operation;
-      const source = op?.source;
-      const target = op?.target;
-      if (!source || !target || source.id === target.id) return;
-      const list = pendingReorderRef.current ?? form.episodes;
-      const fromIndex = Number(source.id);
-      const toIndex = Number(target.id);
-      if (
-        Number.isNaN(fromIndex) ||
-        Number.isNaN(toIndex) ||
-        fromIndex < 0 ||
-        toIndex < 0 ||
-        fromIndex === toIndex
-      ) {
-        return;
-      }
-      const next = [...list];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      pendingReorderRef.current = next;
-    },
-    [form.episodes]
-  );
-  const handleEpisodeDragEnd = useCallback(() => {
-    if (pendingReorderRef.current) {
-      update({ episodes: pendingReorderRef.current });
-      pendingReorderRef.current = null;
-    }
-  }, [update]);
+  const upsertEpisode = async (i: number | null, next: EpisodeDraft): Promise<void> => {
+    const videoMeta = {
+      duration: next.duration,
+      width: next.width || undefined,
+      height: next.height || undefined,
+      size: next.size || undefined,
+    };
 
-  // Job helpers
-  const addJob = () =>
-    update({
-      jobs: [...form.jobs, { role: "", description: "", profitRatio: "", earnings: "" }],
+    if (i === null || i < 0) {
+      await createEpisodeMut({
+        projectId: id,
+        title: next.title,
+        description: next.description,
+        videoLink: next.videoLink,
+        videoBanner: next.videoBanner,
+        videoMeta,
+      });
+      toast.success(tc("saveSuccess"));
+      return;
+    }
+    const target = episodes[i];
+    if (!target) return;
+    await updateEpisodeMut({
+      id: target.id,
+      projectId: id,
+      title: next.title,
+      description: next.description,
+      videoLink: next.videoLink,
+      videoBanner: next.videoBanner,
+      videoMeta,
     });
-  const removeJob = (i: number) => update({ jobs: form.jobs.filter((_, j) => j !== i) });
-  const updateJob = (
-    i: number,
-    patch: Partial<{ role: string; description: string; profitRatio: string; earnings: string }>
-  ) => {
-    const jobs = [...form.jobs];
-    jobs[i] = { ...jobs[i], ...patch };
-    update({ jobs });
+    toast.success(tc("saveSuccess"));
   };
-
-  // Reward helpers
-  const addReward = (r: IPRewardTier) => {
-    if (!form.rewards.some((rr) => rr.id === r.id)) update({ rewards: [...form.rewards, r] });
+  // FAQ helpers — dialog-driven create/edit. `upsertFaq` resolves on
+  // success so the dialog can close itself and reject on failure so the
+  // dialog surfaces the inline error.
+  const openFaqCreate = () => {
+    setFaqDialogIndex(-1);
+    setFaqDialogOpen(true);
   };
-  const removeReward = (rid: string) =>
-    update({ rewards: form.rewards.filter((r) => r.id !== rid) });
+  const openFaqEdit = (i: number) => {
+    setFaqDialogIndex(i);
+    setFaqDialogOpen(true);
+  };
+  const upsertFaq = async (i: number | null, next: FaqDraft): Promise<void> => {
+    if (i === null || i < 0) {
+      await createFAQMut({
+        projectId: Number(id),
+        question: next.question,
+        answer: next.answer,
+      });
+      toast.success(tc("saveSuccess"));
+      return;
+    }
+    const target = faqs[i];
+    if (!target) return;
+    await updateFAQMut({
+      faqId: target.faqId,
+      projectId: target.projectId,
+      question: next.question,
+      answer: next.answer,
+      sort: target.sort,
+    });
+    toast.success(tc("saveSuccess"));
+  };
+  const removeFaq = (i: number) => {
+    const target = faqs[i];
+    if (!target) return;
+    deleteFAQMut(
+      { faqId: target.faqId, projectId: target.projectId },
+      {
+        onSuccess: () => toast.success(tc("deleteSuccess")),
+        onError: (err) =>
+          toast.error(err instanceof Error && err.message ? err.message : tc("deleteFailed")),
+      }
+    );
+  };
 
   return (
-    <div className="flex flex-col bg-background">
-      {/* Top tab nav */}
+    <div className="flex min-h-[calc(100vh-4rem)] flex-col bg-background">
+      {/* Hero — IP banner + status + primary actions. The hero owns the
+       *  Save / Publish / Spark commands; the sticky tab nav below is
+       *  for tab navigation only. */}
+      <EditHero
+        title={form.title || project?.name || ""}
+        projectStatus={project?.projectStatus}
+        saving={saving}
+        saved={saved}
+        publishing={publishing}
+        onSave={handleSave}
+        onTogglePublish={handleTogglePublish}
+        onSpark={() => setSparkOpen(true)}
+      />
+
+      {/* Sticky tab nav — navigation only. */}
       <div className="sticky top-14 z-30 border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/70">
         <div className="relative flex items-center justify-center px-6">
           <nav className="flex items-center gap-1 overflow-x-auto">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -324,19 +677,14 @@ export default function IPEditPage({ id }: { id: string }) {
               </button>
             ))}
           </nav>
-          <div className="absolute right-6 flex shrink-0 items-center gap-2 py-2">
-            {saved && <span className="text-xs text-green-400">{t("saved")}</span>}
-            <Button size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
-              {t("save")}
-            </Button>
-          </div>
         </div>
       </div>
 
+      <SparkDialog open={sparkOpen} onOpenChange={setSparkOpen} projectId={id} />
+
       {/* Content */}
       <div>
-        <div className="mx-auto max-w-screen-lg px-6">
+        <div className="mx-auto max-w-6xl px-4">
           {/* ── Basic ── */}
           {/* ── Media ── */}
           {activeTab === "trailer" && (
@@ -348,16 +696,40 @@ export default function IPEditPage({ id }: { id: string }) {
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      className="absolute right-2 top-2 bg-black/60 text-white hover:bg-black/80"
-                      onClick={() => update({ coverImage: null })}
+                      className="absolute right-2 top-10 bg-black/60 text-white hover:bg-black/80"
+                      onClick={() => update({ coverImage: null, bannerLink: "" })}
+                      disabled={uploadingCover}
                     >
                       <IconX className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className="absolute right-2 top-2 bg-black/60 text-white hover:bg-black/80"
+                      onClick={() => coverInputRef.current?.click()}
+                      disabled={uploadingCover}
+                    >
+                      {uploadingCover ? (
+                        <IconLoader2 className="size-4 animate-spin" />
+                      ) : (
+                        <IconUpload className="size-4" />
+                      )}
                     </Button>
                   </div>
                 ) : (
                   <div className="flex aspect-video w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-border">
-                    <Button variant="outline" color="muted" size="sm">
-                      <IconUpload className="size-3.5" />
+                    <Button
+                      variant="outline"
+                      color="muted"
+                      size="sm"
+                      onClick={() => coverInputRef.current?.click()}
+                      disabled={uploadingCover}
+                    >
+                      {uploadingCover ? (
+                        <IconLoader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <IconUpload className="size-3.5" />
+                      )}
                       {t("uploadImage")}
                     </Button>
                     <p className="mt-2 text-xs text-muted-foreground">{t("imageDropHint")}</p>
@@ -366,23 +738,58 @@ export default function IPEditPage({ id }: { id: string }) {
                     </p>
                   </div>
                 )}
+                <input
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    e.target.value = "";
+                    setUploadingCover(true);
+                    try {
+                      const asset = await uploadIPBanner(file, { projectId: id });
+                      const previewUrl = asset.path.startsWith("http")
+                        ? asset.path
+                        : `${env.BANNER_BASE_URL}/${asset.path}`;
+                      update({ bannerLink: asset.path, coverImage: previewUrl });
+                      toast.success(tc("uploadSuccess"));
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error && err.message ? err.message : tc("uploadFailed")
+                      );
+                    } finally {
+                      setUploadingCover(false);
+                    }
+                  }}
+                />
               </Section>
 
               {/* Trailer video */}
               <Section title={t("sectionTrailerVideo")} description={t("sectionTrailerVideoDesc")}>
                 {videoLink ? (
                   <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-border bg-black">
-                    <video
+                    <VideoPlayer
                       key={videoLink}
                       src={videoLink}
-                      controls
-                      playsInline
-                      className="h-full w-full object-contain"
+                      autoplay={false}
+                      className={cn(
+                        "size-full",
+                        "[&_.video-js]:size-full",
+                        "[&_.vjs-big-play-button]:size-12!",
+                        "[&_.vjs-big-play-button]:-mt-6! [&_.vjs-big-play-button]:-ml-6!",
+                        "[&_.vjs-big-play-button]:rounded-full!",
+                        "[&_.vjs-big-play-button]:border-0!",
+                        "[&_.vjs-big-play-button]:bg-black/60!",
+                        "[&_.vjs-big-play-button]:text-base! [&_.vjs-big-play-button]:leading-12!",
+                        "[&_.vjs-picture-in-picture-control]:hidden!"
+                      )}
                     />
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      className="absolute right-2 top-2 bg-black/60 text-white hover:bg-black/80"
+                      className="absolute right-2 top-2 z-10 bg-black/60 text-white hover:bg-black/80"
                       onClick={() => videoInputRef.current?.click()}
                       disabled={uploadingVideo}
                     >
@@ -537,47 +944,17 @@ export default function IPEditPage({ id }: { id: string }) {
             </>
           )}
 
-          {/* ── Story ── */}
-          {activeTab === "story" && (
-            <>
-              <Section title={t("sectionStory")} description={t("sectionStoryDesc")}>
-                <Textarea
-                  value={form.story}
-                  onChange={(e) => update({ story: e.target.value.slice(0, 2000) })}
-                  rows={10}
-                  className="min-h-48"
-                />
-                <span className="block text-right text-xs text-muted-foreground">
-                  {form.story.length}/2000
-                </span>
-              </Section>
-
-              <Section title={t("sectionWhyThisIP")} description={t("sectionWhyThisIPDesc")}>
-                <Textarea
-                  value={form.whyThisIP}
-                  onChange={(e) => update({ whyThisIP: e.target.value.slice(0, 1000) })}
-                  rows={5}
-                  className="min-h-28"
-                />
-                <span className="block text-right text-xs text-muted-foreground">
-                  {form.whyThisIP.length}/1000
-                </span>
-              </Section>
-            </>
-          )}
-
           {/* ── Episodes ── */}
           {activeTab === "episodes" && (
             <Section title={t("sectionEpisodes")} description={t("sectionEpisodesDesc")}>
               <DragDropProvider onDragOver={handleEpisodeDragOver} onDragEnd={handleEpisodeDragEnd}>
                 <div className="space-y-2">
-                  {form.episodes.map((ep, i) => (
+                  {episodes.map((ep, i) => (
                     <SortableEpisodeRow
-                      key={i}
+                      key={ep.id}
                       id={String(i)}
                       index={i}
                       episode={ep}
-                      ipId={id}
                       onClick={() => setEpisodeDialogIndex(i)}
                       onDelete={() => removeEpisode(i)}
                     />
@@ -601,13 +978,19 @@ export default function IPEditPage({ id }: { id: string }) {
                   if (!v) setEpisodeDialogIndex(null);
                 }}
                 index={episodeDialogIndex}
+                projectId={id}
                 initial={
                   episodeDialogIndex !== null && episodeDialogIndex >= 0
-                    ? form.episodes[episodeDialogIndex]
+                    ? episodeToDraft(episodes[episodeDialogIndex])
                     : null
                 }
-                onSubmit={(draft: EpisodeDraft) => {
-                  upsertEpisode(
+                episodeId={
+                  episodeDialogIndex !== null && episodeDialogIndex >= 0
+                    ? episodes[episodeDialogIndex]?.id
+                    : undefined
+                }
+                onSubmit={async (draft: EpisodeDraft) => {
+                  await upsertEpisode(
                     episodeDialogIndex !== null && episodeDialogIndex >= 0
                       ? episodeDialogIndex
                       : null,
@@ -616,98 +999,108 @@ export default function IPEditPage({ id }: { id: string }) {
                   setEpisodeDialogIndex(null);
                 }}
               />
+
+              <AlertDialog
+                open={deleteEpisodeIndex !== null}
+                onOpenChange={(v) => {
+                  if (!v) {
+                    setDeleteEpisodeIndex(null);
+                    setDeletingEpisode(false);
+                  }
+                }}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{tEp("deleteEpisode")}</AlertDialogTitle>
+                    <AlertDialogDescription>{tEp("deleteEpisodeConfirm")}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={deletingEpisode}>{tc("cancel")}</AlertDialogCancel>
+                    <AlertDialogAction
+                      color="destructive"
+                      disabled={deletingEpisode}
+                      onClick={(e) => {
+                        // Backend not wired up yet — pin the button in a
+                        // loading state so the click feels handled but no
+                        // request is sent. User must cancel to escape.
+                        e.preventDefault();
+                        setDeletingEpisode(true);
+                      }}
+                    >
+                      {deletingEpisode ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
+                      {tc("confirm")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </Section>
           )}
 
           {/* ── Team ── */}
           {activeTab === "team" && (
             <>
-              {/* Self Introduction */}
-              <Section title={t("sectionAbout")} description={t("sectionAboutDesc")}>
-                <div className="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
-                  <div className="flex size-14 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl font-bold text-primary">
-                    {form.title.slice(0, 1) || "?"}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold">{form.title || t("unnamed")}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">{t("creator")}</div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    onClick={() => setActiveTab("basic")}
-                  >
-                    {t("editProfile")}
-                  </Button>
-                </div>
-              </Section>
-
-              {/* Team Members */}
+              {/* Team Members — owner is synthesized at the top of the
+               *  list from `project.owner*` so the section is one
+               *  unified roster. The owner is never removable; backend
+               *  members that echo the owner id are deduplicated. */}
               <Section title={t("sectionMembers")} description={t("sectionMembersDesc")}>
-                {form.jobs.length === 0 ? (
-                  <div className="rounded-xl border border-border bg-card p-6 text-center">
-                    <p className="text-sm text-muted-foreground">{t("noMembers")}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {form.jobs.map((job, i) => (
-                      <div
-                        key={i}
-                        className="flex items-start gap-4 rounded-xl border border-border bg-card p-4"
-                      >
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-bold text-muted-foreground">
-                          {String(i + 1).padStart(2, "0")}
-                        </div>
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <Input
-                            value={job.role}
-                            onChange={(e) => updateJob(i, { role: e.target.value })}
-                            placeholder={t("rolePlaceholder")}
-                            className="h-8 text-sm font-medium"
-                          />
-                          <Textarea
-                            value={job.description}
-                            onChange={(e) => updateJob(i, { description: e.target.value })}
-                            placeholder={t("jobDescPlaceholder")}
-                            rows={2}
-                            className="min-h-14 text-sm"
-                          />
-                          <div className="flex gap-3">
-                            <div className="relative flex-1">
-                              <Input
-                                type="number"
-                                value={job.profitRatio}
-                                onChange={(e) => updateJob(i, { profitRatio: e.target.value })}
-                                placeholder={t("profitRatio")}
-                                className="h-8 pr-8 text-sm"
-                              />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                                %
-                              </span>
-                            </div>
-                            <Input
-                              type="number"
-                              value={job.earnings}
-                              onChange={(e) => updateJob(i, { earnings: e.target.value })}
-                              placeholder={t("estimatedEarnings")}
-                              className="h-8 flex-1 text-sm"
-                            />
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          color="muted"
-                          size="icon-xs"
-                          onClick={() => removeJob(i)}
-                          className="mt-1 hover:text-destructive"
-                        >
-                          <IconTrash className="size-4" />
-                        </Button>
+                {(() => {
+                  const ownerId = project?.ownerId;
+                  const ownerRow: ProjectMember | null =
+                    ownerId != null
+                      ? {
+                          userId: ownerId,
+                          userName: project?.ownerName ?? undefined,
+                          nickName: project?.ownerName ?? undefined,
+                          avatar: project?.ownerAvatar ?? undefined,
+                          role: MEMBER_ROLE.OWNER,
+                        }
+                      : null;
+                  const collaborators = members.filter(
+                    (m) => ownerId == null || m.userId !== ownerId
+                  );
+                  const rows: Array<{ member: ProjectMember; canRemove: boolean }> = [];
+                  if (ownerRow) rows.push({ member: ownerRow, canRemove: false });
+                  for (const m of collaborators) {
+                    rows.push({ member: m, canRemove: m.userId != null });
+                  }
+                  if (rows.length === 0) {
+                    return (
+                      <div className="rounded-xl border border-dashed border-border bg-card/40 px-4 py-10 text-center">
+                        <p className="text-sm text-muted-foreground">{t("noMembers")}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  }
+                  return (
+                    <div className="space-y-2">
+                      {rows.map(({ member: m, canRemove }, i) => (
+                        <MemberRow
+                          key={m.id ?? m.userId ?? i}
+                          member={m}
+                          roleLabel={getRoleLabel(m.role, roleCatalog, t)}
+                          roleTone={getRoleTone(m.role)}
+                          canRemove={canRemove}
+                          onRemove={() => {
+                            if (m.userId == null) return;
+                            removeMemberMut(
+                              { projectId: Number(id), userId: Number(m.userId) },
+                              {
+                                onSuccess: () => toast.success(tc("deleteSuccess")),
+                                onError: (err) =>
+                                  toast.error(
+                                    err instanceof Error && err.message
+                                      ? err.message
+                                      : tc("deleteFailed")
+                                  ),
+                              }
+                            );
+                          }}
+                          labels={{ remove: t("memberRemove") }}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
                 <Button
                   variant="outline"
                   color="muted"
@@ -722,11 +1115,29 @@ export default function IPEditPage({ id }: { id: string }) {
               <AddMemberDialog
                 open={addMemberOpen}
                 onOpenChange={setAddMemberOpen}
-                onSubmit={(member: NewMember) => {
-                  addJob();
-                  const idx = form.jobs.length;
-                  updateJob(idx, { role: member.name, description: member.email });
-                  toast.success(t("memberAdded"));
+                existingUserIds={[
+                  ...(project?.ownerId != null ? [project.ownerId] : []),
+                  ...members.map((m) => m.userId).filter((v): v is number => typeof v === "number"),
+                ]}
+                busy={addingMember}
+                onSubmit={async (member: NewMember) => {
+                  setAddingMember(true);
+                  try {
+                    await addMemberMut({
+                      projectId: Number(id),
+                      email: member.email,
+                      role: member.role,
+                      remark: member.remark,
+                    });
+                    toast.success(t("memberAdded"));
+                    setAddMemberOpen(false);
+                  } catch (err) {
+                    toast.error(
+                      err instanceof Error && err.message ? err.message : t("addMemberFailed")
+                    );
+                  } finally {
+                    setAddingMember(false);
+                  }
                 }}
               />
             </>
@@ -735,264 +1146,88 @@ export default function IPEditPage({ id }: { id: string }) {
           {/* ── FAQ ── */}
           {activeTab === "faq" && (
             <Section title={t("sectionFAQ")} description={t("sectionFAQDesc")}>
-              {(form.faqs ?? []).length > 0 && (
-                <div className="space-y-4">
-                  {(form.faqs ?? []).map((faq, i) => (
-                    <div key={i} className="space-y-3 rounded-xl border border-border bg-card p-4">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-foreground">
-                          {t("faqQuestion")}
-                        </label>
-                        <Input
-                          value={faq.question}
-                          onChange={(e) => {
-                            const faqs = [...form.faqs];
-                            faqs[i] = { ...faqs[i], question: e.target.value };
-                            update({ faqs });
-                          }}
-                          placeholder={t("faqQuestionPlaceholder")}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-foreground">
-                          {t("faqAnswer")}
-                        </label>
-                        <Textarea
-                          value={faq.answer}
-                          onChange={(e) => {
-                            const faqs = [...form.faqs];
-                            faqs[i] = { ...faqs[i], answer: e.target.value };
-                            update({ faqs });
-                          }}
-                          placeholder={t("faqAnswerPlaceholder")}
-                          rows={3}
-                        />
-                      </div>
-                      <div className="flex justify-end">
-                        <Button
-                          variant="outline"
-                          color="destructive"
-                          size="sm"
-                          onClick={() =>
-                            update({ faqs: (form.faqs ?? []).filter((_, j) => j !== i) })
-                          }
-                        >
-                          <IconTrash className="size-3.5" />
-                          {t("faqDelete")}
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              {faqs.length > 0 ? (
+                <DragDropProvider onDragOver={handleFaqDragOver} onDragEnd={handleFaqDragEnd}>
+                  <div className="flex flex-col gap-3">
+                    {faqs.map((faq, i) => (
+                      <SortableFaqRow
+                        key={faq.faqId}
+                        id={String(faq.faqId)}
+                        index={i}
+                        faq={faq}
+                        onEdit={() => openFaqEdit(i)}
+                        onDelete={() => removeFaq(i)}
+                      />
+                    ))}
+                  </div>
+                </DragDropProvider>
+              ) : (
+                <p className="rounded-xl border border-dashed border-border bg-card/40 px-4 py-8 text-center text-sm text-muted-foreground">
+                  {t("faqEmpty")}
+                </p>
               )}
-              <Button
-                variant="outline"
-                color="muted"
-                className="w-full"
-                onClick={() =>
-                  update({ faqs: [...(form.faqs ?? []), { question: "", answer: "" }] })
-                }
-              >
+
+              <Button variant="outline" color="muted" className="w-full" onClick={openFaqCreate}>
                 <IconPlus className="size-4" />
                 {t("faqAdd")}
               </Button>
+
+              <FaqDialog
+                open={faqDialogOpen}
+                onOpenChange={setFaqDialogOpen}
+                index={faqDialogIndex}
+                initial={
+                  faqDialogIndex !== null && faqDialogIndex >= 0
+                    ? {
+                        question: faqs[faqDialogIndex]?.question ?? "",
+                        answer: faqs[faqDialogIndex]?.answer ?? "",
+                      }
+                    : null
+                }
+                onSubmit={(draft) => upsertFaq(faqDialogIndex, draft)}
+              />
             </Section>
           )}
 
-          {/* ── Funding ── */}
-          {activeTab === "funding" && (
-            <>
-              <Section title={t("sectionFundingMode")} description={t("sectionFundingModeDesc")}>
-                <div className="flex gap-3">
-                  {(["investment", "presale"] as const).map((mode) => (
-                    <Button
-                      key={mode}
-                      variant={form.fundingMode === mode ? "soft" : "outline"}
-                      color={form.fundingMode === mode ? "primary" : "muted"}
-                      className="flex-1 py-3"
-                      onClick={() => update({ fundingMode: mode })}
-                    >
-                      {t(`mode_${mode}`)}
-                    </Button>
-                  ))}
-                </div>
-              </Section>
-
-              {form.fundingMode === "investment" ? (
-                <>
-                  <Section title={t("sectionValuation")} description={t("sectionValuationDesc")}>
-                    <Input
-                      type="number"
-                      value={form.valuation}
-                      onChange={(e) => update({ valuation: e.target.value })}
-                      placeholder="0"
-                      className="h-10"
-                    />
-                  </Section>
-                  <Section title={t("sectionShares")} description={t("sectionSharesDesc")}>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          {t("sharesOffered")}
-                        </label>
-                        <div className="relative">
-                          <Input
-                            type="number"
-                            value={form.sharesOffered}
-                            onChange={(e) => update({ sharesOffered: e.target.value })}
-                            className="h-9 pr-8"
-                          />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                            %
-                          </span>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          {t("totalShares")}
-                        </label>
-                        <Input
-                          type="number"
-                          value={form.totalShares}
-                          onChange={(e) => update({ totalShares: e.target.value })}
-                          className="h-9"
-                        />
-                      </div>
-                    </div>
-                  </Section>
-                  <Section title={t("sectionDeadline")} description={t("sectionDeadlineDesc")}>
-                    <Input
-                      type="date"
-                      value={form.deadline}
-                      onChange={(e) => update({ deadline: e.target.value })}
-                      className="h-10"
-                    />
-                  </Section>
-                </>
-              ) : (
-                <>
-                  <Section
-                    title={t("sectionPresalePrice")}
-                    description={t("sectionPresalePriceDesc")}
-                  >
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          {t("presalePrice")}
-                        </label>
-                        <Input
-                          type="number"
-                          value={form.presalePrice}
-                          onChange={(e) => update({ presalePrice: Number(e.target.value) || 0 })}
-                          className="h-9"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs text-muted-foreground">
-                          {t("fullPrice")}
-                        </label>
-                        <Input
-                          type="number"
-                          value={form.fullPrice}
-                          onChange={(e) => update({ fullPrice: Number(e.target.value) || 0 })}
-                          className="h-9"
-                        />
-                      </div>
-                    </div>
-                  </Section>
-                  <Section
-                    title={t("sectionPresaleTarget")}
-                    description={t("sectionPresaleTargetDesc")}
-                  >
-                    <Input
-                      type="number"
-                      value={form.presaleTarget}
-                      onChange={(e) => update({ presaleTarget: Number(e.target.value) || 0 })}
-                      className="h-10"
-                    />
-                  </Section>
-                  <Section
-                    title={t("sectionDeadline")}
-                    description={t("sectionPresaleDeadlineDesc")}
-                  >
-                    <Input
-                      type="date"
-                      value={form.presaleDeadline}
-                      onChange={(e) => update({ presaleDeadline: e.target.value })}
-                      className="h-10"
-                    />
-                  </Section>
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── Rewards ── */}
-          {activeTab === "rewards" && (
-            <Section title={t("sectionRewards")} description={t("sectionRewardsDesc")}>
-              <div className="grid grid-cols-2 gap-3">
-                {PRESET_REWARDS.map((preset) => {
-                  const added = form.rewards.some((r) => r.id === preset.id);
+          {/* ── Legacy job recruitment ──
+              Read-only view of historical hiring data fetched from the
+              old `/project/job/project/list` endpoint. Tab is only mounted
+              when `legacyJobs.length > 0` (see `visibleTabs` above), so
+              this `activeTab === "jobs"` branch is unreachable for
+              brand-new projects. */}
+          {activeTab === "jobs" && (
+            <Section title={t("editJobRecruitment")} description={t("editJobRecruitmentDesc")}>
+              <div className="space-y-2">
+                {legacyJobs.map((job, i) => {
+                  const title = job.roleName || `#${job.roleId ?? i + 1}`;
+                  const desc =
+                    typeof job.jobDescription === "string" ? job.jobDescription.trim() : "";
+                  const tag: string[] = [];
+                  if (typeof job.profitRatio === "number" && job.profitRatio > 0) {
+                    tag.push(t("editJobProfitRatio", { ratio: job.profitRatio }));
+                  }
+                  if (typeof job.estimatedEarnings === "number" && job.estimatedEarnings > 0) {
+                    tag.push(t("editJobEstimatedEarnings", { amount: job.estimatedEarnings }));
+                  }
                   return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => (added ? removeReward(preset.id) : addReward(preset))}
-                      className={cn(
-                        "rounded-xl border p-3 text-left transition-all",
-                        added
-                          ? "border-primary/40 bg-primary/5"
-                          : "border-border bg-card hover:border-border/80"
-                      )}
-                    >
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-foreground">
-                          ¥{preset.amount} {preset.title}
-                        </span>
-                        {added && <span className="text-xs text-primary">{t("added")}</span>}
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {preset.perks.slice(0, 3).map((p) => (
-                          <span
-                            key={p}
-                            className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground"
-                          >
-                            {p}
+                    <div key={job.id ?? i} className="rounded-xl border border-border bg-card p-4">
+                      <div className="mb-1 flex items-center justify-between gap-3">
+                        <span className="text-sm font-semibold text-foreground">{title}</span>
+                        {tag.length > 0 && (
+                          <span className="shrink-0 text-[11px] text-amber-400">
+                            {tag.join(" · ")}
                           </span>
-                        ))}
+                        )}
                       </div>
-                    </button>
+                      {desc && (
+                        <p className="whitespace-pre-line text-xs leading-relaxed text-secondary-foreground">
+                          {desc}
+                        </p>
+                      )}
+                    </div>
                   );
                 })}
               </div>
-              {form.rewards.length > 0 && (
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-foreground">
-                    {t("currentRewards")} ({form.rewards.length})
-                  </label>
-                  <div className="space-y-2">
-                    {form.rewards.map((r) => (
-                      <div
-                        key={r.id}
-                        className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
-                      >
-                        <span className="text-sm font-medium text-foreground">
-                          ¥{r.amount} {r.title}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          color="muted"
-                          size="icon-xs"
-                          onClick={() => removeReward(r.id)}
-                          className="hover:text-destructive"
-                        >
-                          <IconX className="size-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </Section>
           )}
         </div>

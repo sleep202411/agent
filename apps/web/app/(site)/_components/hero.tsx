@@ -18,7 +18,7 @@ import { ShinyText } from "@/components/ui/shiny-text";
 import { StarBorder } from "@/components/ui/star-border";
 import { Noise } from "@/components/ui/noise";
 import { GradualBlur } from "@/components/ui/gradual-blur";
-import { useLocale } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 
@@ -30,6 +30,7 @@ const HERO_IMAGE =
 
 export function Hero() {
   const locale = useLocale() as Locale;
+  const t = useTranslations("home");
 
   return (
     <section className="relative h-screen min-h-[680px] overflow-hidden">
@@ -82,7 +83,7 @@ export function Hero() {
             <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
           </span>
           <ShinyText
-            text="Kling 2.6 · now available"
+            text={t("hero.statusPill")}
             color="rgba(255,255,255,0.7)"
             shineColor="#ffffff"
             speed={3}
@@ -93,7 +94,7 @@ export function Hero() {
         {/* 2. Headline — BlurText reveals each word with a 2-step blur ramp. */}
         <div className="mt-10 max-w-6xl text-balance text-5xl font-semibold tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[100px] lg:leading-[1.02]">
           <BlurText
-            text="Direct your story"
+            text={t("hero.headlineLine1")}
             animateBy="words"
             direction="top"
             delay={120}
@@ -101,7 +102,7 @@ export function Hero() {
             className="justify-center"
           />
           <BlurText
-            text="with an AI crew."
+            text={t("hero.headlineLine2")}
             animateBy="words"
             direction="top"
             delay={120}
@@ -117,8 +118,7 @@ export function Hero() {
           transition={{ duration: 0.6, delay: 1.1 }}
           className="mt-10 max-w-3xl text-balance text-lg leading-relaxed text-white/75 sm:text-xl"
         >
-          Drop a story. Eleven specialist agents draft it, storyboard it, voice it, and render every
-          frame. You direct, they execute.
+          {t("hero.subtitle")}
         </motion.p>
 
         {/* 4. CTAs — tall pills, chevron icons, primary keeps the StarBorder rim. */}
@@ -133,7 +133,7 @@ export function Hero() {
               href={localizePath("/login", locale)}
               className="flex h-14 items-center gap-3 rounded-full bg-white px-8 text-base font-semibold text-black transition-colors hover:bg-white/90"
             >
-              Start now
+              {t("hero.primaryCta")}
               <IconArrowRight className="size-5" strokeWidth={2.5} />
             </Link>
           </StarBorder>
@@ -141,7 +141,7 @@ export function Hero() {
             href={localizePath("/ips", locale)}
             className="flex h-14 items-center gap-3 rounded-full border border-white/15 bg-white/[0.03] px-8 text-base font-semibold text-white/90 backdrop-blur transition-colors hover:border-white/25 hover:bg-white/[0.08]"
           >
-            Browse IPs
+            {t("hero.secondaryCta")}
             <IconArrowRight className="size-5" strokeWidth={2.5} />
           </Link>
         </motion.div>

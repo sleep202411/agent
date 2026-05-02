@@ -4,8 +4,14 @@ import Link from "next/link";
 import { IconSparkles, IconPlayerPlay } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { ipImageUrl, userAvatarUrl, type IPProject, type CategoryMap } from "../_hooks/use-ip";
-import { splitTags, avatarFallbackTone } from "../_data/ip-mock";
+import {
+  ipImageUrl,
+  userAvatarUrl,
+  splitTags,
+  avatarFallbackTone,
+  type IPProject,
+  type CategoryMap,
+} from "../_hooks/use-ip";
 
 /**
  * IP Plaza listing card. Sits inside a CSS-columns masonry container, so

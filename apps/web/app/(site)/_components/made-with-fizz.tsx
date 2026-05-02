@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { IconArrowRight, IconSparkles } from "@tabler/icons-react";
 import { fetchFeaturedIPs, ipBannerUrl, type FeaturedIP } from "../_services/featured-ips";
-import { useLocale } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 
@@ -23,6 +23,7 @@ export function MadeWithFizz() {
   });
   const items = data ?? null;
   const locale = useLocale() as Locale;
+  const t = useTranslations("home");
 
   // Don't render anything if the fetch fails or returns nothing — we
   // don't want a half-empty content wall to be the second thing visitors
@@ -35,21 +36,20 @@ export function MadeWithFizz() {
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="text-xs font-mono uppercase tracking-[0.25em] text-muted-foreground">
-              Made with FizzDragon
+              {t("madeWithFizz.eyebrow")}
             </div>
             <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl">
-              Stories already in production.
+              {t("madeWithFizz.title")}
             </h2>
             <p className="mt-4 max-w-2xl text-base text-muted-foreground sm:text-lg">
-              IPs being built right now by the FizzDragon community. Click in to follow the process
-              or back the project.
+              {t("madeWithFizz.subtitle")}
             </p>
           </div>
           <Link
             href={localizePath("/ips", locale)}
             className="group inline-flex items-center gap-1.5 self-start rounded-full border border-border/50 bg-card/40 px-4 py-2 text-sm text-foreground/80 transition-colors hover:border-border hover:text-foreground sm:self-end"
           >
-            View all
+            {t("madeWithFizz.viewAll")}
             <IconArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
@@ -66,7 +66,11 @@ export function MadeWithFizz() {
                 viewport={{ once: true, margin: "-60px" }}
                 transition={{ duration: 0.4, ease: "easeOut", delay: i * 0.05 }}
               >
-                <Card project={project} locale={locale} />
+                <Card
+                  project={project}
+                  locale={locale}
+                  byOwnerLabel={t("madeWithFizz.byOwner", { name: project.ownerName ?? "" })}
+                />
               </motion.div>
             ))}
           </div>
@@ -76,7 +80,15 @@ export function MadeWithFizz() {
   );
 }
 
-function Card({ project, locale }: { project: FeaturedIP; locale: Locale }) {
+function Card({
+  project,
+  locale,
+  byOwnerLabel,
+}: {
+  project: FeaturedIP;
+  locale: Locale;
+  byOwnerLabel: string;
+}) {
   const cover = ipBannerUrl(project.bannerLink);
   return (
     <Link
@@ -100,7 +112,7 @@ function Card({ project, locale }: { project: FeaturedIP; locale: Locale }) {
         <div className="absolute bottom-3 left-3 right-3">
           <div className="truncate text-base font-semibold text-white">{project.name}</div>
           {project.ownerName ? (
-            <div className="mt-1 truncate text-xs text-white/70">by {project.ownerName}</div>
+            <div className="mt-1 truncate text-xs text-white/70">{byOwnerLabel}</div>
           ) : null}
         </div>
       </div>

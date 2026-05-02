@@ -219,7 +219,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
           onChange={handleCoverChange}
         />
 
-        <div className="relative mx-auto flex w-full max-w-5xl items-end justify-between px-8 pb-6">
+        <div className="relative mx-auto flex w-full max-w-6xl items-end justify-between px-4 pb-6">
           <div className="flex max-w-3xl flex-col gap-3">
             <div className="flex items-center space-x-4">
               <div className="group relative shrink-0">

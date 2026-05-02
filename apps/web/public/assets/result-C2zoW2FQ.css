@@ -1,0 +1,13 @@
+.payment-result-page[data-v-e1c2d506] {
+  width: 100vw;
+  height: 100vh;
+  background: #14141a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.result-iframe[data-v-e1c2d506] {
+  width: 100%;
+  height: 100%;
+  border: none;
+}

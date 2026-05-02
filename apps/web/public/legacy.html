@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script>
+      (function () {
+        try {
+          var p = window.location.pathname;
+          var prefix = "/__legacy";
+          if (p.indexOf(prefix) === 0) {
+            var rest = p.slice(prefix.length) || "/";
+            window.history.replaceState(
+              null,
+              "",
+              rest + window.location.search + window.location.hash
+            );
+          }
+        } catch (err) {
+          /* eslint-disable-next-line no-console */
+          console.warn("[fizz-legacy] could not strip /__legacy prefix:", err);
+        }
+      })();
+    </script>
+  
+    <link rel="stylesheet" href="/assets/uni.5e438b07.css">
+
+    <meta charset="UTF-8" />
+    <script>
+      var coverSupport = 'CSS' in window && typeof CSS.supports === 'function' && (CSS.supports('top: env(a)') ||
+        CSS.supports('top: constant(a)'))
+      document.write(
+        '<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0' +
+        (coverSupport ? ', viewport-fit=cover' : '') + '" />')
+    </script>
+    <title>FizzDragon</title>
+    <link rel="icon" type="image/x-icon" href="/assets/favicon-HTqxGPrA.ico" />
+    <!--preload-links-->
+    <!--app-context-->
+    <script type="module" crossorigin src="/assets/index-WLNnZSMC.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CKFhs9wQ.css">
+    <script src="https://cn-shanghai-aliyun-cloudauth.oss-cn-shanghai.aliyuncs.com/web_sdk_js/jsvm_all.js"></script>
+  
+    <style id="fizz-legacy-hide-chrome">
+      [data-v-7f5ea766] { display: none !important; }
+      [data-v-c2d26263] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div id="app"><!--app-html--></div>
+  </body>
+</html>

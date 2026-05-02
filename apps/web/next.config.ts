@@ -20,17 +20,34 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   async rewrites() {
-    return [
-      // NestJS server (strip /aurora prefix)
-      { source: "/aurora/:path*", destination: `${SERVER_URL}/:path*` },
-      // Java Studio service
-      { source: "/api/:path*", destination: `${JAVA_STUDIO_URL}/api/:path*` },
-      { source: "/anon/:path*", destination: `${JAVA_STUDIO_URL}/anon/:path*` },
-      // Java Content service
-      { source: "/user/:path*", destination: `${JAVA_CONTENT_URL}/user/:path*` },
-      { source: "/project/:path*", destination: `${JAVA_CONTENT_URL}/project/:path*` },
-      { source: "/vedio/:path*", destination: `${JAVA_CONTENT_URL}/vedio/:path*` },
-    ];
+    return {
+      beforeFiles: [],
+      afterFiles: [
+        // NestJS server (strip /aurora prefix)
+        { source: "/aurora/:path*", destination: `${SERVER_URL}/:path*` },
+        // Java Studio service
+        { source: "/api/:path*", destination: `${JAVA_STUDIO_URL}/api/:path*` },
+        { source: "/anon/:path*", destination: `${JAVA_STUDIO_URL}/anon/:path*` },
+        // Java Content service
+        { source: "/user/:path*", destination: `${JAVA_CONTENT_URL}/user/:path*` },
+        { source: "/project/:path*", destination: `${JAVA_CONTENT_URL}/project/:path*` },
+        { source: "/vedio/:path*", destination: `${JAVA_CONTENT_URL}/vedio/:path*` },
+        // Legacy iframe content endpoint. The catch-all page in
+        // `app/(site)/[...legacyPath]/page.tsx` builds an iframe whose
+        // src is `/__legacy/<original-path>`; this rewrite returns the
+        // bundled `public/legacy.html` for any such URL. The legacy
+        // bundle then strips the `/__legacy` prefix client-side (see
+        // scripts/sync-legacy.mjs) so its history router reads the
+        // intended pathname.
+        { source: "/__legacy/:path*", destination: "/legacy.html" },
+      ],
+      // Strangler-fig fallback: any unmatched URL falls into the
+      // catch-all page under `(site)`, which renders the legacy app
+      // inside an iframe so the platform's GlobalNav + SiteFooter
+      // wrap it. The page itself routes via Next.js — no rewrite
+      // needed here.
+      fallback: [],
+    };
   },
 };
 
