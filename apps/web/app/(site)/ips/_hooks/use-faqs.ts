@@ -2,14 +2,14 @@
  * FAQ CRUD.
  *
  *   - `useFAQs`        — GET  /project/faq/list?projectId=
- *   - `useCreateFAQ`   — POST /project/faq/add (query params)
- *   - `useUpdateFAQ`   — POST /project/faq/update (query params)
+ *   - `useCreateFAQ`   — POST /project/faq/add (JSON body)
+ *   - `useUpdateFAQ`   — POST /project/faq/update (JSON body, field is `id` not `faqId`)
  *   - `useDeleteFAQ`   — POST /project/faq/delete (query params)
  *
- * All four endpoints declare their fields as `(query)` in Swagger
- * (Spring `@RequestParam`), so we put everything on the URL — the
- * mutations have no body. Authorization header is preserved on top
- * of the cookie because legacy IP-feature controllers NPE without it.
+ * `add` and `update` migrated to `@RequestBody` on the Java side;
+ * `delete` still declares its fields as `(query)` in Swagger.
+ * Authorization header is preserved on top of the cookie because
+ * legacy IP-feature controllers NPE without it.
  *
  * The backend identifier is **`faqId`** (int64) — not `id`. Update and
  * delete both require `faqId` AND `projectId`. Update additionally
@@ -69,7 +69,7 @@ async function createFAQ(input: CreateFAQInput): Promise<{ faqId: number }> {
   const result = await api.post<{ faqId?: number; id?: number } | number | null>(
     "/project/faq/add",
     {
-      params: {
+      data: {
         projectId: input.projectId,
         question: input.question,
         answer: input.answer,
@@ -102,8 +102,8 @@ interface UpdateFAQInput {
 
 async function updateFAQ(input: UpdateFAQInput): Promise<void> {
   await api.post("/project/faq/update", {
-    params: {
-      faqId: input.faqId,
+    data: {
+      id: input.faqId,
       projectId: input.projectId,
       question: input.question,
       answer: input.answer,
