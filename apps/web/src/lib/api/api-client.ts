@@ -28,7 +28,18 @@ export interface ApiPaginated<T> {
 
 export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
   params?: Record<string, string | number | boolean | undefined>;
+  /**
+   * JSON body — serialized via JSON.stringify, sent as
+   * `application/json`. Mutually exclusive with `form`.
+   */
   data?: unknown;
+  /**
+   * URL-encoded form body (`application/x-www-form-urlencoded`) — used
+   * by Java auth / legacy endpoints that don't accept JSON. Mutually
+   * exclusive with `data`. Values get coerced via String(); undefined
+   * keys are dropped.
+   */
+  form?: Record<string, string | number | boolean | undefined>;
   timeout?: number;
 }
 
@@ -131,7 +142,11 @@ function getAcceptLanguage(): Locale {
 }
 
 async function request<T>(method: string, path: string, config: ApiRequestConfig = {}): Promise<T> {
-  const { params, data, timeout = 30_000, headers: customHeaders, ...rest } = config;
+  const { params, data, form, timeout = 30_000, headers: customHeaders, ...rest } = config;
+
+  if (data !== undefined && form !== undefined) {
+    throw new Error("ApiRequestConfig: pass either `data` or `form`, not both.");
+  }
 
   const url = buildUrl(path, params);
 
@@ -139,10 +154,17 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     console.log(`[backendApi] ${method} ${url}`);
   }
 
+  // Body shape determines Content-Type: form → URL-encoded, data → JSON.
+  // Caller-supplied Content-Type via `headers` still wins (last spread).
+  const isForm = form !== undefined;
+  const defaultContentType = isForm
+    ? "application/x-www-form-urlencoded; charset=UTF-8"
+    : "application/json";
+
   const init: RequestInit = {
     method,
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": defaultContentType,
       "accept-language": getAcceptLanguage(),
       ...customHeaders,
     },
@@ -150,7 +172,13 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     ...rest,
   };
 
-  if (data !== undefined) {
+  if (isForm) {
+    const usp = new URLSearchParams();
+    for (const [k, v] of Object.entries(form)) {
+      if (v !== undefined) usp.set(k, String(v));
+    }
+    init.body = usp.toString();
+  } else if (data !== undefined) {
     init.body = JSON.stringify(data);
   }
 
@@ -208,21 +236,19 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   return (body.data ?? body.info ?? body.path ?? body) as T;
 }
 
-/** POST with application/x-www-form-urlencoded (for Java auth endpoints) */
+/**
+ * POST with application/x-www-form-urlencoded.
+ *
+ * Thin convenience wrapper over `api.post(path, { form })` — kept for
+ * call sites that pre-date the `form` config option. New code can use
+ * `api.post(path, { form: { ... } })` directly.
+ */
 async function postForm<T>(
   path: string,
   data: Record<string, string>,
   config: ApiRequestConfig = {}
 ): Promise<T> {
-  return request<T>("POST", path, {
-    ...config,
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      ...(config.headers as Record<string, string>),
-    },
-    data: undefined,
-    body: new URLSearchParams(data).toString(),
-  } as unknown as ApiRequestConfig);
+  return request<T>("POST", path, { ...config, form: data });
 }
 
 /** POST with multipart/form-data (for file uploads) */
