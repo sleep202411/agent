@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent } from "react";
+import { useRouter } from "next/navigation";
 import { IconLoader2, IconPhotoPlus, IconUpload, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,22 +31,6 @@ type CreateQuickWorldResult = {
 const MAX_NAME_LENGTH = 50;
 const MAX_DESCRIPTION_LENGTH = 500;
 
-/**
- * Same transport the studio ProductCard uses when the user clicks
- * an existing project: in an embedding iframe, delegate to the
- * parent (legacy fizzdragon-web listens for this postMessage and
- * navigates its own tab). Standalone, open the project in a new
- * tab so the studio list isn't lost.
- */
-function openProjectDetail(projectId: string, worldId: string) {
-  if (typeof window === "undefined") return;
-  if (window.self !== window.top) {
-    window.parent.postMessage({ type: "openProject", projectId, worldId }, "*");
-    return;
-  }
-  window.open(`/projects/${projectId}?worldId=${worldId}`, "_blank");
-}
-
 type FormErrors = {
   name?: string;
 };
@@ -63,6 +48,7 @@ export function CreateWorldDialog({
   const tw = useTranslations("workspace");
   const tc = useTranslations("common");
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -151,11 +137,7 @@ export function CreateWorldDialog({
       onOpenChange(false);
 
       if (result?.projectId && result?.worldId) {
-        // Match ProductCard's open-project behavior: in an embedding
-        // iframe defer to the parent, otherwise open in a new tab so
-        // the studio list stays put. Caller's `onCreated` still runs
-        // for any additional follow-up.
-        openProjectDetail(result.projectId, result.worldId);
+        router.push(`/projects/${result.projectId}?worldId=${result.worldId}`);
         onCreated?.(result);
       }
     } catch (err) {

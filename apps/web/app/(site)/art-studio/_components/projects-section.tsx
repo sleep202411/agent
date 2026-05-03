@@ -266,17 +266,6 @@ function ProductCard({
     }
   };
 
-  const handleLinkClick = (e: React.MouseEvent) => {
-    // 嵌入到 parent iframe 时，改走 postMessage 让 parent 在自己那边跳
-    if (typeof window !== "undefined" && window.self !== window.top) {
-      e.preventDefault();
-      window.parent.postMessage(
-        { type: "openProject", projectId: product.id, worldId: product.worldId },
-        "*"
-      );
-    }
-  };
-
   const handleDelete = async () => {
     if (deleting) return;
     setDeleting(true);
@@ -314,11 +303,7 @@ function ProductCard({
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-border">
-      <Link
-        href={`/projects/${product.id}?worldId=${product.worldId}`}
-        target="_blank"
-        onClick={handleLinkClick}
-      >
+      <Link href={`/projects/${product.id}?worldId=${product.worldId}`}>
         <div className="relative aspect-[16/9] w-full bg-muted">
           <img src={cover ?? "/default-cover.png"} alt="" className="size-full object-cover" />
           <span className="absolute left-2 top-2 rounded-md bg-background/80 px-2 py-0.5 text-[10px] font-medium text-foreground backdrop-blur-sm">
@@ -329,8 +314,6 @@ function ProductCard({
       <div className="flex items-start justify-between gap-2 p-3">
         <Link
           href={`/projects/${product.id}?worldId=${product.worldId}`}
-          target="_blank"
-          onClick={handleLinkClick}
           className="min-w-0 flex-1"
         >
           <p className="truncate text-sm font-medium">{product.name}</p>
@@ -344,11 +327,7 @@ function ProductCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <Link
-                href={`/projects/${product.id}?worldId=${product.worldId}`}
-                target="_blank"
-                onClick={handleLinkClick}
-              >
+              <Link href={`/projects/${product.id}?worldId=${product.worldId}`}>
                 {tw("projectMenuOpen")}
               </Link>
             </DropdownMenuItem>
