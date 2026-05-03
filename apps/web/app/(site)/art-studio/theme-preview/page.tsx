@@ -50,7 +50,7 @@ export default function Home() {
   const switchLang = (lng: string) => {
     setCurrentLocale(lng);
     setLanguage(lng);
-    router.replace("/studio/theme-preview");
+    router.replace("/art-studio/theme-preview");
   };
 
   return (

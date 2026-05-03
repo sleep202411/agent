@@ -10,12 +10,8 @@
  */
 
 import { useState } from "react";
-import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
-import { IconArrowRight } from "@tabler/icons-react";
-import { useLocale, useTranslations } from "@/src/i18n/i18n";
-import { localizePath } from "@/src/i18n/locale-url";
-import type { Locale } from "@/src/i18n/config";
+import { useTranslations } from "@/src/i18n/i18n";
 
 type TabId = "creative" | "business" | "education";
 type CardKey =
@@ -93,7 +89,6 @@ const CARD_LAYOUT: Record<TabId, { key: CardKey; image: string }[]> = {
 };
 
 export function UseCases() {
-  const locale = useLocale() as Locale;
   const t = useTranslations("home");
   const [tab, setTab] = useState<TabId>("creative");
   const cards = CARD_LAYOUT[tab];
@@ -192,13 +187,6 @@ export function UseCases() {
                     <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
                       {cardBody}
                     </p>
-                    <Link
-                      href={localizePath("/login", locale)}
-                      className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-foreground/95 px-5 py-2.5 text-sm font-semibold text-background transition-colors hover:bg-foreground"
-                    >
-                      {t("useCases.tryItNow")}
-                      <IconArrowRight className="size-4" />
-                    </Link>
                   </div>
                 </motion.div>
               );

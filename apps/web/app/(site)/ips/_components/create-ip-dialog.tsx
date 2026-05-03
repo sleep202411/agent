@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHero } from "@/components/ui/dialog";
 import { useCreateProject } from "@/app/(site)/ips/_hooks/use-ip";
+import { useSparkAnalyze } from "@/app/(site)/ips/_hooks/use-spark";
 
 const MOCK_CATEGORIES = [
   { value: "1", label: "AIGC影视" },
@@ -84,6 +85,7 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
   const [description, setDescription] = useState("");
   const create = useCreateProject();
   const creating = create.isPending;
+  const sparkAnalyze = useSparkAnalyze();
 
   // AI-fill state
   const [analyzeStatus, setAnalyzeStatus] = useState<AnalyzeStatus>("idle");
@@ -150,7 +152,7 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
     analyzeAbortRef.current = controller;
 
     try {
-      const result = await analyzeIPDocument(file, controller.signal);
+      const result = await sparkAnalyze.mutateAsync(file);
       if (controller.signal.aborted) return;
 
       // Apply only fields the backend returned. Don't overwrite values the
@@ -158,10 +160,6 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
       if (result.name && !name.trim()) {
         setName(result.name);
         markAi("name");
-      }
-      if (result.typeId && !typeId) {
-        setTypeId(result.typeId);
-        markAi("typeId");
       }
       if (result.description && !description.trim()) {
         setDescription(result.description);
@@ -488,35 +486,4 @@ function Dropzone({
       <div className="mt-1 text-xs font-medium text-primary">{t("dropzoneBrowse")}</div>
     </div>
   );
-}
-
-// ─── Mocked Nest.js call ────────────────────────────
-//
-// TODO: replace with the real Nest.js endpoint. Wire shape suggestion:
-//   POST /aurora/ip/analyze-document
-//   Content-Type: multipart/form-data — field "file"
-//   200 → { name?: string; typeId?: string; description?: string }
-//   422 → { code: string; message: string }
-//
-// For now, simulate a 1.4s analysis and hand back a short summary derived
-// from the filename so the UI flow is end-to-end testable.
-
-async function analyzeIPDocument(
-  file: File,
-  signal: AbortSignal
-): Promise<{ name?: string; typeId?: string; description?: string }> {
-  await new Promise<void>((resolve, reject) => {
-    const id = setTimeout(resolve, 1400);
-    signal.addEventListener("abort", () => {
-      clearTimeout(id);
-      reject(new DOMException("aborted", "AbortError"));
-    });
-  });
-
-  const baseName = file.name.replace(/\.[^.]+$/, "").trim();
-  return {
-    name: baseName.slice(0, 20),
-    typeId: "1",
-    description: `[Mock] Auto-extracted summary for "${baseName}". Replace this when the analyze-document endpoint is live.`,
-  };
 }
