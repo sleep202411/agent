@@ -149,12 +149,14 @@ export class ChatEventsGateway
         this.close(client, CLOSE_POLICY, 'missing_conversationId');
         return;
       }
-      // Cookie header is preferred; query param is the cross-origin fallback
-      // (see entity-events.gateway.ts for the rationale).
-      let cookie = request.headers.cookie;
-      if (!cookie) {
+      // Cookie header is preferred; fall back to `?satoken=` whenever the
+      // header lacks satoken (browser may still attach parent-domain
+      // cookies on cross-origin WS but skip host-only satoken). See
+      // entity-events.gateway.ts for the full rationale.
+      let cookie = request.headers.cookie ?? '';
+      if (!/(?:^|;\s*)satoken=/.test(cookie)) {
         const t = url.searchParams.get('satoken');
-        if (t) cookie = `satoken=${t}`;
+        if (t) cookie = cookie ? `${cookie}; satoken=${t}` : `satoken=${t}`;
       }
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {
