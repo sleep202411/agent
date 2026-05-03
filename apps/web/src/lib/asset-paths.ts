@@ -20,6 +20,20 @@ export function ossUrl(path?: string | null) {
   return `${OSS_BASE}/${path}`;
 }
 
+/**
+ * User avatar URL. Mirrors `services/user.ts` resolution:
+ * `USER_BASE_URL` if set, else `OSS_BASE_URL`. Pass-through for absolute /
+ * blob URLs. Returns "" for empty input so callers can decide on fallback.
+ */
+export function userAvatarUrl(path?: string | null) {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("blob:")) {
+    return path;
+  }
+  const base = env.USER_BASE_URL || OSS_BASE;
+  return `${base}/${path}`;
+}
+
 export function normalizeStoragePath(path?: string | null) {
   const raw = String(path ?? "").trim();
   if (!raw) return "";
