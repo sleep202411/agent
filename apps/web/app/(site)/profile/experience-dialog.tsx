@@ -30,10 +30,10 @@ interface ExperienceDialogProps {
 
 const EMPTY: ExperienceEntry = {
   title: "",
-  company: "",
+  organization: "",
   location: "",
-  startDate: "",
-  endDate: "",
+  startTime: "",
+  endTime: "",
   description: "",
 };
 
@@ -93,8 +93,8 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
           <Field>
             <FieldLabel>{t("experienceCompany")}</FieldLabel>
             <Input
-              value={draft.company}
-              onChange={(e) => update({ company: e.target.value })}
+              value={draft.organization}
+              onChange={(e) => update({ organization: e.target.value })}
               placeholder={t("experienceCompany")}
               maxLength={120}
             />
@@ -115,16 +115,16 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
               <FieldLabel>{t("startDate")}</FieldLabel>
               <Input
                 type="month"
-                value={draft.startDate}
-                onChange={(e) => update({ startDate: e.target.value })}
+                value={draft.startTime}
+                onChange={(e) => update({ startTime: e.target.value })}
               />
             </Field>
             <Field>
               <FieldLabel>{t("endDateOptional")}</FieldLabel>
               <Input
                 type="month"
-                value={draft.endDate ?? ""}
-                onChange={(e) => update({ endDate: e.target.value })}
+                value={draft.endTime ?? ""}
+                onChange={(e) => update({ endTime: e.target.value })}
               />
             </Field>
           </div>

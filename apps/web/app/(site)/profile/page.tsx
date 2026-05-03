@@ -176,12 +176,11 @@ function ExperienceTab() {
         </h2>
         <button
           type="button"
-          disabled
-          aria-disabled="true"
-          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground/60 cursor-not-allowed"
+          onClick={handleAdd}
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <IconPlus className="size-3.5" />
-          {t("comingSoon")}
+          {t("addExperience")}
         </button>
       </div>
       {experience.length === 0 ? (
@@ -189,10 +188,10 @@ function ExperienceTab() {
       ) : (
         <ul className="space-y-2">
           {experience.map((entry, i) => {
-            const range = [entry.startDate, entry.endDate || t("present")]
+            const range = [entry.startTime, entry.endTime || t("present")]
               .filter(Boolean)
               .join(" – ");
-            const head = [entry.title, entry.company].filter(Boolean).join(" · ");
+            const head = [entry.title, entry.organization].filter(Boolean).join(" · ");
             return (
               <li
                 key={entry.id ?? i}
