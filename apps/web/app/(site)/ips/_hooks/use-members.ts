@@ -12,7 +12,8 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { acceptLanguage, bearerHeader, ipKeys, postForm } from "./shared";
+import { api } from "@/src/lib/api";
+import { bearerHeader, ipKeys } from "./shared";
 import type { ProjectMember } from "./types";
 
 /** Role conventions copied from `apps/web/app/projects/_components/project-team-dialog.tsx`. */
@@ -49,24 +50,17 @@ function mapWireMember(w: WireMember): ProjectMember {
 }
 
 async function fetchProjectMembers(projectId: string): Promise<ProjectMember[]> {
-  const qs = new URLSearchParams({ projectId: String(projectId) });
-  const res = await fetch(`/project/ip/member/list?${qs.toString()}`, {
-    credentials: "include",
-    headers: {
-      "accept-language": acceptLanguage(),
-      Authorization: bearerHeader(),
-    },
-  });
-  if (!res.ok) throw new Error(`Fetch members failed: HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    code: number;
-    msg?: string;
-    data: WireMember[] | { list?: WireMember[] } | null;
-  };
-  if (json.code !== 0 && json.code !== 200) {
-    throw new Error(json.msg || "Fetch members failed");
-  }
-  const rows = Array.isArray(json.data) ? json.data : (json.data?.list ?? []);
+  // api-client unwraps the {code,msg,data} envelope and throws on
+  // non-200; `data` may be the array directly or `{ list: [...] }`,
+  // both shapes still come through that one field.
+  const data = await api.get<WireMember[] | { list?: WireMember[] } | null>(
+    "/project/ip/member/list",
+    {
+      params: { projectId },
+      headers: { Authorization: bearerHeader() },
+    }
+  );
+  const rows = Array.isArray(data) ? data : (data?.list ?? []);
   return rows.map(mapWireMember);
 }
 
@@ -86,25 +80,17 @@ interface AddMemberInput {
 }
 
 async function addMember(input: AddMemberInput): Promise<void> {
-  const qs = new URLSearchParams({
-    emial: input.email,
-    projectId: String(input.projectId),
-    role: String(input.role),
-  });
-  if (input.remark) qs.set("remark", input.remark);
-  const res = await fetch(`/project/ip/member/add/email?${qs.toString()}`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "accept-language": acceptLanguage(),
-      Authorization: bearerHeader(),
+  // Backend takes everything via query string (note `emial` typo —
+  // backend's, not ours). No JSON body needed.
+  await api.post("/project/ip/member/add/email", {
+    params: {
+      emial: input.email,
+      projectId: input.projectId,
+      role: input.role,
+      ...(input.remark ? { remark: input.remark } : {}),
     },
+    headers: { Authorization: bearerHeader() },
   });
-  if (!res.ok) throw new Error(`Add member failed: HTTP ${res.status}`);
-  const json = (await res.json()) as { code: number; msg?: string };
-  if (json.code !== 0 && json.code !== 200) {
-    throw new Error(json.msg || "Add member failed");
-  }
 }
 
 export function useAddMember() {
@@ -123,9 +109,12 @@ interface RemoveMemberInput {
 }
 
 async function removeMember(input: RemoveMemberInput): Promise<void> {
-  await postForm<unknown>("/project/ip/member/remove", {
-    projectId: String(input.projectId),
-    userId: String(input.userId),
+  await api.post("/project/ip/member/remove", {
+    form: {
+      projectId: input.projectId,
+      userId: input.userId,
+    },
+    headers: { Authorization: bearerHeader() },
   });
 }
 
