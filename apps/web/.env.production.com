@@ -17,3 +17,10 @@ NEXT_PUBLIC_OSS_BASE_URL=https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com
 NEXT_PUBLIC_USER_BASE_URL=https://user-aratar-sg.oss-ap-southeast-1.aliyuncs.com
 NEXT_PUBLIC_BANNER_BASE_URL=https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com
 NEXT_PUBLIC_PARENT_ORIGIN=https://fizzdragon.com
+
+# ============ WebSocket host override ============
+# fizzdragon.com sits behind a CDN that doesn't pass WS upgrades. Point WS
+# clients straight at the platform host; the cross-origin cookie limitation
+# is sidestepped by tunneling `satoken` via query (see entity-events-client.ts
+# and chat-events-client.ts). Empty/unset → WS uses same-origin (default).
+NEXT_PUBLIC_WS_HOST=fizzstudio.fizzdragon.com

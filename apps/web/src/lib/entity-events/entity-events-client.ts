@@ -13,6 +13,7 @@
  *   { event: "terminate",      data: { reason, code } }
  */
 import type { EntityEvent } from "@repo/shared/entity-events";
+import { env } from "@/src/env";
 
 export type EntityEventsFrame =
   | { event: "entity_changed"; data: EntityEvent }
@@ -40,12 +41,20 @@ function buildUrl(): string {
     throw new Error("EntityEventsClient only works in the browser");
   }
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  // Same dev/prod host detection as chat-events-client.
   const isDev =
     window.location.hostname === "localhost" &&
     (window.location.port === "3000" || window.location.port === "5173");
-  const host = isDev ? "localhost:3001" : window.location.host;
-  return `${proto}//${host}/aurora/entity-events/subscribe`;
+  // `WS_HOST` lets prod-com bypass a CDN-fronted main domain by pointing the
+  // WS straight at the platform host (e.g. `fizzstudio.fizzdragon.com`). When
+  // we cross origins like that, the auth cookie won't auto-attach, so we
+  // pull `satoken` out of `document.cookie` and append it as a query param;
+  // the gateway falls back to query if the cookie header is empty.
+  const host = isDev ? "localhost:3001" : env.WS_HOST || window.location.host;
+  const params = new URLSearchParams();
+  const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+  if (tokenMatch) params.set("satoken", tokenMatch[1]);
+  const qs = params.toString();
+  return `${proto}//${host}/aurora/entity-events/subscribe${qs ? `?${qs}` : ""}`;
 }
 
 function parseFrame(raw: string): EntityEventsFrame | null {

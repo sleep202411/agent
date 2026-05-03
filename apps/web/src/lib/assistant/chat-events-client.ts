@@ -22,6 +22,8 @@
  *   { event: "terminate",        data: { reason, code } }
  *        — server-initiated close
  */
+import { env } from "@/src/env";
+
 export type ChatAgentState = "idle" | "running" | "waiting" | "failed" | string;
 
 /**
@@ -107,18 +109,22 @@ function buildUrl(conversationId: string, workspaceId?: string): string {
   if (typeof window === "undefined") {
     throw new Error("ChatEventsClient only works in the browser");
   }
-  // Production (through Nginx) uses same-origin — the `/aurora/chat/...`
-  // location block proxies the Upgrade header to Nest. In local dev the
-  // Next.js dev server does NOT proxy WS upgrades (only HTTP via
-  // next.config rewrites), so we hit Nest directly on :3001. Matches the
-  // dev-vs-prod WS host handling lives here (no sibling gateway anymore).
+  // Production (through Nginx) uses same-origin by default — the
+  // `/aurora/chat/...` location block proxies the Upgrade header to Nest.
+  // When `WS_HOST` is set (prod-com fronted by a non-WS CDN), we instead
+  // point WS at the platform host directly and tunnel `satoken` via query
+  // since cookies won't auto-attach across the cross-origin upgrade.
+  // Local dev hits Nest directly on :3001 because the Next.js dev server
+  // doesn't proxy WS upgrades.
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   const isDev =
     window.location.hostname === "localhost" &&
     (window.location.port === "3000" || window.location.port === "5173");
-  const host = isDev ? "localhost:3001" : window.location.host;
+  const host = isDev ? "localhost:3001" : env.WS_HOST || window.location.host;
   const params = new URLSearchParams({ conversationId });
   if (workspaceId) params.set("workspaceId", workspaceId);
+  const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+  if (tokenMatch) params.set("satoken", tokenMatch[1]);
   return `${proto}//${host}/aurora/chat/subscribe-conversation?${params.toString()}`;
 }
 

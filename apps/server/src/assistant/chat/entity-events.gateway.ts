@@ -114,7 +114,16 @@ export class EntityEventsGateway
 
   async handleConnection(client: TrackedSocket, request: IncomingMessage) {
     try {
-      const cookie = request.headers.cookie;
+      // Cookie header is preferred. When the page is served from a
+      // different origin than the WS host (CDN-fronted main domain →
+      // platform host), the browser won't auto-attach cookies, so the
+      // client tunnels `satoken` through the query string instead.
+      let cookie = request.headers.cookie;
+      if (!cookie && request.url) {
+        const url = new URL(request.url, 'http://localhost');
+        const t = url.searchParams.get('satoken');
+        if (t) cookie = `satoken=${t}`;
+      }
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {
         this.close(client, CLOSE_POLICY, 'unauthorized');
