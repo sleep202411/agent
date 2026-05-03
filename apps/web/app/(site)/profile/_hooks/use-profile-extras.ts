@@ -17,6 +17,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/src/lib/api";
 
 // ─── Work experience ──────────────────────────────────
+// Field names mirror the Java `/user/resumer/*` contract verbatim
+// (`organization`, `startTime`, `endTime`) so payloads round-trip
+// without per-field renaming on either side.
 
 export interface ExperienceEntry {
   /** Optional id — undefined for new entries before the backend
@@ -25,19 +28,19 @@ export interface ExperienceEntry {
   /** Job title / 头衔. */
   title: string;
   /** Company or organization name / 公司·组织. */
-  company: string;
+  organization: string;
   /** Free-form location / 地点. */
   location: string;
   /** YYYY-MM. */
-  startDate: string;
+  startTime: string;
   /** YYYY-MM. Empty / missing ⇒ ongoing role. */
-  endDate?: string;
+  endTime?: string;
   /** Free text. Newlines preserved on render. */
   description: string;
 }
 
 const EXPERIENCE_LIST_URL = "/user/profile/experience/list"; // TODO_BACKEND_URL
-const EXPERIENCE_CREATE_URL = "/user/profile/experience/create"; // TODO_BACKEND_URL
+const EXPERIENCE_CREATE_URL = "/user/resumer/add";
 const EXPERIENCE_UPDATE_URL = "/user/profile/experience/update"; // TODO_BACKEND_URL
 const EXPERIENCE_DELETE_URL = "/user/profile/experience/delete"; // TODO_BACKEND_URL
 
@@ -51,10 +54,10 @@ function normalizeExperience(e: ExperienceEntry): ExperienceEntry {
   return {
     id: e?.id,
     title: typeof e?.title === "string" ? e.title : "",
-    company: typeof e?.company === "string" ? e.company : "",
+    organization: typeof e?.organization === "string" ? e.organization : "",
     location: typeof e?.location === "string" ? e.location : "",
-    startDate: typeof e?.startDate === "string" ? e.startDate : "",
-    endDate: typeof e?.endDate === "string" ? e.endDate : "",
+    startTime: typeof e?.startTime === "string" ? e.startTime : "",
+    endTime: typeof e?.endTime === "string" ? e.endTime : "",
     description: typeof e?.description === "string" ? e.description : "",
   };
 }
@@ -63,10 +66,10 @@ function trimmedExperience(e: ExperienceEntry): ExperienceEntry {
   return {
     ...(e.id !== undefined ? { id: e.id } : {}),
     title: e.title.trim(),
-    company: e.company.trim(),
+    organization: e.organization.trim(),
     location: e.location.trim(),
-    startDate: e.startDate.trim(),
-    endDate: (e.endDate ?? "").trim(),
+    startTime: e.startTime.trim(),
+    endTime: (e.endTime ?? "").trim(),
     description: e.description.trim(),
   };
 }
