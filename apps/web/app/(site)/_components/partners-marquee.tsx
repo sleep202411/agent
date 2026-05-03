@@ -29,9 +29,9 @@ interface Partner {
 }
 
 /**
- * 29 partners across tech / media / IP / other. Order is the legacy
- * marketing list (tech → media → IP → other) so even before logos
- * land, the marquee reads in a sensible grouping when paused.
+ * Partners across tech / IP / other. Order is the legacy marketing
+ * list so even before logos land, the marquee reads in a sensible
+ * grouping when paused.
  */
 const PARTNERS: Partner[] = [
   // ─── Tech & honors ─────────────────────────────────
@@ -42,19 +42,6 @@ const PARTNERS: Partner[] = [
   { slug: "sgtech", name: "SGTech" },
   { slug: "world-internet-conference", name: "World Internet Conference" },
   { slug: "suzhou-industrial-park", name: "Suzhou Industrial Park" },
-
-  // ─── Media ─────────────────────────────────────────
-  { slug: "variety", name: "Variety" },
-  { slug: "cna", name: "CNA" },
-  { slug: "bloomberg", name: "Bloomberg" },
-  { slug: "lianhe-zaobao", name: "Lianhe Zaobao" },
-  { slug: "ne-global-media", name: "NE Global Media" },
-  { slug: "nanjing-daily", name: "Nanjing Daily" },
-  { slug: "china-daily", name: "China Daily" },
-  { slug: "peoples-daily", name: "People's Daily" },
-  { slug: "brussels-diplomatic", name: "Brussels Diplomatic" },
-  { slug: "fred-film-radio", name: "FRED Film Radio" },
-  { slug: "hangzhou-tv", name: "Hangzhou TV" },
 
   // ─── IP partners ───────────────────────────────────
   { slug: "hip-studios", name: "HIP Studios" },

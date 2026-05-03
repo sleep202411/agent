@@ -37,7 +37,7 @@ import {
 import { updateProject, type Project } from "@/src/services/project";
 import { useProjectEditUrl } from "@/app/(site)/ips/_hooks/use-ip";
 import { env } from "@/src/env";
-import { RecruitmentStrip } from "@/app/(site)/studio/_components/recruitment-strip";
+import { RecruitmentStrip } from "@/app/(site)/art-studio/_components/recruitment-strip";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
 
