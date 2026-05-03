@@ -18,6 +18,7 @@ import {
   IconWand,
   IconNews,
   IconBook,
+  IconHelp,
   IconX,
   IconDotsVertical,
   IconUser,
@@ -86,6 +87,8 @@ export function GlobalNav() {
     { href: "/news", label: t("news"), Icon: IconNews },
   ];
 
+  const USER_GUIDE_URL = "https://flowus.cn/share/cca82279-3553-47eb-beea-f71bc4cfb5c6?code=81LL9V";
+
   const isActive = (href: string) => pathname.startsWith(href);
 
   const isDark = mounted && theme === "dark";
@@ -113,9 +116,9 @@ export function GlobalNav() {
   return (
     <header
       className={cn(
-        "fixed inset-x-0 top-0 z-50 transition-[background-color,backdrop-filter,border-color] duration-300 ease-out",
-        scrolled
-          ? "border-b border-white/5 bg-background/60 backdrop-blur-xl backdrop-saturate-150"
+        "fixed inset-x-0 top-0 z-50 transition-[background-color,border-color] duration-300 ease-out",
+        scrolled || mobileOpen
+          ? "border-b border-white/5 bg-popover text-popover-foreground"
           : "border-b border-transparent bg-transparent"
       )}
     >
@@ -132,7 +135,7 @@ export function GlobalNav() {
               key={href}
               href={href}
               className={cn(
-                "inline-flex items-center gap-1.5 text-sm transition-colors",
+                "inline-flex items-center gap-1.5 text-sm font-medium transition-colors",
                 isActive(href) ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -142,8 +145,19 @@ export function GlobalNav() {
           ))}
         </nav>
 
-        {/* Right cluster — desktop: theme / language / CTA */}
+        {/* Right cluster — desktop: user guide / theme / language / CTA */}
         <div className="ml-auto hidden items-center gap-1 lg:flex">
+          <a
+            href={USER_GUIDE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t("userGuide")}
+            title={t("userGuide")}
+            className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+          >
+            <IconHelp className="size-4" />
+          </a>
+
           <button
             type="button"
             onClick={toggleTheme}
@@ -211,7 +225,7 @@ export function GlobalNav() {
 
       {/* Mobile drawer — nav links + theme / language / account, all in one place */}
       {mobileOpen && (
-        <div className="border-t border-border/50 bg-background/95 backdrop-blur-xl lg:hidden">
+        <div className="border-t border-white/5 bg-popover text-popover-foreground lg:hidden">
           <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3">
             {navItems.map(({ href, label, Icon }) => (
               <Link
@@ -219,7 +233,7 @@ export function GlobalNav() {
                 href={href}
                 onClick={() => setMobileOpen(false)}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors",
+                  "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
                   isActive(href)
                     ? "bg-foreground/5 text-foreground"
                     : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
@@ -229,6 +243,17 @@ export function GlobalNav() {
                 {label}
               </Link>
             ))}
+
+            <a
+              href={USER_GUIDE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+            >
+              <IconHelp className="size-4" />
+              {t("userGuide")}
+            </a>
 
             <div className="my-2 h-px bg-border/50" />
 
