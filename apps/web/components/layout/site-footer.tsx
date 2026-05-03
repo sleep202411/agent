@@ -97,7 +97,7 @@ export function SiteFooter() {
       <div className="mx-auto max-w-screen-2xl px-6 pt-12">
         <div className="flex flex-col gap-10 lg:flex-row">
           <div className="flex shrink-0 flex-col lg:w-64">
-            <img src="/logo.png" alt="FizzDragon" className="h-8 w-fit" />
+            <img src="/logo.png" alt="FizzDragon" className="h-8 w-auto" />
             <div className="relative z-10 mt-8 flex gap-3">
               {SOCIALS.map(({ id, label, Icon, qr, align }) => (
                 <div key={id} className="group relative">
