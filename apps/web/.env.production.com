@@ -24,3 +24,5 @@ NEXT_PUBLIC_PARENT_ORIGIN=https://fizzdragon.com
 # is sidestepped by tunneling `satoken` via query (see entity-events-client.ts
 # and chat-events-client.ts). Empty/unset → WS uses same-origin (default).
 NEXT_PUBLIC_WS_HOST=fizzstudio.fizzdragon.com
+NEXT_PUBLIC_API_CONTENT_PREFIX=/content
+NEXT_PUBLIC_API_STUDIO_PREFIX=/studio
