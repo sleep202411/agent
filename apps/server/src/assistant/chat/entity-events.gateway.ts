@@ -116,13 +116,15 @@ export class EntityEventsGateway
     try {
       // Cookie header is preferred. When the page is served from a
       // different origin than the WS host (CDN-fronted main domain →
-      // platform host), the browser won't auto-attach cookies, so the
-      // client tunnels `satoken` through the query string instead.
-      let cookie = request.headers.cookie;
-      if (!cookie && request.url) {
+      // platform host), the browser may still attach parent-domain
+      // cookies (analytics etc.) but not host-only satoken — so we
+      // also fall back to the `?satoken=` query whenever the cookie
+      // header lacks it, not only when the header is missing entirely.
+      let cookie = request.headers.cookie ?? '';
+      if (!/(?:^|;\s*)satoken=/.test(cookie) && request.url) {
         const url = new URL(request.url, 'http://localhost');
         const t = url.searchParams.get('satoken');
-        if (t) cookie = `satoken=${t}`;
+        if (t) cookie = cookie ? `${cookie}; satoken=${t}` : `satoken=${t}`;
       }
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {
