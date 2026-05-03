@@ -149,20 +149,32 @@ export class ChatEventsGateway
         this.close(client, CLOSE_POLICY, 'missing_conversationId');
         return;
       }
-      // Cookie header is preferred; fall back to `?satoken=` whenever the
-      // header lacks satoken (browser may still attach parent-domain
-      // cookies on cross-origin WS but skip host-only satoken). See
-      // entity-events.gateway.ts for the full rationale.
+      // Query satoken takes precedence over cookie — see
+      // entity-events.gateway.ts for the full rationale (stale
+      // host-only satoken from the iframe-era flow can shadow the
+      // fresh token the frontend ships in the query).
       let cookie = request.headers.cookie ?? '';
-      const cookieHadToken = /(?:^|;\s*)satoken=/.test(cookie);
-      if (!cookieHadToken) {
-        const t = url.searchParams.get('satoken');
-        if (t) cookie = cookie ? `${cookie}; satoken=${t}` : `satoken=${t}`;
+      const querySatoken = url.searchParams.get('satoken');
+      const cookieSatoken =
+        cookie.match(/(?:^|;\s*)satoken=([^;]+)/)?.[1] ?? null;
+      const chosenToken = querySatoken ?? cookieSatoken;
+      const tokenSource = querySatoken
+        ? 'query'
+        : cookieSatoken
+          ? 'cookie'
+          : 'none';
+      if (chosenToken) {
+        const cleaned = cookie
+          .split(/;\s*/)
+          .filter((kv) => !/^satoken=/.test(kv))
+          .join('; ');
+        cookie = cleaned
+          ? `${cleaned}; satoken=${chosenToken}`
+          : `satoken=${chosenToken}`;
       }
-      const tokenMatch = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
-      const tokenHint = tokenMatch?.[1].slice(0, 8) ?? '(none)';
+      const tokenHint = chosenToken?.slice(0, 8) ?? '(none)';
       this.logger.log(
-        `ws handshake projectId=${projectId} token=${tokenHint} src=${cookieHadToken ? 'cookie' : 'query'}`,
+        `ws handshake projectId=${projectId} token=${tokenHint} src=${tokenSource}`,
       );
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {
