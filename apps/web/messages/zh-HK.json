@@ -2644,6 +2644,8 @@
     "avatarSizeLimit": "頭像檔案不能超過 5MB",
     "avatarUpdated": "頭像更新成功",
     "avatarUploadFailed": "頭像上傳失敗",
+    "shareProfile": "Share",
+    "profileLinkCopied": "Profile link copied",
     "generateReferralLink": "生成引薦連結",
     "referralLinkCopied": "引薦連結已複製到剪貼簿",
     "referralLinkManualCopy": "請手動複製引薦連結：",

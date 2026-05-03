@@ -2644,6 +2644,8 @@
     "avatarSizeLimit": "Avatar file cannot exceed 5MB",
     "avatarUpdated": "Avatar updated",
     "avatarUploadFailed": "Failed to upload avatar",
+    "shareProfile": "Share",
+    "profileLinkCopied": "Profile link copied",
     "generateReferralLink": "Referral Link",
     "referralLinkCopied": "Referral link copied to clipboard",
     "referralLinkManualCopy": "Please copy the referral link manually:",

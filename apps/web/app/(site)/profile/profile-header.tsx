@@ -8,6 +8,7 @@ import {
   IconCheck,
   IconPhoto,
   IconShieldCheck,
+  IconShare2,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -72,6 +73,7 @@ interface ProfileHeaderProps {
 export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const t = useTranslations("profile");
   const tk = useTranslations("kyc");
+  const tc = useTranslations("common");
   const router = useRouter();
   const [referralLink, setReferralLink] = useState("");
   const [referralDialogOpen, setReferralDialogOpen] = useState(false);
@@ -310,6 +312,25 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/20 bg-white/5 text-white hover:bg-white/10"
+              onClick={async () => {
+                if (!info?.id) return;
+                const link = `${window.location.origin}/creators/${info.id}`;
+                try {
+                  await navigator.clipboard.writeText(link);
+                  toast.success(t("profileLinkCopied"));
+                } catch {
+                  toast.error(tc("copyFailed"));
+                }
+              }}
+              disabled={!info?.id}
+            >
+              <IconShare2 className="size-3.5" />
+              {t("shareProfile")}
+            </Button>
             <Button
               variant="outline"
               size="sm"
