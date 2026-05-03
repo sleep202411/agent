@@ -56,6 +56,7 @@ export class AuthService {
       const satokenCookie = satokenMatch
         ? `satoken=${satokenMatch[1]}`
         : cookie;
+      const tokenHint = satokenMatch?.[1].slice(0, 8) ?? '(none)';
 
       // Use https module instead of fetch — Node.js undici fetch
       // does not reliably forward cookie headers in all environments.
@@ -82,7 +83,7 @@ export class AuthService {
               res.on('data', (c: string) => (errData += c));
               res.on('end', () => {
                 this.logger.warn(
-                  `Auth validation failed: HTTP ${res.statusCode} url=${url} body=${errData.slice(0, 200)}`,
+                  `Auth validation failed: HTTP ${res.statusCode} token=${tokenHint} url=${url} body=${errData.slice(0, 200)}`,
                 );
                 resolve(null);
               });
@@ -114,7 +115,7 @@ export class AuthService {
       const data = body.info ?? body.data;
       if (!isSuccess || !data) {
         const msg = body.msg || body.message || 'unknown';
-        this.logger.warn(`Auth validation rejected: ${msg}`);
+        this.logger.warn(`Auth validation rejected: ${msg} token=${tokenHint}`);
         return null;
       }
       const user: AuthUser = {
@@ -130,7 +131,9 @@ export class AuthService {
       };
 
       if (!user.userId) {
-        this.logger.warn('Auth validation: no userId in response');
+        this.logger.warn(
+          `Auth validation: no userId in response token=${tokenHint}`,
+        );
         return null;
       }
 
@@ -146,7 +149,7 @@ export class AuthService {
       });
 
       this.logger.log(
-        `Auth validated: userId=${user.userId} name=${user.nickName ?? user.userName ?? '?'}`,
+        `Auth validated: userId=${user.userId} name=${user.nickName ?? user.userName ?? '?'} token=${tokenHint}`,
       );
       return user;
     } catch (error) {

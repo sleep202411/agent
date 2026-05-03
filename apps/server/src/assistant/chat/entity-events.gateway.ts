@@ -121,13 +121,20 @@ export class EntityEventsGateway
       // also fall back to the `?satoken=` query whenever the cookie
       // header lacks it, not only when the header is missing entirely.
       let cookie = request.headers.cookie ?? '';
-      if (!/(?:^|;\s*)satoken=/.test(cookie) && request.url) {
+      const cookieHadToken = /(?:^|;\s*)satoken=/.test(cookie);
+      if (!cookieHadToken && request.url) {
         const url = new URL(request.url, 'http://localhost');
         const t = url.searchParams.get('satoken');
         if (t) cookie = cookie ? `${cookie}; satoken=${t}` : `satoken=${t}`;
       }
+      const tokenMatch = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+      const tokenHint = tokenMatch?.[1].slice(0, 8) ?? '(none)';
+      this.logger.log(
+        `ws handshake token=${tokenHint} src=${cookieHadToken ? 'cookie' : 'query'}`,
+      );
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {
+        this.logger.warn(`ws unauthorized token=${tokenHint}`);
         this.close(client, CLOSE_POLICY, 'unauthorized');
         return;
       }

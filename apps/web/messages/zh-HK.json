@@ -2634,7 +2634,7 @@
     "addEducation": "新增教育經歷",
     "schoolName": "學校",
     "major": "專業",
-    "startDate": "起始（YYYY-MM）",
+    "startDate": "起始（YYYY-MM-DD）",
     "endDateOptional": "結束（在讀留空）",
     "present": "至今",
     "nicknameRequired": "請輸入暱稱",

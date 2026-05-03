@@ -154,12 +154,21 @@ export class ChatEventsGateway
       // cookies on cross-origin WS but skip host-only satoken). See
       // entity-events.gateway.ts for the full rationale.
       let cookie = request.headers.cookie ?? '';
-      if (!/(?:^|;\s*)satoken=/.test(cookie)) {
+      const cookieHadToken = /(?:^|;\s*)satoken=/.test(cookie);
+      if (!cookieHadToken) {
         const t = url.searchParams.get('satoken');
         if (t) cookie = cookie ? `${cookie}; satoken=${t}` : `satoken=${t}`;
       }
+      const tokenMatch = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+      const tokenHint = tokenMatch?.[1].slice(0, 8) ?? '(none)';
+      this.logger.log(
+        `ws handshake projectId=${projectId} token=${tokenHint} src=${cookieHadToken ? 'cookie' : 'query'}`,
+      );
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {
+        this.logger.warn(
+          `ws unauthorized projectId=${projectId} token=${tokenHint}`,
+        );
         this.close(client, CLOSE_POLICY, 'unauthorized');
         return;
       }
