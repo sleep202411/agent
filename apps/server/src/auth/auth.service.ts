@@ -57,6 +57,15 @@ export class AuthService {
         ? `satoken=${satokenMatch[1]}`
         : cookie;
       const tokenHint = satokenMatch?.[1].slice(0, 8) ?? '(none)';
+      // TEMP DIAGNOSTIC — dump full satoken values + count duplicates so we can
+      // tell apart "Cookie header has multiple satoken= entries" from "Java
+      // doesn't recognize the only token sent". Remove once root cause found.
+      const allSatokens = (
+        cookie.match(/(?:^|;\s*)satoken=([^;]+)/g) ?? []
+      ).map((s) => s.replace(/^[;\s]*satoken=/, ''));
+      this.logger.log(
+        `[diag] satoken-count=${allSatokens.length} sending=${satokenMatch?.[1] ?? '(none)'} all=${JSON.stringify(allSatokens)}`,
+      );
 
       // Use https module instead of fetch — Node.js undici fetch
       // does not reliably forward cookie headers in all environments.
