@@ -43,7 +43,7 @@ const CARD_LAYOUT: Record<TabId, { key: CardKey; image: string }[]> = {
     },
     {
       key: "indieAnimators",
-      image: "https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=900&q=80&fit=crop",
+      image: "https://static.fizzspace.cn/static/pc/indie-animators.png",
     },
     {
       key: "musicAndShorts",
