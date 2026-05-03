@@ -351,6 +351,7 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
                   placeholder={t("fieldDescriptionPlaceholder")}
                   maxLength={500}
                   rows={3}
+                  className="text-base md:text-base"
                 />
               </div>
 
