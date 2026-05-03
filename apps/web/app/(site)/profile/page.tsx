@@ -15,7 +15,7 @@ import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useUserInfo } from "@/src/hooks/use-user";
-import { AUTH_STATUS } from "@/src/services/certification";
+import { useKycAuthStatus } from "@/src/hooks/use-kyc";
 import { KycRequiredAlert } from "@/components/auth/kyc-required-alert";
 import { parseEducation, type UserInfo } from "@/src/services/user";
 import {
@@ -388,14 +388,16 @@ function PersonalWorksTab() {
   const router = useRouter();
   const locale = useLocale() as Locale;
   const { data: works, isLoading } = useMyPersonalWorks();
-  const { data: userInfo } = useUserInfo();
+  const { data: kycStatus } = useKycAuthStatus();
   const [kycAlertOpen, setKycAlertOpen] = useState(false);
 
-  // Click-time gate: don't navigate to /publish if the user can't
-  // actually finish the flow. Dialog routes to /kyc on confirm; cancel
-  // leaves them where they are.
+  // Click-time gate: ask the backend whether KYC is required for this
+  // user (mirrors fizzdragon-web's `/user/needAuth` check). The .com
+  // region typically returns `needAuth: false` since PRC real-name law
+  // doesn't apply, so users there flow straight through to /publish.
+  // .cn unverified users still see the gate dialog → /kyc.
   const requestPublish = () => {
-    if (userInfo?.authStatus !== AUTH_STATUS.APPROVED) {
+    if (kycStatus?.needAuth === true) {
       setKycAlertOpen(true);
       return;
     }
