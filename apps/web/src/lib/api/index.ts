@@ -12,7 +12,7 @@ export { api as backendApi, ApiRequestError } from "./api-client";
 export type { ApiResponse, ApiPaginated, ApiRequestConfig } from "./api-client";
 
 // Convenience aliases
-export { api } from "./api-client";
+export { api, setUnauthorizedHandler, notifyUnauthorized } from "./api-client";
 export type { ApiPaginated as Paginated } from "./api-client";
 export type { Asset } from "@/src/store/slices/projectSlice";
 

@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHero } from "@/components/ui/dialog";
+import { useCreateProject } from "@/app/(site)/ips/_hooks/use-ip";
 
 const MOCK_CATEGORIES = [
   { value: "1", label: "AIGC影视" },
@@ -81,7 +82,8 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
   const [name, setName] = useState("");
   const [typeId, setTypeId] = useState("");
   const [description, setDescription] = useState("");
-  const [creating, setCreating] = useState(false);
+  const create = useCreateProject();
+  const creating = create.isPending;
 
   // AI-fill state
   const [analyzeStatus, setAnalyzeStatus] = useState<AnalyzeStatus>("idle");
@@ -99,7 +101,6 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
     setName("");
     setTypeId("");
     setDescription("");
-    setCreating(false);
     setAnalyzeStatus("idle");
     setAnalyzedFileName("");
     setAiFilledFields(new Set());
@@ -195,15 +196,24 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
   // ─── Create ─────────────────────────────────────────
   const handleCreate = () => {
     if (!name.trim() || !typeId || creating) return;
-    setCreating(true);
-    // TODO: POST /project/create
-    const mockId = `mock_${Date.now()}`;
-    setTimeout(() => {
-      setCreating(false);
-      onOpenChange(false);
-      toast.success(t("createSuccess"));
-      router.push(`/ips/${mockId}/edit`);
-    }, 500);
+    create.mutate(
+      {
+        name: name.trim(),
+        typeId,
+        description: description.trim() || undefined,
+      },
+      {
+        onSuccess: ({ id }) => {
+          onOpenChange(false);
+          toast.success(t("createSuccess"));
+          router.push(`/ips/${id}/edit`);
+        },
+        onError: (err) => {
+          const msg = err instanceof Error ? err.message : "";
+          toast.error(msg || t("createFailed"));
+        },
+      }
+    );
   };
 
   return (
@@ -216,7 +226,7 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
           description={t("heroSubtitle")}
         />
 
-        <div className="space-y-5 px-6 py-6">
+        <div className="space-y-4 p-4">
           {/* Drag-drop zone */}
           <Dropzone
             status={analyzeStatus}

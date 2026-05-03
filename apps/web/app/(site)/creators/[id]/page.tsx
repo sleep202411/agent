@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { IconArrowLeft, IconLoader2 } from "@tabler/icons-react";
@@ -16,10 +15,9 @@ import {
 import type { PersonalWork, Project } from "@/src/services/project";
 import { CreatorHeader } from "./creator-header";
 
-type CreatorTab = "overview" | "works" | "ips" | "joined";
-
 export default function CreatorDetailPage() {
   const t = useTranslations("creator");
+  const tp = useTranslations("profile");
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
   const { data: creator, isLoading } = useCreatorDetail(id);
@@ -51,82 +49,66 @@ export default function CreatorDetailPage() {
     <div className="min-h-screen bg-background text-foreground">
       <CreatorHeader creator={creator} />
 
-      <div className="relative mx-auto max-w-5xl px-8">
-        <CreatorTabs creator={creator} />
+      {/* Flat vertical stack mirrors `app/(site)/profile/page.tsx` so a
+          creator looking at someone else's page sees the same section
+          rhythm as their own. Tabs were removed deliberately — they
+          forced users to click around for low-density data
+          (about + a handful of works) where scrolling is cheaper. */}
+      <div className="relative mx-auto max-w-6xl space-y-12 px-4 pb-24 pt-10">
+        <OverviewSection creator={creator} />
+
+        <CreatorSection title={tp("personalWorks")}>
+          <PersonalWorksSection creatorId={creator.id} />
+        </CreatorSection>
+
+        <CreatorSection title={tp("myIPs")}>
+          <ProjectsSection creatorId={creator.id} />
+        </CreatorSection>
+
+        <CreatorSection title={tp("joinedCrews")}>
+          <JoinedSection creatorId={creator.id} />
+        </CreatorSection>
       </div>
     </div>
   );
 }
 
-// ─── Tabs ──────────────────────────────────────────────
-
-function CreatorTabs({ creator }: { creator: Creator }) {
-  const tp = useTranslations("profile");
-  const [activeTab, setActiveTab] = useState<CreatorTab>("overview");
-
-  const tabs: { key: CreatorTab; label: string }[] = [
-    { key: "overview", label: tp("overview") },
-    { key: "works", label: tp("personalWorks") },
-    { key: "ips", label: tp("myIPs") },
-    { key: "joined", label: tp("joinedCrews") },
-  ];
-
+function CreatorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mt-6 pb-12">
-      <div className="flex items-center gap-1 border-b border-border">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={
-              activeTab === tab.key
-                ? "border-b-2 border-primary px-4 py-2.5 text-sm font-medium text-foreground"
-                : "border-b-2 border-transparent px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            }
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-6">
-        {activeTab === "overview" && <OverviewTab creator={creator} />}
-        {activeTab === "works" && <PersonalWorksTab creatorId={creator.id} />}
-        {activeTab === "ips" && <ProjectsTab creatorId={creator.id} />}
-        {activeTab === "joined" && <JoinedTab creatorId={creator.id} />}
-      </div>
-    </div>
+    <section>
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 
-// ─── Overview Tab ─────────────────────────────────────
+// ─── Overview ─────────────────────────────────────────
 
-function OverviewTab({ creator }: { creator: Creator }) {
+function OverviewSection({ creator }: { creator: Creator }) {
   const t = useTranslations("creator");
   const bio = (creator.bio || "").trim();
 
   return (
-    <div className="space-y-8">
-      <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("about")}
-        </h2>
-        {bio ? (
-          <p className="whitespace-pre-line rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground">
-            {bio}
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground/70">{t("bioEmpty")}</p>
-        )}
-      </section>
-    </div>
+    <section>
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        {t("about")}
+      </h2>
+      {bio ? (
+        <p className="whitespace-pre-line rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground">
+          {bio}
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground/70">{t("bioEmpty")}</p>
+      )}
+    </section>
   );
 }
 
-// ─── Personal Works Tab ───────────────────────────────
+// ─── Personal Works ───────────────────────────────────
 
-function PersonalWorksTab({ creatorId }: { creatorId: string }) {
+function PersonalWorksSection({ creatorId }: { creatorId: string }) {
   const tp = useTranslations("profile");
   const { data, isLoading } = useCreatorPersonalWorks(creatorId);
   const works = Array.isArray(data) ? data : [];
@@ -187,9 +169,9 @@ function PersonalWorkCard({ work }: { work: PersonalWork }) {
   );
 }
 
-// ─── Projects Tab (IPs created by the creator) ────────
+// ─── Projects (IPs created by the creator) ───────────
 
-function ProjectsTab({ creatorId }: { creatorId: string }) {
+function ProjectsSection({ creatorId }: { creatorId: string }) {
   const tp = useTranslations("profile");
   const { data, isLoading } = useCreatorProjects(creatorId);
   const projects = Array.isArray(data) ? data : [];
@@ -245,9 +227,9 @@ function ProjectCard({ project }: { project: Project }) {
   );
 }
 
-// ─── Joined Tab ───────────────────────────────────────
+// ─── Joined ───────────────────────────────────────────
 
-function JoinedTab({ creatorId }: { creatorId: string }) {
+function JoinedSection({ creatorId }: { creatorId: string }) {
   const tp = useTranslations("profile");
   const { data, isLoading } = useCreatorJoinedProjects(creatorId);
   const projects = Array.isArray(data) ? data : [];

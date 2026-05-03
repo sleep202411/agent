@@ -1,0 +1,1 @@
+import{u as t}from"./user.DZPFEXUe.js";const a=async(a=!1)=>{const s=t();return!0===(await s.getAuthStatus(a)).needAuth},s=async(a=!1)=>{const s=t();return!0===(await s.getAuthStatus(a)).needRole};export{a,s as c};

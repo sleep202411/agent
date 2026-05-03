@@ -13,81 +13,56 @@
  */
 
 import { useState } from "react";
-import Link from "next/link";
 import { motion } from "motion/react";
-import { IconArrowRight } from "@tabler/icons-react";
-import { useLocale } from "@/src/i18n/i18n";
-import { localizePath } from "@/src/i18n/locale-url";
-import type { Locale } from "@/src/i18n/config";
+import { IconSparkles } from "@tabler/icons-react";
+import { useTranslations } from "@/src/i18n/i18n";
 
-type Style = { id: string; name: string; image: string };
+// Static layout: id → image. The visible label is read at render time
+// from `home.styleGallery.styles.<id>` so the same gallery localizes.
+type StyleId =
+  | "anime"
+  | "cinematic"
+  | "watercolor"
+  | "pixel"
+  | "pixar"
+  | "comic"
+  | "noir"
+  | "cyberpunk"
+  | "pastel"
+  | "oil"
+  | "manga"
+  | "vapor";
+
+type Style = { id: StyleId; image: string };
+
+// Image hosting: own OSS at static.fizzspace.cn under static/pc/.
+// Same subject (a young woman with a dragon coiled around her on a
+// city rooftop at dusk) rendered in 12 styles — that's the section's
+// load-bearing claim ("one story, every look"), so the images need
+// to share a subject. Uploaded via the platform's public upload
+// endpoint; replace the OSS object to swap an image without touching
+// this file.
+const OSS_BASE = "https://static.fizzspace.cn/static/pc";
 
 const STYLES: Style[] = [
-  {
-    id: "anime",
-    name: "Anime",
-    image: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "cinematic",
-    name: "Cinematic",
-    image: "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "watercolor",
-    name: "Watercolor",
-    image: "https://images.unsplash.com/photo-1513366208864-87536b8bd7b4?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "pixel",
-    name: "Pixel art",
-    image: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "pixar",
-    name: "3D Pixar",
-    image: "https://images.unsplash.com/photo-1608889825205-eebdb9fc5806?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "comic",
-    name: "Comic",
-    image: "https://images.unsplash.com/photo-1531259683007-016a7b628fc3?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "noir",
-    name: "Film noir",
-    image: "https://images.unsplash.com/photo-1543722530-d2c3201371e7?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "cyberpunk",
-    name: "Cyberpunk",
-    image: "https://images.unsplash.com/photo-1518709268805-4e9042af2176?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "pastel",
-    name: "Pastel",
-    image: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "oil",
-    name: "Oil painting",
-    image: "https://images.unsplash.com/photo-1549289524-06cf8837ace5?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "manga",
-    name: "Manga",
-    image: "https://images.unsplash.com/photo-1605379399642-870262d3d051?w=1200&q=80&fit=crop",
-  },
-  {
-    id: "vapor",
-    name: "Vaporwave",
-    image: "https://images.unsplash.com/photo-1614851099175-e5b30eb6f696?w=1200&q=80&fit=crop",
-  },
+  { id: "anime", image: `${OSS_BASE}/home-style-anime.png` },
+  { id: "cinematic", image: `${OSS_BASE}/home-style-cinematic.png` },
+  { id: "watercolor", image: `${OSS_BASE}/home-style-watercolor.png` },
+  { id: "pixel", image: `${OSS_BASE}/home-style-pixel.png` },
+  { id: "pixar", image: `${OSS_BASE}/home-style-pixar.png` },
+  { id: "comic", image: `${OSS_BASE}/home-style-comic.png` },
+  { id: "noir", image: `${OSS_BASE}/home-style-noir.png` },
+  { id: "cyberpunk", image: `${OSS_BASE}/home-style-cyberpunk.png` },
+  { id: "pastel", image: `${OSS_BASE}/home-style-pastel.png` },
+  { id: "oil", image: `${OSS_BASE}/home-style-oil.png` },
+  { id: "manga", image: `${OSS_BASE}/home-style-manga.png` },
+  { id: "vapor", image: `${OSS_BASE}/home-style-vapor.png` },
 ];
 
 export function StyleGallery() {
-  const locale = useLocale() as Locale;
+  const t = useTranslations("home");
   const [active, setActive] = useState<Style>(STYLES[0]);
+  const activeName = t(`styleGallery.styles.${active.id}`);
 
   return (
     <section className="relative border-t border-border/40 px-6 py-32">
@@ -101,7 +76,7 @@ export function StyleGallery() {
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="text-xs font-mono uppercase tracking-[0.25em] text-muted-foreground"
           >
-            Style library
+            {t("styleGallery.eyebrow")}
           </motion.div>
           <motion.h2
             initial={{ opacity: 0, y: 16 }}
@@ -110,9 +85,9 @@ export function StyleGallery() {
             transition={{ duration: 0.5, ease: "easeOut", delay: 0.05 }}
             className="mt-4 text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl"
           >
-            One story,{" "}
+            {t("styleGallery.titleLine1")}{" "}
             <span className="bg-gradient-to-r from-violet-300 via-fuchsia-200 to-amber-200 bg-clip-text text-transparent">
-              every look.
+              {t("styleGallery.titleLine2")}
             </span>
           </motion.h2>
           <motion.p
@@ -122,8 +97,7 @@ export function StyleGallery() {
             transition={{ duration: 0.5, ease: "easeOut", delay: 0.15 }}
             className="mx-auto mt-5 max-w-2xl text-balance text-base text-muted-foreground sm:text-lg"
           >
-            Render the same script in any visual language — anime, cinematic, watercolor, 3D. Pick a
-            style, ship a series.
+            {t("styleGallery.subtitle")}
           </motion.p>
         </div>
 
@@ -133,14 +107,14 @@ export function StyleGallery() {
             <motion.img
               key={active.id}
               src={active.image}
-              alt={active.name}
+              alt={activeName}
               initial={{ opacity: 0, scale: 1.04 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4, ease: "easeOut" }}
               className="absolute inset-0 size-full object-cover"
             />
             <div className="absolute left-5 top-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/50 px-3.5 py-1.5 text-sm font-medium text-white backdrop-blur">
-              {active.name}
+              {activeName}
             </div>
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
           </div>
@@ -149,17 +123,17 @@ export function StyleGallery() {
           <div className="flex flex-col">
             <div className="hidden lg:block">
               <h3 className="text-lg font-semibold tracking-tight text-foreground">
-                Trending styles
+                {t("styleGallery.sidebarTitle")}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Hover any thumbnail to preview it on the left. From classic painting to modern
-                digital art — pick the look that fits your story.
+                {t("styleGallery.sidebarBody")}
               </p>
             </div>
 
             <div className="mt-6 grid grid-cols-4 gap-3">
               {STYLES.map((style) => {
                 const isActive = style.id === active.id;
+                const styleName = t(`styleGallery.styles.${style.id}`);
                 return (
                   <button
                     key={style.id}
@@ -167,7 +141,7 @@ export function StyleGallery() {
                     onMouseEnter={() => setActive(style)}
                     onFocus={() => setActive(style)}
                     onClick={() => setActive(style)}
-                    aria-label={style.name}
+                    aria-label={styleName}
                     className={`group relative aspect-square overflow-hidden rounded-xl border transition-all ${
                       isActive
                         ? "border-amber-300/70 ring-2 ring-amber-300/30"
@@ -176,25 +150,32 @@ export function StyleGallery() {
                   >
                     <img
                       src={style.image}
-                      alt={style.name}
+                      alt={styleName}
                       className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
                     <span className="pointer-events-none absolute inset-x-0 bottom-1.5 truncate px-2 text-center text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
-                      {style.name}
+                      {styleName}
                     </span>
                   </button>
                 );
               })}
             </div>
 
-            <Link
-              href={localizePath("/login", locale)}
-              className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-foreground px-6 py-4 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
+            {/* Non-interactive count badge — used to be a Link to /login,
+                but the "browse all 437+ styles" promise wasn't actually
+                delivered post-click (login lands in workspace, not a
+                public style library). Demoting to a stat label keeps
+                the breadth-of-platform cue without the broken promise.
+                Restyle: subtle muted background + sparkle icon, NOT a
+                pill-button shape, so it doesn't read as clickable. */}
+            <div
+              className="mt-6 inline-flex items-center justify-center gap-2 self-start rounded-full border border-border/50 bg-card/40 px-5 py-3 text-sm font-medium text-muted-foreground"
+              aria-label={t("styleGallery.cta")}
             >
-              Explore all 437+ styles
-              <IconArrowRight className="size-4" />
-            </Link>
+              <IconSparkles className="size-4 text-amber-300/70" />
+              {t("styleGallery.cta")}
+            </div>
           </div>
         </div>
       </div>

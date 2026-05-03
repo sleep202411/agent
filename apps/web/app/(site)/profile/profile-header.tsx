@@ -197,18 +197,16 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
         )}
         <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-black/40 to-transparent" />
 
-        {/* Cover upload button */}
+        {/* Cover upload button — backend not wired yet, show coming-soon
+            toast on click. Keeps the affordance visible (so the cover
+            slot reads as editable) without committing to the upload
+            flow until /vedio/user/uploadCover ships. */}
         <button
           type="button"
-          onClick={() => coverInputRef.current?.click()}
-          disabled={uploadingCover}
+          onClick={() => toast.info(t("coverComingSoon"))}
           className="absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-lg bg-black/40 px-3 py-1.5 text-xs text-white/80 opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/60 hover:text-white group-hover/banner:opacity-100"
         >
-          {uploadingCover ? (
-            <IconLoader2 className="size-3.5 animate-spin" />
-          ) : (
-            <IconPhoto className="size-3.5" />
-          )}
+          <IconPhoto className="size-3.5" />
           {t("changeCover")}
         </button>
         <input
@@ -219,7 +217,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
           onChange={handleCoverChange}
         />
 
-        <div className="relative mx-auto flex w-full max-w-5xl items-end justify-between px-8 pb-6">
+        <div className="relative mx-auto flex w-full max-w-6xl items-end justify-between px-4 pb-6">
           <div className="flex max-w-3xl flex-col gap-3">
             <div className="flex items-center space-x-4">
               <div className="group relative shrink-0">

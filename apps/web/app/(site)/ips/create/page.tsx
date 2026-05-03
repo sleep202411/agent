@@ -14,41 +14,12 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
+import { useTagList } from "@/src/hooks/use-tag-list";
+import { useIPTypes } from "@/app/(site)/ips/_hooks/use-ip-list";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-
-// ─── Constants ──────────────────────────────────────
-
-const MOCK_CATEGORIES = [
-  { value: "1", label: "AIGC影视" },
-  { value: "2", label: "热血动漫" },
-  { value: "3", label: "AI纪录片" },
-  { value: "4", label: "文化传统" },
-  { value: "5", label: "经典动画" },
-  { value: "6", label: "AI经典改编" },
-  { value: "7", label: "末日来临" },
-  { value: "8", label: "爱情故事" },
-  { value: "9", label: "AI科幻" },
-];
-
-const SUGGESTED_TAGS = [
-  "AI Animation",
-  "Cyberpunk",
-  "Fantasy",
-  "Sci-Fi",
-  "Slice of Life",
-  "Action",
-  "Mystery",
-  "Healing",
-  "Chinese Style",
-  "Mecha",
-  "Post-Apocalyptic",
-  "Romance",
-  "Campus",
-  "Horror",
-];
 
 const STEPS = [
   { label: "Basic Info" },
@@ -111,8 +82,9 @@ export default function CreateIPPage() {
   const t = useTranslations("ipCreate");
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [tagInput, setTagInput] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const { data: tagList } = useTagList();
+  const { data: typeList } = useIPTypes();
 
   const [form, setForm] = useState<CreateForm>({
     title: "",
@@ -141,7 +113,6 @@ export default function CreateIPPage() {
     const trimmed = tag.trim();
     if (trimmed && !form.tags.includes(trimmed) && form.tags.length < 10) {
       update({ tags: [...form.tags, trimmed] });
-      setTagInput("");
     }
   };
 
@@ -272,17 +243,20 @@ export default function CreateIPPage() {
                 Project Type *
               </label>
               <div className="flex flex-wrap gap-2">
-                {MOCK_CATEGORIES.map((c) => (
-                  <Button
-                    key={c.value}
-                    variant={form.projectType === c.value ? "soft" : "outline"}
-                    color={form.projectType === c.value ? "primary" : "muted"}
-                    size="sm"
-                    onClick={() => update({ projectType: c.value })}
-                  >
-                    {c.label}
-                  </Button>
-                ))}
+                {(typeList ?? []).map((tp) => {
+                  const value = String(tp.id);
+                  return (
+                    <Button
+                      key={tp.id}
+                      variant={form.projectType === value ? "soft" : "outline"}
+                      color={form.projectType === value ? "primary" : "muted"}
+                      size="sm"
+                      onClick={() => update({ projectType: value })}
+                    >
+                      {tp.name}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
 
@@ -307,34 +281,19 @@ export default function CreateIPPage() {
               <label className="mb-2 block text-sm font-medium text-foreground">
                 Tags <span className="font-normal text-muted-foreground">(max 10)</span>
               </label>
-              <div className="mb-3 flex items-center gap-2">
-                <Input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addTag(tagInput);
-                    }
-                  }}
-                  placeholder="Type a tag and press Enter"
-                  className="h-9"
-                />
-                <Button size="sm" onClick={() => addTag(tagInput)} disabled={!tagInput.trim()}>
-                  <IconPlus className="size-4" />
-                </Button>
-              </div>
               <div className="mb-3 flex flex-wrap gap-1.5">
-                {SUGGESTED_TAGS.filter((t) => !form.tags.includes(t)).map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => addTag(tag)}
-                    className="rounded-full border border-border bg-secondary px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary"
-                  >
-                    + {tag}
-                  </button>
-                ))}
+                {(tagList ?? [])
+                  .filter((tg) => !form.tags.includes(tg.name))
+                  .map((tg) => (
+                    <button
+                      key={tg.id}
+                      type="button"
+                      onClick={() => addTag(tg.name)}
+                      className="rounded-full border border-border bg-secondary px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/50 hover:text-primary"
+                    >
+                      + {tg.name}
+                    </button>
+                  ))}
               </div>
               {form.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -587,7 +546,7 @@ export default function CreateIPPage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Type</span>
                   <span className="text-foreground">
-                    {MOCK_CATEGORIES.find((c) => c.value === form.projectType)?.label || "—"}
+                    {(typeList ?? []).find((tp) => String(tp.id) === form.projectType)?.name || "—"}
                   </span>
                 </div>
                 <div className="flex justify-between">

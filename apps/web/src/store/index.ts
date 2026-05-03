@@ -1,7 +1,6 @@
 import { configureStore } from "@reduxjs/toolkit";
 import { useDispatch, useSelector, useStore } from "react-redux";
 import { taskSlice } from "./slices/taskSlice";
-import { authSlice } from "./slices/authSlice";
 import { projectSlice } from "./slices/projectSlice";
 import { userSlice } from "./slices/userSlice";
 import { aiModelCacheSlice } from "./slices/aiModelCacheSlice";
@@ -10,7 +9,6 @@ import { assistantSlice } from "./slices/assistantSlice";
 export const store = configureStore({
   reducer: {
     task: taskSlice.reducer,
-    auth: authSlice.reducer,
     project: projectSlice.reducer,
     user: userSlice.reducer,
     aiModelCache: aiModelCacheSlice.reducer,

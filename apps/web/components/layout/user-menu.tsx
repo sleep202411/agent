@@ -25,18 +25,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useAppDispatch, useAppSelector } from "@/src/store";
-import { logout } from "@/src/store/slices/authSlice";
+import { useLogout } from "@/src/hooks/use-logout";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
-import { useCredits, useUserInfo } from "@/src/hooks/use-user";
+import { useCredits, useCurrentUser, useUserInfo } from "@/src/hooks/use-user";
 import { useCertificationRoles, useMyCertifications } from "@/src/hooks/use-certification";
 import { AUTH_STATUS } from "@/src/services/certification";
 
 export function UserMenu() {
   const tc = useTranslations("common");
-  const dispatch = useAppDispatch();
-  const user = useAppSelector((state) => state.auth.user);
+  const logout = useLogout();
+  const { user } = useCurrentUser();
   const { theme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(
     () => () => {},
@@ -216,7 +215,7 @@ export function UserMenu() {
 
           {/* Logout */}
           <div className="py-1">
-            <DropdownMenuItem className="px-4" onClick={() => void dispatch(logout())}>
+            <DropdownMenuItem className="px-4" onClick={() => void logout()}>
               <IconLogout className="size-4" />
               {tc("logout")}
             </DropdownMenuItem>

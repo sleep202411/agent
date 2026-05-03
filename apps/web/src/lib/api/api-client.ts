@@ -154,6 +154,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     } catch {
       /* ignore read error */
     }
+    if (response.status === 401) notifyUnauthorized();
     throw new ApiRequestError(`HTTP_${response.status}`, message, response.status, rawBody);
   }
 
@@ -161,6 +162,9 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
   if (!isSuccess) {
+    // Java backends commonly return 200 OK with an envelope-level 401 code
+    // for expired sessions; treat it the same as a transport-level 401.
+    if (body.code === 401 || body.code === "401") notifyUnauthorized();
     throw new ApiRequestError(
       body.code ?? "UNKNOWN",
       body.msg || body.message || "Request failed",
@@ -247,6 +251,30 @@ async function upload<T>(
   }
 
   return (body.data ?? body.info ?? body.path ?? body) as T;
+}
+
+// ============ 401 / unauthorized hook ============
+//
+// React land registers a handler at app mount (via <AuthGate>) that
+// clears the user query cache and routes the user to /login. Default
+// is a no-op so non-React callers (tests, scripts) don't crash.
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
+/**
+ * Trigger the registered unauthorized handler. Exported so raw fetch
+ * callsites (multipart uploads, SSE, etc.) that bypass the api-client
+ * can still hook into the global "session expired" flow on 401.
+ */
+export function notifyUnauthorized() {
+  try {
+    unauthorizedHandler?.();
+  } catch {
+    /* swallow — handler errors must not cascade into request flow */
+  }
 }
 
 // ============ Public API ============

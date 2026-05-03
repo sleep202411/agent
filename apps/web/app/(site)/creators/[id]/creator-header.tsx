@@ -54,7 +54,7 @@ export function CreatorHeader({ creator }: CreatorHeaderProps) {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(80,120,255,0.15),transparent_50%)]" />
       <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-black/40 to-transparent" />
 
-      <div className="relative mx-auto flex w-full max-w-5xl items-end justify-between px-8 pb-6">
+      <div className="relative mx-auto flex w-full max-w-6xl items-end justify-between px-8 pb-6">
         <div className="flex max-w-3xl flex-col gap-3">
           <div className="flex items-center space-x-4">
             <div className="shrink-0">

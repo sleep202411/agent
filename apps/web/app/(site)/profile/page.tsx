@@ -1,19 +1,43 @@
 "use client";
 
 import { useState } from "react";
-import { IconEdit, IconArrowDown, IconLoader2, IconPlus } from "@tabler/icons-react";
+import {
+  IconEdit,
+  IconArrowDown,
+  IconLoader2,
+  IconPlus,
+  IconExternalLink,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { useUserInfo } from "@/src/hooks/use-user";
+import { AUTH_STATUS } from "@/src/services/certification";
+import { KycRequiredAlert } from "@/components/auth/kyc-required-alert";
 import { parseEducation, type UserInfo } from "@/src/services/user";
+import {
+  SOCIAL_PLATFORMS,
+  useExperience,
+  useSocials,
+  useDeleteExperience,
+  useDeleteSocial,
+  type ExperienceEntry,
+  type SocialLink,
+} from "./_hooks/use-profile-extras";
+import { ExperienceDialog } from "./experience-dialog";
+import { SocialDialog } from "./social-dialog";
 import {
   useMyProjects,
   useMyJoinedProjects,
   useMyPersonalWorks,
 } from "@/src/hooks/use-my-projects";
 import { updateProject, type Project } from "@/src/services/project";
+import { useProjectEditUrl } from "@/app/(site)/ips/_hooks/use-ip";
 import { env } from "@/src/env";
+import { RecruitmentStrip } from "@/app/(site)/studio/_components/recruitment-strip";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
 
@@ -34,8 +58,27 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-background text-foreground">
       <ProfileHeader userInfo={userInfo ?? null} onEditProfile={() => setEditOpen(true)} />
 
-      <div className="relative mx-auto max-w-5xl px-8">
-        <ProfileTabs userInfo={userInfo ?? null} />
+      <div className="relative mx-auto max-w-6xl space-y-12 px-4 pb-24 pt-10">
+        {/* OverviewTab renders its own section heading (Education) */}
+        <OverviewTab userInfo={userInfo ?? null} />
+
+        <ExperienceTab />
+        <SocialsTab />
+
+        <ProfileSection title={t("personalWorks")}>
+          <PersonalWorksTab />
+        </ProfileSection>
+
+        <ProfileSection title={t("myIPs")}>
+          <MyIPsTab />
+        </ProfileSection>
+
+        <ProfileSection title={t("joinedCrews")}>
+          <JoinedTab />
+        </ProfileSection>
+
+        {/* RecruitmentStrip self-hides when there are no applicants. */}
+        <RecruitmentStrip />
       </div>
 
       <ProfileEditDialog open={editOpen} onOpenChange={setEditOpen} userInfo={userInfo ?? null} />
@@ -43,47 +86,14 @@ export default function ProfilePage() {
   );
 }
 
-// ─── Tabs ──────────────────────────────────────────────
-
-type ProfileTab = "overview" | "works" | "ips" | "joined";
-
-function ProfileTabs({ userInfo }: { userInfo: UserInfo | null }) {
-  const t = useTranslations("profile");
-  const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
-
-  const tabs: { key: ProfileTab; label: string }[] = [
-    { key: "overview", label: t("overview") },
-    { key: "works", label: t("personalWorks") },
-    { key: "ips", label: t("myIPs") },
-    { key: "joined", label: t("joinedCrews") },
-  ];
-
+function ProfileSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mt-6 pb-12">
-      <div className="flex items-center gap-1 border-b border-border">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={
-              activeTab === tab.key
-                ? "border-b-2 border-primary px-4 py-2.5 text-sm font-medium text-foreground"
-                : "border-b-2 border-transparent px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            }
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-6">
-        {activeTab === "overview" && <OverviewTab userInfo={userInfo} />}
-        {activeTab === "works" && <PersonalWorksTab />}
-        {activeTab === "ips" && <MyIPsTab />}
-        {activeTab === "joined" && <JoinedTab />}
-      </div>
-    </div>
+    <section>
+      <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 
@@ -125,6 +135,222 @@ function OverviewTab({ userInfo }: { userInfo: UserInfo | null }) {
   );
 }
 
+// ─── Experience Tab ───────────────────────────────────
+
+/**
+ * Editable list of work-experience entries. Add button opens the
+ * dedicated `ExperienceDialog`; each row exposes inline edit / delete.
+ * Mirrors the FAQ tab pattern over in `app/(site)/ips/[id]/edit/page.tsx`
+ * — the section heading sits next to the Add CTA so users discover the
+ * empty-state action without scrolling into the card stack.
+ */
+function ExperienceTab() {
+  const t = useTranslations("profile");
+  const { data: experience = [] } = useExperience();
+  const { mutate: deleteEntry } = useDeleteExperience();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<ExperienceEntry | null>(null);
+
+  const handleAdd = () => {
+    setEditing(null);
+    setDialogOpen(true);
+  };
+  const handleEdit = (entry: ExperienceEntry) => {
+    setEditing(entry);
+    setDialogOpen(true);
+  };
+  const handleDelete = (entry: ExperienceEntry) => {
+    if (entry.id === undefined) return;
+    if (!window.confirm(t("experienceConfirmDelete"))) return;
+    deleteEntry(entry.id, {
+      onSuccess: () => toast.success(t("updateSuccess")),
+      onError: () => toast.error(t("updateFailed")),
+    });
+  };
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("experience")}
+        </h2>
+        <button
+          type="button"
+          disabled
+          aria-disabled="true"
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground/60 cursor-not-allowed"
+        >
+          <IconPlus className="size-3.5" />
+          {t("comingSoon")}
+        </button>
+      </div>
+      {experience.length === 0 ? (
+        <p className="text-sm text-muted-foreground/70">{t("experienceEmpty")}</p>
+      ) : (
+        <ul className="space-y-2">
+          {experience.map((entry, i) => {
+            const range = [entry.startDate, entry.endDate || t("present")]
+              .filter(Boolean)
+              .join(" – ");
+            const head = [entry.title, entry.company].filter(Boolean).join(" · ");
+            return (
+              <li
+                key={entry.id ?? i}
+                className="group rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    {head && <div className="font-medium">{head}</div>}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                      {range && <span>{range}</span>}
+                      {entry.location && (
+                        <>
+                          {range && <span>·</span>}
+                          <span>{entry.location}</span>
+                        </>
+                      )}
+                    </div>
+                    {entry.description && (
+                      <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-secondary-foreground">
+                        {entry.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(entry)}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label={t("edit")}
+                    >
+                      <IconEdit className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(entry)}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                      aria-label={t("delete")}
+                      disabled={entry.id === undefined}
+                    >
+                      <IconTrash className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <ExperienceDialog open={dialogOpen} onOpenChange={setDialogOpen} initial={editing} />
+    </section>
+  );
+}
+
+// ─── Socials Tab ──────────────────────────────────────
+
+function SocialsTab() {
+  const t = useTranslations("profile");
+  const { data: socials = [] } = useSocials();
+  const { mutate: deleteEntry } = useDeleteSocial();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<SocialLink | null>(null);
+
+  const handleAdd = () => {
+    setEditing(null);
+    setDialogOpen(true);
+  };
+  const handleEdit = (entry: SocialLink) => {
+    setEditing(entry);
+    setDialogOpen(true);
+  };
+  const handleDelete = (entry: SocialLink) => {
+    if (entry.id === undefined) return;
+    if (!window.confirm(t("socialConfirmDelete"))) return;
+    deleteEntry(entry.id, {
+      onSuccess: () => toast.success(t("updateSuccess")),
+      onError: () => toast.error(t("updateFailed")),
+    });
+  };
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("socials")}
+        </h2>
+        <button
+          type="button"
+          disabled
+          aria-disabled="true"
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground/60 cursor-not-allowed"
+        >
+          <IconPlus className="size-3.5" />
+          {t("comingSoon")}
+        </button>
+      </div>
+      {socials.length === 0 ? (
+        <p className="text-sm text-muted-foreground/70">{t("socialsEmpty")}</p>
+      ) : (
+        <ul className="flex flex-wrap gap-2">
+          {socials.map((entry, i) => {
+            const meta = SOCIAL_PLATFORMS.find((p) => p.id === entry.platform);
+            const labelKey = meta?.labelKey ?? "socialPlatform_website";
+            const isUrl = /^https?:\/\//i.test(entry.url);
+            return (
+              <li
+                key={entry.id ?? i}
+                className="group inline-flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2"
+              >
+                {isUrl ? (
+                  <a
+                    href={entry.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 transition-colors hover:text-primary"
+                  >
+                    <span className="text-xs font-medium text-foreground">{t(labelKey)}</span>
+                    <span className="max-w-[200px] truncate text-[11px] text-muted-foreground">
+                      {entry.url}
+                    </span>
+                    <IconExternalLink className="size-3 text-muted-foreground" />
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="text-xs font-medium text-foreground">{t(labelKey)}</span>
+                    <span className="max-w-[200px] truncate text-[11px] text-muted-foreground">
+                      {entry.url}
+                    </span>
+                  </span>
+                )}
+                <span className="ml-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(entry)}
+                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label={t("edit")}
+                  >
+                    <IconEdit className="size-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(entry)}
+                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                    aria-label={t("delete")}
+                    disabled={entry.id === undefined}
+                  >
+                    <IconTrash className="size-3" />
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <SocialDialog open={dialogOpen} onOpenChange={setDialogOpen} initial={editing} />
+    </section>
+  );
+}
+
 // ─── My IPs Tab ───────────────────────────────────────
 
 function MyIPsTab() {
@@ -160,17 +386,21 @@ function MyIPsTab() {
 
 function PersonalWorksTab() {
   const t = useTranslations("profile");
+  const router = useRouter();
+  const locale = useLocale() as Locale;
   const { data: works, isLoading } = useMyPersonalWorks();
+  const { data: userInfo } = useUserInfo();
+  const [kycAlertOpen, setKycAlertOpen] = useState(false);
 
-  // Publish flow defers to legacy fizzdragon-web's full publish wizard
-  // (`pages/publicVideo/publicVideoPC`) — covers type / project / tags /
-  // banner / visibility / KYC. The Next.js app is iframe-embedded in
-  // legacy fizzdragon-web, so resolve against the configured parent
-  // origin and navigate the top frame.
+  // Click-time gate: don't navigate to /publish if the user can't
+  // actually finish the flow. Dialog routes to /kyc on confirm; cancel
+  // leaves them where they are.
   const requestPublish = () => {
-    if (typeof window === "undefined") return;
-    const target = `${env.PARENT_ORIGIN}/pages/publicVideo/publicVideoPC`;
-    (window.top ?? window).location.href = target;
+    if (userInfo?.authStatus !== AUTH_STATUS.APPROVED) {
+      setKycAlertOpen(true);
+      return;
+    }
+    router.push(localizePath("/publish", locale));
   };
 
   if (isLoading) {
@@ -242,6 +472,8 @@ function PersonalWorksTab() {
           </div>
         );
       })}
+
+      <KycRequiredAlert open={kycAlertOpen} onOpenChange={setKycAlertOpen} />
     </div>
   );
 }
@@ -282,6 +514,7 @@ function JoinedTab() {
 function ProjectCard({ project }: { project: Project }) {
   const t = useTranslations("profile");
   const router = useRouter();
+  const editUrl = useProjectEditUrl(project.id);
   const bannerUrl = project.bannerLink
     ? project.bannerLink.startsWith("http")
       ? project.bannerLink
@@ -309,12 +542,7 @@ function ProjectCard({ project }: { project: Project }) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              // The new /ips/[id]/edit page isn't finished yet; until it
-              // ships, hand "Edit IP" off to the legacy fizzdragon-web
-              // editor at PARENT_ORIGIN. Drop this once the new edit
-              // route is feature-complete.
-              const origin = env.PARENT_ORIGIN || window.location.origin;
-              window.location.href = `${origin}/pages/createProject/createProject?projectId=${project.id}`;
+              window.location.href = editUrl;
             }}
             className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >

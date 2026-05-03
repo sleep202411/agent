@@ -20,6 +20,7 @@
     "loadFailed": "載入失敗",
     "uploadFailed": "上傳失敗",
     "uploadSuccess": "上傳成功",
+    "uploading": "上傳中...",
     "noData": "暫無資料",
     "unnamed": "未命名",
     "copySuccess": "已複製連結",
@@ -41,6 +42,8 @@
     "backToOldVersion": "返回舊版",
     "upgrade": "升級",
     "logout": "登出",
+    "logoutConfirmTitle": "確定要登出嗎？",
+    "logoutConfirmBody": "登出後需要重新登入才能查看你的專案、劇組和已儲存的內容。",
     "generate": "生成",
     "generating": "生成中...",
     "generateFailed": "生成失敗",
@@ -218,10 +221,12 @@
     "ipPlaza": "IP 廣場",
     "studioHall": "劇組大廳",
     "creators": "人才集市",
+    "course": "學院",
     "news": "新聞",
     "workbench": "工作台",
     "getStarted": "免費開始",
-    "language": "語言"
+    "language": "語言",
+    "menu": "選單"
   },
   "auth": {
     "welcomeBack": "歡迎回來",
@@ -276,6 +281,8 @@
   },
   "ip": {
     "plaza": "IP 廣場",
+    "featuredEmptyTitle": "精選 IP 即將上線",
+    "featuredEmptyBody": "下一檔精選片單確定後會在這裡展示，敬請期待。",
     "subtitle": "IP 投資 · 預售 · 發行",
     "heroSubtitle": "IP 投資 · 預售 · 發行",
     "heroTitle1": "投資優質 IP",
@@ -330,7 +337,6 @@
     "publishNow": "立即發佈 →",
     "noResults": "沒有找到匹配的 IP",
     "clearFilters": "清除篩選條件",
-    "valuation": "估值",
     "tenThousand": "萬",
     "tenThousandPerShare": "萬/份",
     "offering": "出讓",
@@ -338,7 +344,6 @@
     "remaining": "剩餘 {count} 份",
     "fullySubscribed": "已滿額認購",
     "presaleLabel": "預售價",
-    "fullPrice": "原價",
     "people": "人",
     "presaleReached": "100人達標，已開始製作！",
     "needMore": "還差 {count} 人解鎖",
@@ -362,8 +367,10 @@
     "sectionWhyThisIP": "為什麼選這個 IP",
     "sectionProductionPlan": "製作計劃",
     "sectionCreativeTeam": "創作團隊",
-    "sectionUpdates": "動態",
     "sectionFAQ": "常見問題",
+    "detailJobRecruitment": "崗位招聘",
+    "detailJobProfitRatio": "分成 {ratio}%",
+    "detailJobEstimatedEarnings": "預計 ¥{amount}",
     "planStatus_completed": "已完成",
     "planStatus_in_progress": "進行中",
     "planStatus_pending": "待開始",
@@ -378,25 +385,36 @@
     "detailInvestorEarlyAccess": "投資人可提前觀看已完成集數，其他用戶可預購",
     "detailPurchaseWatch": "購買觀看",
     "detailFullBundle": "全集包",
-    "detailBundleDesc": "包含全部 {{count}} 集，節省 ¥{{save}}",
+    "detailBundleDesc": "包含全部 {count} 集，節省 ¥{save}",
     "detailBuyBundle": "購買全集包",
     "detailPlay": "播放",
+    "detailNowPlaying": "播放中",
     "detailBuy": "購買",
     "detailCreativeTeam": "創作團隊",
     "detailLike": "點讚",
     "detailSave": "收藏",
     "detailProducer": "製片人",
     "detailViewProfile": "查看主頁",
+    "forYou": "為你推薦",
     "detailProjects": "個專案",
     "detailManage": "管理",
     "detailUntitled": "未命名 IP",
     "detailWatchTrailer": "播放預告片",
     "detailFollow": "關注",
     "detailEpisodesTitle": "劇集",
+    "detailPurchaseWatch": "購買觀看",
+    "detailShare": "分享",
+    "detailShareHint": "把《{title}》分享給你的社群。",
+    "detailShareCopyLink": "複製連結",
+    "detailShareCopied": "已複製",
+    "detailProducer": "出品人",
+    "detailProducerLabel": "項目主理",
     "detailEpisodeCount": "{count} 集",
     "detailNoEpisodes": "還沒有發布劇集。",
     "detailManageEpisodes": "添加劇集",
     "detailAboutTitle": "關於本作",
+    "detailStoryTitle": "故事簡介",
+    "detailReleased": "已上線",
     "preorderNow": "立即預購",
     "notifyMe": "上線時通知我",
     "watchNow": "立即觀看",
@@ -493,15 +511,20 @@
     "epCoverTooLarge": "封面圖大小超過 5 MB",
     "epCoverRequired": "請上傳劇集封面",
     "epProbing": "讀取影片資訊中…",
+    "epLoadingPreview": "載入預覽中…",
     "epProbeFailed": "無法直接讀取影片元資料，上傳後伺服器會補全。",
     "epCoverPending": "上傳完成後伺服器會生成封面圖。",
     "epFileNotVideo": "請選擇影片檔案",
     "epFileTooLarge": "影片大小超過 2 GB",
     "epTitleLabel": "標題",
+    "epTitleHelp": "會在劇集列表、分享卡片和觀看記錄中顯示。",
     "epTitleRequired": "請填寫劇集標題",
     "epDescriptionLabel": "簡介",
+    "epDescriptionHelp": "會顯示在觀看頁面播放器下方的簡短摘要。",
     "epDescriptionPlaceholder": "本集主要講了什麼？",
     "epDescriptionRequired": "請填寫劇集簡介",
+    "epVideoHelp": "本集影片來源檔案。會上傳到 OSS，點擊儲存後才會發布。",
+    "epCoverHelp": "在廣場卡片、劇集列表和社交分享中顯示的縮圖，建議 16:9。",
     "epVideoRequired": "請上傳劇集影片",
     "epTypeLabel": "類型",
     "sectionTeam": "團隊招募",
@@ -515,22 +538,39 @@
     "editProfile": "編輯個人資料",
     "noMembers": "你尚未新增任何團隊成員。",
     "addMember": "新增團隊成員",
-    "addMemberTitle": "新團隊成員",
-    "memberEmail": "電子郵件",
-    "memberName": "名稱",
-    "memberNamePlaceholder": "團隊成員",
-    "memberPermissions": "權限",
-    "memberPermissionsDesc": "所有協作者均可存取你的專案資料。請在下面設定這位協作者的權限等級。",
-    "permEditProject": "編輯專案",
-    "permManageCommunity": "管理社群",
-    "permCoordinateRewards": "協調兌現",
-    "permManagePayments": "組態認繳管理",
-    "permAnalytics": "分析",
-    "sendInvite": "傳送邀請",
-    "emailRequired": "請輸入電子郵件",
+    "addMemberTitle": "邀請一位夥伴",
+    "addMemberConfirm": "加入團隊",
+    "teamHeroEyebrow": "團隊",
+    "teamHeroSubtitle": "用郵箱找到這個人,設定好角色,馬上加入。",
+    "memberEmail": "郵箱",
+    "memberEmailDesc": "我們用帳號郵箱來查找這個人。",
+    "memberLookupIdle": "輸入郵箱來查找這位夥伴。",
+    "memberLookupSearching": "正在查找…",
+    "memberLookupInvalid": "這看起來不是一個合法的郵箱。",
+    "memberLookupNotFound": "沒有找到使用此郵箱的用戶。",
+    "memberLookupFailed": "查找失敗,請重試。",
+    "memberAlreadyOnTeam": "已在團隊",
+    "memberRole": "角色",
+    "memberRoleDesc": "選擇這位夥伴的權限級別。",
+    "memberRolePlaceholder": "選擇角色",
+    "memberRoleLoading": "正在載入角色…",
+    "memberRoleFailed": "角色列表載入失敗。",
+    "memberRemark": "備註",
+    "memberRemarkDesc": "團隊可見的簡短說明 —— 這位夥伴擅長什麼?",
+    "memberRemarkPlaceholder": "例如:概念美術、配音指導、社群營運",
+    "memberRemove": "移除",
+    "roleMember": "成員",
+    "roleAdmin": "管理員",
+    "roleOwner": "擁有者",
     "memberAdded": "團隊成員已新增",
+    "addMemberFailed": "新增成員失敗",
+    "faqRequireBoth": "請同時填寫問題和答案",
     "editTrailer": "預告",
     "editFAQ": "FAQ",
+    "editJobRecruitment": "崗位招聘",
+    "editJobRecruitmentDesc": "來自舊版資料的招聘資訊，僅展示。",
+    "editJobProfitRatio": "分成 {ratio}%",
+    "editJobEstimatedEarnings": "預計 ¥{amount}",
     "sectionFAQ": "常見問題",
     "sectionFAQDesc": "張貼答案至常見問題。",
     "faqQuestion": "問題",
@@ -538,7 +578,45 @@
     "faqQuestionPlaceholder": "輸入常見問題",
     "faqAnswerPlaceholder": "輸入回答",
     "faqDelete": "刪除",
-    "faqAdd": "新增另一個常見問題",
+    "faqAdd": "新增常見問題",
+    "heroEyebrow": "IP 工作室",
+    "heroSubtitle": "把項目打磨好,然後讓它上線。",
+    "heroStatusLive": "已上架",
+    "heroStatusDraft": "未上架",
+    "heroStatusUnknown": "狀態",
+    "heroSave": "保存",
+    "heroSaving": "保存中",
+    "heroSaved": "已保存",
+    "heroPublish": "上架",
+    "heroUnpublish": "下架",
+    "publishConfirmTitle": "上架這個 IP?",
+    "publishConfirmDesc": "上架後,創作者和支持者都能在廣場看到這個項目。",
+    "publishConfirmAction": "上架",
+    "unpublishConfirmTitle": "下架這個 IP?",
+    "unpublishConfirmDesc": "下架後會從廣場隱藏,你可以隨時重新上架。",
+    "unpublishConfirmAction": "下架",
+    "publishSuccess": "已上架",
+    "unpublishSuccess": "已下架",
+    "publishFailed": "操作失敗,請重試。",
+    "spark": "Spark",
+    "sparkTagline": "丟一份策劃,點燃一份草稿",
+    "sparkDialogTitle": "Spark — AI 策劃解析",
+    "sparkDialogDescription": "上傳一部小說或劇本,Spark 會讀取並為你的 IP 提議名稱、簡介和標籤。應用前可以隨意修改。",
+    "sparkFileTooLarge": "文件過大,最大支援 {mb} MB。",
+    "sparkFieldName": "項目名稱",
+    "sparkFieldDescription": "標語 / 簡介",
+    "sparkFieldCategory": "分類",
+    "sparkFieldCategoryPlaceholder": "選擇分類",
+    "sparkNothingToApply": "還沒東西可應用,先丟一份策劃或填一個欄位。",
+    "sparkApply": "應用",
+    "sparkApplied": "已應用到項目,正在刷新…",
+    "faqEmpty": "尚未有常見問題。新增第一條,讓支持者更了解你的 IP。",
+    "faqHeroEyebrow": "常見問題",
+    "faqHeroSubtitle": "一個清晰的問題,加上一個用心的回答。",
+    "faqDialogTitleNew": "新增常見問題",
+    "faqDialogTitleEdit": "編輯常見問題",
+    "faqQuestionHelp": "用支持者會問的方式表述。",
+    "faqAnswerHelp": "盡量具體,樸實的語言勝過營銷話術。",
     "addPosition": "添加崗位",
     "noPositions": "暫無崗位，添加一個崗位開始招募。",
     "position": "崗位",
@@ -554,14 +632,10 @@
     "sectionValuationDesc": "設置你 IP 專案的總估值（人民幣）。",
     "sectionShares": "股份詳情",
     "sectionSharesDesc": "配置出讓的股權比例和總份額數。",
-    "sharesOffered": "出讓比例 (%)",
-    "totalShares": "總份額",
     "sectionDeadline": "融資截止日期",
     "sectionDeadlineDesc": "設置融資的截止日期。",
     "sectionPresalePrice": "定價",
     "sectionPresalePriceDesc": "設置預售價格和正式發佈後的零售價。",
-    "presalePrice": "預售價",
-    "fullPrice": "正式價",
     "sectionPresaleTarget": "目標人數",
     "sectionPresaleTargetDesc": "需要多少支持者才能達成目標？",
     "sectionPresaleDeadlineDesc": "設置預售活動的截止日期。",
@@ -635,6 +709,7 @@
     "fieldBanner": "專案首圖",
     "fieldBannerHint": "點擊上傳封面（建議 16:9）",
     "createSuccess": "專案建立成功！",
+    "createFailed": "專案建立失敗",
     "creating": "建立中...",
     "saveAndContinue": "儲存並繼續",
     "prev": "上一步",
@@ -677,8 +752,8 @@
     "statusCompleted": "已完成",
     "recommended": "推薦劇組",
     "recommendedDesc": "正在招募和開放職位的劇組",
-    "totalStudios": "共 {{count}} 個劇組",
-    "totalRoles": "共 {{count}} 個招募職位",
+    "totalStudios": "共 {count} 個劇組",
+    "totalRoles": "共 {count} 個招募職位",
     "tabCrews": "劇組",
     "tabOpenRoles": "招募職位",
     "applyNow": "申請",
@@ -729,15 +804,42 @@
     "roadmap": "製作路線圖",
     "teamMembers": "團隊成員",
     "latestActivity": "最新動態",
-    "applyToJoin": "申請加入"
+    "applyToJoin": "申請加入",
+    "list": {
+      "pageTitle": "找專案",
+      "createProject": "建立專案",
+      "myProjects": "我的專案",
+      "filterAll": "全部",
+      "jobPositions": "招募崗位",
+      "join": "加入",
+      "loading": "載入中…",
+      "loadMore": "載入更多",
+      "noMore": "沒有更多專案了",
+      "noData": "暫無專案",
+      "notAvailable": "匿名使用者"
+    },
+    "detail": {
+      "back": "返回",
+      "notFound": "專案不存在",
+      "rolesTitle": "崗位要求",
+      "noRoles": "暫無招聘資訊",
+      "applyJoin": "申請加入",
+      "alreadyApplied": "已申請",
+      "ownProject": "我的專案",
+      "contactLabel": "聯絡方式",
+      "promoVideo": "宣傳推廣片",
+      "team": "團隊成員",
+      "applySuccess": "申請成功",
+      "applyFail": "申請失敗，請稍後重試"
+    }
   },
   "news": {
     "title": "FizzDragon 新聞中心",
     "subtitle": "AI 原生電影工作室的故事、訪談與公告。",
     "subscribePlaceholder": "輸入你的電郵",
     "subscribe": "訂閱",
-    "subscribeSocialProof": "1,200,000 super viewers, investors, creators, schools, and other institutions have subscribed.",
-    "tSubscribed": "訂閱成功！我們會把更新發送到 {{email}}。",
+    "subscribeSocialProof": "已有 120 萬 + 資深觀眾、投資人、創作者、院校等機構訂閱。",
+    "tSubscribed": "訂閱成功！我們會把更新發送到 {email}。",
     "tInvalidEmail": "請輸入有效的電郵",
     "recent": "最新文章",
     "all": "全部文章",
@@ -2051,7 +2153,7 @@
     "wsTodo": "待辦",
     "wsIncomplete": "未完成",
     "people": "人",
-    "epLabel": "第{{n}}集",
+    "epLabel": "第{n}集",
     "viewCurrentEp": "查看當前集",
     "configMembers": "配置成員",
     "epMemberStatus": "當前集成員狀態",
@@ -2066,7 +2168,7 @@
     "memberManagement": "成員管理",
     "inviteMember": "邀請成員",
     "episodeProgress": "劇集進度",
-    "epTotal": "共 {{total}} 集，當前第 {{current}} 集",
+    "epTotal": "共 {total} 集，當前第 {current} 集",
     "deliveryZone": "交付區",
     "deliveryZoneDesc": "驗收表單、文件哈希校驗、水印驗證、尾款釋放",
     "deliveryHistory": "交付歷史",
@@ -2086,12 +2188,12 @@
     "actReject": "退回",
     "actSubmitReview": "提交審核",
     "wsSubmitting": "提交中...",
-    "tApproved": "已通過 {{name}} 的工作",
-    "tRejected": "已駁回 {{name}} 的工作",
-    "tReminderSent": "已提醒 {{name}}",
-    "tSubmittedForReview": "已為 {{name}} 提交審核",
-    "tEpisodeSubmitted": "EP{{n}} 已提交給客戶",
-    "tInviteSent": "已邀請 {{who}}",
+    "tApproved": "已通過 {name} 的工作",
+    "tRejected": "已駁回 {name} 的工作",
+    "tReminderSent": "已提醒 {name}",
+    "tSubmittedForReview": "已為 {name} 提交審核",
+    "tEpisodeSubmitted": "EP{n} 已提交給客戶",
+    "tInviteSent": "已邀請 {who}",
     "tActionFailed": "操作失敗，請重試",
     "inviteByPrompt": "請輸入用戶名或郵箱",
     "noTodos": "暫無待辦。",
@@ -2135,7 +2237,7 @@
     "flowClientWaiting": "尚未提交客戶確認",
     "memberStatus": "成員狀態",
     "clientConfirmStatus": "客戶確認狀態",
-    "clientPendingMembers": "本集還有 {{count}} 名成員待審/未提交，全部通過後方可提交客戶",
+    "clientPendingMembers": "本集還有 {count} 名成員待審/未提交，全部通過後方可提交客戶",
     "clientReadySubmit": "所有成員已通過審核，可提交客戶確認",
     "viewFeedback": "查看反饋",
     "epActivity": "本集動態",
@@ -2467,6 +2569,45 @@
       }
     }
   },
+  "publishVideo": {
+    "pageTitle": "發佈個人影片",
+    "stepBasic": "基本資訊",
+    "stepUpload": "上傳影片",
+    "videoTitle": "影片標題",
+    "videoTitlePlaceholder": "給作品起個名字",
+    "videoTags": "影片標籤",
+    "videoDescription": "影片簡介",
+    "videoDescriptionPlaceholder": "簡要描述你的影片",
+    "selectTag": "選擇標籤",
+    "modifyTag": "修改標籤",
+    "selectTagTitle": "選擇標籤",
+    "maxSelectTags": "最多可選擇 {max} 個標籤",
+    "noTagsAvailable": "暫無可選標籤。",
+    "uploadVideo": "上傳影片",
+    "uploadVideoCover": "上傳封面",
+    "uploadVideoFile": "點擊選擇 MP4 檔案（最大 5GB）",
+    "replaceVideo": "更換影片",
+    "uploading": "上傳中...",
+    "uploadSuccess": "上傳成功",
+    "uploadFailed": "上傳失敗",
+    "uploadImageFormat": "JPG / PNG，建議 16:9，最大 10MB",
+    "creating": "建立中...",
+    "updating": "儲存中...",
+    "createFailed": "建立影片記錄失敗",
+    "updateFailed": "更新影片記錄失敗",
+    "publish": "發佈",
+    "publishSuccess": "發佈成功",
+    "publishFailed": "發佈失敗",
+    "publishingNotice": "正在發佈，請勿關閉頁面",
+    "nextStep": "下一步",
+    "prevStep": "上一步",
+    "cancel": "取消",
+    "pleaseCompleteInfo": "請填寫所有必填項",
+    "pleaseUploadVideo": "請先上傳影片",
+    "kycRequiredTitle": "需要實名認證",
+    "kycRequiredBody": "完成實名認證後才能發佈影片。",
+    "kycRequiredCta": "去認證"
+  },
   "profile": {
     "unnamed": "未命名用戶",
     "editProfile": "編輯資料",
@@ -2501,6 +2642,7 @@
     "copied": "已複製",
     "credits": "積分",
     "changeCover": "更換封面",
+    "coverComingSoon": "即將上線",
     "coverSizeLimit": "封面圖不能超過 10MB",
     "coverUpdated": "封面更新成功",
     "coverUploadFailed": "封面上傳失敗",
@@ -2514,9 +2656,40 @@
     "availableOffDesc": "隱藏後你的資料將不會出現在人才市場，其他用戶也無法發現你。",
     "cancel": "取消",
     "confirm": "確定",
-    "overview": "Overview",
-    "education": "Education",
+    "overview": "概覽",
+    "education": "教育經歷",
     "educationEmpty": "暫無教育經歷，點「編輯資料」新增（每行一條）。",
+    "experience": "履歷",
+    "experienceEmpty": "暫無履歷。",
+    "addExperience": "新增履歷",
+    "comingSoon": "即將上線",
+    "editExperience": "編輯履歷",
+    "experienceTitle": "頭銜",
+    "experienceTitleRequired": "請輸入頭銜",
+    "experienceCompany": "公司 / 組織",
+    "experienceLocation": "地點",
+    "experienceDescription": "工作內容（選填）",
+    "experienceConfirmDelete": "確認刪除這條履歷？",
+    "socials": "社交媒體",
+    "socialsEmpty": "暫無社交連結。",
+    "addSocial": "新增社交連結",
+    "editSocial": "編輯社交連結",
+    "socialPlatformLabel": "平台",
+    "socialUrl": "連結 / 帳號",
+    "socialUrlRequired": "請輸入連結或帳號",
+    "socialConfirmDelete": "確認刪除這條社交連結？",
+    "delete": "刪除",
+    "socialPlatform_twitter": "X (推特)",
+    "socialPlatform_weibo": "微博",
+    "socialPlatform_wechat": "微信",
+    "socialPlatform_bilibili": "嗶哩嗶哩",
+    "socialPlatform_douyin": "抖音",
+    "socialPlatform_xiaohongshu": "小紅書",
+    "socialPlatform_youtube": "YouTube",
+    "socialPlatform_instagram": "Instagram",
+    "socialPlatform_github": "GitHub",
+    "socialPlatform_linkedin": "領英",
+    "socialPlatform_website": "個人網站",
     "personalWorks": "個人作品",
     "myIPs": "我的 IP",
     "joinedCrews": "參與劇組",
@@ -2591,18 +2764,25 @@
   },
   "footer": {
     "tagline": "AI 動畫與 IP 共創平台",
-    "ipPlaza": "IP 廣場",
-    "browseIPs": "瀏覽 IP",
-    "createIP": "建立 IP",
-    "studio": "工作室",
-    "myProjects": "我的專案",
-    "workbench": "工作台",
-    "account": "帳戶",
-    "profile": "個人主頁",
-    "settings": "設置",
-    "legal": "法律",
-    "terms": "服務條款",
-    "privacy": "隱私政策"
+    "platform": {
+      "title": "平台",
+      "plaza": "故事廣場",
+      "crews": "劇組",
+      "ips": "IP 廣場",
+      "workspace": "進入工作台"
+    },
+    "company": {
+      "title": "公司",
+      "about": "關於我們",
+      "creators": "創作者中心",
+      "contact": "聯絡我們"
+    },
+    "legal": {
+      "title": "法律",
+      "privacy": "隱私政策",
+      "terms": "服務條款",
+      "refund": "退款政策"
+    }
   },
   "kyc": {
     "identityVerification": "身份資訊認證",
@@ -2659,15 +2839,289 @@
     "tagline": "一個為全球創意內容提供高效交易與賦能的流動性市場。"
   },
   "home": {
-    "tagline": "讓你的故事，動起來。",
-    "subtitle": "劇本 → 分鏡 → 成片。AI 幫你處理重活，你只管講好故事。",
-    "cta": "開始創作",
-    "secondaryCta": "看看怎麼做的",
-    "frames": {
-      "script": "劇本",
-      "storyboard": "分鏡",
-      "shot": "鏡頭",
-      "render": "成片"
+    "hero": {
+      "statusPill": "Happy Horse · 現已上線",
+      "headlineLine1": "故事從這裡開始。",
+      "headlineLine2": "團隊把它做出來。",
+      "subtitle": "工具幫你做，夥伴助你成，觀眾已經在等。",
+      "primaryCta": "立即開始",
+      "secondaryCta": "瀏覽 IP"
+    },
+    "madeWithFizz": {
+      "eyebrow": "用 FizzDragon 製作",
+      "title": "正在製作中的故事。",
+      "subtitle": "FizzDragon 社群正在打造的 IP。點擊進入追蹤進度或支持項目。",
+      "viewAll": "查看全部",
+      "byOwner": "by {name}"
+    },
+    "pillars": {
+      "eyebrow": "三種切入方式",
+      "titleLine1": "一個平台。",
+      "titleLine2": "做內容、組團隊、找觀眾。",
+      "subtitle": "無論你是想做故事、想找搭檔一起做、還是想追下一部好 IP——FizzDragon 三件事都覆蓋。",
+      "items": {
+        "make": {
+          "title": "做",
+          "body": "AI Agent 幫你寫腳本、畫分鏡、配音、渲染每一幀。你來導演，它們來執行。",
+          "cta": "開新項目"
+        },
+        "connect": {
+          "title": "組",
+          "body": "找編劇、畫師、配音、導演。組一支 crew，分工協作，一起把項目做出來。",
+          "cta": "瀏覽 Crew"
+        },
+        "show": {
+          "title": "傳",
+          "body": "發布劇集、聚集觀眾、接受 backer。IP Plaza 是故事和粉絲相遇的地方。",
+          "cta": "進入 IP Plaza"
+        }
+      }
+    },
+    "cast": {
+      "eyebrow": "團隊內幕",
+      "titleLine1": "11 位 Agent。",
+      "titleLine2": "一個連貫的項目。",
+      "subtitle": "每個項目背後，一位總管 Agent 把你的指令路由給各專家——它們共享同一份項目設定，人物、場景、道具的連貫性不需要你親自看著。",
+      "footnote": "……還有 Brief Analyzer、Script Splitter、Evaluator 和 Story Editor 在幕後默默配合。",
+      "members": {
+        "storyOutliner": {
+          "name": "Story Outliner",
+          "role": "通讀你的素材，把人物、場景、道具梳理成一份可工作的世界設定。"
+        },
+        "episodePlanner": {
+          "name": "Episode Planner",
+          "role": "把控多集結構。每集的鉤子、節奏、收尾都安排到位。"
+        },
+        "scriptwriter": {
+          "name": "Scriptwriter",
+          "role": "逐句對白與場景調度，忠實還原 planner 的節奏設計。"
+        },
+        "storyboardDesigner": {
+          "name": "Storyboard Designer",
+          "role": "構圖分鏡，包括鏡頭運動、畫面框選、鏡頭語言註釋。"
+        },
+        "artDirector": {
+          "name": "Art Director",
+          "role": "保證人物、場景、道具的視覺風格從第一幀起就統一。"
+        },
+        "sceneAndPropDesigner": {
+          "name": "Scene & Prop Designer",
+          "role": "搭建你故事所在的世界。跨集複用，越用越完善。"
+        }
+      }
+    },
+    "toolkit": {
+      "eyebrow": "裡面有什麼",
+      "titleLine1": "一間工作室、一張人脈網、",
+      "titleLine2": "一群在等你的觀眾。",
+      "subtitle": "工具、人、以及作品和觀眾相遇的地方——一個平台一併提供。",
+      "items": {
+        "storyboardEditor": {
+          "title": "分鏡編輯器",
+          "body": "以鏡頭為單位思考的編輯器——每個格子裡都有提示詞、參考圖、生成結果和備註。"
+        },
+        "directorOnCall": {
+          "title": "隨叫隨到的導演",
+          "body": "一位了解你項目的總管 Agent，把你的需求路由給最合適的專家。"
+        },
+        "assetLibrary": {
+          "title": "素材庫",
+          "body": "人物、場景、道具——可搜尋、跨集複用。"
+        },
+        "crewWorkspace": {
+          "title": "Crew 協作空間",
+          "body": "和編劇、畫師、配音一起共創。分工、看進度、一起出片。"
+        },
+        "ipPlaza": {
+          "title": "IP Plaza",
+          "body": "發布你的 IP，聚集粉絲，接受 backer。每集都有獨立頁面和數據。"
+        }
+      }
+    },
+    "styleGallery": {
+      "eyebrow": "風格庫",
+      "titleLine1": "同一個故事，",
+      "titleLine2": "無數種樣貌。",
+      "subtitle": "把同一份腳本渲染成任意視覺語言——動漫、電影、水彩、3D。選定風格，開拍系列。",
+      "sidebarTitle": "熱門風格",
+      "sidebarBody": "滑鼠懸停任一縮圖即可在左側預覽。從經典繪畫到現代數位藝術——挑選最契合你故事的樣貌。",
+      "cta": "437+ 種風格 · 持續上新",
+      "styles": {
+        "anime": "動漫",
+        "cinematic": "電影感",
+        "watercolor": "水彩",
+        "pixel": "像素藝術",
+        "pixar": "3D 皮克斯",
+        "comic": "漫畫",
+        "noir": "黑色電影",
+        "cyberpunk": "賽博朋克",
+        "pastel": "粉彩",
+        "oil": "油畫",
+        "manga": "日漫",
+        "vapor": "蒸汽波"
+      }
+    },
+    "useCases": {
+      "eyebrow": "為每位創作者準備",
+      "title": "適合每一種故事。",
+      "subtitle": "從連續劇到社群廣告再到課程教案——FizzDragon 適配你的媒介和團隊。",
+      "tabs": {
+        "creative": "創作",
+        "business": "商業",
+        "education": "教育"
+      },
+      "tryItNow": "立即試用",
+      "cards": {
+        "creative": {
+          "seriesCreators": {
+            "title": "連續劇創作者",
+            "body": "規劃多集結構，渲染每一幀，讓人物在整季中保持一致。"
+          },
+          "webcomicArtists": {
+            "title": "網絡漫畫作者",
+            "body": "把腳本變成分格、嵌字的漫畫頁面。跨章節複用人物與道具。"
+          },
+          "indieAnimators": {
+            "title": "獨立動畫師",
+            "body": "分鏡、配音、對口型、剪輯——身後不需要一整間工作室。"
+          },
+          "musicAndShorts": {
+            "title": "音樂與短片",
+            "body": "把鏡頭對齊節拍。放一首曲子、勾勒氛圍、一個下午就能出畫面。"
+          }
+        },
+        "business": {
+          "brandFilms": {
+            "title": "品牌片",
+            "body": "路演影片、產品宣傳片、社群剪輯——一個下午從腳本到成片，全程不跑偏品牌調性。"
+          },
+          "productLaunches": {
+            "title": "新品發布",
+            "body": "為新功能製作動畫講解和演示影片，無需影片預算。"
+          },
+          "socialAds": {
+            "title": "社群廣告",
+            "body": "用一份分鏡衍生十幾個版本。測試剪輯、切換風格、每天上新。"
+          },
+          "investorPitches": {
+            "title": "投資路演",
+            "body": "用電影級視覺講故事——敘事弧線代替條目堆砌。"
+          }
+        },
+        "education": {
+          "courseVideos": {
+            "title": "課程影片",
+            "body": "把教案變成有插畫、有配音的故事影片。任何學科、任何年齡段。"
+          },
+          "historyAndCulture": {
+            "title": "歷史與人文",
+            "body": "用考據級視覺讓歷史事件和民間傳說鮮活起來。"
+          },
+          "childrensStories": {
+            "title": "兒童故事",
+            "body": "柔和的插畫、貼合年齡段。為角色配音、對齊口型，分享連結。"
+          },
+          "trainingMaterial": {
+            "title": "培訓素材",
+            "body": "新員工培訓、安全合規——用敘事影片代替簡報。"
+          }
+        }
+      }
+    },
+    "testimonials": {
+      "eyebrow": "好評",
+      "titleBefore": "創作者們怎麼評價",
+      "titleAfter": "。",
+      "subtitle": "聽聽用 FizzDragon 產出專業視覺內容的創作者怎麼說。",
+      "items": {
+        "sarahChen": {
+          "quote": "剛試了 FizzDragon，真的被驚到了。作為一個一直跟分鏡流程死磕的人，能用上一個真正懂構圖的 AI 團隊太爽了。這是我第一個會毫無保留推薦給同行的 AI 動畫工具。",
+          "name": "Sarah Chen",
+          "role": "獨立動畫師"
+        },
+        "alexJohnson": {
+          "quote": "FizzDragon 的文字轉影片流程能把一段文字變成我真願意繼續編輯的東西。跨集無縫的素材庫這一點，沒什麼人提到，但很關鍵。",
+          "name": "Alex Johnson",
+          "role": "科技測評人"
+        },
+        "michaelRodriguez": {
+          "quote": "今年用過最好的影片創作工具。這套 Agent 系統不像玩具，更像一間你能真正指揮的小工作室。",
+          "name": "Michael Rodriguez",
+          "role": "影片導演"
+        },
+        "emmaThompson": {
+          "quote": "FizzDragon 徹底改變了我做短片的方式。文字轉影片流程難以置信——我描述一個場景，午餐前就能拿到能直接上時間線的素材。最打動我的是逐幀精修。",
+          "name": "Emma Thompson",
+          "role": "內容創作者"
+        },
+        "chrisPark": {
+          "quote": "試了影片和圖像增強工具——出專業級內容的便利度是真的。這是我第一次沒有跟模型死磕。",
+          "name": "Chris Park",
+          "role": "自由設計師"
+        },
+        "davidKim": {
+          "quote": "FizzDragon 直接改變了我的內容工作流。新手友善的介面，底下的引擎卻很硬核。我會推薦給任何想做系列內容的人。",
+          "name": "David Kim",
+          "role": "社群媒體經理"
+        },
+        "jessicaMartinez": {
+          "quote": "幾行文字就能產出高質素影片，編輯器也很順手。作為數位內容創作者，我用過的工具數不勝數——這一個我會一直回來用。",
+          "name": "Jessica Martinez",
+          "role": "數位內容創作者"
+        }
+      }
+    },
+    "faq": {
+      "eyebrow": "常見問題",
+      "title": "你想問的，都在這裡。",
+      "subtitle": "在按下你第一場戲的錄製鍵之前，你可能想知道的一切。",
+      "questions": {
+        "whatIs": {
+          "q": "FizzDragon 是什麼？",
+          "a": "為講故事的人打造的平台，三件事合一：(1) AI 工作室——幫你寫腳本、畫分鏡、配音、渲染。(2) Crew 網絡——編劇、畫師、配音聚到一起，分工合作把項目做出來。(3) IP Plaza——成片找到觀眾和 backer 的地方。"
+        },
+        "howCrewWorks": {
+          "q": "AI 團隊是怎麼協作的？",
+          "a": "一位總管 Agent 通讀你的項目，把每個需求路由給對應的專家——Outliner、Episode Planner、Scriptwriter、Storyboard Designer、Art Director 等等。它們共享一份項目設定，所以人物、場景、道具在跨集時保持一致。"
+        },
+        "howLong": {
+          "q": "做出一個東西要多久？",
+          "a": "從想法到第一幀大約 5 分鐘。單條 60 秒短片通常 15 分鐘內能渲染完成；一個多集系列的策劃與分鏡可以在一個下午搞定。"
+        },
+        "styles": {
+          "q": "支援哪些視覺風格？",
+          "a": "437+ 種且持續增加——動漫、電影、水彩、3D 皮克斯、漫畫、黑色電影、像素、蒸汽波等等。同一份腳本無需改寫一句台詞即可換成任意風格渲染。"
+        },
+        "pricing": {
+          "q": "定價和積分怎麼算？",
+          "a": "免費起步。每個階段都有清晰、可預期的積分成本明確展示——渲染中途不會冒出意外帳單。重渲染（長影片、口型同步）消耗較多積分；策劃和寫腳本幾乎免費。"
+        },
+        "ownership": {
+          "q": "我對作品擁有所有權嗎？",
+          "a": "擁有。你保留腳本、分鏡和最終成片的權利。付費計劃允許商用。"
+        },
+        "languages": {
+          "q": "可以用哪些語言創作？",
+          "a": "腳本和對白當前支援 English、简体中文、繁體中文。配音覆蓋同樣三種語言，原生質素 TTS，更多語言在路線圖上。"
+        }
+      },
+      "stillHaveQuestions": {
+        "title": "還有問題？",
+        "body": "給我們留言——每一條我們都看。",
+        "cta": "聯絡我們"
+      }
+    },
+    "finalCta": {
+      "title": "準備好做點值得被看到的東西了嗎？",
+      "subtitle": "免費起步。帶上故事、找到搭檔、遇見觀眾。",
+      "primaryCta": "開始創作",
+      "secondaryCta": "瀏覽 IP",
+      "timing": "從想法到第一幀大約 5 分鐘。"
+    },
+    "partners": {
+      "eyebrow": "合作夥伴 & 媒體報導",
+      "title": "攜手前行，被世界看見",
+      "subtitle": "加速器、出版社、電視台與製作公司，與 FizzDragon 一同把 AI 輔助創作帶給全球觀眾。"
     }
   }
 }

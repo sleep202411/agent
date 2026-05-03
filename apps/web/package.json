@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "eslint",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "legacy:sync": "node scripts/sync-legacy.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.146",

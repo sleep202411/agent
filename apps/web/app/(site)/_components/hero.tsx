@@ -11,6 +11,7 @@
  */
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { IconArrowRight } from "@tabler/icons-react";
 import { BlurText } from "@/components/ui/blur-text";
@@ -18,28 +19,49 @@ import { ShinyText } from "@/components/ui/shiny-text";
 import { StarBorder } from "@/components/ui/star-border";
 import { Noise } from "@/components/ui/noise";
 import { GradualBlur } from "@/components/ui/gradual-blur";
-import { useLocale } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 
-// Primary backdrop. Hand-generated artwork uploaded to OSS via the
-// public/upload/static endpoint; served from static.fizzspace.cn.
-// To swap: drop a new image into the same OSS path or replace the URL.
-const HERO_IMAGE =
+// Primary backdrop — looping muted videos served from the OSS static
+// CDN (same bucket as HERO_POSTER). The pool is randomized on mount;
+// until the random pick lands the <video> shows the poster so the
+// section is never blank. The poster also serves as the fallback if
+// autoplay is blocked. To swap a clip: re-upload to the same path via
+// the `/content/public/upload/static` endpoint with `dir=pc`.
+const HERO_VIDEOS = [
+  "https://static.fizzspace.cn/static/pc/hero-bg-1.mp4",
+  "https://static.fizzspace.cn/static/pc/hero-bg-2.mp4",
+] as const;
+const HERO_POSTER =
   "https://static.fizzspace.cn/static/pc/ChatGPT%20Image%202026%E5%B9%B44%E6%9C%8827%E6%97%A5%2012_25_56.png";
 
 export function Hero() {
   const locale = useLocale() as Locale;
+  const t = useTranslations("home");
+
+  // Pick the video on mount only — server-rendered HTML omits `src` so
+  // the SSR/CSR markup stays identical (no hydration mismatch). The
+  // poster covers the moment between hydration and the effect firing.
+  const [videoSrc, setVideoSrc] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    setVideoSrc(HERO_VIDEOS[Math.floor(Math.random() * HERO_VIDEOS.length)]);
+  }, []);
 
   return (
     <section className="relative h-screen min-h-[680px] overflow-hidden">
-      {/* Backdrop — slow Ken Burns scaling */}
-      <motion.img
-        src={HERO_IMAGE}
-        alt=""
-        initial={{ scale: 1.05 }}
-        animate={{ scale: 1.18 }}
-        transition={{ duration: 24, ease: "linear", repeat: Infinity, repeatType: "reverse" }}
+      {/* Backdrop — looping silent video. autoPlay+muted+playsInline are
+          required together for autoplay on iOS Safari + Chrome data-saver. */}
+      <video
+        key={videoSrc ?? "poster"}
+        src={videoSrc}
+        poster={HERO_POSTER}
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="auto"
+        aria-hidden="true"
         className="absolute inset-0 size-full object-cover"
       />
 
@@ -82,7 +104,7 @@ export function Hero() {
             <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
           </span>
           <ShinyText
-            text="Kling 2.6 · now available"
+            text={t("hero.statusPill")}
             color="rgba(255,255,255,0.7)"
             shineColor="#ffffff"
             speed={3}
@@ -93,7 +115,7 @@ export function Hero() {
         {/* 2. Headline — BlurText reveals each word with a 2-step blur ramp. */}
         <div className="mt-10 max-w-6xl text-balance text-5xl font-semibold tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[100px] lg:leading-[1.02]">
           <BlurText
-            text="Direct your story"
+            text={t("hero.headlineLine1")}
             animateBy="words"
             direction="top"
             delay={120}
@@ -101,7 +123,7 @@ export function Hero() {
             className="justify-center"
           />
           <BlurText
-            text="with an AI crew."
+            text={t("hero.headlineLine2")}
             animateBy="words"
             direction="top"
             delay={120}
@@ -117,8 +139,7 @@ export function Hero() {
           transition={{ duration: 0.6, delay: 1.1 }}
           className="mt-10 max-w-3xl text-balance text-lg leading-relaxed text-white/75 sm:text-xl"
         >
-          Drop a story. Eleven specialist agents draft it, storyboard it, voice it, and render every
-          frame. You direct, they execute.
+          {t("hero.subtitle")}
         </motion.p>
 
         {/* 4. CTAs — tall pills, chevron icons, primary keeps the StarBorder rim. */}
@@ -133,7 +154,7 @@ export function Hero() {
               href={localizePath("/login", locale)}
               className="flex h-14 items-center gap-3 rounded-full bg-white px-8 text-base font-semibold text-black transition-colors hover:bg-white/90"
             >
-              Start now
+              {t("hero.primaryCta")}
               <IconArrowRight className="size-5" strokeWidth={2.5} />
             </Link>
           </StarBorder>
@@ -141,7 +162,7 @@ export function Hero() {
             href={localizePath("/ips", locale)}
             className="flex h-14 items-center gap-3 rounded-full border border-white/15 bg-white/[0.03] px-8 text-base font-semibold text-white/90 backdrop-blur transition-colors hover:border-white/25 hover:bg-white/[0.08]"
           >
-            Browse IPs
+            {t("hero.secondaryCta")}
             <IconArrowRight className="size-5" strokeWidth={2.5} />
           </Link>
         </motion.div>
