@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconCopy, IconLoader2, IconMail, IconRefresh, IconUserPlus } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { env } from "@/src/env";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -209,10 +208,14 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
       ]);
       setMembers(memberList ?? []);
       if (code) {
-        const origin = env.PARENT_ORIGIN || window.location.origin;
+        const origin = window.location.origin;
         const wid = worldId ?? "";
         setInviteLink(
-          `${origin}/pages/invite/invite?code=${String(code)}&projectId=${String(project.id)}${wid ? `&worldId=${wid}` : ""}`
+          // Native /invite under (site) — proxy.ts will 308 the
+          // unprefixed path to the default-locale prefix when the
+          // recipient opens it. Don't bake the current user's locale
+          // into the share URL — recipient may prefer a different one.
+          `${origin}/invite?code=${String(code)}&projectId=${String(project.id)}${wid ? `&worldId=${wid}` : ""}`
         );
       }
     } catch (error) {
@@ -312,10 +315,14 @@ export function ProjectTeamDialog({ open, project, onOpenChange }: ProjectTeamDi
         }
       );
       if (code) {
-        const origin = env.PARENT_ORIGIN || window.location.origin;
+        const origin = window.location.origin;
         const wid = worldId ?? "";
         setInviteLink(
-          `${origin}/pages/invite/invite?code=${String(code)}&projectId=${String(project.id)}${wid ? `&worldId=${wid}` : ""}`
+          // Native /invite under (site) — proxy.ts will 308 the
+          // unprefixed path to the default-locale prefix when the
+          // recipient opens it. Don't bake the current user's locale
+          // into the share URL — recipient may prefer a different one.
+          `${origin}/invite?code=${String(code)}&projectId=${String(project.id)}${wid ? `&worldId=${wid}` : ""}`
         );
         toast.success(t("inviteLinkRefreshed"));
       }

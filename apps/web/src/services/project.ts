@@ -121,11 +121,27 @@ export const createPersonalWork = (data: {
   viewStatus?: number;
 }) => api.post<{ id: number }>("/vedio/create/personal/video", { data });
 
-/** 上传个人作品视频 */
+/** 上传个人作品视频
+ *
+ * TODO(backend): drop the form-body `token` field once the Java handler
+ * for `/vedio/upload/personal/video/backup` reads auth from the cookie
+ * (Sa-Token already serves it via `credentials: "include"`). The form
+ * field is a uni-app legacy workaround — modern browsers send the
+ * cookie reliably, the controller just hasn't been migrated.
+ *
+ * Until then we must read the satoken cookie ourselves and stuff it in
+ * the form body, mirroring `fizzdragon-web/pages/publicVideo/publicVideoPC.vue`.
+ * Without it the upload returns an auth error even though the cookie
+ * is present on the request.
+ */
 export async function uploadPersonalVideo(id: number | string, file: File) {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("id", String(id));
+  if (typeof document !== "undefined") {
+    const match = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+    if (match?.[1]) formData.append("token", match[1]);
+  }
 
   const response = await fetch(
     `${typeof window !== "undefined" ? window.location.origin : ""}/vedio/upload/personal/video/backup`,
