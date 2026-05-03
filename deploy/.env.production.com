@@ -17,8 +17,8 @@ AI_MODEL=deepseek-chat
 STORYOS_ROUTER_PROVIDER=deepseek
 STORYOS_PERSONA_PROVIDER=deepseek
 # --- Alibaba (kept commented — hit 400 "content required" on compat endpoint) ---
-# ALIBABA_API_KEY=sk-0484a407126d4f50adaed6a6762b30ca
-# ALIBABA_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+ALIBABA_API_KEY=sk-0484a407126d4f50adaed6a6762b30ca
+ALIBABA_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 
 # Worker parallelism — bumped to 90 for 8c/16g ECS (ecs.c8i.2xlarge).
 # Workflows are I/O-bound (LLM + Java) so the real ceiling is DeepSeek
