@@ -2634,7 +2634,7 @@
     "addEducation": "添加教育经历",
     "schoolName": "学校",
     "major": "专业",
-    "startDate": "起始（YYYY-MM）",
+    "startDate": "起始（YYYY-MM-DD）",
     "endDateOptional": "结束（在读留空）",
     "present": "至今",
     "nicknameRequired": "请输入昵称",

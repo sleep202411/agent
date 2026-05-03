@@ -114,7 +114,7 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
             <Field>
               <FieldLabel>{t("startDate")}</FieldLabel>
               <Input
-                type="month"
+                type="date"
                 value={draft.startTime}
                 onChange={(e) => update({ startTime: e.target.value })}
               />
@@ -122,7 +122,7 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
             <Field>
               <FieldLabel>{t("endDateOptional")}</FieldLabel>
               <Input
-                type="month"
+                type="date"
                 value={draft.endTime ?? ""}
                 onChange={(e) => update({ endTime: e.target.value })}
               />

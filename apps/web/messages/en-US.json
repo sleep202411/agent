@@ -2634,7 +2634,7 @@
     "addEducation": "Add education",
     "schoolName": "School",
     "major": "Major",
-    "startDate": "Start (YYYY-MM)",
+    "startDate": "Start (YYYY-MM-DD)",
     "endDateOptional": "End (leave blank if ongoing)",
     "present": "Present",
     "nicknameRequired": "Please enter a nickname",
