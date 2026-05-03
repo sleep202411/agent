@@ -62,6 +62,7 @@ import {
 } from "@/app/(site)/ips/_hooks/use-ip";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTagList } from "@/src/hooks/use-tag-list";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useIPTypes } from "@/app/(site)/ips/_hooks/use-ip-list";
 import { uploadIPBanner } from "@/app/(site)/ips/_hooks/uploads";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
@@ -311,6 +312,7 @@ export default function IPEditPage() {
 
   // Team CRUD — list shipped, add/remove via dialog + per-row delete.
   const { data: members = [] } = useProjectMembers(id);
+  const { user: currentUser } = useCurrentUser();
   const { data: roleCatalog = [] } = useProjectRoles();
   const { mutateAsync: addMemberMut } = useAddMember();
   const { mutate: removeMemberMut } = useRemoveMember();
@@ -1042,12 +1044,18 @@ export default function IPEditPage() {
               {/* Team Members — owner is synthesized at the top of the
                *  list from `project.owner*` so the section is one
                *  unified roster. The owner is never removable; backend
-               *  members that echo the owner id are deduplicated. */}
+               *  members that echo the owner id are deduplicated. The
+               *  signed-in user is hidden from the list — they already
+               *  know they're on the team, no need to surface their
+               *  own row (also matches the privacy ask from ops). */}
               <Section title={t("sectionMembers")} description={t("sectionMembersDesc")}>
                 {(() => {
                   const ownerId = project?.ownerId;
+                  const selfId = currentUser?.id != null ? Number(currentUser.id) : undefined;
+                  const isSelf = (uid: number | null | undefined) =>
+                    selfId != null && uid != null && uid === selfId;
                   const ownerRow: ProjectMember | null =
-                    ownerId != null
+                    ownerId != null && !isSelf(ownerId)
                       ? {
                           userId: ownerId,
                           userName: project?.ownerName ?? undefined,
@@ -1057,7 +1065,7 @@ export default function IPEditPage() {
                         }
                       : null;
                   const collaborators = members.filter(
-                    (m) => ownerId == null || m.userId !== ownerId
+                    (m) => (ownerId == null || m.userId !== ownerId) && !isSelf(m.userId)
                   );
                   const rows: Array<{ member: ProjectMember; canRemove: boolean }> = [];
                   if (ownerRow) rows.push({ member: ownerRow, canRemove: false });
