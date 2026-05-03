@@ -62,7 +62,7 @@ export class AuthService {
       // doesn't recognize the only token sent". Remove once root cause found.
       const allSatokens = (
         cookie.match(/(?:^|;\s*)satoken=([^;]+)/g) ?? []
-      ).map((s) => s.replace(/^[;\s]*satoken=/, ''));
+      ).map((s: string) => s.replace(/^[;\s]*satoken=/, ''));
       this.logger.log(
         `[diag] satoken-count=${allSatokens.length} sending=${satokenMatch?.[1] ?? '(none)'} all=${JSON.stringify(allSatokens)}`,
       );
