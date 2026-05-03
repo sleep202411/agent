@@ -8,9 +8,11 @@ import {
   IconChevronRight,
   IconPlayerPlay,
   IconPlus,
+  IconShare3,
   IconVolumeOff,
   IconMovie,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { usePlazaFeatured, usePlazaForYou } from "../_hooks/use-ip";
@@ -112,7 +114,7 @@ export function IPCinematicHero() {
         <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-background to-transparent" />
 
         {/* Content */}
-        <div className="relative z-10 mx-auto flex h-full max-w-screen-2xl items-end px-6 pt-24 pb-16 sm:px-10">
+        <div className="relative z-10 mx-auto flex h-full max-w-[1800px] items-end px-6 pt-24 pb-16 sm:px-10">
           <div className="max-w-2xl">
             {slide.eyebrow && (
               <div className="mb-3 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300">
@@ -139,11 +141,49 @@ export function IPCinematicHero() {
             <div className="mt-6 flex items-center gap-3">
               <Link
                 href={`/ips/${slide.id}`}
-                className="inline-flex items-center gap-2 rounded-md bg-white px-6 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-white/90"
+                className="group/cta relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-white/30 bg-white/10 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/30 backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 hover:border-white/50 hover:bg-white/20 hover:shadow-white/10"
               >
-                <IconPlayerPlay className="size-4 fill-current" />
-                {t("detailViewProfile")}
+                {/* Liquid-glass shimmer: a soft diagonal highlight that
+                 *  drifts across the surface on hover. Pure CSS, no JS. */}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 -translate-x-full bg-linear-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover/cta:translate-x-full"
+                />
+                <IconPlayerPlay className="relative size-4 fill-current" />
+                <span className="relative">{t("detailViewProfile")}</span>
               </Link>
+              <button
+                type="button"
+                onClick={async () => {
+                  // Build the absolute URL from the page's origin so the
+                  // copied link works no matter which locale-prefixed
+                  // path the user is currently sitting on. Fall back to
+                  // legacy execCommand for browsers without async
+                  // clipboard (older Safari / non-HTTPS contexts).
+                  const url = `${window.location.origin}/ips/${slide.id}`;
+                  try {
+                    if (navigator.clipboard?.writeText) {
+                      await navigator.clipboard.writeText(url);
+                    } else {
+                      const ta = document.createElement("textarea");
+                      ta.value = url;
+                      ta.style.position = "fixed";
+                      ta.style.opacity = "0";
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand("copy");
+                      document.body.removeChild(ta);
+                    }
+                    toast.success(t("shareCopied"));
+                  } catch {
+                    toast.error(t("shareCopyFailed"));
+                  }
+                }}
+                aria-label={t("share")}
+                className="inline-flex size-12 items-center justify-center rounded-full border border-white/30 bg-white/10 text-white shadow-lg shadow-black/30 backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 hover:border-white/50 hover:bg-white/20 hover:shadow-white/10"
+              >
+                <IconShare3 className="size-4" />
+              </button>
             </div>
             {slide.tags.length > 0 && (
               <div className="mt-4 flex flex-wrap items-center text-[11px] text-white/55">
@@ -158,8 +198,9 @@ export function IPCinematicHero() {
           </div>
         </div>
 
-        {/* Right corner: mute */}
-        <div className="absolute bottom-8 right-6 z-10 flex items-center gap-3">
+        {/* Top-right: mute (moved here so the bottom-right is free for
+         *  the thumbnail strip below) */}
+        <div className="absolute top-6 right-6 z-10 flex items-center gap-3">
           <button
             type="button"
             aria-label="Toggle audio"
@@ -168,6 +209,43 @@ export function IPCinematicHero() {
             <IconVolumeOff className="size-4" />
           </button>
         </div>
+
+        {/* Bottom-right: slide thumbnails. Replaces the previous bullet
+         *  dots — gives users a visual peek of what's coming next and
+         *  doubles as the position indicator. Hidden on small screens
+         *  to avoid crowding the hero. */}
+        {total > 1 && (
+          <div className="absolute right-6 bottom-6 z-10 hidden gap-2 lg:flex">
+            {slides.map((s, i) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setIndex(i)}
+                aria-label={`Slide ${i + 1}: ${s.title ?? ""}`}
+                aria-current={i === index}
+                // Active state: solid 2px primary border + 4px halo of
+                // primary at ~30% alpha, stacked via two box-shadows so
+                // the inner edge stays sharp and the outer halo softly
+                // bleeds outward without nudging layout.
+                style={
+                  i === index
+                    ? {
+                        boxShadow:
+                          "0 0 0 2px var(--color-primary), 0 0 0 6px color-mix(in srgb, var(--color-primary) 30%, transparent)",
+                      }
+                    : undefined
+                }
+                className={cn(
+                  "relative h-20 w-32 overflow-hidden rounded-lg transition-all",
+                  i === index ? "opacity-100" : "opacity-50 hover:opacity-90"
+                )}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={s.keyArt} alt="" className="size-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Carousel arrows */}
         {total > 1 && (
@@ -188,28 +266,13 @@ export function IPCinematicHero() {
             >
               <IconChevronRight className="size-5" />
             </button>
-
-            <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5">
-              {slides.map((s, i) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setIndex(i)}
-                  className={cn(
-                    "h-1 rounded-full transition-all",
-                    i === index ? "w-8 bg-white" : "w-4 bg-white/30 hover:bg-white/50"
-                  )}
-                  aria-label={`Slide ${i + 1}`}
-                />
-              ))}
-            </div>
           </>
         )}
       </div>
 
       {/* ── For you rail ──────────────────────────────── */}
       {rail.length > 0 && (
-        <div className="mx-auto -mt-2 max-w-screen-2xl px-6 pt-6 sm:px-10">
+        <div className="mx-auto -mt-2 max-w-[1800px] px-6 pt-6 sm:px-10">
           <div className="mb-3">
             <h2 className="text-lg font-semibold text-foreground">{t("forYou")}</h2>
           </div>
