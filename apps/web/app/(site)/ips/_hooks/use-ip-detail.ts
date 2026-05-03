@@ -15,7 +15,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ipKeys, postForm, postJson } from "./shared";
+import { ipKeys, postForm } from "./shared";
 import type { Project, ProjectJob } from "./types";
 
 // ─── Reads ─────────────────────────────────────────────
@@ -116,10 +116,22 @@ async function createProject(input: CreateProjectInput): Promise<{ id: number }>
   if (input.bannerLink) body.bannerLink = input.bannerLink;
   if (input.contact) body.contact = input.contact;
   if (input.tag) body.tag = input.tag;
-  const res = (await postJson("/project/create", body)) as { id?: number } | number | null;
-  const id = typeof res === "number" ? res : res?.id;
-  if (!id) throw new Error("Backend returned no project id");
-  return { id };
+  // Java's /project/create returns `{ code, msg, id }` (id at top level,
+  // not inside `data`), so it doesn't fit the standard ApiEnvelope shape
+  // postJson's unwrap expects. Inline the fetch to read id directly.
+  const res = await fetch("/project/create", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as { code?: number; msg?: string; id?: number };
+  if (json.code !== 0 && json.code !== 200) {
+    throw new Error(json.msg || "Create failed");
+  }
+  if (!json.id) throw new Error("Backend returned no project id");
+  return { id: json.id };
 }
 
 interface UpdateProjectInput {

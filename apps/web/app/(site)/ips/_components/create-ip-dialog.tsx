@@ -7,12 +7,14 @@ import {
   IconCloudUpload,
   IconFileText,
   IconLoader2,
+  IconPhoto,
   IconRefresh,
   IconSparkles,
   IconX,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
+import { env } from "@/src/env";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +29,7 @@ import {
 import { Dialog, DialogContent, DialogHero } from "@/components/ui/dialog";
 import { useCreateProject } from "@/app/(site)/ips/_hooks/use-ip";
 import { useSparkAnalyze } from "@/app/(site)/ips/_hooks/use-spark";
+import { uploadIPBanner } from "@/app/(site)/ips/_hooks/uploads";
 
 const MOCK_CATEGORIES = [
   { value: "1", label: "AIGC影视" },
@@ -80,9 +83,13 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
   const t = useTranslations("ipCreate");
   const router = useRouter();
 
+  const [step, setStep] = useState<1 | 2>(1);
   const [name, setName] = useState("");
   const [typeId, setTypeId] = useState("");
   const [description, setDescription] = useState("");
+  const [bannerLink, setBannerLink] = useState("");
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
   const create = useCreateProject();
   const creating = create.isPending;
   const sparkAnalyze = useSparkAnalyze();
@@ -100,9 +107,12 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
   // Reset on close
   useEffect(() => {
     if (open) return;
+    setStep(1);
     setName("");
     setTypeId("");
     setDescription("");
+    setBannerLink("");
+    setUploadingBanner(false);
     setAnalyzeStatus("idle");
     setAnalyzedFileName("");
     setAiFilledFields(new Set());
@@ -191,13 +201,32 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
     setAiFilledFields(new Set());
   };
 
+  // ─── Banner upload ──────────────────────────────────
+  const handleBannerFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error(t("fileTypeUnsupported"));
+      return;
+    }
+    setUploadingBanner(true);
+    try {
+      const asset = await uploadIPBanner(file);
+      setBannerLink(asset.path);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      toast.error(msg || t("createFailed"));
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
   // ─── Create ─────────────────────────────────────────
   const handleCreate = () => {
-    if (!name.trim() || !typeId || creating) return;
+    if (!name.trim() || !typeId || !bannerLink || creating) return;
     create.mutate(
       {
         name: name.trim(),
         typeId,
+        bannerLink,
         description: description.trim() || undefined,
       },
       {
@@ -225,111 +254,182 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
         />
 
         <div className="space-y-4 p-4">
-          {/* Drag-drop zone */}
-          <Dropzone
-            status={analyzeStatus}
-            dragOver={dragOver}
-            fileName={analyzedFileName}
-            onDragEnter={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onBrowse={() => fileInputRef.current?.click()}
-            onClear={handleClearAnalysis}
-            onRetry={() => {
-              setAnalyzeStatus("idle");
-              fileInputRef.current?.click();
-            }}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={ACCEPT_ATTR}
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) void handleFile(file);
-            }}
-          />
+          {step === 1 ? (
+            <>
+              {/* Drag-drop zone */}
+              <Dropzone
+                status={analyzeStatus}
+                dragOver={dragOver}
+                fileName={analyzedFileName}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onBrowse={() => fileInputRef.current?.click()}
+                onClear={handleClearAnalysis}
+                onRetry={() => {
+                  setAnalyzeStatus("idle");
+                  fileInputRef.current?.click();
+                }}
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPT_ATTR}
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void handleFile(file);
+                }}
+              />
 
-          {/* Form */}
-          <div className="space-y-2">
-            <FieldLabel
-              required
-              label={t("fieldName")}
-              ai={aiFilledFields.has("name")}
-              aiLabel={t("aiSuggested")}
-            />
-            <Input
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                clearAi("name");
-              }}
-              placeholder={t("fieldNamePlaceholder")}
-              maxLength={20}
-            />
-          </div>
+              {/* Form */}
+              <div className="space-y-2">
+                <FieldLabel
+                  required
+                  label={t("fieldName")}
+                  ai={aiFilledFields.has("name")}
+                  aiLabel={t("aiSuggested")}
+                />
+                <Input
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    clearAi("name");
+                  }}
+                  placeholder={t("fieldNamePlaceholder")}
+                  maxLength={20}
+                />
+              </div>
 
-          <div className="space-y-2">
-            <FieldLabel
-              required
-              label={t("fieldCategory")}
-              ai={aiFilledFields.has("typeId")}
-              aiLabel={t("aiSuggested")}
-            />
-            <Select
-              value={typeId}
-              onValueChange={(v) => {
-                setTypeId(v);
-                clearAi("typeId");
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={t("fieldCategoryPlaceholder")} />
-              </SelectTrigger>
-              <SelectContent>
-                {MOCK_CATEGORIES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
-                    {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              <div className="space-y-2">
+                <FieldLabel
+                  required
+                  label={t("fieldCategory")}
+                  ai={aiFilledFields.has("typeId")}
+                  aiLabel={t("aiSuggested")}
+                />
+                <Select
+                  value={typeId}
+                  onValueChange={(v) => {
+                    setTypeId(v);
+                    clearAi("typeId");
+                  }}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={t("fieldCategoryPlaceholder")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MOCK_CATEGORIES.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="space-y-2">
-            <FieldLabel
-              label={t("fieldDescription")}
-              ai={aiFilledFields.has("description")}
-              aiLabel={t("aiSuggested")}
-            />
-            <Textarea
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                clearAi("description");
-              }}
-              placeholder={t("fieldDescriptionPlaceholder")}
-              maxLength={500}
-              rows={3}
-            />
-          </div>
+              <div className="space-y-2">
+                <FieldLabel
+                  label={t("fieldDescription")}
+                  ai={aiFilledFields.has("description")}
+                  aiLabel={t("aiSuggested")}
+                />
+                <Textarea
+                  value={description}
+                  onChange={(e) => {
+                    setDescription(e.target.value);
+                    clearAi("description");
+                  }}
+                  placeholder={t("fieldDescriptionPlaceholder")}
+                  maxLength={500}
+                  rows={3}
+                />
+              </div>
 
-          <Button
-            onClick={handleCreate}
-            disabled={!name.trim() || !typeId || creating}
-            className="w-full"
-          >
-            {creating ? t("creating") : t("saveAndContinue")}
-          </Button>
+              <Button
+                onClick={() => setStep(2)}
+                disabled={!name.trim() || !typeId}
+                className="w-full"
+              >
+                {t("next")}
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* Banner — required by backend, full 16:9 preview area */}
+              <div className="space-y-2">
+                <FieldLabel required label={t("fieldBanner")} aiLabel={t("aiSuggested")} />
+                <button
+                  type="button"
+                  onClick={() => bannerInputRef.current?.click()}
+                  disabled={uploadingBanner}
+                  className={cn(
+                    "relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/30 transition-colors hover:border-primary/50",
+                    uploadingBanner && "cursor-wait opacity-60"
+                  )}
+                >
+                  {bannerLink ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={
+                        bannerLink.startsWith("http")
+                          ? bannerLink
+                          : `${env.BANNER_BASE_URL}/${bannerLink}`
+                      }
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center gap-1.5 text-xs text-muted-foreground">
+                      {uploadingBanner ? (
+                        <IconLoader2 className="size-5 animate-spin" />
+                      ) : (
+                        <IconPhoto className="size-5" />
+                      )}
+                      <span>{t("fieldBannerHint")}</span>
+                    </div>
+                  )}
+                </button>
+                <input
+                  ref={bannerInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void handleBannerFile(file);
+                  }}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep(1)}
+                  disabled={creating}
+                  className="flex-1"
+                >
+                  {t("prev")}
+                </Button>
+                <Button
+                  onClick={handleCreate}
+                  disabled={!bannerLink || uploadingBanner || creating}
+                  className="flex-1"
+                >
+                  {creating ? t("creating") : t("saveAndContinue")}
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>
