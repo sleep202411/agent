@@ -189,7 +189,6 @@ export const MOCK_CREWS: CrewItem[] = [
 export const PLATFORM_STATS = [
   { labelKey: "statStudios", value: "128" },
   { labelKey: "statRoles", value: "340+" },
-  { labelKey: "statCreators", value: "2.4k" },
   { labelKey: "statCompleted", value: "89" },
 ];
 
