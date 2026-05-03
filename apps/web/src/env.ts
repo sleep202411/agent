@@ -20,6 +20,12 @@ export const env = {
   /** Base URL for user avatar images */
   USER_BASE_URL: process.env.NEXT_PUBLIC_USER_BASE_URL ?? "",
   /**
+   * WS host override (e.g. `fizzstudio.fizzdragon.com`). Used by entity-events
+   * and chat-events clients when the page is served from a CDN-fronted domain
+   * that doesn't pass WebSocket upgrades. Empty → use `window.location.host`.
+   */
+  WS_HOST: process.env.NEXT_PUBLIC_WS_HOST ?? "",
+  /**
    * Base URL for static assets (default covers, fallback art). Mirrors
    * legacy fizzdragon-web's `STATIC_BASE_URL` — `static.fizzspace.cn` in
    * mainland envs, `fizzdragon-web-static-sg.oss-…` overseas.

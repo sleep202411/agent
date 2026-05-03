@@ -5,14 +5,16 @@
  *
  * NOTE: the quotes below are illustrative placeholders for development.
  * Replace with real user testimonials before any public launch.
- * Avatars use initials-on-gradient (no stock face photos) so we don't
- * pretend to feature specific real people during dev.
+ * Avatar images are pulled from anonymous platform user uploads (the
+ * profiles themselves are seed/fake data) so no real public figures are
+ * implied. Gradient stays as the load-state fallback behind the image.
  */
 
 import { motion } from "motion/react";
 import { IconStar } from "@tabler/icons-react";
 import { GlitchText } from "@/components/ui/glitch-text";
 import { useTranslations } from "@/src/i18n/i18n";
+import { userAvatarUrl } from "@/src/lib/asset-paths";
 
 type TestimonialKey =
   | "sarahChen"
@@ -25,18 +27,48 @@ type TestimonialKey =
 
 interface Testimonial {
   key: TestimonialKey;
-  /** Tailwind gradient classes for the avatar circle. */
+  /** Tailwind gradient classes for the avatar fallback circle. */
   gradient: string;
+  /** Avatar OSS path (relative — passed through `ossUrl`). */
+  avatar: string;
 }
 
 const TESTIMONIALS: Testimonial[] = [
-  { key: "sarahChen", gradient: "from-orange-500 to-pink-500" },
-  { key: "alexJohnson", gradient: "from-cyan-500 to-blue-500" },
-  { key: "michaelRodriguez", gradient: "from-violet-500 to-fuchsia-500" },
-  { key: "emmaThompson", gradient: "from-rose-500 to-red-500" },
-  { key: "chrisPark", gradient: "from-amber-500 to-orange-500" },
-  { key: "davidKim", gradient: "from-emerald-500 to-teal-500" },
-  { key: "jessicaMartinez", gradient: "from-indigo-500 to-violet-500" },
+  {
+    key: "sarahChen",
+    gradient: "from-orange-500 to-pink-500",
+    avatar: "avatar/53286d9b3b2fc2969d2691ce30437301.jpeg",
+  },
+  {
+    key: "alexJohnson",
+    gradient: "from-cyan-500 to-blue-500",
+    avatar: "avatar/4f943eb36f588172f55c72ab75f8ba66.jpg",
+  },
+  {
+    key: "michaelRodriguez",
+    gradient: "from-violet-500 to-fuchsia-500",
+    avatar: "avatar/52f353e3b6c92be2facc0f69c531a660.jpeg",
+  },
+  {
+    key: "emmaThompson",
+    gradient: "from-rose-500 to-red-500",
+    avatar: "avatar/441ea6c761b0b69c3a148d4ed6435956.jpg",
+  },
+  {
+    key: "chrisPark",
+    gradient: "from-amber-500 to-orange-500",
+    avatar: "avatar/3b9201c5ad9e8389392ec361c368abc1.jpg",
+  },
+  {
+    key: "davidKim",
+    gradient: "from-emerald-500 to-teal-500",
+    avatar: "avatar/3a39e2d5fdb0908f5718ea6461965a68.jpg",
+  },
+  {
+    key: "jessicaMartinez",
+    gradient: "from-indigo-500 to-violet-500",
+    avatar: "avatar/3036706459ec7d32e0178a57367e9928.jpg",
+  },
 ];
 
 // Manual column distribution for an asymmetric masonry feel — keeps
@@ -111,7 +143,6 @@ function Card({ testimonial, delay }: { testimonial: Testimonial; delay: number 
   const name = t(`testimonials.items.${testimonial.key}.name`);
   const role = t(`testimonials.items.${testimonial.key}.role`);
   const quote = t(`testimonials.items.${testimonial.key}.quote`);
-  const initial = name.charAt(0).toUpperCase();
   return (
     <motion.figure
       initial={{ opacity: 0, y: 16 }}
@@ -123,10 +154,14 @@ function Card({ testimonial, delay }: { testimonial: Testimonial; delay: number 
       <blockquote className="text-[15px] leading-relaxed text-foreground/85">{quote}</blockquote>
       <figcaption className="mt-5 flex items-center gap-3">
         <div
-          className={`flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${testimonial.gradient} text-base font-semibold text-white shadow-sm`}
-          aria-hidden
+          className={`size-11 shrink-0 overflow-hidden rounded-full bg-gradient-to-br ${testimonial.gradient} shadow-sm`}
         >
-          {initial}
+          <img
+            src={userAvatarUrl(testimonial.avatar)}
+            alt=""
+            loading="lazy"
+            className="size-full object-cover"
+          />
         </div>
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-foreground">{name}</div>

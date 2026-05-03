@@ -149,7 +149,13 @@ export class ChatEventsGateway
         this.close(client, CLOSE_POLICY, 'missing_conversationId');
         return;
       }
-      const cookie = request.headers.cookie;
+      // Cookie header is preferred; query param is the cross-origin fallback
+      // (see entity-events.gateway.ts for the rationale).
+      let cookie = request.headers.cookie;
+      if (!cookie) {
+        const t = url.searchParams.get('satoken');
+        if (t) cookie = `satoken=${t}`;
+      }
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {
         this.close(client, CLOSE_POLICY, 'unauthorized');
