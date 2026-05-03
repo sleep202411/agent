@@ -58,6 +58,40 @@ export function VideoUploadStep({
 
   return (
     <div className="space-y-8">
+      {/* Cover first, video second — matches the legacy
+       *  fizzdragon-web personal-video flow (commit d9d91b4) so users
+       *  set the poster image before uploading the (long) video. The
+       *  team-project flow over there still does video → cover, but
+       *  this wizard is personal-only. */}
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold text-foreground">{t("uploadVideoCover")}</h3>
+        <button
+          type="button"
+          onClick={() => coverInputRef.current?.click()}
+          disabled={coverUploading}
+          className={cn(
+            "flex h-40 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-secondary/30 transition-colors",
+            coverUploading ? "cursor-wait" : "hover:border-primary/50 hover:bg-secondary/50"
+          )}
+        >
+          {coverUploading ? (
+            <IconLoader2 className="size-6 animate-spin text-primary" />
+          ) : (
+            <>
+              <IconVideo className="size-7 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">{t("uploadImageFormat")}</p>
+            </>
+          )}
+        </button>
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={pickCover}
+        />
+      </section>
+
       <section className="space-y-3">
         <h3 className="text-sm font-semibold text-foreground">{t("uploadVideo")}</h3>
 
@@ -108,37 +142,6 @@ export function VideoUploadStep({
           onChange={pickVideo}
         />
       </section>
-
-      {videoUrl && (
-        <section className="space-y-3">
-          <h3 className="text-sm font-semibold text-foreground">{t("uploadVideoCover")}</h3>
-          <button
-            type="button"
-            onClick={() => coverInputRef.current?.click()}
-            disabled={coverUploading}
-            className={cn(
-              "flex h-40 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-secondary/30 transition-colors",
-              coverUploading ? "cursor-wait" : "hover:border-primary/50 hover:bg-secondary/50"
-            )}
-          >
-            {coverUploading ? (
-              <IconLoader2 className="size-6 animate-spin text-primary" />
-            ) : (
-              <>
-                <IconVideo className="size-7 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">{t("uploadImageFormat")}</p>
-              </>
-            )}
-          </button>
-          <input
-            ref={coverInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={pickCover}
-          />
-        </section>
-      )}
     </div>
   );
 }

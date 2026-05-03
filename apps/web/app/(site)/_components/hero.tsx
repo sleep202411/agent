@@ -22,6 +22,7 @@ import { GradualBlur } from "@/components/ui/gradual-blur";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
+import { useCurrentUser } from "@/src/hooks/use-user";
 
 // Primary backdrop — looping muted videos served from the OSS static
 // CDN (same bucket as HERO_POSTER). The pool is randomized on mount;
@@ -39,6 +40,11 @@ const HERO_POSTER =
 export function Hero() {
   const locale = useLocale() as Locale;
   const t = useTranslations("home");
+  const { user } = useCurrentUser();
+  // Already-signed-in visitors landing here from a refresh / back-nav
+  // shouldn't be bounced to /login. Send them straight into the
+  // platform's main work surface; logged-out users still get /login.
+  const primaryCtaHref = localizePath(user ? "/art-studio/projects" : "/login", locale);
 
   // Pick the video on mount only — server-rendered HTML omits `src` so
   // the SSR/CSR markup stays identical (no hydration mismatch). The
@@ -151,7 +157,7 @@ export function Hero() {
         >
           <StarBorder color="#ff8a4c" speed="5s" thickness={1.5}>
             <Link
-              href={localizePath("/login", locale)}
+              href={primaryCtaHref}
               className="flex h-14 items-center gap-3 rounded-full bg-white px-8 text-base font-semibold text-black transition-colors hover:bg-white/90"
             >
               {t("hero.primaryCta")}

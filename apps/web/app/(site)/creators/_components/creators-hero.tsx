@@ -1,7 +1,10 @@
 "use client";
 
-import { IconBrandWechat, IconSparkles } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
+import Link from "next/link";
+import { IconArrowRight, IconBrandWechat, IconSparkles, IconUserCircle } from "@tabler/icons-react";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface CreatorsHeroProps {
@@ -25,6 +28,7 @@ function isQrActive(now: Date = new Date()): boolean {
 
 export function CreatorsHero({ total }: CreatorsHeroProps) {
   const t = useTranslations("creator");
+  const locale = useLocale() as Locale;
   const showQr = isQrActive();
 
   return (
@@ -39,43 +43,6 @@ export function CreatorsHero({ total }: CreatorsHeroProps) {
       />
 
       <div className="relative mx-auto max-w-screen-2xl px-6 pb-12 pt-16">
-        {showQr && (
-          <div className="absolute right-6 top-16">
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={t("groupQrTitle")}
-                  className="inline-flex h-10 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-medium text-emerald-300 backdrop-blur-md transition-colors hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
-                >
-                  <IconBrandWechat className="size-5" />
-                  <span>{t("creatorCommunity")}</span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-64 gap-3 p-4">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
-                  <IconBrandWechat className="size-3.5" />
-                  {t("groupQrEyebrow")}
-                </div>
-                <div className="overflow-hidden rounded-lg bg-white">
-                  <img
-                    src={WECHAT_GROUP_QR_SRC}
-                    alt={t("groupQrAlt")}
-                    className="block aspect-square w-full object-contain"
-                    loading="lazy"
-                  />
-                </div>
-                <p className="text-center text-xs font-medium text-foreground">
-                  {t("groupQrTitle")}
-                </p>
-                <p className="-mt-2 text-center text-[10px] text-muted-foreground">
-                  {t("groupQrExpiry", { date: WECHAT_GROUP_EXPIRES_AT })}
-                </p>
-              </PopoverContent>
-            </Popover>
-          </div>
-        )}
-
         <div className="max-w-3xl">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400">
             <IconSparkles className="size-4" />
@@ -104,6 +71,58 @@ export function CreatorsHero({ total }: CreatorsHeroProps) {
             </div>
             <span className="text-xs text-muted-foreground/70">{t("openCountCap")}</span>
           </div>
+        </div>
+
+        {/* Right-side CTA stack — Creator Community pill on top, then
+         *  Complete-profile CTA. md+ floats absolute at the hero's
+         *  bottom-right; below md it falls back to inline flow at the
+         *  end of the hero so it doesn't fight the headline for
+         *  horizontal space. Both buttons stay vertically stacked at
+         *  all sizes. */}
+        <div className="mt-8 flex flex-col items-stretch gap-3 md:absolute md:right-6 md:bottom-12 md:mt-0 md:items-end">
+          {showQr && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("groupQrTitle")}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 text-sm font-medium text-emerald-300 backdrop-blur-md transition-colors hover:border-emerald-300/40 hover:bg-emerald-300/10 hover:text-emerald-200"
+                >
+                  <IconBrandWechat className="size-5" />
+                  <span>{t("creatorCommunity")}</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 gap-3 p-4">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+                  <IconBrandWechat className="size-3.5" />
+                  {t("groupQrEyebrow")}
+                </div>
+                <div className="overflow-hidden rounded-lg bg-white">
+                  <img
+                    src={WECHAT_GROUP_QR_SRC}
+                    alt={t("groupQrAlt")}
+                    className="block aspect-square w-full object-contain"
+                    loading="lazy"
+                  />
+                </div>
+                <p className="text-center text-xs font-medium text-foreground">
+                  {t("groupQrTitle")}
+                </p>
+                <p className="-mt-2 text-center text-[10px] text-muted-foreground">
+                  {t("groupQrExpiry", { date: WECHAT_GROUP_EXPIRES_AT })}
+                </p>
+              </PopoverContent>
+            </Popover>
+          )}
+
+          <Link
+            href={localizePath("/profile", locale)}
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/5 px-4 py-2 text-sm font-medium text-amber-300 backdrop-blur-md transition-colors hover:border-amber-300/50 hover:bg-amber-400/10 hover:text-amber-200"
+          >
+            <IconUserCircle className="size-4" />
+            <span>{t("completeProfileCta")}</span>
+            <IconArrowRight className="size-3.5" />
+          </Link>
         </div>
       </div>
     </section>

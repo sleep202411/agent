@@ -84,16 +84,22 @@ export default function IPPlazaPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 
-  // Pin a small sentinel near the inline "Create IP" button. Once it
-  // scrolls out of view we surface a floating-action variant in the
-  // bottom-right corner so the create flow is always one click away.
+  // Pin a small sentinel near the inline "Create IP" button. Once the
+  // user scrolls *past* it we surface a floating-action variant in the
+  // bottom-right so the create flow is always one click away. We
+  // explicitly check the sentinel is above the viewport — if it's still
+  // below the fold (initial page load before scrolling), the FAB stays
+  // hidden so it doesn't fight with the hero thumbnail strip.
   const inlineCreateRef = useRef<HTMLDivElement>(null);
   const [showFloatingCreate, setShowFloatingCreate] = useState(false);
   useEffect(() => {
     const node = inlineCreateRef.current;
     if (!node) return;
     const observer = new IntersectionObserver(
-      ([entry]) => setShowFloatingCreate(!entry.isIntersecting),
+      ([entry]) => {
+        const scrolledPast = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+        setShowFloatingCreate(scrolledPast);
+      },
       { rootMargin: "0px", threshold: 0 }
     );
     observer.observe(node);
