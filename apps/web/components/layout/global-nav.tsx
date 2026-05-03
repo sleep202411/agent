@@ -76,7 +76,12 @@ export function GlobalNav() {
   // Browse-style entries (IP / Crews / Creators) read as text-only labels;
   // tool-style entries (Studio onward) keep their icon glyph as an affordance
   // hint that they're an action surface, not a directory.
-  const navItems: { href: string; label: string; Icon?: typeof IconWand }[] = [
+  const navItems: {
+    href: string;
+    label: string;
+    Icon?: typeof IconWand;
+    external?: boolean;
+  }[] = [
     { href: "/ips", label: t("ipPlaza") },
     { href: "/crews", label: t("studioHall") },
     { href: "/creators", label: t("creators") },
@@ -85,9 +90,13 @@ export function GlobalNav() {
     // app/(site)/courses/ ships per its README migration plan.
     { href: "/pages/course/course", label: t("course"), Icon: IconBook },
     { href: "/news", label: t("news"), Icon: IconNews },
+    {
+      href: "https://flowus.cn/share/cca82279-3553-47eb-beea-f71bc4cfb5c6?code=81LL9V",
+      label: t("userGuide"),
+      Icon: IconHelp,
+      external: true,
+    },
   ];
-
-  const USER_GUIDE_URL = "https://flowus.cn/share/cca82279-3553-47eb-beea-f71bc4cfb5c6?code=81LL9V";
 
   const isActive = (href: string) => pathname.startsWith(href);
 
@@ -122,42 +131,45 @@ export function GlobalNav() {
           : "border-b border-transparent bg-transparent"
       )}
     >
-      <div className="mx-auto flex h-16 max-w-[1800px] items-center gap-4 px-6">
+      <div className="mx-auto flex h-16 max-w-450 items-center gap-4 px-6">
         {/* Logo */}
         <Link href="/" className="flex shrink-0 items-center">
           <img src="/logo.png" alt="FizzDragon" className="h-6 w-auto object-contain" />
         </Link>
 
         {/* Nav links (desktop) */}
-        <nav className="ml-6 hidden flex-1 items-center gap-8 lg:flex">
-          {navItems.map(({ href, label, Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "inline-flex items-center gap-1.5 text-sm font-medium transition-colors",
-                isActive(href) ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {Icon && <Icon className="size-4" />}
-              {label}
-            </Link>
-          ))}
+        <nav className="ml-4 hidden flex-1 items-center gap-6 lg:flex">
+          {navItems.map(({ href, label, Icon, external }) => {
+            const className = cn(
+              "inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-foreground",
+              !external && isActive(href) ? "text-foreground" : "text-foreground/80"
+            );
+            const content = (
+              <>
+                {Icon && <Icon className="size-4" />}
+                {label}
+              </>
+            );
+            return external ? (
+              <a
+                key={href}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={className}
+              >
+                {content}
+              </a>
+            ) : (
+              <Link key={href} href={href} className={className}>
+                {content}
+              </Link>
+            );
+          })}
         </nav>
 
-        {/* Right cluster — desktop: user guide / theme / language / CTA */}
+        {/* Right cluster — desktop: theme / language / CTA */}
         <div className="ml-auto hidden items-center gap-1 lg:flex">
-          <a
-            href={USER_GUIDE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={t("userGuide")}
-            title={t("userGuide")}
-            className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-          >
-            <IconHelp className="size-4" />
-          </a>
-
           <button
             type="button"
             onClick={toggleTheme}
@@ -227,33 +239,41 @@ export function GlobalNav() {
       {mobileOpen && (
         <div className="border-t border-white/5 bg-popover text-popover-foreground lg:hidden">
           <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3">
-            {navItems.map(({ href, label, Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
-                  isActive(href)
-                    ? "bg-foreground/5 text-foreground"
-                    : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
-                )}
-              >
-                {Icon && <Icon className="size-4" />}
-                {label}
-              </Link>
-            ))}
-
-            <a
-              href={USER_GUIDE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-            >
-              <IconHelp className="size-4" />
-              {t("userGuide")}
-            </a>
+            {navItems.map(({ href, label, Icon, external }) => {
+              const className = cn(
+                "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
+                !external && isActive(href)
+                  ? "bg-foreground/5 text-foreground"
+                  : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+              );
+              const content = (
+                <>
+                  {Icon && <Icon className="size-4" />}
+                  {label}
+                </>
+              );
+              return external ? (
+                <a
+                  key={href}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setMobileOpen(false)}
+                  className={className}
+                >
+                  {content}
+                </a>
+              ) : (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setMobileOpen(false)}
+                  className={className}
+                >
+                  {content}
+                </Link>
+              );
+            })}
 
             <div className="my-2 h-px bg-border/50" />
 
