@@ -114,24 +114,36 @@ export class EntityEventsGateway
 
   async handleConnection(client: TrackedSocket, request: IncomingMessage) {
     try {
-      // Cookie header is preferred. When the page is served from a
-      // different origin than the WS host (CDN-fronted main domain →
-      // platform host), the browser may still attach parent-domain
-      // cookies (analytics etc.) but not host-only satoken — so we
-      // also fall back to the `?satoken=` query whenever the cookie
-      // header lacks it, not only when the header is missing entirely.
+      // Query satoken takes precedence over cookie. Cross-origin WS
+      // upgrades (page on fizzdragon.com → wss to fizzstudio subdomain)
+      // may auto-attach a stale host-only satoken cookie left over
+      // from the iframe-era flow; the frontend always ships the fresh
+      // satoken in the query, so we trust query first and rewrite the
+      // cookie string before handing it to AuthService.
       let cookie = request.headers.cookie ?? '';
-      const cookieHadToken = /(?:^|;\s*)satoken=/.test(cookie);
-      if (!cookieHadToken && request.url) {
-        const url = new URL(request.url, 'http://localhost');
-        const t = url.searchParams.get('satoken');
-        if (t) cookie = cookie ? `${cookie}; satoken=${t}` : `satoken=${t}`;
+      const reqUrl = request.url
+        ? new URL(request.url, 'http://localhost')
+        : null;
+      const querySatoken = reqUrl?.searchParams.get('satoken') ?? null;
+      const cookieSatoken =
+        cookie.match(/(?:^|;\s*)satoken=([^;]+)/)?.[1] ?? null;
+      const chosenToken = querySatoken ?? cookieSatoken;
+      const tokenSource = querySatoken
+        ? 'query'
+        : cookieSatoken
+          ? 'cookie'
+          : 'none';
+      if (chosenToken) {
+        const cleaned = cookie
+          .split(/;\s*/)
+          .filter((kv) => !/^satoken=/.test(kv))
+          .join('; ');
+        cookie = cleaned
+          ? `${cleaned}; satoken=${chosenToken}`
+          : `satoken=${chosenToken}`;
       }
-      const tokenMatch = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
-      const tokenHint = tokenMatch?.[1].slice(0, 8) ?? '(none)';
-      this.logger.log(
-        `ws handshake token=${tokenHint} src=${cookieHadToken ? 'cookie' : 'query'}`,
-      );
+      const tokenHint = chosenToken?.slice(0, 8) ?? '(none)';
+      this.logger.log(`ws handshake token=${tokenHint} src=${tokenSource}`);
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {
         this.logger.warn(`ws unauthorized token=${tokenHint}`);
