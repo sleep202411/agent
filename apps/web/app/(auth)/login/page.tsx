@@ -65,6 +65,7 @@ export default function LoginPage() {
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder={t("identifierPlaceholder")}
+              size="lg"
               required
             />
           </Field>
@@ -76,12 +77,13 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t("passwordPlaceholder")}
+              size="lg"
               required
             />
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
           <AgreementCheckbox checked={agreed} onCheckedChange={setAgreed} />
-          <Button type="submit" disabled={!canSubmit} className="w-full">
+          <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
             {submitting ? <IconLoader2 className="size-3 animate-spin" /> : null}
             {t("login")}
           </Button>

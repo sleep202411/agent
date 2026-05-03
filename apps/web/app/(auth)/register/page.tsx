@@ -113,6 +113,7 @@ export default function RegisterPage() {
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder={t("identifierPlaceholder")}
+              size="lg"
               required
             />
           </Field>
@@ -126,6 +127,7 @@ export default function RegisterPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder={t("codePlaceholder")}
+                size="lg"
                 required
               />
               <SendCodeButton onSend={handleSendCode} disabled={!idOk} />
@@ -139,6 +141,7 @@ export default function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t("passwordPlaceholder")}
+              size="lg"
               required
               minLength={MIN_PASSWORD_LEN}
             />
@@ -151,6 +154,7 @@ export default function RegisterPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder={t("confirmPasswordPlaceholder")}
+              size="lg"
               required
               minLength={MIN_PASSWORD_LEN}
             />
@@ -165,11 +169,12 @@ export default function RegisterPage() {
               value={recommendationCode}
               onChange={(e) => setRecommendationCode(e.target.value)}
               placeholder={t("inviteCodePlaceholder")}
+              size="lg"
             />
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
           <AgreementCheckbox checked={agreed} onCheckedChange={setAgreed} />
-          <Button type="submit" disabled={!canSubmit} className="w-full">
+          <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
             {submitting ? <IconLoader2 className="size-3 animate-spin" /> : null}
             {t("register")}
           </Button>
