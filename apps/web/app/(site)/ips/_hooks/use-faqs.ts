@@ -2,13 +2,14 @@
  * FAQ CRUD.
  *
  *   - `useFAQs`        — GET  /project/faq/list?projectId=
- *   - `useCreateFAQ`   — POST /project/faq/add
- *   - `useUpdateFAQ`   — POST /project/faq/update
- *   - `useDeleteFAQ`   — POST /project/faq/delete
+ *   - `useCreateFAQ`   — POST /project/faq/add (query params)
+ *   - `useUpdateFAQ`   — POST /project/faq/update (query params)
+ *   - `useDeleteFAQ`   — POST /project/faq/delete (query params)
  *
- * All four endpoints declare their fields as `(query)` in Swagger, i.e.
- * Spring `@RequestParam`. Reads go on the URL; mutations send
- * `application/x-www-form-urlencoded` via the shared `postForm` helper.
+ * All four endpoints declare their fields as `(query)` in Swagger
+ * (Spring `@RequestParam`), so we put everything on the URL — the
+ * mutations have no body. Authorization header is preserved on top
+ * of the cookie because legacy IP-feature controllers NPE without it.
  *
  * The backend identifier is **`faqId`** (int64) — not `id`. Update and
  * delete both require `faqId` AND `projectId`. Update additionally
@@ -17,7 +18,8 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { acceptLanguage, bearerHeader, ipKeys, postForm } from "./shared";
+import { api } from "@/src/lib/api";
+import { bearerHeader, ipKeys } from "./shared";
 import type { FAQ } from "./types";
 
 interface WireFAQ {
@@ -40,24 +42,11 @@ function mapWireFAQ(w: WireFAQ): FAQ {
 }
 
 async function fetchFAQs(projectId: string): Promise<FAQ[]> {
-  const qs = new URLSearchParams({ projectId: String(projectId) });
-  const res = await fetch(`/project/faq/list?${qs.toString()}`, {
-    credentials: "include",
-    headers: {
-      "accept-language": acceptLanguage(),
-      Authorization: bearerHeader(),
-    },
+  const data = await api.get<WireFAQ[] | { list?: WireFAQ[] } | null>("/project/faq/list", {
+    params: { projectId },
+    headers: { Authorization: bearerHeader() },
   });
-  if (!res.ok) throw new Error(`Fetch FAQs failed: HTTP ${res.status}`);
-  const json = (await res.json()) as {
-    code: number;
-    msg?: string;
-    data: WireFAQ[] | { list?: WireFAQ[] } | null;
-  };
-  if (json.code !== 0 && json.code !== 200) {
-    throw new Error(json.msg || "Fetch FAQs failed");
-  }
-  const rows = Array.isArray(json.data) ? json.data : (json.data?.list ?? []);
+  const rows = Array.isArray(data) ? data : (data?.list ?? []);
   return rows.map(mapWireFAQ);
 }
 
@@ -77,15 +66,17 @@ interface CreateFAQInput {
 }
 
 async function createFAQ(input: CreateFAQInput): Promise<{ faqId: number }> {
-  const data: Record<string, string> = {
-    projectId: String(input.projectId),
-    question: input.question,
-    answer: input.answer,
-  };
-  if (input.sort != null) data.sort = String(input.sort);
-  const result = await postForm<{ faqId?: number; id?: number } | number | null>(
+  const result = await api.post<{ faqId?: number; id?: number } | number | null>(
     "/project/faq/add",
-    data
+    {
+      params: {
+        projectId: input.projectId,
+        question: input.question,
+        answer: input.answer,
+        sort: input.sort,
+      },
+      headers: { Authorization: bearerHeader() },
+    }
   );
   if (typeof result === "number") return { faqId: result };
   return { faqId: (result?.faqId ?? result?.id ?? 0) as number };
@@ -110,14 +101,16 @@ interface UpdateFAQInput {
 }
 
 async function updateFAQ(input: UpdateFAQInput): Promise<void> {
-  const data: Record<string, string> = {
-    faqId: String(input.faqId),
-    projectId: String(input.projectId),
-    question: input.question,
-    answer: input.answer,
-  };
-  if (input.sort != null) data.sort = String(input.sort);
-  await postForm<unknown>("/project/faq/update", data);
+  await api.post("/project/faq/update", {
+    params: {
+      faqId: input.faqId,
+      projectId: input.projectId,
+      question: input.question,
+      answer: input.answer,
+      sort: input.sort,
+    },
+    headers: { Authorization: bearerHeader() },
+  });
 }
 
 export function useUpdateFAQ() {
@@ -136,9 +129,12 @@ interface DeleteFAQInput {
 }
 
 async function deleteFAQ(input: DeleteFAQInput): Promise<void> {
-  await postForm<unknown>("/project/faq/delete", {
-    faqId: String(input.faqId),
-    projectId: String(input.projectId),
+  await api.post("/project/faq/delete", {
+    params: {
+      faqId: input.faqId,
+      projectId: input.projectId,
+    },
+    headers: { Authorization: bearerHeader() },
   });
 }
 
