@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   IconArrowLeft,
+  IconCheck,
   IconChevronRight,
   IconCredits,
   IconCrown,
@@ -12,6 +13,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ProjectTabs, type ProjectTab } from "./project-tabs";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -22,7 +24,8 @@ import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { StudioUserMenu } from "@/app/projects/_components/studio-user-menu";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { useAppSelector, useAppDispatch } from "@/src/store";
-import { setActiveTab, selectCurrentInstance } from "@/src/store/slices/projectSlice";
+import { setActiveTab, selectCurrentInstance, togglePanel } from "@/src/store/slices/projectSlice";
+import type { WorkspacePanelKey } from "@/src/types/workspace";
 import {
   setCredits,
   setIntegralRecords,
@@ -35,13 +38,37 @@ interface ProjectHeaderProps {
   isLoading?: boolean;
 }
 
+// Numbered quick-access chips that nudge confused users toward the
+// asset panels in the suggested setup order. Maps 1:1 onto the
+// sidebar items so it's a duplicate surface, not a new feature —
+// short-term workflow guidance until we can do something more
+// principled. Each click dispatches togglePanel on the matching key.
+//
+// `assetField` points at the matching array on the project instance
+// in Redux so the chip can show "done" once the user has at least
+// one entry there.
+const QUICK_PANELS: ReadonlyArray<{
+  key: WorkspacePanelKey;
+  labelKey: string;
+  assetField: "episodes" | "characters" | "scenes" | "props";
+}> = [
+  { key: "episodes", labelKey: "episodes", assetField: "episodes" },
+  { key: "characters", labelKey: "characters", assetField: "characters" },
+  { key: "scenes", labelKey: "scenes", assetField: "scenes" },
+  { key: "props", labelKey: "props", assetField: "props" },
+];
+
 export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
+  const tSidebar = useTranslations("sidebar");
   const dispatch = useAppDispatch();
   const project = useAppSelector((s) => selectCurrentInstance(s).detail);
   const worldDetail = useAppSelector((s) => selectCurrentInstance(s).worldDetail);
   const episodes = useAppSelector((s) => selectCurrentInstance(s).episodes);
+  const characters = useAppSelector((s) => selectCurrentInstance(s).characters);
+  const scenes = useAppSelector((s) => selectCurrentInstance(s).scenes);
+  const props = useAppSelector((s) => selectCurrentInstance(s).props);
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
   const activeTab = useAppSelector((s) => selectCurrentInstance(s).activeTab);
   const credits = useAppSelector((s) => s.user.credits);
@@ -152,6 +179,52 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
                 </span>
               </>
             )}
+          </div>
+
+          {/* Numbered quick-panels — workflow nudge for first-time users.
+           *  Hidden under xl since the centered ProjectTabs already
+           *  reserves the middle of the bar; below xl we'd start
+           *  fighting for horizontal space. Each chip shows the
+           *  step number until the user adds at least one entry on
+           *  that panel — then it flips to a green checkmark + count
+           *  so a glance at the header tells them what's still empty. */}
+          <div className="hidden items-center gap-1.5 xl:flex">
+            {QUICK_PANELS.map((panel, idx) => {
+              const count =
+                panel.assetField === "episodes"
+                  ? episodes.length
+                  : panel.assetField === "characters"
+                    ? characters.length
+                    : panel.assetField === "scenes"
+                      ? scenes.length
+                      : props.length;
+              const done = count > 0;
+              return (
+                <button
+                  key={panel.key}
+                  type="button"
+                  onClick={() => dispatch(togglePanel(panel.key))}
+                  title={tSidebar(panel.labelKey)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                    done
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+                      : "border-border/60 bg-muted/60 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-4 items-center justify-center rounded-full text-[10px] font-semibold",
+                      done ? "bg-emerald-500/25 text-emerald-300" : "bg-primary/15 text-primary"
+                    )}
+                  >
+                    {done ? <IconCheck className="size-2.5" /> : idx + 1}
+                  </span>
+                  <span>{tSidebar(panel.labelKey)}</span>
+                  {done ? <span className="text-[10px] opacity-80">{count}</span> : null}
+                </button>
+              );
+            })}
           </div>
         </div>
 
