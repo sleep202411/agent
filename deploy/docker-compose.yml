@@ -41,7 +41,6 @@ services:
       ALIBABA_API_KEY: ${ALIBABA_API_KEY}
       ALIBABA_BASE_URL: ${ALIBABA_BASE_URL}
       AI_PROVIDER: ${AI_PROVIDER:-alibaba}
-      AI_MODEL: ${AI_MODEL:-qwen3-max}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       REDIS_URL: redis://redis:6379
       # Supervisor chat + workflow endpoints live in the agent container.

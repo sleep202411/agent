@@ -13,7 +13,6 @@ JAVA_CONTENT_URL=https://fizzdragon.com/content
 # --- DeepSeek (active — same config as staging, proven end-to-end) ---
 AI_PROVIDER=deepseek
 DEEPSEEK_API_KEY=sk-1abd1c91f73347d0be88f93ea7d079fa
-AI_MODEL=deepseek-chat
 STORYOS_ROUTER_PROVIDER=deepseek
 STORYOS_PERSONA_PROVIDER=deepseek
 # --- Alibaba (kept commented — hit 400 "content required" on compat endpoint) ---
