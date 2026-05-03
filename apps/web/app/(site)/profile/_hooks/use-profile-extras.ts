@@ -39,10 +39,13 @@ export interface ExperienceEntry {
   description: string;
 }
 
-const EXPERIENCE_LIST_URL = "/user/profile/experience/list"; // TODO_BACKEND_URL
+// `/me` returns the current logged-in user's resume entries; the
+// alternate `/list/{userId}` endpoint is for viewing another user's
+// resume from public profile pages — not used on the self-profile.
+const EXPERIENCE_LIST_URL = "/user/resumer/me";
 const EXPERIENCE_CREATE_URL = "/user/resumer/add";
-const EXPERIENCE_UPDATE_URL = "/user/profile/experience/update"; // TODO_BACKEND_URL
-const EXPERIENCE_DELETE_URL = "/user/profile/experience/delete"; // TODO_BACKEND_URL
+const EXPERIENCE_UPDATE_URL = "/user/resumer/update";
+// Delete uses a path-param URL — built inline in useDeleteExperience.
 
 async function fetchExperience(): Promise<ExperienceEntry[]> {
   const raw = await api.get<ExperienceEntry[] | { list?: ExperienceEntry[] }>(EXPERIENCE_LIST_URL);
@@ -114,7 +117,7 @@ export function useUpdateExperience() {
 export function useDeleteExperience() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string | number) => api.post(EXPERIENCE_DELETE_URL, { data: { id } }),
+    mutationFn: (id: string | number) => api.post(`/user/resumer/delete/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: profileExtrasKeys.experience });
     },
