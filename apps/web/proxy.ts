@@ -77,6 +77,13 @@ export const config = {
     // because that path is rewritten directly to public/legacy.html
     // by next.config; locale wrapping there would corrupt the
     // pathname the legacy bundle reads.
-    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|__legacy|.*\\..*).*)",
+    //
+    // `content` / `studio` / `test1` / `test2` are the env-specific
+    // path prefixes prepended by `applyApiPrefix()` (see api-client.ts)
+    // when `NEXT_PUBLIC_API_CONTENT_PREFIX` / `NEXT_PUBLIC_API_STUDIO_PREFIX`
+    // are set per environment. Excluding all four means the locale
+    // proxy never wraps Java API calls regardless of which env the
+    // bundle was built for.
+    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|content|studio|test1|test2|__legacy|.*\\..*).*)",
   ],
 };
