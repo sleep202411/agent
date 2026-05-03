@@ -55,13 +55,44 @@ export class ApiRequestError extends Error {
 
 // ============ Core ============
 
+/**
+ * Path-based prefix router. Mirrors legacy fizzdragon-web's
+ * `getFullApiUrl()`: write business code with bare paths
+ * (`/vedio/list`, `/api/ai/...`); this prepends the env-driven prefix
+ * at request time so the same code works across local / test / prod.
+ *
+ * Examples by env (`NEXT_PUBLIC_API_*_PREFIX`):
+ *   local: `""`     → `/vedio/list`         (Next.js rewrites proxy)
+ *   test:  `/test1` → `/test1/vedio/list`   (nginx routes direct to ecs2)
+ *   prod:  `/content` → `/content/vedio/list`
+ *
+ * Routing table:
+ *   /user, /project, /vedio, /personal  → API_CONTENT_PREFIX
+ *   /api,  /anon                        → API_STUDIO_PREFIX
+ *   /aurora                             → no prefix (Nest, separate proxy)
+ */
+const CONTENT_RE = /^\/(user|project|vedio|personal)(\/|$)/;
+const STUDIO_RE = /^\/(api|anon)(\/|$)/;
+
+function applyApiPrefix(path: string): string {
+  if (path.startsWith("http")) return path;
+  if (CONTENT_RE.test(path)) {
+    return `${process.env.NEXT_PUBLIC_API_CONTENT_PREFIX ?? ""}${path}`;
+  }
+  if (STUDIO_RE.test(path)) {
+    return `${process.env.NEXT_PUBLIC_API_STUDIO_PREFIX ?? ""}${path}`;
+  }
+  return path;
+}
+
 function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
+  const prefixed = applyApiPrefix(path);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
-  const base = path.startsWith("http") ? path : `${origin}${path}`;
+  const base = prefixed.startsWith("http") ? prefixed : `${origin}${prefixed}`;
   if (!params) return base;
 
   const entries = Object.entries(params).filter(([, v]) => v !== undefined);
-  if (entries.length === 0) return path;
+  if (entries.length === 0) return base;
 
   const qs = new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString();
   return `${base}?${qs}`;
