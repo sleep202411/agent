@@ -1,56 +1,60 @@
 "use client";
 
 /**
- * Spark dialog — two-step AI-assisted IP draft.
+ * Spark dialog — AI-assisted IP edit. Mirrors `create-ip-dialog` so the
+ * two flows feel like the same surface: dropzone + 3 form fields with
+ * `AI-suggested` pills, single Apply button.
  *
- *   step 1 "upload"     drop zone / picker (≤ SPARK_MAX_BYTES, .pdf .doc .docx .txt .md)
- *                       on file pick → auto POST /aurora/spark/analyze
- *   step 2 "review"     editable form (title / description / tags) seeded
- *                       with the AI suggestion. Apply → POST /project/update,
- *                       invalidate the project detail query (the parent
- *                       form re-syncs via its hydrate effect), close dialog.
- *
- * Field set is intentionally narrow (title / description / tags) —
- * matches the Nest endpoint's contract. Reintroduce extra fields here
- * only when the backend grows them.
+ * Differences from create:
+ *   - Acts on an existing project (POST /project/update via useUpdateProject)
+ *   - The Spark backend (`/aurora/spark/analyze`) returns `tags?: string[]`
+ *     too — we silently match those names against the platform tag
+ *     catalog and submit the matched ids on Apply. No tag UI is shown.
+ *   - Empty fields are skipped on submit so opening Spark and applying
+ *     without filling something doesn't blank an existing value.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  IconAlertCircle,
+  IconCloudUpload,
+  IconFileText,
   IconLoader2,
   IconRefresh,
   IconSparkles,
-  IconUpload,
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogFooter,
-  DialogHero,
-} from "@/components/ui/dialog";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHero } from "@/components/ui/dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
-  ipImageUrl,
   SPARK_MAX_BYTES,
   useIPTagList,
   useSparkAnalyze,
-  useSparkGenerateBanner,
   useUpdateProject,
 } from "@/app/(site)/ips/_hooks/use-ip";
+import { useIPTypes } from "@/app/(site)/ips/_hooks/use-ip-list";
 
 const SPARK_HERO_URL = encodeURI(
   "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月30日 12_47_51.png"
 );
 
-const ACCEPT = ".pdf,.doc,.docx,.txt,.md,application/pdf,text/plain,text/markdown";
+const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".md"];
+const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.join(",");
+
+type AnalyzeStatus = "idle" | "analyzing" | "success" | "error";
+type AiField = "name" | "typeId" | "description";
 
 interface SparkDialogProps {
   open: boolean;
@@ -58,36 +62,6 @@ interface SparkDialogProps {
   projectId: string;
 }
 
-type Phase = "upload" | "analyzing" | "review" | "error";
-
-interface DraftForm {
-  name: string;
-  description: string;
-  /** Tag IDs picked from the backend catalog. AI returns names (strings);
-   *  on analyze we fuzzy-match them to backend tags and pre-select the
-   *  matched IDs. Anything that didn't match is surfaced separately
-   *  as an info hint so the user knows what was dropped. */
-  tagIds: number[];
-  /** Hidden English image-gen prompt the AI produced alongside the
-   *  metadata. Never displayed verbatim; only used as input to the
-   *  banner-generation call. */
-  bannerPrompt: string;
-  /** OSS path of the generated banner image (relative key, not URL).
-   *  Empty until the user clicks "Generate". Sent to /project/update
-   *  on Apply when set. */
-  bannerLink: string;
-}
-
-const EMPTY_DRAFT: DraftForm = {
-  name: "",
-  description: "",
-  tagIds: [],
-  bannerPrompt: "",
-  bannerLink: "",
-};
-
-/** Case + whitespace-insensitive match. Chinese punctuation also folded
- *  in case Qwen returns "科幻、悬疑" style joined entries. */
 function normalize(s: string): string {
   return s
     .trim()
@@ -101,139 +75,157 @@ function bytesToMB(bytes: number): string {
 
 export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps) {
   const t = useTranslations("ipEdit");
-  const tc = useTranslations("common");
+  // Dropzone + AI-pill copy is shared with the create dialog (same UX
+  // element, identical strings) — read those keys from the ipCreate
+  // namespace rather than duplicating them under ipEdit.
+  const tc = useTranslations("ipCreate");
 
-  const [phase, setPhase] = useState<Phase>("upload");
-  const [errorMsg, setErrorMsg] = useState<string>("");
-  const [draft, setDraft] = useState<DraftForm>(EMPTY_DRAFT);
-  /** Names AI proposed that didn't map to any backend tag. Surfaced as
-   *  a small info hint so the user understands why their suggestion
-   *  count dropped — and can ask the platform to add them later. */
-  const [unmatchedTagNames, setUnmatchedTagNames] = useState<string[]>([]);
+  const [name, setName] = useState("");
+  const [typeId, setTypeId] = useState("");
+  const [description, setDescription] = useState("");
+  const [tagIds, setTagIds] = useState<number[]>([]);
+
+  const [analyzeStatus, setAnalyzeStatus] = useState<AnalyzeStatus>("idle");
+  const [analyzedFileName, setAnalyzedFileName] = useState("");
+  const [aiFilledFields, setAiFilledFields] = useState<Set<AiField>>(new Set());
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const analyze = useSparkAnalyze();
-  const generateBanner = useSparkGenerateBanner();
   const update = useUpdateProject();
+  const { data: typeList = [] } = useIPTypes();
   const { data: tagCatalog = [] } = useIPTagList();
 
-  // Quick lookup: normalized tag name → backend id. Built once per
-  // catalog change. Catalog is small (~80 entries) so the cost is
-  // trivial, but the lookup runs once per AI response and once per
-  // badge render, so caching matters.
-  const tagByName = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const tag of tagCatalog) map.set(normalize(tag.name), tag.id);
-    return map;
-  }, [tagCatalog]);
-
-  // Reset on open. Without this, a previous Apply leaves stale draft
-  // values in state when the user re-opens the dialog.
+  // Reset on close. Form starts blank — Spark fills via the dropzone or
+  // the user types. On Apply, empty fields are skipped so opening Spark
+  // and applying without filling anything is a no-op.
   useEffect(() => {
-    if (!open) return;
-    setPhase("upload");
-    setErrorMsg("");
-    setDraft(EMPTY_DRAFT);
-    setUnmatchedTagNames([]);
+    if (open) return;
+    setName("");
+    setTypeId("");
+    setDescription("");
+    setTagIds([]);
+    setAnalyzeStatus("idle");
+    setAnalyzedFileName("");
+    setAiFilledFields(new Set());
+    setDragOver(false);
   }, [open]);
 
-  const handleFile = async (file: File) => {
+  const markAi = (field: AiField) => {
+    setAiFilledFields((prev) => {
+      const next = new Set(prev);
+      next.add(field);
+      return next;
+    });
+  };
+  const clearAi = (field: AiField) => {
+    setAiFilledFields((prev) => {
+      if (!prev.has(field)) return prev;
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
+  };
+
+  const validateFile = (file: File): string | null => {
     if (file.size > SPARK_MAX_BYTES) {
-      toast.error(t("sparkFileTooLarge", { mb: bytesToMB(SPARK_MAX_BYTES) }));
+      return t("sparkFileTooLarge", { mb: bytesToMB(SPARK_MAX_BYTES) });
+    }
+    const lower = file.name.toLowerCase();
+    if (!ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+      return tc("fileTypeUnsupported");
+    }
+    return null;
+  };
+
+  const handleFile = async (file: File) => {
+    const validationError = validateFile(file);
+    if (validationError) {
+      toast.error(validationError);
       return;
     }
-    setPhase("analyzing");
-    setErrorMsg("");
+
+    setAnalyzedFileName(file.name);
+    setAnalyzeStatus("analyzing");
+
     try {
       const result = await analyze.mutateAsync(file);
-      // Match AI's free-form tag names against the backend catalog.
-      // De-dupe and preserve the catalog's id-order on the picked set
-      // so the selected badges read consistently no matter what order
-      // Qwen returned them in.
-      const matchedIds = new Set<number>();
-      const unmatched: string[] = [];
-      for (const name of result.tags ?? []) {
-        const id = tagByName.get(normalize(name));
-        if (id !== undefined) matchedIds.add(id);
-        else if (name.trim()) unmatched.push(name.trim());
+      // Apply only fields the AI returned, and only if the user hasn't
+      // already typed something in. Don't overwrite manual edits.
+      if (result.name && !name.trim()) {
+        setName(result.name);
+        markAi("name");
       }
-      setDraft({
-        name: result.name ?? "",
-        description: result.description ?? "",
-        tagIds: Array.from(matchedIds),
-        bannerPrompt: result.bannerPrompt ?? "",
-        bannerLink: "",
-      });
-      setUnmatchedTagNames(unmatched);
-      setPhase("review");
+      if (result.description && !description.trim()) {
+        setDescription(result.description);
+        markAi("description");
+      }
+      // Tag matching is silent — pick catalog ids whose names match
+      // any of the AI's free-form proposals; saved on Apply, never shown.
+      const matched = new Set<number>();
+      for (const proposed of result.tags ?? []) {
+        const norm = normalize(proposed);
+        for (const tag of tagCatalog) {
+          if (normalize(tag.name) === norm) matched.add(tag.id);
+        }
+      }
+      setTagIds(Array.from(matched));
+      setAnalyzeStatus("success");
     } catch (err) {
-      setErrorMsg(err instanceof Error && err.message ? err.message : t("sparkAnalyzeFailed"));
-      setPhase("error");
+      console.error("[SparkDialog] analyze failed", err);
+      setAnalyzeStatus("error");
     }
   };
 
-  const handleGenerateBanner = async () => {
-    if (!draft.bannerPrompt) {
-      toast.warning(t("sparkBannerNoPrompt"));
-      return;
-    }
-    try {
-      const link = await generateBanner.mutateAsync({
-        projectId,
-        prompt: draft.bannerPrompt,
-      });
-      if (!link) throw new Error("Empty banner");
-      setDraft((d) => ({ ...d, bannerLink: link }));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      toast.error(msg || t("sparkBannerFailed"));
-    }
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void handleFile(file);
   };
 
-  const toggleTag = (id: number) => {
-    setDraft((d) =>
-      d.tagIds.includes(id)
-        ? { ...d, tagIds: d.tagIds.filter((x) => x !== id) }
-        : { ...d, tagIds: [...d.tagIds, id] }
-    );
+  const handleClearAnalysis = () => {
+    setAnalyzeStatus("idle");
+    setAnalyzedFileName("");
+    if (aiFilledFields.has("name")) setName("");
+    if (aiFilledFields.has("typeId")) setTypeId("");
+    if (aiFilledFields.has("description")) setDescription("");
+    setAiFilledFields(new Set());
+    setTagIds([]);
   };
 
   const handleApply = () => {
-    const name = draft.name.trim();
-    if (!name) {
-      toast.warning(t("nameRequired"));
+    const trimmedName = name.trim();
+    const trimmedDesc = description.trim();
+    // Skip blank fields so we don't accidentally clear backend values
+    // the user never touched in this Spark session.
+    const payload: Parameters<typeof update.mutate>[0] = { id: Number(projectId) };
+    if (trimmedName) payload.name = trimmedName;
+    if (typeId) payload.typeId = typeId;
+    if (trimmedDesc) payload.description = trimmedDesc;
+    if (tagIds.length > 0) payload.tag = JSON.stringify(tagIds);
+    if (Object.keys(payload).length === 1) {
+      toast.warning(t("sparkNothingToApply"));
       return;
     }
-    update.mutate(
-      {
-        id: Number(projectId),
-        name,
-        description: draft.description.trim(),
-        // Backend expects `tag` as `JSON.stringify(numericIds[])` —
-        // the same shape the manual edit page uses on Save.
-        tag: JSON.stringify(draft.tagIds),
-        // Only include bannerLink when the user actually generated one
-        // — passing an empty string here would clear an existing banner
-        // and that's never the user's intent inside Spark.
-        ...(draft.bannerLink ? { bannerLink: draft.bannerLink } : {}),
+    update.mutate(payload, {
+      onSuccess: () => {
+        toast.success(t("sparkApplied"));
+        onOpenChange(false);
       },
-      {
-        onSuccess: () => {
-          toast.success(t("sparkApplied"));
-          onOpenChange(false);
-        },
-        onError: (err) => {
-          const msg = err instanceof Error ? err.message : "";
-          toast.error(msg || t("saveFailed"));
-        },
-      }
-    );
+      onError: (err) => {
+        const msg = err instanceof Error ? err.message : "";
+        toast.error(msg || t("saveFailed"));
+      },
+    });
   };
+
+  const applying = update.isPending;
+  const hasContent = !!(name.trim() || typeId || description.trim() || tagIds.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="overflow-hidden p-0 sm:max-w-lg">
         <DialogHero
           src={SPARK_HERO_URL}
           eyebrow={t("spark")}
@@ -241,230 +233,255 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
           description={t("sparkDialogDescription")}
         />
 
-        <DialogBody className="max-h-[60vh] overflow-y-auto py-4">
-          {phase === "upload" && (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
+        <div className="space-y-4 p-4">
+          <Dropzone
+            status={analyzeStatus}
+            dragOver={dragOver}
+            fileName={analyzedFileName}
+            t={tc}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onBrowse={() => fileInputRef.current?.click()}
+            onClear={handleClearAnalysis}
+            onRetry={() => {
+              setAnalyzeStatus("idle");
+              fileInputRef.current?.click();
+            }}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPT_ATTR}
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void handleFile(file);
+            }}
+          />
+
+          <div className="space-y-2">
+            <FieldLabel
+              label={t("sparkFieldName")}
+              ai={aiFilledFields.has("name")}
+              aiLabel={tc("aiSuggested")}
+            />
+            <Input
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value.slice(0, 80));
+                clearAi("name");
               }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                const file = e.dataTransfer.files?.[0];
-                if (file) void handleFile(file);
+            />
+          </div>
+
+          <div className="space-y-2">
+            <FieldLabel
+              label={t("sparkFieldCategory")}
+              ai={aiFilledFields.has("typeId")}
+              aiLabel={tc("aiSuggested")}
+            />
+            <Select
+              value={typeId}
+              onValueChange={(v) => {
+                setTypeId(v);
+                clearAi("typeId");
               }}
-              className={cn(
-                "flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-card/40 px-6 py-12 text-muted-foreground transition-colors hover:border-primary/50 hover:bg-card/60",
-                dragOver && "border-primary/60 bg-primary/5 text-primary"
-              )}
             >
-              <IconUpload className="size-8" />
-              <span className="text-sm font-medium">{t("sparkDropzoneTitle")}</span>
-              <span className="text-xs text-muted-foreground/70">
-                {t("sparkDropzoneHint", { mb: bytesToMB(SPARK_MAX_BYTES) })}
-              </span>
-            </button>
-          )}
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={t("sparkFieldCategoryPlaceholder")} />
+              </SelectTrigger>
+              <SelectContent>
+                {typeList.map((tp) => (
+                  <SelectItem key={tp.id} value={String(tp.id)}>
+                    {tp.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-          {phase === "analyzing" && (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
-              <IconSparkles className="size-8 animate-pulse text-primary" />
-              <span className="text-sm font-medium text-foreground">{t("sparkAnalyzing")}</span>
-              <span className="text-xs">{t("sparkAnalyzingHint")}</span>
-            </div>
-          )}
+          <div className="space-y-2">
+            <FieldLabel
+              label={t("sparkFieldDescription")}
+              ai={aiFilledFields.has("description")}
+              aiLabel={tc("aiSuggested")}
+            />
+            <Textarea
+              value={description}
+              onChange={(e) => {
+                setDescription(e.target.value.slice(0, 500));
+                clearAi("description");
+              }}
+              rows={3}
+            />
+          </div>
 
-          {phase === "error" && (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-              <IconAlertCircle className="size-8 text-destructive" />
-              <span className="text-sm font-medium text-foreground">{t("sparkAnalyzeFailed")}</span>
-              <span className="text-xs text-muted-foreground">{errorMsg}</span>
-              <Button variant="outline" color="muted" size="sm" onClick={() => setPhase("upload")}>
-                <IconRefresh className="size-3.5" />
-                {t("sparkRetry")}
-              </Button>
-            </div>
-          )}
-
-          {phase === "review" && (
-            <div className="space-y-5">
-              <div>
-                <p className="text-sm font-semibold text-foreground">{t("sparkReviewTitle")}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{t("sparkReviewDesc")}</p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-foreground">
-                  {t("sparkFieldName")}
-                </label>
-                <Input
-                  value={draft.name}
-                  onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value.slice(0, 80) }))}
-                  className="h-10"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-foreground">
-                  {t("sparkFieldDescription")}
-                </label>
-                <Textarea
-                  value={draft.description}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, description: e.target.value.slice(0, 500) }))
-                  }
-                  rows={4}
-                />
-                <span className="block text-right text-xs text-muted-foreground">
-                  {draft.description.length}/500
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <label className="block text-xs font-semibold text-foreground">
-                    {t("sparkFieldTags")}
-                  </label>
-                  <span className="text-xs text-muted-foreground">
-                    {t("sparkTagsSelected", { count: draft.tagIds.length })}
-                  </span>
-                </div>
-                {tagCatalog.length === 0 ? (
-                  <p className="rounded-md border border-dashed border-border bg-card/40 px-3 py-2 text-xs text-muted-foreground">
-                    {t("sparkTagsCatalogEmpty")}
-                  </p>
-                ) : (
-                  <div className="max-h-44 overflow-y-auto rounded-md border border-border bg-card/40 p-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      {tagCatalog.map((tag) => {
-                        const active = draft.tagIds.includes(tag.id);
-                        return (
-                          <button
-                            key={tag.id}
-                            type="button"
-                            onClick={() => toggleTag(tag.id)}
-                            className={cn(
-                              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                              active
-                                ? "bg-primary/15 text-primary ring-1 ring-inset ring-primary/40"
-                                : "bg-muted/40 text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                            )}
-                          >
-                            {tag.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {unmatchedTagNames.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {t("sparkTagsUnmatched", {
-                      names: unmatchedTagNames.join("、"),
-                    })}
-                  </p>
-                )}
-              </div>
-
-              {/* Banner — opt-in, generated from the hidden English
-               *  bannerPrompt the analyzer produced. Empty preview
-               *  square + button when nothing's been generated yet. */}
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-foreground">
-                  {t("sparkFieldBanner")}
-                </label>
-                <div className="flex items-start gap-3">
-                  <div className="aspect-video w-44 shrink-0 overflow-hidden rounded-md border border-border bg-muted/40">
-                    {draft.bannerLink ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={ipImageUrl(draft.bannerLink)}
-                        alt=""
-                        className="size-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex size-full items-center justify-center text-muted-foreground/50">
-                        <IconSparkles className="size-6" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      color="muted"
-                      onClick={handleGenerateBanner}
-                      disabled={generateBanner.isPending || !draft.bannerPrompt}
-                    >
-                      {generateBanner.isPending ? (
-                        <>
-                          <IconLoader2 className="size-3.5 animate-spin" />
-                          {t("sparkBannerGenerating")}
-                        </>
-                      ) : (
-                        <>
-                          <IconSparkles className="size-3.5" />
-                          {draft.bannerLink ? t("sparkBannerRegenerate") : t("sparkBannerGenerate")}
-                        </>
-                      )}
-                    </Button>
-                    <p className="text-xs text-muted-foreground">{t("sparkBannerHint")}</p>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(EMPTY_DRAFT);
-                  setPhase("upload");
-                }}
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <IconX className="size-3" />
-                {t("sparkRestart")}
-              </button>
-            </div>
-          )}
-        </DialogBody>
-
-        <DialogFooter className="sm:items-center">
-          <Button
-            variant="outline"
-            color="muted"
-            onClick={() => onOpenChange(false)}
-            disabled={phase === "analyzing" || update.isPending}
-          >
-            {tc("cancel")}
+          <Button onClick={handleApply} disabled={applying || !hasContent} className="w-full">
+            {applying ? (
+              <IconLoader2 className="size-3.5 animate-spin" />
+            ) : (
+              <IconSparkles className="size-3.5" />
+            )}
+            {t("sparkApply")}
           </Button>
-          {phase === "review" && (
-            <Button onClick={handleApply} disabled={update.isPending || !draft.name.trim()}>
-              {update.isPending ? (
-                <IconLoader2 className="size-3.5 animate-spin" />
-              ) : (
-                <IconSparkles className="size-3.5" />
-              )}
-              {t("sparkApply")}
-            </Button>
-          )}
-        </DialogFooter>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPT}
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void handleFile(file);
-            e.target.value = "";
-          }}
-        />
+        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Helpers ──────────────────────────────────────────
+
+function FieldLabel({
+  label,
+  required,
+  ai,
+  aiLabel,
+}: {
+  label: string;
+  required?: boolean;
+  ai?: boolean;
+  aiLabel: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Label className="text-sm">
+        {label}
+        {required && <span className="ml-1 text-destructive">*</span>}
+      </Label>
+      {ai && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-1.5 py-px text-[10px] font-medium text-violet-300">
+          <IconSparkles className="size-2.5" />
+          {aiLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
+interface DropzoneProps {
+  status: AnalyzeStatus;
+  dragOver: boolean;
+  fileName: string;
+  t: (key: string, params?: Record<string, string | number>) => string;
+  onDragEnter: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+  onBrowse: () => void;
+  onClear: () => void;
+  onRetry: () => void;
+}
+
+function Dropzone({
+  status,
+  dragOver,
+  fileName,
+  t,
+  onDragEnter,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onBrowse,
+  onClear,
+  onRetry,
+}: DropzoneProps) {
+  if (status === "success") {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2.5">
+        <IconSparkles className="size-4 shrink-0 text-emerald-300" />
+        <span className="min-w-0 flex-1 truncate text-xs text-emerald-200">
+          {t("dropzoneSuccess", { name: fileName })}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="shrink-0 rounded p-1 text-emerald-300/70 transition-colors hover:bg-emerald-400/15 hover:text-emerald-200"
+          aria-label={t("dropzoneClear")}
+        >
+          <IconX className="size-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  if (status === "analyzing") {
+    return (
+      <div className="rounded-xl border border-violet-400/30 bg-violet-400/5 px-4 py-4 text-center">
+        <div className="mx-auto mb-2 flex size-9 items-center justify-center rounded-full bg-violet-400/15">
+          <IconLoader2 className="size-5 animate-spin text-violet-300" />
+        </div>
+        <div className="text-sm font-medium text-violet-200">{t("dropzoneAnalyzing")}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{fileName}</div>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3.5 text-center">
+        <div className="mb-2 text-sm font-medium text-destructive">{t("dropzoneFailed")}</div>
+        <div className="flex justify-center gap-2">
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <IconRefresh className="size-3.5" />
+            {t("dropzoneRetry")}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClear}>
+            {t("dropzoneClear")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onBrowse}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onBrowse();
+        }
+      }}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={cn(
+        "group relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors",
+        dragOver
+          ? "border-primary bg-primary/5 text-foreground"
+          : "border-border bg-muted/20 hover:border-primary/40 hover:bg-muted/40"
+      )}
+    >
+      <div
+        className={cn(
+          "flex size-10 items-center justify-center rounded-full transition-colors",
+          dragOver
+            ? "bg-primary/15 text-primary"
+            : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+        )}
+      >
+        {dragOver ? <IconCloudUpload className="size-5" /> : <IconFileText className="size-5" />}
+      </div>
+      <div className="text-sm font-semibold text-foreground">
+        {dragOver ? t("dropzoneActive") : t("dropzoneIdleTitle")}
+      </div>
+      <p className="max-w-[320px] text-xs leading-relaxed text-muted-foreground">
+        {t("dropzoneIdleHint")}
+      </p>
+      <div className="mt-1 text-xs font-medium text-primary">{t("dropzoneBrowse")}</div>
+    </div>
   );
 }

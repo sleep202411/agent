@@ -96,6 +96,33 @@ export function useProjectJobs(id: string) {
 
 // ─── Mutations ─────────────────────────────────────────
 
+interface CreateProjectInput {
+  name: string;
+  typeId: string | number;
+  description?: string;
+  background?: string;
+  bannerLink?: string;
+  contact?: string;
+  tag?: string;
+}
+
+async function createProject(input: CreateProjectInput): Promise<{ id: number }> {
+  const body = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, String(v ?? "")]));
+  const res = (await postForm("/project/create", body)) as {
+    code?: number;
+    msg?: string;
+    message?: string;
+    data?: { id?: number } | number | null;
+  };
+  if (res.code !== undefined && res.code !== 200 && res.code !== 0) {
+    throw new Error(res.msg || res.message || "Create failed");
+  }
+  const data = res.data;
+  const id = typeof data === "number" ? data : data?.id;
+  if (!id) throw new Error("Backend returned no project id");
+  return { id };
+}
+
 interface UpdateProjectInput {
   id: number | string;
   name?: string;
@@ -132,6 +159,19 @@ async function uploadProjectVideo({
   const json = (await res.json()) as { code?: number; msg?: string; data?: string; path?: string };
   if (json.code !== 200) throw new Error(json.msg || "Upload failed");
   return json.data ?? json.path ?? "";
+}
+
+export function useCreateProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createProject,
+    onSuccess: () => {
+      // No specific detail key to invalidate yet (the new project's id
+      // wasn't in cache); blow away the list so the new row shows up
+      // when the user navigates back to /ips.
+      queryClient.invalidateQueries({ queryKey: ["ip", "projects"] });
+    },
+  });
 }
 
 export function useUpdateProject() {

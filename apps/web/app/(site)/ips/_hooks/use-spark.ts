@@ -95,14 +95,26 @@ async function generateBanner(input: GenerateBannerInput): Promise<string> {
       prompt: input.prompt,
     }),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = (await res.json()) as {
+  // Read body even on non-2xx so the toast surfaces what the backend
+  // actually said (route 404, "余额不足", "model timeout", …) instead of
+  // a bare "HTTP 404" — there's no other place to see the failure mode.
+  const text = await res.text();
+  if (!res.ok) {
+    const snippet = text ? ` — ${text.slice(0, 200)}` : "";
+    throw new Error(`HTTP ${res.status}${snippet}`);
+  }
+  let body: {
     code?: number;
     success?: boolean;
     msg?: string;
     message?: string;
     data?: string | { bannerLink?: string; path?: string } | null;
   };
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error(`Non-JSON response: ${text.slice(0, 200)}`);
+  }
   const ok = body.success === true || body.code === 0 || body.code === 200;
   if (!ok) throw new Error(body.msg || body.message || "Banner generation failed");
   const data = body.data;

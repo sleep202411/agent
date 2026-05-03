@@ -61,7 +61,8 @@ import {
   type ProjectRole,
 } from "@/app/(site)/ips/_hooks/use-ip";
 import { useQueryClient } from "@tanstack/react-query";
-import { SUGGESTED_TAGS } from "@/app/(site)/ips/_data/ip";
+import { useTagList } from "@/src/hooks/use-tag-list";
+import { useIPTypes } from "@/app/(site)/ips/_hooks/use-ip-list";
 import { uploadIPBanner } from "@/app/(site)/ips/_hooks/uploads";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
 import { EpisodeDialog, type EpisodeDraft } from "./episode-dialog";
@@ -284,6 +285,8 @@ export default function IPEditPage() {
   const [deleteEpisodeIndex, setDeleteEpisodeIndex] = useState<number | null>(null);
   const [deletingEpisode, setDeletingEpisode] = useState(false);
 
+  const { data: tagList } = useTagList();
+  const { data: typeList } = useIPTypes();
   const { data: project, isLoading } = useProjectDetail(id);
   const { mutate: doUpdate, isPending: saving } = useUpdateProject();
   const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
@@ -857,12 +860,20 @@ export default function IPEditPage() {
 
               <Section title={t("sectionType")} description={t("sectionTypeDesc")}>
                 <div className="flex flex-wrap gap-2">
-                  <Input
-                    value={form.typeId}
-                    onChange={(e) => update({ typeId: e.target.value })}
-                    placeholder={t("sectionTypeDesc")}
-                    className="h-10"
-                  />
+                  {(typeList ?? []).map((tp) => {
+                    const value = String(tp.id);
+                    return (
+                      <Button
+                        key={tp.id}
+                        variant={form.typeId === value ? "soft" : "outline"}
+                        color={form.typeId === value ? "primary" : "muted"}
+                        size="sm"
+                        onClick={() => update({ typeId: value })}
+                      >
+                        {tp.name}
+                      </Button>
+                    );
+                  })}
                 </div>
               </Section>
 
@@ -891,30 +902,19 @@ export default function IPEditPage() {
               </Section>
 
               <Section title={t("sectionTags")} description={t("sectionTagsDesc")}>
-                <Input
-                  placeholder={t("tagPlaceholder")}
-                  className="h-10"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addTag((e.target as HTMLInputElement).value);
-                      (e.target as HTMLInputElement).value = "";
-                    }
-                  }}
-                />
                 <div className="flex flex-wrap gap-1">
-                  {SUGGESTED_TAGS.filter((t) => !form.tags.includes(t))
-                    .slice(0, 8)
-                    .map((tag) => (
+                  {(tagList ?? [])
+                    .filter((tg) => !form.tags.includes(tg.name))
+                    .map((tg) => (
                       <Button
-                        key={tag}
+                        key={tg.id}
                         variant="outline"
                         color="muted"
                         size="xs"
                         className="rounded-full"
-                        onClick={() => addTag(tag)}
+                        onClick={() => addTag(tg.name)}
                       >
-                        + {tag}
+                        + {tg.name}
                       </Button>
                     ))}
                 </div>

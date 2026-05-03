@@ -50,6 +50,7 @@ export {
   useProjectVideoLink,
   useProjectJobs,
   useLegacyJobsByRole,
+  useCreateProject,
   useUpdateProject,
   useUploadProjectVideo,
 } from "./use-ip-detail";

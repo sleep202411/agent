@@ -176,11 +176,12 @@ function ExperienceTab() {
         </h2>
         <button
           type="button"
-          onClick={handleAdd}
-          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          disabled
+          aria-disabled="true"
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground/60 cursor-not-allowed"
         >
           <IconPlus className="size-3.5" />
-          {t("addExperience")}
+          {t("comingSoon")}
         </button>
       </div>
       {experience.length === 0 ? (
@@ -279,11 +280,12 @@ function SocialsTab() {
         </h2>
         <button
           type="button"
-          onClick={handleAdd}
-          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          disabled
+          aria-disabled="true"
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground/60 cursor-not-allowed"
         >
           <IconPlus className="size-3.5" />
-          {t("addSocial")}
+          {t("comingSoon")}
         </button>
       </div>
       {socials.length === 0 ? (

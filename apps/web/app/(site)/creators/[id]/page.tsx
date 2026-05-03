@@ -54,7 +54,7 @@ export default function CreatorDetailPage() {
           rhythm as their own. Tabs were removed deliberately — they
           forced users to click around for low-density data
           (about + a handful of works) where scrolling is cheaper. */}
-      <div className="relative mx-auto max-w-5xl space-y-12 px-8 pb-24 pt-10">
+      <div className="relative mx-auto max-w-6xl space-y-12 px-4 pb-24 pt-10">
         <OverviewSection creator={creator} />
 
         <CreatorSection title={tp("personalWorks")}>
