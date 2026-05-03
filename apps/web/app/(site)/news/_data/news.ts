@@ -76,7 +76,12 @@ function flatten(data: unknown): NewsItem[] {
   // We never want to throw — worst case is "no live articles".
   if (!data || typeof data !== "object") return [];
 
-  const seen = new Set<number>();
+  // Dedupe by both id AND url. Upstream `newsad` slices the same
+  // article into multiple category sections and tends to assign a
+  // fresh id per section, so id-only dedup misses cross-section
+  // duplicates. Article url is the stable identity here.
+  const seenIds = new Set<number>();
+  const seenUrls = new Set<string>();
   const out: NewsItem[] = [];
   try {
     for (const arr of Object.values(data as Record<string, unknown>)) {
@@ -90,8 +95,10 @@ function flatten(data: unknown): NewsItem[] {
         // filler.
         if (!item.url || item.url.trim() === "") continue;
         if (!item.title || item.title.trim() === "") continue;
-        if (seen.has(item.id)) continue;
-        seen.add(item.id);
+        const urlKey = item.url.trim();
+        if (seenIds.has(item.id) || seenUrls.has(urlKey)) continue;
+        seenIds.add(item.id);
+        seenUrls.add(urlKey);
         out.push(normalizeUpstream(item));
       }
     }
@@ -109,22 +116,30 @@ export async function getNewsList(rawLang: string): Promise<NewsItem[]> {
   // Worst case we just serve the static articles (or an empty list on
   // production .cn).
   let live: NewsItem[] = [];
+  console.log(`[news] fetching upstream lang=${lang} url=${UPSTREAM}`);
   try {
     const res = await fetch(UPSTREAM, {
       headers: { "accept-language": lang },
       next: { revalidate: 300 },
     });
+    console.log(`[news] upstream status=${res.status} ${res.statusText}`);
     if (!res.ok) {
       console.warn(`[news] upstream non-OK: ${res.status} ${res.statusText}`);
     } else {
       let json: UpstreamResponse | null = null;
       try {
         json = (await res.json()) as UpstreamResponse;
+        // Truncate to keep stdout readable when upstream returns dozens
+        // of articles. First 2000 chars is enough to see envelope shape
+        // + a couple of items.
+        const preview = JSON.stringify(json).slice(0, 2000);
+        console.log(`[news] upstream body (truncated 2000):`, preview);
       } catch (err) {
         console.warn("[news] upstream JSON parse failed:", err);
       }
       if (isUpstreamSuccess(json) && json!.data) {
         live = flatten(json!.data);
+        console.log(`[news] flattened live items=${live.length}`);
       } else if (json) {
         console.warn(
           `[news] upstream not OK — success=${json.success} code=${json.code} message=${json.message}`
