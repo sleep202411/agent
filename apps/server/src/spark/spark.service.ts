@@ -14,7 +14,12 @@
  *                           `DASHSCOPE_API_KEY` too; we pass the
  *                           value explicitly so the env name doesn't
  *                           silently drift).
- *   - AI_MODEL            — model id (default: qwen3-max).
+ *
+ * Model is hard-coded to `qwen3-max`. Previously this was an `AI_MODEL`
+ * env var, but the name was misleadingly generic — ops set it to
+ * `deepseek-chat` (a DeepSeek-native id DashScope rejects) and broke
+ * /aurora/spark/analyze in prod. If we ever need a different model
+ * here, change the literal, not a deploy-time knob.
  *
  * No DB writes, no external state. The dialog calls /project/update
  * separately once the user accepts.
@@ -110,10 +115,9 @@ export class SparkService {
         ? { baseURL: process.env.ALIBABA_BASE_URL }
         : {}),
     });
-    const modelId = process.env.AI_MODEL ?? 'qwen3-max';
 
     const { object } = await generateObject({
-      model: alibaba(modelId),
+      model: alibaba('qwen3-max'),
       schema: SparkDraftSchema,
       schemaName: 'SparkDraft',
       schemaDescription:

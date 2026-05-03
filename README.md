@@ -63,7 +63,6 @@ JAVA_STUDIO_URL=http://120.26.152.164:8090
 JAVA_CONTENT_URL=http://120.26.152.164:8091
 ALIBABA_API_KEY=sk-xxx
 ALIBABA_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-AI_MODEL=qwen3-max
 PORT=3001
 ```
 
