@@ -70,6 +70,11 @@ export class AuthService {
       // Use https module instead of fetch — Node.js undici fetch
       // does not reliably forward cookie headers in all environments.
       const url = `${baseUrl}/user/query/user/info`;
+      // TEMP DIAGNOSTIC — print full outbound request so we can compare
+      // against the working `node -e https.get(...)` repro from the shell.
+      this.logger.log(
+        `[diag] outbound GET ${url} headers=${JSON.stringify({ Cookie: satokenCookie })}`,
+      );
       const body = await new Promise<{
         success?: boolean;
         code?: number | string;
@@ -87,6 +92,9 @@ export class AuthService {
             headers: { Cookie: satokenCookie },
           },
           (res: { statusCode: number; on: Function }) => {
+            this.logger.log(
+              `[diag] inbound status=${res.statusCode} from ${url}`,
+            );
             if (res.statusCode !== 200) {
               let errData = '';
               res.on('data', (c: string) => (errData += c));
