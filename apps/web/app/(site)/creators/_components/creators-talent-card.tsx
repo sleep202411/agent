@@ -27,6 +27,7 @@ export function CreatorsTalentCard({ creator }: { creator: Creator }) {
   return (
     <Link
       href={`/creators/${id}`}
+      prefetch={false}
       className="group relative mt-8 flex h-full w-full flex-col rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-white/6 hover:shadow-lg hover:shadow-primary/5"
     >
       {/* Avatar — half pokes above the card edge */}
