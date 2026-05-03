@@ -1,4 +1,5 @@
 import { ClickSpark } from "@/components/ui/click-spark";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { AuthMediaPanel } from "./_components/auth-media-panel";
 
 /**
@@ -11,7 +12,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   return (
     <ClickSpark sparkColor="#ffffff" sparkSize={12} sparkRadius={22} sparkCount={9} duration={500}>
       <div className="flex min-h-screen bg-background">
-        <section className="flex flex-1 justify-center overflow-auto">
+        <section className="relative flex flex-1 justify-center overflow-auto">
+          <div className="absolute right-4 top-4 z-10">
+            <LanguageSwitcher />
+          </div>
           <div className="flex w-full max-w-[474px] flex-col justify-center px-6 py-16 lg:py-0">
             {children}
           </div>

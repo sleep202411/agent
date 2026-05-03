@@ -101,6 +101,7 @@ export default function ForgotPasswordPage() {
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               placeholder={t("identifierPlaceholder")}
+              size="lg"
               required
             />
           </Field>
@@ -114,6 +115,7 @@ export default function ForgotPasswordPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder={t("codePlaceholder")}
+                size="lg"
                 required
               />
               <SendCodeButton onSend={handleSendCode} disabled={!idOk} />
@@ -127,6 +129,7 @@ export default function ForgotPasswordPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t("newPasswordPlaceholder")}
+              size="lg"
               required
               minLength={MIN_PASSWORD_LEN}
             />
@@ -139,6 +142,7 @@ export default function ForgotPasswordPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder={t("confirmPasswordPlaceholder")}
+              size="lg"
               required
               minLength={MIN_PASSWORD_LEN}
             />
@@ -147,7 +151,7 @@ export default function ForgotPasswordPage() {
             ) : null}
           </Field>
           {error ? <FieldError>{error}</FieldError> : null}
-          <Button type="submit" disabled={!canSubmit} className="w-full">
+          <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
             {submitting ? <IconLoader2 className="size-3 animate-spin" /> : null}
             {t("resetPasswordSubmit")}
           </Button>
