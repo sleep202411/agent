@@ -173,7 +173,7 @@ export function SiteFooter() {
         </div>
 
         {isCnSite ? (
-          <div className="mt-8 border-t border-border pt-6 text-center text-xs text-muted-foreground">
+          <div className="mt-8 pb-8 border-t border-border pt-6 text-center text-xs text-muted-foreground">
             <p>
               © {new Date().getFullYear()} Fizz共创平台 版权所有{" "}
               <a

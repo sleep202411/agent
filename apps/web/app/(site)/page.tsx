@@ -263,7 +263,7 @@ export default function HomePage() {
               className="mt-10 flex flex-wrap items-center justify-center gap-3"
             >
               <Button size="lg" asChild>
-                <Link href={localizePath("/studio", locale)}>
+                <Link href={localizePath("/art-studio", locale)}>
                   {t("finalCta.primaryCta")}
                   <IconArrowRight className="size-4" />
                 </Link>

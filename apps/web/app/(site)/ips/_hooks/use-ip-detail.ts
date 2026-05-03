@@ -15,7 +15,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ipKeys, postForm } from "./shared";
+import { ipKeys, postForm, postJson } from "./shared";
 import type { Project, ProjectJob } from "./types";
 
 // ─── Reads ─────────────────────────────────────────────
@@ -107,18 +107,17 @@ interface CreateProjectInput {
 }
 
 async function createProject(input: CreateProjectInput): Promise<{ id: number }> {
-  const body = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, String(v ?? "")]));
-  const res = (await postForm("/project/create", body)) as {
-    code?: number;
-    msg?: string;
-    message?: string;
-    data?: { id?: number } | number | null;
+  const body: Record<string, unknown> = {
+    name: input.name,
+    typeId: Number(input.typeId),
   };
-  if (res.code !== undefined && res.code !== 200 && res.code !== 0) {
-    throw new Error(res.msg || res.message || "Create failed");
-  }
-  const data = res.data;
-  const id = typeof data === "number" ? data : data?.id;
+  if (input.description) body.description = input.description;
+  if (input.background) body.background = input.background;
+  if (input.bannerLink) body.bannerLink = input.bannerLink;
+  if (input.contact) body.contact = input.contact;
+  if (input.tag) body.tag = input.tag;
+  const res = (await postJson("/project/create", body)) as { id?: number } | number | null;
+  const id = typeof res === "number" ? res : res?.id;
   if (!id) throw new Error("Backend returned no project id");
   return { id };
 }

@@ -129,7 +129,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             </button>
           ) : (
             <Link
-              href="/studio/projects"
+              href="/art-studio/projects"
               className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
             >
               <IconArrowLeft className="size-4" />
