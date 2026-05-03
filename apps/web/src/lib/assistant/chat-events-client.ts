@@ -164,12 +164,17 @@ export function openChatEventsClient(
 
   const connect = () => {
     if (userClosed) return;
+    const tokenHint = url.match(/satoken=([^&]{0,8})/)?.[1] ?? "(none)";
+    console.log(
+      `[chat-events] open attempt#${attempts + 1} conv=${conversationId.slice(0, 8)} token=${tokenHint}`
+    );
     const sock = new WebSocket(url);
     ws = sock;
 
     sock.addEventListener("open", () => {
       const wasReconnect = attempts > 0;
       attempts = 0;
+      console.log(`[chat-events] open success token=${tokenHint}`);
       handlers.onOpen?.();
       if (wasReconnect) handlers.onReconnected?.();
     });
@@ -214,6 +219,9 @@ export function openChatEventsClient(
       const fatalByTerminate =
         lastTerminateCode !== null && FATAL_CLOSE_CODES.has(lastTerminateCode);
       const fatalByCode = FATAL_CLOSE_CODES.has(event.code);
+      console.log(
+        `[chat-events] close code=${event.code} reason=${event.reason} terminateCode=${lastTerminateCode ?? "-"} fatal=${fatalByTerminate || fatalByCode} attempts=${attempts}`
+      );
       if (fatalByTerminate || fatalByCode) {
         userClosed = true;
         handlers.onClose?.(event);
