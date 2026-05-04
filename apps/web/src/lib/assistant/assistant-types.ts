@@ -320,11 +320,17 @@ export function readMostRecentProjectParam(
   messages: AssistantMessage[],
   key: "targetEpisodeCount" | "shotsPerEpisode" | "dialogLanguage"
 ): number | string | undefined {
+  // Tool name aliases. Supervisor historically wrote the params to a tool
+  // message named `tool-require_project_params`, but the current
+  // configure_params tool stores its output under `tool-configure_params`.
+  // Reading both lets old + new chat histories resolve cleanly without
+  // forcing the agent to rename one back. New aliases land here.
+  const PARAM_TOOL_TYPES = new Set(["tool-require_project_params", "tool-configure_params"]);
   for (let i = messages.length - 1; i >= 0; i--) {
     const parts = messages[i]?.parts ?? [];
     for (const part of parts) {
       if (
-        part.type === "tool-require_project_params" &&
+        PARAM_TOOL_TYPES.has(part.type) &&
         part.state === "output-available" &&
         part.output &&
         typeof part.output === "object"
