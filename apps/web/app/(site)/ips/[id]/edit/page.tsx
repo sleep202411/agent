@@ -1123,10 +1123,6 @@ export default function IPEditPage() {
               <AddMemberDialog
                 open={addMemberOpen}
                 onOpenChange={setAddMemberOpen}
-                existingUserIds={[
-                  ...(project?.ownerId != null ? [project.ownerId] : []),
-                  ...members.map((m) => m.userId).filter((v): v is number => typeof v === "number"),
-                ]}
                 busy={addingMember}
                 onSubmit={async (member: NewMember) => {
                   setAddingMember(true);

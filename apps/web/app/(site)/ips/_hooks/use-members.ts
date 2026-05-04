@@ -20,6 +20,13 @@ import type { ProjectMember } from "./types";
 export const MEMBER_ROLE = { MEMBER: 0, ADMIN: 8, OWNER: 10 } as const;
 export type MemberRole = (typeof MEMBER_ROLE)[keyof typeof MEMBER_ROLE];
 
+/**
+ * Wire row shape. Backend ships per-member metadata (`role`, `remark`,
+ * `userId`, `projectId`, `createTime`) at the top level and the joined
+ * user record under a nested `user` object — name / avatar / contact
+ * etc. all live there. Older rows may also have these fields inlined,
+ * so the mapper falls back to the top-level shape if `user` is missing.
+ */
 interface WireMember {
   id?: number | null;
   projectId?: number | null;
@@ -32,15 +39,24 @@ interface WireMember {
   roleName?: string | null;
   remark?: string | null;
   createTime?: string | null;
+  user?: {
+    id?: number | null;
+    name?: string | null;
+    nickName?: string | null;
+    avatar?: string | null;
+    contact?: string | null;
+    description?: string | null;
+  } | null;
 }
 
 function mapWireMember(w: WireMember): ProjectMember {
+  const u = w.user ?? null;
   return {
     id: w.id ?? undefined,
-    userId: w.userId ?? undefined,
-    userName: w.userName ?? undefined,
-    nickName: w.nickName ?? undefined,
-    avatar: w.avatar ?? undefined,
+    userId: w.userId ?? u?.id ?? undefined,
+    userName: u?.name ?? w.userName ?? undefined,
+    nickName: u?.nickName ?? w.nickName ?? undefined,
+    avatar: u?.avatar ?? w.avatar ?? undefined,
     role: w.role ?? w.roleId ?? undefined,
     roleId: w.roleId ?? undefined,
     roleName: w.roleName ?? undefined,

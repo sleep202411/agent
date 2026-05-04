@@ -66,8 +66,6 @@ export {
 
 export { useProjectMembers, useAddMember, useRemoveMember, MEMBER_ROLE } from "./use-members";
 export type { MemberRole } from "./use-members";
-export { useUserByEmail } from "./use-user-search";
-export type { UserLookupRow } from "./use-user-search";
 export { useProjectRoles } from "./use-roles";
 export type { ProjectRole } from "./use-roles";
 
