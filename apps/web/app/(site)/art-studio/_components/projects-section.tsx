@@ -33,6 +33,7 @@ import {
   type WorldListType,
 } from "@/src/hooks/use-worlds";
 import { useTranslations } from "@/src/i18n/i18n";
+import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { cn } from "@/lib/utils";
 import { CreateWorldDialog } from "./create-world-dialog";
 import { ProjectEditorDialog } from "@/app/projects/_components/project-editor-dialog";
@@ -303,7 +304,12 @@ function ProductCard({
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-border">
-      <Link href={`/projects/${product.id}?worldId=${product.worldId}`}>
+      <Link
+        href={localizePath(
+          `/projects/${product.id}?worldId=${product.worldId}`,
+          getCurrentLocale()
+        )}
+      >
         <div className="relative aspect-[16/9] w-full bg-muted">
           <img src={cover ?? "/default-cover.png"} alt="" className="size-full object-cover" />
           <span className="absolute left-2 top-2 rounded-md bg-background/80 px-2 py-0.5 text-[10px] font-medium text-foreground backdrop-blur-sm">
@@ -313,7 +319,10 @@ function ProductCard({
       </Link>
       <div className="flex items-start justify-between gap-2 p-3">
         <Link
-          href={`/projects/${product.id}?worldId=${product.worldId}`}
+          href={localizePath(
+            `/projects/${product.id}?worldId=${product.worldId}`,
+            getCurrentLocale()
+          )}
           className="min-w-0 flex-1"
         >
           <p className="truncate text-sm font-medium">{product.name}</p>
@@ -327,7 +336,12 @@ function ProductCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <Link href={`/projects/${product.id}?worldId=${product.worldId}`}>
+              <Link
+                href={localizePath(
+                  `/projects/${product.id}?worldId=${product.worldId}`,
+                  getCurrentLocale()
+                )}
+              >
                 {tw("projectMenuOpen")}
               </Link>
             </DropdownMenuItem>

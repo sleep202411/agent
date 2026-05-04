@@ -20,6 +20,7 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { backendApi } from "@/src/lib/api";
 import { buildOssUrl, uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { useTranslations } from "@/src/i18n/i18n";
+import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { worldKeys } from "@/src/hooks/use-worlds";
 
 /** Payload returned by `/api/user/world/create/quick/worldproduct`. */
@@ -137,7 +138,12 @@ export function CreateWorldDialog({
       onOpenChange(false);
 
       if (result?.projectId && result?.worldId) {
-        router.push(`/projects/${result.projectId}?worldId=${result.worldId}`);
+        router.push(
+          localizePath(
+            `/projects/${result.projectId}?worldId=${result.worldId}`,
+            getCurrentLocale()
+          )
+        );
         onCreated?.(result);
       }
     } catch (err) {
