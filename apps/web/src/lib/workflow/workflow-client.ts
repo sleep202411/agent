@@ -169,6 +169,44 @@ export async function cancelWorkflow(runId: string, projectId: string): Promise<
  * swallowed so a transient 502 / network blip doesn't trigger UI
  * noise; the next tick will retry.
  */
+/** Server-side workflow lifecycle status, mirrors agent's WorkflowStatus.
+ *  `unknown` means the meta key wasn't found (run never existed or aged
+ *  out of Redis). */
+export type WorkflowLiveStatus =
+  | "queued"
+  | "running"
+  | "suspended"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+
+/**
+ * Batch lookup of authoritative server-side status for a set of runIds.
+ * The composer pill polls this every ~30s for runIds Redux still
+ * thinks are queued, so it can drop runs whose terminal lifecycle
+ * message never made it into Redux (WS race, missed message_added,
+ * stale tab). Returns one entry per requested runId.
+ */
+export async function fetchWorkflowStatuses(
+  runIds: string[],
+  projectId: string
+): Promise<Record<string, { status: WorkflowLiveStatus; workflowName?: WorkflowName }>> {
+  if (runIds.length === 0) return {};
+  const url = `/aurora/workflow/status`;
+  const resp = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ runIds, projectId }),
+  });
+  if (!resp.ok) return {};
+  return (await resp.json()) as Record<
+    string,
+    { status: WorkflowLiveStatus; workflowName?: WorkflowName }
+  >;
+}
+
 export async function heartbeatWorkflow(runId: string, projectId: string): Promise<void> {
   const url = `/aurora/workflow/${encodeURIComponent(runId)}/heartbeat`;
   await fetch(url, {

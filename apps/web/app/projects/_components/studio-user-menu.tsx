@@ -1,17 +1,21 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
   IconCredits,
   IconCrown,
   IconCoin,
+  IconLanguage,
   IconSun,
   IconMoon,
   IconDeviceDesktop,
   IconLogout,
   IconUsers,
 } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
+import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
+import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { useTheme } from "next-themes";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -35,14 +39,30 @@ interface StudioUserMenuProps {
 
 export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: StudioUserMenuProps) {
   const tc = useTranslations("common");
+  const tn = useTranslations("nav");
   const logout = useLogout();
   const { user } = useCurrentUser();
   const { theme, setTheme } = useTheme();
+  const router = useRouter();
+  const pathname = usePathname() ?? "/";
+  const locale = useLocale();
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   );
+
+  const switchLocale = (next: Locale) => {
+    if (next === locale) return;
+    setCurrentLocale(next);
+    setLanguage(next);
+    // Preserve the project's search params + hash (worldId / episodeId
+    // / etc) — usePathname() drops them, so pull from window directly.
+    const stripped = stripLocalePrefix(pathname);
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    router.replace(`${localizePath(stripped, next)}${search}${hash}`);
+  };
 
   const displayName = user?.nickname || "User";
   const avatarUrl = user?.avatar || undefined;
@@ -63,7 +83,7 @@ export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: Studi
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-72 p-0">
+      <DropdownMenuContent align="end" className="w-80 p-0">
         {/* User info */}
         <div className="flex items-center gap-3 px-4 py-4">
           <Avatar className="size-12">
@@ -123,6 +143,40 @@ export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: Studi
             <DropdownMenuSeparator />
           </>
         )}
+
+        {/* Language */}
+        <div className="flex items-center justify-between px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <IconLanguage className="size-4 text-muted-foreground" />
+            <span className="text-sm">{tn("language")}</span>
+          </div>
+          <div className="flex rounded-lg border border-border">
+            {LOCALE_OPTIONS.map((opt, i) => {
+              const current = opt.value === locale;
+              const isFirst = i === 0;
+              const isLast = i === LOCALE_OPTIONS.length - 1;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => switchLocale(opt.value)}
+                  className={cn(
+                    "flex h-8 items-center justify-center px-2 text-xs transition-colors",
+                    isFirst && "rounded-l-lg",
+                    isLast && "rounded-r-lg",
+                    current
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <DropdownMenuSeparator />
 
         {/* Theme */}
         {mounted && (

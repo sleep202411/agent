@@ -83,6 +83,58 @@ const SparkDraftSchema = z.object({
         'subject, environment, lighting, mood, art style — never ' +
         'narrative spoilers, no on-image text, no logos, no watermarks.',
     ),
+  // Structural breakdown — these are *estimates* the StoryOS UI shows
+  // before the full pipeline runs. They're allowed to be omitted if the
+  // brief truly doesn't support a guess. All counts are positive ints;
+  // language is a short label ("Chinese", "English", "Japanese", …);
+  // runtimeMinutes is the *total* drama runtime, not per-episode.
+  episodeCount: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Estimated number of episodes the brief would split into for a short-drama production (typically 8–24).',
+    ),
+  runtimeMinutes: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Estimated total runtime of the finished drama in minutes (sum of all episodes).',
+    ),
+  language: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'Primary language of the source text as a short label (e.g. "Chinese", "English"). One word, capitalized.',
+    ),
+  roleCount: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Estimated number of distinct on-screen characters (including major + supporting roles).',
+    ),
+  sceneCount: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Estimated number of distinct scenes / locations the production would need.',
+    ),
+  propCount: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Estimated number of distinct props (objects characters interact with) the production would need.',
+    ),
 });
 
 export type SparkDraft = z.infer<typeof SparkDraftSchema>;
@@ -135,13 +187,25 @@ export class SparkService {
         `  - tags:         ${TAGS_MAX} or fewer, each ≤ ${TAG_MAX_LEN} characters.`,
         `  - bannerPrompt: up to ${BANNER_PROMPT_MAX} characters.`,
         '',
+        'Structural estimates (episodeCount / runtimeMinutes / roleCount /',
+        'sceneCount / propCount / language) describe what a short-drama',
+        'production of this brief would look like. Reason from cues in the',
+        'text (number of named characters, distinct locations, plot beats',
+        'per chapter, total length). When the brief is too thin to support',
+        'an honest estimate, omit the field rather than inventing a number.',
+        'Typical ranges: 8–24 episodes, 60–240 total runtime minutes,',
+        '4–30 roles, 8–60 scenes, 5–40 props.',
+        '',
         'Language rules:',
         '  - name / description / tags MUST match the source text language',
         '    (Chinese in → Chinese out).',
         '  - bannerPrompt MUST be in English regardless of source language —',
         '    image models follow English prompts more reliably.',
+        '  - language: a short capitalized English label of the source text',
+        '    language (e.g. "Chinese", "English", "Japanese") — NOT the',
+        '    output language; this names what was uploaded.',
       ].join('\n'),
-      prompt: `Source text:\n\n${input}\n\nReturn { name, description, tags, bannerPrompt } as JSON.`,
+      prompt: `Source text:\n\n${input}\n\nReturn { name, description, tags, bannerPrompt, episodeCount, runtimeMinutes, language, roleCount, sceneCount, propCount } as JSON. Omit any structural field you cannot honestly estimate.`,
     });
 
     return this.clamp(object);
@@ -149,8 +213,14 @@ export class SparkService {
 
   /** Apply length caps in code so a slightly-overrun model response
    *  still ships. The dialog can show the (now-conformant) suggestion
-   *  and the user is free to edit before applying. */
+   *  and the user is free to edit before applying. Structural counts
+   *  are clamped to plausible upper bounds — the model occasionally
+   *  hallucinates 4-digit numbers from a multi-novel anthology. */
   private clamp(draft: SparkDraft): SparkDraft {
+    const clampInt = (v: number | undefined, max: number) =>
+      typeof v === 'number' && Number.isFinite(v) && v > 0
+        ? Math.min(Math.round(v), max)
+        : undefined;
     return {
       name: draft.name.trim().slice(0, NAME_MAX),
       description: draft.description.trim().slice(0, DESCRIPTION_MAX),
@@ -159,6 +229,12 @@ export class SparkService {
         .filter(Boolean)
         .slice(0, TAGS_MAX),
       bannerPrompt: draft.bannerPrompt.trim().slice(0, BANNER_PROMPT_MAX),
+      episodeCount: clampInt(draft.episodeCount, 200),
+      runtimeMinutes: clampInt(draft.runtimeMinutes, 6000),
+      language: draft.language?.trim().slice(0, 24) || undefined,
+      roleCount: clampInt(draft.roleCount, 200),
+      sceneCount: clampInt(draft.sceneCount, 500),
+      propCount: clampInt(draft.propCount, 500),
     };
   }
 

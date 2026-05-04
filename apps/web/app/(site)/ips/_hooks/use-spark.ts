@@ -26,6 +26,16 @@ export interface SparkDraft {
   description?: string;
   tags?: string[];
   bannerPrompt?: string;
+  /** Structural breakdown of the brief — used by the create-world
+   *  StoryOS preview. Each is best-effort: spark omits a field when
+   *  the brief is too thin to honestly estimate. Values are positive
+   *  ints already clamped server-side. */
+  episodeCount?: number;
+  runtimeMinutes?: number;
+  language?: string;
+  roleCount?: number;
+  sceneCount?: number;
+  propCount?: number;
 }
 
 /** Limit picked to be friendly for typical novel/script uploads while

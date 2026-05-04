@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { cancelWorkflow } from "@/src/lib/workflow/workflow-client";
 import { useWorkflowHeartbeat } from "@/src/hooks/use-workflow-heartbeat";
 import { useWorkflowCancelOnLeave } from "@/src/hooks/use-workflow-cancel-on-leave";
+import { useWorkflowLiveness } from "@/src/hooks/use-workflow-liveness";
 import type {
   AssistantAttachment,
   AssistantToolInvocation,
@@ -93,14 +94,30 @@ export function ChatComposer({
     projectId ? (s.assistant.projects[projectId]?.messages ?? null) : null
   );
   const queuedRuns = useMemo(() => deriveQueuedRuns(messages ?? []), [messages]);
-  const queuedCount = queuedRuns.length;
+  // Cross-check derived queued runIds against the agent's authoritative
+  // status. Catches the case where chat history believes a run is still
+  // queued (queued msg present, no follow-up failed/completed) but the
+  // server has actually terminated it — typically a WS race that lost
+  // the lifecycle event. Without this filter the pill sticks at "Queued
+  // · N" forever; with it, the next 30s poll prunes the stale id.
+  const aliveSet = useWorkflowLiveness(
+    queuedRuns.map((r) => r.runId),
+    projectId
+  );
+  const liveQueuedRuns = useMemo(
+    () => queuedRuns.filter((r) => aliveSet.has(r.runId)),
+    [queuedRuns, aliveSet]
+  );
+  const queuedCount = liveQueuedRuns.length;
   // Liveness signal for the agent's reaper: ping every 10s for EVERY
   // non-terminal run the user is currently watching, not just the
   // active one. The user can have N queued runs (pill = "排隊中 · N");
   // each has its own reaper deadline and needs its own heartbeat,
   // otherwise the queue silently shrinks 30s after dispatch.
+  // Use `liveQueuedRuns` (already filtered by useWorkflowLiveness) so
+  // we don't heartbeat ghost runs the server already finalized.
   const liveRunIds = useMemo(() => {
-    const set = new Set<string>(queuedRuns.map((r) => r.runId));
+    const set = new Set<string>(liveQueuedRuns.map((r) => r.runId));
     if (
       activeWorkflow &&
       (activeWorkflow.status === "queued" ||
@@ -110,7 +127,7 @@ export function ChatComposer({
       set.add(activeWorkflow.runId);
     }
     return [...set];
-  }, [queuedRuns, activeWorkflow]);
+  }, [liveQueuedRuns, activeWorkflow]);
   useWorkflowHeartbeat(liveRunIds, projectId);
   useWorkflowCancelOnLeave(liveRunIds, projectId);
   // Show the working pill whenever EITHER:

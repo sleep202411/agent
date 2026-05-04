@@ -54,12 +54,27 @@ export function useLocale(): string {
 
 /**
  * Set the active language. Call from locale switcher or when URL locale changes.
+ *
+ * Persists in two places:
+ *   - localStorage["language"] — used by client-side detect helpers.
+ *   - NEXT_LOCALE cookie — read by `proxy.ts` so unprefixed paths
+ *     (e.g. when a stray `router.push("/foo")` slips through without
+ *     localizePath) redirect to the user's last-chosen locale instead
+ *     of always falling back to the default. Host-only cookie on
+ *     purpose — same lesson as the satoken Domain bug: leaving Domain
+ *     unset makes the cookie travel with the browser cleanly without
+ *     surprising cross-subdomain leaks.
  */
+const LOCALE_COOKIE_NAME = "NEXT_LOCALE";
+const LOCALE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
 export function setLanguage(lng: string): void {
   if (!isValidLocale(lng)) return;
   void i18n.changeLanguage(lng);
   if (typeof window !== "undefined") {
     localStorage.setItem("language", lng);
     document.documentElement.lang = lng;
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${LOCALE_COOKIE_NAME}=${encodeURIComponent(lng)}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
   }
 }
