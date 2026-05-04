@@ -441,7 +441,7 @@ export function CharacterEditDialog({
                       variant="outline"
                       color="muted"
                       onClick={() => void handleGenerateThreeView()}
-                      disabled={threeViewLoading || !formData.prompt?.trim()}
+                      disabled={threeViewLoading}
                     >
                       {threeViewLoading ? (
                         <IconLoader2 className="size-3 animate-spin" />
