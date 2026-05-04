@@ -41,6 +41,18 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
    */
   form?: Record<string, string | number | boolean | undefined>;
   timeout?: number;
+  /**
+   * Skip the `body.data ?? body.info ?? body.path ?? body` unwrap and
+   * return the full envelope instead. Use this for endpoints whose
+   * response carries multiple top-level fields side-by-side (e.g.
+   * `{ info, level }` on `/user/query/user/info`,
+   * `{ data, sum }` on the talent-market list, `{ id }` on
+   * `/project/create`). The success check (`code === 200` etc.) still
+   * runs; only the data extraction is skipped. Type the call as the
+   * envelope shape: `api.get<{ info: UserInfo; level: Level[] }>(...,
+   * { raw: true })`.
+   */
+  raw?: boolean;
 }
 
 // ============ Error ============
@@ -232,7 +244,9 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     );
   }
 
-  // Different endpoints return data in different fields
+  // Different endpoints return data in different fields. When `raw` is
+  // set the caller wants the whole envelope (multi-field responses).
+  if (config.raw) return body as T;
   return (body.data ?? body.info ?? body.path ?? body) as T;
 }
 

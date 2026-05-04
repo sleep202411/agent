@@ -41,7 +41,7 @@ import {
 import { useMyCertifications, useCertificationRoles } from "@/src/hooks/use-certification";
 import { AUTH_STATUS } from "@/src/services/certification";
 import { CertificationDialog } from "./certification-dialog";
-import type { UserInfo } from "@/src/services/user";
+import type { UserInfo, UserInfoResolved } from "@/src/services/user";
 
 /**
  * Real-name verification status badge config. Backend reuses the same
@@ -66,7 +66,9 @@ function resolveAvatarUrl(info: UserInfo | null) {
 }
 
 interface ProfileHeaderProps {
-  userInfo: UserInfo | null;
+  /** Resolved variant carries `levels` (FD-IV chips) and OSS-resolved
+   *  `headImgUrl` / `bannerUrl` fields the rendering relies on. */
+  userInfo: UserInfoResolved | null;
   onEditProfile: () => void;
 }
 
@@ -272,6 +274,23 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
                       {info.userLevel}
                     </span>
                   )}
+                  {(info?.levels ?? []).map((lvl) => (
+                    <span
+                      key={lvl.id}
+                      title={lvl.description ?? lvl.name}
+                      className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 py-px pl-1 pr-2 text-[10px] font-medium text-amber-300"
+                    >
+                      {lvl.iconUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={lvl.iconUrl}
+                          alt=""
+                          className="size-3.5 shrink-0 rounded-full object-cover"
+                        />
+                      ) : null}
+                      {lvl.name}
+                    </span>
+                  ))}
                   {certBadges.map((badge) => (
                     <span
                       key={badge.id}
@@ -287,19 +306,28 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
                   >
                     {certBadges.length > 0 ? t("manageCert") : t("addCertification")}
                   </button>
-                  <button
-                    type="button"
-                    disabled={!kycClickable}
-                    onClick={() => {
-                      if (kycClickable) router.push("/kyc");
-                    }}
-                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-[10px] font-medium transition-colors ${kycChipClass} ${
-                      kycClickable ? "" : "cursor-default"
-                    }`}
-                  >
-                    <IconShieldCheck className="size-3" />
-                    {kycChipLabel}
-                  </button>
+                  {/* Real-name verification (KYC) is a China-specific
+                      regulatory requirement; the global / .com region
+                      doesn't enroll users in this flow. The backend
+                      defaults `authStatus = 0` for every fresh account
+                      regardless of region, so without this gate every
+                      .com user would see a permanent "Under review"
+                      chip even though they never started KYC. */}
+                  {env.SITE_REGION !== "global" && (
+                    <button
+                      type="button"
+                      disabled={!kycClickable}
+                      onClick={() => {
+                        if (kycClickable) router.push("/kyc");
+                      }}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-px text-[10px] font-medium transition-colors ${kycChipClass} ${
+                        kycClickable ? "" : "cursor-default"
+                      }`}
+                    >
+                      <IconShieldCheck className="size-3" />
+                      {kycChipLabel}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

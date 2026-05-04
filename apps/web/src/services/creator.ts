@@ -99,9 +99,21 @@ export async function listCreators(params: CreatorListPayload = {}): Promise<Cre
  *
  * Backend signature: `POST /user/other/user/info?UserId=<id>` — Spring
  * `@RequestParam`, so the field goes in the query string (capital I)
- * with no request body.
+ * with no request body. Uses `raw: true` because the response envelope
+ * carries BOTH `info` and `level` at the top level; the default api
+ * unwrap (`body.data ?? body.info ?? …`) would silently discard the
+ * `level` array, leaving creator pages without their cert chips.
  */
-export const getCreatorBasicInfo = (userId: number | string) =>
-  api.post<CreatorRow>("/user/other/user/info", {
+export const getCreatorBasicInfo = async (userId: number | string): Promise<CreatorRow> => {
+  const envelope = await api.post<{
+    info?: CreatorInfo;
+    level?: CreatorLevelEntry[];
+  }>("/user/other/user/info", {
     params: { UserId: String(userId) },
+    raw: true,
   });
+  return {
+    info: envelope?.info ?? ({} as CreatorInfo),
+    level: Array.isArray(envelope?.level) ? envelope.level : [],
+  };
+};
