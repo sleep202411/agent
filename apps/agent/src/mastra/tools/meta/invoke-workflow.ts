@@ -103,12 +103,36 @@ export const invokeWorkflow = createTool({
     // see the chat-history value, not the LLM's.
     const needsEpisodeCount = workflowName === "episode_phase" || workflowName === "parse_script";
     const ctxInjections: Record<string, unknown> = {};
-    if (
-      needsEpisodeCount &&
-      typeof ctx.targetEpisodeCount === "number" &&
-      ctx.targetEpisodeCount > 0
-    ) {
-      ctxInjections.targetEpisodeCount = ctx.targetEpisodeCount;
+    if (needsEpisodeCount) {
+      const TARGET_EPISODE_COUNT_DEFAULT = 10;
+      let resolvedEpisodeCount: number;
+      if (typeof ctx.targetEpisodeCount === "number" && ctx.targetEpisodeCount > 0) {
+        resolvedEpisodeCount = ctx.targetEpisodeCount;
+      } else if (
+        typeof llmOverrides.targetEpisodeCount === "number" &&
+        llmOverrides.targetEpisodeCount > 0
+      ) {
+        resolvedEpisodeCount = llmOverrides.targetEpisodeCount;
+      } else {
+        // Fallback: neither chat-history ctx nor LLM-supplied value is
+        // usable. Happens when the `tool-require_project_params` message
+        // is missing from chat history (LRU eviction, never-submitted,
+        // partial-streaming state, etc.) AND the supervisor LLM didn't
+        // echo the value into inputData. Don't fail the workflow — pick
+        // the same default analyze-brief uses and log loudly so we can
+        // investigate which arm of the upstream chain dropped the value.
+        resolvedEpisodeCount = TARGET_EPISODE_COUNT_DEFAULT;
+        console.warn(
+          `[invoke_workflow] DEFAULT_TARGET_EPISODE_COUNT used: workflow=${workflowName} projectId=${ctx.projectId} userId=${ctx.userId} fallback=${resolvedEpisodeCount} ` +
+            `ctx.targetEpisodeCount=${JSON.stringify(ctx.targetEpisodeCount)} ` +
+            `llm.targetEpisodeCount=${JSON.stringify(llmOverrides.targetEpisodeCount)} ` +
+            `ctx.shotsPerEpisode=${JSON.stringify(ctx.shotsPerEpisode)} ` +
+            `ctx.dialogLanguage=${JSON.stringify(ctx.dialogLanguage)} ` +
+            `ctx.stylePainting=${JSON.stringify(ctx.stylePainting)} ` +
+            `inputDataKeys=${JSON.stringify(Object.keys(resolvedObj))}`
+        );
+      }
+      ctxInjections.targetEpisodeCount = resolvedEpisodeCount;
     }
 
     // Supervisor doesn't see projectId / worldId (they live in requestContext),
