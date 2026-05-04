@@ -1,16 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { IconArrowUp, IconLoader2, IconPaperclip, IconSparkles, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { quickCreateWorldProduct } from "@/src/services/world";
-import type {
-  OpenProjectMessage,
-  StudioAgent,
-  StudioSeedAttachment,
+import {
+  STUDIO_SEED_STORAGE_KEY,
+  type StudioAgent,
+  type StudioSeed,
+  type StudioSeedAttachment,
 } from "@/src/types/studio-seed";
 
 const ACCEPTED_EXTENSIONS = [".txt", ".md", ".text", ".docx", ".pdf"];
@@ -25,6 +27,7 @@ export function StudioHomeComposer() {
   const t = useTranslations("workspace");
   const tp = useTranslations("project");
   const tc = useTranslations("common");
+  const router = useRouter();
 
   const [prompt, setPrompt] = useState("");
   // Agent pills UI removed — keep a default in seed payload so
@@ -103,25 +106,25 @@ export function StudioHomeComposer() {
     try {
       const { worldId, projectId } = await quickCreateWorldProduct(tp("unnamedWorld"));
       console.info("[studio-composer] quick-create ok", { worldId, projectId });
-      const msg: OpenProjectMessage = {
-        type: "openProject",
-        projectId,
-        worldId,
-        seed: {
-          agent,
-          prompt: prompt.trim(),
-          attachment: scriptAttachment ?? undefined,
-        },
+      // Stash the composer payload in sessionStorage so the project
+      // workspace can pick it up on mount and bootstrap the first turn.
+      // Was a postMessage round-trip when the studio lived inside an
+      // iframe; now that everything is same-origin Next.js, the storage
+      // hop is enough.
+      const seed: StudioSeed = {
+        agent,
+        prompt: prompt.trim(),
+        attachment: scriptAttachment ?? undefined,
       };
-      if (typeof window !== "undefined" && window.self !== window.top) {
-        console.info("[studio-composer] postMessage openProject → parent", msg);
-        window.parent.postMessage(msg, "*");
-        // parent will navigate away; leave composer disabled
-      } else {
-        console.warn("[studio-composer] standalone mode — no iframe parent to receive");
-        toast.info(tc("createSuccess"));
-        setSubmitting(false);
+      try {
+        sessionStorage.setItem(
+          STUDIO_SEED_STORAGE_KEY,
+          JSON.stringify({ projectId, worldId, seed })
+        );
+      } catch (err) {
+        console.warn("[studio-composer] sessionStorage write failed", err);
       }
+      router.push(`/projects/${projectId}`);
     } catch (err) {
       console.warn("[studio-composer] quick-create failed", err);
       toast.error(tc("uploadFailed"));

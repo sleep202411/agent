@@ -36,8 +36,8 @@ function mapSeedAgent(agent: StudioAgent): AssistantAgentType {
 /**
  * One-shot bootstrap for projects opened via the studio composer.
  *
- * Listens for a seed from the parent iframe (studio home → creatorCenter
- * → workspace → this hook). When seed + projectId are both ready, it:
+ * Reads a seed left in sessionStorage by the studio home composer.
+ * When seed + projectId are both ready, it:
  *
  *   1. Opens the AI assistant panel (so the user sees the chat).
  *   2. Pushes the uploaded script (if any) into the conversation's
@@ -46,15 +46,15 @@ function mapSeedAgent(agent: StudioAgent): AssistantAgentType {
  *   4. Primes the draft input with the user's prompt.
  *   5. Fires sendUserMessage(projectId) to kick the assistant off.
  *
- * Guarded by a ref so it only runs once per page load. If the user
- * refreshes, the parent's sessionStorage has been cleared (see
- * use-studio-seed.ts), so no duplicate send.
+ * Guarded by a ref so it only runs once per page load. The seed is
+ * removed from sessionStorage on first read in `useStudioSeed`, so a
+ * page refresh starts clean.
  */
 export function useStudioSeedConsumer(projectId: string | null | undefined): {
   seed: StudioSeed | null;
   consumed: boolean;
 } {
-  const { seed } = useStudioSeed();
+  const { seed } = useStudioSeed(projectId);
   const dispatch = useAppDispatch();
   const consumedRef = useRef(false);
 
