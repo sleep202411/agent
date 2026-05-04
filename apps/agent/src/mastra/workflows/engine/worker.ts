@@ -16,8 +16,6 @@ import { WorkflowCancelledError } from "./progress";
 import { classifyError } from "../../lib/error-classifier";
 import { isMissingArtifactError } from "../../lib/artifact-store";
 import { getLastActiveWorkflow, publishWorkflowFailed } from "../../lib/workflow-messages";
-import { takePendingFollowup } from "../../lib/pending-followup";
-import { startWorkflow } from "./runner";
 import type { ResumeJobData, RunJobData } from "./types";
 import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
 import type { StoryosContext } from "../../lib/workspace-client";
@@ -219,27 +217,6 @@ async function applyResult(
   if (r.status === "success") {
     await setStatus(runId, "completed", { result: r.result });
     await clearCancel(runId);
-    // Closed-loop followup: invoke_workflow's outline auto-redirect
-    // stashed the user's originally requested workflow keyed by THIS
-    // runId. If a record exists, fire it so the pipeline keeps going
-    // without another supervisor turn / user click.
-    try {
-      const followup = await takePendingFollowup(runId);
-      if (followup) {
-        const { runId: nextRunId } = await startWorkflow({
-          workflowName: followup.workflowName,
-          inputData: followup.inputData,
-          ctx: followup.ctx,
-        });
-        // eslint-disable-next-line no-console
-        console.log(
-          `[worker] PENDING_FOLLOWUP fired: trigger=${runId} → ${followup.workflowName} runId=${nextRunId} reason="${followup.reason}"`
-        );
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`[worker] takePendingFollowup/dispatch failed for ${runId}:`, err);
-    }
     return;
   }
   if (r.status === "suspended") {
