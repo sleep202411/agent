@@ -30,7 +30,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,6 +74,21 @@ const TARGETS = {
   static: { src: "static", dst: "static" },
 };
 
+// The legacy fizzdragon-web bundle hardcodes `FIZZSTUDIO_URL` /
+// `STUDIO_NEW_URL` (and similar) to the host-only studio subdomain
+// (e.g. `https://fizzstudio.fizzdragon.com`). When a legacy page
+// builds a "go to studio" link with one of these constants, the
+// resulting navigation crosses subdomain — and the satoken cookie
+// (set on the apex with the host attribute alone) doesn't always
+// follow, so the user lands on the studio host unauthenticated and
+// gets bounced to /login. Since the platform now serves the same
+// app from the apex via nginx proxy, we patch the bundle to point
+// these constants back at the apex on every sync.
+const FIZZSTUDIO_REWRITES = [
+  ["https://fizzstudio.fizzdragon.com", "https://fizzdragon.com"],
+  ["https://fizzstudio.fizzspace.cn", "https://fizzdragon.fizzspace.cn"],
+];
+
 function fail(msg) {
   console.error(`[sync-legacy] ${msg}`);
   process.exit(1);
@@ -83,6 +98,36 @@ async function copyDir(srcAbs, dstAbs) {
   await rm(dstAbs, { recursive: true, force: true });
   await mkdir(dstAbs, { recursive: true });
   await cp(srcAbs, dstAbs, { recursive: true });
+}
+
+/**
+ * Rewrite hardcoded cross-subdomain studio URLs inside the bundle's JS
+ * chunks back to the apex domain. See FIZZSTUDIO_REWRITES for the rule.
+ */
+async function rewriteCrossSubdomainUrls(assetsDir) {
+  if (!existsSync(assetsDir)) return;
+  const entries = await readdir(assetsDir);
+  for (const entry of entries) {
+    if (!entry.endsWith(".js") && !entry.endsWith(".css")) continue;
+    const file = resolve(assetsDir, entry);
+    let content;
+    try {
+      content = await readFile(file, "utf-8");
+    } catch {
+      continue;
+    }
+    let changed = false;
+    for (const [from, to] of FIZZSTUDIO_REWRITES) {
+      if (content.includes(from)) {
+        content = content.split(from).join(to);
+        changed = true;
+      }
+    }
+    if (changed) {
+      await writeFile(file, content, "utf-8");
+      console.log(`[sync-legacy] rewrote cross-subdomain URLs in assets/${entry}`);
+    }
+  }
 }
 
 async function main() {
@@ -112,6 +157,12 @@ async function main() {
     await copyDir(srcAbs, dstAbs);
     console.log(`[sync-legacy] ${label}: ${srcAbs} → ${dstAbs}`);
   }
+
+  // Patch step: rewrite hardcoded `https://fizzstudio.<env>` URLs in
+  // the just-copied asset chunks back to the apex. The legacy bundle
+  // builds links from these constants and would otherwise navigate the
+  // user across subdomain (where the satoken cookie may not follow).
+  await rewriteCrossSubdomainUrls(resolve(PUBLIC_DIR, TARGETS.assets.dst));
 
   // Copy index.html with a small `<style>` injection that hides the
   // legacy fizzdragon-web's own AppLayout navbar + footer. The platform
