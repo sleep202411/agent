@@ -5,27 +5,6 @@ import { getContext, type StoryosContext } from "../../lib/workspace-client";
 import { resolveAttachmentRefs } from "../../lib/attachment-resolve";
 import { startWorkflow } from "../../workflows/engine";
 import { estimateWorkflowCost, getUserBalance } from "../../lib/billing";
-import { getOutline } from "../../lib/outline";
-import { setPendingFollowup } from "../../lib/pending-followup";
-
-/**
- * Workflows that require the project's `outline` artifact already to
- * exist before they can run. If the supervisor LLM dispatches one of
- * these without first running `story_outline` (or `parse_script`,
- * which writes the outline as a side-effect), we redirect the
- * dispatch to `story_outline` instead of letting the requested run
- * fail with `MissingArtifactError`. The frontend's failed-card
- * remediation button is the user-facing recovery path; this one
- * preempts the failure entirely so the supervisor's "正常路径" doesn't
- * burn user time on a guaranteed-fail run.
- */
-const OUTLINE_DEPENDENT_WORKFLOWS: ReadonlySet<WorkflowName> = new Set([
-  "episode_phase",
-  "role_phase",
-  "scene_phase",
-  "prop_phase",
-  "script_phase",
-]);
 
 export const invokeWorkflow = createTool({
   id: "invoke_workflow",
@@ -165,66 +144,6 @@ export const invokeWorkflow = createTool({
       ...sanitizedResolvedObj,
       ...ctxInjections,
     };
-
-    // ─── Outline precondition (auto-redirect + closed-loop followup) ─
-    // Phase workflows (episode/role/scene/prop/script) all assert the
-    // project's `outline` artifact exists before their first step.
-    // When the supervisor LLM dispatches one without first running
-    // story_outline (sees a chat full of scriptwriter / character
-    // exchanges, decides to "skip ahead"), the run lands in
-    // MissingArtifactError. Catch that here:
-    //   1. Quietly redirect this dispatch to story_outline.
-    //   2. Stash the *originally requested* workflow + inputData as a
-    //      pending followup keyed by the substituted run.
-    //   3. The worker's success handler reads that record after
-    //      story_outline lands and auto-fires the original — closing
-    //      the loop without another supervisor turn.
-    if (OUTLINE_DEPENDENT_WORKFLOWS.has(workflowName as WorkflowName)) {
-      const outline = await getOutline(ctx.projectId);
-      if (!outline) {
-        const fallbackName: WorkflowName = "story_outline";
-        const fallbackInput: Record<string, unknown> = {
-          projectId: ctx.projectId,
-          ...(ctx.worldId ? { worldId: ctx.worldId } : {}),
-        };
-        const fallbackEstimate = estimateWorkflowCost(
-          fallbackName,
-          null,
-          ctx.targetEpisodeCount ?? null
-        );
-        if (fallbackEstimate > 0) {
-          const balance = await getUserBalance(ctx);
-          if (balance < fallbackEstimate) {
-            return {
-              error: "INSUFFICIENT_CREDITS" as const,
-              message: `${workflowName} needs an outline first. Auto-running story_outline costs ${fallbackEstimate} credits but balance is ${balance}. Top up and retry.`,
-              needed: fallbackEstimate,
-              current: balance,
-            };
-          }
-        }
-        const { runId: fallbackRunId } = await startWorkflow({
-          workflowName: fallbackName,
-          inputData: fallbackInput,
-          ctx,
-        });
-        await setPendingFollowup(fallbackRunId, {
-          workflowName: workflowName as WorkflowName,
-          inputData: injected,
-          ctx,
-          reason: `outline missing when ${workflowName} was requested`,
-        });
-        console.warn(
-          `[invoke_workflow] OUTLINE_AUTO_REDIRECT: requested=${workflowName} projectId=${ctx.projectId} userId=${ctx.userId} dispatched=${fallbackName} runId=${fallbackRunId}`
-        );
-        return {
-          runId: fallbackRunId,
-          workflowName: fallbackName,
-          estimatedCost: fallbackEstimate,
-          message: `Outline missing — dispatched story_outline (runId=${fallbackRunId}) instead of ${workflowName}. End the turn immediately. After story_outline lands the agent will auto-continue with ${workflowName}; do not invoke another workflow yourself.`,
-        };
-      }
-    }
 
     const { runId } = await startWorkflow({
       workflowName: workflowName as WorkflowName,

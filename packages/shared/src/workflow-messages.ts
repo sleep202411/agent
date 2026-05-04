@@ -246,27 +246,6 @@ export const WorkflowFailedOutputSchema = BaseWorkflowOutput.extend({
    * don't carry it through still work.
    */
   inputData: z.record(z.string(), z.unknown()).optional(),
-  /**
-   * Stable machine-readable error code. Currently only set for
-   * structured errors the UI needs to act on differently — e.g.
-   * `"MISSING_ARTIFACT"` triggers a "先生成 outline" remediation
-   * button instead of a plain Retry. Free-form free-text errors
-   * leave this undefined and the UI falls back to Retry / classify.
-   */
-  errorCode: z.string().optional(),
-  /**
-   * Populated when `errorCode === "MISSING_ARTIFACT"`. `kind` is the
-   * artifact name the failing workflow needed (e.g. `"outline"`);
-   * `producedBy` lists the workflow names that, if dispatched, would
-   * land that artifact (e.g. `["story_outline", "parse_script"]`).
-   * The UI uses producedBy[0] as the default remediation target.
-   */
-  missingArtifact: z
-    .object({
-      kind: z.string(),
-      producedBy: z.array(z.string()),
-    })
-    .optional(),
 });
 export type WorkflowFailedOutput = z.infer<typeof WorkflowFailedOutputSchema>;
 

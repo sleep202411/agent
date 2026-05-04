@@ -14,10 +14,7 @@ import { clearCancel, isCancelled, setStatus } from "./state";
 import { buildConnection, QUEUE_NAME, type StoryosJobData, type StoryosJobName } from "./queue";
 import { WorkflowCancelledError } from "./progress";
 import { classifyError } from "../../lib/error-classifier";
-import { isMissingArtifactError } from "../../lib/artifact-store";
 import { getLastActiveWorkflow, publishWorkflowFailed } from "../../lib/workflow-messages";
-import { takePendingFollowup } from "../../lib/pending-followup";
-import { startWorkflow } from "./runner";
 import type { ResumeJobData, RunJobData } from "./types";
 import { WORKFLOW_NAMES, type WorkflowName } from "../../lib/redis-keys";
 import type { StoryosContext } from "../../lib/workspace-client";
@@ -138,29 +135,15 @@ async function finalizeFailed(
   projectId: string,
   error: string,
   classification: ReturnType<typeof classifyError>,
-  inputData?: unknown,
-  rawError?: unknown
+  inputData?: unknown
 ): Promise<void> {
   try {
-    // Surface MissingArtifactError as a structured `errorCode` +
-    // `missingArtifact` payload so the UI can offer a remediation
-    // button ("先生成 outline") instead of a plain Retry that's
-    // guaranteed to fail again. Classifier downgrades it to
-    // non-retryable so the regular Retry path doesn't spin forever
-    // on what's really a "wrong workflow order" condition.
-    const missingArtifact = isMissingArtifactError(rawError)
-      ? { kind: rawError.kind, producedBy: rawError.producedBy }
-      : null;
     await publishWorkflowFailed(projectId, runId, workflowName, {
       terminalStatus: "failed",
       error,
       classification,
-      retryable:
-        !missingArtifact &&
-        classification !== "content_policy" &&
-        classification !== "invalid_input",
+      retryable: classification !== "content_policy" && classification !== "invalid_input",
       ...(isPlainObject(inputData) ? { inputData } : {}),
-      ...(missingArtifact ? { errorCode: "MISSING_ARTIFACT", missingArtifact } : {}),
     });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -219,27 +202,6 @@ async function applyResult(
   if (r.status === "success") {
     await setStatus(runId, "completed", { result: r.result });
     await clearCancel(runId);
-    // Closed-loop followup: invoke_workflow's outline auto-redirect
-    // stashed the user's originally requested workflow keyed by THIS
-    // runId. If a record exists, fire it so the pipeline keeps going
-    // without another supervisor turn / user click.
-    try {
-      const followup = await takePendingFollowup(runId);
-      if (followup) {
-        const { runId: nextRunId } = await startWorkflow({
-          workflowName: followup.workflowName,
-          inputData: followup.inputData,
-          ctx: followup.ctx,
-        });
-        // eslint-disable-next-line no-console
-        console.log(
-          `[worker] PENDING_FOLLOWUP fired: trigger=${runId} → ${followup.workflowName} runId=${nextRunId} reason="${followup.reason}"`
-        );
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`[worker] takePendingFollowup/dispatch failed for ${runId}:`, err);
-    }
     return;
   }
   if (r.status === "suspended") {
@@ -256,15 +218,7 @@ async function applyResult(
     const failingWorkflow = await resolveFailingWorkflow(runId, r.error, workflowName);
     await setStatus(runId, "failed", { error: message, errorClassification: classification });
     await clearCancel(runId);
-    await finalizeFailed(
-      runId,
-      failingWorkflow,
-      projectId,
-      message,
-      classification,
-      inputData,
-      r.error
-    );
+    await finalizeFailed(runId, failingWorkflow, projectId, message, classification, inputData);
     return;
   }
   // tripwire / paused / anything unexpected — log and mark failed so the run
@@ -293,7 +247,7 @@ async function applyError(
   const failingWorkflow = await resolveFailingWorkflow(runId, err, workflowName);
   await setStatus(runId, "failed", { error: message, errorClassification: classification });
   await clearCancel(runId);
-  await finalizeFailed(runId, failingWorkflow, projectId, message, classification, inputData, err);
+  await finalizeFailed(runId, failingWorkflow, projectId, message, classification, inputData);
 }
 
 /**
