@@ -43,6 +43,10 @@ export interface Creator {
   id: string;
   name: string;
   avatar: string;
+  /** Resolved full URL for the cover/banner image, or empty string when
+   *  the creator hasn't set one. Wire field is `banner`; we resolve here
+   *  so the header component can render `<img src={banner}>` directly. */
+  banner: string;
   bio: string;
   joinedAt: string;
   levels: CreatorLevel[];
@@ -65,6 +69,17 @@ function buildAvatarUrl(path: string): string {
   if (!path) return "";
   if (/^(https?:|blob:|data:)/i.test(path)) return path;
   const base = env.USER_BASE_URL || env.OSS_BASE_URL;
+  if (!base) return "";
+  const trimmed = path.startsWith("/") ? path.slice(1) : path;
+  return `${base.replace(/\/+$/, "")}/${trimmed}`;
+}
+
+/** Banner/cover assets live on `NEXT_PUBLIC_BANNER_BASE_URL`. Same
+ *  pass-through rules as avatars. */
+function buildBannerUrl(path: string): string {
+  if (!path) return "";
+  if (/^(https?:|blob:|data:)/i.test(path)) return path;
+  const base = env.BANNER_BASE_URL;
   if (!base) return "";
   const trimmed = path.startsWith("/") ? path.slice(1) : path;
   return `${base.replace(/\/+$/, "")}/${trimmed}`;
@@ -97,6 +112,7 @@ function toCreator(row: CreatorRow | null | undefined): Creator | null {
     id,
     name,
     avatar: buildAvatarUrl(avatarPath),
+    banner: buildBannerUrl(safeStr(info.banner)),
     bio: safeStr(info.description),
     joinedAt: safeStr(info.createTime),
     levels,

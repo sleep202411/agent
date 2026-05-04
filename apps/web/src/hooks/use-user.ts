@@ -4,7 +4,7 @@ import {
   getUserInfo,
   updateUserInfo,
   uploadAvatar,
-  uploadCover,
+  uploadBanner,
   getCredits,
   getRecommendationCode,
   type UserInfo,
@@ -35,7 +35,7 @@ export function useUserInfo() {
  * for `useCurrentUser().user` is a one-line change at each callsite.
  *
  * `avatar` / `cover` are resolved full URLs (USER_BASE_URL +
- * headImg, BANNER_BASE_URL + coverImage). Components don't need to
+ * headImg, BANNER_BASE_URL + banner). Components don't need to
  * compose URLs locally any more.
  */
 export interface CurrentUser {
@@ -64,7 +64,7 @@ export function useCurrentUser(): {
       email: data.email ?? "",
       nickname: data.nickName ?? data.userName ?? data.name ?? "",
       avatar: data.headImgUrl,
-      cover: data.coverImageUrl,
+      cover: data.bannerUrl,
       userLevel: data.userLevel,
       raw: data,
     };
@@ -106,12 +106,25 @@ export function useUploadAvatar() {
   });
 }
 
-// ─── Upload Cover ─────────────────────────────────────
+// ─── Upload Banner ────────────────────────────────────
 
-export function useUploadCover() {
+/**
+ * Upload a cover/banner image. Two-step backend contract:
+ *   1. POST /project/uploadBanner       → returns relative path
+ *   2. POST /user/update/user/info      → persist `{ banner: <path> }`
+ *
+ * Both steps are stitched together here so callsites just hand over a
+ * File and get cache invalidation for free. Either step failing leaves
+ * the user-info cache untouched.
+ */
+export function useUploadBanner() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: uploadCover,
+    mutationFn: async (file: File) => {
+      const path = await uploadBanner(file);
+      await updateUserInfo({ banner: path });
+      return path;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.info });
     },

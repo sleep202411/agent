@@ -46,12 +46,20 @@ export function CreatorHeader({ creator }: CreatorHeaderProps) {
   const levels = Array.isArray(creator.levels) ? creator.levels.filter((l) => !!l?.name) : [];
   const contact = (creator.contact || "").trim();
 
+  const banner = (creator?.banner || "").trim();
+
   return (
     <div className="relative flex h-75 w-full items-end overflow-hidden">
-      {/* Default gradient banner (no cover image data on creators yet) */}
-      <div className="absolute inset-0 bg-linear-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(229,34,39,0.2),transparent_50%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(80,120,255,0.15),transparent_50%)]" />
+      {banner ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={banner} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      ) : (
+        <>
+          <div className="absolute inset-0 bg-linear-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(229,34,39,0.2),transparent_50%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,rgba(80,120,255,0.15),transparent_50%)]" />
+        </>
+      )}
       <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-black/40 to-transparent" />
 
       <div className="relative mx-auto flex w-full max-w-6xl items-end justify-between px-8 pb-6">
