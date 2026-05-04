@@ -8,6 +8,7 @@ import { setupInterceptors } from "@/src/lib/api";
 import { StoreProvider } from "@/src/store/provider";
 import { useEntityEventsSession } from "@/src/lib/entity-events/use-entity-events-session";
 import { AuthInterceptor } from "@/components/layout/auth-interceptor";
+import { ApexRedirect } from "@/components/apex-redirect";
 
 /**
  * Lives inside StoreProvider so it can hook Redux. Opens a single
@@ -51,6 +52,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <StoreProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
+          <ApexRedirect />
           <AuthInterceptor />
           <EntityEventsSession>{children}</EntityEventsSession>
           <Toaster position="top-center" />

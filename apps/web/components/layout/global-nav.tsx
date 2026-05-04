@@ -76,16 +76,40 @@ export function GlobalNav() {
   // Browse-style entries (IP / Crews / Creators) read as text-only labels;
   // tool-style entries (Studio onward) keep their icon glyph as an affordance
   // hint that they're an action surface, not a directory.
-  const navItems: { href: string; label: string; Icon?: typeof IconWand }[] = [
+  // `requiresAuth` items intercept clicks while the user is signed out
+  // and route to /login with `?redirect=` so post-login lands them back
+  // here. Without this, clicking e.g. Academy when logged out lets the
+  // legacy iframe try to load and its own bundle internally bounces
+  // through the studio subdomain (cross-origin auth loss). Native Next
+  // routes have AuthGate / AuthInterceptor as a fallback; the click
+  // gate is a strictly nicer UX.
+  const navItems: {
+    href: string;
+    label: string;
+    Icon?: typeof IconWand;
+    requiresAuth?: boolean;
+  }[] = [
     { href: "/ips", label: t("ipPlaza") },
     { href: "/crews", label: t("studioHall") },
     { href: "/creators", label: t("creators") },
     { href: "/art-studio/projects", label: t("studio"), Icon: IconWand },
     // Legacy uni-app route — flip to "/courses" once the native page in
     // app/(site)/courses/ ships per its README migration plan.
-    { href: "/pages/course/course", label: t("course"), Icon: IconBook },
+    {
+      href: "/pages/course/course",
+      label: t("course"),
+      Icon: IconBook,
+      requiresAuth: true,
+    },
     { href: "/news", label: t("news"), Icon: IconNews },
   ];
+
+  const onNavClick = (e: React.MouseEvent<HTMLAnchorElement>, item: (typeof navItems)[number]) => {
+    if (!item.requiresAuth) return;
+    if (user) return;
+    e.preventDefault();
+    router.push(`/login?redirect=${encodeURIComponent(item.href)}`);
+  };
 
   const USER_GUIDE_URL = "https://flowus.cn/share/cca82279-3553-47eb-beea-f71bc4cfb5c6?code=81LL9V";
 
@@ -130,19 +154,23 @@ export function GlobalNav() {
 
         {/* Nav links (desktop) */}
         <nav className="ml-4 hidden flex-1 items-center gap-6 lg:flex">
-          {navItems.map(({ href, label, Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-foreground",
-                isActive(href) ? "text-foreground" : "text-foreground/80"
-              )}
-            >
-              {Icon && <Icon className="size-4" />}
-              {label}
-            </Link>
-          ))}
+          {navItems.map((item) => {
+            const { href, label, Icon } = item;
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={(e) => onNavClick(e, item)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-foreground",
+                  isActive(href) ? "text-foreground" : "text-foreground/80"
+                )}
+              >
+                {Icon && <Icon className="size-4" />}
+                {label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Right cluster — desktop: user guide / theme / language / CTA */}
@@ -227,22 +255,28 @@ export function GlobalNav() {
       {mobileOpen && (
         <div className="border-t border-white/5 bg-popover text-popover-foreground lg:hidden">
           <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3">
-            {navItems.map(({ href, label, Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
-                  isActive(href)
-                    ? "bg-foreground/5 text-foreground"
-                    : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
-                )}
-              >
-                {Icon && <Icon className="size-4" />}
-                {label}
-              </Link>
-            ))}
+            {navItems.map((item) => {
+              const { href, label, Icon } = item;
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={(e) => {
+                    onNavClick(e, item);
+                    setMobileOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
+                    isActive(href)
+                      ? "bg-foreground/5 text-foreground"
+                      : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+                  )}
+                >
+                  {Icon && <Icon className="size-4" />}
+                  {label}
+                </Link>
+              );
+            })}
 
             <a
               href={USER_GUIDE_URL}
