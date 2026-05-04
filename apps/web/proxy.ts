@@ -3,15 +3,23 @@
  *
  * URL convention:
  * - All locales use a URL prefix: /en-US/crews, /zh-CN/crews, /zh-HK/crews
- * - Hitting an unprefixed path (/crews, /ips/123, /) 308-redirects to
- *   the default-locale prefix (/en-US/crews, /en-US/ips/123, /en-US).
+ * - Hitting an unprefixed path (/crews, /ips/123, /) redirects to a
+ *   locale-prefixed version. The chosen locale follows this precedence:
+ *     1. `NEXT_LOCALE` cookie — set by the language switcher; this is
+ *        the user's explicit choice and survives across sessions.
+ *     2. `Accept-Language` request header — first supported language
+ *        from the browser's preference list.
+ *     3. `DEFAULT_LOCALE` (en-US).
+ *   We use 307 (not 308) for these so the redirect target can change
+ *   when the cookie is updated; 308 is permanent and intermediaries
+ *   are allowed to cache it forever.
  *
  * Proxy action:
  * - /zh-CN/crews → rewrite internally to /crews so Next routes to
  *   app/(site)/crews/page.tsx; URL in browser stays /zh-CN/crews.
  * - /en-US/crews → same: rewrite internally to /crews.
- * - /crews (no prefix) → 308 to /en-US/crews. Then the request above
- *   handles it.
+ * - /crews (no prefix) → 307 to /<chosen>/crews. Then the request
+ *   above handles it.
  * - Paths that hit backend proxies (rewritten in next.config) are
  *   filtered out via the matcher.
  */
@@ -21,7 +29,56 @@ import type { NextRequest } from "next/server";
 import { isProtectedPath, SESSION_COOKIE_NAME } from "@/src/lib/auth/protected-paths";
 
 const LOCALES = ["en-US", "zh-HK", "zh-CN"] as const;
-const DEFAULT_LOCALE = "en-US";
+type SupportedLocale = (typeof LOCALES)[number];
+const DEFAULT_LOCALE: SupportedLocale = "en-US";
+const LOCALE_COOKIE_NAME = "NEXT_LOCALE";
+
+function isSupportedLocale(value: string): value is SupportedLocale {
+  return (LOCALES as readonly string[]).includes(value);
+}
+
+/**
+ * Pick the redirect target locale for an unprefixed request.
+ *
+ * Cookie wins because it's an explicit user action; Accept-Language
+ * is a fallback for first-time visitors with no cookie. Falling
+ * through to DEFAULT_LOCALE means the user gets *something* readable
+ * even if both signals are missing or unsupported.
+ */
+function pickRedirectLocale(request: NextRequest): SupportedLocale {
+  const cookieValue = request.cookies.get(LOCALE_COOKIE_NAME)?.value;
+  if (cookieValue && isSupportedLocale(cookieValue)) return cookieValue;
+
+  const accept = request.headers.get("accept-language");
+  if (accept) {
+    // Parse "zh-CN,zh;q=0.9,en;q=0.8" — sort entries by their q-weight
+    // (default 1.0) and return the first one that maps to a supported
+    // locale. We accept exact matches and a couple of regional aliases
+    // (zh-TW → zh-HK, plain `zh` → zh-CN) so common browser settings
+    // do the right thing without explicit user action.
+    const ranked = accept
+      .split(",")
+      .map((entry) => {
+        const [tag, ...params] = entry.trim().split(";");
+        const q = params.map((p) => p.trim()).find((p) => p.startsWith("q="));
+        const weight = q ? Number.parseFloat(q.slice(2)) : 1;
+        return { tag: tag.trim(), weight: Number.isFinite(weight) ? weight : 0 };
+      })
+      .filter((e) => e.tag.length > 0)
+      .sort((a, b) => b.weight - a.weight);
+
+    for (const { tag } of ranked) {
+      if (isSupportedLocale(tag)) return tag;
+      // Region aliases.
+      if (tag === "zh-TW" || tag === "zh-Hant") return "zh-HK";
+      if (tag === "zh" || tag.startsWith("zh-")) return "zh-CN";
+      const base = tag.split("-")[0];
+      if (base === "en") return "en-US";
+    }
+  }
+
+  return DEFAULT_LOCALE;
+}
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
@@ -38,11 +95,14 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  // No prefix → 308 redirect to /<DEFAULT_LOCALE><pathname>.
+  // No prefix → 307 redirect to /<picked-locale><pathname>. Cookie /
+  // Accept-Language can change between requests, so the redirect must
+  // not be cached as permanent.
   if (matchedLocale === null) {
+    const target = pickRedirectLocale(request);
     const url = request.nextUrl.clone();
-    url.pathname = `/${DEFAULT_LOCALE}${pathname === "/" ? "" : pathname}`;
-    return NextResponse.redirect(url, 308);
+    url.pathname = `/${target}${pathname === "/" ? "" : pathname}`;
+    return NextResponse.redirect(url, 307);
   }
 
   // Auth gate: protected paths without a session cookie 307 to /login
