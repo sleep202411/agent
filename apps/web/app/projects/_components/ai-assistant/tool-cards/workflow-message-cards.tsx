@@ -897,62 +897,6 @@ export function WorkflowFailedCard({
           </ActionButton>
         </div>
       )}
-      {/* MISSING_ARTIFACT remediation: the failing workflow needs an
-          upstream artifact (e.g. `outline`) that hasn't been produced
-          yet. Plain Retry would just hit the same error again — instead
-          surface a button that dispatches the correct producer
-          workflow (story_outline / parse_script). When that succeeds
-          the user can click Retry on the original card. */}
-      {output.errorCode === "MISSING_ARTIFACT" &&
-        output.missingArtifact &&
-        output.missingArtifact.producedBy.length > 0 &&
-        (() => {
-          const producer = output.missingArtifact.producedBy[0] as WorkflowName;
-          const producerLabel = t(
-            (WORKFLOW_LABEL_KEYS as Record<string, string>)[producer] ?? "workflowGeneric"
-          );
-          const missingKind = output.missingArtifact.kind;
-          const handleRunPrerequisite = () => {
-            if (!projectId || !isActive || hasInFlightSuccessor) return;
-            const seedInput = buildInputData(
-              producer,
-              {
-                projectId,
-                worldId,
-                targetEpisodeCount:
-                  typeof targetEpisodeCount === "number" ? targetEpisodeCount : null,
-              },
-              undefined,
-              messages ?? undefined
-            );
-            void dispatch(
-              startWorkflowFromButton({
-                projectId,
-                userLabel: t("workflowActionRunPrerequisite", { name: producerLabel }),
-                workflowName: producer,
-                inputData: seedInput,
-              })
-            );
-          };
-          return (
-            <div className="mt-3 flex flex-col gap-1.5">
-              <ActionButton
-                variant="primary"
-                onClick={handleRunPrerequisite}
-                disabled={!projectId || !isActive || hasInFlightSuccessor}
-                icon={<IconRefresh className="size-4" />}
-              >
-                {t("workflowActionRunPrerequisite", { name: producerLabel })}
-              </ActionButton>
-              <p className="text-[11px] leading-relaxed text-muted-foreground/80">
-                {t("workflowHintMissingArtifact", {
-                  kind: missingKind,
-                  name: producerLabel,
-                })}
-              </p>
-            </div>
-          );
-        })()}
     </div>
   );
 }
