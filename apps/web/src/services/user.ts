@@ -138,21 +138,64 @@ function resolveAssetUrl(path: string | null | undefined, base: string): string 
   return base ? `${base}/${path}` : undefined;
 }
 
+/** Certification / FD-level entry returned alongside the user info
+ *  envelope. Same shape as the talent-market `level` rows so the two
+ *  surfaces can render the same chip component. `iconUrl` is the
+ *  resolved badge image URL (STATIC_BASE_URL + imagePath); empty
+ *  string when the level has no badge. */
+export interface UserCertLevel {
+  id: number;
+  name: string;
+  description?: string | null;
+  imagePath?: string | null;
+  iconUrl: string;
+  type?: number;
+  remark?: string | null;
+  content?: string | null;
+}
+
 export interface UserInfoResolved extends UserInfo {
   /** Full URL for the avatar (USER_BASE_URL || OSS_BASE_URL + headImg/avatar). */
   headImgUrl?: string;
   /** Full URL for the cover/banner image (BANNER_BASE_URL + banner). */
   bannerUrl?: string;
+  /** Certification levels (FD-IV etc.). Empty array if backend doesn't
+   *  return any — callers can render conditionally. */
+  levels?: UserCertLevel[];
+}
+
+interface UserCertLevelWire {
+  id: number;
+  name: string;
+  description?: string | null;
+  imagePath?: string | null;
+  type?: number;
+  remark?: string | null;
+  content?: string | null;
+}
+
+interface UserInfoEnvelope {
+  info?: UserInfo;
+  level?: UserCertLevelWire[];
 }
 
 export const getUserInfo = async (): Promise<UserInfoResolved> => {
-  const info = await api.get<UserInfo>("/user/query/user/info");
-  if (!info) return info as UserInfoResolved;
+  // Backend response shape is `{ code, msg, info, level }`. The shared
+  // api-client unwrap defaults to `body.data ?? body.info ?? ...` which
+  // would silently drop `level`. Use `raw: true` to keep the full
+  // envelope so we can surface both info and level downstream.
+  const env_ = await api.get<UserInfoEnvelope>("/user/query/user/info", { raw: true });
+  const info = env_?.info ?? ({} as UserInfo);
+  const rawLevels = Array.isArray(env_?.level) ? env_.level : [];
   const avatarBase = env.USER_BASE_URL || env.OSS_BASE_URL;
   return {
     ...info,
     headImgUrl: resolveAssetUrl(info.headImg ?? info.avatar, avatarBase),
     bannerUrl: resolveAssetUrl(info.banner, env.BANNER_BASE_URL),
+    levels: rawLevels.map((l) => ({
+      ...l,
+      iconUrl: resolveAssetUrl(l.imagePath, env.STATIC_BASE_URL) ?? "",
+    })),
   };
 };
 

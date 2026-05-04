@@ -80,8 +80,17 @@ export function CreatorHeader({ creator }: CreatorHeaderProps) {
                 {levels.map((l) => (
                   <span
                     key={l.id}
-                    className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-px text-[10px] font-medium text-amber-300"
+                    title={l.description || l.name}
+                    className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 py-px pl-1 pr-2 text-[10px] font-medium text-amber-300"
                   >
+                    {l.iconUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={l.iconUrl}
+                        alt=""
+                        className="size-3.5 shrink-0 rounded-full object-cover"
+                      />
+                    ) : null}
                     {l.name}
                   </span>
                 ))}

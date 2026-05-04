@@ -37,6 +37,10 @@ import { env } from "@/src/env";
 export interface CreatorLevel {
   id: number;
   name: string;
+  /** Resolved icon URL (STATIC_BASE_URL + raw imagePath). Empty when
+   *  the level has no badge image. */
+  iconUrl: string;
+  description: string;
 }
 
 export interface Creator {
@@ -74,6 +78,18 @@ function buildAvatarUrl(path: string): string {
   return `${base.replace(/\/+$/, "")}/${trimmed}`;
 }
 
+/** Cert-level badge icons live on the static CDN (`STATIC_BASE_URL`,
+ *  e.g. `https://static.fizzspace.cn/static/icon/...`). Same pass-through
+ *  rules as avatars / banners. */
+function buildLevelIconUrl(path: string): string {
+  if (!path) return "";
+  if (/^(https?:|blob:|data:)/i.test(path)) return path;
+  const base = env.STATIC_BASE_URL;
+  if (!base) return "";
+  const trimmed = path.startsWith("/") ? path.slice(1) : path;
+  return `${base.replace(/\/+$/, "")}/${trimmed}`;
+}
+
 /** Banner/cover assets live on `NEXT_PUBLIC_BANNER_BASE_URL`. Same
  *  pass-through rules as avatars. */
 function buildBannerUrl(path: string): string {
@@ -106,7 +122,12 @@ function toCreator(row: CreatorRow | null | undefined): Creator | null {
   const avatarPath = safeStr(info.avatar);
   const levels: CreatorLevel[] = levelRaw
     .filter((l): l is NonNullable<typeof l> => !!l && typeof l.name === "string")
-    .map((l) => ({ id: Number(l.id) || 0, name: l.name }));
+    .map((l) => ({
+      id: Number(l.id) || 0,
+      name: l.name,
+      iconUrl: buildLevelIconUrl(safeStr(l.imagePath)),
+      description: safeStr(l.description),
+    }));
 
   return {
     id,
