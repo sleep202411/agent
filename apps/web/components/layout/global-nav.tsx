@@ -156,10 +156,15 @@ export function GlobalNav() {
         <nav className="ml-4 hidden flex-1 items-center gap-6 lg:flex">
           {navItems.map((item) => {
             const { href, label, Icon } = item;
+            // Localize the click target so navigation doesn't shed the
+            // user's current locale via an unprefixed → proxy → cookie
+            // round-trip. legacy uni-app routes (`/pages/...`) are
+            // served outside the locale prefix and must stay raw.
+            const target = href.startsWith("/pages/") ? href : localizePath(href, locale as Locale);
             return (
               <Link
                 key={href}
-                href={href}
+                href={target}
                 onClick={(e) => onNavClick(e, item)}
                 className={cn(
                   "inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-foreground",
@@ -257,10 +262,13 @@ export function GlobalNav() {
           <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3">
             {navItems.map((item) => {
               const { href, label, Icon } = item;
+              const target = href.startsWith("/pages/")
+                ? href
+                : localizePath(href, locale as Locale);
               return (
                 <Link
                   key={href}
-                  href={href}
+                  href={target}
                   onClick={(e) => {
                     onNavClick(e, item);
                     setMobileOpen(false);
