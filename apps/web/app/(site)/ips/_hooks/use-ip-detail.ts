@@ -201,6 +201,11 @@ export function useUploadProjectVideo() {
   return useMutation({
     mutationFn: uploadProjectVideo,
     onSuccess: (_data, variables) => {
+      // Invalidate the project detail too — `useProjectVideoLink` is
+      // gated on `project.videoLink` being truthy, so without a detail
+      // refetch a first-time upload leaves the getLink query disabled
+      // and the just-uploaded video never resolves to a playable URL.
+      queryClient.invalidateQueries({ queryKey: ipKeys.detail(variables.projectId) });
       queryClient.invalidateQueries({ queryKey: ipKeys.video(variables.projectId) });
     },
   });
