@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { IconCircleCheck, IconCircleX, IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { backendApi } from "@/src/lib/api";
@@ -17,6 +17,7 @@ interface OrderStatusResponse {
 
 export default function PaymentResultPage() {
   const t = useTranslations("payment");
+  const router = useRouter();
   const searchParams = useSearchParams();
   const orderNo = searchParams?.get("order_id") ?? searchParams?.get("orderNo") ?? "";
   const [status, setStatus] = useState<PaymentStatus>("loading");
@@ -88,13 +89,7 @@ export default function PaymentResultPage() {
             </p>
             <button
               type="button"
-              onClick={() => {
-                if (window.self !== window.top) {
-                  window.parent.postMessage({ type: "navigateToCreatorCenter" }, "*");
-                } else {
-                  window.history.back();
-                }
-              }}
+              onClick={() => router.push("/art-studio")}
               className="mt-6 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110"
             >
               {t("backToCreatorCenter")}

@@ -1,11 +1,8 @@
 /**
- * Contract between /studio composer and the downstream project workspace
- * (/projects/:id). A "seed" is the payload the user gave in the hero
- * composer — it's carried via postMessage → sessionStorage → postMessage,
- * and consumed once by /projects/:id to bootstrap the first StoryOS turn.
- *
- * All layers (Next.js /studio, fizzdragon-web creatorCenter + workspace,
- * Next.js /projects/:id) must agree on these shapes.
+ * Contract between the /art-studio composer and the downstream project
+ * workspace (/projects/:id). A "seed" is the payload the user gave in
+ * the hero composer; the composer stashes it in sessionStorage and the
+ * workspace picks it up on mount to bootstrap the first StoryOS turn.
  */
 
 export type StudioAgent = "character" | "episode" | "prop" | "scene";
@@ -28,27 +25,6 @@ export interface StudioSeed {
   prompt: string;
   /** 剧本附件；可选 */
   attachment?: StudioSeedAttachment;
-}
-
-// ─── postMessage 协议 ──────────────────────────────────
-
-/** /studio → parent(iframe host)：请求打开项目 */
-export interface OpenProjectMessage {
-  type: "openProject";
-  projectId: string;
-  worldId: string;
-  seed: StudioSeed;
-}
-
-/** /projects/:id → parent(iframe host)：问它有没有为本次跳转暂存的 seed */
-export interface RequestSeedMessage {
-  type: "requestSeed";
-}
-
-/** parent → /projects/:id：回传 seed（没有就 payload: null） */
-export interface SeedMessage {
-  type: "seed";
-  payload: StudioSeed | null;
 }
 
 // ─── sessionStorage key ────────────────────────────────

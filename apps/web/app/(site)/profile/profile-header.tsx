@@ -148,10 +148,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const handleGenerateReferralLink = () => {
     doGetReferralCode(undefined, {
       onSuccess: (code) => {
-        const inIframe = window.self !== window.top && !!document.referrer;
-        const link = inIframe
-          ? `${new URL(document.referrer).origin}/pages/register/register?recommendationCode=${code}`
-          : `${window.location.origin}/register?recommendationCode=${code}`;
+        const link = `${window.location.origin}/register?recommendationCode=${code}`;
         setReferralLink(link);
         setCopied(false);
         setReferralDialogOpen(true);
