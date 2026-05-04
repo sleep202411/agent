@@ -30,6 +30,8 @@ import {
   type PersonalWork,
   type Project,
 } from "@/src/services/project";
+import { api } from "@/src/lib/api";
+import type { ExperienceEntry } from "@/app/(site)/profile/_hooks/use-profile-extras";
 import { env } from "@/src/env";
 
 export interface CreatorLevel {
@@ -45,6 +47,9 @@ export interface Creator {
   joinedAt: string;
   levels: CreatorLevel[];
   contact: string;
+  /** Raw `study` JSON string from the backend — parse with
+   *  `parseEducation()` from `@/src/services/user` at render time. */
+  study: string;
 }
 
 function safeStr(v: unknown): string {
@@ -96,6 +101,7 @@ function toCreator(row: CreatorRow | null | undefined): Creator | null {
     joinedAt: safeStr(info.createTime),
     levels,
     contact: safeStr(info.contact).trim(),
+    study: safeStr(info.study),
   };
 }
 
@@ -212,6 +218,37 @@ export function useCreatorProjects(creatorId: string) {
     queryKey: ["creator", "projects", creatorId],
     queryFn: () => getUserProjects(creatorId, 1, 50),
     enabled: !!creatorId,
+  });
+}
+
+/**
+ * Work-experience entries for a given creator (read-only view of someone
+ * else's resume). Backend endpoint:
+ *   GET /user/resumer/list/{userId}
+ *
+ * Distinct from the self-profile `useExperience` hook which hits
+ * `/user/resumer/me`. Same row shape on the wire — reuses
+ * `ExperienceEntry` from the profile feature for typing only.
+ */
+export function useCreatorExperience(creatorId: string) {
+  return useQuery<ExperienceEntry[]>({
+    queryKey: ["creator", "experience", creatorId],
+    enabled: !!creatorId,
+    queryFn: async () => {
+      const raw = await api.get<ExperienceEntry[] | { list?: ExperienceEntry[] } | null>(
+        `/user/resumer/list/${encodeURIComponent(creatorId)}`
+      );
+      const list = Array.isArray(raw) ? raw : (raw?.list ?? []);
+      return list.map((e) => ({
+        id: e?.id,
+        title: typeof e?.title === "string" ? e.title : "",
+        organization: typeof e?.organization === "string" ? e.organization : "",
+        location: typeof e?.location === "string" ? e.location : "",
+        startTime: typeof e?.startTime === "string" ? e.startTime : "",
+        endTime: typeof e?.endTime === "string" ? e.endTime : "",
+        description: typeof e?.description === "string" ? e.description : "",
+      }));
+    },
   });
 }
 

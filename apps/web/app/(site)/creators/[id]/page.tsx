@@ -10,9 +10,11 @@ import {
   useCreatorPersonalWorks,
   useCreatorProjects,
   useCreatorJoinedProjects,
+  useCreatorExperience,
   type Creator,
 } from "@/app/(site)/creators/_hooks/use-creator";
 import type { PersonalWork, Project } from "@/src/services/project";
+import { parseEducation } from "@/src/services/user";
 import { CreatorHeader } from "./creator-header";
 
 export default function CreatorDetailPage() {
@@ -56,6 +58,10 @@ export default function CreatorDetailPage() {
           (about + a handful of works) where scrolling is cheaper. */}
       <div className="relative mx-auto max-w-6xl space-y-12 px-4 pb-24 pt-10">
         <OverviewSection creator={creator} />
+
+        <EducationSection creator={creator} />
+
+        <ExperienceSection creatorId={creator.id} />
 
         <CreatorSection title={tp("personalWorks")}>
           <PersonalWorksSection creatorId={creator.id} />
@@ -101,6 +107,95 @@ function OverviewSection({ creator }: { creator: Creator }) {
         </p>
       ) : (
         <p className="text-sm text-muted-foreground/70">{t("bioEmpty")}</p>
+      )}
+    </section>
+  );
+}
+
+// ─── Education ────────────────────────────────────────
+
+function EducationSection({ creator }: { creator: Creator }) {
+  const tp = useTranslations("profile");
+  const education = parseEducation(creator.study);
+
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        {tp("education")}
+      </h2>
+      {education.length === 0 ? (
+        <p className="text-sm text-muted-foreground/70">{tp("educationEmpty")}</p>
+      ) : (
+        <ul className="space-y-2">
+          {education.map((entry, i) => {
+            const range = [entry.startDate, entry.endDate || tp("present")]
+              .filter(Boolean)
+              .join(" – ");
+            const head = [entry.schoolName, entry.major].filter(Boolean).join(" · ");
+            return (
+              <li
+                key={i}
+                className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground"
+              >
+                {head && <div className="font-medium">{head}</div>}
+                {range && <div className="mt-0.5 text-xs text-muted-foreground">{range}</div>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ─── Experience ───────────────────────────────────────
+
+function ExperienceSection({ creatorId }: { creatorId: string }) {
+  const tp = useTranslations("profile");
+  const { data: experience = [], isLoading } = useCreatorExperience(creatorId);
+
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        {tp("experience")}
+      </h2>
+      {isLoading ? (
+        <div className="flex h-24 items-center justify-center">
+          <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : experience.length === 0 ? (
+        <p className="text-sm text-muted-foreground/70">{tp("experienceEmpty")}</p>
+      ) : (
+        <ul className="space-y-2">
+          {experience.map((entry, i) => {
+            const range = [entry.startTime, entry.endTime || tp("present")]
+              .filter(Boolean)
+              .join(" – ");
+            const head = [entry.title, entry.organization].filter(Boolean).join(" · ");
+            return (
+              <li
+                key={entry.id ?? i}
+                className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm text-foreground"
+              >
+                {head && <div className="font-medium">{head}</div>}
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                  {range && <span>{range}</span>}
+                  {entry.location && (
+                    <>
+                      {range && <span>·</span>}
+                      <span>{entry.location}</span>
+                    </>
+                  )}
+                </div>
+                {entry.description && (
+                  <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-secondary-foreground">
+                    {entry.description}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </section>
   );
