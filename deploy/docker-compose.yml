@@ -154,15 +154,22 @@ services:
     image: ${REDIS_IMAGE:-redis/redis-stack-server:7.4.0-v3}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-redis
     restart: always
-    # Cap Redis memory so an attachment-cache / chat-event burst can't eat
-    # everything. `allkeys-lru` evicts least-recently-used when the cap is
-    # hit — safe because our attachment / draft / workflow keys all have
-    # TTLs anyway; the LRU eviction is just a backstop against runaway.
-    # 1g for WORKER_CONCURRENCY=90: BullMQ queue depth + draft cache can
-    # peak at hundreds of MB when lots of workflows are mid-flight.
+    # Cap Redis memory so an attachment-cache / chat-event burst can't
+    # eat everything. `noeviction` returns OOM on writes when the cap is
+    # hit rather than evicting random keys — required because BullMQ
+    # jobs and Mastra workflow state stored here MUST NOT be dropped
+    # mid-run; LRU eviction would silently lose step state and surface
+    # as `[reaper] cancelled stale run` + the user-facing "智能体没
+    # 反应" symptom. Attachment / draft / chat keys carry their own
+    # TTLs and age out cleanly without LRU pressure. Peak usage is
+    # currently ~30M of 900M (3.4%); OOM is theoretical until usage
+    # scales 30× from here, at which point raise the cap, don't loosen
+    # the eviction policy.
+    # 1g for WORKER_CONCURRENCY=90: BullMQ queue depth + draft cache
+    # can peak at hundreds of MB when lots of workflows are mid-flight.
     mem_limit: 1g
     environment:
-      REDIS_ARGS: "--appendonly yes --appendfsync everysec --maxmemory 900mb --maxmemory-policy allkeys-lru"
+      REDIS_ARGS: "--appendonly yes --appendfsync everysec --maxmemory 900mb --maxmemory-policy noeviction"
     volumes:
       - redis_data:/data
     networks:
