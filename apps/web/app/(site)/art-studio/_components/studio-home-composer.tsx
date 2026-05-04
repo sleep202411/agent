@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { IconArrowUp, IconLoader2, IconPaperclip, IconSparkles, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
+import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { cn } from "@/lib/utils";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { quickCreateWorldProduct } from "@/src/services/world";
@@ -124,7 +125,7 @@ export function StudioHomeComposer() {
       } catch (err) {
         console.warn("[studio-composer] sessionStorage write failed", err);
       }
-      router.push(`/projects/${projectId}`);
+      router.push(localizePath(`/projects/${projectId}`, getCurrentLocale()));
     } catch (err) {
       console.warn("[studio-composer] quick-create failed", err);
       toast.error(tc("uploadFailed"));
