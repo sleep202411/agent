@@ -1821,6 +1821,8 @@
     "workflowActionRevise": "I want to revise",
     "workflowActionCancel": "Cancel task",
     "workflowActionRetry": "Retry",
+    "workflowActionRunPrerequisite": "Run {name} first",
+    "workflowHintMissingArtifact": "Needs {kind} from {name} before this step can run.",
     "workflowFailureAnnounce": "\"{label}\" failed: {reason}. Tap Retry on the card, or tell me what to adjust and I'll redispatch.",
     "workflowCancelledAnnounce": "\"{label}\" was cancelled.",
     "workflowConfirmPrompt": "Generated — does it look right?",
