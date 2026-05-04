@@ -23,9 +23,7 @@ import {
 import { useTranslations } from "@/src/i18n/i18n";
 import { MEMBER_ROLE, useProjectRoles } from "@/app/(site)/ips/_hooks/use-ip";
 
-const TEAM_HERO_URL = encodeURI(
-  "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月30日 team banner.png"
-);
+const TEAM_HERO_URL = "https://static.fizzspace.cn/static/pc/add_member.png";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -38,11 +36,20 @@ export interface NewMember {
 interface AddMemberDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Account emails already on the team — surface an inline warning so
+   *  the caller can't add the same person twice. Compared case-insensitively. */
+  existingEmails?: string[];
   busy?: boolean;
   onSubmit: (member: NewMember) => void | Promise<void>;
 }
 
-export function AddMemberDialog({ open, onOpenChange, busy, onSubmit }: AddMemberDialogProps) {
+export function AddMemberDialog({
+  open,
+  onOpenChange,
+  existingEmails = [],
+  busy,
+  onSubmit,
+}: AddMemberDialogProps) {
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
 
@@ -73,10 +80,12 @@ export function AddMemberDialog({ open, onOpenChange, busy, onSubmit }: AddMembe
   const trimmedEmail = email.trim();
   const isValidEmail = EMAIL_RE.test(trimmedEmail);
   const showInvalidHint = trimmedEmail.length > 0 && !isValidEmail;
-  const canSubmit = isValidEmail && !!role && !busy;
+  const normalizedExisting = existingEmails.map((e) => e.trim().toLowerCase());
+  const isDuplicate = isValidEmail && normalizedExisting.includes(trimmedEmail.toLowerCase());
+  const canSubmit = isValidEmail && !isDuplicate && !!role && !busy;
 
   const handleSubmit = async () => {
-    if (!isValidEmail) return;
+    if (!isValidEmail || isDuplicate) return;
     await onSubmit({
       email: trimmedEmail,
       role: Number(role),
@@ -114,6 +123,12 @@ export function AddMemberDialog({ open, onOpenChange, busy, onSubmit }: AddMembe
                 <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <IconAlertCircle className="size-3.5" />
                   {t("memberLookupInvalid")}
+                </p>
+              )}
+              {isDuplicate && (
+                <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-400">
+                  <IconAlertCircle className="size-3.5" />
+                  {t("memberAlreadyOnTeam")}
                 </p>
               )}
             </Field>

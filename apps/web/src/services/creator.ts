@@ -19,6 +19,9 @@ export interface CreatorInfo {
   name?: string | null;
   contact?: string | null;
   avatar?: string | null;
+  /** Cover/banner image — relative path resolved against
+   *  `NEXT_PUBLIC_BANNER_BASE_URL`. */
+  banner?: string | null;
   description?: string | null;
   createTime?: string | null;
   other?: string | null;

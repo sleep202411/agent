@@ -26,7 +26,9 @@ export interface UserInfo {
   scoreBalance?: number;
   expireTime?: string;
   createTime?: string;
-  coverImage?: string;
+  /** Cover/banner image. Wire field is `banner` (Java side). Persisted
+   *  via `updateUserInfo({ banner })`; uploaded via `uploadBanner()`. */
+  banner?: string;
   /** Whether the user is open to job offers / freelance work. */
   availableForWork?: boolean;
   /** Education history. Wire format is a JSON-encoded `EducationEntry[]`
@@ -139,8 +141,8 @@ function resolveAssetUrl(path: string | null | undefined, base: string): string 
 export interface UserInfoResolved extends UserInfo {
   /** Full URL for the avatar (USER_BASE_URL || OSS_BASE_URL + headImg/avatar). */
   headImgUrl?: string;
-  /** Full URL for the cover image (BANNER_BASE_URL + coverImage). */
-  coverImageUrl?: string;
+  /** Full URL for the cover/banner image (BANNER_BASE_URL + banner). */
+  bannerUrl?: string;
 }
 
 export const getUserInfo = async (): Promise<UserInfoResolved> => {
@@ -150,7 +152,7 @@ export const getUserInfo = async (): Promise<UserInfoResolved> => {
   return {
     ...info,
     headImgUrl: resolveAssetUrl(info.headImg ?? info.avatar, avatarBase),
-    coverImageUrl: resolveAssetUrl(info.coverImage, env.BANNER_BASE_URL),
+    bannerUrl: resolveAssetUrl(info.banner, env.BANNER_BASE_URL),
   };
 };
 
@@ -163,11 +165,13 @@ export const updateUserInfo = (data: {
   study?: string;
   /** Job-seeking toggle. true = open / show in talent market filters. */
   availableForWork?: boolean;
+  /** Cover/banner image path (returned by `uploadBanner`). */
+  banner?: string;
 }) => api.post("/user/update/user/info", { data });
 
 export const uploadAvatar = (file: File) => api.upload<string>("/user/uploadAratar", file);
 
-export const uploadCover = (file: File) => api.upload<string>("/content/user/uploadCover", file);
+export const uploadBanner = (file: File) => api.upload<string>("/project/uploadBanner", file);
 
 export const getRecommendationCode = () => api.get<string>("/user/recommendationcode");
 

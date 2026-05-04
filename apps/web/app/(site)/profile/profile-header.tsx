@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { env } from "@/src/env";
 import {
   useUploadAvatar,
-  useUploadCover,
+  useUploadBanner,
   useReferralCode,
   useUpdateUserInfo,
 } from "@/src/hooks/use-user";
@@ -101,7 +101,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
 
   const { mutate: doUpdateUserInfo } = useUpdateUserInfo();
   const { mutate: doUploadAvatar, isPending: uploadingAvatar } = useUploadAvatar();
-  const { mutate: doUploadCover, isPending: uploadingCover } = useUploadCover();
+  const { mutate: doUploadBanner, isPending: uploadingCover } = useUploadBanner();
   const { mutate: doGetReferralCode, isPending: generatingLink } = useReferralCode();
   const { data: certifications } = useMyCertifications();
   const { data: certRoles } = useCertificationRoles();
@@ -160,10 +160,10 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
     });
   };
 
-  const coverUrl = info?.coverImage
-    ? info.coverImage.startsWith("http")
-      ? info.coverImage
-      : `${env.USER_BASE_URL || env.OSS_BASE_URL}/${info.coverImage}`
+  const coverUrl = info?.banner
+    ? info.banner.startsWith("http")
+      ? info.banner
+      : `${env.BANNER_BASE_URL}/${info.banner}`
     : "";
 
   const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,7 +178,7 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
       toast.error(t("coverSizeLimit"));
       return;
     }
-    doUploadCover(file, {
+    doUploadBanner(file, {
       onSuccess: () => toast.success(t("coverUpdated")),
       onError: () => toast.error(t("coverUploadFailed")),
     });
@@ -199,16 +199,17 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
         )}
         <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-black/40 to-transparent" />
 
-        {/* Cover upload button — backend not wired yet, show coming-soon
-            toast on click. Keeps the affordance visible (so the cover
-            slot reads as editable) without committing to the upload
-            flow until /vedio/user/uploadCover ships. */}
         <button
           type="button"
-          onClick={() => toast.info(t("coverComingSoon"))}
-          className="absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-lg bg-black/40 px-3 py-1.5 text-xs text-white/80 opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/60 hover:text-white group-hover/banner:opacity-100"
+          onClick={() => coverInputRef.current?.click()}
+          disabled={uploadingCover}
+          className="absolute right-4 top-4 z-10 flex items-center gap-1.5 rounded-lg bg-black/40 px-3 py-1.5 text-xs text-white/80 opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/60 hover:text-white group-hover/banner:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <IconPhoto className="size-3.5" />
+          {uploadingCover ? (
+            <IconLoader2 className="size-3.5 animate-spin" />
+          ) : (
+            <IconPhoto className="size-3.5" />
+          )}
           {t("changeCover")}
         </button>
         <input

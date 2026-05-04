@@ -57,6 +57,7 @@ function mapWireMember(w: WireMember): ProjectMember {
     userName: u?.name ?? w.userName ?? undefined,
     nickName: u?.nickName ?? w.nickName ?? undefined,
     avatar: u?.avatar ?? w.avatar ?? undefined,
+    contact: u?.contact ?? undefined,
     role: w.role ?? w.roleId ?? undefined,
     roleId: w.roleId ?? undefined,
     roleName: w.roleName ?? undefined,

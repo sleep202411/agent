@@ -164,6 +164,9 @@ export interface ProjectMember {
   userName?: string | null;
   nickName?: string | null;
   avatar?: string | null;
+  /** Account email (Java field: `contact`). Used by the add-member
+   *  dialog for client-side dup-checking before the mutation fires. */
+  contact?: string | null;
   /** Backend `role` (int32). 0 = member, 8 = admin, 10 = owner — convention
    *  shared with `app/projects/_components/project-team-dialog.tsx`. */
   role?: number;
