@@ -94,10 +94,11 @@ export async function listCreators(params: CreatorListPayload = {}): Promise<Cre
  * list cache. Returns the same `{ level, info }` row shape as the list
  * endpoint.
  *
- * Backend signature: `POST /user/other/user/info` with
- * `application/x-www-form-urlencoded` body (`userId=<id>`).
+ * Backend signature: `POST /user/other/user/info?UserId=<id>` — Spring
+ * `@RequestParam`, so the field goes in the query string (capital I)
+ * with no request body.
  */
 export const getCreatorBasicInfo = (userId: number | string) =>
-  api.postForm<CreatorRow>("/user/other/user/info", {
-    userId: String(userId),
+  api.post<CreatorRow>("/user/other/user/info", {
+    params: { UserId: String(userId) },
   });

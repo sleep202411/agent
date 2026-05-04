@@ -171,7 +171,10 @@ export function useOwnerInfo(userId: string | number | undefined) {
   return useQuery({
     queryKey: detailKeys.owner(userId ?? ""),
     enabled: userId != null && userId !== "",
-    queryFn: () => api.postForm<OwnerInfo>("/user/other/user/info", { UserId: String(userId) }),
+    queryFn: () =>
+      api.post<OwnerInfo>("/user/other/user/info", {
+        params: { UserId: String(userId) },
+      }),
   });
 }
 
