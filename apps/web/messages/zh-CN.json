@@ -1821,6 +1821,8 @@
     "workflowActionRevise": "我要修改",
     "workflowActionCancel": "取消任务",
     "workflowActionRetry": "重试",
+    "workflowActionRunPrerequisite": "Run {name} first",
+    "workflowHintMissingArtifact": "Needs {kind} from {name} before this step can run.",
     "workflowFailureAnnounce": "「{label}」执行失败：{reason}。可以点卡片上的「重试」再试一次，或者告诉我要调整什么再重新派发。",
     "workflowCancelledAnnounce": "「{label}」已取消。",
     "workflowConfirmPrompt": "已生成，请确认是否满意？",

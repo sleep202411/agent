@@ -164,6 +164,37 @@ export const workflowRoutes = [
     },
   }),
 
+  // ─── POST /workflow/status ─────────────────────────────────────────
+  // Batch status lookup. Frontend feeds in the runIds it currently
+  // shows in queued/running state and gets back each run's authoritative
+  // server-side status. Used by the composer pill's `useWorkflowLiveness`
+  // poll to drop stale runIds whose lifecycle messages never made it
+  // into the client's Redux (WS race, missed message_added, etc.) —
+  // without this, "Queued · N" can stick at N forever even after every
+  // run has terminated server-side. Cap at 100 runIds per call so a
+  // misbehaving client can't fan out into a Redis storm.
+  registerApiRoute("/workflow/status", {
+    method: "POST",
+    handler: async (c) => {
+      const body = (await c.req.json().catch(() => ({}))) as {
+        runIds?: unknown;
+      };
+      const runIds = Array.isArray(body.runIds)
+        ? (body.runIds.filter((r) => typeof r === "string") as string[]).slice(0, 100)
+        : [];
+      const statuses: Record<string, { status: string; workflowName?: string }> = {};
+      await Promise.all(
+        runIds.map(async (runId) => {
+          const meta = await getMeta(runId);
+          statuses[runId] = meta
+            ? { status: meta.status, workflowName: meta.workflowName }
+            : { status: "unknown" };
+        })
+      );
+      return c.json(statuses);
+    },
+  }),
+
   // ─── POST /workflow/:runId/heartbeat ──────────────────────────────
   // Light-weight liveness ping from the web client. Stamps
   // `lastHeartbeatAt` on the run's meta. The reaper reads this on

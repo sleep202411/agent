@@ -193,6 +193,37 @@ export class WorkflowProxyController {
     });
   }
 
+  // ─── Batch run-status lookup ───────────────────────────────────────
+  // Frontend's composer pill calls this every ~30s for the runIds it
+  // still believes are queued/running. Returns each run's authoritative
+  // server-side status so the pill can drop runs that already terminated
+  // server-side but whose `tool-workflow_failed`/`completed` chat
+  // message never made it into Redux (WS race, missed message_added).
+  // Without this fallback, "Queued · N" could stick at N indefinitely.
+  // Body: { runIds: string[] (cap 100) }, returns { [runId]: { status, workflowName? } }.
+  @Post('status')
+  async status(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = String(body?.projectId ?? '');
+    const runIds = Array.isArray(body?.runIds)
+      ? (body.runIds.filter(
+          (r): r is string => typeof r === 'string',
+        ) as string[])
+      : [];
+    const context = this.buildContext(
+      user,
+      projectId ? { projectId } : undefined,
+    );
+    return this.forward('/workflow/status', {
+      method: 'POST',
+      headers: this.buildHeaders(req, context, true),
+      body: JSON.stringify({ runIds }),
+    });
+  }
+
   // ─── Liveness heartbeat ────────────────────────────────────────────
   // Frontend pings every ~10s while the chat is open. Stamps the
   // run's lastHeartbeatAt; if the client stops pinging, the agent's
