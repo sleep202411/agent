@@ -28,7 +28,17 @@
  * deep-link case shows up.
  */
 
+import { notFound } from "next/navigation";
 import { use } from "react";
+
+/**
+ * Allowlist of legacy paths still permitted to render via the iframe.
+ * Everything else 404s — the native Next.js routes have caught up
+ * enough that the strangler-fig only needs a handful of survivors.
+ * Add a path to this set when you decide it's worth keeping the
+ * legacy version live; remove it when the native port lands.
+ */
+const ALLOWED_LEGACY_PATHS = new Set<string>(["/pages/course/course"]);
 
 interface Props {
   params: Promise<{ legacyPath?: string[] }>;
@@ -37,6 +47,9 @@ interface Props {
 export default function LegacyCatchAllPage({ params }: Props) {
   const { legacyPath } = use(params);
   const path = legacyPath?.length ? `/${legacyPath.join("/")}` : "/";
+  if (!ALLOWED_LEGACY_PATHS.has(path)) {
+    notFound();
+  }
   // Iframe src points to the rewrite endpoint that returns legacy.html.
   // The bundle's prefix-stripper script (sync-legacy.mjs) corrects the
   // pathname before its router reads it.
