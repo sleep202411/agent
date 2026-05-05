@@ -16,6 +16,7 @@ import {
   IconSparkles,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -45,26 +46,36 @@ const TOOLKIT_TILES = [
   {
     key: "storyboardEditor",
     icon: IconLayoutGrid,
+    image: "/assets/home/toolkit/storyboard-editor.png",
+    imageClass: "right-[-16%] bottom-[-20%] w-[92%] opacity-80",
     span: "lg:col-span-2 lg:row-span-2",
   },
   {
     key: "directorOnCall",
     icon: IconMessage2,
+    image: "/assets/home/toolkit/director-on-call.png",
+    imageClass: "right-[-9%] bottom-[-34%] w-[58%] opacity-75",
     span: "lg:col-span-2",
   },
   {
     key: "assetLibrary",
     icon: IconLibrary,
+    image: "/assets/home/toolkit/asset-library.png",
+    imageClass: "right-[-26%] bottom-[-22%] w-[78%] opacity-70",
     span: "",
   },
   {
     key: "crewWorkspace",
     icon: IconUsersGroup,
+    image: "/assets/home/toolkit/crew-workspace.png",
+    imageClass: "right-[-38%] bottom-[-14%] w-[94%] opacity-70",
     span: "",
   },
   {
     key: "ipPlaza",
     icon: IconWorld,
+    image: "/assets/home/toolkit/ip-plaza.png",
+    imageClass: "right-[-7%] bottom-[-42%] w-[45%] opacity-75",
     span: "lg:col-span-2",
   },
 ] as const;
@@ -210,17 +221,37 @@ export default function HomePage() {
                   whileInView={{ opacity: 1, scale: 1 }}
                   viewport={{ once: true, margin: "-60px" }}
                   transition={{ duration: 0.5, ease: "easeOut", delay: i * 0.06 }}
-                  className={`group relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/70 to-card/20 p-7 backdrop-blur-sm transition-all hover:border-border ${tile.span}`}
+                  className={cn(
+                    "group relative min-h-[220px] overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card/75 to-card/20 p-7 backdrop-blur-sm transition-all hover:border-border",
+                    tile.span
+                  )}
                 >
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-foreground/10 to-foreground/[0.02] text-foreground/80">
+                  <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={tile.image}
+                      alt=""
+                      aria-hidden="true"
+                      className={cn(
+                        "absolute max-w-none select-none object-contain transition-transform duration-700 group-hover:scale-[1.03]",
+                        tile.imageClass
+                      )}
+                    />
+                    <div className="absolute inset-0 bg-linear-to-r from-card via-card/80 to-card/15" />
+                    <div className="absolute inset-0 bg-linear-to-b from-transparent via-card/10 to-card/70" />
+                  </div>
+
+                  <div className="relative z-10 flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-foreground/10 to-foreground/[0.02] text-foreground/80">
                     <tile.icon className="size-4" />
                   </div>
-                  <h3 className="mt-4 text-lg font-semibold tracking-tight text-foreground">
-                    {t(`toolkit.items.${tile.key}.title`)}
-                  </h3>
-                  <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-                    {t(`toolkit.items.${tile.key}.body`)}
-                  </p>
+                  <div className="relative z-10 max-w-[72%]">
+                    <h3 className="mt-4 text-lg font-semibold tracking-tight text-foreground">
+                      {t(`toolkit.items.${tile.key}.title`)}
+                    </h3>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                      {t(`toolkit.items.${tile.key}.body`)}
+                    </p>
+                  </div>
                 </motion.div>
               ))}
             </div>
