@@ -21,8 +21,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { IconAlertCircle, IconCheck, IconLoader2 } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
-import { backendApi } from "@/src/lib/api";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import type { Locale } from "@/src/i18n/config";
+import { localizePath } from "@/src/i18n/locale-url";
+import { backendApi, ApiRequestError } from "@/src/lib/api";
+import { Button } from "@/components/ui/button";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -50,10 +53,26 @@ export default function InvitePage() {
   const t = useTranslations("invite");
   const router = useRouter();
   const searchParams = useSearchParams();
+  const locale = useLocale() as Locale;
 
   const inviteCode = searchParams?.get("code") ?? "";
   const queryProjectId = searchParams?.get("projectId") ?? "";
   const queryWorldId = searchParams?.get("worldId") ?? "";
+
+  // Send unauthenticated visitors to /login with a redirect-back to the
+  // exact invite URL (same code / projectId / worldId) so the deep link
+  // survives the round-trip. Public-path policy means proxy.ts won't
+  // gate /invite for us, and AuthInterceptor doesn't redirect on 401
+  // for public paths either — so this page owns the redirect.
+  const redirectToLogin = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const here = `${window.location.pathname}${window.location.search}`;
+    const loginPath = localizePath("/login", locale);
+    router.replace(`${loginPath}?redirect=${encodeURIComponent(here)}`);
+  }, [router, locale]);
+
+  const isUnauthorized = (err: unknown): boolean =>
+    err instanceof ApiRequestError && err.status === 401;
 
   const [uiState, setUiState] = useState<UiState>("loading");
   const [errorMessage, setErrorMessage] = useState("");
@@ -162,8 +181,12 @@ export default function InvitePage() {
         setProjectId((prev) => prev || String(info.projectId ?? ""));
         setWorldId((prev) => prev || String(info.worldId ?? ""));
         setUiState(info.joined ? "alreadyJoined" : "confirm");
-      } catch {
+      } catch (err) {
         if (!active) return;
+        if (isUnauthorized(err)) {
+          redirectToLogin();
+          return;
+        }
         setUiState("error");
         setErrorMessage(t("error"));
       }
@@ -171,7 +194,7 @@ export default function InvitePage() {
     return () => {
       active = false;
     };
-  }, [inviteCode, t]);
+  }, [inviteCode, t, redirectToLogin]);
 
   // ─── Actions ────────────────────────────────────────────────────
   const handleApply = async () => {
@@ -184,7 +207,11 @@ export default function InvitePage() {
       setUiState("applied");
       pollCountRef.current = 0;
       startPolling();
-    } catch {
+    } catch (err) {
+      if (isUnauthorized(err)) {
+        redirectToLogin();
+        return;
+      }
       toast.error(t("applyFailed"));
     } finally {
       setApplying(false);
@@ -242,7 +269,9 @@ export default function InvitePage() {
             </IconCircle>
             <h2 className="m-0 text-xl font-semibold text-white">{t("errorTitle")}</h2>
             <p className="m-0 text-sm leading-relaxed text-white/60">{errorMessage}</p>
-            <PrimaryButton onClick={handleGoHome}>{t("backHome")}</PrimaryButton>
+            <Button onClick={handleGoHome} className="h-11 w-full">
+              {t("backHome")}
+            </Button>
           </GlassCard>
         )}
 
@@ -255,9 +284,9 @@ export default function InvitePage() {
             <p className="m-0 text-sm leading-relaxed text-white/60">
               {t("alreadyJoinedDesc", { projectName })}
             </p>
-            <PrimaryButton onClick={() => void goToWorkspace(projectId, worldId)}>
+            <Button onClick={() => void goToWorkspace(projectId, worldId)} className="h-11 w-full">
               {t("enterProject")}
-            </PrimaryButton>
+            </Button>
           </GlassCard>
         )}
 
@@ -270,10 +299,18 @@ export default function InvitePage() {
             </div>
             <p className="m-0 text-sm leading-relaxed text-white/60">{t("desc")}</p>
             <div className="mt-2 flex w-full gap-3">
-              <SecondaryButton onClick={handleGoHome}>{t("decline")}</SecondaryButton>
-              <PrimaryButton onClick={handleApply} loading={applying}>
+              <Button
+                variant="outline"
+                color="muted"
+                onClick={handleGoHome}
+                className="h-11 flex-1"
+              >
+                {t("decline")}
+              </Button>
+              <Button onClick={handleApply} disabled={applying} className="h-11 flex-1">
+                {applying ? <IconLoader2 className="size-4 animate-spin" /> : null}
                 {t("accept")}
-              </PrimaryButton>
+              </Button>
             </div>
           </GlassCard>
         )}
@@ -286,10 +323,18 @@ export default function InvitePage() {
             <h2 className="m-0 text-xl font-semibold text-white">{t("applySuccessTitle")}</h2>
             <p className="m-0 text-sm leading-relaxed text-white/60">{t("applySuccessDesc")}</p>
             <div className="mt-2 flex w-full gap-3">
-              <SecondaryButton onClick={handleGoHome}>{t("backHome")}</SecondaryButton>
-              <PrimaryButton onClick={handleManualCheck} loading={checking}>
+              <Button
+                variant="outline"
+                color="muted"
+                onClick={handleGoHome}
+                className="h-11 flex-1"
+              >
+                {t("backHome")}
+              </Button>
+              <Button onClick={handleManualCheck} disabled={checking} className="h-11 flex-1">
+                {checking ? <IconLoader2 className="size-4 animate-spin" /> : null}
                 {checking ? t("checking") : t("refresh")}
-              </PrimaryButton>
+              </Button>
             </div>
           </GlassCard>
         )}
@@ -325,45 +370,5 @@ function IconCircle({ tone, children }: { tone: "error" | "success"; children: R
     <div className={`flex size-16 items-center justify-center rounded-full border-2 ${toneClass}`}>
       {children}
     </div>
-  );
-}
-
-function PrimaryButton({
-  children,
-  onClick,
-  loading = false,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  loading?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={loading}
-      className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-[#E52227] px-6 text-sm font-medium text-white transition-all hover:bg-[#f02b30] active:bg-[#c41d21] disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      {loading ? <IconLoader2 className="size-4 animate-spin" /> : null}
-      {children}
-    </button>
-  );
-}
-
-function SecondaryButton({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex h-12 flex-1 items-center justify-center rounded-xl bg-white/[0.08] px-6 text-sm font-medium text-white/80 transition-all hover:bg-white/[0.12] hover:text-white"
-    >
-      {children}
-    </button>
   );
 }
