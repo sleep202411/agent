@@ -150,9 +150,8 @@ export class AgentStateService implements OnModuleDestroy {
         await this.redis.publish(
           this.channel(projectId),
           JSON.stringify({
-            kind: 'agent_state_changed',
-            projectId,
-            state: result.state,
+            type: 'agent_state_changed',
+            data: { projectId, state: result.state },
           }),
         );
       } catch (err) {
