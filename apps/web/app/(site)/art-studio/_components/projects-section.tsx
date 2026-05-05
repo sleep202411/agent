@@ -311,7 +311,7 @@ function ProductCard({
         )}
       >
         <div className="relative aspect-[16/9] w-full bg-muted">
-          <img src={cover ?? "/default-cover.png"} alt="" className="size-full object-cover" />
+          <img src={cover ?? "/default-cover.jpg"} alt="" className="size-full object-cover" />
           <span className="absolute left-2 top-2 rounded-md bg-background/80 px-2 py-0.5 text-[10px] font-medium text-foreground backdrop-blur-sm">
             {world.name}
           </span>
