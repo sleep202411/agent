@@ -164,11 +164,27 @@ export async function askPersona(opts: AskPersonaOptions): Promise<AskPersonaRes
         const record = rawObj as Record<string, unknown>;
         const alreadyWrapped = typeof record.summary === "string" && record.summary.length > 0;
         if (!alreadyWrapped) {
-          const synth =
+          // Try named keys first (description / setting / image_prompt
+          // are the role/scene/prop/storyboarder common shapes), then
+          // fall back to "longest string value in the payload" so
+          // personas with novel field names (scriptwriter emits
+          // script/content/dialogue, story_outliner emits outline,
+          // etc.) still get a meaningful preview line — without us
+          // having to enumerate every persona's schema here.
+          const namedSynth =
             (typeof record.description === "string" && record.description) ||
             (typeof record.setting === "string" && record.setting) ||
             (typeof record.image_prompt === "string" && record.image_prompt) ||
             "";
+          let bestStringSynth = "";
+          if (!namedSynth) {
+            for (const value of Object.values(record)) {
+              if (typeof value === "string" && value.length > bestStringSynth.length) {
+                bestStringSynth = value;
+              }
+            }
+          }
+          const synth = (namedSynth || bestStringSynth || "").slice(0, 200).trim();
           const wrapped = {
             summary: synth || "(persona did not provide a summary)",
             fields: record,

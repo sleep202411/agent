@@ -23,6 +23,7 @@ export { saveProjectMeta } from "./save-project-meta";
 export { updateProject } from "./update-project";
 export { updateEpisode, deleteEpisode } from "./episode-crud";
 export { listAssets } from "./list-assets";
+export { queryStoryboardRows } from "./query-storyboard-rows";
 export { updateStoryboardRow } from "./update-storyboard-row";
 export { batchUpdateStoryboardRows } from "./batch-update-storyboard-rows";
 export { deleteShot } from "./delete-shot";

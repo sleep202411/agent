@@ -2,12 +2,10 @@ import { Agent } from "@mastra/core/agent";
 import {
   addShot,
   analyzeBrief,
-  applyPhaseDrafts,
   batchCreateCharacter,
   batchCreateProp,
   batchCreateScene,
   batchUpdateStoryboardRows,
-  cancelWorkflowTool,
   generateCharacterImage,
   generatePropImage,
   generateSceneImage,
@@ -18,11 +16,10 @@ import {
   explainCurrentState,
   exportScripts,
   generateProjectCover,
-  invokeWorkflow,
-  listActiveWorkflows,
   listAssets,
   markProjectParamsUpdated,
   queryContext,
+  queryStoryboardRows,
   requireProjectParams,
   saveProjectMeta,
   showDrafts,
@@ -44,20 +41,22 @@ import { storyosInstructions } from "../prompts/storyos";
 import { defaultRouterModel } from "../lib/models";
 
 /**
- * Supervisor agent — the only agent surface the user talks to. Plans the
- * creation flow, routes work into background workflows, and observes their
- * outputs to decide the next step. Holds only meta-tools; all generation
- * lives inside workflows invoked via `invoke_workflow`.
+ * Supervisor agent — the only agent surface the user talks to.
  *
- * Differs from the original "router" design in that it is allowed (and
- * expected) to reason about user intent, chain related phases when safe,
- * and ask clarifying questions when ambiguous — see prompts/storyos.ts.
+ * **Workflow engine removed (2026-05-05).** The supervisor no longer
+ * dispatches background phase workflows; it consults persona agents
+ * via `ask_*` for drafts and commits results via direct CRUD tools.
+ * The Mastra workflow registration, `invoke_workflow` /
+ * `cancel_workflow` / `list_active_workflows` / `apply_phase_drafts`
+ * tools, and the prereq-checking phase guards have all been
+ * unregistered from this agent — files remain in the repo for now in
+ * case we revisit, but the LLM cannot reach them.
  */
 export const storyosAgent = new Agent({
   id: "storyos",
   name: "StoryOS",
   description:
-    "FizzSpace StoryOS supervisor — plans the creation flow, dispatches work into workflows, and coordinates HITL with the user.",
+    "FizzSpace StoryOS supervisor — consults specialist personas, commits results via direct CRUD, and coordinates HITL with the user.",
   // System prompt as an array so we can attach provider-specific options.
   // `providerOptions.anthropic.cacheControl` marks this block as cacheable
   // on Claude — cuts ~8k input tokens per turn down to the 10% cached price
@@ -76,70 +75,11 @@ export const storyosAgent = new Agent({
   // later (e.g. via Mastra Studio settings UI or a secrets-loader middleware).
   model: () => defaultRouterModel(),
   tools: {
-    // Workflow orchestration (heavy tasks — batch / HITL / DB commit)
-    invoke_workflow: invokeWorkflow,
-    cancel_workflow: cancelWorkflowTool,
-    list_active_workflows: listActiveWorkflows,
-    explain_current_state: explainCurrentState,
-    // HITL commit/discard — every HITL phase (scene/role/prop/episode/
-    // script/storyboard) emits drafts and ends. User confirm/revise goes
-    // through this tool; Nest button short-circuit also calls it via
-    // /workflow/:runId/confirm → phase-specific apply helper.
-    apply_phase_drafts: applyPhaseDrafts,
-    // Preflight UI gate — legacy Java-backed param form. Kept registered
-    // for back-compat but the prompt now drives `configure_params` instead.
-    require_project_params: requireProjectParams,
-    // New pattern: generation-time params collected via a generic multi-
-    // field form, values live only in conversation context — no Java write,
-    // no workspaceContext plumbing. Supervisor passes the collected values
-    // into subsequent invoke_workflow inputData.
-    configure_params: configureParams,
-    // Generic "user picks from a list" HITL. Supervisor calls it when intent
-    // is legitimately ambiguous (not when the supervisor just wants to avoid
-    // committing). See storyos.ts prompt for when-to-call rules.
-    show_options: showOptions,
-    // UI ack — renders "✓ 更新项目参数" after <PROJECT_PARAMS_CONFIRMED />.
-    mark_project_params_updated: markProjectParamsUpdated,
-    // Auto cover generation via Replicate (no user credits).
-    generate_project_cover: generateProjectCover,
-    // Quick one-shot brief extraction (name, description, core, param
-    // suggestions) to seed a new project with user material. Used BEFORE
-    // require_project_params on a fresh project.
-    analyze_brief: analyzeBrief,
-    // Silent writer for project header + world world-building fields.
-    // Callable right after analyze_brief — only fills empty slots.
-    save_project_meta: saveProjectMeta,
-    // State reads + quality review
-    query_context: queryContext,
-    list_assets: listAssets,
-    show_drafts: showDrafts,
-    evaluate: evaluateDrafts,
-    // Fine-grained direct writes — atomic CRUD the LLM orchestrates itself.
-    // Big structural regenerates still go through invoke_workflow.
-    update_project: updateProject,
-    update_episode: updateEpisode,
-    delete_episode: deleteEpisode,
-    update_storyboard_row: updateStoryboardRow,
-    batch_update_storyboard_rows: batchUpdateStoryboardRows,
-    delete_shot: deleteShot,
-    add_shot: addShot,
-    // Direct-commit batch creates — no draft gate, no HITL. Supervisor
-    // calls these when user has already confirmed (e.g. clicked the
-    // "仅保存" generative-UI button). For "propose → user reviews" flows
-    // use invoke_workflow: role_design / scene_design / prop_design.
-    batch_create_character: batchCreateCharacter,
-    batch_create_scene: batchCreateScene,
-    batch_create_prop: batchCreateProp,
-    // Atomic single-image generation — synchronous 5-30s blocking call
-    // per asset. Typical use: supervisor calls batch_create_character,
-    // then pipelines N of these for each returned id. For bulk regenerates
-    // over a full world, prefer invoke_workflow: role_image_phase / etc.
-    generate_character_image: generateCharacterImage,
-    generate_scene_image: generateSceneImage,
-    generate_prop_image: generatePropImage,
-    export_scripts: exportScripts,
-    // Direct-call persona consultations (light tasks — single-turn reply,
-    // no DB write, no HITL). See tools/personas/ask-tools.ts.
+    // ─── Persona consultations ─────────────────────────
+    // Each `ask_*` calls a specialist agent with structured output
+    // ({summary, fields}). No DB writes, no HITL pause, no queue —
+    // just synchronous LLM consult that returns drafts the supervisor
+    // can pipe straight into the matching commit tool below.
     ask_scriptwriter: askScriptwriter,
     ask_character_designer: askCharacterDesigner,
     ask_scene_designer: askSceneDesigner,
@@ -147,5 +87,48 @@ export const storyosAgent = new Agent({
     ask_art_director: askArtDirector,
     ask_storyboard_designer: askStoryboardDesigner,
     ask_episode_planner: askEpisodePlanner,
+
+    // ─── Direct CRUD commits ───────────────────────────
+    // Supervisor takes the {fields} from an ask_* reply (or builds
+    // its own payload after a chat with the user) and calls these
+    // to persist to Java.
+    batch_create_character: batchCreateCharacter,
+    batch_create_scene: batchCreateScene,
+    batch_create_prop: batchCreateProp,
+    update_project: updateProject,
+    update_episode: updateEpisode,
+    delete_episode: deleteEpisode,
+    update_storyboard_row: updateStoryboardRow,
+    batch_update_storyboard_rows: batchUpdateStoryboardRows,
+    delete_shot: deleteShot,
+    add_shot: addShot,
+
+    // ─── Image generation ──────────────────────────────
+    // Atomic single-image calls — blocking 5–30s per asset. For bulk
+    // regenerates the supervisor pipelines these in series / batch
+    // explicitly; there's no "phase" wrapper anymore.
+    generate_character_image: generateCharacterImage,
+    generate_scene_image: generateSceneImage,
+    generate_prop_image: generatePropImage,
+    generate_project_cover: generateProjectCover,
+
+    // ─── Project setup helpers ─────────────────────────
+    analyze_brief: analyzeBrief,
+    save_project_meta: saveProjectMeta,
+    require_project_params: requireProjectParams,
+    configure_params: configureParams,
+    mark_project_params_updated: markProjectParamsUpdated,
+
+    // ─── HITL primitives ───────────────────────────────
+    show_options: showOptions,
+
+    // ─── State reads / review ──────────────────────────
+    explain_current_state: explainCurrentState,
+    query_context: queryContext,
+    query_storyboard_rows: queryStoryboardRows,
+    list_assets: listAssets,
+    show_drafts: showDrafts,
+    evaluate: evaluateDrafts,
+    export_scripts: exportScripts,
   },
 });

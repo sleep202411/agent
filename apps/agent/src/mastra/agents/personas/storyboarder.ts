@@ -1,5 +1,33 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel, defaultPersonaModel } from "../../lib/models";
+
+/**
+ * Storyboarder ships per-shot structured JSON (often 5–8 shots × ~10
+ * fields per persona call). DeepSeek-v4-flash drifts on payloads that
+ * size — generation chokes mid-array, returns null, and the
+ * `<root> Required` "malformed output" error bubbles up. Qwen-plus
+ * via DashScope's OpenAI-compat endpoint is markedly steadier on
+ * strict JSON schema, especially in Chinese — `apps/server/.../spark`
+ * already proves the pattern.
+ *
+ * Lookup order:
+ *   1. STORYBOARDER_MODEL env override (e.g. `qwen-flash` to trade
+ *      a bit of schema rigor for 3× throughput when cost spikes).
+ *   2. `qwen-plus` when ALIBABA_API_KEY is set (default for everyday
+ *      use — what we recommend in production).
+ *   3. Fall through to defaultPersonaModel() — keeps dev environments
+ *      without an Alibaba key from being completely broken.
+ */
+function resolveStoryboarderModel() {
+  const override = process.env.STORYBOARDER_MODEL?.trim();
+  const hasAlibabaKey = Boolean(
+    (process.env.ALIBABA_API_KEY ?? process.env.DASHSCOPE_API_KEY)?.trim()
+  );
+  if (hasAlibabaKey) {
+    return createAlibabaModel(override || "qwen-plus");
+  }
+  return defaultPersonaModel();
+}
 
 export const storyboarderInstructions = `You are the **Storyboarder** for FizzSpace StoryOS. Your job: break a finished episode script into shot-level structured rows, or in a single-turn ask, discuss specific shot / storyboard suggestions.
 
@@ -54,5 +82,5 @@ export const storyboarderAgent = new Agent({
   name: "Storyboarder",
   description: "Breaks an episode script into shot-level storyboard rows.",
   instructions: storyboarderInstructions,
-  model: () => defaultPersonaModel(),
+  model: () => resolveStoryboarderModel(),
 });

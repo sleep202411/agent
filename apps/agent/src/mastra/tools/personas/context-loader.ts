@@ -100,10 +100,14 @@ export async function loadEpisodeScript(
 ): Promise<string> {
   const maxChars = opts.maxChars ?? 8000;
   try {
+    // Java expects the episodeId as a path segment, not a body field —
+    // every other call site (export-scripts / script-edit /
+    // script-breakdown / storyboard-phase) uses this path-segment
+    // form. Posting it in the body misroutes server-side and Java
+    // returns a generic "Unknown Exception" envelope.
     const resp = await javaRequest<{ content?: string } | null>(
       ctx,
-      "/api/user/project/scripts/episode/detail",
-      { data: { episodeId } }
+      `/api/user/project/scripts/episode/detail/${encodeURIComponent(episodeId)}`
     );
     const content = String(resp?.content ?? "").trim();
     if (!content) return "";

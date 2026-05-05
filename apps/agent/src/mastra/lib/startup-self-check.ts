@@ -37,6 +37,21 @@ function check(): Check[] {
     label: "persona",
     value: `${personaProvider} / ${personaModel}`,
   });
+  // Storyboarder pins to qwen-plus (DashScope OpenAI-compat) when an
+  // Alibaba key is present — DeepSeek-v4-flash drifts on the strict
+  // multi-shot JSON schema. Surfaces here so the boot banner makes
+  // the per-agent model choice visible.
+  const storyboarderOverride = process.env.STORYBOARDER_MODEL?.trim();
+  const hasAlibabaKey = Boolean(
+    (process.env.ALIBABA_API_KEY ?? process.env.DASHSCOPE_API_KEY)?.trim()
+  );
+  out.push({
+    kind: "info",
+    label: "storyboarder",
+    value: hasAlibabaKey
+      ? `alibaba / ${storyboarderOverride || "qwen-plus"}`
+      : `(persona default — set ALIBABA_API_KEY for qwen-plus)`,
+  });
 
   // ─── API-key sanity (format-only, no network) ────────────────────────
   const anthropic = process.env.ANTHROPIC_API_KEY?.trim();

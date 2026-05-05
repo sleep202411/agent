@@ -15,27 +15,16 @@ import { sceneDesignerAgent } from "./agents/personas/scene-designer";
 import { propDesignerAgent } from "./agents/personas/prop-designer";
 import { briefAnalyzerAgent } from "./agents/personas/brief-analyzer";
 import { scriptSplitterAgent } from "./agents/personas/script-splitter";
-import { workflowRoutes } from "./routes/workflow";
 import { assetsRoutes } from "./routes/assets";
 import { adminRoutes } from "./routes/admin";
 import { videoPromptRoutes } from "./routes/video-prompt";
 import { logStartupSelfCheck } from "./lib/startup-self-check";
-import { roleDesignWorkflow } from "./workflows/role-design";
-import { sceneDesignWorkflow } from "./workflows/scene-design";
-import { propDesignWorkflow } from "./workflows/prop-design";
-import { batchCreateAssetWorkflow } from "./workflows/batch-create-asset";
-import { scriptEditWorkflow } from "./workflows/script-edit";
-import { scriptBreakdownWorkflow } from "./workflows/phases/script-breakdown";
-import { rolePhaseWorkflow } from "./workflows/phases/role-phase";
-import { roleImagePhaseWorkflow } from "./workflows/phases/role-image-phase";
-import { scenePhaseWorkflow } from "./workflows/phases/scene-phase";
-import { sceneImagePhaseWorkflow } from "./workflows/phases/scene-image-phase";
-import { propPhaseWorkflow } from "./workflows/phases/prop-phase";
-import { propImagePhaseWorkflow } from "./workflows/phases/prop-image-phase";
-import { episodePhaseWorkflow } from "./workflows/phases/episode-phase";
-import { scriptPhaseWorkflow } from "./workflows/phases/script-phase";
-import { storyboardPhaseWorkflow } from "./workflows/phases/storyboard-phase";
-import { parseScriptWorkflow } from "./workflows/parse-script";
+
+// Workflow registrations removed 2026-05-05. Phase workflow files +
+// `routes/workflow.ts` are still on disk for now in case we revisit;
+// they're just no longer mounted on the Mastra server. The supervisor
+// uses `ask_*` persona consults + direct CRUD instead — see
+// `agents/storyos.ts`.
 
 if (!process.env.DASHSCOPE_API_KEY && process.env.ALIBABA_API_KEY) {
   process.env.DASHSCOPE_API_KEY = process.env.ALIBABA_API_KEY;
@@ -109,29 +98,6 @@ export const mastra = new Mastra({
     briefAnalyzer: briefAnalyzerAgent,
     scriptSplitter: scriptSplitterAgent,
   },
-  workflows: {
-    // Single-phase workflows (still reachable individually via invoke_workflow)
-    role_design: roleDesignWorkflow,
-    scene_design: sceneDesignWorkflow,
-    prop_design: propDesignWorkflow,
-    batch_create_asset: batchCreateAssetWorkflow,
-    script_edit: scriptEditWorkflow,
-    // Phase workflows used inside main_flow — also reachable standalone
-    story_outline: scriptBreakdownWorkflow,
-    role_phase: rolePhaseWorkflow,
-    role_image_phase: roleImagePhaseWorkflow,
-    scene_phase: scenePhaseWorkflow,
-    scene_image_phase: sceneImagePhaseWorkflow,
-    prop_phase: propPhaseWorkflow,
-    prop_image_phase: propImagePhaseWorkflow,
-    episode_phase: episodePhaseWorkflow,
-    script_phase: scriptPhaseWorkflow,
-    storyboard_phase: storyboardPhaseWorkflow,
-    // Script-as-input: slice uploaded 剧本 into episodes (no LLM rewrite).
-    // Each downstream phase is an independent run — LLM (or user button)
-    // dispatches the next step after each phase's completion card.
-    parse_script: parseScriptWorkflow,
-  },
   storage: new LibSQLStore({
     id: "storyos-storage",
     url: process.env.MASTRA_DB_URL ?? "file:./mastra.db",
@@ -145,14 +111,12 @@ export const mastra = new Mastra({
     host: process.env.MASTRA_HOST ?? "localhost",
     middleware: [
       { path: "/api/*", handler: populateRequestContext },
-      { path: "/workflow/*", handler: populateRequestContext },
       { path: "/drafts/*", handler: populateRequestContext },
       { path: "/chat/*", handler: populateRequestContext },
       { path: "/assets/*", handler: populateRequestContext },
       { path: "/video-prompt/*", handler: populateRequestContext },
     ],
     apiRoutes: [
-      ...workflowRoutes,
       ...assetsRoutes,
       ...adminRoutes,
       ...videoPromptRoutes,
