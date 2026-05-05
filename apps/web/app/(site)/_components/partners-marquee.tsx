@@ -36,8 +36,13 @@ interface Partner {
 const PARTNERS: Partner[] = [
   // ─── Tech & honors ─────────────────────────────────
   { slug: "nvidia-inception", name: "NVIDIA Inception" },
-  { slug: "microsoft-for-startups", name: "Microsoft for Startups" },
-  { slug: "alibaba-jumpstarter", name: "Alibaba JUMPSTARTER" },
+  // No dedicated "Microsoft for Startups" mark — fall back to the
+  // generic Microsoft logo and let the hover title carry the full
+  // sub-brand name.
+  { slug: "microsoft", name: "Microsoft for Startups" },
+  // Same pattern as Microsoft — generic Alibaba mark + hover title
+  // for the JUMPSTARTER sub-brand.
+  { slug: "alibaba", name: "Alibaba JUMPSTARTER" },
   { slug: "cyberport", name: "Cyberport" },
   { slug: "sgtech", name: "SGTech" },
   { slug: "world-internet-conference", name: "World Internet Conference" },
@@ -48,14 +53,17 @@ const PARTNERS: Partner[] = [
   { slug: "8letters", name: "8Letters" },
 
   // ─── Other partners ────────────────────────────────
-  { slug: "river-music-festival", name: "River Music Festival" },
   { slug: "mm2-asia", name: "mm2 Asia" },
-  { slug: "future-studio", name: "Future Studio" },
-  { slug: "beijing-xinghong", name: "Beijing Xinghong" },
   { slug: "cqifte", name: "Chongqing Institute of Foreign Trade & Economics" },
   { slug: "sipivt", name: "SIP Institute of Services Outsourcing" },
-  { slug: "chinese-nebula-awards", name: "Chinese Nebula Awards" },
-  { slug: "scifi-future-tech-center", name: "Sci-Fi & Future Tech Center" },
+  // Future Studios (Malaysia), Beijing Xinghong, Chinese Nebula Awards,
+  // and the Sci-Fi & Future Tech Development Research Center are real
+  // partners — but no public logo URL exists for them yet (Future
+  // Studios has no domain, Xinghong/Starrise blocks scraping, Nebula
+  // runs through WeChat, the research center is a sub-committee with
+  // no standalone brand). Re-add entries here as the marketing team
+  // sources brand-kit files; the dropzone takes any svg/png/jpg/webp
+  // matching the slug, no code change needed.
 ];
 
 export function PartnersMarquee() {
