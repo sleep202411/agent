@@ -10,6 +10,7 @@ import { ChatEventsGateway } from './chat/chat-events.gateway';
 import { EntityEventsGateway } from './chat/entity-events.gateway';
 import { EntityEventsService } from './chat/entity-events.service';
 import { AgentStreamService } from './chat/agent-stream.service';
+import { AgentStateService } from './chat/agent-state.service';
 import { ChatController } from './chat/chat.controller';
 import { WorkflowProxyController } from './workflow/workflow-proxy.controller';
 import { DraftsProxyController } from './workflow/drafts-proxy.controller';
@@ -32,7 +33,8 @@ import { DraftsProxyController } from './workflow/drafts-proxy.controller';
     EntityEventsGateway,
     EntityEventsService,
     AgentStreamService,
+    AgentStateService,
   ],
-  exports: [EntityEventsService],
+  exports: [EntityEventsService, AgentStateService],
 })
 export class AssistantModule {}

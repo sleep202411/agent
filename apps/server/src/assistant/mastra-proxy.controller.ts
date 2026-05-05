@@ -9,17 +9,24 @@ import {
   Post,
   Req,
   Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { CurrentUser, type AuthUser } from '../auth';
-import { preprocessMessages } from './message-preprocess';
+import {
+  preprocessMessages,
+  ingestAttachmentBuffer,
+} from './message-preprocess';
 import { WorkspaceService } from './workspace.service';
 import {
   MessageStoreService,
   type StoredMessage,
 } from './chat/message-store.service';
 import { AgentStreamService } from './chat/agent-stream.service';
+import { AgentStateService } from './chat/agent-state.service';
 import { EntityEventsService } from './chat/entity-events.service';
 
 type MastraChatBody = {
@@ -90,6 +97,7 @@ export class MastraProxyController {
     private readonly workspace: WorkspaceService,
     private readonly store: MessageStoreService,
     private readonly agentStream: AgentStreamService,
+    private readonly agentState: AgentStateService,
     private readonly entityEvents: EntityEventsService,
   ) {}
 
@@ -455,6 +463,34 @@ export class MastraProxyController {
       }
     }
 
+    // ── Agent-state gate ─────────────────────────────────────────
+    // Acquire the project's "running" lock before doing any Mastra
+    // dispatch. CAS-guarded in Redis so two concurrent submits
+    // (multi-tab / double-click / retry storms) can't both win.
+    // Released by AgentStreamService.consume on success / failure.
+    // Short-circuit branches (confirmProjectParams / forceEnterWorkflow
+    // / confirmWorkflow) above don't take the gate — they're follow-on
+    // signals on top of an already-committed turn, not new dispatches.
+    const turnId = randomUUID();
+    const gate = await this.agentState.transition(
+      body.projectId,
+      ['idle', 'failed', 'cancelled'],
+      { kind: 'running', turnId },
+    );
+    if (!gate.ok) {
+      this.logger.warn(
+        `submit blocked: project=${body.projectId} state=${gate.current.kind} turn=${gate.current.turnId ?? '-'}`,
+      );
+      throw new HttpException(
+        {
+          code: 'AGENT_BUSY',
+          message: 'There is already an active turn for this project',
+          current: gate.current,
+        },
+        HttpStatus.CONFLICT,
+      );
+    }
+
     // Strip synthetic workflow-lifecycle parts from the history we forward
     // to the supervisor LLM. These `tool-workflow_*` parts are rendered as
     // chat cards for the user, but the supervisor never actually called
@@ -496,6 +532,12 @@ export class MastraProxyController {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(`Mastra upstream fetch failed: ${msg}`);
+      // Release the gate so the user can retry. Without this the
+      // project would stay stuck at running until the TTL expired.
+      await this.agentState.set(body.projectId, {
+        kind: 'failed',
+        lastError: `Mastra upstream unavailable: ${msg}`,
+      });
       throw new HttpException(
         { message: `Mastra upstream unavailable: ${msg}` },
         HttpStatus.BAD_GATEWAY,
@@ -507,6 +549,10 @@ export class MastraProxyController {
       this.logger.error(
         `Mastra returned ${upstreamResponse.status}: ${text.slice(0, 300)}`,
       );
+      await this.agentState.set(body.projectId, {
+        kind: 'failed',
+        lastError: `Mastra ${upstreamResponse.status}: ${text.slice(0, 200)}`,
+      });
       throw new HttpException(
         { message: `Mastra error: ${text.slice(0, 300)}` },
         upstreamResponse.status === 401
@@ -516,6 +562,10 @@ export class MastraProxyController {
     }
 
     if (!upstreamResponse.body) {
+      await this.agentState.set(body.projectId, {
+        kind: 'failed',
+        lastError: 'Mastra returned no body',
+      });
       throw new HttpException(
         { message: 'Mastra returned no body' },
         HttpStatus.BAD_GATEWAY,
@@ -586,6 +636,67 @@ export class MastraProxyController {
     const messageIds = await this.store.getMessageIds(projectId);
     const agentState = await this.store.getAgentState(projectId);
     return { projectId, messageIds, agentState };
+  }
+
+  /**
+   * Direct attachment ingestion — replaces the old "upload to OSS,
+   * then have message-preprocess re-fetch" dance with a single
+   * round-trip. Web POSTs the raw file body via multipart, Nest
+   * extracts text in-process, caches it in Redis under a fresh
+   * `attachment:{ref}` key, and returns the ref + a short excerpt
+   * for the file card UI. The user's chat message simply embeds
+   * the ref; downstream `preprocessMessages` reads the cached text
+   * via the same code path it always used. OSS no longer participates
+   * in the chat flow — eliminates the "NoSuchKey" failure mode where
+   * uploads landed in a different bucket than Nest tried to read.
+   */
+  @Post('upload-attachment')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB cap.
+    }),
+  )
+  async uploadAttachment(
+    @UploadedFile()
+    file:
+      | {
+          originalname?: string;
+          mimetype?: string;
+          buffer?: Buffer;
+          size?: number;
+        }
+      | undefined,
+    @CurrentUser() _user: AuthUser,
+  ) {
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new HttpException(
+        'file (multipart field) is required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const filename = file.originalname ?? 'file';
+    const mimeType = file.mimetype ?? 'application/octet-stream';
+    try {
+      const result = await ingestAttachmentBuffer({
+        buffer: file.buffer,
+        filename,
+        mimeType,
+      });
+      return {
+        ref: result.ref,
+        filename,
+        mimeType,
+        size: file.size ?? file.buffer.length,
+        chars: result.chars,
+        excerpt: result.excerpt,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'extract failed';
+      throw new HttpException(
+        { code: 'EXTRACT_FAILED', message: msg },
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
   }
 
   @Post('get-messages')

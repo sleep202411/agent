@@ -64,7 +64,15 @@ type StoreEvent =
       data: { messageId: string; partIndex: number; appendText: string };
     }
   | { type: 'message_finalize'; data: { messageId: string } }
-  | { type: 'agent_state'; data: { state: string } };
+  | { type: 'agent_state'; data: { state: string } }
+  | {
+      // New rich state event published by AgentStateService.
+      // Forwarded as-is to subscribed clients; the data block is
+      // {projectId, state} where state matches the AgentState type
+      // from @repo/shared (kind / turnId / lastError / enteredAt).
+      type: 'agent_state_changed';
+      data: { projectId: string; state: Record<string, unknown> };
+    };
 
 /**
  * Inspired by oii's `subscribe_conversation` semantic but with our hyphen
