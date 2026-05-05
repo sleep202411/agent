@@ -30,6 +30,7 @@ import type {
   AssistantWorkspaceContext as SharedAssistantWorkspaceContext,
 } from "@/src/types/assistant-contracts";
 import { assistantInteractiveToolNames } from "@/src/types/assistant-contracts";
+import type { ForcedPersonaKey } from "@repo/shared";
 
 export type AssistantRole = "system" | "user" | "assistant";
 
@@ -51,6 +52,16 @@ export interface AssistantMessageMetadata {
    */
   kind?: "stream_error";
   rawError?: string;
+  /**
+   * Set on user messages when the user pinned a designer via the
+   * composer's persona pills. Round-trips through Redis storage
+   * (server keeps the field on the stored copy) so the bubble can
+   * render the same tone-coloured prefix in chat history. The Nest
+   * proxy reads this on submit and injects a `<FORCED_PERSONA />`
+   * marker into the LLM-facing message; the prompt rule wires it
+   * through to the matching `ask_*` consult.
+   */
+  forcedPersona?: ForcedPersonaKey;
 }
 
 export interface AssistantTextPart {

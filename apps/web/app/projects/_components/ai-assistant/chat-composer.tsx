@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from "@/src/store";
 import {
   clearActiveWorkflow,
   sendUserMessage,
+  setForcedPersona,
   submitConfigureParams,
   cancelAllQueuedRuns,
   deriveQueuedRuns,
@@ -28,9 +29,12 @@ import type {
   AssistantConfigureParamsResult,
 } from "@/src/lib/assistant/assistant-types";
 import { toast } from "sonner";
+import { PERSONA_TONE_RING, getPersonaFromForcedKey } from "@/src/lib/assistant/personas";
 import { AttachmentList } from "./attachment-list";
-import { TextEditor } from "./text-editor";
+import { TextEditor, type TextEditorHandle } from "./text-editor";
 import { ChatToolbar } from "./chat-toolbar";
+import { ForcePersonaPills } from "./force-persona-pills";
+import type { ForcedPersonaKey } from "@repo/shared";
 import { ToolOptionsCard } from "./tool-cards/tool-options-card";
 import { ToolConfirmCard } from "./tool-cards/tool-confirm-card";
 import { ToolParamsCard } from "./tool-cards/tool-params-card";
@@ -51,7 +55,7 @@ interface ChatComposerProps {
   hasPendingTools: boolean;
   hasUploadingAttachments: boolean;
   error: string | null;
-  editorRef: React.RefObject<HTMLDivElement | null>;
+  editorRef: React.RefObject<TextEditorHandle | null>;
   activePendingTool?: ActivePendingTool | null;
   onToolResult?: (result: AssistantToolResult) => void;
   /** When true, disable send — project-params form gate is active upstream. */
@@ -143,6 +147,19 @@ export function ChatComposer({
     queuedCount > 0;
 
   const dispatch = useAppDispatch();
+
+  // Pinned designer for the next outgoing message — single source of
+  // truth lives in the conversation slice so the thunk can stamp it
+  // onto `metadata.forcedPersona` and clear it atomically. Reset is
+  // baked into `sendUserMessage` (each turn = one intent).
+  const forcedPersona = useAppSelector((s) =>
+    projectId ? (s.assistant.projects[projectId]?.forcedPersona ?? null) : null
+  );
+  const updateForcedPersona = (next: ForcedPersonaKey | null) => {
+    if (!projectId) return;
+    dispatch(setForcedPersona({ projectId, forcedPersona: next }));
+  };
+
   const handleSubmitConfigureParams = (toolCallId: string, values: Record<string, unknown>) => {
     if (!projectId) return;
     void dispatch(submitConfigureParams({ projectId, toolCallId, values }));
@@ -153,6 +170,8 @@ export function ChatComposer({
 
   const handleSend = () => {
     if (!projectId) return;
+    // The thunk reads `forcedPersona` from the slice, stamps it onto
+    // the user message, then clears it. We don't need to clear here.
     void dispatch(sendUserMessage(projectId));
   };
 
@@ -183,9 +202,16 @@ export function ChatComposer({
     );
   }
 
+  const forcedTone = forcedPersona ? getPersonaFromForcedKey(forcedPersona).tone : null;
+
   return (
     <div className="pb-2">
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div
+        className={cn(
+          "overflow-hidden rounded-2xl border bg-card transition-shadow",
+          forcedTone ? PERSONA_TONE_RING[forcedTone] : "border-border"
+        )}
+      >
         {sending && (
           <div className="px-3 py-1.5 text-center text-xs text-muted-foreground">
             {t("aiReplying")}
@@ -199,11 +225,21 @@ export function ChatComposer({
             <AttachmentList projectId={projectId} attachments={attachments} />
 
             <TextEditor
+              ref={editorRef}
               projectId={projectId}
               hasPendingTools={hasPendingTools}
-              editorRef={editorRef}
               onSend={handleSend}
+              forcedPersona={forcedPersona}
+              onClearForcedPersona={() => updateForcedPersona(null)}
             />
+
+            <div className="mt-2">
+              <ForcePersonaPills
+                value={forcedPersona}
+                onChange={updateForcedPersona}
+                disabled={sending || hasPendingTools}
+              />
+            </div>
 
             <ChatToolbar
               projectId={projectId}

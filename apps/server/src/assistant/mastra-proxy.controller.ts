@@ -16,6 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { CurrentUser, type AuthUser } from '../auth';
+import { isForcedPersonaKey, type ForcedPersonaKey } from '@repo/shared';
 import {
   preprocessMessages,
   ingestAttachmentBuffer,
@@ -424,6 +425,17 @@ export class MastraProxyController {
     if (context.episodeId) wsAttrs.push(`episodeId="${context.episodeId}"`);
     if (wsAttrs.length > 0) {
       markers.push(`<WORKSPACE_CONTEXT ${wsAttrs.join(' ')} />`);
+    }
+
+    // Forced-persona pin: user pinned a designer in the composer
+    // (Storyboard / Character / Scene / Prop). The metadata rides on
+    // the latest user message; we trust the field after schema-
+    // validating against the shared whitelist. Marker is injected for
+    // the LLM's eyes only — the stored copy still carries clean
+    // metadata.forcedPersona so chat history can render the chip.
+    const forcedPersona = readLatestForcedPersona(messages);
+    if (forcedPersona) {
+      markers.push(`<FORCED_PERSONA persona="${forcedPersona}" />`);
     }
 
     if (confirmProjectParams) {
@@ -1471,4 +1483,23 @@ function sanitizeHistoryForSupervisor(
     out.push({ ...raw, parts: filtered });
   }
   return out;
+}
+
+/**
+ * Pluck `metadata.forcedPersona` off the most recent user message in
+ * the inbound payload. Validates against the shared whitelist before
+ * returning — we never trust a client string verbatim into the LLM.
+ */
+function readLatestForcedPersona(
+  messages: unknown,
+): ForcedPersonaKey | undefined {
+  if (!Array.isArray(messages)) return undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as Record<string, unknown> | null | undefined;
+    if (!m || m.role !== 'user') continue;
+    const md = m.metadata as Record<string, unknown> | undefined;
+    const candidate = md?.forcedPersona;
+    return isForcedPersonaKey(candidate) ? candidate : undefined;
+  }
+  return undefined;
 }

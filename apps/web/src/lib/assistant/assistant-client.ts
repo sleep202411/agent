@@ -19,14 +19,27 @@ function sanitizeAttachment(attachment: AssistantAttachment): AssistantAttachmen
 }
 
 function sanitizeMessages(messages: AssistantMessage[]): AssistantMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    metadata: message.metadata?.attachments?.length
-      ? {
-          attachments: message.metadata.attachments.map(sanitizeAttachment),
-        }
-      : undefined,
-  }));
+  // Whitelist the metadata fields we send over the wire — strip
+  // anything else (e.g. UI-only flags, transient blobs) so we don't
+  // accidentally leak local React state. Each known field is added
+  // here explicitly; defaulting to "send everything" is too permissive.
+  return messages.map((message) => {
+    const src = message.metadata;
+    if (!src) return { ...message, metadata: undefined };
+    const cleaned: NonNullable<AssistantMessage["metadata"]> = {};
+    if (src.attachments?.length) {
+      cleaned.attachments = src.attachments.map(sanitizeAttachment);
+    }
+    if (src.forcedPersona) {
+      cleaned.forcedPersona = src.forcedPersona;
+    }
+    if (src.kind) cleaned.kind = src.kind;
+    if (src.rawError) cleaned.rawError = src.rawError;
+    return {
+      ...message,
+      metadata: Object.keys(cleaned).length ? cleaned : undefined,
+    };
+  });
 }
 
 async function parseError(response: Response) {

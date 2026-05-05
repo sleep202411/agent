@@ -11,6 +11,27 @@ The workflow engine has been removed. There is no \`invoke_workflow\` tool, no p
 
 The dependency between artifacts is now your responsibility to surface in conversation, not the workflow engine's responsibility to enforce. If you would have called \`invoke_workflow\` in the old design, replace it with the equivalent persona consult + commit chain.
 
+🎯 **FORCED PERSONA — user pinned a designer; route directly, no exceptions.**
+
+If the latest user message contains \`<FORCED_PERSONA persona="X" />\` (X is one of \`scriptwriter\` / \`episode_planner\` / \`character_designer\` / \`scene_designer\` / \`prop_designer\` / \`storyboard_designer\`), the user explicitly chose to bypass routing. **This is a hard contract, not a hint.**
+
+**MUST do, every time, no matter how short or casual the user's text:**
+1. Call \`ask_X\` as the FIRST tool call of the turn. \`task\` = the user's text with the \`<FORCED_PERSONA …/>\` marker stripped.
+2. **No exceptions for greetings / chitchat / short input.** "你好", "hi", "?", "test" with the marker → still call \`ask_X\`. The pin is the user's vote that this turn belongs to that specialist; you don't get to second-guess based on input length or apparent intent. If the persona itself decides it's just small talk, that's fine — it'll return a brief reply, and the card will render it.
+3. **No clarifying questions, no \`query_context\`, no other tools before the \`ask_*\` call.** Even if you'd normally ask "which episode?", don't. The pinned persona handles its own context lookup.
+
+**MUST NOT do:**
+- Substitute a different persona (\`ask_X\` failing after retries → say so plainly and stop; do not silently call \`ask_Y\`).
+- **Repeat or paraphrase the persona's summary in your text reply.** The persona card UI already shows the summary inline — duplicating it as a markdown bubble below is pure noise. Your text reply for forced-persona turns should be either:
+  - Empty (preferred when the persona returned a usable answer — the card carries everything).
+  - A trailing JSON action block (when persona returned non-empty \`fields\` per the "Generative UI" rules — same as the normal post-persona case).
+  - At most a one-line bridge (≤15 chars, e.g. "已转交分镜师" / "Routed to storyboard"). Do not summarise content.
+- Echo the \`<FORCED_PERSONA />\` marker — it's a server hint, invisible to the user.
+
+The pin is per-message; the next turn (no marker) goes back to normal supervisor routing.
+
+---
+
 📖 **READ TOOLS — never spawn a persona for state you can query.**
 
 When the user asks about project / episode / shot state, prefer the cheap Java read tools over an \`ask_*\` consult:

@@ -26,7 +26,7 @@ import type {
   PendingAssistantToolUi,
 } from "@/src/lib/assistant/assistant-types";
 import type { AssistantAgentType } from "@/src/types/assistant-contracts";
-import type { AgentState } from "@repo/shared";
+import type { AgentState, ForcedPersonaKey } from "@repo/shared";
 import {
   getAssistantToolName,
   isAssistantInteractiveToolName,
@@ -121,6 +121,18 @@ function createEmptyConversation() {
       workflowName: WorkflowName;
       status: "queued" | "running" | "suspended";
     } | null,
+    /**
+     * Pinned designer for the next outgoing message. Set when the user
+     * clicks one of the persona pills in the composer; cleared
+     * automatically after `sendUserMessage` so each turn expresses one
+     * intent. Drives:
+     *   - the inline tone-coloured chip in the textarea (Tiptap atom)
+     *   - the tone-coloured ring on the composer card
+     *   - the active state on the pill row
+     *   - `metadata.forcedPersona` on the user message that flies over
+     *     the wire / ends up in chat history
+     */
+    forcedPersona: null as ForcedPersonaKey | null,
   };
 }
 
@@ -255,7 +267,11 @@ function sanitizeMessageAttachment(attachment: AssistantAttachment): AssistantAt
   };
 }
 
-function buildUserMessage(text: string, attachments: AssistantAttachment[]): AssistantMessage {
+function buildUserMessage(
+  text: string,
+  attachments: AssistantAttachment[],
+  forcedPersona: ForcedPersonaKey | null
+): AssistantMessage {
   const metadataAttachments = attachments.map(sanitizeMessageAttachment);
   const parts: AssistantMessagePart[] = [];
 
@@ -274,10 +290,14 @@ function buildUserMessage(text: string, attachments: AssistantAttachment[]): Ass
     }
   }
 
+  const metadata: AssistantMessage["metadata"] = {};
+  if (metadataAttachments.length) metadata.attachments = metadataAttachments;
+  if (forcedPersona) metadata.forcedPersona = forcedPersona;
+
   return {
     id: crypto.randomUUID(),
     role: "user",
-    metadata: metadataAttachments.length ? { attachments: metadataAttachments } : undefined,
+    metadata: Object.keys(metadata).length ? metadata : undefined,
     parts,
   };
 }
@@ -690,9 +710,13 @@ export const sendUserMessage = createAsyncThunk<
       (uploadedAttachments.length > 0 ? "Please continue the analysis using the attachments." : "");
     if (!typedText && uploadedAttachments.length === 0) return;
 
-    const userMessage = buildUserMessage(typedText, uploadedAttachments);
+    const userMessage = buildUserMessage(typedText, uploadedAttachments, current.forcedPersona);
 
+    // Stamp the persona pin onto the message *before* clearing it so
+    // the optimistic UI render and the wire payload both see it. The
+    // pin is a per-turn flag; we always reset after read.
     dispatch(commitUserMessage({ projectId, userMessage }));
+    dispatch(setForcedPersona({ projectId, forcedPersona: null }));
 
     const abortController = createProjectAbortController(projectId);
 
@@ -1469,6 +1493,22 @@ export const assistantSlice = createSlice({
       };
     },
 
+    /**
+     * Pin / unpin the designer for the next user message. Source of
+     * truth for: pill row active state, in-textarea Tiptap chip,
+     * outer ring tone, and the `metadata.forcedPersona` stamped onto
+     * the outgoing user message. `sendUserMessage` resets to null
+     * after each turn — see thunk for rationale.
+     */
+    setForcedPersona: (
+      state,
+      action: PayloadAction<{ projectId: string; forcedPersona: ForcedPersonaKey | null }>
+    ) => {
+      const { projectId, forcedPersona } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = { ...current, forcedPersona };
+    },
+
     streamError: (state, action: PayloadAction<{ projectId: string; error: string }>) => {
       const { projectId, error } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
@@ -1593,6 +1633,7 @@ export const {
   finalizeAssistantMessage,
   markAgentWorking,
   setAgentState,
+  setForcedPersona,
   streamError,
   setHistory,
   markHistoryLoaded,

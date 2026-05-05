@@ -163,7 +163,11 @@ import {
   type AssistantToolInvocation,
   type AssistantToolResult,
 } from "@/src/lib/assistant/assistant-types";
-import { isAskPersonaTool } from "@/src/lib/assistant/personas";
+import {
+  getPersonaFromForcedKey,
+  isAskPersonaTool,
+  PERSONA_TONE_TEXT,
+} from "@/src/lib/assistant/personas";
 import { extractSuggestedActions } from "@/src/lib/assistant/suggested-action";
 import { SuggestedActionButtons } from "./suggested-action-buttons";
 import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
@@ -511,6 +515,37 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 // each emission stands alone; supervisor owns dedupe +
                 // label uniqueness.
                 const { cleanText, suggestedActions } = extractSuggestedActions(part.text);
+
+                // Forced-persona pin: render `Storyboard Designer / `
+                // inline before the user's text on the FIRST text part
+                // only. Same tone colour as the live composer chip, so
+                // the "this went to X" attribution carries through chat
+                // history. Skip markdown for the prefixed render —
+                // user text is normally plain anyway, and inline-
+                // mixing markdown with a leading inline element fights
+                // react-markdown's block-level paragraph default.
+                const forcedPersonaKey =
+                  message.role === "user" ? message.metadata?.forcedPersona : undefined;
+                const isFirstTextPart = forcedPersonaKey
+                  ? message.parts.findIndex((p) => p.type === "text") === index
+                  : false;
+
+                if (forcedPersonaKey && isFirstTextPart) {
+                  const persona = getPersonaFromForcedKey(forcedPersonaKey);
+                  const displayName = t(`personas.${persona.nameKey}`);
+                  return (
+                    <div
+                      key={`${message.id}-text-${index}`}
+                      className="max-w-none text-[13px] leading-relaxed whitespace-pre-wrap"
+                    >
+                      <span className={cn("font-medium", PERSONA_TONE_TEXT[persona.tone])}>
+                        {displayName} /{" "}
+                      </span>
+                      {cleanText}
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={`${message.id}-text-${index}`}
