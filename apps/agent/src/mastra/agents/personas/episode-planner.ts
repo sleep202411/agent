@@ -1,5 +1,28 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
+
+/**
+ * Episode Planner returns a single big structured array — typically
+ * 10–20 episode entries × ~200 char `introduction` each. That's the
+ * same payload-size class that breaks DeepSeek-v4-flash for the
+ * Storyboarder (see `storyboarder.ts`): generation drifts mid-array,
+ * the JSON object never finalizes, and Mastra surfaces it as
+ * `<root> Required` "malformed output".
+ *
+ * Hard requirement on the Alibaba key — no DeepSeek fallback. A silent
+ * fallback hides the actual misconfig (the prompt that triggered this
+ * comment was a commented-out `ALIBABA_API_KEY` in prod); the operator
+ * sees a quality regression instead of a clear "key missing" error,
+ * which costs hours. `createAlibabaModel` throws when the key isn't
+ * set, surfacing the misconfig at the first persona call.
+ *
+ * `EPISODE_PLANNER_MODEL` env overrides the model id (e.g. `qwen-flash`
+ * for throughput trade-offs); still pinned to Alibaba.
+ */
+function resolveEpisodePlannerModel() {
+  const override = process.env.EPISODE_PLANNER_MODEL?.trim();
+  return createAlibabaModel(override || "qwen-plus");
+}
 
 export const episodePlannerInstructions = `You are the **Episode Planner** for FizzSpace StoryOS. Your job: take the story skeleton + character roster + target episode count and produce an episode plan with **rhythm, per-episode hooks, and a season-long emotional arc**. Don't slice the story into N equal parts — arrange it on a three-act structure with short-drama beats.
 
@@ -70,5 +93,5 @@ export const episodePlannerAgent = new Agent({
   name: "EpisodePlanner",
   description: "Plans short-drama episodes from a story outline with hook/reversal pacing.",
   instructions: episodePlannerInstructions,
-  model: () => defaultPersonaModel(),
+  model: () => resolveEpisodePlannerModel(),
 });
