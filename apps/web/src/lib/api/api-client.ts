@@ -233,13 +233,20 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
   if (!isSuccess) {
-    // Java backends commonly return 200 OK with an envelope-level 401 code
-    // for expired sessions; treat it the same as a transport-level 401.
-    if (body.code === 401 || body.code === "401") notifyUnauthorized();
+    // Java backends return 200 OK with an envelope-level "not authed"
+    // code for expired / missing sessions. Sa-Token uses 302 (the
+    // legacy Vue redirect-on-unauth dance), and other handlers
+    // historically used 401. Both mean the same thing to us: the
+    // session is gone — surface this uniformly so downstream callers
+    // can do a single `err.status === 401` check instead of having
+    // to know about each backend's quirks.
+    const isUnauthEnvelope =
+      body.code === 401 || body.code === "401" || body.code === 302 || body.code === "302";
+    if (isUnauthEnvelope) notifyUnauthorized();
     throw new ApiRequestError(
       body.code ?? "UNKNOWN",
       body.msg || body.message || "Request failed",
-      200,
+      isUnauthEnvelope ? 401 : 200,
       JSON.stringify(body)
     );
   }
