@@ -158,6 +158,7 @@ import {
   getAssistantToolDisplayName,
   isAssistantToolPart,
   type AssistantMessage,
+  type AssistantMessagePart,
   type AssistantToolInvocation,
   type AssistantToolResult,
 } from "@/src/lib/assistant/assistant-types";
@@ -205,6 +206,104 @@ function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantTo
       )}
       {isError && part.errorText && (
         <span className="text-[11px] text-destructive/70">{part.errorText}</span>
+      )}
+    </div>
+  );
+}
+
+// ─── Tool-run collapse ─────────────────────────────────
+//
+// Some tools are intrinsically "batched" — when the supervisor wants
+// to update 8 storyboard rows it emits 8 separate `update_storyboard_row`
+// tool calls, which used to render as 8 stacked `↻ Updating Storyboard`
+// rows. Collapse consecutive runs of the same tool into a single
+// indicator with a count. Tools NOT in this set render one-row-per-call
+// as before (different cards, different intents).
+const COLLAPSIBLE_TOOLS = new Set<string>([
+  "update_storyboard_row",
+  "batch_update_storyboard_rows",
+  "add_shot",
+  "delete_shot",
+  "update_episode",
+  "delete_episode",
+  "batch_create_character",
+  "batch_create_scene",
+  "batch_create_prop",
+  "generate_character_image",
+  "generate_scene_image",
+  "generate_prop_image",
+]);
+
+/** Counts how many consecutive same-toolName tool parts start at
+ *  `index`. Used to collapse 8× "Updating Storyboard" into one row. */
+function countRun(parts: AssistantMessagePart[], index: number, toolName: string): number {
+  let n = 0;
+  for (let i = index; i < parts.length; i++) {
+    const p = parts[i];
+    if (!isAssistantToolPart(p)) break;
+    if (getAssistantToolName(p) !== toolName) break;
+    n++;
+  }
+  return n;
+}
+
+/** Returns true if a previous sibling absorbed this part into a run.
+ *  Skips rendering for everyone except the run leader. */
+function isAbsorbedByRun(parts: AssistantMessagePart[], index: number, toolName: string): boolean {
+  if (index === 0) return false;
+  const prev = parts[index - 1];
+  if (!isAssistantToolPart(prev)) return false;
+  return getAssistantToolName(prev) === toolName;
+}
+
+function GroupedToolIndicator({
+  toolName,
+  parts,
+}: {
+  toolName: string;
+  parts: AssistantToolInvocation[];
+}) {
+  const displayName = getAssistantToolDisplayName(toolName);
+  // Aggregate run state — pessimistic: if any part is still streaming
+  // we render as loading; if any errored, render as soft hiccup; else
+  // fully completed.
+  const total = parts.length;
+  let loading = 0;
+  let errored = 0;
+  for (const p of parts) {
+    const out =
+      p.state === "output-available"
+        ? (p.output as Record<string, unknown> | undefined)
+        : undefined;
+    const outputErrored = out?.error === true;
+    if (p.state === "output-error" || p.state === "output-denied" || outputErrored) {
+      errored++;
+    } else if (p.state !== "output-available") {
+      loading++;
+    }
+  }
+  const allDone = loading === 0;
+  const hasErrors = errored > 0;
+  const Icon = loading > 0 ? IconLoader2 : hasErrors ? IconX : IconCheck;
+  const iconClass =
+    loading > 0
+      ? "size-3 animate-spin text-muted-foreground/50"
+      : hasErrors
+        ? "size-3 text-destructive/70"
+        : "size-3 text-green-500/70";
+
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
+      <Icon className={iconClass} />
+      <span className="font-medium">{displayName}</span>
+      <span className="rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] text-muted-foreground/60">
+        ×{total}
+      </span>
+      {hasErrors && <span className="text-[11px] text-destructive/70">({errored} failed)</span>}
+      {!allDone && loading < total && (
+        <span className="text-[11px] text-muted-foreground/50">
+          {total - loading}/{total}
+        </span>
       )}
     </div>
   );
@@ -285,6 +384,16 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
 
           <div className="space-y-3">
             {message.parts.map((part, index) => {
+              // Suppress non-leading members of a collapsible run — the
+              // run leader (first occurrence) renders the grouped
+              // indicator down at the catch-all branch below.
+              if (
+                isAssistantToolPart(part) &&
+                COLLAPSIBLE_TOOLS.has(getAssistantToolName(part)) &&
+                isAbsorbedByRun(message.parts, index, getAssistantToolName(part))
+              ) {
+                return null;
+              }
               if (part.type === "text") {
                 // Canonical user message `Params set: {JSON}` — parse the
                 // JSON and render a localized key:value list. The raw
@@ -732,7 +841,25 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   );
                 }
 
-                // All other tools — compact inline indicator
+                // All other tools — compact inline indicator. When
+                // this is a leader of a collapsible run (>1 sibling
+                // tool calls of the same name in a row), render a
+                // single grouped indicator with a count instead.
+                if (COLLAPSIBLE_TOOLS.has(toolName)) {
+                  const runLen = countRun(message.parts, index, toolName);
+                  if (runLen > 1) {
+                    const runParts = message.parts
+                      .slice(index, index + runLen)
+                      .filter(isAssistantToolPart) as AssistantToolInvocation[];
+                    return (
+                      <GroupedToolIndicator
+                        key={`${message.id}-${part.toolCallId}-${toolName}-group${runLen}`}
+                        toolName={toolName}
+                        parts={runParts}
+                      />
+                    );
+                  }
+                }
                 return (
                   <ToolIndicator
                     key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}
