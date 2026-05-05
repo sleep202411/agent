@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback } from "react";
-import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
+import { IconCheck, IconCopy, IconLoader2, IconMinus } from "@tabler/icons-react";
+import { toast } from "sonner";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Document, Packer, Paragraph, HeadingLevel, AlignmentType } from "docx";
@@ -170,6 +171,7 @@ import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared
 // ─── Compact tool indicator ───────────────────────────
 
 function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantToolInvocation }) {
+  const t = useTranslations("ai");
   const displayName = getAssistantToolDisplayName(toolName);
   const rawDone = part.state === "output-available";
   // Mastra routes input-validation failures (and other app-level errors)
@@ -189,12 +191,32 @@ function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantTo
     if (msg && msg.length < 60) entityLabel = msg;
   }
 
+  // Raw error payload — surfaced via "copy" affordance only, never rendered.
+  // Most of these are JSON-stringified Mastra tool envelopes the user has no
+  // use for, but we still want them recoverable for ops / Sentry follow-up.
+  const rawError =
+    part.errorText ||
+    (typeof output?.errorMessage === "string" ? (output.errorMessage as string) : "") ||
+    (outputErrored ? JSON.stringify(output ?? {}) : "");
+
+  const copyError = useCallback(() => {
+    if (!rawError) return;
+    void navigator.clipboard.writeText(rawError).then(
+      () => toast.success(t("toolErrorCopied")),
+      () => toast.error(t("toolErrorCopyFailed"))
+    );
+  }, [rawError, t]);
+
   return (
     <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
       {isLoading ? (
         <IconLoader2 className="size-3 animate-spin text-muted-foreground/50" />
       ) : isError ? (
-        <IconX className="size-3 text-destructive/70" />
+        // Tool hiccups are common (schema drift, ratelimit, transient
+        // network) and not user-actionable — use a neutral dash instead
+        // of a destructive red X so the chat doesn't read as "system
+        // failure" every time the LLM has to retry.
+        <IconMinus className="size-3 text-muted-foreground/40" />
       ) : (
         <IconCheck className="size-3 text-green-500/70" />
       )}
@@ -204,8 +226,21 @@ function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantTo
           {entityLabel}
         </span>
       )}
-      {isError && part.errorText && (
-        <span className="text-[11px] text-destructive/70">{part.errorText}</span>
+      {isError && (
+        <>
+          <span className="text-[11px] text-muted-foreground/60">{t("toolErrorFriendly")}</span>
+          {rawError && (
+            <button
+              type="button"
+              onClick={copyError}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground/50 transition-colors hover:bg-white/8 hover:text-muted-foreground"
+              title={t("toolErrorCopyHint")}
+            >
+              <IconCopy className="size-3" />
+              {t("toolErrorCopy")}
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -235,7 +270,8 @@ const COLLAPSIBLE_TOOLS = new Set<string>([
 ]);
 
 /** Counts how many consecutive same-toolName tool parts start at
- *  `index`. Used to collapse 8× "Updating Storyboard" into one row. */
+ *  `index`. Used to collapse 8× "Updating Storyboard" into one row.
+ *  Only counts when the tool is in COLLAPSIBLE_TOOLS. */
 function countRun(parts: AssistantMessagePart[], index: number, toolName: string): number {
   let n = 0;
   for (let i = index; i < parts.length; i++) {
@@ -263,6 +299,7 @@ function GroupedToolIndicator({
   toolName: string;
   parts: AssistantToolInvocation[];
 }) {
+  const t = useTranslations("ai");
   const displayName = getAssistantToolDisplayName(toolName);
   // Aggregate run state — pessimistic: if any part is still streaming
   // we render as loading; if any errored, render as soft hiccup; else
@@ -284,12 +321,12 @@ function GroupedToolIndicator({
   }
   const allDone = loading === 0;
   const hasErrors = errored > 0;
-  const Icon = loading > 0 ? IconLoader2 : hasErrors ? IconX : IconCheck;
+  const Icon = loading > 0 ? IconLoader2 : hasErrors ? IconMinus : IconCheck;
   const iconClass =
     loading > 0
       ? "size-3 animate-spin text-muted-foreground/50"
       : hasErrors
-        ? "size-3 text-destructive/70"
+        ? "size-3 text-muted-foreground/40"
         : "size-3 text-green-500/70";
 
   return (
@@ -299,11 +336,50 @@ function GroupedToolIndicator({
       <span className="rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] text-muted-foreground/60">
         ×{total}
       </span>
-      {hasErrors && <span className="text-[11px] text-destructive/70">({errored} failed)</span>}
+      {hasErrors && (
+        <span className="text-[11px] text-muted-foreground/60">
+          {t("toolErrorFriendly")} ({errored})
+        </span>
+      )}
       {!allDone && loading < total && (
         <span className="text-[11px] text-muted-foreground/50">
           {total - loading}/{total}
         </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Stream-error indicator ────────────────────────────
+//
+// Renders a synthesized "soft" error message (from streamError) as a
+// small dash + friendly text + copy-details affordance. Same visual
+// language as ToolIndicator's error state — both are infrastructure
+// hiccups, not user-actionable failures.
+function StreamErrorIndicator({ rawError }: { rawError: string }) {
+  const t = useTranslations("ai");
+  const copy = useCallback(() => {
+    if (!rawError) return;
+    void navigator.clipboard.writeText(rawError).then(
+      () => toast.success(t("toolErrorCopied")),
+      () => toast.error(t("toolErrorCopyFailed"))
+    );
+  }, [rawError, t]);
+
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/60">
+      <IconMinus className="size-3 text-muted-foreground/40" />
+      <span>{t("toolErrorFriendly")}</span>
+      {rawError && (
+        <button
+          type="button"
+          onClick={copy}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground/50 transition-colors hover:bg-white/8 hover:text-muted-foreground"
+          title={t("toolErrorCopyHint")}
+        >
+          <IconCopy className="size-3" />
+          {t("toolErrorCopy")}
+        </button>
       )}
     </div>
   );
@@ -349,6 +425,15 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
         }
       }
     }
+  }
+
+  // Synthesized stream-error messages (raw POST-to-agent failed) render
+  // as the same soft dash + friendly + copy-details treatment as a tool
+  // hiccup. The agent run still streams in normally over WS most of
+  // the time, so a loud red error block between two valid assistant
+  // turns is misleading.
+  if (message.role === "assistant" && message.metadata?.kind === "stream_error") {
+    return <StreamErrorIndicator rawError={message.metadata.rawError ?? ""} />;
   }
 
   return (

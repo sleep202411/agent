@@ -4,6 +4,7 @@ import type {
   AssistantMessage,
   AssistantWorkspaceSelection,
 } from "./assistant-types";
+import type { AgentState } from "@repo/shared";
 
 function sanitizeAttachment(attachment: AssistantAttachment): AssistantAttachment {
   return {
@@ -178,6 +179,23 @@ export async function submitMessageToAgent({
     signal,
   });
 
+  if (response.status === 409) {
+    // AGENT_BUSY — server says another turn is already running for
+    // this project. Throw a typed error so the slice's catch can
+    // distinguish it from generic failures and update agentState
+    // instead of showing a "Request failed" message.
+    let body: { code?: string; current?: AgentState; message?: string } = {};
+    try {
+      body = (await response.json()) as typeof body;
+    } catch {
+      /* fall through to default message */
+    }
+    throw new AgentBusyError(
+      body.message ?? "Agent is already running for this project",
+      body.current
+    );
+  }
+
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
@@ -191,6 +209,20 @@ export async function submitMessageToAgent({
     conversationId: envelope.conversationId ?? projectId,
     seedMessageId: envelope.seedMessageId,
   };
+}
+
+/**
+ * Thrown by submitMessageToAgent when the server returns 409
+ * AGENT_BUSY. Carries the current AgentState so the slice can hydrate
+ * Redux + show the right hint instead of a generic error message.
+ */
+export class AgentBusyError extends Error {
+  current?: AgentState;
+  constructor(message: string, current?: AgentState) {
+    super(message);
+    this.name = "AgentBusyError";
+    this.current = current;
+  }
 }
 
 // ─── Save API ─────────────────────────────────────────

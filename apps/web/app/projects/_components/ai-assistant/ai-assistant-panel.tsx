@@ -27,6 +27,7 @@ import {
   finalizeMessage,
   finalizeTurnOnIdle,
   markAgentWorking,
+  setAgentState,
   streamError,
 } from "@/src/store/slices/assistantSlice";
 import { ensureSession, closeSession } from "@/src/lib/assistant/chat-session";
@@ -94,6 +95,14 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
         } else if (state === "failed") {
           dispatch(streamError({ projectId, error: "Agent run failed" }));
         }
+      },
+      onAgentStateChanged: (changedProjectId, agentState) => {
+        // Server-authoritative agent state — single source of truth
+        // for "can submit?" and the soft hint above the composer. We
+        // accept any project ID the server sends (it should match
+        // ours; the if-guard is belt-and-braces).
+        if (changedProjectId !== projectId) return;
+        dispatch(setAgentState({ projectId, agentState }));
       },
       onError: (err) => {
         console.warn("[ai-assistant] chat-session error:", err.message);

@@ -41,6 +41,16 @@ export type AssistantAttachment = SharedAssistantAttachment & {
 
 export interface AssistantMessageMetadata {
   attachments?: AssistantAttachment[];
+  /**
+   * Marks a synthesized "soft" error message — currently only used by
+   * the `streamError` reducer when the synchronous POST to
+   * `submit-message-to-agent` fails but the agent run usually still
+   * completes via WS. MessageBubble renders this as a small dash +
+   * "我开了点小差" line instead of a loud "Request failed: HTTP 500"
+   * text bubble between two valid assistant turns.
+   */
+  kind?: "stream_error";
+  rawError?: string;
 }
 
 export interface AssistantTextPart {
@@ -223,20 +233,67 @@ export function getAssistantInteractiveToolName(part: AssistantToolInvocation) {
 }
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
-  // Workflow dispatch / resume — rendered as a small chip by message-bubble
-  invoke_workflow: "Start Workflow",
-  resume_workflow: "Resume Workflow",
-  // UI tools
+  // ─── Persona consultations ───────────────────────────────
+  ask_scriptwriter: "Consulting Scriptwriter",
+  ask_character_designer: "Consulting Character Designer",
+  ask_scene_designer: "Consulting Scene Designer",
+  ask_prop_designer: "Consulting Prop Designer",
+  ask_art_director: "Consulting Art Director",
+  ask_storyboard_designer: "Consulting Storyboard Designer",
+  ask_episode_planner: "Consulting Episode Planner",
+
+  // ─── Project setup helpers ───────────────────────────────
+  analyze_brief: "Analyzing Brief",
+  save_project_meta: "Saving Project Info",
+  require_project_params: "Project Settings",
+  configure_params: "Settings",
+  mark_project_params_updated: "Settings Updated",
+
+  // ─── HITL / generative UI ────────────────────────────────
   show_options: "Options",
   confirm_action: "Confirm",
-  configure_params: "Settings",
-  // Proposal tools
+
+  // ─── State reads / review ────────────────────────────────
+  query_context: "Reading Project",
+  explain_current_state: "Reading State",
+  list_assets: "Listing Assets",
+  show_drafts: "Showing Drafts",
+  evaluate: "Reviewing Drafts",
+  export_scripts: "Exporting Scripts",
+
+  // ─── Project / episode / shot CRUD ───────────────────────
+  update_project: "Updating Project",
+  update_episode: "Updating Episode",
+  delete_episode: "Deleting Episode",
+  add_shot: "Adding Shot",
+  delete_shot: "Deleting Shot",
+  update_storyboard_row: "Updating Storyboard",
+  batch_update_storyboard_rows: "Updating Storyboard",
+
+  // ─── Direct batch creates ────────────────────────────────
+  batch_create_character: "Saving Characters",
+  batch_create_scene: "Saving Scenes",
+  batch_create_prop: "Saving Props",
+
+  // ─── Image generation ────────────────────────────────────
+  generate_character_image: "Generating Character Image",
+  generate_scene_image: "Generating Scene Image",
+  generate_prop_image: "Generating Prop Image",
+  generate_project_cover: "Generating Cover",
+
+  // ─── Legacy / deprecated (kept so historic chat history
+  //     still renders friendly labels — these tools are
+  //     no longer registered on the supervisor) ───────────
+  invoke_workflow: "Start Workflow",
+  resume_workflow: "Resume Workflow",
+  cancel_workflow: "Cancel Workflow",
+  list_active_workflows: "Active Tasks",
+  apply_phase_drafts: "Applying Drafts",
   propose_characters: "Character Proposal",
   propose_scenes: "Scene Proposal",
   propose_props: "Prop Proposal",
   propose_storyboard_patch: "Storyboard Draft",
   propose_script: "Script Proposal",
-  // Read tools
   get_project_snapshot: "Reading Project",
   get_world_assets: "Reading Assets",
   list_characters: "Listing Characters",
@@ -247,36 +304,26 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   get_storyboard_snapshot: "Reading Storyboard",
   query_storyboard_rows: "Querying Storyboard",
   aggregate_storyboard_rows_for_analysis: "Analyzing Storyboard",
-  // Execute tools
   update_project_settings: "Update Project",
   create_episode: "Create Episode",
-  update_episode: "Update Episode",
-  delete_episode: "Delete Episode",
   create_character: "Create Character",
-  batch_create_character: "Save Characters",
   batch_create_characters: "Create Characters",
   update_character: "Update Character",
   delete_character: "Delete Character",
-  generate_character_image: "Generate Character Image",
   create_scene: "Create Scene",
-  batch_create_scene: "Save Scenes",
   batch_create_scenes: "Create Scenes",
   update_scene: "Update Scene",
   delete_scene: "Delete Scene",
-  generate_scene_image: "Generate Scene Image",
   create_prop: "Create Prop",
-  batch_create_prop: "Save Props",
   batch_create_props: "Create Props",
   update_prop: "Update Prop",
   delete_prop: "Delete Prop",
-  generate_prop_image: "Generate Prop Image",
   fill_cell: "Fill Cell",
   save_storyboard_draft: "Save Storyboard",
   batch_create_episodes: "Create Episodes",
   batch_update_episodes: "Update Episodes",
   reorder_episodes: "Reorder Episodes",
   save_episode_script: "Save Script",
-  // Script agent tools
   analyze_text: "Analyzing Script",
   map_episodes: "Mapping Episodes",
   create_episodes_and_assets: "Creating Episodes & Assets",

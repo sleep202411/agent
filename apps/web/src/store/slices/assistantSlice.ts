@@ -2,12 +2,13 @@ import { createSlice, createAsyncThunk, type PayloadAction } from "@reduxjs/tool
 import { toast } from "sonner";
 import { backendApi } from "@/src/lib/api";
 import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
-import { uploadWorkspaceFile, computeFileHash } from "@/src/lib/uploads/workspace-upload";
+import { uploadChatAttachment, computeFileHash } from "@/src/lib/uploads/workspace-upload";
 import {
   submitMessageToAgent,
   saveConversation,
   fetchConversationHistory,
   clearConversation as clearConversationApi,
+  AgentBusyError,
   type ConfirmProjectParamsPayload,
 } from "@/src/lib/assistant/assistant-client";
 import {
@@ -25,6 +26,7 @@ import type {
   PendingAssistantToolUi,
 } from "@/src/lib/assistant/assistant-types";
 import type { AssistantAgentType } from "@/src/types/assistant-contracts";
+import type { AgentState } from "@repo/shared";
 import {
   getAssistantToolName,
   isAssistantInteractiveToolName,
@@ -90,6 +92,16 @@ function createEmptyConversation() {
     sending: false,
     streaming: false,
     error: null as string | null,
+    /**
+     * Server-authoritative agent state. Hydrated from
+     * /chat/list-messages on mount/reconnect, then kept in sync via
+     * the `agent_state_changed` WS event. The composer's "can submit?"
+     * decision and the soft hint above the input both read this — see
+     * canSubmit() helper in @repo/shared. Defaults to idle so a
+     * fresh-loaded project doesn't appear blocked while we wait for
+     * the first network round-trip.
+     */
+    agentState: { kind: "idle" } as AgentState,
     panelOpen: false,
     panelExpanded: false,
     pendingToolUi: [] as PendingAssistantToolUi[],
@@ -341,7 +353,12 @@ async function uploadAttachmentFile(
   if (!attachment?.file) return;
 
   try {
-    const uploaded = await uploadWorkspaceFile(attachment.file, {
+    // Direct-to-Nest upload: extracts text in-process and caches it
+    // in Redis under attachment:{ref}. The returned `path` is that
+    // ref string (no OSS URL); the chat preprocessor reads the
+    // cached text by ref so the LLM gets the full document content
+    // even though we never staged it to OSS.
+    const uploaded = await uploadChatAttachment(attachment.file, {
       uploadType: getAttachmentUploadType(attachment.file),
       sourceType: "LOCAL",
       maxSize: MAX_ATTACHMENT_SIZE,
@@ -352,7 +369,13 @@ async function uploadAttachmentFile(
       updateAttachment({
         projectId,
         attachmentId,
-        updates: { path: storagePath, url: uploaded.url, status: "uploaded", error: undefined },
+        updates: {
+          path: storagePath,
+          url: uploaded.url,
+          status: "uploaded",
+          error: undefined,
+          excerpt: uploaded.excerpt,
+        },
       })
     );
   } catch (error) {
@@ -688,6 +711,16 @@ export const sendUserMessage = createAsyncThunk<
       // finalizeTurnOnIdle when agent_state flips to "idle".
     } catch (error) {
       if (abortController.signal.aborted) return;
+      // 409 AGENT_BUSY → server says someone else is already running.
+      // Don't dump a "Request failed" error bubble; instead echo the
+      // server's authoritative state into Redux and show a soft toast.
+      // The composer will gate the input naturally because agentState
+      // is now `running`.
+      if (error instanceof AgentBusyError && error.current) {
+        dispatch(setAgentState({ projectId, agentState: error.current }));
+        toast(error.message);
+        return;
+      }
       const errMsg = error instanceof Error ? error.message : "AI request failed";
       dispatch(streamError({ projectId, error: errMsg }));
       toast.error(errMsg);
@@ -1409,9 +1442,43 @@ export const assistantSlice = createSlice({
       state.projects[projectId] = { ...current, sending: true, streaming: true };
     },
 
+    /**
+     * Server-pushed agent state update. Triggered by:
+     *   - /chat/list-messages on (re)mount → hydrate `agentStateRich`
+     *   - WS `agent_state_changed` event → realtime updates
+     *   - 409 AGENT_BUSY response from submit → echo `current` here
+     * The composer reads this to gate the input + show a soft hint.
+     */
+    setAgentState: (
+      state,
+      action: PayloadAction<{ projectId: string; agentState: AgentState }>
+    ) => {
+      const { projectId, agentState } = action.payload;
+      const current = state.projects[projectId] ?? createEmptyConversation();
+      state.projects[projectId] = {
+        ...current,
+        agentState,
+        // Mirror onto the legacy flags so any UI still reading them
+        // doesn't get out-of-sync. Once those call-sites are migrated
+        // to read `agentState.kind` directly, we can drop these.
+        sending: agentState.kind === "running",
+        streaming: agentState.kind === "running",
+        ...(agentState.kind === "failed" && agentState.lastError
+          ? { error: agentState.lastError }
+          : {}),
+      };
+    },
+
     streamError: (state, action: PayloadAction<{ projectId: string; error: string }>) => {
       const { projectId, error } = action.payload;
       const current = state.projects[projectId] ?? createEmptyConversation();
+      // Synthesize a "stream_error" assistant message — MessageBubble
+      // detects the metadata kind and renders the soft dash + copy
+      // details treatment instead of a raw "Request failed: HTTP 500"
+      // text bubble. The agent run usually completes via WS even when
+      // this synchronous POST fails (Mastra streams over a separate
+      // channel), so the user shouldn't see a loud red error block
+      // sandwiched between two valid assistant turns.
       state.projects[projectId] = {
         ...current,
         messages: [
@@ -1419,7 +1486,8 @@ export const assistantSlice = createSlice({
           {
             id: crypto.randomUUID(),
             role: "assistant",
-            parts: [{ type: "text", text: `Request failed: ${error}`, state: "done" }],
+            parts: [{ type: "text", text: "", state: "done" }],
+            metadata: { kind: "stream_error", rawError: error },
           },
         ],
         sending: false,
@@ -1524,6 +1592,7 @@ export const {
   finalizeMessage,
   finalizeAssistantMessage,
   markAgentWorking,
+  setAgentState,
   streamError,
   setHistory,
   markHistoryLoaded,
