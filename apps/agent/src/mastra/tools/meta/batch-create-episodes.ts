@@ -72,6 +72,11 @@ const OutputSchema = z.object({
   cleanedDefaults: z
     .array(z.object({ id: z.string(), title: z.string() }))
     .describe("Empty default episodes that were deleted as part of this commit."),
+  cleanedDefaultShots: z
+    .array(z.object({ episodeId: z.string(), shotId: z.string() }))
+    .describe(
+      "Empty default shot rows that were deleted from just-created episodes (Java seeds one stub shot per new episode)."
+    ),
   message: z.string(),
 });
 
@@ -109,7 +114,7 @@ function buildPayload(projectId: string, items: EpisodeItem[]): JavaEpisodeCreat
 export const batchCreateEpisode = createTool({
   id: "batch_create_episode",
   description:
-    'Batch-create episodes (worldepisode) in the current project — direct write, no user confirmation needed. Use when the user has already confirmed they want to save N new episode outlines (typical trigger: user clicked the "save" button on an episode-planner proposal, or said "就这么定 / 继续 / 保存这 N 集"). Each episode needs a `title` and `introduction` (synopsis); `frontPrompt` / `behindPrompt` are optional style modifiers applied to every shot in that episode. **Do not use** for renaming a single episode — use `update_episode` instead. **Do not use** for character / scene / prop saves — those have their own batch_create_* tools. Sister tool of batch_create_character / _scene / _prop, mirroring the same direct-commit pattern. **Auto-cleanup**: after the commit, this tool deletes any pre-existing episodes whose introduction is empty (Java auto-creates a default stub on project init that often becomes an orphan). The deletion is opportunistic and reported in `cleanedDefaults`; mention it in your recap if it happened ("saved 8 episodes, removed 1 default placeholder") so the user knows their episode count matches what they asked for.',
+    'Batch-create episodes (worldepisode) in the current project — direct write, no user confirmation needed. Use when the user has already confirmed they want to save N new episode outlines (typical trigger: user clicked the "save" button on an episode-planner proposal, or said "就这么定 / 继续 / 保存这 N 集"). Each episode needs a `title` and `introduction` (synopsis); `frontPrompt` / `behindPrompt` are optional style modifiers applied to every shot in that episode. **Do not use** for renaming a single episode — use `update_episode` instead. **Do not use** for character / scene / prop saves — those have their own batch_create_* tools. Sister tool of batch_create_character / _scene / _prop, mirroring the same direct-commit pattern. **Auto-cleanup** (two passes, both opportunistic): (1) deletes pre-existing episodes whose introduction is blank (Java seeds one when a project is first created), reported in `cleanedDefaults`; (2) for each just-created episode, lists its shots and deletes the ones with blank `description` (Java also seeds a single empty stub shot per new episode), reported in `cleanedDefaultShots`. Mention either in your recap when non-zero ("saved 8 episodes, removed 1 default placeholder, removed 8 empty default shots") so the user knows their counts match what they asked for.',
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async ({ items }, execCtx) => {
@@ -126,6 +131,7 @@ export const batchCreateEpisode = createTool({
           reason: "projectId missing from context",
         })),
         cleanedDefaults: [],
+        cleanedDefaultShots: [],
         message: "This project is missing projectId — cannot commit episodes.",
       };
     }
@@ -148,6 +154,7 @@ export const batchCreateEpisode = createTool({
         created: [],
         failed: items.map((it) => ({ title: it.title, reason })),
         cleanedDefaults: [],
+        cleanedDefaultShots: [],
         message: `Java batch write failed: ${reason}`,
       };
     }
@@ -193,6 +200,7 @@ export const batchCreateEpisode = createTool({
         created: [],
         failed: [],
         cleanedDefaults: [],
+        cleanedDefaultShots: [],
         message: `Saved ${items.length} episodes (id lookup deferred: ${reason}).`,
       };
     }
@@ -233,7 +241,61 @@ export const batchCreateEpisode = createTool({
       }
     }
 
-    if (created.length > 0 || cleanedDefaults.length > 0) {
+    // ─── Cleanup: drop Java's auto-seeded stub shots ───────────────────
+    //
+    // Whenever Java creates an episode it seeds a single empty shot row
+    // (no scene / no description / no prompts) — presumably so the
+    // storyboard table renders a "click to fill" line. Once the user
+    // commits real shots via the produce pipeline / add_shot / batch
+    // update, the stub stays as row #1 forever, polluting the table.
+    // Same recipe as the empty-episode cleanup above: list shots per
+    // just-created episode, delete the ones whose `description` value
+    // is blank. Conservative on purpose — we only touch episodes we
+    // ourselves just created, never pre-existing ones (those might
+    // have user's intentionally-empty in-progress rows).
+    type ShotRow = {
+      shotId?: string | number;
+      shotValues?: Array<{ presetColumnKey?: string; value?: string }>;
+    };
+    const cleanedDefaultShots: { episodeId: string; shotId: string }[] = [];
+    for (const c of created) {
+      try {
+        const shotsResp = await javaRequest<{ list?: ShotRow[] }>(ctx, "/api/user/shot/queryPage", {
+          data: {
+            storyBoardId: c.id,
+            page: 1,
+            pageSize: 999,
+            shotIds: [],
+            presetColumnKeys: [],
+          },
+        });
+        const shots = shotsResp.list ?? [];
+        for (const shot of shots) {
+          const shotId = shot.shotId == null ? "" : String(shot.shotId);
+          if (!shotId) continue;
+          const description = String(
+            shot.shotValues?.find((v) => v.presetColumnKey === "description")?.value ?? ""
+          ).trim();
+          if (description !== "") continue;
+          try {
+            await javaRequest(ctx, `/api/user/shot/delete/${encodeURIComponent(shotId)}`);
+            cleanedDefaultShots.push({ episodeId: c.id, shotId });
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            console.warn(
+              `[batch_create_episode] failed to drop empty default shot id=${shotId} in episode ${c.id}: ${reason}`
+            );
+          }
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[batch_create_episode] failed to list shots for cleanup in episode ${c.id}: ${reason}`
+        );
+      }
+    }
+
+    if (created.length > 0 || cleanedDefaults.length > 0 || cleanedDefaultShots.length > 0) {
       // Wakes the workspace sidebar's red-dot indicator + triggers the
       // Episodes panel refetch, same channel scene/prop/role use.
       // Fired even when only cleanup happened so the panel drops the
@@ -243,6 +305,16 @@ export const batchCreateEpisode = createTool({
         action: "batch_created",
         source: "batch_create_episode",
       });
+      if (cleanedDefaultShots.length > 0) {
+        // Storyboard tab red-dot driver — fire one storyboard event so
+        // the affected episodes' storyboard view re-fetches and the
+        // stub shot disappears in real time.
+        await publishEntityEvent(ctx, {
+          entity: "storyboard",
+          action: "batch_deleted",
+          source: "batch_create_episode.cleanup_default_shots",
+        });
+      }
     }
 
     const baseMessage =
@@ -251,18 +323,25 @@ export const batchCreateEpisode = createTool({
         : `Saved ${created.length}, failed ${failed.length}: ${failed
             .map((f) => `${f.title} (${f.reason})`)
             .join("; ")}`;
-    const cleanupSuffix =
-      cleanedDefaults.length > 0
-        ? ` (also removed ${cleanedDefaults.length} empty default placeholder${
-            cleanedDefaults.length === 1 ? "" : "s"
-          })`
-        : "";
+    const parts: string[] = [];
+    if (cleanedDefaults.length > 0) {
+      parts.push(
+        `removed ${cleanedDefaults.length} empty default episode${cleanedDefaults.length === 1 ? "" : "s"}`
+      );
+    }
+    if (cleanedDefaultShots.length > 0) {
+      parts.push(
+        `removed ${cleanedDefaultShots.length} empty default shot${cleanedDefaultShots.length === 1 ? "" : "s"}`
+      );
+    }
+    const cleanupSuffix = parts.length > 0 ? ` (${parts.join(", also ")})` : "";
 
     return {
       ok: failed.length === 0,
       created,
       failed,
       cleanedDefaults,
+      cleanedDefaultShots,
       message: `${baseMessage}${cleanupSuffix}.`,
     };
   },
