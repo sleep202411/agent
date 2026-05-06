@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   IconArrowLeft,
-  IconCheck,
   IconChevronRight,
   IconCredits,
   IconCrown,
@@ -13,7 +12,6 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ProjectTabs, type ProjectTab } from "./project-tabs";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -24,8 +22,7 @@ import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { StudioUserMenu } from "@/app/projects/_components/studio-user-menu";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { useAppSelector, useAppDispatch } from "@/src/store";
-import { setActiveTab, selectCurrentInstance, togglePanel } from "@/src/store/slices/projectSlice";
-import type { WorkspacePanelKey } from "@/src/types/workspace";
+import { setActiveTab, selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import {
   setCredits,
   setIntegralRecords,
@@ -38,37 +35,13 @@ interface ProjectHeaderProps {
   isLoading?: boolean;
 }
 
-// Numbered quick-access chips that nudge confused users toward the
-// asset panels in the suggested setup order. Maps 1:1 onto the
-// sidebar items so it's a duplicate surface, not a new feature —
-// short-term workflow guidance until we can do something more
-// principled. Each click dispatches togglePanel on the matching key.
-//
-// `assetField` points at the matching array on the project instance
-// in Redux so the chip can show "done" once the user has at least
-// one entry there.
-const QUICK_PANELS: ReadonlyArray<{
-  key: WorkspacePanelKey;
-  labelKey: string;
-  assetField: "episodes" | "characters" | "scenes" | "props";
-}> = [
-  { key: "episodes", labelKey: "episodes", assetField: "episodes" },
-  { key: "characters", labelKey: "characters", assetField: "characters" },
-  { key: "scenes", labelKey: "scenes", assetField: "scenes" },
-  { key: "props", labelKey: "props", assetField: "props" },
-];
-
 export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
-  const tSidebar = useTranslations("sidebar");
   const dispatch = useAppDispatch();
   const project = useAppSelector((s) => selectCurrentInstance(s).detail);
   const worldDetail = useAppSelector((s) => selectCurrentInstance(s).worldDetail);
   const episodes = useAppSelector((s) => selectCurrentInstance(s).episodes);
-  const characters = useAppSelector((s) => selectCurrentInstance(s).characters);
-  const scenes = useAppSelector((s) => selectCurrentInstance(s).scenes);
-  const props = useAppSelector((s) => selectCurrentInstance(s).props);
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
   const activeTab = useAppSelector((s) => selectCurrentInstance(s).activeTab);
   const credits = useAppSelector((s) => s.user.credits);
@@ -170,78 +143,59 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
               </>
             )}
           </div>
-
-          {/* Numbered quick-panels — workflow nudge for first-time users.
-           *  Hidden under xl since the centered ProjectTabs already
-           *  reserves the middle of the bar; below xl we'd start
-           *  fighting for horizontal space. Each chip shows the
-           *  step number until the user adds at least one entry on
-           *  that panel — then it flips to a green checkmark + count
-           *  so a glance at the header tells them what's still empty. */}
-          <div className="hidden items-center gap-1.5 xl:flex">
-            {QUICK_PANELS.map((panel, idx) => {
-              const count =
-                panel.assetField === "episodes"
-                  ? episodes.length
-                  : panel.assetField === "characters"
-                    ? characters.length
-                    : panel.assetField === "scenes"
-                      ? scenes.length
-                      : props.length;
-              const done = count > 0;
-              return (
-                <button
-                  key={panel.key}
-                  type="button"
-                  onClick={() => dispatch(togglePanel(panel.key))}
-                  title={tSidebar(panel.labelKey)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
-                    done
-                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
-                      : "border-border/60 bg-muted/60 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex size-4 items-center justify-center rounded-full text-[10px] font-semibold",
-                      done ? "bg-emerald-500/25 text-emerald-300" : "bg-primary/15 text-primary"
-                    )}
-                  >
-                    {done ? <IconCheck className="size-2.5" /> : idx + 1}
-                  </span>
-                  <span>{tSidebar(panel.labelKey)}</span>
-                  {done ? <span className="text-[10px] opacity-80">{count}</span> : null}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         <ProjectTabs activeTab={activeTab} onTabChange={(tab) => dispatch(setActiveTab(tab))} />
 
         <div className="flex flex-1 items-center justify-end gap-2">
-          <Button
-            data-tour-step="upgrade"
-            size="sm"
-            className="hidden bg-linear-to-r from-purple-600 to-purple-500 text-white hover:from-purple-500 hover:to-purple-400 xl:flex"
-            onClick={() => setUpgradeOpen(true)}
-          >
-            <IconCrown className="size-3.5" />
-            {tc("upgrade")}
-          </Button>
+          {/* 一键开拍 — entry to the produce wizard. Distinct from the
+              freeform Script/Storyboard/Timeline tabs in the centre:
+              this is the guided pipeline (剧本 → 资产 → 视频) for
+              users who'd rather follow rails than orchestrate the
+              chat themselves. Sparkle + gradient ties it visually to
+              the rest of the AI surfaces. Only shows when we know
+              the project id, which we always do here once the
+              header has hydrated. */}
+          {project?.id ? (
+            <Button asChild size="sm">
+              <Link
+                href={`/projects/${project.id}/produce`}
+                className="bg-gradient-to-r from-fuchsia-500 to-purple-500 text-white hover:from-fuchsia-400 hover:to-purple-400"
+              >
+                <IconSparkles className="size-3.5" />
+                一键成片
+              </Link>
+            </Button>
+          ) : null}
 
+          {/* Credits + Upgrade as one segmented pill. Both halves
+              share the chip's neutral background so it reads as one
+              control; the upgrade half just borrows a soft primary
+              tint + primary text so it's discoverable without
+              shouting. Avoids the previous two-tone (transparent vs
+              full purple gradient) clash. */}
           <div className="relative hidden xl:block">
-            <button
-              type="button"
-              data-tour-step="credits"
-              onClick={() => setCreditsOpen((prev) => !prev)}
-              className="flex items-center gap-2 rounded-xl border border-border bg-background/60 px-3 py-2 text-sm transition-colors hover:bg-muted/20"
-            >
-              <IconCredits className="size-4 text-primary" />
-              <span>{tc("credits")}</span>
-              <span className="font-semibold">{isCreditsLoading ? "..." : displayCredits}</span>
-            </button>
+            <div className="flex items-center overflow-hidden rounded-xl border border-border bg-background/60">
+              <button
+                type="button"
+                data-tour-step="credits"
+                onClick={() => setCreditsOpen((prev) => !prev)}
+                className="flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-muted/30"
+              >
+                <IconCredits className="size-4 text-primary" />
+                <span className="font-semibold">{isCreditsLoading ? "..." : displayCredits}</span>
+              </button>
+              <span className="h-5 w-px bg-border/70" aria-hidden />
+              <button
+                type="button"
+                data-tour-step="upgrade"
+                onClick={() => setUpgradeOpen(true)}
+                className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/10"
+              >
+                <IconCrown className="size-3.5" />
+                {tc("upgrade")}
+              </button>
+            </div>
 
             {creditsOpen ? (
               <div className="absolute right-0 top-12 z-50 w-96 rounded-2xl border border-border bg-popover p-3 shadow-2xl">
