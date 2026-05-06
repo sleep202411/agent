@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ComponentType, type SVGProps } from "react";
+import { useLayoutEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import {
   IconArrowUp,
@@ -9,6 +9,7 @@ import {
   IconLoader2,
   IconMask,
   IconPaperclip,
+  IconSparkles,
   IconUsers,
   IconX,
 } from "@tabler/icons-react";
@@ -51,33 +52,57 @@ const STUDIO_AGENT_PILLS: {
   agent: StudioAgent;
   labelKey: string;
   icon: IconType;
-  /** Tailwind classes applied when the pill is active. Matches
+  /** Tailwind classes applied to the pill itself when active. Matches
    *  PERSONA_TONE_CLASSES in `apps/web/src/lib/assistant/personas.ts`. */
   active: string;
+  /** Ring + glow applied to the composer card when this pill is pinned —
+   *  parallel to PERSONA_TONE_RING in the in-chat composer, which switches
+   *  the card border to the persona's tone the moment a pill is clicked.
+   *  Without this the pill click feels like a no-op. */
+  composerRing: string;
+  /** Text-tone class for the inline `角色设计师 /` prefix rendered at the
+   *  start of the typing area — matches PERSONA_TONE_TEXT, kept inline
+   *  here so the pill row drives every visual signal from one record. */
+  prefixTone: string;
+  /** Localized placeholder text — i18n key under `ai.personas.*` — so the
+   *  textarea hints which crew the user has pinned. */
+  personaKey: string;
 }[] = [
   {
     agent: "episode",
     labelKey: "forcePersonaEpisodePlanner",
     icon: IconLayoutList,
     active: "bg-lime-500/10 text-lime-300 border-lime-400/30",
+    composerRing: "ring-lime-400/60 shadow-[0_0_32px_-8px_rgb(132_204_22/0.55)]",
+    prefixTone: "text-lime-300",
+    personaKey: "personas.episodePlanner",
   },
   {
     agent: "character",
     labelKey: "forcePersonaCharacter",
     icon: IconUsers,
     active: "bg-amber-500/10 text-amber-300 border-amber-400/30",
+    composerRing: "ring-amber-400/60 shadow-[0_0_32px_-8px_rgb(245_158_11/0.55)]",
+    prefixTone: "text-amber-300",
+    personaKey: "personas.characterDesigner",
   },
   {
     agent: "scene",
     labelKey: "forcePersonaScene",
     icon: IconBuildingStore,
     active: "bg-teal-500/10 text-teal-300 border-teal-400/30",
+    composerRing: "ring-teal-400/60 shadow-[0_0_32px_-8px_rgb(20_184_166/0.55)]",
+    prefixTone: "text-teal-300",
+    personaKey: "personas.sceneDesigner",
   },
   {
     agent: "prop",
     labelKey: "forcePersonaProp",
     icon: IconMask,
     active: "bg-orange-500/10 text-orange-300 border-orange-400/30",
+    composerRing: "ring-orange-400/60 shadow-[0_0_32px_-8px_rgb(249_115_22/0.55)]",
+    prefixTone: "text-orange-300",
+    personaKey: "personas.propDesigner",
   },
 ];
 
@@ -100,9 +125,28 @@ export function StudioHomeComposer() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const personaPrefixRef = useRef<HTMLSpanElement>(null);
 
   const canSubmit =
     !submitting && !scriptUploading && (prompt.trim().length > 0 || scriptAttachment !== null);
+
+  const pinnedPill = agent ? (STUDIO_AGENT_PILLS.find((p) => p.agent === agent) ?? null) : null;
+
+  // Width of the inline `{personaName} / ` prefix span. Used as the
+  // textarea's first-line text-indent so the user's typing flows AFTER
+  // the colored prefix instead of overlapping it. We measure on every
+  // pinned-pill change because the persona name length differs by role
+  // and locale (e.g. "Character Designer / " vs "角色设计师 / ").
+  const [prefixWidth, setPrefixWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (!pinnedPill) {
+      setPrefixWidth(0);
+      return;
+    }
+    const node = personaPrefixRef.current;
+    if (!node) return;
+    setPrefixWidth(Math.ceil(node.getBoundingClientRect().width));
+  }, [pinnedPill, ta]);
 
   // ─── Script upload ────────────────────────────────────
 
@@ -203,34 +247,68 @@ export function StudioHomeComposer() {
         <p className="text-sm text-muted-foreground sm:text-base">{t("studioHomeSubtitle")}</p>
       </div>
 
-      {/* Composer — liquid glass over the hero video */}
+      {/* Composer — liquid glass over the hero video. When a persona pill
+          is pinned, the outer ring + glow takes on that crew member's tone
+          — same affordance as the in-chat composer, so the click reads as
+          "you're now talking to this designer" rather than just toggling
+          a button. Pinned tone overrides both focused and idle states. */}
       <div className="relative w-full">
         <div
           className={cn(
             "rounded-3xl bg-white/5 backdrop-blur-2xl backdrop-saturate-150 transition-all duration-500",
             "ring-1 ring-inset",
-            focused
-              ? "ring-primary/60 shadow-[0_0_32px_-8px_oklch(0.591_0.225_26.8/0.45)]"
-              : "ring-white/15 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.5)]"
+            pinnedPill
+              ? pinnedPill.composerRing
+              : focused
+                ? "ring-primary/60 shadow-[0_0_32px_-8px_oklch(0.591_0.225_26.8/0.45)]"
+                : "ring-white/15 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.5)]"
           )}
         >
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canSubmit) {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-            placeholder={t("studioHomePlaceholder")}
-            rows={3}
-            className="min-h-[140px] w-full resize-none bg-transparent px-5 pt-5 text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
-            disabled={submitting}
-          />
+          {/* Inline persona prefix — same visual the in-chat composer
+              renders via the `personaPrefix` Tiptap node: plain colored
+              text "{personaName} / " sitting at offset 0 of the typing
+              area. We can't do an inline atom in a plain textarea, so we
+              fake it with an absolutely-positioned span and a measured
+              first-line `text-indent` on the textarea. The user's text
+              flows AFTER the prefix, wraps to the left edge on subsequent
+              lines (text-indent only affects the first line — exactly
+              what the in-chat editor does too). Removed by toggling the
+              pill again or clicking ×; the pill drives the text-indent
+              so deletion stays in lockstep with the pin. */}
+          <div className="relative">
+            {pinnedPill && (
+              <span
+                ref={personaPrefixRef}
+                aria-hidden
+                className={cn(
+                  "pointer-events-none absolute left-5 top-5 select-none text-[15px] leading-relaxed font-medium",
+                  pinnedPill.prefixTone
+                )}
+              >
+                {ta(pinnedPill.personaKey)}
+                <span className="opacity-70"> / </span>
+              </span>
+            )}
+
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canSubmit) {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+              placeholder={pinnedPill ? "" : t("studioHomePlaceholder")}
+              rows={3}
+              style={pinnedPill ? { textIndent: `${prefixWidth}px` } : undefined}
+              className="min-h-35 w-full resize-none bg-transparent px-5 pt-5 text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+              disabled={submitting}
+            />
+          </div>
 
           {/* Attached script chip */}
           {(scriptFile || scriptAttachment) && (
@@ -241,7 +319,7 @@ export function StudioHomeComposer() {
                 ) : (
                   <IconPaperclip className="size-3.5 shrink-0" />
                 )}
-                <span className="max-w-[240px] truncate">
+                <span className="max-w-60 truncate">
                   {scriptFile?.name ?? scriptAttachment?.name}
                 </span>
                 <button
@@ -253,41 +331,6 @@ export function StudioHomeComposer() {
                   <IconX className="size-3" />
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Persona pin pills — only meaningful for the freeform-chat
-              path. With a file attached, submit goes to /produce instead
-              and the pill choice would be silently ignored, so we hide
-              the row to make the two paths visually distinct. */}
-          {!scriptFile && !scriptAttachment && (
-            <div
-              className={cn(
-                "flex items-center gap-1.5 overflow-x-auto px-4 pb-2",
-                "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              )}
-            >
-              {STUDIO_AGENT_PILLS.map(({ agent: key, labelKey, icon: Icon, active }) => {
-                const isActive = agent === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => setAgent(isActive ? null : key)}
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
-                      "disabled:cursor-not-allowed disabled:opacity-50",
-                      isActive
-                        ? active
-                        : "border-white/15 bg-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                    )}
-                  >
-                    <Icon className="size-3" />
-                    {ta(labelKey)}
-                  </button>
-                );
-              })}
             </div>
           )}
 
@@ -326,6 +369,45 @@ export function StudioHomeComposer() {
           </div>
         </div>
       </div>
+
+      {/* Persona pin pills — sibling of the composer card so the row
+          reads as a "what crew lead should I start with?" picker rather
+          than another in-composer toolbar control. Hidden once a script
+          file is attached: that path bypasses chat and lands in the
+          /produce wizard, where the pill choice would be silently
+          dropped. */}
+      {!scriptFile && !scriptAttachment && (
+        <div
+          className={cn(
+            "flex flex-wrap items-center justify-center gap-2",
+            "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          )}
+        >
+          {STUDIO_AGENT_PILLS.map(({ agent: key, labelKey, icon: Icon, active }) => {
+            const isActive = agent === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={submitting}
+                onClick={() => setAgent(isActive ? null : key)}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full border backdrop-blur-md transition-all",
+                  "px-4 py-2 text-sm",
+                  "disabled:cursor-not-allowed disabled:opacity-50",
+                  isActive
+                    ? cn(active, "shadow-lg")
+                    : "border-white/15 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                )}
+              >
+                <IconSparkles className="size-3.5" />
+                <Icon className="size-3.5" />
+                {ta(labelKey)}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
