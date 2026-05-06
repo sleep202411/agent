@@ -96,7 +96,7 @@ export function GlobalNav() {
     // Legacy uni-app route — flip to "/courses" once the native page in
     // app/(site)/courses/ ships per its README migration plan.
     {
-      href: "/pages/course/course",
+      href: "/courses",
       label: t("course"),
       Icon: IconBook,
       requiresAuth: true,
