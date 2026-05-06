@@ -372,42 +372,41 @@ export function StudioHomeComposer() {
 
       {/* Persona pin pills — sibling of the composer card so the row
           reads as a "what crew lead should I start with?" picker rather
-          than another in-composer toolbar control. Hidden once a script
-          file is attached: that path bypasses chat and lands in the
-          /produce wizard, where the pill choice would be silently
-          dropped. */}
-      {!scriptFile && !scriptAttachment && (
-        <div
-          className={cn(
-            "flex flex-wrap items-center justify-center gap-2",
-            "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          )}
-        >
-          {STUDIO_AGENT_PILLS.map(({ agent: key, labelKey, icon: Icon, active }) => {
-            const isActive = agent === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                disabled={submitting}
-                onClick={() => setAgent(isActive ? null : key)}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-full border backdrop-blur-md transition-all",
-                  "px-4 py-2 text-sm",
-                  "disabled:cursor-not-allowed disabled:opacity-50",
-                  isActive
-                    ? cn(active, "shadow-lg")
-                    : "border-white/15 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-                )}
-              >
-                <IconSparkles className="size-3.5" />
-                <Icon className="size-3.5" />
-                {ta(labelKey)}
-              </button>
-            );
-          })}
-        </div>
-      )}
+          than another in-composer toolbar control. Always visible: the
+          pin is meaningful both for the freeform-chat path (stamps
+          forcedPersona on the first turn) and the produce path (lets
+          users keep the indicator they just clicked, even with a file
+          attached). */}
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-center gap-2",
+          "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        )}
+      >
+        {STUDIO_AGENT_PILLS.map(({ agent: key, labelKey, icon: Icon, active }) => {
+          const isActive = agent === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              disabled={submitting}
+              onClick={() => setAgent(isActive ? null : key)}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full border backdrop-blur-md transition-all",
+                "px-4 py-2 text-sm",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+                isActive
+                  ? cn(active, "shadow-lg")
+                  : "border-white/15 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              )}
+            >
+              <IconSparkles className="size-3.5" />
+              <Icon className="size-3.5" />
+              {ta(labelKey)}
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }

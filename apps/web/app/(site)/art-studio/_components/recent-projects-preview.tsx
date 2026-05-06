@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { IconArrowRight } from "@tabler/icons-react";
+import { IconArrowRight, IconPlus } from "@tabler/icons-react";
 import { env } from "@/src/env";
 import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { useMyProducts, type MyProduct } from "../_hooks/use-my-products";
+import { CreateWorldDialog } from "./create-world-dialog";
 
 const OSS_BASE = env.OSS_BASE_URL;
 
@@ -21,10 +23,18 @@ function ossUrl(path: string | null | undefined): string | null {
  * user's library without dragging in the full /projects page chrome
  * (own/created tabs, flat/grouped toggle, world grouping). The "View
  * all →" link in the header takes the user to the dedicated list.
+ *
+ * Includes a `+` create card as the first grid slot — the same
+ * `CreateWorldDialog` ProjectsSection uses, kept here so the home page
+ * doesn't lose the explicit "create with file upload + manual fields"
+ * affordance just because we slimmed the preview down. The studio
+ * composer above is the AI-led creation path; this card is the
+ * file-led / form-led one.
  */
 export function RecentProjectsPreview() {
   const tw = useTranslations("workspace");
   const { products, totalCount, isLoading } = useMyProducts({ pageSize: 8 });
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   return (
     <section className="flex w-full flex-col gap-4">
@@ -45,7 +55,8 @@ export function RecentProjectsPreview() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        {isLoading && Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        <CreateButton onClick={() => setCreateDialogOpen(true)} />
+        {isLoading && Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
         {!isLoading && products.map((p) => <ProductCard key={p.id} product={p} />)}
         {!isLoading && products.length === 0 && (
           <p className="col-span-full py-8 text-center text-sm text-muted-foreground">
@@ -53,6 +64,8 @@ export function RecentProjectsPreview() {
           </p>
         )}
       </div>
+
+      <CreateWorldDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
     </section>
   );
 }
@@ -74,6 +87,24 @@ function ProductCard({ product }: { product: MyProduct }) {
         <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p>
       </div>
     </Link>
+  );
+}
+
+function CreateButton({ onClick }: { onClick: () => void }) {
+  const tw = useTranslations("workspace");
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group overflow-hidden rounded-xl border border-dashed border-border/70 bg-card transition-all hover:border-primary/40 hover:bg-muted/40"
+    >
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-muted/30 py-10">
+        <div className="flex size-10 items-center justify-center rounded-full bg-foreground text-background">
+          <IconPlus className="size-5" />
+        </div>
+        <span className="text-sm font-medium">{tw("createWorld")}</span>
+      </div>
+    </button>
   );
 }
 
