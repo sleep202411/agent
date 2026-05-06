@@ -120,7 +120,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
       <header className="relative flex h-16 shrink-0 items-center gap-4 px-4">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Link
-            href="/art-studio/projects"
+            href="/art-studio"
             className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
           >
             <IconArrowLeft className="size-4" />
