@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PanelAnimateContext } from "@/app/projects/_components/panels/panel-layout";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "@/src/i18n/i18n";
 import { ProjectHeader } from "@/app/projects/_components/project-header";
 import { ProjectSidebar } from "@/app/projects/_components/project-sidebar";
@@ -27,12 +27,17 @@ import { useWorldAssets } from "@/src/hooks/use-world-assets";
 import { useStudioSeedConsumer } from "@/src/hooks/use-studio-seed-consumer";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
-import { setActivePanel, selectCurrentInstance } from "@/src/store/slices/projectSlice";
+import {
+  setActivePanel,
+  setActiveTab,
+  selectCurrentInstance,
+} from "@/src/store/slices/projectSlice";
 
 export default function ProjectDetailPage() {
   const t = useTranslations("project");
   const router = useRouter();
   const pathname = usePathname() ?? "";
+  const searchParams = useSearchParams();
 
   const { detail, episodes, isLoading, isEpisodesLoading, error } = useProjectDetail();
   useStoryboardData();
@@ -69,6 +74,12 @@ export default function ProjectDetailPage() {
   }, [batchGeneratingActive, t]);
 
   const activeTab = useAppSelector((s) => selectCurrentInstance(s).activeTab);
+  useEffect(() => {
+    const tab = searchParams?.get("tab");
+    if (tab !== "script" && tab !== "storyboard" && tab !== "timeline") return;
+    if (tab === activeTab) return;
+    store.dispatch(setActiveTab(tab));
+  }, [activeTab, searchParams]);
   const [mountedTabs, setMountedTabs] = useState<Record<string, boolean>>({
     storyboard: true,
   });
