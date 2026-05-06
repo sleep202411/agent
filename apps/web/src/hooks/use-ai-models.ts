@@ -80,6 +80,47 @@ export function useAiModels(path: string) {
 }
 
 /**
+ * Targeted single-path fetch — skips the global preload's
+ * `currentProjectId` gate so it works on routes that don't go
+ * through the project workspace setter (e.g. the per-episode
+ * video editor). Idempotent: short-circuits when the cache for
+ * this path is already populated.
+ *
+ * Use when a non-workspace page needs the model list for one
+ * specific endpoint; for the workspace itself prefer
+ * `useAiModelsPreload` so all paths warm in one idle pass.
+ */
+export function useEnsureAiModels(path: string) {
+  const cached = useAppSelector((s) => s.aiModelCache.aiModelCache[path] ?? EMPTY_MODELS);
+
+  useEffect(() => {
+    if (!path) return;
+    if (cached.length > 0) return;
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const raw = await backendApi.post<RawAiModel[]>(
+          `/api/ai/record/model/list?path=${encodeURIComponent(path)}`
+        );
+        if (cancelled) return;
+        const rawModels = (raw ?? []) as RawAiModel[];
+        store.dispatch(setAiRawModelCache({ path, models: rawModels }));
+        const models = rawModels.map((m) => normalizeAiModel(m));
+        store.dispatch(setAiModelCache({ path, models }));
+      } catch (err) {
+        console.error(`[useEnsureAiModels] Failed to load models for ${path}:`, err);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [path, cached.length]);
+}
+
+/**
  * Get cached raw AI models (RawAiModel format) for a specific path.
  * Returns raw backend models from the store cache — useful for components
  * that still consume the RawAiModel shape (serviceName, serviceCode, description, etc).
