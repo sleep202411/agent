@@ -47,8 +47,6 @@ type CreateQuickWorldResult = {
   projectId: string;
 };
 
-const MAX_NAME_LENGTH = 50;
-const MAX_DESCRIPTION_LENGTH = 500;
 const SOURCE_MAX_SIZE_MB = 25;
 const SOURCE_MAX_SIZE_BYTES = SOURCE_MAX_SIZE_MB * 1024 * 1024;
 const SOURCE_ACCEPT = ".pdf,.doc,.docx,.txt,.md";
@@ -157,11 +155,11 @@ export function CreateWorldDialog({
       try {
         const draft = await sparkAnalyze.mutateAsync(file);
         if (draft.name && !name.trim()) {
-          setName(draft.name.slice(0, MAX_NAME_LENGTH));
+          setName(draft.name);
           markAi("name");
         }
         if (draft.description && !description.trim()) {
-          setDescription(draft.description.slice(0, MAX_DESCRIPTION_LENGTH));
+          setDescription(draft.description);
           markAi("description");
         }
         if (draft.tags?.length) setTags(draft.tags);
@@ -207,9 +205,6 @@ export function CreateWorldDialog({
     const next: FormErrors = {};
     const trimmedName = name.trim();
     if (!trimmedName) next.name = tw("createWorldNameRequired");
-    else if (trimmedName.length > MAX_NAME_LENGTH) {
-      next.name = tw("createWorldNameMaxLength", { max: MAX_NAME_LENGTH });
-    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -447,7 +442,6 @@ export function CreateWorldDialog({
               <Input
                 id="create-world-name"
                 value={name}
-                maxLength={MAX_NAME_LENGTH}
                 onChange={(event) => {
                   setName(event.target.value);
                   clearAi("name");
@@ -469,7 +463,6 @@ export function CreateWorldDialog({
               <Textarea
                 id="create-world-description"
                 value={description}
-                maxLength={MAX_DESCRIPTION_LENGTH}
                 rows={3}
                 onChange={(event) => {
                   setDescription(event.target.value);
