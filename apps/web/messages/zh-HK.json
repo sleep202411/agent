@@ -2323,6 +2323,7 @@
     "createWorldSuccess": "世界已建立",
     "createWorldFailed": "建立世界失敗",
     "createWorldSubmit": "開始創作",
+    "createWorldSubmitOneClick": "一鍵成片",
     "createWorldStoryOsHeading": "StoryOS 拆解",
     "createWorldStoryOsAnalyzing": "StoryOS 正在閱讀劇本並規劃製作…",
     "createWorldStoryOsEmpty": "StoryOS 已讀入劇本，點擊「開始創作」進入工作室。",

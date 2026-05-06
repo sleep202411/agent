@@ -275,7 +275,6 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
               {aiFilledFields.has("name") && <AiSuggestedChip label={tc("aiSuggested")} />}
             </FieldLabel>
             <Input
-              size="default"
               value={name}
               onChange={(e) => {
                 setName(e.target.value.slice(0, 80));

@@ -2323,6 +2323,7 @@
     "createWorldSuccess": "World created",
     "createWorldFailed": "Failed to create world",
     "createWorldSubmit": "Start Creating",
+    "createWorldSubmitOneClick": "One-click Create",
     "createWorldStoryOsHeading": "StoryOS breakdown",
     "createWorldStoryOsAnalyzing": "StoryOS is reading your brief and laying out the production…",
     "createWorldStoryOsEmpty": "StoryOS read your brief — press Start Creating to enter the studio.",

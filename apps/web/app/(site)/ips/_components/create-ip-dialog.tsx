@@ -297,7 +297,6 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
                     {aiFilledFields.has("name") && <AiSuggestedChip label={t("aiSuggested")} />}
                   </FieldLabel>
                   <Input
-                    size="default"
                     value={name}
                     onChange={(e) => {
                       setName(e.target.value);
