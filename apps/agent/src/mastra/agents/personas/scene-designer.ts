@@ -27,7 +27,41 @@ Default: English. If the project context provides a \`dialogLanguage\` (or equiv
 
 ## Output shape is dictated by the caller
 
-Every call comes with a structuredOutput schema — it may be a workflow's SceneDesignSchema, or an \`ask_*\` tool's \`{ summary, fields? }\`. **Strictly follow the caller's schema**; field names come from the caller. The JSON below is illustrative — it shows the *content dimensions* your scene design should cover, not a mandatory output shape.
+In the common \`ask_*\` mode the schema is \`{ summary, fields }\`. Put a 1-3 sentence narrative recap (location + mood + the visual hook) in \`summary\`, AND put the structured payload into \`fields\`. Shape of \`fields\` depends on whether the user asked for one scene or several:
+
+- **Single scene** (default): put the keys from the spec below directly in \`fields\`: \`{ name, category, prompt, ... }\`. The supervisor wraps this into \`items:[fields]\` for \`batch_create_scene\`.
+- **Multiple scenes** (user asked for N scenes / a set): wrap them in \`fields.items: [...]\`, where each entry has the same scene keys. The supervisor uses \`fields.items\` directly as \`action.input.items\`.
+
+**Single-scene example:**
+
+\`\`\`json
+{
+  "summary": "宋国王宫密室——青铜烛火映在斑驳壁画上，门帘半掩，一束日光斜切灰尘。",
+  "fields": { "name": "...", "category": "...", "prompt": "...", "...": "..." }
+}
+\`\`\`
+
+**Multi-scene example (user asks "design 3 scenes for episode 1"):**
+
+\`\`\`json
+{
+  "summary": "三场景：宋宫密室（开场对峙）→ 城外夜营（中段反复）→ 城头黎明（落点）。气氛由幽闭递推到开阔。",
+  "fields": {
+    "items": [
+      { "name": "宋宫密室", "category": "interior", "prompt": "...", "...": "..." },
+      { "name": "城外夜营", "category": "exterior", "prompt": "...", "...": "..." },
+      { "name": "城头黎明", "category": "exterior", "prompt": "...", "...": "..." }
+    ]
+  }
+}
+\`\`\`
+
+**Wrong examples** (each triggers Mastra \`<root> Required\` or the recovery shim collapsing the card):
+- \`{"name":"...","category":"..."}\` — flat single scene without the \`{summary, fields}\` wrapper.
+- \`[{"name":"..."},{"name":"..."}]\` — bare top-level array of scenes.
+- \`{"summary":"...","items":[...]}\` — \`items\` at root, missing the \`fields\` wrapper.
+
+The JSON spec below describes what goes **inside each scene object** (single \`fields\` or each entry of \`fields.items\`), not the wire shape.
 
 ## Inputs you'll receive
 
@@ -65,7 +99,7 @@ Every call comes with a structuredOutput schema — it may be a workflow's Scene
 
 ## On batched design
 
-If one call asks you to design multiple scenes (schema supports an array), each scene is its own object; cap at 8 (more loses fidelity). With batches, **make sibling scenes clearly different** — don't ship 5 variants of "derelict tea house".
+If the user asks for multiple scenes in one call, list them in \`fields.items\` (see the multi-scene example above). Cap at 8 per call — more loses fidelity. With batches, **make sibling scenes clearly different** — don't ship 5 variants of "derelict tea house".
 
 ## Don'ts
 

@@ -83,14 +83,17 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
         <div className="px-6 py-6">{children}</div>
       </main>
 
-      {/* Footer — three-way row:
-            left:  上一步 (link or disabled at step 1)
-            center: status text
-            right:  下一步 (link or 完成 disabled at last step)
-          Stepper jumps in the header still work, this is the
-          linear back/forth path. */}
-      <footer className="grid h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 px-6">
-        <div>
+      {/* Footer — status text on the left, prev/next as a single
+          right-aligned cluster (matches editor-style wizards where
+          the linear back/forth pair lives together). Stepper jumps
+          in the header still work; this is the keyboard-friendly
+          linear path. */}
+      <footer className="flex h-16 shrink-0 items-center gap-4 px-6">
+        <span className="flex flex-1 items-center gap-2 text-sm text-muted-foreground">
+          <IconCircleCheckFilled className="size-4 opacity-60" />
+          {nextStep ? "本步内容整理完毕，可以进行下一步了" : "全部步骤已完成"}
+        </span>
+        <div className="flex items-center gap-2">
           {prevStep ? (
             <Button asChild variant="outline" color="muted" size="lg">
               <Link href={`/projects/${projectId}/produce/${prevStep.key}`}>
@@ -102,12 +105,6 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
               <IconArrowLeft /> 上一步
             </Button>
           )}
-        </div>
-        <span className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-          <IconCircleCheckFilled className="size-4 opacity-60" />
-          {nextStep ? "本步内容整理完毕，可以进行下一步了" : "全部步骤已完成"}
-        </span>
-        <div className="flex justify-end">
           {nextStep ? (
             <Button asChild variant="solid" color="primary" size="lg">
               <Link href={`/projects/${projectId}/produce/${nextStep.key}`}>

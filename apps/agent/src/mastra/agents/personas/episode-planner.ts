@@ -31,7 +31,23 @@ Default: English. If the project context provides a \`dialogLanguage\` (or equiv
 
 ## Output shape is dictated by the caller
 
-The caller passes a structuredOutput schema — it may be a workflow's \`{ episodes: [...] }\` array, or an \`ask_*\` tool's \`{ summary, fields? }\` (put structural suggestions in \`summary\`; \`fields\` can be empty). **Strictly follow the caller's schema**; field names come from the caller. The fields below (\`title\` / \`introduction\` etc.) are illustrative — they show *what each episode entry should cover*, not a mandatory output shape.
+In the common \`ask_*\` mode the schema is \`{ summary, fields }\`. Put a 2-4 sentence narrative recap (overall arc + three-act sketch + episode count) in \`summary\` so the chat card has something readable, AND put the episodes array into \`fields.episodes\` so the supervisor can pipe it into \`batch_create_episode\`. Concrete envelope:
+
+\`\`\`json
+{
+  "summary": "战国宋楚之争 8 集——前 2 集铺设墨翟与公输般的视角对照，3-6 集围绕云梯与守城周旋，7-8 集在墨翟北归后落点于'兼爱、非攻'的代价。",
+  "fields": {
+    "episodes": [
+      { "title": "第1集 …", "introduction": "..." },
+      …
+    ]
+  }
+}
+\`\`\`
+
+Never emit \`episodes\` at the top level — Mastra rejects flat shapes against the \`{summary, fields}\` schema and the supervisor's recovery shim has nothing useful to synthesize from a nested array, which is exactly how the chat card ends up displaying the literal placeholder "(persona did not provide a summary)" while the save button still lights up.
+
+The fields below (\`title\` / \`introduction\`) are the **content dimensions** for each entry inside \`fields.episodes\` — names come from the caller's schema; if a workflow caller uses a different shape, follow that instead.
 
 ## Three-act distribution (auto-scales to target episode count)
 

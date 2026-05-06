@@ -81,12 +81,19 @@ export class ProduceProxyController {
     body: JsonBody,
   ): Promise<T> {
     const url = `${this.mastraUrl}${path}`;
+    // Sit just above Mastra's 30-min server.timeout so Mastra's clean
+    // 504 wins the race when the workflow truly overruns. Without an
+    // explicit signal, Node's undici defaults `headersTimeout` to
+    // 5 min and would false-fire on the long-poll well before Mastra
+    // itself decides to give up.
+    const FORWARD_TIMEOUT_MS = 31 * 60 * 1000;
     let upstream: globalThis.Response;
     try {
       upstream = await fetch(url, {
         method: 'POST',
         headers: this.buildHeaders(req, context),
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -110,8 +117,14 @@ export class ProduceProxyController {
     return (await upstream.json()) as T;
   }
 
-  @Post('script-draft/start')
-  async start(
+  // Synchronous run: blocks for ~30-120s while Mastra runs the
+  // produce_script_pipeline in-process, then returns the draft.
+  // Replaces the old start/status/cancel triplet — the frontend
+  // simply awaits this single response. If the user closes the tab
+  // / navigates away mid-flight, the abort propagates as a fetch
+  // failure here and the caller-side socket close.
+  @Post('script-draft/sync')
+  async sync(
     @Body() body: JsonBody,
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
@@ -121,27 +134,7 @@ export class ProduceProxyController {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
     const context = this.buildContext(user, body);
-    return this.forward('/produce/script-draft/start', req, context, body);
-  }
-
-  @Post('script-draft/status')
-  async status(
-    @Body() body: JsonBody,
-    @CurrentUser() user: AuthUser,
-    @Req() req: Request,
-  ) {
-    const context = this.buildContext(user, body);
-    return this.forward('/produce/script-draft/status', req, context, body);
-  }
-
-  @Post('script-draft/cancel')
-  async cancel(
-    @Body() body: JsonBody,
-    @CurrentUser() user: AuthUser,
-    @Req() req: Request,
-  ) {
-    const context = this.buildContext(user, body);
-    return this.forward('/produce/script-draft/cancel', req, context, body);
+    return this.forward('/produce/script-draft/sync', req, context, body);
   }
 
   @Post('script-draft/commit')

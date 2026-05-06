@@ -27,7 +27,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { AiSuggestedChip } from "@/components/ui/ai-suggested-chip";
 import {
   Select,
   SelectContent,
@@ -268,12 +269,11 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
             }}
           />
 
-          <div className="space-y-2">
-            <FieldLabel
-              label={t("sparkFieldName")}
-              ai={aiFilledFields.has("name")}
-              aiLabel={tc("aiSuggested")}
-            />
+          <Field>
+            <FieldLabel>
+              {t("sparkFieldName")}
+              {aiFilledFields.has("name") && <AiSuggestedChip label={tc("aiSuggested")} />}
+            </FieldLabel>
             <Input
               value={name}
               onChange={(e) => {
@@ -281,14 +281,13 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
                 clearAi("name");
               }}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-2">
-            <FieldLabel
-              label={t("sparkFieldCategory")}
-              ai={aiFilledFields.has("typeId")}
-              aiLabel={tc("aiSuggested")}
-            />
+          <Field>
+            <FieldLabel>
+              {t("sparkFieldCategory")}
+              {aiFilledFields.has("typeId") && <AiSuggestedChip label={tc("aiSuggested")} />}
+            </FieldLabel>
             <Select
               value={typeId}
               onValueChange={(v) => {
@@ -307,14 +306,13 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
 
-          <div className="space-y-2">
-            <FieldLabel
-              label={t("sparkFieldDescription")}
-              ai={aiFilledFields.has("description")}
-              aiLabel={tc("aiSuggested")}
-            />
+          <Field>
+            <FieldLabel>
+              {t("sparkFieldDescription")}
+              {aiFilledFields.has("description") && <AiSuggestedChip label={tc("aiSuggested")} />}
+            </FieldLabel>
             <Textarea
               value={description}
               onChange={(e) => {
@@ -323,7 +321,7 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
               }}
               rows={3}
             />
-          </div>
+          </Field>
 
           <Button onClick={handleApply} disabled={applying || !hasContent} className="w-full">
             {applying ? (
@@ -340,33 +338,6 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
 }
 
 // ─── Helpers ──────────────────────────────────────────
-
-function FieldLabel({
-  label,
-  required,
-  ai,
-  aiLabel,
-}: {
-  label: string;
-  required?: boolean;
-  ai?: boolean;
-  aiLabel: string;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Label className="text-sm">
-        {label}
-        {required && <span className="ml-1 text-destructive">*</span>}
-      </Label>
-      {ai && (
-        <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-1.5 py-px text-[10px] font-medium text-violet-300">
-          <IconSparkles className="size-2.5" />
-          {aiLabel}
-        </span>
-      )}
-    </div>
-  );
-}
 
 interface DropzoneProps {
   status: AnalyzeStatus;

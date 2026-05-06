@@ -278,13 +278,12 @@ function buildAttachmentBlock(
   const preview = text.slice(0, PREVIEW_CHARS);
   const truncated = text.length > PREVIEW_CHARS;
   return [
-    `[附件「${filename ?? 'file'}」]`,
-    `- 引用标识: ${ref}`,
+    `[attachment "${ref}"] ${filename ?? 'file'}`,
     `- 总字数: ${text.length}`,
     '- 预览（节选）:',
     preview + (truncated ? '…' : ''),
     '',
-    `⚠️ 完整正文已缓存（TTL 1 小时）。调用 invoke_workflow 时, 在 inputData 中传 {"textRef": "${ref}"} 即可, 服务器会自动取回完整正文并填入 text 字段。严禁复制正文到 inputData, 否则 JSON 会过大解析失败。`,
+    `⚠️ 完整正文已缓存（TTL 1 小时）。调用 ask_* persona 工具时, 在参数里传 textRef: "${ref}", 服务器会自动取回完整正文并作为 [Source material] 注入。如果你忘了传, 服务器也会从 requestContext.attachmentRefs 兜底注入这条 ref, 但显式传入更可靠。严禁把正文复制到 task 字段。`,
   ].join('\n');
 }
 
@@ -339,6 +338,48 @@ export async function ingestAttachmentBuffer(input: {
     chars: text.length,
     excerpt: text.slice(0, 800),
   };
+}
+
+/**
+ * Walk the message history and collect every `att_xxx` ref that's
+ * still resolvable. Used by the controller to seed
+ * `requestContext.attachmentRefs` so that ask_* tools can fall back
+ * to the latest attachment when the LLM forgets to pass `textRef`
+ * explicitly. This is the server-side guarantee that the persona
+ * always sees source material if the user uploaded one — no
+ * dependence on supervisor diligence.
+ *
+ * Order: oldest → newest, so callers can `at(-1)` for the most recent.
+ * Dedup'd to avoid duplicates when the same ref appears across turns.
+ *
+ * The walk reads two locations on every user message:
+ *   1. `metadata.attachments[].ref` (and `.path` when it starts with `att_`)
+ *   2. `[attachment "att_xxx"]` markers inline in text parts (covers
+ *      messages whose attachments were already resolved server-side
+ *      on a previous turn — the marker survives but `metadata` may not)
+ */
+export function collectAttachmentRefs(messages: Message[]): string[] {
+  const refs: string[] = [];
+  const seen = new Set<string>();
+  const push = (ref: string | undefined) => {
+    if (!ref || seen.has(ref)) return;
+    seen.add(ref);
+    refs.push(ref);
+  };
+  const markerRegex = /\[attachment\s+"(att_[A-Za-z0-9_-]+)"\]/g;
+  for (const msg of messages) {
+    if (msg.role !== 'user') continue;
+    for (const a of msg.metadata?.attachments ?? []) {
+      push(a.ref);
+      if (a.path?.startsWith('att_')) push(a.path);
+    }
+    for (const part of msg.parts ?? []) {
+      const text = part.text;
+      if (typeof text !== 'string' || text.length === 0) continue;
+      for (const match of text.matchAll(markerRegex)) push(match[1]);
+    }
+  }
+  return refs;
 }
 
 export async function preprocessMessages(messages: Message[]): Promise<void> {

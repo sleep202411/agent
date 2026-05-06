@@ -5,7 +5,9 @@
  * phase workflow API. Step 1 creates an ephemeral analysis draft; only the
  * explicit commit route writes Java business data.
  */
+import { randomUUID } from "node:crypto";
 import { registerApiRoute } from "@mastra/core/server";
+import { RequestContext } from "@mastra/core/request-context";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { getRedis } from "../lib/redis-client";
@@ -16,14 +18,7 @@ import {
   batchUpsertRoles,
   batchUpsertScenes,
 } from "../lib/batch-writers/world-assets";
-import {
-  getMeta,
-  getQueue,
-  recordHeartbeat,
-  requestCancel,
-  setStatus,
-  startWorkflow,
-} from "../workflows/engine";
+import { getMeta, putMeta, requestCancel, setStatus } from "../workflows/engine";
 import {
   ProducePipelineInputSchema,
   ProducePipelineOutputSchema,
@@ -35,14 +30,10 @@ const CommitRequestSchema = z.object({
   worldId: z.string().min(1).optional(),
 });
 
-const StartRequestSchema = z.object({
+const SyncRequestSchema = z.object({
   projectId: z.string().min(1).optional(),
   worldId: z.string().min(1).optional(),
   seed: ProducePipelineInputSchema.shape.seed,
-});
-
-const StatusRequestSchema = z.object({
-  runId: z.string().min(1),
 });
 
 const STORYBOARD_HEADERS = [
@@ -130,77 +121,155 @@ function requireContext(c: import("hono").Context): StoryosContext {
 }
 
 export const produceRoutes = [
-  registerApiRoute("/produce/script-draft/start", {
+  registerApiRoute("/produce/script-draft/sync", {
     method: "POST",
     handler: async (c) => {
       const ctx = requireContext(c);
-      const body = StartRequestSchema.parse(await c.req.json());
+      const body = SyncRequestSchema.parse(await c.req.json());
       const projectId = body.projectId ?? ctx.projectId;
       if (projectId !== ctx.projectId) {
         throw new HTTPException(403, { message: "projectId does not match auth context" });
       }
       const worldId = body.worldId ?? body.seed.worldId ?? ctx.worldId;
+      const fullCtx: StoryosContext = {
+        ...ctx,
+        projectId,
+        worldId,
+        targetEpisodeCount: body.seed.episodeCount,
+        dialogLanguage: body.seed.language,
+      };
       const input = ProducePipelineInputSchema.parse({
         projectId,
         worldId,
         seed: { ...body.seed, worldId },
       });
-      const { runId } = await startWorkflow({
-        workflowName: "produce_script_pipeline",
-        inputData: input,
-        ctx: {
-          ...ctx,
-          projectId,
-          worldId,
-          targetEpisodeCount: body.seed.episodeCount,
-          dialogLanguage: body.seed.language,
-        },
-      });
-      return c.json({ runId, status: "queued" });
-    },
-  }),
 
-  registerApiRoute("/produce/script-draft/status", {
-    method: "POST",
-    handler: async (c) => {
-      requireContext(c);
-      const { runId } = StatusRequestSchema.parse(await c.req.json());
-      const meta = await getMeta(runId);
-      if (!meta || meta.workflowName !== "produce_script_pipeline") {
-        throw new HTTPException(404, { message: "produce run not found" });
-      }
-      if (meta.status === "queued" || meta.status === "running") {
-        await recordHeartbeat(runId);
-      }
-      return c.json({
+      // Synchronous run-in-process. The frontend simply awaits the
+      // response (no polling, no resume-on-refresh). We still
+      // generate a runId and write Redis meta in lockstep with the
+      // worker path so /commit's `getMeta(runId)` lookup keeps
+      // working unchanged — the only difference between this route
+      // and the legacy queued path is that no BullMQ job exists
+      // and there's no restart-recovery. If the agent process dies
+      // mid-run, the client's fetch errors out and the user just
+      // hits "重试", which fires this route fresh.
+      const runId = randomUUID();
+      const now = Date.now();
+      await putMeta({
         runId,
-        status: meta.status,
-        progress: meta.progress,
-        error: meta.error,
-        errorClassification: meta.errorClassification,
-        result: meta.result ?? null,
-        startedAt: meta.startedAt,
-        updatedAt: meta.updatedAt,
-        completedAt: meta.completedAt,
+        workflowName: "produce_script_pipeline",
+        workspaceId: projectId,
+        userId: ctx.userId,
+        status: "running",
+        startedAt: now,
+        updatedAt: now,
+        lastHeartbeatAt: now,
       });
-    },
-  }),
 
-  registerApiRoute("/produce/script-draft/cancel", {
-    method: "POST",
-    handler: async (c) => {
-      requireContext(c);
-      const { runId } = StatusRequestSchema.parse(await c.req.json());
-      const meta = await getMeta(runId);
-      if (!meta || meta.workflowName !== "produce_script_pipeline") {
-        return c.json({ ok: true });
+      // Wire client disconnect → workflow cancel. Without this, a
+      // browser refresh / tab close detaches the HTTP socket but the
+      // workflow keeps running to completion in the background — every
+      // refresh stacks another 9-10 min of LLM work the client can
+      // never receive. The downstream steps each call
+      // `throwIfCancelled(runId)` between LLM hops; setting the Redis
+      // cancel flag here lets the next step transition unwind cleanly
+      // (the in-flight LLM call itself can't be aborted mid-stream,
+      // but the very next step boundary will see the flag and throw
+      // `WorkflowCancelledError`).
+      const clientSignal = c.req.raw?.signal;
+      let clientCancelled = false;
+      const onClientAbort = () => {
+        clientCancelled = true;
+        // Best-effort — Redis hiccup here doesn't deserve a 500.
+        void requestCancel(runId).catch((err) => {
+          console.warn(
+            `[produce] requestCancel(${runId}) failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+        });
+      };
+      clientSignal?.addEventListener("abort", onClientAbort, { once: true });
+
+      // Mastra registers the singleton on the Hono context. The cast
+      // is needed because @mastra/core types `c.get` as
+      // `Record<string, unknown>` rather than narrowing the known keys.
+      type MastraLike = {
+        getWorkflowById: (
+          name: string
+        ) => { createRun: (opts: { runId: string }) => Promise<unknown> } | undefined;
+      };
+      const mastra = c.get("mastra" as never) as MastraLike | undefined;
+      const workflow = mastra?.getWorkflowById("produce_script_pipeline");
+      if (!workflow) {
+        await setStatus(runId, "failed", { error: "produce_script_pipeline not registered" });
+        throw new HTTPException(500, {
+          message: "produce_script_pipeline workflow is not registered on this Mastra instance",
+        });
       }
-      if (meta.status !== "completed" && meta.status !== "failed" && meta.status !== "cancelled") {
-        await requestCancel(runId);
-        await setStatus(runId, "cancelled");
-        await removeWaitingJobs(runId);
+
+      // Mirror the worker's RequestContext shape so steps that read
+      // dialogLanguage / targetEpisodeCount / runId / etc. behave
+      // identically regardless of which entry point invoked them.
+      const requestContext = new RequestContext();
+      requestContext.set("cookie", fullCtx.cookie);
+      requestContext.set("userId", fullCtx.userId);
+      requestContext.set("projectId", fullCtx.projectId);
+      if (fullCtx.worldId) requestContext.set("worldId", fullCtx.worldId);
+      if (fullCtx.episodeId) requestContext.set("episodeId", fullCtx.episodeId);
+      if (fullCtx.locale) requestContext.set("locale", fullCtx.locale);
+      if (fullCtx.acceptLanguage) requestContext.set("acceptLanguage", fullCtx.acceptLanguage);
+      if (fullCtx.dialogLanguage) requestContext.set("dialogLanguage", fullCtx.dialogLanguage);
+      if (fullCtx.stylePainting) requestContext.set("stylePainting", fullCtx.stylePainting);
+      if (typeof fullCtx.targetEpisodeCount === "number") {
+        requestContext.set("targetEpisodeCount", fullCtx.targetEpisodeCount);
       }
-      return c.json({ ok: true });
+      requestContext.set("runId", runId);
+
+      try {
+        const run = (await workflow.createRun({ runId })) as {
+          start: (opts: { inputData: unknown; requestContext: RequestContext }) => Promise<unknown>;
+        };
+        const raw = await run.start({ inputData: input, requestContext });
+        const r = (raw ?? {}) as {
+          status?: string;
+          result?: unknown;
+          error?: unknown;
+        };
+        if (clientCancelled) {
+          // Client already gave up — nothing to write back. The
+          // throwIfCancelled-driven cancel may still produce a
+          // success/failed shape from Mastra; treat it as cancelled
+          // for our state machine.
+          await setStatus(runId, "cancelled", { error: "client disconnected" });
+          // No response needed — the socket is closed; Hono will skip.
+          return c.json({ runId, draft: null }, 499 as never);
+        }
+        if (r.status !== "success") {
+          const message =
+            r.error instanceof Error
+              ? r.error.message
+              : typeof r.error === "string"
+                ? r.error
+                : `workflow ${r.status ?? "unknown"}`;
+          await setStatus(runId, "failed", { error: message });
+          throw new HTTPException(500, { message });
+        }
+        await setStatus(runId, "completed", { result: r.result });
+        const draft = ProducePipelineOutputSchema.parse(r.result);
+        return c.json({ runId, draft });
+      } catch (err) {
+        if (clientCancelled) {
+          await setStatus(runId, "cancelled", { error: "client disconnected" });
+          return c.json({ runId, draft: null }, 499 as never);
+        }
+        if (err instanceof HTTPException) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        await setStatus(runId, "failed", { error: message });
+        throw new HTTPException(500, { message });
+      } finally {
+        clientSignal?.removeEventListener("abort", onClientAbort);
+      }
     },
   }),
 
@@ -292,23 +361,6 @@ export const produceRoutes = [
     },
   }),
 ];
-
-async function removeWaitingJobs(runId: string): Promise<void> {
-  try {
-    const queue = getQueue();
-    const initial = await queue.getJob(`run-${runId}`);
-    if (initial) {
-      const state = await initial.getState();
-      if (state === "waiting" || state === "delayed") await initial.remove();
-    }
-  } catch (err) {
-    console.warn(
-      `[produce] removeWaitingJobs failed runId=${runId}: ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    );
-  }
-}
 
 async function readCommitState(key: string): Promise<CommitState | null> {
   const raw = await getRedis().get(key);

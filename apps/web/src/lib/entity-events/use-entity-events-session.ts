@@ -17,6 +17,7 @@ import {
   touchProjectList,
   touchWorld,
   touchEpisodes,
+  touchScript,
   touchCharacters,
   touchScenes,
   touchProps,
@@ -52,8 +53,15 @@ export function useEntityEventsSession(opts: { enabled: boolean }) {
             dispatch(touchWorld());
             break;
           case "episode":
-          case "script":
             dispatch(touchEpisodes());
+            break;
+          case "script":
+            // Bump both: episodesVersion drives the sidebar red dot
+            // (script is part of the Episodes panel data model), and
+            // scriptVersion drives the top Script tab indicator.
+            console.log("[entity-events] script change → touchScript + touchEpisodes");
+            dispatch(touchEpisodes());
+            dispatch(touchScript());
             break;
           case "character":
             dispatch(touchCharacters());
