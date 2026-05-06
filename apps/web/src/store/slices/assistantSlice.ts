@@ -881,15 +881,19 @@ export const applyPersonaAction = createAsyncThunk<
   }
 });
 
-// ─── Workflow dispatch via supervisor (button path) ─────
+// ─── Workflow button thunks (DEPRECATED stubs) ─────────
 //
-// Unified with the freeform chat path (oii-style). Button clicks post a user
-// message AND send `forceEnterWorkflow = {workflowName, inputData}` to the
-// supervisor. The supervisor sees the flag, skips routing / preflight, still
-// produces the pre-dispatch 3-段 persona narration, then invokes the named
-// workflow. Single entry point, consistent conversation surface, persona
-// narration on every action — at the cost of one extra LLM round-trip
-// vs the old direct-to-engine path.
+// Both `startWorkflowFromButton` and `confirmWorkflowFromButton` used to
+// drive the legacy workflow engine through supervisor button paths
+// (forceEnterWorkflow + confirmWorkflow body fields on
+// /assistant/submit-message-to-agent). The workflow engine was retired
+// 2026-05-05 and the supervisor lost its `invoke_workflow` /
+// `resume_workflow` tools; the corresponding Nest body-field handling
+// has now also been removed. Keeping the thunks as inert stubs so any
+// historical workflow tool-card buttons that still reference them
+// surface a single toast instead of a TS error / silent failure. The
+// buttons themselves should be removed in a follow-up that also
+// deletes workflow-message-cards.tsx and the related rendering layer.
 
 export const startWorkflowFromButton = createAsyncThunk<
   void,
@@ -900,67 +904,9 @@ export const startWorkflowFromButton = createAsyncThunk<
     inputData?: Record<string, unknown>;
   },
   { state: RootState; dispatch: AppDispatch }
->(
-  "assistant/startWorkflowFromButton",
-  async ({ projectId, userLabel, workflowName, inputData }, { dispatch, getState }) => {
-    abortProjectStream(projectId);
-    dispatch(ensureProject(projectId));
-
-    // Enforce single-in-flight-workflow-per-project: if there's already an
-    // active workflow for this project (queued / running / suspended), cancel
-    // it before starting a new one. Prevents the "retry spawns duplicate
-    // runs / 2 cards on screen" problem reported in manual testing.
-    const prevActive = getState().assistant.projects[projectId]?.activeWorkflow;
-    if (prevActive && prevActive.runId) {
-      try {
-        await cancelWorkflow(prevActive.runId, projectId);
-      } catch (err) {
-        // Non-fatal — worst case the old run finishes in the background;
-        // its results won't be auto-committed because the user's HITL focus
-        // has moved on.
-        console.warn(
-          "[startWorkflowFromButton] cancelWorkflow failed:",
-          err instanceof Error ? err.message : err
-        );
-      }
-    }
-
-    const userMessage: AssistantMessage = {
-      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      role: "user",
-      parts: [{ type: "text", text: userLabel, state: "done" }],
-    };
-    dispatch(commitUserMessage({ projectId, userMessage }));
-
-    const abortController = createProjectAbortController(projectId);
-
-    try {
-      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
-      const workspaceContext = buildWorkspaceContext(getState(), projectId);
-
-      await submitMessageToAgent({
-        projectId,
-        messages: nextMessages,
-        workspaceContext,
-        signal: abortController.signal,
-        forceEnterWorkflow: { workflowName, inputData: inputData ?? {} },
-      });
-    } catch (err) {
-      if (abortController.signal.aborted) return;
-      const errMsg = err instanceof Error ? err.message : "Failed to dispatch workflow";
-      dispatch(streamError({ projectId, error: errMsg }));
-      toast.error(errMsg);
-    }
-  }
-);
-
-// ─── HITL confirm/revise via supervisor (unified path) ──
-//
-// Same shape as startWorkflowFromButton but for in-flight workflow HITL
-// gates. The supervisor sees a `<CONFIRM_WORKFLOW>` tag and calls the
-// `resume_workflow` tool, which enqueues a resume job on the engine.
-// Replaces the old direct `/workflow/:runId/confirm` REST call so every
-// user action on a workflow card flows through the same chat pipe.
+>("assistant/startWorkflowFromButton", async () => {
+  toast.error("Workflow dispatch path was removed; this button is no longer wired up.");
+});
 
 export const confirmWorkflowFromButton = createAsyncThunk<
   void,
@@ -970,52 +916,12 @@ export const confirmWorkflowFromButton = createAsyncThunk<
     userLabel: string;
     approved: boolean;
     feedback?: string;
-    /** parse_script-only opt-in to wipe existing episodes before this batch. */
     replaceExisting?: boolean;
   },
   { state: RootState; dispatch: AppDispatch }
->(
-  "assistant/confirmWorkflowFromButton",
-  async (
-    { projectId, runId, userLabel, approved, feedback, replaceExisting },
-    { dispatch, getState }
-  ) => {
-    abortProjectStream(projectId);
-    dispatch(ensureProject(projectId));
-
-    const userMessage: AssistantMessage = {
-      id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      role: "user",
-      parts: [{ type: "text", text: userLabel, state: "done" }],
-    };
-    dispatch(commitUserMessage({ projectId, userMessage }));
-
-    const abortController = createProjectAbortController(projectId);
-
-    try {
-      const nextMessages = getState().assistant.projects[projectId]?.messages ?? [];
-      const workspaceContext = buildWorkspaceContext(getState(), projectId);
-
-      await submitMessageToAgent({
-        projectId,
-        messages: nextMessages,
-        workspaceContext,
-        signal: abortController.signal,
-        confirmWorkflow: {
-          runId,
-          approved,
-          feedback,
-          ...(replaceExisting !== undefined ? { replaceExisting } : {}),
-        },
-      });
-    } catch (err) {
-      if (abortController.signal.aborted) return;
-      const errMsg = err instanceof Error ? err.message : "Failed to confirm workflow";
-      dispatch(streamError({ projectId, error: errMsg }));
-      toast.error(errMsg);
-    }
-  }
-);
+>("assistant/confirmWorkflowFromButton", async () => {
+  toast.error("Workflow HITL confirm path was removed; this button is no longer wired up.");
+});
 
 // ─── Project params "儲存並繼續" (supervisor-owned save) ──
 //

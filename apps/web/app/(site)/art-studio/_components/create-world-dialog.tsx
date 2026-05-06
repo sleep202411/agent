@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { AiSuggestedChip } from "@/components/ui/ai-suggested-chip";
 import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import {
@@ -433,12 +434,10 @@ export function CreateWorldDialog({
             )}
 
             <Field data-invalid={Boolean(errors.name)}>
-              <div className="flex items-center gap-2">
-                <FieldLabel htmlFor="create-world-name" required>
-                  {tw("createWorldNameLabel")}
-                </FieldLabel>
+              <FieldLabel htmlFor="create-world-name" required>
+                {tw("createWorldNameLabel")}
                 {aiFilledFields.has("name") && <AiSuggestedChip label={tw("aiSuggested")} />}
-              </div>
+              </FieldLabel>
               <Input
                 id="create-world-name"
                 value={name}
@@ -454,14 +453,15 @@ export function CreateWorldDialog({
             </Field>
 
             <Field>
-              <div className="flex items-center gap-2">
-                <FieldLabel htmlFor="create-world-description">
-                  {tw("createWorldDescriptionLabel")}
-                </FieldLabel>
+              <FieldLabel htmlFor="create-world-description">
+                {tw("createWorldDescriptionLabel")}
                 {aiFilledFields.has("description") && <AiSuggestedChip label={tw("aiSuggested")} />}
-              </div>
+              </FieldLabel>
               <Textarea
                 id="create-world-description"
+                // Cap height + scroll so a long brief doesn't push the
+                // dialog footer out — same fix used in create-ip-dialog.
+                className="max-h-40 overflow-y-auto"
                 value={description}
                 rows={3}
                 onChange={(event) => {
@@ -472,13 +472,17 @@ export function CreateWorldDialog({
               />
             </Field>
 
-            {/* StoryOS breakdown — replaces the legacy cover slot.
-                Shows what spark extracted (tags + a structural stat
-                grid) plus a CTA preview of what StoryOS will do once
-                the user enters the studio. */}
-            {(sourceFile || sparkAnalyze.isPending) && (
+            {/* StoryOS breakdown — only rendered while spark is
+                analyzing so the user sees a skeleton during the wait.
+                Once analysis finishes, the AI-suggested chips on the
+                Name / Description fields already signal the AI ran;
+                the bulky stat grid + theme chips would otherwise push
+                the dialog footer (with the one-click CTA) below the
+                fold. The footer button is what now carries the "一键成
+                片 / Start Creating" intent — see DialogFooter below. */}
+            {sparkAnalyze.isPending && (
               <StoryOsBreakdownCard
-                analyzing={sparkAnalyze.isPending}
+                analyzing
                 tags={tags}
                 insights={insights}
                 heading={tw("createWorldStoryOsHeading")}
@@ -516,7 +520,12 @@ export function CreateWorldDialog({
             disabled={submitting || sourceUploading || sparkAnalyze.isPending}
           >
             {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-            {tw("createWorldSubmit")}
+            {/* When the user uploaded a brief, handleSubmit lands them
+                in the /produce wizard (1-click pipeline); label the
+                button "一键成片" so the destination matches the words.
+                Without a file, fall back to the generic Studio entry
+                label. */}
+            {sourceFile ? tw("createWorldSubmitOneClick") : tw("createWorldSubmit")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -528,15 +537,6 @@ function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function AiSuggestedChip({ label }: { label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-1.5 py-px text-[10px] font-medium text-violet-300">
-      <IconSparkles className="size-2.5" />
-      {label}
-    </span>
-  );
 }
 
 function StoryOsBreakdownCard({

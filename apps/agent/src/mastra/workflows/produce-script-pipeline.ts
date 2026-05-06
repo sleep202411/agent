@@ -52,31 +52,82 @@ export const ProducePipelineInputSchema = z.object({
 });
 
 const EpisodePlanSchema = z.object({
-  title: z.string().min(1),
-  introduction: z.string().min(1),
-  frontPrompt: z.string().optional().default(""),
-  behindPrompt: z.string().optional().default(""),
+  title: z.string().min(1).describe("Episode title (e.g. '第1集 荧惑守心')."),
+  introduction: z
+    .string()
+    .min(1)
+    .describe("1-3 sentence synopsis covering the dramatic beat, location, and turn/cliffhanger."),
+  frontPrompt: z
+    .string()
+    .optional()
+    .default("")
+    .describe("Visual style prefix prepended to every shot in this episode (optional)."),
+  behindPrompt: z
+    .string()
+    .optional()
+    .default("")
+    .describe("Visual style suffix appended to every shot in this episode (optional)."),
 });
 
 const AssetPlanSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
-  prompt: z.string().optional().default(""),
+  name: z.string().min(1).describe("Short asset name (3-12 chars)."),
+  description: z.string().min(1).describe("One-sentence narrative description."),
+  prompt: z
+    .string()
+    .optional()
+    .default("")
+    .describe("Concise visual-generation prompt — appearance, lighting, mood. Not a story line."),
 });
 
+/**
+ * Plan output shape. **All four top-level keys (`storySummary`,
+ * `episodes`, `assets`, plus the optional metadata) must be returned
+ * together** — Mastra's structured-output prompt-builder uses these
+ * `.describe()` strings as the JSON-schema hint it sends the model;
+ * without them qwen3.6-plus tends to emit only `{ episodes }` and skip
+ * the rest, which previously dropped the whole pipeline at planStep.
+ *
+ * `storySummary` is now optional with a "" default + a normalize-time
+ * fallback so a missing field doesn't kill the run; `episodes` stays
+ * the only hard requirement (without it there's literally nothing to
+ * produce).
+ */
 const PlanSchema = z.object({
-  storySummary: z.string().min(1),
-  logline: z.string().optional().default(""),
-  genre: z.string().optional().default(""),
-  tone: z.string().optional().default(""),
-  episodes: z.array(EpisodePlanSchema).min(1),
+  storySummary: z
+    .string()
+    .optional()
+    .default("")
+    .describe(
+      "2-4 sentence overall premise of the season — the protagonist, the central conflict, the world. Not a per-episode plot."
+    ),
+  logline: z.string().optional().default("").describe("Single-sentence pitch (under 30 words)."),
+  genre: z.string().optional().default("").describe("e.g. '古装权谋' / 'sci-fi noir'."),
+  tone: z.string().optional().default("").describe("e.g. '冷峻克制' / 'romantic comedy'."),
+  episodes: z
+    .array(EpisodePlanSchema)
+    .min(1)
+    .describe("Ordered list of episodes; length should match the requested target episode count."),
   assets: z
     .object({
-      characters: z.array(AssetPlanSchema).optional().default([]),
-      scenes: z.array(AssetPlanSchema).optional().default([]),
-      props: z.array(AssetPlanSchema).optional().default([]),
+      characters: z
+        .array(AssetPlanSchema)
+        .optional()
+        .default([])
+        .describe("All speaking / on-screen characters drawn from the source."),
+      scenes: z
+        .array(AssetPlanSchema)
+        .optional()
+        .default([])
+        .describe("Distinct shooting locations the episodes need."),
+      props: z
+        .array(AssetPlanSchema)
+        .optional()
+        .default([])
+        .describe("Story-meaningful objects characters interact with."),
     })
-    .default({ characters: [], scenes: [], props: [] }),
+    .optional()
+    .default({ characters: [], scenes: [], props: [] })
+    .describe("Production asset registry. Empty arrays are acceptable, but the object must exist."),
 });
 
 const ScriptedEpisodeSchema = EpisodePlanSchema.extend({
@@ -89,8 +140,17 @@ const ProduceAssetDraftSchema = AssetPlanSchema.extend({
   clientRefId: z.string().min(1),
 });
 
+/**
+ * Storyboarder LLM frequently emits `shot_no: 1` (number) and
+ * `duration: "5s"` (string-with-unit) instead of the strict
+ * string/number this schema requested. Mastra's structuredOutput
+ * silently rejects on Zod parse and returns `response.object = undefined`
+ * — and because storyboardStep has no fallback for that, the whole
+ * pipeline tanks. Coerce-and-default both fields so the typical
+ * variations land cleanly.
+ */
 const StoryboardRowSchema = z.object({
-  shot_no: z.string(),
+  shot_no: z.union([z.string(), z.number()]).transform((value) => String(value).trim() || "1"),
   scene: z.string().optional().default(""),
   description: z.string().min(1),
   image_prompt: z.string().optional().default(""),
@@ -99,7 +159,15 @@ const StoryboardRowSchema = z.object({
   dialogue: z.string().optional().default(""),
   shot_size: z.string().optional().default("中景"),
   perspective: z.string().optional().default("平视"),
-  duration: z.number().optional().default(5),
+  duration: z
+    .union([z.number(), z.string()])
+    .optional()
+    .default(5)
+    .transform((value) => {
+      if (typeof value === "number") return Number.isFinite(value) ? value : 5;
+      const parsed = Number.parseFloat(String(value).replace(/[^0-9.]/g, ""));
+      return Number.isFinite(parsed) ? parsed : 5;
+    }),
 });
 
 const EpisodeWithStoryboardSchema = ScriptedEpisodeSchema.extend({
@@ -241,7 +309,11 @@ const planStep = createStep({
       schema: PlanSchema as unknown as z.ZodType<Plan>,
       tag: `produce-plan-${runId}`,
       prompt: buildPlanPrompt(inputData),
-      isEmpty: (obj) => !obj?.episodes?.length || !obj.storySummary?.trim(),
+      // Episodes is the only structurally-required output — everything
+      // else has a sensible default in normalizePlan. Demanding a
+      // non-empty `storySummary` here used to nuke the whole run when
+      // qwen3.6-plus skipped that field.
+      isEmpty: (obj) => !obj?.episodes?.length,
     });
 
     return {
@@ -448,9 +520,18 @@ const storyboardStep = createStep({
     const episodes = outputEpisodes.filter(
       (ep): ep is z.infer<typeof EpisodeWithStoryboardSchema> => ep !== null
     );
-    if (episodes.length !== total) {
+    // Allow partial completes — at least one episode worth of
+    // storyboard is enough to give the user a draft to review. Hard-
+    // failing the whole pipeline because qwen3.6-plus burped on a
+    // single episode wastes the work that already succeeded.
+    if (episodes.length === 0) {
       throw new Error(
         `分镜生成未完成：${episodes.length}/${total} 成功。${errors.slice(0, 3).join("；")}`
+      );
+    }
+    if (errors.length > 0) {
+      console.warn(
+        `[produce] storyboard partial: ${episodes.length}/${total} ok; failures: ${errors.join("; ")}`
       );
     }
 
@@ -539,11 +620,24 @@ function buildPlanPrompt(input: ResolvedInput): string {
     `Target episode count: ${input.targetEpisodeCount}`,
     `Primary content language: ${input.languageLabel}`,
     "",
+    // Explicit shape — qwen3.6-plus has been observed silently dropping
+    // `storySummary` and `assets` when only the schema describes them
+    // (it complies with `episodes` because `EpisodePlanSchema` is the
+    // most-detailed sub-schema). Listing the keys here in plain prose
+    // forces the model to fill them.
+    "Output JSON object with these top-level keys, ALL REQUIRED:",
+    "  • storySummary  (2-4 sentences — overall season premise)",
+    "  • logline       (one-sentence pitch, optional)",
+    "  • genre / tone  (short labels, optional)",
+    `  • episodes      (array of exactly ${input.targetEpisodeCount} items, each with title + introduction)`,
+    "  • assets        (object with characters[], scenes[], props[]; each entry: { name, description, prompt })",
+    "",
     "Requirements:",
     `- Return exactly ${input.targetEpisodeCount} episodes unless the source obviously cannot support it.`,
     "- Each episode needs a clear dramatic beat, visual setting, and cliffhanger/turn.",
     "- Build the asset registry as reusable production assets: characters, scenes/locations, props.",
     "- Asset prompts should be concise visual-generation prompts, not story summaries.",
+    "- Empty arrays (e.g. no props) are allowed, but the `assets` object itself must be present.",
     `- All titles, summaries, descriptions, scripts, and storyboard text must use ${input.languageLabel}.`,
     contentLanguageInstruction(resolveContentLanguage(input.seed.language)),
     "",
@@ -561,16 +655,29 @@ function normalizePlan(plan: Plan, targetEpisodeCount: number): Plan {
     frontPrompt: ep.frontPrompt?.trim() || ep.introduction.trim(),
     behindPrompt: ep.behindPrompt?.trim() || ep.introduction.trim(),
   }));
+  // If the model omitted `storySummary`, derive a stub from the first
+  // few episode introductions so downstream steps (script, storyboard,
+  // commit recap) still have a non-empty premise to anchor on. Cheaper
+  // than a second LLM call and the user can rewrite it post-commit.
+  const storySummary =
+    plan.storySummary?.trim() ||
+    episodes
+      .slice(0, 3)
+      .map((ep) => ep.introduction)
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 400);
+  const assets = plan.assets ?? { characters: [], scenes: [], props: [] };
   return {
-    storySummary: plan.storySummary.trim(),
+    storySummary,
     logline: plan.logline?.trim() || "",
     genre: plan.genre?.trim() || "",
     tone: plan.tone?.trim() || "",
     episodes,
     assets: {
-      characters: dedupeAssets(plan.assets.characters),
-      scenes: dedupeAssets(plan.assets.scenes),
-      props: dedupeAssets(plan.assets.props),
+      characters: dedupeAssets(assets.characters ?? []),
+      scenes: dedupeAssets(assets.scenes ?? []),
+      props: dedupeAssets(assets.props ?? []),
     },
   };
 }

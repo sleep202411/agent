@@ -79,30 +79,6 @@ export async function fetchMessagesByIds(
 
 // ─── Chat API (shared option shape) ───────────────────
 
-export interface ForceEnterWorkflow {
-  /** Target workflow ID — supervisor must skip routing and invoke directly. */
-  workflowName: string;
-  /** Optional pre-filled inputData; supervisor merges with its own context. */
-  inputData?: Record<string, unknown>;
-}
-
-export interface ConfirmWorkflowPayload {
-  /** Which suspended workflow run this confirmation targets. */
-  runId: string;
-  /** User's decision — true = satisfied, false = revise with feedback. */
-  approved: boolean;
-  /** Free-form feedback when approved=false. */
-  feedback?: string;
-  /**
-   * parse_script-only opt-in: when true, the apply step deletes the
-   * project's existing episodes before persisting this batch (Java
-   * cascades the wipe to scripts/storyboards). Surfaced via the HITL
-   * card's "替换 / 追加" toggle, only when the suspended payload carries
-   * a non-zero existingEpisodeCount.
-   */
-  replaceExisting?: boolean;
-}
-
 export interface ConfirmProjectParamsPayload {
   aspectRatioType: string;
   chapterLength: number;
@@ -111,27 +87,11 @@ export interface ConfirmProjectParamsPayload {
   /**
    * Target number of episodes the user wants. NOT persisted by Java — the
    * value is embedded into the `tool-require_project_params` tool output so
-   * chat history is the single source-of-truth (read via
-   * `readMostRecentProjectParam` at every workflow dispatch).
+   * chat history is the single source-of-truth.
    */
   targetEpisodeCount?: number;
-  /**
-   * Target number of shots per episode for storyboard_phase. Same chat-
-   * history-as-source-of-truth story as targetEpisodeCount — not written to
-   * Java, threaded into storyboard_phase via workspaceContext.
-   */
+  /** Target number of shots per episode. Same chat-history-as-source-of-truth as targetEpisodeCount. */
   shotsPerEpisode?: number;
-  /**
-   * Workflow to auto-start on the server once params are saved. Supervisor
-   * sets this on the require_project_params tool call when it already
-   * knows the target workflow; the form card reads it from the tool
-   * input and forwards verbatim. Server short-circuits dispatch so we
-   * skip a second LLM turn.
-   */
-  onConfirmWorkflow?: {
-    workflowName: string;
-    inputData?: Record<string, unknown>;
-  };
 }
 
 export interface SubmitMessageOptions {
@@ -139,8 +99,6 @@ export interface SubmitMessageOptions {
   messages: AssistantMessage[];
   workspaceContext: AssistantWorkspaceSelection;
   signal?: AbortSignal;
-  forceEnterWorkflow?: ForceEnterWorkflow;
-  confirmWorkflow?: ConfirmWorkflowPayload;
   confirmProjectParams?: ConfirmProjectParamsPayload;
 }
 
@@ -167,8 +125,6 @@ export async function submitMessageToAgent({
   messages,
   workspaceContext,
   signal,
-  forceEnterWorkflow,
-  confirmWorkflow,
   confirmProjectParams,
 }: SubmitMessageOptions): Promise<SubmitMessageResult> {
   const response = await fetch("/aurora/assistant/submit-message-to-agent", {
@@ -185,8 +141,6 @@ export async function submitMessageToAgent({
       projectId,
       messages: sanitizeMessages(messages),
       workspaceContext,
-      ...(forceEnterWorkflow ? { forceEnterWorkflow } : {}),
-      ...(confirmWorkflow ? { confirmWorkflow } : {}),
       ...(confirmProjectParams ? { confirmProjectParams } : {}),
     }),
     signal,

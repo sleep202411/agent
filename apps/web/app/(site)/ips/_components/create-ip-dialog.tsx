@@ -18,7 +18,8 @@ import { env } from "@/src/env";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { AiSuggestedChip } from "@/components/ui/ai-suggested-chip";
 import {
   Select,
   SelectContent,
@@ -26,22 +27,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHero } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHero,
+} from "@/components/ui/dialog";
 import { useCreateProject } from "@/app/(site)/ips/_hooks/use-ip";
+import { useIPTypes } from "@/app/(site)/ips/_hooks/use-ip-list";
 import { useSparkAnalyze } from "@/app/(site)/ips/_hooks/use-spark";
 import { uploadIPBanner } from "@/app/(site)/ips/_hooks/uploads";
-
-const MOCK_CATEGORIES = [
-  { value: "1", label: "AIGC影视" },
-  { value: "2", label: "热血动漫" },
-  { value: "3", label: "AI纪录片" },
-  { value: "4", label: "文化传统" },
-  { value: "5", label: "经典动画" },
-  { value: "6", label: "AI经典改编" },
-  { value: "7", label: "末日来临" },
-  { value: "8", label: "爱情故事" },
-  { value: "9", label: "AI科幻" },
-];
 
 // Hero image lives on the shared static CDN (separate from the OSS
 // avatar / banner buckets we use for user-generated content).
@@ -93,6 +89,7 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
   const create = useCreateProject();
   const creating = create.isPending;
   const sparkAnalyze = useSparkAnalyze();
+  const { data: typeList = [] } = useIPTypes();
 
   // AI-fill state
   const [analyzeStatus, setAnalyzeStatus] = useState<AnalyzeStatus>("idle");
@@ -253,9 +250,9 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
           description={t("heroSubtitle")}
         />
 
-        <div className="space-y-4 p-4">
-          {step === 1 ? (
-            <>
+        {step === 1 ? (
+          <>
+            <DialogBody>
               {/* Drag-drop zone */}
               <Dropzone
                 status={analyzeStatus}
@@ -290,82 +287,89 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
                 }}
               />
 
-              {/* Form */}
-              <div className="space-y-2">
-                <FieldLabel
-                  required
-                  label={t("fieldName")}
-                  ai={aiFilledFields.has("name")}
-                  aiLabel={t("aiSuggested")}
-                />
-                <Input
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    clearAi("name");
-                  }}
-                  placeholder={t("fieldNamePlaceholder")}
-                />
-              </div>
+              {/* Form — shadcn Field/FieldLabel primitives so the AI-
+                  suggested chip slots in as a sibling child of the label
+                  and spacing matches every other form on the site. */}
+              <FieldGroup>
+                <Field>
+                  <FieldLabel required>
+                    {t("fieldName")}
+                    {aiFilledFields.has("name") && <AiSuggestedChip label={t("aiSuggested")} />}
+                  </FieldLabel>
+                  <Input
+                    value={name}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      clearAi("name");
+                    }}
+                    placeholder={t("fieldNamePlaceholder")}
+                  />
+                </Field>
 
-              <div className="space-y-2">
-                <FieldLabel
-                  required
-                  label={t("fieldCategory")}
-                  ai={aiFilledFields.has("typeId")}
-                  aiLabel={t("aiSuggested")}
-                />
-                <Select
-                  value={typeId}
-                  onValueChange={(v) => {
-                    setTypeId(v);
-                    clearAi("typeId");
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={t("fieldCategoryPlaceholder")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MOCK_CATEGORIES.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <Field>
+                  <FieldLabel required>
+                    {t("fieldCategory")}
+                    {aiFilledFields.has("typeId") && <AiSuggestedChip label={t("aiSuggested")} />}
+                  </FieldLabel>
+                  <Select
+                    value={typeId}
+                    onValueChange={(v) => {
+                      setTypeId(v);
+                      clearAi("typeId");
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={t("fieldCategoryPlaceholder")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {typeList.map((tp) => (
+                        <SelectItem key={tp.id} value={String(tp.id)}>
+                          {tp.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
 
-              <div className="space-y-2">
-                <FieldLabel
-                  label={t("fieldDescription")}
-                  ai={aiFilledFields.has("description")}
-                  aiLabel={t("aiSuggested")}
-                />
-                <Textarea
-                  value={description}
-                  onChange={(e) => {
-                    setDescription(e.target.value);
-                    clearAi("description");
-                  }}
-                  placeholder={t("fieldDescriptionPlaceholder")}
-                  rows={3}
-                  className="text-base md:text-base"
-                />
-              </div>
+                <Field>
+                  <FieldLabel>
+                    {t("fieldDescription")}
+                    {aiFilledFields.has("description") && (
+                      <AiSuggestedChip label={t("aiSuggested")} />
+                    )}
+                  </FieldLabel>
+                  <Textarea
+                    // Cap height + allow scroll so a long pasted
+                    // synopsis doesn't push the Next button out of the
+                    // dialog. The base Textarea uses `field-sizing:
+                    // content` to auto-grow; max-h clamps that and the
+                    // textarea's own scrollbar takes over once the cap
+                    // is hit.
+                    className="max-h-40 overflow-y-auto"
+                    value={description}
+                    onChange={(e) => {
+                      setDescription(e.target.value);
+                      clearAi("description");
+                    }}
+                    placeholder={t("fieldDescriptionPlaceholder")}
+                    rows={3}
+                  />
+                </Field>
+              </FieldGroup>
+            </DialogBody>
 
-              <Button
-                onClick={() => setStep(2)}
-                disabled={!name.trim() || !typeId}
-                className="w-full"
-              >
+            <DialogFooter>
+              <Button onClick={() => setStep(2)} disabled={!name.trim() || !typeId}>
                 {t("next")}
               </Button>
-            </>
-          ) : (
-            <>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <DialogBody>
               {/* Banner — required by backend, full 16:9 preview area */}
-              <div className="space-y-2">
-                <FieldLabel required label={t("fieldBanner")} aiLabel={t("aiSuggested")} />
+              <Field>
+                <FieldLabel required>{t("fieldBanner")}</FieldLabel>
                 <button
                   type="button"
                   onClick={() => bannerInputRef.current?.click()}
@@ -408,59 +412,31 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
                     if (file) void handleBannerFile(file);
                   }}
                 />
-              </div>
+              </Field>
+            </DialogBody>
 
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setStep(1)}
-                  disabled={creating}
-                  className="flex-1"
-                >
-                  {t("prev")}
-                </Button>
-                <Button
-                  onClick={handleCreate}
-                  disabled={!bannerLink || uploadingBanner || creating}
-                  className="flex-1"
-                >
-                  {creating ? t("creating") : t("saveAndContinue")}
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                color="muted"
+                onClick={() => setStep(1)}
+                disabled={creating}
+              >
+                {t("prev")}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCreate}
+                disabled={!bannerLink || uploadingBanner || creating}
+              >
+                {creating ? t("creating") : t("saveAndContinue")}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ─── Field label with optional AI-suggested chip ─────
-
-function FieldLabel({
-  label,
-  required,
-  ai,
-  aiLabel,
-}: {
-  label: string;
-  required?: boolean;
-  ai?: boolean;
-  aiLabel: string;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Label className="text-sm">
-        {label}
-        {required && <span className="ml-1 text-destructive">*</span>}
-      </Label>
-      {ai && (
-        <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-1.5 py-px text-[10px] font-medium text-violet-300">
-          <IconSparkles className="size-2.5" />
-          {aiLabel}
-        </span>
-      )}
-    </div>
   );
 }
 
@@ -560,7 +536,7 @@ function Dropzone({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       className={cn(
-        "group relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors",
+        "group relative flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed px-4 py-4 text-center transition-colors",
         dragOver
           ? "border-primary bg-primary/5 text-foreground"
           : "border-border bg-muted/20 hover:border-primary/40 hover:bg-muted/40"
