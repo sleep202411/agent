@@ -1,15 +1,14 @@
 /**
- * Standalone worker process — consumes image-generation jobs from BullMQ.
- * Runs as its own Node process so a crash in the API server doesn't kill
- * in-flight image jobs (and vice versa).
+ * Standalone worker process — consumes produce workflow jobs and
+ * image-generation jobs from BullMQ. Runs as its own Node process so a
+ * crash in the API server doesn't kill in-flight jobs (and vice versa).
  *
  * Dev:  npm run worker
  * Prod: node dist/worker.js
  *
- * Workflow worker / reaper were removed 2026-05-05 along with the rest of
- * the workflow engine. Image generation kept its own queue (the supervisor
- * fans out short blocking calls per asset) — this file now only manages
- * that queue.
+ * StoryOS chat no longer dispatches phase workflows. Produce mode still
+ * uses one isolated workflow for Step 1 draft analysis, so the workflow
+ * worker is enabled again without remounting the legacy chat workflow API.
  */
 export {}; // mark this file as a module so top-level await is permitted
 
@@ -19,17 +18,30 @@ try {
   // Optional: in prod env comes from docker/k8s, no .env on disk.
 }
 
-const { startImageWorker } = await import("./mastra/workflows/engine/image-worker.js");
-
-if (!process.env.DASHSCOPE_API_KEY && process.env.ALIBABA_API_KEY) {
-  process.env.DASHSCOPE_API_KEY = process.env.ALIBABA_API_KEY;
-}
+const { mastra } = await import("./mastra/index.js");
+const { startImageWorker, startWorker } = await import("./mastra/workflows/engine/index.js");
 
 // Image-generation worker on its own queue. Serial (concurrency=1) by
 // default — dashscope burst-rate-limits at >1 per few seconds. Bump via
 // IMAGE_WORKER_CONCURRENCY if provider quota allows true parallelism.
+const workflowConcurrency = Number(process.env.WORKFLOW_WORKER_CONCURRENCY ?? 2);
+const workflowWorker = startWorker({ mastra, concurrency: workflowConcurrency });
+
 const imageConcurrency = Number(process.env.IMAGE_WORKER_CONCURRENCY ?? 1);
 const imageWorker = startImageWorker({ concurrency: imageConcurrency });
+
+workflowWorker.on("ready", () => {
+  // eslint-disable-next-line no-console
+  console.log(`[workflow-worker] ready (concurrency=${workflowConcurrency})`);
+});
+workflowWorker.on("failed", (job, err) => {
+  // eslint-disable-next-line no-console
+  console.error(`[workflow-worker] job ${job?.id} failed:`, err?.message ?? err);
+});
+workflowWorker.on("completed", (job) => {
+  // eslint-disable-next-line no-console
+  console.log(`[workflow-worker] job ${job.id} completed`);
+});
 
 imageWorker.on("ready", () => {
   // eslint-disable-next-line no-console
@@ -46,7 +58,8 @@ imageWorker.on("completed", (job) => {
 
 async function shutdown(signal: string): Promise<void> {
   // eslint-disable-next-line no-console
-  console.log(`[image-worker] received ${signal}, draining…`);
+  console.log(`[storyos-worker] received ${signal}, draining…`);
+  await workflowWorker.close();
   await imageWorker.close();
   process.exit(0);
 }

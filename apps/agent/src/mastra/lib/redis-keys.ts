@@ -20,6 +20,8 @@ export const TTL = {
   JAVA_CACHE_MEDIUM: 300,
   /** Story skeleton — latest-wins per project; reused by downstream phases */
   OUTLINE: 30 * 24 * 3600,
+  /** Produce-mode ephemeral draft state. Not business persistence. */
+  PRODUCE_DRAFT: 6 * 3600,
 } as const;
 
 export const ENTITY_TYPES = ["film", "episode", "role", "scene", "prop", "script", "shot"] as const;
@@ -47,6 +49,9 @@ export const WORKFLOW_NAMES = [
   "episode_phase",
   "script_phase",
   "storyboard_phase",
+  // Produce-mode end-to-end analysis. Runs outside StoryOS chat and
+  // returns an ephemeral draft; Java writes happen only on explicit commit.
+  "produce_script_pipeline",
 ] as const;
 
 export type WorkflowName = (typeof WORKFLOW_NAMES)[number];
@@ -121,6 +126,17 @@ export const K = {
   workflowGenFailed: (runId: string) => {
     assertSafeId(runId, "runId");
     return `workflow:run:${runId}:gen_failed`;
+  },
+
+  // ─── Produce mode ─────────────────────────────────────────────────
+  produceCommit: (projectId: string, runId: string) => {
+    assertSafeId(projectId, "projectId");
+    assertSafeId(runId, "runId");
+    return `produce:${projectId}:commit:${runId}`;
+  },
+  produceLatestCommit: (projectId: string) => {
+    assertSafeId(projectId, "projectId");
+    return `produce:${projectId}:latest_commit`;
   },
 
   // ─── Workflow indices (sorted sets by startedAt) ──────────────────

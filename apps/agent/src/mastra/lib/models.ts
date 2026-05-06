@@ -13,7 +13,7 @@
  *   new Agent({ model: defaultRouterModel(), ... })
  */
 import { wrapLanguageModel } from "ai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createAlibaba } from "@ai-sdk/alibaba";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createAzure } from "@ai-sdk/azure";
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -95,35 +95,33 @@ export function createDeepSeekModel(
   return provider(modelId);
 }
 
-// ─── Alibaba DashScope (Qwen, via OpenAI-compatible endpoint) ────────
+// ─── Alibaba DashScope (Qwen) ────────────────────────────────────────
 
 type AlibabaModelId = "qwen3-max" | "qwen-plus" | "qwen-turbo" | "qwen-max" | string;
 
 /**
- * Qwen via DashScope's OpenAI-compatible endpoint
- * (`/compatible-mode/v1`). We explicitly use `createOpenAICompatible`
- * rather than `@ai-sdk/alibaba` because the latter serialises chat
- * messages in DashScope's **native** shape (`{input:{messages:[...]}}`),
- * which the compat endpoint rejects with 400 `"messages[i].content is
- * required"`. The compat endpoint expects OpenAI-format bodies
- * (`{messages:[{role,content}]}`), so we bypass the native SDK and hit
- * the compat URL like any other OpenAI-alike provider.
+ * Qwen via the same official `@ai-sdk/alibaba` provider Spark uses.
+ *
+ * Keep this aligned with `apps/server/src/spark/spark.service.ts`:
+ * one env var (`ALIBABA_API_KEY`), one provider family. Using
+ * `@ai-sdk/openai-compatible` here looked harmless but can hit a
+ * different DashScope auth path than Spark, which makes a valid key look
+ * invalid in the produce worker.
  *
  * Used primarily on `prod-cn` (fizzstudio.fizzspace.cn) where router
  * traffic stays in-country — lower latency, compliance-friendly, and
  * decoupled from Claude's US-side outages.
  */
 export function createAlibabaModel(modelId: AlibabaModelId = "qwen-max"): LanguageModelV3 {
-  const apiKey = (process.env.ALIBABA_API_KEY || process.env.DASHSCOPE_API_KEY)?.trim();
+  const apiKey = process.env.ALIBABA_API_KEY?.trim();
   if (!apiKey) {
-    throw new Error("ALIBABA_API_KEY (or DASHSCOPE_API_KEY) is not set.");
+    throw new Error("ALIBABA_API_KEY is not set.");
   }
-  const provider = createOpenAICompatible({
-    name: "alibaba",
-    baseURL: envOrDefault("ALIBABA_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+  const provider = createAlibaba({
     apiKey,
+    ...(process.env.ALIBABA_BASE_URL ? { baseURL: envOrDefault("ALIBABA_BASE_URL", "") } : {}),
   });
-  return provider.chatModel(modelId);
+  return provider(modelId) as LanguageModelV3;
 }
 
 // ─── Anthropic (Claude) ──────────────────────────────────────────────

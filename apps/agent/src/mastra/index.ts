@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
 import { PinoLogger } from "@mastra/loggers";
@@ -18,16 +20,40 @@ import { scriptSplitterAgent } from "./agents/personas/script-splitter";
 import { assetsRoutes } from "./routes/assets";
 import { adminRoutes } from "./routes/admin";
 import { videoPromptRoutes } from "./routes/video-prompt";
+import { produceRoutes } from "./routes/produce";
 import { logStartupSelfCheck } from "./lib/startup-self-check";
+import { produceScriptPipelineWorkflow } from "./workflows/produce-script-pipeline";
 
-// Workflow registrations removed 2026-05-05. Phase workflow files +
-// `routes/workflow.ts` are still on disk for now in case we revisit;
-// they're just no longer mounted on the Mastra server. The supervisor
-// uses `ask_*` persona consults + direct CRUD instead — see
-// `agents/storyos.ts`.
+// StoryOS chat no longer owns workflow orchestration. The only workflow
+// registered here is the dedicated produce-mode analysis pipeline; it is
+// launched from /produce/script and commits nothing until the user confirms.
 
-if (!process.env.DASHSCOPE_API_KEY && process.env.ALIBABA_API_KEY) {
-  process.env.DASHSCOPE_API_KEY = process.env.ALIBABA_API_KEY;
+loadLocalEnvFallbacks();
+
+function loadLocalEnvFallbacks(): void {
+  try {
+    process.loadEnvFile();
+  } catch {
+    // Optional: Mastra CLI usually loads apps/agent/.env already.
+  }
+  if (process.env.ALIBABA_API_KEY) return;
+
+  // Local dev convenience: Spark historically kept the DashScope key in
+  // apps/server/.env. The produce pipeline runs inside the agent worker,
+  // so read that file as a fallback when developers start only agent env.
+  const candidates = [
+    resolve(process.cwd(), "apps/server/.env"),
+    resolve(process.cwd(), "../server/.env"),
+  ];
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    try {
+      process.loadEnvFile(candidate);
+    } catch {
+      // Try the next candidate.
+    }
+    if (process.env.ALIBABA_API_KEY) return;
+  }
 }
 
 // A single tool/LLM failure should degrade the one request, not crash the
@@ -98,6 +124,9 @@ export const mastra = new Mastra({
     briefAnalyzer: briefAnalyzerAgent,
     scriptSplitter: scriptSplitterAgent,
   },
+  workflows: {
+    produceScriptPipeline: produceScriptPipelineWorkflow,
+  },
   storage: new LibSQLStore({
     id: "storyos-storage",
     url: process.env.MASTRA_DB_URL ?? "file:./mastra.db",
@@ -115,11 +144,13 @@ export const mastra = new Mastra({
       { path: "/chat/*", handler: populateRequestContext },
       { path: "/assets/*", handler: populateRequestContext },
       { path: "/video-prompt/*", handler: populateRequestContext },
+      { path: "/produce/*", handler: populateRequestContext },
     ],
     apiRoutes: [
       ...assetsRoutes,
       ...adminRoutes,
       ...videoPromptRoutes,
+      ...produceRoutes,
       // AI SDK v5–compatible chat stream. Consumed by apps/web's
       // `readUIMessageStream()` via the NestJS proxy at
       // /assistant/submit-message-to-agent.

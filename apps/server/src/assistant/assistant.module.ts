@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { WorkspaceService } from './workspace.service';
 import { MastraProxyController } from './mastra-proxy.controller';
 import { AssetsProxyController } from './assets-proxy.controller';
+import { ProduceProxyController } from './produce-proxy.controller';
 import { DictionariesController } from './dictionaries.controller';
 import { VideoPromptController } from './video-prompt.controller';
 import { MessageStoreService } from './chat/message-store.service';
@@ -20,6 +21,7 @@ import { DraftsProxyController } from './workflow/drafts-proxy.controller';
   controllers: [
     MastraProxyController,
     AssetsProxyController,
+    ProduceProxyController,
     DictionariesController,
     ChatController,
     WorkflowProxyController,
