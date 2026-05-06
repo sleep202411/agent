@@ -1550,6 +1550,25 @@
     "insertAfter": "后插镜头",
     "shotLabel": "分镜{no}"
   },
+  "produce": {
+    "title": "制片模式",
+    "exit": "退出",
+    "prev": "上一步",
+    "next": "下一步",
+    "stepPlaceholder": "这一步正在搭建中，敬请期待。",
+    "stepScript": "剧本",
+    "stepScriptDescription": "规划整季并逐集撰写剧本。",
+    "stepAsset": "资产",
+    "stepAssetDescription": "为剧本设计所需的角色、场景与道具。",
+    "stepVideo": "剧集",
+    "stepVideoDescription": "进入每集的分镜表，编辑镜头并生成视频。",
+    "tabCharacter": "角色",
+    "tabCharacterDescription": "描述角色设定，让角色设计师起草草稿。",
+    "tabScene": "场景",
+    "tabSceneDescription": "勾勒故事发生的场景空间。",
+    "tabProp": "道具",
+    "tabPropDescription": "列出剧情中关键的道具元素。"
+  },
   "ai": {
     "title": "StoryOS",
     "panelDescription": "单项目单对话，当前会话仅保存在内存中",
@@ -1826,6 +1845,7 @@
     "workflowEpisodePhase": "分集规划",
     "workflowScriptPhase": "剧本生成",
     "workflowStoryboardPhase": "分镜生成",
+    "workflowProduceScriptPipeline": "生产流水线",
     "workflowGeneric": "任务",
     "workflowMissingRunId": "任务未返回 runId，无法跟踪进度。",
     "workflowCurrentStep": "当前阶段",

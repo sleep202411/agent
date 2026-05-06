@@ -1550,6 +1550,25 @@
     "insertAfter": "後插鏡頭",
     "shotLabel": "分鏡{no}"
   },
+  "produce": {
+    "title": "製片模式",
+    "exit": "退出",
+    "prev": "上一步",
+    "next": "下一步",
+    "stepPlaceholder": "這一步正在搭建中，敬請期待。",
+    "stepScript": "劇本",
+    "stepScriptDescription": "規劃整季並逐集撰寫劇本。",
+    "stepAsset": "資產",
+    "stepAssetDescription": "為劇本設計所需的角色、場景與道具。",
+    "stepVideo": "劇集",
+    "stepVideoDescription": "進入每集的分鏡表，編輯鏡頭並生成視頻。",
+    "tabCharacter": "角色",
+    "tabCharacterDescription": "描述角色設定，讓角色設計師起草草稿。",
+    "tabScene": "場景",
+    "tabSceneDescription": "勾勒故事發生的場景空間。",
+    "tabProp": "道具",
+    "tabPropDescription": "列出劇情中關鍵的道具元素。"
+  },
   "ai": {
     "title": "StoryOS",
     "panelDescription": "單專案單對話，目前會話僅儲存在記憶體中",
@@ -1826,6 +1845,7 @@
     "workflowEpisodePhase": "分集規劃",
     "workflowScriptPhase": "劇本生成",
     "workflowStoryboardPhase": "分鏡生成",
+    "workflowProduceScriptPipeline": "生產流水線",
     "workflowGeneric": "任務",
     "workflowMissingRunId": "任務未返回 runId，無法追蹤進度。",
     "workflowCurrentStep": "目前階段",

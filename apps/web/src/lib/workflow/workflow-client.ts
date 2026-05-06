@@ -25,7 +25,8 @@ export type WorkflowName =
   | "prop_image_phase"
   | "episode_phase"
   | "script_phase"
-  | "storyboard_phase";
+  | "storyboard_phase"
+  | "produce_script_pipeline";
 
 export type WorkflowProgress = {
   current: number;

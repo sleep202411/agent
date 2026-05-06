@@ -1550,6 +1550,25 @@
     "insertAfter": "Insert after",
     "shotLabel": "Shot {no}"
   },
+  "produce": {
+    "title": "Production Mode",
+    "exit": "Exit",
+    "prev": "Previous",
+    "next": "Next",
+    "stepPlaceholder": "This step is being built — check back soon.",
+    "stepScript": "Script",
+    "stepScriptDescription": "Plan the season and write the screenplay episode-by-episode.",
+    "stepAsset": "Assets",
+    "stepAssetDescription": "Design the characters, scenes and props your script needs.",
+    "stepVideo": "Episodes",
+    "stepVideoDescription": "Open each episode's storyboard table to edit shots and generate video.",
+    "tabCharacter": "Characters",
+    "tabCharacterDescription": "Describe your cast and let the character designer draft them.",
+    "tabScene": "Scenes",
+    "tabSceneDescription": "Outline the worlds your story moves through.",
+    "tabProp": "Props",
+    "tabPropDescription": "List the meaningful objects in the story."
+  },
   "ai": {
     "title": "StoryOS",
     "panelDescription": "One conversation per project, stored in memory only",
@@ -1826,6 +1845,7 @@
     "workflowEpisodePhase": "Episode planning",
     "workflowScriptPhase": "Script generation",
     "workflowStoryboardPhase": "Storyboard generation",
+    "workflowProduceScriptPipeline": "Production pipeline",
     "workflowGeneric": "Task",
     "workflowMissingRunId": "Task returned no runId, progress tracking unavailable.",
     "workflowCurrentStep": "Current step",

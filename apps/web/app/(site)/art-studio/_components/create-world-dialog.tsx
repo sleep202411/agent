@@ -39,6 +39,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { worldKeys } from "@/src/hooks/use-worlds";
 import { useSparkAnalyze } from "@/app/(site)/ips/_hooks/use-spark";
+import { saveProduceSeed } from "@/app/projects/[id]/produce/_hooks/use-produce-seed";
 
 /** Payload returned by `/api/user/world/create/quick/worldproduct`. */
 type CreateQuickWorldResult = {
@@ -68,6 +69,9 @@ type StoryOsInsights = {
   roleCount?: number;
   sceneCount?: number;
   propCount?: number;
+  textRef?: string;
+  sourceChars?: number;
+  sourceExcerpt?: string;
 };
 
 export function CreateWorldDialog({
@@ -168,6 +172,9 @@ export function CreateWorldDialog({
           roleCount: draft.roleCount,
           sceneCount: draft.sceneCount,
           propCount: draft.propCount,
+          textRef: draft.textRef,
+          sourceChars: draft.sourceChars,
+          sourceExcerpt: draft.sourceExcerpt,
         });
       } catch (analyzeErr) {
         console.warn("[CreateWorldDialog] spark analyze failed:", analyzeErr);
@@ -244,12 +251,47 @@ export function CreateWorldDialog({
       onOpenChange(false);
 
       if (result?.projectId && result?.worldId) {
-        router.push(
-          localizePath(
-            `/projects/${result.projectId}?worldId=${result.worldId}`,
-            getCurrentLocale()
-          )
-        );
+        // Branch on whether the user uploaded source material:
+        //   - With file → save the spark snapshot to sessionStorage
+        //     and land in the production pipeline (/produce). The
+        //     wizard's Step 1 reads the seed and renders pre-filled.
+        //   - Without file → there's nothing for the pipeline to
+        //     seed from, so we keep the legacy behaviour and drop
+        //     the user into the studio chat (/projects/[id]) where
+        //     they can describe what they want freeform.
+        if (sourceFile) {
+          const seedPayload = {
+            worldId: result.worldId,
+            worldName: name.trim(),
+            description: description.trim(),
+            tags,
+            episodeCount: insights.episodeCount,
+            runtimeMinutes: insights.runtimeMinutes,
+            language: insights.language,
+            roleCount: insights.roleCount,
+            sceneCount: insights.sceneCount,
+            propCount: insights.propCount,
+            sourceFile: {
+              name: sourceFile.name,
+              size: sourceFile.size,
+              mimeType: sourceFile.mimeType,
+              path: sourceFile.path,
+              textRef: insights.textRef,
+              chars: insights.sourceChars,
+              excerpt: insights.sourceExcerpt,
+            },
+            createdAt: Date.now(),
+          };
+          saveProduceSeed(result.projectId, seedPayload);
+          router.push(localizePath(`/projects/${result.projectId}/produce`, getCurrentLocale()));
+        } else {
+          router.push(
+            localizePath(
+              `/projects/${result.projectId}?worldId=${result.worldId}`,
+              getCurrentLocale()
+            )
+          );
+        }
         onCreated?.(result);
       }
     } catch (err) {
