@@ -150,7 +150,7 @@ function buildUserMessage(input: ExpandRequest): string {
  * behaviour when Qwen *is* available.
  */
 function resolveVideoPromptModel(): LanguageModel {
-  const alibabaKey = (process.env.ALIBABA_API_KEY || process.env.DASHSCOPE_API_KEY)?.trim();
+  const alibabaKey = process.env.ALIBABA_API_KEY?.trim();
   if (alibabaKey) {
     return createAlibabaModel(process.env.VIDEO_PROMPT_MODEL?.trim() || "qwen-plus");
   }

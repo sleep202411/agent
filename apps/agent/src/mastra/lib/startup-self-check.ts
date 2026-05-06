@@ -42,9 +42,7 @@ function check(): Check[] {
   // multi-shot JSON schema. Surfaces here so the boot banner makes
   // the per-agent model choice visible.
   const storyboarderOverride = process.env.STORYBOARDER_MODEL?.trim();
-  const hasAlibabaKey = Boolean(
-    (process.env.ALIBABA_API_KEY ?? process.env.DASHSCOPE_API_KEY)?.trim()
-  );
+  const hasAlibabaKey = Boolean(process.env.ALIBABA_API_KEY?.trim());
   out.push({
     kind: "info",
     label: "storyboarder",
