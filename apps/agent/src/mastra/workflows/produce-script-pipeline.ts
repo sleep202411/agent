@@ -130,7 +130,7 @@ const PlanSchema = z.object({
     .describe("Production asset registry. Empty arrays are acceptable, but the object must exist."),
 });
 
-const ScriptedEpisodeSchema = EpisodePlanSchema.extend({
+export const ScriptedEpisodeSchema = EpisodePlanSchema.extend({
   clientRefId: z.string().min(1),
   no: z.number().int().positive(),
   script: z.string().min(1),
@@ -219,7 +219,7 @@ type FinalizedInput = ScriptedInput & {
   finalizedAssets: ProducePipelineOutput["assets"];
 };
 
-const ResolvedInputSchema = ProducePipelineInputSchema.extend({
+export const ResolvedInputSchema = ProducePipelineInputSchema.extend({
   sourceText: z.string().min(1),
   sourceExcerpt: z.string().min(1),
   targetEpisodeCount: z.number().int().positive(),
@@ -227,11 +227,11 @@ const ResolvedInputSchema = ProducePipelineInputSchema.extend({
   languageLabel: z.string().min(1),
 });
 
-const PlannedInputSchema = ResolvedInputSchema.extend({
+export const PlannedInputSchema = ResolvedInputSchema.extend({
   plan: PlanSchema,
 });
 
-const ScriptedInputSchema = PlannedInputSchema.extend({
+export const ScriptedInputSchema = PlannedInputSchema.extend({
   episodes: z.array(ScriptedEpisodeSchema).min(1),
 });
 
@@ -239,7 +239,7 @@ const FinalizedInputSchema = ScriptedInputSchema.extend({
   finalizedAssets: ProducePipelineOutputSchema.shape.assets,
 });
 
-const resolveSourceStep = createStep({
+export const resolveSourceStep = createStep({
   id: "resolve_source",
   inputSchema: ProducePipelineInputSchema,
   outputSchema: ResolvedInputSchema,
@@ -287,7 +287,7 @@ const resolveSourceStep = createStep({
   },
 });
 
-const planStep = createStep({
+export const planStep = createStep({
   id: "plan_story",
   inputSchema: ResolvedInputSchema,
   outputSchema: PlannedInputSchema,
@@ -323,7 +323,7 @@ const planStep = createStep({
   },
 });
 
-const scriptStep = createStep({
+export const scriptStep = createStep({
   id: "write_scripts",
   inputSchema: PlannedInputSchema,
   outputSchema: ScriptedInputSchema,

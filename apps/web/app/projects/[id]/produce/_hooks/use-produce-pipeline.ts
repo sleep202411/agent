@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearProduceSeed,
+  consumeProduceAutoStart,
   saveProduceCommittedResult,
   type ProduceCommittedResult,
   type ProduceSeed,
@@ -77,6 +78,14 @@ export interface ProduceDraft {
 
 type PipelineStatus =
   | "idle"
+  /**
+   * Seed exists but the auto-start marker was already consumed (or never
+   * set). Distinct from `idle` so the page can render a "previous run
+   * was interrupted — retry / abandon" recovery card instead of a blank
+   * spinner. Reached when the user refreshes mid-run, or navigates back
+   * to the wizard from elsewhere with a stale seed.
+   */
+  | "ready"
   | "running"
   | "completed"
   | "failed"
@@ -95,11 +104,28 @@ interface PipelineState {
 export function useProducePipeline(projectId: string, seed: ProduceSeed | null) {
   const [state, setState] = useState<PipelineState>({ status: "idle" });
   const abortRef = useRef<AbortController | null>(null);
-  // `attempt` re-triggers the analysis effect when the user retries.
+  // `attempt` is bumped by `start()` / `retry()` to (re)trigger the
+  // analysis effect. Initial value 0 = no run requested yet; the mount
+  // effect below converts the auto-start marker (when present) into the
+  // first attempt.
   const [attempt, setAttempt] = useState(0);
 
+  // Mount-only auto-start gate: consume the one-shot marker the dialog
+  // dropped in sessionStorage. If present → bump attempt to fire the
+  // run effect once. Refresh / direct nav with a lingering seed sees
+  // no marker → settles into `ready` so the page can offer retry
+  // / discard. Effect runs once per projectId.
   useEffect(() => {
     if (!projectId || !seed) return;
+    if (consumeProduceAutoStart(projectId)) {
+      setAttempt((n) => n + 1);
+    } else {
+      setState((prev) => (prev.status === "idle" ? { status: "ready" } : prev));
+    }
+  }, [projectId, seed]);
+
+  useEffect(() => {
+    if (!projectId || !seed || attempt === 0) return;
     const controller = new AbortController();
     abortRef.current = controller;
     let stopped = false;
@@ -150,9 +176,26 @@ export function useProducePipeline(projectId: string, seed: ProduceSeed | null) 
     abortRef.current?.abort();
   }, []);
 
+  /**
+   * User-initiated start (retry from `ready`, or from the upload entry
+   * after writing a fresh seed). Bumps `attempt` to fire the run effect.
+   */
+  const start = useCallback(() => {
+    setAttempt((n) => n + 1);
+  }, []);
+
   const retry = useCallback(() => {
     setAttempt((n) => n + 1);
   }, []);
+
+  /**
+   * Drop the seed entirely — sends the page to the "no seed" branch
+   * (project-data view). Used by the recovery card's "abandon" action.
+   */
+  const discard = useCallback(() => {
+    clearProduceSeed(projectId);
+    setState({ status: "idle" });
+  }, [projectId]);
 
   const commit = useCallback(async (): Promise<ProduceCommittedResult> => {
     const runId = state.runId;
@@ -177,5 +220,5 @@ export function useProducePipeline(projectId: string, seed: ProduceSeed | null) 
     return body.result;
   }, [projectId, seed?.worldId, state.runId]);
 
-  return { ...state, cancel, retry, commit };
+  return { ...state, cancel, retry, start, discard, commit };
 }

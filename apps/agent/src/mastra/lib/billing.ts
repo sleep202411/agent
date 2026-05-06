@@ -227,6 +227,7 @@ export function estimateWorkflowCost(
     case "prop_image_phase":
     case "batch_create_asset":
     case "produce_script_pipeline":
+    case "produce_step1_episodes":
       return 0; // image phases + asset batch-insert are free / Java-side
     default: {
       // Exhaustive check: any new WorkflowName added to the type union

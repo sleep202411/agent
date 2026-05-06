@@ -23,6 +23,7 @@ import {
   ProducePipelineInputSchema,
   ProducePipelineOutputSchema,
 } from "../workflows/produce-script-pipeline";
+import { Step1OutputSchema } from "../workflows/produce-step1-episodes";
 
 const CommitRequestSchema = z.object({
   runId: z.string().min(1),
@@ -360,6 +361,211 @@ export const produceRoutes = [
       }
     },
   }),
+
+  // ─── Step 1: episodes + scripts ───────────────────────────────────
+  //
+  // Slice of the old `script-draft/sync` flow that ends after
+  // scripts. Web flow:
+  //
+  //   /generate → returns { runId, draft } (Mastra workflow ran in-
+  //               process, draft cached in Redis via setStatus completed)
+  //   /commit   → user clicks 保存继续, draft → Java (episodes + scripts
+  //               only, NO assets / NO storyboards — those are step 2/3)
+  //
+  // Same client-disconnect → cancel pattern as the legacy route. Step 2
+  // and Step 3 follow identical lifecycles in their own routes.
+  registerApiRoute("/produce/step1/generate", {
+    method: "POST",
+    handler: async (c) => {
+      const ctx = requireContext(c);
+      const body = SyncRequestSchema.parse(await c.req.json());
+      const projectId = body.projectId ?? ctx.projectId;
+      if (projectId !== ctx.projectId) {
+        throw new HTTPException(403, { message: "projectId does not match auth context" });
+      }
+      const worldId = body.worldId ?? body.seed.worldId ?? ctx.worldId;
+      const fullCtx: StoryosContext = {
+        ...ctx,
+        projectId,
+        worldId,
+        targetEpisodeCount: body.seed.episodeCount,
+        dialogLanguage: body.seed.language,
+      };
+      const input = ProducePipelineInputSchema.parse({
+        projectId,
+        worldId,
+        seed: { ...body.seed, worldId },
+      });
+
+      const runId = randomUUID();
+      const now = Date.now();
+      await putMeta({
+        runId,
+        workflowName: "produce_step1_episodes",
+        workspaceId: projectId,
+        userId: ctx.userId,
+        status: "running",
+        startedAt: now,
+        updatedAt: now,
+        lastHeartbeatAt: now,
+      });
+      // Stash the active runId so refresh / a parallel client tab can
+      // discover an in-flight Step 1 run and attach to it instead of
+      // starting a fresh one. Cleared on terminal status below.
+      await getRedis().set(K.produceStep1Active(projectId), runId, "EX", TTL.PRODUCE_DRAFT);
+
+      const clientSignal = c.req.raw?.signal;
+      let clientCancelled = false;
+      const onClientAbort = () => {
+        clientCancelled = true;
+        void requestCancel(runId).catch((err) => {
+          console.warn(
+            `[produce/step1] requestCancel(${runId}) failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+        });
+      };
+      clientSignal?.addEventListener("abort", onClientAbort, { once: true });
+
+      type MastraLike = {
+        getWorkflowById: (
+          name: string
+        ) => { createRun: (opts: { runId: string }) => Promise<unknown> } | undefined;
+      };
+      const mastra = c.get("mastra" as never) as MastraLike | undefined;
+      const workflow = mastra?.getWorkflowById("produce_step1_episodes");
+      if (!workflow) {
+        await setStatus(runId, "failed", { error: "produce_step1_episodes not registered" });
+        await getRedis().del(K.produceStep1Active(projectId));
+        throw new HTTPException(500, {
+          message: "produce_step1_episodes workflow is not registered on this Mastra instance",
+        });
+      }
+
+      const requestContext = new RequestContext();
+      requestContext.set("cookie", fullCtx.cookie);
+      requestContext.set("userId", fullCtx.userId);
+      requestContext.set("projectId", fullCtx.projectId);
+      if (fullCtx.worldId) requestContext.set("worldId", fullCtx.worldId);
+      if (fullCtx.episodeId) requestContext.set("episodeId", fullCtx.episodeId);
+      if (fullCtx.locale) requestContext.set("locale", fullCtx.locale);
+      if (fullCtx.acceptLanguage) requestContext.set("acceptLanguage", fullCtx.acceptLanguage);
+      if (fullCtx.dialogLanguage) requestContext.set("dialogLanguage", fullCtx.dialogLanguage);
+      if (fullCtx.stylePainting) requestContext.set("stylePainting", fullCtx.stylePainting);
+      if (typeof fullCtx.targetEpisodeCount === "number") {
+        requestContext.set("targetEpisodeCount", fullCtx.targetEpisodeCount);
+      }
+      requestContext.set("runId", runId);
+
+      try {
+        const run = (await workflow.createRun({ runId })) as {
+          start: (opts: { inputData: unknown; requestContext: RequestContext }) => Promise<unknown>;
+        };
+        const raw = await run.start({ inputData: input, requestContext });
+        const r = (raw ?? {}) as { status?: string; result?: unknown; error?: unknown };
+        if (clientCancelled) {
+          await setStatus(runId, "cancelled", { error: "client disconnected" });
+          await getRedis().del(K.produceStep1Active(projectId));
+          return c.json({ runId, draft: null }, 499 as never);
+        }
+        if (r.status !== "success") {
+          const message =
+            r.error instanceof Error
+              ? r.error.message
+              : typeof r.error === "string"
+                ? r.error
+                : `workflow ${r.status ?? "unknown"}`;
+          await setStatus(runId, "failed", { error: message });
+          await getRedis().del(K.produceStep1Active(projectId));
+          throw new HTTPException(500, { message });
+        }
+        await setStatus(runId, "completed", { result: r.result });
+        // Keep the active key set — the user still needs to /commit.
+        // It clears on commit success (or on next /generate's runId
+        // overwrite, naturally taking over).
+        const draft = Step1OutputSchema.parse(r.result);
+        return c.json({ runId, draft });
+      } catch (err) {
+        if (clientCancelled) {
+          await setStatus(runId, "cancelled", { error: "client disconnected" });
+          await getRedis().del(K.produceStep1Active(projectId));
+          return c.json({ runId, draft: null }, 499 as never);
+        }
+        if (err instanceof HTTPException) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        await setStatus(runId, "failed", { error: message });
+        await getRedis().del(K.produceStep1Active(projectId));
+        throw new HTTPException(500, { message });
+      } finally {
+        clientSignal?.removeEventListener("abort", onClientAbort);
+      }
+    },
+  }),
+
+  registerApiRoute("/produce/step1/commit", {
+    method: "POST",
+    handler: async (c) => {
+      const ctx = requireContext(c);
+      const body = CommitRequestSchema.parse(await c.req.json());
+      const meta = await getMeta(body.runId);
+      if (!meta || meta.workflowName !== "produce_step1_episodes") {
+        throw new HTTPException(404, { message: "produce step1 draft not found" });
+      }
+      if (meta.status !== "completed") {
+        throw new HTTPException(409, { message: `draft is not ready: ${meta.status}` });
+      }
+      const draft = Step1OutputSchema.parse(meta.result);
+      if (draft.projectId !== ctx.projectId) {
+        throw new HTTPException(403, { message: "projectId does not match auth context" });
+      }
+
+      const commitKey = K.produceStep1Commit(ctx.projectId, body.runId);
+      const existing = await readCommitState(commitKey);
+      if (existing?.status === "completed" && existing.result) {
+        // Idempotent: re-clicking 保存继续 returns the prior commit's
+        // summary instead of re-writing Java. Important because the
+        // upstream batch endpoints aren't fully idempotent on retry
+        // (they re-upsert by sort key, not by id).
+        return c.json({ ok: true, result: existing.result, reused: true });
+      }
+      if (existing?.status === "committing" && Date.now() - existing.startedAt < 10 * 60_000) {
+        throw new HTTPException(409, { message: "commit already in progress" });
+      }
+
+      const state: CommitState = existing ?? {
+        status: "committing",
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      await writeCommitState(commitKey, { ...state, status: "committing", updatedAt: Date.now() });
+
+      try {
+        const result = await commitStep1Draft({ ctx, draft });
+        await writeCommitState(commitKey, {
+          ...state,
+          status: "completed",
+          updatedAt: Date.now(),
+          result: result as ProduceCommitResult, // schema is a subset of the legacy shape
+          error: undefined,
+        });
+        // Active key is now obsolete — Step 1 is done; the next thing
+        // the user does is move to /produce/asset, where Step 2 owns
+        // its own active key.
+        await getRedis().del(K.produceStep1Active(ctx.projectId));
+        return c.json({ ok: true, result, reused: false });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await writeCommitState(commitKey, {
+          ...state,
+          status: "failed",
+          updatedAt: Date.now(),
+          error: message,
+        });
+        throw new HTTPException(500, { message });
+      }
+    },
+  }),
 ];
 
 async function readCommitState(key: string): Promise<CommitState | null> {
@@ -374,6 +580,60 @@ async function readCommitState(key: string): Promise<CommitState | null> {
 
 async function writeCommitState(key: string, state: CommitState): Promise<void> {
   await getRedis().set(key, JSON.stringify(state), "EX", TTL.PRODUCE_DRAFT);
+}
+
+/**
+ * Step 1 commit — write episodes + scripts to Java, nothing else.
+ * Sister of the legacy `commitProduceDraft` but stops after scripts;
+ * assets and storyboards are committed by Step 2 and Step 3.
+ *
+ * Reuses `createEpisodes` and `saveScripts` from the legacy commit
+ * path so both flows produce identical Java rows. The returned
+ * shape mirrors `ProduceCommitResult` minus assets / shotCount, so
+ * the page can render the same summary card across paths.
+ */
+async function commitStep1Draft(input: {
+  ctx: StoryosContext;
+  draft: import("zod").infer<typeof Step1OutputSchema>;
+}): Promise<ProduceCommitResult> {
+  const { ctx, draft } = input;
+  const worldId = ctx.worldId ?? draft.worldId;
+  if (!worldId) throw new Error("worldId required");
+  const draftForCreate = {
+    projectId: draft.projectId,
+    episodes: draft.episodes,
+  } as unknown as ProduceDraft;
+  const episodeIds = await createEpisodes(ctx, draftForCreate);
+  await saveScripts(ctx, draftForCreate, episodeIds);
+
+  const episodes = draft.episodes.map((ep) => {
+    const saved = episodeIds.find((item) => item.clientRefId === ep.clientRefId);
+    if (!saved) throw new Error(`missing committed episode id for ${ep.title}`);
+    return {
+      clientRefId: ep.clientRefId,
+      episodeId: saved.episodeId,
+      no: ep.no,
+      title: ep.title,
+      scriptChars: ep.script.length,
+      shotCount: 0,
+    };
+  });
+
+  return {
+    projectId: draft.projectId,
+    worldId,
+    title: draft.title,
+    committedAt: Date.now(),
+    episodes,
+    assets: { characters: [], scenes: [], props: [] },
+    totals: {
+      episodeCount: episodes.length,
+      characterCount: 0,
+      sceneCount: 0,
+      propCount: 0,
+      shotCount: 0,
+    },
+  };
 }
 
 async function commitProduceDraft(input: {

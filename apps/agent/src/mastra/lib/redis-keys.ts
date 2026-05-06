@@ -52,6 +52,10 @@ export const WORKFLOW_NAMES = [
   // Produce-mode end-to-end analysis. Runs outside StoryOS chat and
   // returns an ephemeral draft; Java writes happen only on explicit commit.
   "produce_script_pipeline",
+  // Produce-mode split workflows (Phase A onwards) — Step 1 generates
+  // episodes + scripts only; Step 2 / Step 3 will follow with assets
+  // and storyboards. Each step has its own generate / commit cycle.
+  "produce_step1_episodes",
 ] as const;
 
 export type WorkflowName = (typeof WORKFLOW_NAMES)[number];
@@ -137,6 +141,25 @@ export const K = {
   produceLatestCommit: (projectId: string) => {
     assertSafeId(projectId, "projectId");
     return `produce:${projectId}:latest_commit`;
+  },
+  /**
+   * Step 1 (episodes + scripts) per-run commit state. Keyed per
+   * runId so retries / refresh re-bind to the same draft. Mirrors
+   * `produceCommit` but scoped so step1 / step3 don't collide.
+   */
+  produceStep1Commit: (projectId: string, runId: string) => {
+    assertSafeId(projectId, "projectId");
+    assertSafeId(runId, "runId");
+    return `produce:${projectId}:step1:commit:${runId}`;
+  },
+  /**
+   * Active runId for Step 1 of a project. Set on /generate, cleared
+   * on terminal status. Lets the page recover an in-flight run after
+   * refresh by querying state instead of starting a new one.
+   */
+  produceStep1Active: (projectId: string) => {
+    assertSafeId(projectId, "projectId");
+    return `produce:${projectId}:step1:active`;
   },
 
   // ─── Workflow indices (sorted sets by startedAt) ──────────────────

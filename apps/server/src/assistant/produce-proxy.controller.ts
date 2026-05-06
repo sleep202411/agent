@@ -164,6 +164,39 @@ export class ProduceProxyController {
     const context = this.buildContext(user, body);
     return this.forward('/produce/script-draft/committed', req, context, body);
   }
+
+  // ─── Step 1 (episodes + scripts) ──────────────────────────────────
+  // Mirrors `script-draft/sync` + `/commit` but runs the slimmer
+  // `produce_step1_episodes` workflow that stops after scripts. Phase
+  // A1 of the produce pipeline split — Step 2 (assets) and Step 3
+  // (storyboard) follow with their own routes.
+  @Post('step1/generate')
+  async step1Generate(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = scalarString(body.projectId);
+    if (!projectId) {
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    const context = this.buildContext(user, body);
+    return this.forward('/produce/step1/generate', req, context, body);
+  }
+
+  @Post('step1/commit')
+  async step1Commit(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = scalarString(body.projectId);
+    if (!projectId) {
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    const context = this.buildContext(user, body);
+    return this.forward('/produce/step1/commit', req, context, body);
+  }
 }
 
 function scalarString(value: unknown): string | undefined {

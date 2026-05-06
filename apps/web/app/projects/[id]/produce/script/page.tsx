@@ -8,6 +8,8 @@ import {
   IconFileX,
   IconPlayerStop,
   IconRefresh,
+  IconRotate2,
+  IconTrash,
 } from "@tabler/icons-react";
 import {
   Empty,
@@ -24,6 +26,7 @@ import { useProduceSeed } from "../_hooks/use-produce-seed";
 import { useProducePipeline } from "../_hooks/use-produce-pipeline";
 import { useProjectScripts } from "../_hooks/use-project-scripts";
 import { ProjectEpisodeCard } from "./_components/project-episode-card";
+import { ProduceReseedCard } from "./_components/produce-reseed-card";
 
 const MESSAGE_INTERVAL_MS = 2200;
 
