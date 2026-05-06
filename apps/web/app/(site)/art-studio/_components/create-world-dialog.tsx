@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { AiSuggestedChip } from "@/components/ui/ai-suggested-chip";
 import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import {
@@ -528,15 +529,6 @@ function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function AiSuggestedChip({ label }: { label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 px-1.5 py-px text-[10px] font-medium text-violet-300">
-      <IconSparkles className="size-2.5" />
-      {label}
-    </span>
-  );
 }
 
 function StoryOsBreakdownCard({
