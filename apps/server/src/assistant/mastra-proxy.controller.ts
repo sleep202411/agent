@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import { CurrentUser, type AuthUser } from '../auth';
 import { isForcedPersonaKey, type ForcedPersonaKey } from '@repo/shared';
 import {
+  collectAttachmentRefs,
   preprocessMessages,
   ingestAttachmentBuffer,
 } from './message-preprocess';
@@ -194,6 +195,32 @@ export class MastraProxyController {
       // Keep going — text parts still reach the agent.
     }
 
+    // Server-side guarantee that the persona always sees the user's
+    // uploaded source material, even when the supervisor LLM forgets
+    // to thread `textRef` through to its `ask_*` tool calls. We
+    // collect every `att_xxx` ref still present in the chat history
+    // (newest last) and pass them through `x-storyos-context` →
+    // `requestContext.attachmentRefs`. The ask_* tool wrappers fall
+    // back to the latest ref when the LLM doesn't pass one, so the
+    // 14k-char source we cached on upload reliably reaches the
+    // persona regardless of supervisor diligence — fixes the
+    // "ctxBytes=506" symptom where personas were inventing content
+    // because they never saw the file.
+    const attachmentRefs = (() => {
+      try {
+        return collectAttachmentRefs(messages);
+      } catch (err) {
+        this.logger.warn(
+          `collectAttachmentRefs failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return [];
+      }
+    })();
+    const ctxWithAttachments: Record<string, unknown> = { ...context };
+    if (attachmentRefs.length > 0) {
+      ctxWithAttachments.attachmentRefs = attachmentRefs;
+    }
+
     // ── Short-circuit: PROJECT_PARAMS_CONFIRMED button (no LLM needed) ──
     //
     // Form submit provides the 4 core params (+ optional targetEpisodeCount /
@@ -313,7 +340,7 @@ export class MastraProxyController {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
       'accept-language': acceptLanguage,
-      'x-storyos-context': JSON.stringify(context),
+      'x-storyos-context': JSON.stringify(ctxWithAttachments),
     };
     if (cookie) headers.cookie = cookie;
 

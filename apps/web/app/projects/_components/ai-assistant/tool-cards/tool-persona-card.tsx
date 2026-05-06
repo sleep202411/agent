@@ -29,8 +29,14 @@ interface AskPersonaOutput {
   persona?: string;
   /** Markdown prose for the user. */
   summary?: string;
-  /** Structured fields for supervisor — not rendered here. */
-  fields?: { name: string; description: string; prompt: string } | null;
+  /**
+   * Structured fields for supervisor's commit step. Open-ended on
+   * purpose — each persona returns its own shape (episode_planner →
+   * `{episodes:[…]}`, storyboarder → `{rows:[…]}`, character/scene/
+   * prop designers → `{name, description, prompt}`, scriptwriter →
+   * `{content:"…"}`). The card renders whatever it can detect.
+   */
+  fields?: Record<string, unknown> | null;
   tookMs?: number;
   contextBytes?: number;
   error?: string;
@@ -65,6 +71,7 @@ export function ToolPersonaCard({ toolName, part }: ToolPersonaCardProps) {
   const hasError = Boolean(output?.error) || part.state === "output-error";
   const summary = output?.summary ?? "";
   const task = input?.task ?? "";
+  const fields = output?.fields ?? null;
 
   return (
     <PersonaCard
@@ -73,6 +80,7 @@ export function ToolPersonaCard({ toolName, part }: ToolPersonaCardProps) {
       hasError={hasError}
       task={task}
       summary={summary}
+      fields={fields}
       error={output?.error ?? part.errorText}
       tookMs={output?.tookMs}
       t={t}
@@ -86,6 +94,7 @@ interface PersonaCardInnerProps {
   hasError: boolean;
   task: string;
   summary: string;
+  fields: Record<string, unknown> | null;
   error?: string;
   tookMs?: number;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -97,6 +106,7 @@ function PersonaCard({
   hasError,
   task,
   summary,
+  fields,
   error,
   tookMs,
   t,
@@ -168,8 +178,217 @@ function PersonaCard({
           </Markdown>
         </div>
       )}
+
+      {!hasError && expanded && <FieldsPreview fields={fields} />}
     </div>
   );
+}
+
+// ─── Fields preview ─────────────────────────────────────────────────
+//
+// Renders persona's `fields` so the user can review what's about to be
+// committed BEFORE clicking the save button. Without this, "save 8
+// episodes" was a leap of faith — fields was 2 KB of episode outlines
+// the user never saw. Branches on the most-specific shape we can
+// detect (episodes array → titled list, rows array → shot table, single
+// asset record → key-value list, script content → markdown body),
+// falling back to a JSON dump for unknown shapes (so the user at least
+// knows there IS data, even if we don't have a custom view yet).
+
+interface FieldsPreviewProps {
+  fields: Record<string, unknown> | null;
+}
+
+function FieldsPreview({ fields }: FieldsPreviewProps) {
+  if (!fields || Object.keys(fields).length === 0) return null;
+
+  const episodes = pickArrayOf<EpisodeItem>(fields.episodes, isEpisodeItem);
+  if (episodes) return <EpisodesPreview items={episodes} />;
+
+  const rows = pickArrayOf<StoryboardRow>(fields.rows, isStoryboardRow);
+  if (rows) return <StoryboardPreview rows={rows} />;
+
+  const items = pickArrayOf<AssetItem>(fields.items, isAssetItem);
+  if (items) return <AssetItemsPreview items={items} />;
+
+  const content = typeof fields.content === "string" ? fields.content : null;
+  if (content) return <ScriptContentPreview content={content} />;
+
+  if (isAssetItem(fields)) return <AssetItemsPreview items={[fields]} />;
+
+  // Unknown shape — show keys so the user at least knows fields was
+  // populated and the save button isn't going to act on `{}`.
+  return (
+    <div className="mt-2 rounded-md border border-border/40 bg-background/40 px-2 py-1.5 text-[11px] text-muted-foreground">
+      Generated keys: {Object.keys(fields).join(", ")}
+    </div>
+  );
+}
+
+interface EpisodeItem {
+  title: string;
+  introduction?: string;
+  frontPrompt?: string;
+  behindPrompt?: string;
+}
+function isEpisodeItem(v: unknown): v is EpisodeItem {
+  return typeof v === "object" && v !== null && typeof (v as EpisodeItem).title === "string";
+}
+function EpisodesPreview({ items }: { items: EpisodeItem[] }) {
+  return (
+    <div className="mt-2 border-t border-border/40 pt-2">
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {items.length} episodes
+      </div>
+      <ol className="space-y-1.5">
+        {items.map((ep, i) => (
+          <li key={i} className="rounded-md border border-border/30 bg-background/30 px-2 py-1.5">
+            <div className="text-[12px] font-semibold text-foreground/90">{ep.title}</div>
+            {ep.introduction && (
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                {ep.introduction}
+              </p>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+interface StoryboardRow {
+  shot_no?: string | number;
+  scene?: string;
+  description?: string;
+  dialogue?: string;
+  shot_size?: string;
+  perspective?: string;
+  movement?: string;
+  duration?: number | string;
+  image_prompt?: string;
+}
+function isStoryboardRow(v: unknown): v is StoryboardRow {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as StoryboardRow;
+  return typeof r.description === "string" && r.description.length > 0;
+}
+function StoryboardPreview({ rows }: { rows: StoryboardRow[] }) {
+  return (
+    <div className="mt-2 border-t border-border/40 pt-2">
+      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {rows.length} shots
+      </div>
+      <ol className="space-y-1.5">
+        {rows.map((r, i) => (
+          <li key={i} className="rounded-md border border-border/30 bg-background/30 px-2 py-1.5">
+            <div className="flex items-baseline gap-1.5 text-[12px]">
+              <span className="font-semibold text-foreground/90">#{r.shot_no ?? i + 1}</span>
+              {r.scene && <span className="text-muted-foreground/80">· {r.scene}</span>}
+              {(r.shot_size || r.perspective || r.movement) && (
+                <span className="text-muted-foreground/60">
+                  · {[r.shot_size, r.perspective, r.movement].filter(Boolean).join(" / ")}
+                </span>
+              )}
+              {typeof r.duration !== "undefined" && (
+                <span className="ml-auto text-[10.5px] text-muted-foreground/60">
+                  {r.duration}s
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+              {r.description}
+            </p>
+            {r.dialogue && (
+              <p className="mt-0.5 text-[11.5px] italic text-muted-foreground/80">
+                「{r.dialogue}」
+              </p>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+interface AssetItem {
+  name: string;
+  description?: string;
+  prompt?: string;
+  role?: string;
+  appearance?: string;
+  personality?: string;
+  category?: string;
+}
+function isAssetItem(v: unknown): v is AssetItem {
+  if (typeof v !== "object" || v === null) return false;
+  return typeof (v as AssetItem).name === "string" && (v as AssetItem).name.length > 0;
+}
+function AssetItemsPreview({ items }: { items: AssetItem[] }) {
+  return (
+    <div className="mt-2 border-t border-border/40 pt-2">
+      {items.length > 1 && (
+        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {items.length} items
+        </div>
+      )}
+      <div className="space-y-2">
+        {items.map((a, i) => (
+          <div key={i} className="rounded-md border border-border/30 bg-background/30 px-2 py-1.5">
+            <div className="text-[12px] font-semibold text-foreground/90">
+              {a.name}
+              {a.role && (
+                <span className="ml-1.5 text-[11px] text-muted-foreground/70">· {a.role}</span>
+              )}
+              {a.category && (
+                <span className="ml-1.5 text-[11px] text-muted-foreground/70">· {a.category}</span>
+              )}
+            </div>
+            {a.description && (
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                {a.description}
+              </p>
+            )}
+            {a.appearance && (
+              <p className="mt-0.5 text-[11.5px] text-muted-foreground/80">
+                <span className="text-muted-foreground/60">外观：</span>
+                {a.appearance}
+              </p>
+            )}
+            {a.personality && (
+              <p className="mt-0.5 text-[11.5px] text-muted-foreground/80">
+                <span className="text-muted-foreground/60">性格：</span>
+                {a.personality}
+              </p>
+            )}
+            {a.prompt && (
+              <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted-foreground/60">
+                <span className="text-muted-foreground/40">prompt：</span>
+                {a.prompt}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ScriptContentPreview({ content }: { content: string }) {
+  return (
+    <div className="mt-2 border-t border-border/40 pt-2">
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Script body · {content.length} chars
+      </div>
+      <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-md border border-border/30 bg-background/30 px-2 py-1.5 text-[11.5px] leading-relaxed text-foreground/85">
+        {content}
+      </pre>
+    </div>
+  );
+}
+
+function pickArrayOf<T>(value: unknown, guard: (v: unknown) => v is T): T[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  return value.every(guard) ? (value as T[]) : null;
 }
 
 // Friendly inline error indicator with copy-details affordance —

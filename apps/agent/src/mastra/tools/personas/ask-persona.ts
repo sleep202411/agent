@@ -218,6 +218,30 @@ export async function askPersona(opts: AskPersonaOptions): Promise<AskPersonaRes
                 bestStringSynth = value;
               }
             }
+            // Last-resort drill: if no top-level strings exist (e.g. an
+            // episode-planner output of `{ episodes: [{introduction}, ...] }`),
+            // pluck a narrative string out of the first entry of any
+            // top-level array. Without this the card falls back to the
+            // literal "(persona did not provide a summary)" placeholder
+            // even though the persona's data is perfectly usable.
+            if (!bestStringSynth) {
+              for (const value of Object.values(record)) {
+                if (!Array.isArray(value) || value.length === 0) continue;
+                const first = value[0];
+                if (!first || typeof first !== "object") continue;
+                const f = first as Record<string, unknown>;
+                const candidate =
+                  (typeof f.introduction === "string" && f.introduction) ||
+                  (typeof f.description === "string" && f.description) ||
+                  (typeof f.summary === "string" && f.summary) ||
+                  (typeof f.title === "string" && f.title) ||
+                  "";
+                if (typeof candidate === "string" && candidate.length > 0) {
+                  bestStringSynth = candidate;
+                  break;
+                }
+              }
+            }
           }
           const raw = (namedSynth || bestStringSynth || "").trim();
           // Trim to ~280 chars but break on sentence / clause boundary
@@ -244,8 +268,14 @@ export async function askPersona(opts: AskPersonaOptions): Promise<AskPersonaRes
             );
             return lastClause > 60 ? `${cut.slice(0, lastClause)}…` : `${cut}…`;
           })();
+          // Last-ditch fallback. Earlier this was a literal "(persona did
+          // not provide a summary)" placeholder that read terribly in the
+          // chat card. Now: if we recovered fields successfully, signal
+          // that the structured preview below carries the answer rather
+          // than displaying an apology line. The frontend renders
+          // `fields` regardless of summary content.
           const wrapped = {
-            summary: synth || "(persona did not provide a summary)",
+            summary: synth || "见下方结构化结果。",
             fields: record,
           };
           const retry = PersonaReplyShapeSchema.safeParse(wrapped);

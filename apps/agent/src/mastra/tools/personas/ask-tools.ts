@@ -156,24 +156,56 @@ function makeAskTool(cfg: AskToolConfig) {
         };
       }
       const contextBlocks = await collectContext(ctx, scope, cfg.defaultScope);
-      // Optionally pull attachment text and inject as its own context
-      // block. Soft-fail (logged) so a stale / missing ref doesn't kill
-      // the whole persona call — the LLM still has project state to
-      // work from, and the supervisor will get a clear "fields=null"
-      // signal if the persona can't proceed without source material.
-      if (textRef) {
+
+      // Resolve the attachment ref the persona should read. The LLM
+      // is supposed to pass `textRef` explicitly (the supervisor
+      // prompt insists), but it forgets often enough that we keep a
+      // server-side guarantee: Nest stuffs every `att_xxx` it sees
+      // in the user-message history into requestContext.attachmentRefs,
+      // newest last. If the LLM didn't pass a ref we fall back to the
+      // most recent one. The result: persona reliably sees the
+      // uploaded source material whenever the user attached a file,
+      // regardless of supervisor diligence.
+      let resolvedTextRef = textRef;
+      let textRefSource: "explicit" | "fallback" | "none" = textRef ? "explicit" : "none";
+      if (!resolvedTextRef) {
+        const refsRaw = execCtx?.requestContext?.get("attachmentRefs");
+        const refs = Array.isArray(refsRaw)
+          ? refsRaw.filter((r): r is string => typeof r === "string" && r.length > 0)
+          : [];
+        const fallback = refs.at(-1);
+        if (fallback) {
+          resolvedTextRef = fallback;
+          textRefSource = "fallback";
+          console.info(
+            `[ask-persona] ${cfg.agentId} textRef fallback from requestContext.attachmentRefs → ${fallback} (history depth=${refs.length})`
+          );
+        }
+      }
+
+      // Pull the attachment text and inject as its own context block.
+      // Soft-fail (logged) so a stale / missing ref doesn't kill the
+      // whole persona call — the LLM still has project state to work
+      // from, and the supervisor sees a clear "fields=null" signal
+      // if the persona can't proceed without source material.
+      if (resolvedTextRef) {
         try {
-          const sourceText = await resolveAttachmentText(textRef, { projectId: ctx.projectId });
+          const sourceText = await resolveAttachmentText(resolvedTextRef, {
+            projectId: ctx.projectId,
+          });
           if (sourceText.trim()) {
             contextBlocks.push({ heading: "Source material", body: sourceText });
+            console.info(
+              `[ask-persona] ${cfg.agentId} attached source material via ${textRefSource} ref ${resolvedTextRef} (${sourceText.length} chars)`
+            );
           } else {
             console.warn(
-              `[ask-persona] textRef=${textRef} resolved to empty text (projectId=${ctx.projectId})`
+              `[ask-persona] ${cfg.agentId} textRef=${resolvedTextRef} (${textRefSource}) resolved to empty text (projectId=${ctx.projectId})`
             );
           }
         } catch (err) {
           console.warn(
-            `[ask-persona] failed to resolve textRef=${textRef}: ${err instanceof Error ? err.message : err}`
+            `[ask-persona] ${cfg.agentId} failed to resolve textRef=${resolvedTextRef} (${textRefSource}): ${err instanceof Error ? err.message : err}`
           );
         }
       }
