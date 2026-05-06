@@ -714,6 +714,7 @@ export interface ProjectInstanceState {
 
   projectListVersion: number;
   episodesVersion: number;
+  scriptVersion: number;
   storyboardVersion: number;
   worldVersion: number;
   charactersVersion: number;
@@ -721,15 +722,16 @@ export interface ProjectInstanceState {
   propsVersion: number;
   assetsVersion: number;
 
-  // Last version the user has "seen" — sidebar shows a red dot when
-  // `xVersion > xSeenVersion`. Bumped to match the live version when the
-  // user opens (or is viewing) the corresponding panel. Only tracked for
-  // asset types that have a sidebar menu item.
+  // Last version the user has "seen" — sidebar / top-tabs show a red dot
+  // when `xVersion > xSeenVersion`. Bumped to match the live version when
+  // the user opens (or is viewing) the corresponding panel / tab.
   episodesSeenVersion: number;
   worldSeenVersion: number;
   charactersSeenVersion: number;
   scenesSeenVersion: number;
   propsSeenVersion: number;
+  scriptSeenVersion: number;
+  storyboardSeenVersion: number;
 
   // AI Image Form (merged from aiImageFormSlice)
   aiImageForm: AiImageFormNestedState;
@@ -782,6 +784,7 @@ export function createDefaultProjectInstance(): ProjectInstanceState {
 
     projectListVersion: 0,
     episodesVersion: 0,
+    scriptVersion: 0,
     storyboardVersion: 0,
     worldVersion: 0,
     charactersVersion: 0,
@@ -794,6 +797,8 @@ export function createDefaultProjectInstance(): ProjectInstanceState {
     charactersSeenVersion: 0,
     scenesSeenVersion: 0,
     propsSeenVersion: 0,
+    scriptSeenVersion: 0,
+    storyboardSeenVersion: 0,
 
     aiImageForm: createDefaultAiImageForm(),
     aiVideoForm: createDefaultAiVideoForm(),
@@ -1509,6 +1514,10 @@ export const projectSlice = createSlice({
       const inst = getInstance(state);
       if (inst) inst.episodesVersion += 1;
     },
+    touchScript: (state) => {
+      const inst = getInstance(state);
+      if (inst) inst.scriptVersion += 1;
+    },
     touchStoryboard: (state) => {
       const inst = getInstance(state);
       if (inst) inst.storyboardVersion += 1;
@@ -1539,7 +1548,9 @@ export const projectSlice = createSlice({
     // arrives.
     markAssetSeen: (
       state,
-      action: PayloadAction<"episodes" | "world" | "characters" | "scenes" | "props">
+      action: PayloadAction<
+        "episodes" | "world" | "characters" | "scenes" | "props" | "script" | "storyboard"
+      >
     ) => {
       const inst = getInstance(state);
       if (!inst) return;
@@ -1558,6 +1569,12 @@ export const projectSlice = createSlice({
           break;
         case "props":
           inst.propsSeenVersion = inst.propsVersion;
+          break;
+        case "script":
+          inst.scriptSeenVersion = inst.scriptVersion;
+          break;
+        case "storyboard":
+          inst.storyboardSeenVersion = inst.storyboardVersion;
           break;
       }
     },
@@ -1957,6 +1974,7 @@ export const {
   setProjectListLoading,
   touchProjectList,
   touchEpisodes,
+  touchScript,
   touchStoryboard,
   touchWorld,
   touchCharacters,
