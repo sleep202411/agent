@@ -6,6 +6,7 @@ import {
   batchCreateEpisode,
   batchCreateProp,
   batchCreateScene,
+  batchSaveEpisodeScripts,
   batchUpdateStoryboardRows,
   generateCharacterImage,
   generatePropImage,
@@ -22,6 +23,7 @@ import {
   queryContext,
   queryStoryboardRows,
   requireProjectParams,
+  saveEpisodeScript,
   saveProjectMeta,
   showDrafts,
   showOptions,
@@ -104,6 +106,8 @@ export const storyosAgent = new Agent({
     batch_update_storyboard_rows: batchUpdateStoryboardRows,
     delete_shot: deleteShot,
     add_shot: addShot,
+    save_episode_script: saveEpisodeScript,
+    batch_save_episode_scripts: batchSaveEpisodeScripts,
 
     // ─── Image generation ──────────────────────────────
     // Atomic single-image calls — blocking 5–30s per asset. For bulk
