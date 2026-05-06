@@ -12,7 +12,11 @@ import {
   generatePropImage,
   generateSceneImage,
   configureParams,
+  deleteCharacter,
   deleteEpisode,
+  deleteEpisodeScript,
+  deleteProp,
+  deleteScene,
   deleteShot,
   evaluateDrafts,
   explainCurrentState,
@@ -27,8 +31,11 @@ import {
   saveProjectMeta,
   showDrafts,
   showOptions,
+  updateCharacter,
   updateEpisode,
   updateProject,
+  updateProp,
+  updateScene,
   updateStoryboardRow,
 } from "../tools/meta";
 import {
@@ -108,6 +115,13 @@ export const storyosAgent = new Agent({
     add_shot: addShot,
     save_episode_script: saveEpisodeScript,
     batch_save_episode_scripts: batchSaveEpisodeScripts,
+    delete_episode_script: deleteEpisodeScript,
+    update_character: updateCharacter,
+    delete_character: deleteCharacter,
+    update_scene: updateScene,
+    delete_scene: deleteScene,
+    update_prop: updateProp,
+    delete_prop: deleteProp,
 
     // ─── Image generation ──────────────────────────────
     // Atomic single-image calls — blocking 5–30s per asset. For bulk

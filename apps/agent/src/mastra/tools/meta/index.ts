@@ -32,6 +32,15 @@ export { batchCreateCharacter, batchCreateScene, batchCreateProp } from "./batch
 export { batchCreateEpisode } from "./batch-create-episodes";
 export { saveEpisodeScript, batchSaveEpisodeScripts } from "./save-episode-script";
 export {
+  updateCharacter,
+  deleteCharacter,
+  updateScene,
+  deleteScene,
+  updateProp,
+  deleteProp,
+  deleteEpisodeScript,
+} from "./asset-crud";
+export {
   generateCharacterImage,
   generateSceneImage,
   generatePropImage,
