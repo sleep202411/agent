@@ -888,6 +888,7 @@
     "contactCopied": "已复制"
   },
   "sidebar": {
+    "home": "首页",
     "projects": "项目",
     "episodes": "剧集",
     "characters": "角色",
@@ -2285,6 +2286,8 @@
     "epActivity": "本集动态",
     "promptPlaceholder": "描述你的故事，或上传小说，AI 将为你生成完整的短剧视频...",
     "myProjects": "我的项目",
+    "recentProjects": "最近项目",
+    "viewAll": "查看全部",
     "noProjects": "还没有项目",
     "noProjectsHint": "创建你的第一个项目开始创作吧",
     "createProject": "创建项目",

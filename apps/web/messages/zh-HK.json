@@ -888,6 +888,7 @@
     "contactCopied": "已複製"
   },
   "sidebar": {
+    "home": "首頁",
     "projects": "專案",
     "episodes": "劇集",
     "characters": "角色",
@@ -2285,6 +2286,8 @@
     "epActivity": "本集動態",
     "promptPlaceholder": "描述你的故事，或上傳小說，AI 將為你生成完整的短劇影片...",
     "myProjects": "我的專案",
+    "recentProjects": "最近專案",
+    "viewAll": "查看全部",
     "noProjects": "還沒有專案",
     "noProjectsHint": "建立你的第一個專案開始創作吧",
     "createProject": "建立專案",

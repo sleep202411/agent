@@ -888,6 +888,7 @@
     "contactCopied": "Copied"
   },
   "sidebar": {
+    "home": "Home",
     "projects": "Projects",
     "episodes": "Episodes",
     "characters": "Characters",
@@ -2285,6 +2286,8 @@
     "epActivity": "Episode Activity",
     "promptPlaceholder": "Describe your story, upload a novel, and AI will generate a complete short video...",
     "myProjects": "My Projects",
+    "recentProjects": "Recent Projects",
+    "viewAll": "View all",
     "noProjects": "No projects yet",
     "noProjectsHint": "Create your first project to get started",
     "createProject": "Create Project",
