@@ -1,8 +1,17 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ComponentType, type SVGProps } from "react";
 import { useRouter } from "next/navigation";
-import { IconArrowUp, IconLoader2, IconPaperclip, IconSparkles, IconX } from "@tabler/icons-react";
+import {
+  IconArrowUp,
+  IconBuildingStore,
+  IconLayoutList,
+  IconLoader2,
+  IconMask,
+  IconPaperclip,
+  IconUsers,
+  IconX,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
@@ -24,16 +33,65 @@ function isSupportedScript(file: File) {
   return ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext));
 }
 
+type IconType = ComponentType<SVGProps<SVGSVGElement>>;
+
+/**
+ * Pin which crew role handles the first agent message after this composer
+ * lands the user in the workspace chat. Same intent as the in-chat
+ * `ForcePersonaPills` — but this composer feeds `seed.agent`, which the
+ * workspace consumer reads via `mapSeedAgent` and dispatches to
+ * `setAgentType`. Pills are hidden when a script file is attached: that
+ * path bypasses chat entirely and lands in the /produce wizard, where the
+ * pill choice would be silently dropped.
+ *
+ * Tones / icons mirror `ASSISTANT_PERSONAS` so the entry composer reads
+ * as the same crew the user will meet inside the project.
+ */
+const STUDIO_AGENT_PILLS: {
+  agent: StudioAgent;
+  labelKey: string;
+  icon: IconType;
+  /** Tailwind classes applied when the pill is active. Matches
+   *  PERSONA_TONE_CLASSES in `apps/web/src/lib/assistant/personas.ts`. */
+  active: string;
+}[] = [
+  {
+    agent: "episode",
+    labelKey: "forcePersonaEpisodePlanner",
+    icon: IconLayoutList,
+    active: "bg-lime-500/10 text-lime-300 border-lime-400/30",
+  },
+  {
+    agent: "character",
+    labelKey: "forcePersonaCharacter",
+    icon: IconUsers,
+    active: "bg-amber-500/10 text-amber-300 border-amber-400/30",
+  },
+  {
+    agent: "scene",
+    labelKey: "forcePersonaScene",
+    icon: IconBuildingStore,
+    active: "bg-teal-500/10 text-teal-300 border-teal-400/30",
+  },
+  {
+    agent: "prop",
+    labelKey: "forcePersonaProp",
+    icon: IconMask,
+    active: "bg-orange-500/10 text-orange-300 border-orange-400/30",
+  },
+];
+
 export function StudioHomeComposer() {
   const t = useTranslations("workspace");
   const tp = useTranslations("project");
   const tc = useTranslations("common");
+  const ta = useTranslations("ai");
   const router = useRouter();
 
   const [prompt, setPrompt] = useState("");
-  // Agent pills UI removed — keep a default in seed payload so
-  // downstream consumers that still read `seed.agent` get a valid value.
-  const agent: StudioAgent = "character";
+  // null = no pill pinned; submit defaults to "character" so the seed
+  // payload stays a valid StudioAgent for downstream consumers.
+  const [agent, setAgent] = useState<StudioAgent | null>(null);
   const [focused, setFocused] = useState(false);
   const [scriptFile, setScriptFile] = useState<File | null>(null);
   const [scriptAttachment, setScriptAttachment] = useState<StudioSeedAttachment | null>(null);
@@ -113,7 +171,9 @@ export function StudioHomeComposer() {
       // iframe; now that everything is same-origin Next.js, the storage
       // hop is enough.
       const seed: StudioSeed = {
-        agent,
+        // Pin pill choice; fall back to "character" so the seed shape
+        // stays valid when no pill is selected (matches old default).
+        agent: agent ?? "character",
         prompt: prompt.trim(),
         attachment: scriptAttachment ?? undefined,
       };
@@ -193,6 +253,41 @@ export function StudioHomeComposer() {
                   <IconX className="size-3" />
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Persona pin pills — only meaningful for the freeform-chat
+              path. With a file attached, submit goes to /produce instead
+              and the pill choice would be silently ignored, so we hide
+              the row to make the two paths visually distinct. */}
+          {!scriptFile && !scriptAttachment && (
+            <div
+              className={cn(
+                "flex items-center gap-1.5 overflow-x-auto px-4 pb-2",
+                "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              )}
+            >
+              {STUDIO_AGENT_PILLS.map(({ agent: key, labelKey, icon: Icon, active }) => {
+                const isActive = agent === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => setAgent(isActive ? null : key)}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors",
+                      "disabled:cursor-not-allowed disabled:opacity-50",
+                      isActive
+                        ? active
+                        : "border-white/15 bg-transparent text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="size-3" />
+                    {ta(labelKey)}
+                  </button>
+                );
+              })}
             </div>
           )}
 
