@@ -44,20 +44,6 @@ type MastraChatBody = {
     shotsPerEpisode?: unknown;
     targetEpisodeCount?: unknown;
   };
-  /** Button-driven workflow trigger. Supervisor reads from requestContext and
-   * skips LLM routing, dispatching the named workflow directly. */
-  forceEnterWorkflow?: {
-    workflowName?: unknown;
-    inputData?: unknown;
-  };
-  /** HITL confirm/revise on an in-flight suspended workflow. */
-  confirmWorkflow?: {
-    runId?: unknown;
-    approved?: unknown;
-    feedback?: unknown;
-    /** parse_script-only opt-in to wipe existing episodes before commit. */
-    replaceExisting?: unknown;
-  };
   /**
    * User clicked "儲存並繼續" on the ProjectParamsForm. Nest saves to Java and
    * tags the user message with <PROJECT_PARAMS_CONFIRMED /> so supervisor
@@ -68,25 +54,10 @@ type MastraChatBody = {
     chapterLength?: unknown;
     stylePainting?: unknown;
     dialogLanguage?: unknown;
-    /**
-     * Not persisted by Java (no column yet) — client-only; we surface it
-     * in the <PROJECT_PARAMS_CONFIRMED /> marker so the supervisor sees the
-     * user's target episode count and threads it into invoke_workflow
-     * inputData.
-     */
+    /** Surfaced in the <PROJECT_PARAMS_CONFIRMED /> marker for supervisor. */
     targetEpisodeCount?: unknown;
-    /** Same story as targetEpisodeCount. Threaded via marker + context. */
+    /** Same — threaded via marker + context. */
     shotsPerEpisode?: unknown;
-    /**
-     * Workflow to auto-start once params are saved. Supervisor stashes this
-     * in the require_project_params tool-call input when it already knows
-     * the target; frontend forwards it verbatim. When present, Nest starts
-     * the workflow directly (no LLM turn) and seeds a canned "规划完成" ack.
-     */
-    onConfirmWorkflow?: {
-      workflowName?: unknown;
-      inputData?: unknown;
-    };
   };
 };
 
@@ -127,41 +98,6 @@ export class MastraProxyController {
       );
     }
 
-    // Extract forceEnterWorkflow (button-driven dispatch).
-    const forceEnterWorkflow =
-      body.forceEnterWorkflow &&
-      typeof body.forceEnterWorkflow.workflowName === 'string' &&
-      body.forceEnterWorkflow.workflowName.length > 0
-        ? {
-            workflowName: body.forceEnterWorkflow.workflowName,
-            inputData:
-              body.forceEnterWorkflow.inputData &&
-              typeof body.forceEnterWorkflow.inputData === 'object'
-                ? (body.forceEnterWorkflow.inputData as Record<string, unknown>)
-                : {},
-          }
-        : undefined;
-
-    // Extract confirmWorkflow (HITL 满意 / 修改 button).
-    const confirmWorkflow =
-      body.confirmWorkflow &&
-      typeof body.confirmWorkflow.runId === 'string' &&
-      body.confirmWorkflow.runId.length > 0 &&
-      typeof body.confirmWorkflow.approved === 'boolean'
-        ? {
-            runId: body.confirmWorkflow.runId,
-            approved: body.confirmWorkflow.approved,
-            feedback:
-              typeof body.confirmWorkflow.feedback === 'string'
-                ? body.confirmWorkflow.feedback
-                : undefined,
-            replaceExisting:
-              typeof body.confirmWorkflow.replaceExisting === 'boolean'
-                ? body.confirmWorkflow.replaceExisting
-                : undefined,
-          }
-        : undefined;
-
     // Extract confirmProjectParams (ProjectParamsForm 儲存並繼續 button).
     const confirmProjectParams =
       body.confirmProjectParams &&
@@ -189,49 +125,6 @@ export class MastraProxyController {
               Number.isFinite(body.confirmProjectParams.shotsPerEpisode) &&
               body.confirmProjectParams.shotsPerEpisode > 0
                 ? body.confirmProjectParams.shotsPerEpisode
-                : undefined,
-            onConfirmWorkflow:
-              body.confirmProjectParams.onConfirmWorkflow &&
-              typeof (
-                body.confirmProjectParams.onConfirmWorkflow as Record<
-                  string,
-                  unknown
-                >
-              ).workflowName === 'string' &&
-              (
-                (
-                  body.confirmProjectParams.onConfirmWorkflow as Record<
-                    string,
-                    unknown
-                  >
-                ).workflowName as string
-              ).length > 0
-                ? {
-                    workflowName: (
-                      body.confirmProjectParams.onConfirmWorkflow as Record<
-                        string,
-                        unknown
-                      >
-                    ).workflowName as string,
-                    inputData:
-                      (
-                        body.confirmProjectParams.onConfirmWorkflow as Record<
-                          string,
-                          unknown
-                        >
-                      ).inputData &&
-                      typeof (
-                        body.confirmProjectParams.onConfirmWorkflow as Record<
-                          string,
-                          unknown
-                        >
-                      ).inputData === 'object'
-                        ? ((
-                            body.confirmProjectParams
-                              .onConfirmWorkflow as Record<string, unknown>
-                          ).inputData as Record<string, unknown>)
-                        : {},
-                  }
                 : undefined,
           }
         : undefined;
@@ -280,7 +173,6 @@ export class MastraProxyController {
           ? body.workspaceContext.targetEpisodeCount
           : undefined,
       userTier: user.userLevel ?? 'free',
-      ...(forceEnterWorkflow ? { forceEnterWorkflow } : {}),
     };
 
     // Extract attachment text server-side, strip file parts. See
@@ -302,60 +194,12 @@ export class MastraProxyController {
       // Keep going — text parts still reach the agent.
     }
 
-    // ── Short-circuit: HITL confirm button (no LLM needed) ──
-    //
-    // User clicking "满意 / 我要修改" on a suspended workflow card is a
-    // fully-specified action: we already know the runId + approved +
-    // feedback. Routing it through the supervisor just so it can decode
-    // a marker and call resume_workflow wastes an LLM turn and depends
-    // on prompt quality for a mechanical operation. Skip LLM, call the
-    // engine's resume endpoint directly, and seed a canned ack message.
-    //
-    // Gate: only when confirmWorkflow is the SOLE button-triggered
-    // signal. If it rides together with forceEnterWorkflow or
-    // confirmProjectParams (shouldn't happen in current UI, but the
-    // transport type allows it), fall through to the normal LLM path.
-    if (confirmWorkflow && !forceEnterWorkflow && !confirmProjectParams) {
-      return this.handleConfirmWorkflowShortCircuit({
-        body,
-        originalMessages,
-        confirmWorkflow,
-        user,
-        req,
-        res,
-      });
-    }
-
-    // ── Short-circuit: FORCE_WORKFLOW button (no LLM needed) ──
-    //
-    // Same idea as the confirmWorkflow path above. The frontend button
-    // already provides {workflowName, inputData} — LLM's only role in
-    // the legacy path was decoding the XML marker + generating warm
-    // narration + calling invoke_workflow with the exact values. All
-    // three are mechanical for phase-advance buttons; the user is
-    // already inside a flow and a canned "已派发" is sufficient.
-    //
-    // Gate mirrors confirmWorkflow's: only when forceEnterWorkflow is
-    // the SOLE button signal.
-    if (forceEnterWorkflow && !confirmWorkflow && !confirmProjectParams) {
-      return this.handleForceWorkflowShortCircuit({
-        body,
-        originalMessages,
-        forceEnterWorkflow,
-        user,
-        req,
-        res,
-      });
-    }
-
     // ── Short-circuit: PROJECT_PARAMS_CONFIRMED button (no LLM needed) ──
     //
-    // Form submit provides the 4 core params + optional onConfirmWorkflow
-    // (supervisor stashes it in the tool-call input when it already knows
-    // the target). We: (1) save to Java, (2) kick cover generation as a
-    // fire-and-forget side effect, (3) if onConfirmWorkflow is set, start
-    // that workflow directly, (4) seed a "规划完成" ack. No LLM turn.
-    if (confirmProjectParams && !confirmWorkflow && !forceEnterWorkflow) {
+    // Form submit provides the 4 core params (+ optional targetEpisodeCount /
+    // shotsPerEpisode). We save to Java, kick cover generation as a fire-and-
+    // forget side effect, and seed a canned "规划完成" ack message. No LLM turn.
+    if (confirmProjectParams) {
       return this.handleConfirmProjectParamsShortCircuit({
         body,
         originalMessages,
@@ -364,50 +208,6 @@ export class MastraProxyController {
         req,
         res,
       });
-    }
-
-    // ── Legacy path: confirmProjectParams rides together with another
-    // button signal (shouldn't happen in current UI). Keep the old
-    // save-to-Java + marker injection so the LLM handles it.
-    if (confirmProjectParams) {
-      try {
-        const headers: Record<string, string> = {
-          'accept-language':
-            (req.headers['accept-language'] as string | undefined) ?? 'zh-CN',
-        };
-        const cookie = req.headers.cookie as string | undefined;
-        if (cookie) headers.cookie = cookie;
-        const current = await this.workspace.getProjectDetail(
-          headers,
-          body.projectId,
-        );
-        const worldIdForSave = body.workspaceContext?.worldId
-          ? String(body.workspaceContext.worldId)
-          : current.worldId;
-        await this.workspace.updateProject(headers, {
-          id: body.projectId,
-          worldId: worldIdForSave,
-          name: current.name,
-          description: current.description,
-          type: current.type,
-          episode: current.episode,
-          imagePath: current.imagePath,
-          aspectRatioType: confirmProjectParams.aspectRatioType,
-          chapterLength: confirmProjectParams.chapterLength,
-          stylePainting: confirmProjectParams.stylePainting,
-          dialogLanguage: confirmProjectParams.dialogLanguage,
-        });
-        this.logger.log(
-          `confirmProjectParams (legacy) saved for ${body.projectId}: ${confirmProjectParams.aspectRatioType}/${confirmProjectParams.chapterLength}/${confirmProjectParams.stylePainting}/${confirmProjectParams.dialogLanguage}`,
-        );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`confirmProjectParams Java save failed: ${msg}`);
-        throw new HttpException(
-          { message: `保存项目参数失败: ${msg}` },
-          HttpStatus.BAD_GATEWAY,
-        );
-      }
     }
 
     // Button-driven signals: inject XML-style markers into the last user
@@ -438,23 +238,6 @@ export class MastraProxyController {
       markers.push(`<FORCED_PERSONA persona="${forcedPersona}" />`);
     }
 
-    if (confirmProjectParams) {
-      const extras: string[] = [];
-      if (typeof confirmProjectParams.targetEpisodeCount === 'number') {
-        extras.push(
-          `targetEpisodeCount="${confirmProjectParams.targetEpisodeCount}"`,
-        );
-      }
-      if (typeof confirmProjectParams.shotsPerEpisode === 'number') {
-        extras.push(
-          `shotsPerEpisode="${confirmProjectParams.shotsPerEpisode}"`,
-        );
-      }
-      const extrasSuffix = extras.length > 0 ? ` ${extras.join(' ')}` : '';
-      markers.push(
-        `<PROJECT_PARAMS_CONFIRMED aspectRatioType="${confirmProjectParams.aspectRatioType}" chapterLength="${confirmProjectParams.chapterLength}" stylePainting="${confirmProjectParams.stylePainting}" dialogLanguage="${confirmProjectParams.dialogLanguage}"${extrasSuffix} />`,
-      );
-    }
     if (markers.length > 0) {
       const markerText = `\n\n${markers.join('\n')}`;
       for (let i = (messages as unknown[]).length - 1; i >= 0; i--) {
@@ -480,9 +263,9 @@ export class MastraProxyController {
     // dispatch. CAS-guarded in Redis so two concurrent submits
     // (multi-tab / double-click / retry storms) can't both win.
     // Released by AgentStreamService.consume on success / failure.
-    // Short-circuit branches (confirmProjectParams / forceEnterWorkflow
-    // / confirmWorkflow) above don't take the gate — they're follow-on
-    // signals on top of an already-committed turn, not new dispatches.
+    // The confirmProjectParams short-circuit above doesn't take this
+    // gate — it's a follow-on signal on top of an already-committed
+    // turn, not a new dispatch.
     const turnId = randomUUID();
     const gate = await this.agentState.transition(
       body.projectId,
@@ -761,337 +544,15 @@ export class MastraProxyController {
   }
 
   /**
-   * HITL confirm button short-circuit — no LLM turn.
-   *
-   * Flow:
-   *  1. Persist the user's button-label message so the chat history
-   *     matches the normal path
-   *  2. Call agent's `/workflow/:runId/confirm` directly (resume job
-   *     enqueued without a supervisor roundtrip)
-   *  3. Synthesize a canned assistant ack + write to the message store
-   *  4. Return the usual envelope so the frontend's WS pipeline can pick
-   *     up the ack via `message_added`
-   */
-  private async handleConfirmWorkflowShortCircuit(args: {
-    body: MastraChatBody;
-    originalMessages: unknown[];
-    confirmWorkflow: {
-      runId: string;
-      approved: boolean;
-      feedback: string | undefined;
-      replaceExisting: boolean | undefined;
-    };
-    user: AuthUser;
-    req: Request;
-    res: Response;
-  }): Promise<void> {
-    const { body, originalMessages, confirmWorkflow, user, req, res } = args;
-    const projectId = body.projectId!;
-
-    // Flip to 'running' FIRST so the terminal 'idle' at end is a real
-    // transition (chat-session dedups identical states). Without this, if
-    // state was already 'idle' the final setAgentState('idle') is a no-op
-    // on client and `finalizeTurnOnIdle` never fires → sending UI stays.
-    await this.store.setAgentState(projectId, 'running').catch(() => {});
-
-    try {
-      await this.persistInboundMessages(projectId, originalMessages);
-    } catch (err) {
-      this.logger.warn(
-        `persistInboundMessages (confirm short-circuit) failed project=${projectId}: ${err instanceof Error ? err.message : err}`,
-      );
-    }
-
-    const resumeContext = {
-      userId: user.userId,
-      projectId,
-      worldId: body.workspaceContext?.worldId
-        ? String(body.workspaceContext.worldId)
-        : undefined,
-      episodeId: body.workspaceContext?.episodeId
-        ? String(body.workspaceContext.episodeId)
-        : undefined,
-      locale:
-        typeof body.workspaceContext?.locale === 'string'
-          ? body.workspaceContext.locale
-          : undefined,
-      userTier: user.userLevel ?? 'free',
-    };
-    const cookie = req.headers.cookie as string | undefined;
-    const acceptLanguage =
-      (req.headers['accept-language'] as string | undefined) ?? 'zh-CN';
-    const resumeHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'accept-language': acceptLanguage,
-      'x-storyos-context': JSON.stringify(resumeContext),
-    };
-    if (cookie) resumeHeaders.cookie = cookie;
-
-    const resumeUrl = `${this.mastraUrl}/workflow/${encodeURIComponent(confirmWorkflow.runId)}/confirm`;
-    let completionPayload: unknown = null;
-    let failurePayload: unknown = null;
-    try {
-      const resp = await fetch(resumeUrl, {
-        method: 'POST',
-        headers: resumeHeaders,
-        body: JSON.stringify({
-          approved: confirmWorkflow.approved,
-          feedback: confirmWorkflow.feedback,
-          // parse_script-only opt-in to wipe existing episodes before
-          // commit. Other phases ignore it; pass-through keeps Nest
-          // workflow-agnostic.
-          ...(confirmWorkflow.replaceExisting !== undefined
-            ? { replaceExisting: confirmWorkflow.replaceExisting }
-            : {}),
-          // Tell the agent NOT to side-channel-emit workflow_completed /
-          // workflow_failed: we'll embed the returned payload into our own
-          // synthetic message below so the card + any follow-up text live
-          // in one bubble, matching the NL path's apply_phase_drafts tool.
-          emitLifecycleMessage: false,
-        }),
-      });
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => '');
-        this.logger.error(
-          `Workflow resume failed runId=${confirmWorkflow.runId} status=${resp.status}: ${text.slice(0, 300)}`,
-        );
-        throw new HttpException(
-          { message: `Workflow resume failed: ${text.slice(0, 300)}` },
-          HttpStatus.BAD_GATEWAY,
-        );
-      }
-      const data = (await resp.json().catch(() => ({}))) as {
-        completion?: unknown;
-        failure?: unknown;
-      };
-      completionPayload = data.completion ?? null;
-      failurePayload = data.failure ?? null;
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(`Workflow resume fetch failed: ${msg}`);
-      throw new HttpException(
-        { message: `Workflow resume unavailable: ${msg}` },
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-
-    // Synthetic assistant message — a `tool-apply_phase_drafts` part whose
-    // output carries the `completion` / `failure` payload the agent just
-    // returned. Frontend renders this part with the same WorkflowCompleted
-    // / WorkflowFailed card used elsewhere (see message-bubble.tsx's
-    // apply_phase_drafts branch). Follow-up text, if we still want one
-    // for the revise case, rides in the SAME message's parts array so
-    // card + text never fragment into sibling bubbles.
-    const toolCallId = `apply-${confirmWorkflow.runId}`;
-    const toolPart = {
-      type: 'tool-apply_phase_drafts',
-      toolCallId,
-      state: 'output-available',
-      input: {
-        runId: confirmWorkflow.runId,
-        approved: confirmWorkflow.approved,
-        feedback: confirmWorkflow.feedback,
-      },
-      output: {
-        outcome: confirmWorkflow.approved ? 'committed' : 'rejected',
-        completion: completionPayload,
-        failure: failurePayload,
-      },
-    };
-    // Approved path: card (with summary + next-step buttons) IS the reply
-    // — no follow-up text. Revise path: surface the user's feedback so
-    // they know the handoff landed, but keep it tight.
-    const parts: unknown[] = [toolPart];
-    if (!confirmWorkflow.approved) {
-      const ackText = confirmWorkflow.feedback
-        ? `了解，团队会按"${confirmWorkflow.feedback}"的方向再过一遍，稍后请您再看一眼。`
-        : '了解，团队会按您的反馈再过一遍，稍后请您再看一眼。';
-      parts.push({ type: 'text', text: ackText, state: 'done' });
-    }
-    const ackId = randomUUID();
-    await this.store.addMessage(projectId, {
-      id: ackId,
-      role: 'assistant',
-      parts,
-    } as StoredMessage);
-
-    this.logger.log(
-      `confirmWorkflow short-circuit runId=${confirmWorkflow.runId} approved=${confirmWorkflow.approved} project=${projectId} synthMsgId=${ackId} completionPresent=${!!completionPayload} failurePresent=${!!failurePayload}`,
-    );
-
-    // Flip agent_state to 'idle' so the web client's WS listener fires
-    // `finalizeTurnOnIdle` — clears the composer's sending/streaming flags
-    // (normally done by the SSE consumer at turn end; short-circuits skip
-    // SSE entirely, so we set it explicitly here).
-    await this.store.setAgentState(projectId, 'idle').catch((err) => {
-      this.logger.warn(
-        `confirmWorkflow short-circuit setAgentState(idle) failed: ${err instanceof Error ? err.message : err}`,
-      );
-    });
-
-    res.status(HttpStatus.ACCEPTED).json({
-      agentInstanceId: randomUUID(),
-      conversationId: projectId,
-      seedMessageId: ackId,
-    });
-  }
-
-  /**
-   * FORCE_WORKFLOW button short-circuit — no LLM turn.
-   *
-   * The frontend button dispatches {workflowName, inputData} verbatim;
-   * the legacy path asked the LLM to decode a marker, write a warm
-   * 3-段 narration, then call invoke_workflow with the same values.
-   * Nothing about that required LLM reasoning. Skip it: call the
-   * engine's `/workflow/start` endpoint directly, seed a canned ack.
-   */
-  private async handleForceWorkflowShortCircuit(args: {
-    body: MastraChatBody;
-    originalMessages: unknown[];
-    forceEnterWorkflow: {
-      workflowName: string;
-      inputData: Record<string, unknown>;
-    };
-    user: AuthUser;
-    req: Request;
-    res: Response;
-  }): Promise<void> {
-    const { body, originalMessages, forceEnterWorkflow, user, req, res } = args;
-    const projectId = body.projectId!;
-
-    // See handleConfirmWorkflowShortCircuit — flip to 'running' first so
-    // terminal 'idle' is always a real state transition.
-    await this.store.setAgentState(projectId, 'running').catch(() => {});
-
-    try {
-      await this.persistInboundMessages(projectId, originalMessages);
-    } catch (err) {
-      this.logger.warn(
-        `persistInboundMessages (force short-circuit) failed project=${projectId}: ${err instanceof Error ? err.message : err}`,
-      );
-    }
-
-    const startContext = {
-      userId: user.userId,
-      projectId,
-      worldId: body.workspaceContext?.worldId
-        ? String(body.workspaceContext.worldId)
-        : undefined,
-      episodeId: body.workspaceContext?.episodeId
-        ? String(body.workspaceContext.episodeId)
-        : undefined,
-      locale:
-        typeof body.workspaceContext?.locale === 'string'
-          ? body.workspaceContext.locale
-          : undefined,
-      dialogLanguage:
-        typeof body.workspaceContext?.dialogLanguage === 'string'
-          ? body.workspaceContext.dialogLanguage
-          : undefined,
-      stylePainting:
-        typeof body.workspaceContext?.stylePainting === 'string'
-          ? body.workspaceContext.stylePainting
-          : undefined,
-      shotsPerEpisode:
-        typeof body.workspaceContext?.shotsPerEpisode === 'number' &&
-        Number.isFinite(body.workspaceContext.shotsPerEpisode)
-          ? body.workspaceContext.shotsPerEpisode
-          : undefined,
-      targetEpisodeCount:
-        typeof body.workspaceContext?.targetEpisodeCount === 'number' &&
-        Number.isFinite(body.workspaceContext.targetEpisodeCount) &&
-        body.workspaceContext.targetEpisodeCount > 0
-          ? body.workspaceContext.targetEpisodeCount
-          : undefined,
-      userTier: user.userLevel ?? 'free',
-    };
-    const cookie = req.headers.cookie as string | undefined;
-    const acceptLanguage =
-      (req.headers['accept-language'] as string | undefined) ?? 'zh-CN';
-    const startHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'accept-language': acceptLanguage,
-      'x-storyos-context': JSON.stringify(startContext),
-    };
-    if (cookie) startHeaders.cookie = cookie;
-
-    const startUrl = `${this.mastraUrl}/workflow/start`;
-    try {
-      const resp = await fetch(startUrl, {
-        method: 'POST',
-        headers: startHeaders,
-        body: JSON.stringify({
-          workflowName: forceEnterWorkflow.workflowName,
-          inputData: forceEnterWorkflow.inputData,
-        }),
-      });
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => '');
-        this.logger.error(
-          `Workflow start failed workflowName=${forceEnterWorkflow.workflowName} status=${resp.status}: ${text.slice(0, 300)}`,
-        );
-        throw new HttpException(
-          { message: `Workflow start failed: ${text.slice(0, 300)}` },
-          HttpStatus.BAD_GATEWAY,
-        );
-      }
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      this.logger.error(`Workflow start fetch failed: ${msg}`);
-      throw new HttpException(
-        { message: `Workflow start unavailable: ${msg}` },
-        HttpStatus.BAD_GATEWAY,
-      );
-    }
-
-    // Canned ack. Keep it dry — the workflow card the engine publishes
-    // next (workflow_started / workflow_progress) carries the actual
-    // name, so repeating it here would just add noise. Locale-aware so
-    // zh-HK / zh-TW users get traditional characters and en-* users
-    // get an English ack instead of mixed-script noise.
-    const ackText = buildDispatchAck(
-      forceEnterWorkflow.workflowName,
-      acceptLanguage,
-    );
-    const ackId = randomUUID();
-    await this.store.addMessage(projectId, {
-      id: ackId,
-      role: 'assistant',
-      parts: [{ type: 'text', text: ackText, state: 'done' }],
-    } as StoredMessage);
-
-    this.logger.log(
-      `forceEnterWorkflow short-circuit workflowName=${forceEnterWorkflow.workflowName} project=${projectId}`,
-    );
-
-    await this.store.setAgentState(projectId, 'idle').catch((err) => {
-      this.logger.warn(
-        `forceEnterWorkflow short-circuit setAgentState(idle) failed: ${err instanceof Error ? err.message : err}`,
-      );
-    });
-
-    res.status(HttpStatus.ACCEPTED).json({
-      agentInstanceId: randomUUID(),
-      conversationId: projectId,
-      seedMessageId: ackId,
-    });
-  }
-
-  /**
    * ProjectParamsForm submit short-circuit — no LLM turn.
    *
-   * Flow (mirrors what the supervisor did in the legacy marker path,
-   * minus the narration personalization which becomes a template):
+   * Flow:
    *   1. Persist user's button-label message
    *   2. Save 4 core params to Java
    *   3. Fire-and-forget cover generation (idempotent; skipped if
    *      project already has imagePath)
    *   4. Seed a canned "规划完成" ack message with the user's picked
    *      values interpolated
-   *   5. If onConfirmWorkflow is set, POST /workflow/start to dispatch
-   *      without another LLM hop
    */
   private async handleConfirmProjectParamsShortCircuit(args: {
     body: MastraChatBody;
@@ -1103,10 +564,6 @@ export class MastraProxyController {
       dialogLanguage: string;
       targetEpisodeCount?: number;
       shotsPerEpisode?: number;
-      onConfirmWorkflow?: {
-        workflowName: string;
-        inputData: Record<string, unknown>;
-      };
     };
     user: AuthUser;
     req: Request;
@@ -1162,7 +619,7 @@ export class MastraProxyController {
         dialogLanguage: confirmProjectParams.dialogLanguage,
       });
       this.logger.log(
-        `confirmProjectParams short-circuit saved for ${projectId}: ${confirmProjectParams.aspectRatioType}/${confirmProjectParams.chapterLength}/${confirmProjectParams.stylePainting}/${confirmProjectParams.dialogLanguage} targetEpisodeCount=${confirmProjectParams.targetEpisodeCount ?? '-'} shotsPerEpisode=${confirmProjectParams.shotsPerEpisode ?? '-'} next=${confirmProjectParams.onConfirmWorkflow?.workflowName ?? '-'}`,
+        `confirmProjectParams short-circuit saved for ${projectId}: ${confirmProjectParams.aspectRatioType}/${confirmProjectParams.chapterLength}/${confirmProjectParams.stylePainting}/${confirmProjectParams.dialogLanguage} targetEpisodeCount=${confirmProjectParams.targetEpisodeCount ?? '-'} shotsPerEpisode=${confirmProjectParams.shotsPerEpisode ?? '-'}`,
       );
       await this.entityEvents.publish(user.userId, {
         entity: 'project',
@@ -1180,8 +637,7 @@ export class MastraProxyController {
       );
     }
 
-    // Agent-facing context — used for both the cover fire-and-forget
-    // and the optional workflow dispatch below.
+    // Agent-facing context — used for the cover fire-and-forget below.
     const agentContext = {
       userId: user.userId,
       projectId,
@@ -1210,7 +666,7 @@ export class MastraProxyController {
 
     // Fire-and-forget: generate_project_cover is idempotent, so we don't
     // block the response on it. If it fails the user still gets the ack
-    // + workflow, and the next LLM turn can retry.
+    // and the next LLM turn can retry.
     void fetch(`${this.mastraUrl}/project/cover/generate`, {
       method: 'POST',
       headers: agentHeaders,
@@ -1232,16 +688,13 @@ export class MastraProxyController {
       typeof confirmProjectParams.targetEpisodeCount === 'number'
         ? `共 ${confirmProjectParams.targetEpisodeCount} 集、`
         : '';
-    const nextStepLine = confirmProjectParams.onConfirmWorkflow
-      ? `下一步会继续推进「${WORKFLOW_ACK_LABELS[confirmProjectParams.onConfirmWorkflow.workflowName] ?? '创作流程'}」。`
-      : '下一步等您发出下一个创作指令。';
     const projectPart = projectName ? ` 《${projectName}》` : '';
     const ackText = [
       '规划完成',
       '',
       '• 参数已同步给团队。',
       `• 团队将根据您确认的 ${aspectLabel}、单集 ${confirmProjectParams.chapterLength} 分钟、${episodesSummary}${dialogLabel} 对白的需求继续推进${projectPart}。`,
-      `• ${nextStepLine}`,
+      '• 下一步等您发出下一个创作指令。',
     ].join('\n');
     const ackId = randomUUID();
     await this.store.addMessage(projectId, {
@@ -1249,46 +702,6 @@ export class MastraProxyController {
       role: 'assistant',
       parts: [{ type: 'text', text: ackText, state: 'done' }],
     } as StoredMessage);
-
-    // Auto-start the declared workflow, if any. Nest talks to the agent's
-    // existing /workflow/start endpoint — same path a FORCE_WORKFLOW
-    // short-circuit uses. Missing onConfirmWorkflow is fine: the user
-    // will simply type their next ask and the LLM routes from there.
-    if (confirmProjectParams.onConfirmWorkflow) {
-      try {
-        const resp = await fetch(`${this.mastraUrl}/workflow/start`, {
-          method: 'POST',
-          headers: agentHeaders,
-          body: JSON.stringify({
-            workflowName: confirmProjectParams.onConfirmWorkflow.workflowName,
-            inputData: confirmProjectParams.onConfirmWorkflow.inputData,
-          }),
-        });
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => '');
-          this.logger.error(
-            `Post-params workflow start failed workflow=${confirmProjectParams.onConfirmWorkflow.workflowName} status=${resp.status}: ${text.slice(0, 300)}`,
-          );
-          // Don't throw — params were saved + ack was delivered; surface
-          // the workflow failure as a follow-up assistant message.
-          const errId = randomUUID();
-          await this.store.addMessage(projectId, {
-            id: errId,
-            role: 'assistant',
-            parts: [
-              {
-                type: 'text',
-                text: `工作流启动失败：${text.slice(0, 200) || `HTTP ${resp.status}`}。请稍后再试或告诉我下一步想做什么。`,
-                state: 'done',
-              },
-            ],
-          } as StoredMessage);
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        this.logger.error(`Post-params workflow start fetch failed: ${msg}`);
-      }
-    }
 
     await this.store.setAgentState(projectId, 'idle').catch((err) => {
       this.logger.warn(
@@ -1302,88 +715,6 @@ export class MastraProxyController {
       seedMessageId: ackId,
     });
   }
-}
-
-/**
- * Workflow name → label for the canned dispatch ack ("已派发X"). One map
- * per locale variant — keeps the simplified-Chinese (zh-CN) defaults but
- * switches to traditional Chinese (zh-HK/zh-TW) and English (en-*) when
- * the request's Accept-Language asks for it. Missing entries fall back
- * to a bare ack — the workflow card that follows carries the real name.
- */
-const WORKFLOW_ACK_LABELS: Record<string, string> = {
-  story_outline: '素材分析',
-  parse_script: '剧本切分',
-  role_phase: '角色设计',
-  role_image_phase: '角色主图',
-  scene_phase: '场景设计',
-  scene_image_phase: '场景参考图',
-  prop_phase: '道具设计',
-  prop_image_phase: '道具参考图',
-  episode_phase: '分集规划',
-  script_phase: '剧本写作',
-  storyboard_phase: '分镜生成',
-  role_design: '角色设计',
-  scene_design: '场景设计',
-  prop_design: '道具设计',
-  batch_create_asset: '资产录入',
-  script_edit: '剧本修改',
-};
-
-const WORKFLOW_ACK_LABELS_HK: Record<string, string> = {
-  story_outline: '素材分析',
-  parse_script: '劇本切分',
-  role_phase: '角色設計',
-  role_image_phase: '角色主圖',
-  scene_phase: '場景設計',
-  scene_image_phase: '場景參考圖',
-  prop_phase: '道具設計',
-  prop_image_phase: '道具參考圖',
-  episode_phase: '分集規劃',
-  script_phase: '劇本寫作',
-  storyboard_phase: '分鏡生成',
-  role_design: '角色設計',
-  scene_design: '場景設計',
-  prop_design: '道具設計',
-  batch_create_asset: '資產錄入',
-  script_edit: '劇本修改',
-};
-
-const WORKFLOW_ACK_LABELS_EN: Record<string, string> = {
-  story_outline: 'story outline',
-  parse_script: 'script parsing',
-  role_phase: 'character design',
-  role_image_phase: 'character portraits',
-  scene_phase: 'scene design',
-  scene_image_phase: 'scene references',
-  prop_phase: 'prop design',
-  prop_image_phase: 'prop references',
-  episode_phase: 'episode planning',
-  script_phase: 'script writing',
-  storyboard_phase: 'storyboard generation',
-  role_design: 'character design',
-  scene_design: 'scene design',
-  prop_design: 'prop design',
-  batch_create_asset: 'asset import',
-  script_edit: 'script editing',
-};
-
-function buildDispatchAck(
-  workflowName: string,
-  acceptLanguage: string,
-): string {
-  const tag = (acceptLanguage.split(',')[0] ?? '').trim().toLowerCase();
-  if (tag.startsWith('zh-hk') || tag.startsWith('zh-tw')) {
-    const label = WORKFLOW_ACK_LABELS_HK[workflowName];
-    return label ? `已派發${label}。` : '已派發。';
-  }
-  if (tag.startsWith('en')) {
-    const label = WORKFLOW_ACK_LABELS_EN[workflowName];
-    return label ? `Dispatched: ${label}.` : 'Dispatched.';
-  }
-  // zh-CN / zh / unknown → simplified default
-  const label = WORKFLOW_ACK_LABELS[workflowName];
-  return label ? `已派发${label}。` : '已派发。';
 }
 
 /** Aspect-ratio id → human-readable label (used in params ack narration). */
