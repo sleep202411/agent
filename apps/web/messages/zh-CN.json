@@ -1568,7 +1568,19 @@
     "tabScene": "场景",
     "tabSceneDescription": "勾勒故事发生的场景空间。",
     "tabProp": "道具",
-    "tabPropDescription": "列出剧情中关键的道具元素。"
+    "tabPropDescription": "列出剧情中关键的道具元素。",
+    "scriptDraftLoadingTitle": "正在生成临时剧本草稿",
+    "scriptDraftMsgParse": "解析素材中…",
+    "scriptDraftMsgPlan": "规划集数中…",
+    "scriptDraftMsgWrite": "撰写剧本中…",
+    "scriptDraftMsgStoryboard": "整理分镜大纲…",
+    "scriptDraftCancel": "取消分析",
+    "scriptDraftCancelled": "分析已取消",
+    "scriptDraftFailed": "分析失败",
+    "scriptDraftRetryHint": "重试会重新跑一遍分析，本地素材保持不变。",
+    "scriptDraftRetry": "重试",
+    "scriptDraftStartFailed": "启动分析失败",
+    "scriptDraftMissingRun": "缺少分析任务"
   },
   "ai": {
     "title": "StoryOS",

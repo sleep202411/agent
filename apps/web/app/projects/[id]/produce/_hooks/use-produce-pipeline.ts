@@ -1,5 +1,25 @@
 "use client";
 
+/**
+ * Synchronous produce-script driver.
+ *
+ * Trade-off vs the previous async/queue approach: a single POST holds
+ * open for ~30-120s while Mastra runs `produce_script_pipeline` inline.
+ * If the user closes the tab the fetch aborts; if the agent process
+ * crashes the request fails outright. We picked simple over resilient
+ * — the user just hits "重试" and re-runs.
+ *
+ *   start  → POST /aurora/produce/script-draft/sync (blocks until
+ *            workflow completes; returns { runId, draft })
+ *   commit → POST /aurora/produce/script-draft/commit (writes Java
+ *            via the runId)
+ *
+ * No polling, no resume-on-refresh, no /cancel endpoint. "取消分析" is
+ * implemented as `controller.abort()`; the server keeps running until
+ * the workflow finishes (we trade some wasted LLM tokens for a much
+ * smaller client surface area).
+ */
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearProduceSeed,
@@ -57,8 +77,6 @@ export interface ProduceDraft {
 
 type PipelineStatus =
   | "idle"
-  | "starting"
-  | "queued"
   | "running"
   | "completed"
   | "failed"
@@ -69,149 +87,77 @@ type PipelineStatus =
 interface PipelineState {
   runId?: string;
   status: PipelineStatus;
-  progress?: { current: number; total: number; label?: string };
   draft?: ProduceDraft;
   committed?: ProduceCommittedResult;
   error?: string;
 }
 
-interface StatusResponse {
-  runId: string;
-  status: PipelineStatus;
-  progress?: { current: number; total: number; label?: string };
-  result?: ProduceDraft | null;
-  error?: string;
-}
-
 export function useProducePipeline(projectId: string, seed: ProduceSeed | null) {
   const [state, setState] = useState<PipelineState>({ status: "idle" });
-  const startedRef = useRef(false);
-  const runIdRef = useRef<string | undefined>(undefined);
-  const statusRef = useRef<PipelineStatus>("idle");
-
-  const patchState = useCallback((patch: Partial<PipelineState>) => {
-    setState((prev) => {
-      const next = { ...prev, ...patch };
-      statusRef.current = next.status;
-      if (next.runId) runIdRef.current = next.runId;
-      return next;
-    });
-  }, []);
+  const abortRef = useRef<AbortController | null>(null);
+  // `attempt` re-triggers the analysis effect when the user retries.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!projectId || !seed || startedRef.current) return;
-    startedRef.current = true;
+    if (!projectId || !seed) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     let stopped = false;
-    let timer: number | undefined;
 
-    const poll = async (runId: string) => {
-      if (stopped) return;
+    const run = async () => {
+      setState({ status: "running" });
       try {
-        const res = await fetch("/aurora/produce/script-draft/status", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runId, projectId, worldId: seed.worldId }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body = (await res.json()) as StatusResponse;
-        patchState({
-          runId,
-          status: body.status,
-          progress: body.progress,
-          draft: body.result ?? undefined,
-          error: body.error,
-        });
-        if (
-          body.status === "completed" ||
-          body.status === "failed" ||
-          body.status === "cancelled"
-        ) {
-          if (timer) window.clearInterval(timer);
-        }
-      } catch (err) {
-        patchState({
-          status: "failed",
-          error: err instanceof Error ? err.message : "状态查询失败",
-        });
-        if (timer) window.clearInterval(timer);
-      }
-    };
-
-    const start = async () => {
-      patchState({ status: "starting", error: undefined });
-      try {
-        const res = await fetch("/aurora/produce/script-draft/start", {
+        const res = await fetch("/aurora/produce/script-draft/sync", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ projectId, worldId: seed.worldId, seed }),
+          signal: controller.signal,
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const body = (await res.json()) as { runId: string; status: PipelineStatus };
-        runIdRef.current = body.runId;
-        patchState({ runId: body.runId, status: body.status });
-        await poll(body.runId);
-        timer = window.setInterval(() => void poll(body.runId), 1600);
+        if (stopped) return;
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text ? text.slice(0, 200) : `HTTP ${res.status}`);
+        }
+        const body = (await res.json()) as { runId: string; draft: ProduceDraft };
+        if (stopped) return;
+        setState({ runId: body.runId, status: "completed", draft: body.draft });
       } catch (err) {
-        patchState({
+        if (stopped) return;
+        if (controller.signal.aborted) {
+          setState({ status: "cancelled" });
+          return;
+        }
+        setState({
           status: "failed",
-          error: err instanceof Error ? err.message : "启动分析失败",
+          // English fallback only — the page translates the generic
+          // failure title; this string surfaces only when the network
+          // / backend gave us nothing concrete to show.
+          error: err instanceof Error ? err.message : "Failed to start analysis",
         });
       }
     };
 
-    void start();
+    void run();
 
     return () => {
       stopped = true;
-      if (timer) window.clearInterval(timer);
+      controller.abort();
     };
-  }, [patchState, projectId, seed]);
-
-  useEffect(() => {
-    const cancelOnLeave = () => {
-      const runId = runIdRef.current;
-      if (!runId) return;
-      if (
-        statusRef.current !== "starting" &&
-        statusRef.current !== "queued" &&
-        statusRef.current !== "running"
-      ) {
-        return;
-      }
-      const payload = JSON.stringify({ runId, projectId, worldId: seed?.worldId });
-      const blob = new Blob([payload], { type: "application/json" });
-      if (!navigator.sendBeacon("/aurora/produce/script-draft/cancel", blob)) {
-        void fetch("/aurora/produce/script-draft/cancel", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: payload,
-          keepalive: true,
-        });
-      }
-    };
-    window.addEventListener("pagehide", cancelOnLeave);
-    return () => window.removeEventListener("pagehide", cancelOnLeave);
-  }, [projectId, seed?.worldId]);
+  }, [projectId, seed, attempt]);
 
   const cancel = useCallback(async () => {
-    const runId = runIdRef.current;
-    if (!runId) return;
-    await fetch("/aurora/produce/script-draft/cancel", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ runId, projectId, worldId: seed?.worldId }),
-    }).catch(() => undefined);
-    patchState({ status: "cancelled" });
-  }, [patchState, projectId, seed?.worldId]);
+    abortRef.current?.abort();
+  }, []);
+
+  const retry = useCallback(() => {
+    setAttempt((n) => n + 1);
+  }, []);
 
   const commit = useCallback(async (): Promise<ProduceCommittedResult> => {
-    const runId = runIdRef.current;
-    if (!runId) throw new Error("缺少分析任务");
-    patchState({ status: "committing", error: undefined });
+    const runId = state.runId;
+    if (!runId) throw new Error("No analysis run to commit");
+    setState((prev) => ({ ...prev, status: "committing", error: undefined }));
     const res = await fetch("/aurora/produce/script-draft/commit", {
       method: "POST",
       credentials: "include",
@@ -221,15 +167,15 @@ export function useProducePipeline(projectId: string, seed: ProduceSeed | null) 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       const message = text ? text.slice(0, 200) : `HTTP ${res.status}`;
-      patchState({ status: "completed", error: message });
+      setState((prev) => ({ ...prev, status: "completed", error: message }));
       throw new Error(message);
     }
     const body = (await res.json()) as { ok: boolean; result: ProduceCommittedResult };
     saveProduceCommittedResult(projectId, body.result);
     clearProduceSeed(projectId);
-    patchState({ status: "committed", committed: body.result });
+    setState((prev) => ({ ...prev, status: "committed", committed: body.result }));
     return body.result;
-  }, [patchState, projectId, seed?.worldId]);
+  }, [projectId, seed?.worldId, state.runId]);
 
-  return { ...state, cancel, commit };
+  return { ...state, cancel, retry, commit };
 }

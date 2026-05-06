@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { IconAlertCircle, IconArrowRight, IconFileX, IconPlayerStop } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconArrowRight,
+  IconFileX,
+  IconPlayerStop,
+  IconRefresh,
+} from "@tabler/icons-react";
 import {
   Empty,
   EmptyDescription,
@@ -13,12 +19,11 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useTranslations } from "@/src/i18n/i18n";
 import { useProduceSeed } from "../_hooks/use-produce-seed";
 import { useProducePipeline } from "../_hooks/use-produce-pipeline";
 import { useProjectScripts } from "../_hooks/use-project-scripts";
 import { ProjectEpisodeCard } from "./_components/project-episode-card";
-
-const LOADING_MESSAGES = ["解析素材中…", "规划集数中…", "撰写剧本中…", "整理分镜大纲…"];
 
 const MESSAGE_INTERVAL_MS = 2200;
 
@@ -33,17 +38,26 @@ export default function ProduceScriptPage() {
   const projectId = String(params.id ?? "");
   const seed = useProduceSeed(projectId);
   const pipeline = useProducePipeline(projectId, seed);
-  const loading =
-    pipeline.status === "starting" || pipeline.status === "queued" || pipeline.status === "running";
+  const loading = pipeline.status === "running";
+  const t = useTranslations("produce");
+  const loadingMessages = useMemo(
+    () => [
+      t("scriptDraftMsgParse"),
+      t("scriptDraftMsgPlan"),
+      t("scriptDraftMsgWrite"),
+      t("scriptDraftMsgStoryboard"),
+    ],
+    [t]
+  );
 
   const [messageIndex, setMessageIndex] = useState(0);
   useEffect(() => {
     if (!loading) return;
     const id = window.setInterval(() => {
-      setMessageIndex((i) => (i + 1) % LOADING_MESSAGES.length);
+      setMessageIndex((i) => (i + 1) % loadingMessages.length);
     }, MESSAGE_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [loading]);
+  }, [loading, loadingMessages.length]);
 
   // No seed → fall back to whatever Java already has for the
   // project. Returning users (committed earlier, or built
@@ -111,28 +125,17 @@ export default function ProduceScriptPage() {
   }
 
   if (loading) {
-    const progress = pipeline.progress;
-    const pct =
-      progress && progress.total > 0
-        ? Math.min(100, Math.round((progress.current / progress.total) * 100))
-        : 12;
     return (
       <div className="mx-auto flex min-h-[60vh] w-full max-w-3xl flex-col items-center justify-center gap-6">
         <Spinner className="size-8 text-primary" />
         <div className="w-full text-center">
-          <h2 className="text-lg font-semibold">正在生成临时剧本草稿</h2>
+          <h2 className="text-lg font-semibold">{t("scriptDraftLoadingTitle")}</h2>
           <p key={messageIndex} className="mt-2 animate-in fade-in text-sm text-muted-foreground">
-            {progress?.label ?? LOADING_MESSAGES[messageIndex]}
+            {loadingMessages[messageIndex]}
           </p>
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
         <Button variant="outline" color="muted" size="lg" onClick={() => void pipeline.cancel()}>
-          <IconPlayerStop /> 取消分析
+          <IconPlayerStop /> {t("scriptDraftCancel")}
         </Button>
       </div>
     );
@@ -145,11 +148,20 @@ export default function ProduceScriptPage() {
           <EmptyMedia variant="icon">
             <IconAlertCircle />
           </EmptyMedia>
-          <EmptyTitle>{pipeline.status === "cancelled" ? "分析已取消" : "分析失败"}</EmptyTitle>
-          <EmptyDescription>
-            {pipeline.error || "刷新页面会丢弃当前临时任务，并重新开始分析。"}
-          </EmptyDescription>
+          <EmptyTitle>
+            {pipeline.status === "cancelled" ? t("scriptDraftCancelled") : t("scriptDraftFailed")}
+          </EmptyTitle>
+          <EmptyDescription>{pipeline.error || t("scriptDraftRetryHint")}</EmptyDescription>
         </EmptyHeader>
+        <Button
+          variant="solid"
+          color="primary"
+          size="lg"
+          className="mt-4"
+          onClick={() => pipeline.retry()}
+        >
+          <IconRefresh /> {t("scriptDraftRetry")}
+        </Button>
       </Empty>
     );
   }

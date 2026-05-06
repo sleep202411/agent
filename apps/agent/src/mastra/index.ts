@@ -138,6 +138,13 @@ export const mastra = new Mastra({
   server: {
     port: Number(process.env.PORT ?? 4111),
     host: process.env.MASTRA_HOST ?? "localhost",
+    // Hono `timeout` middleware that Mastra mounts globally defaults to
+    // 3 min and fires `504 Gateway Timeout` when it expires. The
+    // produce-script sync route runs an in-process workflow that
+    // takes ~9-10 min on the qwen3.6-plus path and can stretch on slow
+    // days; allow up to 30 min so we don't false-fire. Per-LLM-call
+    // timeouts (model-hardening) still cap individual upstream calls.
+    timeout: 30 * 60 * 1000,
     middleware: [
       { path: "/api/*", handler: populateRequestContext },
       { path: "/drafts/*", handler: populateRequestContext },

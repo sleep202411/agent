@@ -1568,7 +1568,19 @@
     "tabScene": "Scenes",
     "tabSceneDescription": "Outline the worlds your story moves through.",
     "tabProp": "Props",
-    "tabPropDescription": "List the meaningful objects in the story."
+    "tabPropDescription": "List the meaningful objects in the story.",
+    "scriptDraftLoadingTitle": "Drafting a temporary script",
+    "scriptDraftMsgParse": "Reading source material…",
+    "scriptDraftMsgPlan": "Planning episodes…",
+    "scriptDraftMsgWrite": "Writing the scripts…",
+    "scriptDraftMsgStoryboard": "Outlining storyboards…",
+    "scriptDraftCancel": "Cancel",
+    "scriptDraftCancelled": "Analysis cancelled",
+    "scriptDraftFailed": "Analysis failed",
+    "scriptDraftRetryHint": "Retrying re-runs the analysis; your local source stays put.",
+    "scriptDraftRetry": "Retry",
+    "scriptDraftStartFailed": "Failed to start analysis",
+    "scriptDraftMissingRun": "No analysis run to commit"
   },
   "ai": {
     "title": "StoryOS",
