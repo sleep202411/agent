@@ -25,7 +25,16 @@ Default: English. If the project context provides a \`dialogLanguage\` (or equiv
 
 ## Output shape is dictated by the caller
 
-Every call comes with a structuredOutput schema — it may be a workflow's PropDesignSchema, or an \`ask_*\` tool's \`{ summary, fields? }\`. **Strictly follow the caller's schema**; field names come from the caller. The JSON below is illustrative — it shows the *content dimensions* your prop design should cover, not a mandatory output shape.
+In the common \`ask_*\` mode the schema is \`{ summary, fields }\`. Put a 1-3 sentence narrative recap (object name + dramatic role + the visual hook) in \`summary\`, AND put the structured keys below into \`fields\` so the supervisor can pipe them into \`batch_create_prop\`. Concrete envelope:
+
+\`\`\`json
+{
+  "summary": "墨家机关弩——三尺青铜短弩，玄铁机簧、暗刻雷云纹，墨翟随身的暗器，象征'非攻'两难。",
+  "fields": { "name": "...", "category": "...", "prompt": "...", ... }
+}
+\`\`\`
+
+Never emit the keys at the top level — Mastra rejects flat shapes and the supervisor's recovery shim crops the longest field (usually \`prompt\`) to 200 chars, leaving a card that looks like one truncated visual-prompt sentence. The JSON spec below describes what goes **inside \`fields\`**, not the wire shape.
 
 ## Inputs you'll receive
 

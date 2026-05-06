@@ -27,7 +27,16 @@ Default: English. If the project context provides a \`dialogLanguage\` (or equiv
 
 ## Output shape is dictated by the caller
 
-Every call comes with a structuredOutput schema — it may be a workflow's SceneDesignSchema, or an \`ask_*\` tool's \`{ summary, fields? }\`. **Strictly follow the caller's schema**; field names come from the caller. The JSON below is illustrative — it shows the *content dimensions* your scene design should cover, not a mandatory output shape.
+In the common \`ask_*\` mode the schema is \`{ summary, fields }\`. Put a 1-3 sentence narrative recap (location + mood + the visual hook that makes it memorable) in \`summary\`, AND put the structured keys below into \`fields\` so the supervisor can pipe them into \`batch_create_scene\`. Concrete envelope:
+
+\`\`\`json
+{
+  "summary": "宋国王宫密室——青铜烛火映在斑驳壁画上，门帘半掩，一束日光斜切灰尘。",
+  "fields": { "name": "...", "category": "...", "prompt": "...", ... }
+}
+\`\`\`
+
+Never emit the keys at the top level — Mastra rejects flat shapes and the supervisor's recovery shim crops the longest field (usually \`prompt\`) to 200 chars, which leaves the chat card looking like one truncated visual-prompt sentence. The JSON spec below describes what goes **inside \`fields\`**, not the wire shape.
 
 ## Inputs you'll receive
 

@@ -111,6 +111,17 @@ function composePrompt(task: string, blocks: Array<{ heading: string; body: stri
     if (!b.body?.trim()) continue;
     parts.push(`[${b.heading}]\n${b.body.trim()}`);
   }
+  // DashScope / qwen has a preflight check: when `response_format` is
+  // `json_object` the messages array MUST contain the literal word
+  // "json" or the API rejects with InvalidParameter (400). Mastra's
+  // `structuredOutput` translates to `response_format: json_object` for
+  // non-OpenAI providers, so without this nudge every persona call to
+  // alibaba blows up before reaching the model. The trailing footer
+  // is harmless on Anthropic / DeepSeek paths — it just reinforces the
+  // expected output shape.
+  parts.push(
+    "[Response format]\nReturn a JSON object that matches the structuredOutput schema exactly."
+  );
   return parts.join("\n\n");
 }
 
@@ -178,17 +189,27 @@ export async function askPersona(opts: AskPersonaOptions): Promise<AskPersonaRes
         const record = rawObj as Record<string, unknown>;
         const alreadyWrapped = typeof record.summary === "string" && record.summary.length > 0;
         if (!alreadyWrapped) {
-          // Try named keys first (description / setting / image_prompt
-          // are the role/scene/prop/storyboarder common shapes), then
-          // fall back to "longest string value in the payload" so
-          // personas with novel field names (scriptwriter emits
-          // script/content/dialogue, story_outliner emits outline,
-          // etc.) still get a meaningful preview line — without us
-          // having to enumerate every persona's schema here.
+          // Prefer narrative fields when synthesising a summary —
+          // image-model `prompt` strings are visual tokens (commas
+          // and adjectives) and read terribly when shown alone in
+          // the chat card. A persona that forgets the {summary,
+          // fields} envelope but emits {name, role, personality,
+          // appearance, prompt} should still surface as
+          // "personality" rather than a 200-char-cropped image-prompt
+          // blurb. Order: narrative-richest → next-richest →
+          // visual-prompt as last resort → longest other string.
+          const pickString = (key: string): string =>
+            typeof record[key] === "string" ? (record[key] as string) : "";
           const namedSynth =
-            (typeof record.description === "string" && record.description) ||
-            (typeof record.setting === "string" && record.setting) ||
-            (typeof record.image_prompt === "string" && record.image_prompt) ||
+            pickString("personality") ||
+            pickString("description") ||
+            pickString("appearance") ||
+            pickString("setting") ||
+            pickString("introduction") ||
+            pickString("synopsis") ||
+            pickString("content") ||
+            pickString("prompt") ||
+            pickString("image_prompt") ||
             "";
           let bestStringSynth = "";
           if (!namedSynth) {
@@ -198,7 +219,31 @@ export async function askPersona(opts: AskPersonaOptions): Promise<AskPersonaRes
               }
             }
           }
-          const synth = (namedSynth || bestStringSynth || "").slice(0, 200).trim();
+          const raw = (namedSynth || bestStringSynth || "").trim();
+          // Trim to ~280 chars but break on sentence / clause boundary
+          // so the chat card doesn't end mid-word ("...standing
+          // upright facing camera, head" was the original symptom).
+          const synth = (() => {
+            if (raw.length <= 280) return raw;
+            const cut = raw.slice(0, 280);
+            const lastSentence = Math.max(
+              cut.lastIndexOf("。"),
+              cut.lastIndexOf("."),
+              cut.lastIndexOf("!"),
+              cut.lastIndexOf("?"),
+              cut.lastIndexOf("！"),
+              cut.lastIndexOf("？")
+            );
+            if (lastSentence > 100) return cut.slice(0, lastSentence + 1);
+            const lastClause = Math.max(
+              cut.lastIndexOf("，"),
+              cut.lastIndexOf(","),
+              cut.lastIndexOf("、"),
+              cut.lastIndexOf("；"),
+              cut.lastIndexOf(";")
+            );
+            return lastClause > 60 ? `${cut.slice(0, lastClause)}…` : `${cut}…`;
+          })();
           const wrapped = {
             summary: synth || "(persona did not provide a summary)",
             fields: record,
