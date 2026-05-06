@@ -855,7 +855,7 @@ export default function IPEditPage() {
               <Section title={t("sectionName")} description={t("sectionNameDesc")}>
                 <Input
                   value={form.title}
-                  onChange={(e) => update({ title: e.target.value.slice(0, 50) })}
+                  onChange={(e) => update({ title: e.target.value.slice(0, 200) })}
                   className="h-10"
                 />
               </Section>
@@ -882,24 +882,24 @@ export default function IPEditPage() {
               <Section title={t("sectionDesc")} description={t("sectionDescDesc")}>
                 <Textarea
                   value={form.description}
-                  onChange={(e) => update({ description: e.target.value.slice(0, 500) })}
+                  onChange={(e) => update({ description: e.target.value.slice(0, 1200) })}
                   rows={4}
                   className="min-h-24"
                 />
                 <span className="block text-right text-xs text-muted-foreground">
-                  {form.description.length}/500
+                  {form.description.length}/1200
                 </span>
               </Section>
 
               <Section title={t("sectionBackground")} description={t("sectionBackgroundDesc")}>
                 <Textarea
                   value={form.background}
-                  onChange={(e) => update({ background: e.target.value.slice(0, 2000) })}
+                  onChange={(e) => update({ background: e.target.value.slice(0, 6000) })}
                   rows={5}
                   className="min-h-32"
                 />
                 <span className="block text-right text-xs text-muted-foreground">
-                  {form.background.length}/2000
+                  {form.background.length}/6000
                 </span>
               </Section>
 

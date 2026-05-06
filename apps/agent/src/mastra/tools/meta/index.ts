@@ -30,6 +30,7 @@ export { deleteShot } from "./delete-shot";
 export { addShot } from "./add-shot";
 export { batchCreateCharacter, batchCreateScene, batchCreateProp } from "./batch-create-assets";
 export { batchCreateEpisode } from "./batch-create-episodes";
+export { saveEpisodeScript, batchSaveEpisodeScripts } from "./save-episode-script";
 export {
   generateCharacterImage,
   generateSceneImage,
