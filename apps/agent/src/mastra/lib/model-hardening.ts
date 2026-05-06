@@ -507,9 +507,12 @@ const DEFAULTS: Required<HardenConfig> = {
   queueMaxDepth: Number(process.env.STORYOS_CLAUDE_QUEUE_MAX_DEPTH ?? 100),
   circuitFailureThreshold: Number(process.env.STORYOS_CLAUDE_CIRCUIT_THRESHOLD ?? 5),
   circuitCooldownMs: Number(process.env.STORYOS_CLAUDE_CIRCUIT_COOLDOWN_MS ?? 60_000),
-  // 30s is comfortably longer than a normal supervisor turn (~2-15s) but
-  // short enough that a hung call doesn't squat on a slot for minutes.
-  requestTimeoutMs: Number(process.env.STORYOS_CLAUDE_REQUEST_TIMEOUT_MS ?? 30_000),
+  // 90s — long enough for a heavy supervisor turn (multi-tool, large
+  // structured output) to finish even when Anthropic is mid-overload
+  // and streaming is slow, short enough that a truly hung call still
+  // releases its slot in under two minutes. Matches the same generosity
+  // tier as DEFAULT_ASK_TIMEOUT_MS / PERSONA_REQUEST_TIMEOUT_MS.
+  requestTimeoutMs: Number(process.env.STORYOS_CLAUDE_REQUEST_TIMEOUT_MS ?? 90_000),
 };
 
 // Stateful layers shared across every call through this process.

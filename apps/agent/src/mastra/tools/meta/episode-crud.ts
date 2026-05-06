@@ -21,7 +21,7 @@ import { publishEntityEvent } from "../../lib/entity-events";
 export const updateEpisode = createTool({
   id: "update_episode",
   description:
-    'Update one episode\'s title / synopsis / per-shot prompt prefix or suffix. Call when the user explicitly says "rename episode N to X" or "add Y to the episode N synopsis". For bulk changes across episodes, re-run via invoke_workflow("episode_phase"). Get episodeId from query_context(summary).episodes.',
+    'Update one episode\'s title / synopsis / per-shot prompt prefix or suffix. Call when the user explicitly says "rename episode N to X" or "add Y to the episode N synopsis". For **creating** new episodes, use `batch_create_episode`. Get episodeId from query_context(summary).episodes.',
   inputSchema: z.object({
     episodeId: z.string().describe("Java episode id"),
     title: z.string().optional(),

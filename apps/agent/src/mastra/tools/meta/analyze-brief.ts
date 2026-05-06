@@ -10,7 +10,7 @@
  *   - themeSummary    string                           → 3-段叙述 seed
  *
  * Called by the supervisor BEFORE require_project_params on a fresh project
- * with material. Fast (~3-5s on router model, deepseek-chat / qwen3-max)
+ * with material. Fast (~3-5s on router model, deepseek-chat / qwen3.6-plus)
  * and cheap (short prompt + small output), so it's OK to make this a
  * synchronous supervisor tool rather than a BullMQ workflow.
  *

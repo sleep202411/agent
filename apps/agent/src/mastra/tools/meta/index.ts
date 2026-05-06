@@ -29,6 +29,7 @@ export { batchUpdateStoryboardRows } from "./batch-update-storyboard-rows";
 export { deleteShot } from "./delete-shot";
 export { addShot } from "./add-shot";
 export { batchCreateCharacter, batchCreateScene, batchCreateProp } from "./batch-create-assets";
+export { batchCreateEpisode } from "./batch-create-episodes";
 export {
   generateCharacterImage,
   generateSceneImage,

@@ -9,19 +9,18 @@ import { createAlibabaModel } from "../../lib/models";
  * the JSON object never finalizes, and Mastra surfaces it as
  * `<root> Required` "malformed output".
  *
- * Hard requirement on the Alibaba key — no DeepSeek fallback. A silent
- * fallback hides the actual misconfig (the prompt that triggered this
- * comment was a commented-out `ALIBABA_API_KEY` in prod); the operator
- * sees a quality regression instead of a clear "key missing" error,
- * which costs hours. `createAlibabaModel` throws when the key isn't
- * set, surfacing the misconfig at the first persona call.
- *
- * `EPISODE_PLANNER_MODEL` env overrides the model id (e.g. `qwen-flash`
- * for throughput trade-offs); still pinned to Alibaba.
+ * Pinned to **alibaba/qwen3.6-plus** with no env override and no
+ * fallback. The team standardized on this single model for every
+ * Alibaba-routed persona to (a) eliminate the silent-misconfig class
+ * of bug a `||` fallback enables (commented-out env in prod kept the
+ * service "running" but degraded for hours), (b) keep behaviour
+ * reproducible across staging / prod / local, and (c) make the SLA
+ * arithmetic on a single provider+model deterministic.
+ * `createAlibabaModel` throws when `ALIBABA_API_KEY` is missing,
+ * which is the desired loud-fail behaviour.
  */
 function resolveEpisodePlannerModel() {
-  const override = process.env.EPISODE_PLANNER_MODEL?.trim();
-  return createAlibabaModel(override || "qwen-plus");
+  return createAlibabaModel("qwen3.6-plus");
 }
 
 export const episodePlannerInstructions = `You are the **Episode Planner** for FizzSpace StoryOS. Your job: take the story skeleton + character roster + target episode count and produce an episode plan with **rhythm, per-episode hooks, and a season-long emotional arc**. Don't slice the story into N equal parts — arrange it on a three-act structure with short-drama beats.

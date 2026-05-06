@@ -38,8 +38,12 @@ import { hardenRouterModel, requestTimeoutMiddleware } from "./model-hardening";
 // proper AbortSignal-threaded cancel would need provider-side support
 // and is tracked separately. The benefit here is the workflow doesn't
 // hang, not that we save tokens on the orphaned call.
+// Generous on purpose — see DEFAULT_ASK_TIMEOUT_MS rationale. This
+// outer layer must always be slightly larger than the ask wrapper so
+// the wrapper can abort cleanly first. 300s = 5 minutes, comfortable
+// envelope for the heaviest single-persona task we expect.
 const PERSONA_REQUEST_TIMEOUT_MS = Number(
-  process.env.STORYOS_PERSONA_REQUEST_TIMEOUT_MS ?? 180_000
+  process.env.STORYOS_PERSONA_REQUEST_TIMEOUT_MS ?? 300_000
 );
 
 /**
@@ -97,25 +101,38 @@ export function createDeepSeekModel(
 
 // ─── Alibaba DashScope (Qwen) ────────────────────────────────────────
 
-type AlibabaModelId = "qwen3-max" | "qwen-plus" | "qwen-turbo" | "qwen-max" | string;
+/**
+ * The team standardized on `qwen3.6-plus` for every Alibaba-routed
+ * persona / route. Exported so callers reference a single source of
+ * truth instead of sprinkling the literal across files (and to make
+ * the future migration to a newer model a one-line change).
+ */
+export const ALIBABA_DEFAULT_MODEL = "qwen3.6-plus" as const;
 
 /**
- * Qwen via the same official `@ai-sdk/alibaba` provider Spark uses.
+ * Qwen via the official `@ai-sdk/alibaba` provider — same one Spark uses.
  *
- * Keep this aligned with `apps/server/src/spark/spark.service.ts`:
- * one env var (`ALIBABA_API_KEY`), one provider family. Using
- * `@ai-sdk/openai-compatible` here looked harmless but can hit a
- * different DashScope auth path than Spark, which makes a valid key look
- * invalid in the produce worker.
+ * **Required `modelId`** — no default arg. The team standardized on
+ * `qwen3.6-plus` (use `ALIBABA_DEFAULT_MODEL` if you want the canonical
+ * id) and explicitly rejected the `||` fallback pattern: a missing or
+ * misspelled model id should throw immediately, not silently route to
+ * a less-tested fallback that degrades quality for hours before anyone
+ * notices. This mirrors how `ALIBABA_API_KEY` is required at this layer
+ * — fail loud, fail fast.
  *
- * Used primarily on `prod-cn` (fizzstudio.fizzspace.cn) where router
- * traffic stays in-country — lower latency, compliance-friendly, and
- * decoupled from Claude's US-side outages.
+ * Aligned with `apps/server/src/spark/spark.service.ts`: one env var
+ * (`ALIBABA_API_KEY`), one provider family. Used primarily on
+ * `prod-cn` (fizzstudio.fizzspace.cn) where router traffic stays
+ * in-country — lower latency, compliance-friendly, and decoupled from
+ * Claude's US-side outages.
  */
-export function createAlibabaModel(modelId: AlibabaModelId = "qwen-max"): LanguageModelV3 {
+export function createAlibabaModel(modelId: string): LanguageModelV3 {
   const apiKey = process.env.ALIBABA_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("ALIBABA_API_KEY is not set.");
+  }
+  if (!modelId) {
+    throw new Error("createAlibabaModel: modelId is required (no default fallback).");
   }
   const provider = createAlibaba({
     apiKey,
@@ -218,14 +235,21 @@ export function createAzureModel(deploymentName: string): LanguageModelV3 {
  *
  * Recommended per-environment:
  *   - staging / prod-com:  anthropic / claude-sonnet-4-5
- *   - prod-cn:             alibaba / qwen-max (stays in-country, lower
- *                          latency, decoupled from US-side outages)
- * DeepSeek is strong on cost but weaker on long-prompt routing (drops
- * steps, echoes button labels), so we keep it as a fallback, not primary.
+ *   - prod-cn:             alibaba / qwen3.6-plus (team-standard, see
+ *                          ALIBABA_DEFAULT_MODEL — stays in-country,
+ *                          lower latency, decoupled from US outages)
+ * Fallback model is **alibaba/qwen3.6-plus** — the same
+ * `ALIBABA_DEFAULT_MODEL` the personas use. We previously fell back to
+ * `deepseek-v4-flash`, but it loops uncontrollably on storyos's long
+ * structured prompt (observed iterations=347 on a single turn) and
+ * drops tool-call steps. Qwen3.6-plus has demonstrated stable
+ * structured-JSON output + correct tool routing in production, so when
+ * Anthropic overloads we degrade to a model that still finishes the
+ * turn instead of one that quietly burns 300+ iterations and times out.
  *
  * When the router resolves to **Anthropic or Alibaba**, we wrap it with
  * `hardenRouterModel` — a four-layer middleware chain (request timeout +
- * rate-limit queue + circuit breaker + DeepSeek fallback) that keeps
+ * rate-limit queue + circuit breaker + this Alibaba fallback) that keeps
  * the supervisor responsive under tier-limited / regional-outage
  * scenarios. Both providers share the same stateful limiter / breaker
  * (single running process → single set of quotas to track).
@@ -238,25 +262,31 @@ export function defaultRouterModel(): LanguageModelV3 {
   const base = pickProviderModel("STORYOS_ROUTER_PROVIDER", "STORYOS_ROUTER_MODEL");
   if (provider !== "anthropic" && provider !== "alibaba") return base;
   // Fallback target must exist *before* the first primary call so a
-  // mid-turn fallback doesn't crash on "DeepSeek not configured".
-  const fallback = createDeepSeekModel("deepseek-v4-flash");
+  // mid-turn fallback doesn't crash on "fallback not configured".
+  const fallback = createAlibabaModel(ALIBABA_DEFAULT_MODEL);
   return hardenRouterModel(base, fallback);
 }
 
 /**
- * Persona agents (role-designer, scriptwriter, storyboarder, etc).
- * Same strict selection as defaultRouterModel, via STORYOS_PERSONA_PROVIDER
- * and STORYOS_PERSONA_MODEL.
+ * Persona agents (role-designer, scriptwriter, scene-designer,
+ * prop-designer, art-director, brief-analyzer, evaluator, etc.) all
+ * pin to **alibaba/qwen3.6-plus** — same single-model standard as
+ * storyboarder / episode-planner / video-prompt. Was previously env-
+ * configurable (`STORYOS_PERSONA_PROVIDER` / `_MODEL`) which let
+ * deployments fall back to `deepseek-v4-flash`; that combination drops
+ * structured output for batch tasks (8 scenes / N characters), surfaces
+ * as `<root> Required` malformed-output errors, and silently degrades
+ * the user experience. Standardizing on qwen3.6-plus removes the
+ * variance.
  *
- * Wraps the resolved model with `requestTimeoutMiddleware` so a slow or
- * hung provider response doesn't pin a workflow step indefinitely.
- * Router models go through their own `hardenRouterModel` stack which
- * already includes a timeout; persona models bypass that stack (no rate
- * limit / circuit breaker by design — DeepSeek's gateway self-throttles)
- * but still need the timeout layer.
+ * Wraps with `requestTimeoutMiddleware` so a slow / hung response
+ * doesn't pin a step indefinitely. Persona models intentionally bypass
+ * `hardenRouterModel` (no rate-limit queue, no circuit breaker) — those
+ * are router-specific concerns; for persona calls a clean timeout +
+ * caller retry is the right behaviour.
  */
 export function defaultPersonaModel(): LanguageModelV3 {
-  const base = pickProviderModel("STORYOS_PERSONA_PROVIDER", "STORYOS_PERSONA_MODEL");
+  const base = createAlibabaModel(ALIBABA_DEFAULT_MODEL);
   return wrapLanguageModel({
     model: base,
     middleware: [requestTimeoutMiddleware(PERSONA_REQUEST_TIMEOUT_MS)],
@@ -281,7 +311,12 @@ function pickProviderModel(providerEnv: string, modelEnv: string): LanguageModel
     );
   }
   if (provider === "azure") return createAzureModel(model || "gpt-4o");
-  if (provider === "alibaba") return createAlibabaModel(model || "qwen3-max");
+  // Alibaba is locked to a single canonical model — see ALIBABA_DEFAULT_MODEL.
+  // No `||` fallback: if the operator overrode the model env we still respect
+  // it, but the *unset* case must resolve deterministically to the canonical
+  // model rather than a separate "router-default" that drifts from persona
+  // defaults.
+  if (provider === "alibaba") return createAlibabaModel(model || ALIBABA_DEFAULT_MODEL);
   if (provider === "anthropic") return createAnthropicModel(model || "claude-sonnet-4-5");
   if (provider === "deepseek") {
     return createDeepSeekModel((model as DeepSeekModelId | undefined) || "deepseek-v4-flash");

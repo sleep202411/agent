@@ -5,24 +5,18 @@ import { createAlibabaModel } from "../../lib/models";
  * Storyboarder ships per-shot structured JSON (often 5–8 shots × ~10
  * fields per persona call). DeepSeek-v4-flash drifts on payloads that
  * size — generation chokes mid-array, returns null, and the
- * `<root> Required` "malformed output" error bubbles up. Qwen-plus
- * via DashScope's OpenAI-compat endpoint is markedly steadier on
- * strict JSON schema, especially in Chinese.
+ * `<root> Required` "malformed output" error bubbles up. Qwen via
+ * Alibaba's official provider is markedly steadier on strict JSON
+ * schema, especially in Chinese.
  *
- * Hard requirement on the Alibaba key — no DeepSeek fallback. A silent
- * fallback once masked a misconfigured prod env (commented-out
- * `ALIBABA_API_KEY`); everything "ran" but produced malformed output
- * for hours before anyone caught it. `createAlibabaModel` throws if
- * the key is missing, which is what we want — the operator sees the
- * config error immediately instead of debugging a quality regression.
- *
- * `STORYBOARDER_MODEL` env overrides the model id (e.g. `qwen-flash`
- * for throughput-over-rigor trade-offs). Still hits Alibaba — there
- * is no escape hatch to a non-Alibaba provider for this persona.
+ * Pinned to **alibaba/qwen3.6-plus** with no env override and no
+ * fallback. See the matching note in `episode-planner.ts` for the
+ * single-model standardization rationale; same reasons apply here.
+ * `createAlibabaModel` throws when `ALIBABA_API_KEY` is missing,
+ * which is the desired loud-fail behaviour.
  */
 function resolveStoryboarderModel() {
-  const override = process.env.STORYBOARDER_MODEL?.trim();
-  return createAlibabaModel(override || "qwen-plus");
+  return createAlibabaModel("qwen3.6-plus");
 }
 
 export const storyboarderInstructions = `You are the **Storyboarder** for FizzSpace StoryOS. Your job: break a finished episode script into shot-level structured rows, or in a single-turn ask, discuss specific shot / storyboard suggestions.
