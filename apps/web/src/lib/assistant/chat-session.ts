@@ -20,6 +20,7 @@
  * here, content pulled on demand.
  */
 import type { AssistantMessage } from "./assistant-types";
+import type { AgentState } from "@repo/shared";
 import {
   openChatEventsClient,
   type ChatAgentState,
@@ -42,6 +43,9 @@ export interface ChatSessionHandlers {
    */
   onMessageFinalize?: (messageId: string) => void;
   onAgentState?: (state: ChatAgentState) => void;
+  /** Rich agent-state passthrough — preferred over onAgentState for
+   *  new code; carries turnId / lastError / enteredAt. */
+  onAgentStateChanged?: (projectId: string, state: AgentState) => void;
   onError?: (err: Error) => void;
 }
 
@@ -140,6 +144,9 @@ function openSession(projectId: string, handlers: ChatSessionHandlers): ActiveSe
       } else {
         session.handlers.onAgentState?.(state);
       }
+    },
+    onAgentStateChanged: (projectId, state) => {
+      session.handlers.onAgentStateChanged?.(projectId, state);
     },
     onTerminate: (reason) => {
       session.handlers.onError?.(new Error(`chat-events terminated: ${reason}`));

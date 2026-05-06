@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser, type AuthUser } from '../../auth';
 import { MessageStoreService } from './message-store.service';
+import { AgentStateService } from './agent-state.service';
 
 type GetMessagesBody = {
   conversationId?: string;
@@ -40,7 +41,10 @@ function pickConversationId(body: {
 
 @Controller('chat')
 export class ChatController {
-  constructor(private readonly store: MessageStoreService) {}
+  constructor(
+    private readonly store: MessageStoreService,
+    private readonly agentState: AgentStateService,
+  ) {}
 
   /**
    * Returns the full message payloads for the requested ids.
@@ -85,11 +89,22 @@ export class ChatController {
         HttpStatus.BAD_REQUEST,
       );
     }
-    const [messageIds, agentState] = await Promise.all([
+    const [messageIds, legacyAgentState, richAgentState] = await Promise.all([
       this.store.getMessageIds(conversationId),
       this.store.getAgentState(conversationId),
+      this.agentState.get(conversationId),
     ]);
-    return { conversationId, messageIds, agentState };
+    // `agentState` (legacy string) kept for any client still reading
+    // it; new clients read `agentStateRich` which carries turnId /
+    // lastError / enteredAt for richer composer hints. The new field
+    // is the authoritative source-of-truth — see
+    // packages/shared/src/agent-state.ts.
+    return {
+      conversationId,
+      messageIds,
+      agentState: legacyAgentState,
+      agentStateRich: richAgentState,
+    };
   }
 
   /**

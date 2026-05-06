@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   IconBook,
   IconBuildingStore,
@@ -61,6 +61,7 @@ export const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
   episode_phase: "workflowEpisodePhase",
   script_phase: "workflowScriptPhase",
   storyboard_phase: "workflowStoryboardPhase",
+  produce_script_pipeline: "workflowProduceScriptPipeline",
 };
 
 interface WorkflowPersona {
@@ -86,6 +87,7 @@ export const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
   episode_phase: { nameKey: "personas.episodePlanner", icon: IconLayoutList },
   script_phase: { nameKey: "personas.scriptwriter", icon: IconPencil },
   storyboard_phase: { nameKey: "personas.storyboardDesigner", icon: IconCamera },
+  produce_script_pipeline: { nameKey: "personas.storyboardDesigner", icon: IconSparkles },
   batch_create_asset: { nameKey: "personas.assetImporter", icon: IconPackage },
   script_edit: { nameKey: "personas.scriptwriter", icon: IconPencil },
 };
@@ -568,15 +570,12 @@ function DraftDetailDialog({
     .sort(([a], [b]) => (a === "sortHint" ? -1 : b === "sortHint" ? 1 : 0));
 
   const originalPrompt = String(data.prompt ?? "");
-
-  const [editedPrompt, setEditedPrompt] = useState(originalPrompt);
-  const [saving, setSaving] = useState(false);
-
-  // Re-seed textarea whenever a different draft is opened.
-  useEffect(() => {
-    setEditedPrompt(String(((draft?.data ?? {}) as Record<string, unknown>).prompt ?? ""));
-    setSaving(false);
-  }, [draft?.clientRefId, open]);
+  const draftKey = `${draft?.clientRefId ?? "none"}:${open ? "open" : "closed"}`;
+  const [promptState, setPromptState] = useState({ key: draftKey, value: originalPrompt });
+  const [savingState, setSavingState] = useState({ key: draftKey, value: false });
+  const editedPrompt = promptState.key === draftKey ? promptState.value : originalPrompt;
+  const saving = savingState.key === draftKey ? savingState.value : false;
+  const setSaving = (value: boolean) => setSavingState({ key: draftKey, value });
 
   const hasChanges = editedPrompt !== originalPrompt;
 
@@ -636,7 +635,7 @@ function DraftDetailDialog({
                 {isPromptRow ? (
                   <textarea
                     value={editedPrompt}
-                    onChange={(e) => setEditedPrompt(e.target.value)}
+                    onChange={(e) => setPromptState({ key: draftKey, value: e.target.value })}
                     disabled={saving}
                     className="min-h-[140px] w-full resize-y border-0 bg-transparent p-0 text-[13px] leading-relaxed text-foreground/90 focus:outline-none focus:ring-0 disabled:opacity-60"
                   />

@@ -92,6 +92,23 @@ function baseUrlFor(path: string) {
   return url.replace(/\/$/, "");
 }
 
+/**
+ * Pull the satoken value out of a Cookie header for debug logging.
+ * Cookie strings look like `name1=val1; name2=val2; …` and the
+ * satoken specifically is what Java's sa-token filter validates, so
+ * surfacing it (excerpted) on each Java call gives a clear signal of
+ * which auth context the request actually carried.
+ */
+function extractSatoken(cookie: string | undefined): string {
+  if (!cookie) return "(none)";
+  const match = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+  if (!match) return "(no satoken in cookie)";
+  const value = match[1] ?? "";
+  // Truncate to keep logs scannable while still letting you spot
+  // changes between requests / sessions.
+  return `${value.slice(0, 12)}…(len=${value.length})`;
+}
+
 export async function javaRequest<T>(
   ctx: StoryosContext,
   path: string,
@@ -100,6 +117,21 @@ export async function javaRequest<T>(
   const method = options?.method ?? "POST";
   const timeoutMs = options?.timeoutMs ?? 60_000;
   const url = `${baseUrlFor(path)}${path}`;
+  const bodyStr = options?.data === undefined ? undefined : JSON.stringify(options.data);
+  const startedAt = Date.now();
+
+  const satokenPreview = extractSatoken(ctx.cookie);
+  const cookieLen = ctx.cookie?.length ?? 0;
+  const bodyPreview =
+    bodyStr === undefined
+      ? "(none)"
+      : bodyStr.length > 200
+        ? `${bodyStr.slice(0, 200)}…(${bodyStr.length}B)`
+        : bodyStr;
+  // eslint-disable-next-line no-console
+  console.info(
+    `[javaRequest] → ${method} ${url} satoken=${satokenPreview} cookieLen=${cookieLen} userId=${ctx.userId} projectId=${ctx.projectId} body=${bodyPreview}`
+  );
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -111,16 +143,29 @@ export async function javaRequest<T>(
         "accept-language": ctx.acceptLanguage ?? "zh-CN",
         cookie: ctx.cookie,
       },
-      body: options?.data === undefined ? undefined : JSON.stringify(options.data),
+      body: bodyStr,
       signal: controller.signal,
     });
+    const tookMs = Date.now() - startedAt;
     if (!response.ok) {
       const text = await response.text().catch(() => "");
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[javaRequest] ✕ ${method} ${path} → HTTP ${response.status} (${tookMs}ms) body=${text.slice(0, 200)}`
+      );
       throw new Error(`HTTP ${response.status} on ${method} ${path}: ${text.slice(0, 300)}`);
     }
     const body = (await response.json()) as ApiBody<T>;
     const ok = body.success === true || body.code === 200 || body.code === "SUCCESS";
-    if (!ok) throw new Error(body.msg || body.message || `Request failed: ${method} ${path}`);
+    if (!ok) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[javaRequest] ✕ ${method} ${path} → envelope code=${String(body.code)} msg=${String(body.msg ?? body.message ?? "")} (${tookMs}ms)`
+      );
+      throw new Error(body.msg || body.message || `Request failed: ${method} ${path}`);
+    }
+    // eslint-disable-next-line no-console
+    console.info(`[javaRequest] ← ${method} ${path} OK (${tookMs}ms)`);
     return (body.data ?? null) as T;
   } finally {
     clearTimeout(timer);

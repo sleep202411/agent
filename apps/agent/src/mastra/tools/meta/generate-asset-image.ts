@@ -94,7 +94,7 @@ async function runGenerate(
 export const generateCharacterImage = createTool({
   id: "generate_character_image",
   description:
-    'Synchronously generate a main image for a single saved character (worldrole) and write the OSS path back onto the record. The Java endpoint blocks 5-30s. Use when the user has already confirmed they want images — typical case: call once per id returned from batch_create_character. For multiple characters, invoke this tool multiple times (it does NOT take an array). For "design a fresh batch of characters from scratch + generate images", use invoke_workflow: role_design instead.',
+    'Synchronously generate a main image for a single saved character (worldrole) and write the OSS path back onto the record. The Java endpoint blocks 5-30s. Use when the user has already confirmed they want images — typical case: call once per id returned from batch_create_character. For multiple characters, invoke this tool multiple times (it does NOT take an array). For "design a fresh batch of characters from scratch + generate images", call `ask_character_designer` to draft, `batch_create_character` to commit, then loop this tool over each new id.',
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async (input, execCtx) =>

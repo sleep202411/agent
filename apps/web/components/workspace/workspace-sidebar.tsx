@@ -1,22 +1,34 @@
 "use client";
 
-import { IconHome2 } from "@tabler/icons-react";
-import Link from "next/link";
+import { IconFolder, IconHome2 } from "@tabler/icons-react";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "@/src/i18n/i18n";
+import { cn } from "@/lib/utils";
 import { WorkspaceSidebarItem } from "./workspace-sidebar-item";
-import { ThemeToggle } from "@/components/theme-toggle";
 
-const workspaceItems = [
-  {
-    path: "/art-studio",
-    exact: true,
-    label: "Home",
-    icon: <IconHome2 className="size-5" />,
-  },
-];
-
+/**
+ * Studio left rail — fixed-positioned floating pill anchored to the
+ * left edge of the viewport, vertically centered. Doesn't reserve flow
+ * space, so page layouts don't have to pad around it.
+ */
 export function WorkspaceSidebar() {
+  const t = useTranslations("sidebar");
   const pathname = usePathname() ?? "/";
+
+  const items = [
+    {
+      path: "/art-studio",
+      exact: true,
+      label: t("home"),
+      icon: <IconHome2 className="size-5" />,
+    },
+    {
+      path: "/art-studio/projects",
+      exact: false,
+      label: t("projects"),
+      icon: <IconFolder className="size-5" />,
+    },
+  ];
 
   const isItemActive = (path: string, exact = false) => {
     if (exact) return pathname === path;
@@ -24,13 +36,14 @@ export function WorkspaceSidebar() {
   };
 
   return (
-    <aside className="relative z-20 flex w-16 shrink-0 flex-col items-center border-r border-border/70 bg-background py-4">
-      <Link href="/art-studio" aria-label="FizzDragon" className="mb-6 block px-2">
-        <img src="/logo.png" alt="FizzDragon" className="h-auto w-full max-w-[44px]" />
-      </Link>
-
-      <nav className="flex flex-1 flex-col gap-3">
-        {workspaceItems.map((item) => (
+    <aside className="fixed left-3 top-1/2 z-20 -translate-y-1/2">
+      <div
+        className={cn(
+          "flex flex-col items-center gap-1 rounded-full p-1.5",
+          "bg-white/5 backdrop-blur-md ring-1 ring-white/10"
+        )}
+      >
+        {items.map((item) => (
           <WorkspaceSidebarItem
             key={item.path}
             href={item.path}
@@ -39,10 +52,6 @@ export function WorkspaceSidebar() {
             isActive={isItemActive(item.path, item.exact)}
           />
         ))}
-      </nav>
-
-      <div className="mt-auto">
-        <ThemeToggle />
       </div>
     </aside>
   );

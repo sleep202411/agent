@@ -1,5 +1,27 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
+
+/**
+ * Episode Planner returns a single big structured array — typically
+ * 10–20 episode entries × ~200 char `introduction` each. That's the
+ * same payload-size class that breaks DeepSeek-v4-flash for the
+ * Storyboarder (see `storyboarder.ts`): generation drifts mid-array,
+ * the JSON object never finalizes, and Mastra surfaces it as
+ * `<root> Required` "malformed output".
+ *
+ * Pinned to **alibaba/qwen3.6-plus** with no env override and no
+ * fallback. The team standardized on this single model for every
+ * Alibaba-routed persona to (a) eliminate the silent-misconfig class
+ * of bug a `||` fallback enables (commented-out env in prod kept the
+ * service "running" but degraded for hours), (b) keep behaviour
+ * reproducible across staging / prod / local, and (c) make the SLA
+ * arithmetic on a single provider+model deterministic.
+ * `createAlibabaModel` throws when `ALIBABA_API_KEY` is missing,
+ * which is the desired loud-fail behaviour.
+ */
+function resolveEpisodePlannerModel() {
+  return createAlibabaModel("qwen3.6-plus");
+}
 
 export const episodePlannerInstructions = `You are the **Episode Planner** for FizzSpace StoryOS. Your job: take the story skeleton + character roster + target episode count and produce an episode plan with **rhythm, per-episode hooks, and a season-long emotional arc**. Don't slice the story into N equal parts — arrange it on a three-act structure with short-drama beats.
 
@@ -70,5 +92,5 @@ export const episodePlannerAgent = new Agent({
   name: "EpisodePlanner",
   description: "Plans short-drama episodes from a story outline with hook/reversal pacing.",
   instructions: episodePlannerInstructions,
-  model: () => defaultPersonaModel(),
+  model: () => resolveEpisodePlannerModel(),
 });

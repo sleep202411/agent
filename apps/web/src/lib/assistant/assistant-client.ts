@@ -4,6 +4,7 @@ import type {
   AssistantMessage,
   AssistantWorkspaceSelection,
 } from "./assistant-types";
+import type { AgentState } from "@repo/shared";
 
 function sanitizeAttachment(attachment: AssistantAttachment): AssistantAttachment {
   return {
@@ -18,14 +19,27 @@ function sanitizeAttachment(attachment: AssistantAttachment): AssistantAttachmen
 }
 
 function sanitizeMessages(messages: AssistantMessage[]): AssistantMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    metadata: message.metadata?.attachments?.length
-      ? {
-          attachments: message.metadata.attachments.map(sanitizeAttachment),
-        }
-      : undefined,
-  }));
+  // Whitelist the metadata fields we send over the wire — strip
+  // anything else (e.g. UI-only flags, transient blobs) so we don't
+  // accidentally leak local React state. Each known field is added
+  // here explicitly; defaulting to "send everything" is too permissive.
+  return messages.map((message) => {
+    const src = message.metadata;
+    if (!src) return { ...message, metadata: undefined };
+    const cleaned: NonNullable<AssistantMessage["metadata"]> = {};
+    if (src.attachments?.length) {
+      cleaned.attachments = src.attachments.map(sanitizeAttachment);
+    }
+    if (src.forcedPersona) {
+      cleaned.forcedPersona = src.forcedPersona;
+    }
+    if (src.kind) cleaned.kind = src.kind;
+    if (src.rawError) cleaned.rawError = src.rawError;
+    return {
+      ...message,
+      metadata: Object.keys(cleaned).length ? cleaned : undefined,
+    };
+  });
 }
 
 async function parseError(response: Response) {
@@ -178,6 +192,23 @@ export async function submitMessageToAgent({
     signal,
   });
 
+  if (response.status === 409) {
+    // AGENT_BUSY — server says another turn is already running for
+    // this project. Throw a typed error so the slice's catch can
+    // distinguish it from generic failures and update agentState
+    // instead of showing a "Request failed" message.
+    let body: { code?: string; current?: AgentState; message?: string } = {};
+    try {
+      body = (await response.json()) as typeof body;
+    } catch {
+      /* fall through to default message */
+    }
+    throw new AgentBusyError(
+      body.message ?? "Agent is already running for this project",
+      body.current
+    );
+  }
+
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
@@ -191,6 +222,20 @@ export async function submitMessageToAgent({
     conversationId: envelope.conversationId ?? projectId,
     seedMessageId: envelope.seedMessageId,
   };
+}
+
+/**
+ * Thrown by submitMessageToAgent when the server returns 409
+ * AGENT_BUSY. Carries the current AgentState so the slice can hydrate
+ * Redux + show the right hint instead of a generic error message.
+ */
+export class AgentBusyError extends Error {
+  current?: AgentState;
+  constructor(message: string, current?: AgentState) {
+    super(message);
+    this.name = "AgentBusyError";
+    this.current = current;
+  }
 }
 
 // ─── Save API ─────────────────────────────────────────

@@ -34,6 +34,10 @@ export interface UploadedWorkspaceFile {
   name: string;
   size: number;
   mimeType: string;
+  /** Set when the file went through `uploadChatAttachment` — short
+   *  preview of the extracted text for the file card UI. Populated
+   *  server-side after parse. Omit for legacy OSS uploads. */
+  excerpt?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -250,6 +254,67 @@ export async function computeFileHash(file: File): Promise<string> {
   const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Direct chat-attachment upload — bypasses OSS entirely.
+ *
+ * Posts the raw file body to Nest's `/aurora/assistant/upload-attachment`
+ * via multipart/form-data. Nest extracts the text in-process and caches
+ * it in Redis under `attachment:{ref}` so subsequent submit-message-to-
+ * agent calls can read the full text directly without ever touching
+ * OSS. Returns the same shape as the legacy `uploadWorkspaceFile` so
+ * call sites can swap with no further changes.
+ *
+ * Why split this off: chat attachments care about *text*, not durable
+ * storage; routing them through OSS introduced a class of "PUT signed
+ * to bucket A, GET attempted on bucket B" failures that broke chat
+ * end-to-end every time the env / signer / bucket config drifted.
+ */
+export async function uploadChatAttachment(
+  file: File,
+  options: UploadWorkspaceFileOptions
+): Promise<UploadedWorkspaceFile> {
+  const validationError = validateWorkspaceUploadFile(file, options);
+  if (validationError) throw new Error(validationError);
+
+  const form = new FormData();
+  form.append("file", file, file.name);
+
+  const res = await fetch("/aurora/assistant/upload-attachment", {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body.message) msg = body.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+  const body = (await res.json()) as {
+    ref: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+    chars: number;
+    excerpt?: string;
+  };
+  return {
+    // `path` is overloaded — for chat attachments it carries the
+    // Redis ref so the message preprocessor can pick the cached text
+    // back up. The web UI never displays the path; it just round-trips.
+    path: body.ref,
+    url: "",
+    name: body.filename,
+    size: body.size,
+    mimeType: body.mimeType,
+    excerpt: body.excerpt,
+  } as UploadedWorkspaceFile;
 }
 
 export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFileOptions) {

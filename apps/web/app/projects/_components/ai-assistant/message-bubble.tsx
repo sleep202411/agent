@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback } from "react";
-import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
+import { IconCheck, IconCopy, IconLoader2, IconMinus } from "@tabler/icons-react";
+import { toast } from "sonner";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Document, Packer, Paragraph, HeadingLevel, AlignmentType } from "docx";
@@ -158,10 +159,15 @@ import {
   getAssistantToolDisplayName,
   isAssistantToolPart,
   type AssistantMessage,
+  type AssistantMessagePart,
   type AssistantToolInvocation,
   type AssistantToolResult,
 } from "@/src/lib/assistant/assistant-types";
-import { isAskPersonaTool } from "@/src/lib/assistant/personas";
+import {
+  getPersonaFromForcedKey,
+  isAskPersonaTool,
+  PERSONA_TONE_TEXT,
+} from "@/src/lib/assistant/personas";
 import { extractSuggestedActions } from "@/src/lib/assistant/suggested-action";
 import { SuggestedActionButtons } from "./suggested-action-buttons";
 import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared";
@@ -169,6 +175,7 @@ import type { WorkflowCompletedOutput, WorkflowFailedOutput } from "@repo/shared
 // ─── Compact tool indicator ───────────────────────────
 
 function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantToolInvocation }) {
+  const t = useTranslations("ai");
   const displayName = getAssistantToolDisplayName(toolName);
   const rawDone = part.state === "output-available";
   // Mastra routes input-validation failures (and other app-level errors)
@@ -188,12 +195,32 @@ function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantTo
     if (msg && msg.length < 60) entityLabel = msg;
   }
 
+  // Raw error payload — surfaced via "copy" affordance only, never rendered.
+  // Most of these are JSON-stringified Mastra tool envelopes the user has no
+  // use for, but we still want them recoverable for ops / Sentry follow-up.
+  const rawError =
+    part.errorText ||
+    (typeof output?.errorMessage === "string" ? (output.errorMessage as string) : "") ||
+    (outputErrored ? JSON.stringify(output ?? {}) : "");
+
+  const copyError = useCallback(() => {
+    if (!rawError) return;
+    void navigator.clipboard.writeText(rawError).then(
+      () => toast.success(t("toolErrorCopied")),
+      () => toast.error(t("toolErrorCopyFailed"))
+    );
+  }, [rawError, t]);
+
   return (
     <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
       {isLoading ? (
         <IconLoader2 className="size-3 animate-spin text-muted-foreground/50" />
       ) : isError ? (
-        <IconX className="size-3 text-destructive/70" />
+        // Tool hiccups are common (schema drift, ratelimit, transient
+        // network) and not user-actionable — use a neutral dash instead
+        // of a destructive red X so the chat doesn't read as "system
+        // failure" every time the LLM has to retry.
+        <IconMinus className="size-3 text-muted-foreground/40" />
       ) : (
         <IconCheck className="size-3 text-green-500/70" />
       )}
@@ -203,8 +230,160 @@ function ToolIndicator({ toolName, part }: { toolName: string; part: AssistantTo
           {entityLabel}
         </span>
       )}
-      {isError && part.errorText && (
-        <span className="text-[11px] text-destructive/70">{part.errorText}</span>
+      {isError && (
+        <>
+          <span className="text-[11px] text-muted-foreground/60">{t("toolErrorFriendly")}</span>
+          {rawError && (
+            <button
+              type="button"
+              onClick={copyError}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground/50 transition-colors hover:bg-white/8 hover:text-muted-foreground"
+              title={t("toolErrorCopyHint")}
+            >
+              <IconCopy className="size-3" />
+              {t("toolErrorCopy")}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Tool-run collapse ─────────────────────────────────
+//
+// Some tools are intrinsically "batched" — when the supervisor wants
+// to update 8 storyboard rows it emits 8 separate `update_storyboard_row`
+// tool calls, which used to render as 8 stacked `↻ Updating Storyboard`
+// rows. Collapse consecutive runs of the same tool into a single
+// indicator with a count. Tools NOT in this set render one-row-per-call
+// as before (different cards, different intents).
+const COLLAPSIBLE_TOOLS = new Set<string>([
+  "update_storyboard_row",
+  "batch_update_storyboard_rows",
+  "add_shot",
+  "delete_shot",
+  "update_episode",
+  "delete_episode",
+  "batch_create_character",
+  "batch_create_scene",
+  "batch_create_prop",
+  "generate_character_image",
+  "generate_scene_image",
+  "generate_prop_image",
+]);
+
+/** Counts how many consecutive same-toolName tool parts start at
+ *  `index`. Used to collapse 8× "Updating Storyboard" into one row.
+ *  Only counts when the tool is in COLLAPSIBLE_TOOLS. */
+function countRun(parts: AssistantMessagePart[], index: number, toolName: string): number {
+  let n = 0;
+  for (let i = index; i < parts.length; i++) {
+    const p = parts[i];
+    if (!isAssistantToolPart(p)) break;
+    if (getAssistantToolName(p) !== toolName) break;
+    n++;
+  }
+  return n;
+}
+
+/** Returns true if a previous sibling absorbed this part into a run.
+ *  Skips rendering for everyone except the run leader. */
+function isAbsorbedByRun(parts: AssistantMessagePart[], index: number, toolName: string): boolean {
+  if (index === 0) return false;
+  const prev = parts[index - 1];
+  if (!isAssistantToolPart(prev)) return false;
+  return getAssistantToolName(prev) === toolName;
+}
+
+function GroupedToolIndicator({
+  toolName,
+  parts,
+}: {
+  toolName: string;
+  parts: AssistantToolInvocation[];
+}) {
+  const t = useTranslations("ai");
+  const displayName = getAssistantToolDisplayName(toolName);
+  // Aggregate run state — pessimistic: if any part is still streaming
+  // we render as loading; if any errored, render as soft hiccup; else
+  // fully completed.
+  const total = parts.length;
+  let loading = 0;
+  let errored = 0;
+  for (const p of parts) {
+    const out =
+      p.state === "output-available"
+        ? (p.output as Record<string, unknown> | undefined)
+        : undefined;
+    const outputErrored = out?.error === true;
+    if (p.state === "output-error" || p.state === "output-denied" || outputErrored) {
+      errored++;
+    } else if (p.state !== "output-available") {
+      loading++;
+    }
+  }
+  const allDone = loading === 0;
+  const hasErrors = errored > 0;
+  const Icon = loading > 0 ? IconLoader2 : hasErrors ? IconMinus : IconCheck;
+  const iconClass =
+    loading > 0
+      ? "size-3 animate-spin text-muted-foreground/50"
+      : hasErrors
+        ? "size-3 text-muted-foreground/40"
+        : "size-3 text-green-500/70";
+
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/70">
+      <Icon className={iconClass} />
+      <span className="font-medium">{displayName}</span>
+      <span className="rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] text-muted-foreground/60">
+        ×{total}
+      </span>
+      {hasErrors && (
+        <span className="text-[11px] text-muted-foreground/60">
+          {t("toolErrorFriendly")} ({errored})
+        </span>
+      )}
+      {!allDone && loading < total && (
+        <span className="text-[11px] text-muted-foreground/50">
+          {total - loading}/{total}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Stream-error indicator ────────────────────────────
+//
+// Renders a synthesized "soft" error message (from streamError) as a
+// small dash + friendly text + copy-details affordance. Same visual
+// language as ToolIndicator's error state — both are infrastructure
+// hiccups, not user-actionable failures.
+function StreamErrorIndicator({ rawError }: { rawError: string }) {
+  const t = useTranslations("ai");
+  const copy = useCallback(() => {
+    if (!rawError) return;
+    void navigator.clipboard.writeText(rawError).then(
+      () => toast.success(t("toolErrorCopied")),
+      () => toast.error(t("toolErrorCopyFailed"))
+    );
+  }, [rawError, t]);
+
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-[12px] text-muted-foreground/60">
+      <IconMinus className="size-3 text-muted-foreground/40" />
+      <span>{t("toolErrorFriendly")}</span>
+      {rawError && (
+        <button
+          type="button"
+          onClick={copy}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground/50 transition-colors hover:bg-white/8 hover:text-muted-foreground"
+          title={t("toolErrorCopyHint")}
+        >
+          <IconCopy className="size-3" />
+          {t("toolErrorCopy")}
+        </button>
       )}
     </div>
   );
@@ -252,6 +431,15 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
     }
   }
 
+  // Synthesized stream-error messages (raw POST-to-agent failed) render
+  // as the same soft dash + friendly + copy-details treatment as a tool
+  // hiccup. The agent run still streams in normally over WS most of
+  // the time, so a loud red error block between two valid assistant
+  // turns is misleading.
+  if (message.role === "assistant" && message.metadata?.kind === "stream_error") {
+    return <StreamErrorIndicator rawError={message.metadata.rawError ?? ""} />;
+  }
+
   return (
     <>
       {/* Tool result summaries rendered as user-like messages */}
@@ -285,6 +473,16 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
 
           <div className="space-y-3">
             {message.parts.map((part, index) => {
+              // Suppress non-leading members of a collapsible run — the
+              // run leader (first occurrence) renders the grouped
+              // indicator down at the catch-all branch below.
+              if (
+                isAssistantToolPart(part) &&
+                COLLAPSIBLE_TOOLS.has(getAssistantToolName(part)) &&
+                isAbsorbedByRun(message.parts, index, getAssistantToolName(part))
+              ) {
+                return null;
+              }
               if (part.type === "text") {
                 // Canonical user message `Params set: {JSON}` — parse the
                 // JSON and render a localized key:value list. The raw
@@ -317,6 +515,37 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                 // each emission stands alone; supervisor owns dedupe +
                 // label uniqueness.
                 const { cleanText, suggestedActions } = extractSuggestedActions(part.text);
+
+                // Forced-persona pin: render `Storyboard Designer / `
+                // inline before the user's text on the FIRST text part
+                // only. Same tone colour as the live composer chip, so
+                // the "this went to X" attribution carries through chat
+                // history. Skip markdown for the prefixed render —
+                // user text is normally plain anyway, and inline-
+                // mixing markdown with a leading inline element fights
+                // react-markdown's block-level paragraph default.
+                const forcedPersonaKey =
+                  message.role === "user" ? message.metadata?.forcedPersona : undefined;
+                const isFirstTextPart = forcedPersonaKey
+                  ? message.parts.findIndex((p) => p.type === "text") === index
+                  : false;
+
+                if (forcedPersonaKey && isFirstTextPart) {
+                  const persona = getPersonaFromForcedKey(forcedPersonaKey);
+                  const displayName = t(`personas.${persona.nameKey}`);
+                  return (
+                    <div
+                      key={`${message.id}-text-${index}`}
+                      className="max-w-none text-[13px] leading-relaxed whitespace-pre-wrap"
+                    >
+                      <span className={cn("font-medium", PERSONA_TONE_TEXT[persona.tone])}>
+                        {displayName} /{" "}
+                      </span>
+                      {cleanText}
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={`${message.id}-text-${index}`}
@@ -732,7 +961,25 @@ export function MessageBubble({ message, isLastAssistant, onApplyToolResult }: M
                   );
                 }
 
-                // All other tools — compact inline indicator
+                // All other tools — compact inline indicator. When
+                // this is a leader of a collapsible run (>1 sibling
+                // tool calls of the same name in a row), render a
+                // single grouped indicator with a count instead.
+                if (COLLAPSIBLE_TOOLS.has(toolName)) {
+                  const runLen = countRun(message.parts, index, toolName);
+                  if (runLen > 1) {
+                    const runParts = message.parts
+                      .slice(index, index + runLen)
+                      .filter(isAssistantToolPart) as AssistantToolInvocation[];
+                    return (
+                      <GroupedToolIndicator
+                        key={`${message.id}-${part.toolCallId}-${toolName}-group${runLen}`}
+                        toolName={toolName}
+                        parts={runParts}
+                      />
+                    );
+                  }
+                }
                 return (
                   <ToolIndicator
                     key={`${message.id}-${part.toolCallId}-${toolName}-${part.state}`}

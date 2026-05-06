@@ -12,6 +12,8 @@
  * edit actually resolved to.
  */
 
+import { ALIBABA_DEFAULT_MODEL } from "./models";
+
 type Check =
   | { kind: "info"; label: string; value: string }
   | { kind: "ok"; label: string; detail: string }
@@ -23,20 +25,33 @@ function check(): Check[] {
   // ─── Router / persona wiring ─────────────────────────────────────────
   const routerProvider = process.env.STORYOS_ROUTER_PROVIDER?.trim() || "(unset)";
   const routerModel = process.env.STORYOS_ROUTER_MODEL?.trim() || "(default)";
-  const personaProvider = process.env.STORYOS_PERSONA_PROVIDER?.trim() || "(unset)";
-  const personaModel = process.env.STORYOS_PERSONA_MODEL?.trim() || "(default)";
-  const fallbackModel = process.env.STORYOS_ROUTER_FALLBACK_MODEL?.trim() || "deepseek-chat";
-
   out.push({
     kind: "info",
     label: "router",
-    value: `${routerProvider} / ${routerModel}  → fallback deepseek/${fallbackModel}`,
+    value: `${routerProvider} / ${routerModel}  → fallback alibaba/${ALIBABA_DEFAULT_MODEL}`,
   });
-  out.push({
-    kind: "info",
-    label: "persona",
-    value: `${personaProvider} / ${personaModel}`,
-  });
+  // All personas (storyboarder, episode-planner, video-prompt + the
+  // generic `defaultPersonaModel()` consumers — scriptwriter / role-
+  // designer / scene-designer / prop-designer / art-director / brief-
+  // analyzer / evaluator / script-splitter / story-editor) pin to a
+  // single canonical model — see ALIBABA_DEFAULT_MODEL in
+  // `lib/models.ts`. No env override, no fallback: a missing key is a
+  // hard boot-time signal, not a silent quality regression.
+  const hasAlibabaKey = Boolean(process.env.ALIBABA_API_KEY?.trim());
+  if (hasAlibabaKey) {
+    out.push({
+      kind: "info",
+      label: "personas",
+      value: `alibaba / ${ALIBABA_DEFAULT_MODEL}  (all personas + video-prompt)`,
+    });
+  } else {
+    out.push({
+      kind: "warn",
+      label: "personas",
+      detail:
+        "ALIBABA_API_KEY missing — every persona (and the supervisor's fallback) will throw on first call.",
+    });
+  }
 
   // ─── API-key sanity (format-only, no network) ────────────────────────
   const anthropic = process.env.ANTHROPIC_API_KEY?.trim();
@@ -63,11 +78,11 @@ function check(): Check[] {
   }
 
   const deepseek = process.env.DEEPSEEK_API_KEY?.trim();
-  if (
-    personaProvider === "deepseek" ||
-    routerProvider === "deepseek" ||
-    routerProvider === "anthropic" // Claude fallback needs DeepSeek too
-  ) {
+  if (routerProvider === "deepseek") {
+    // Personas + Anthropic-fallback no longer use DeepSeek (they all
+    // resolve to Alibaba/qwen3.6-plus now), so the key is only required
+    // when the supervisor itself is explicitly configured to run on
+    // DeepSeek.
     if (!deepseek) {
       out.push({
         kind: "warn",

@@ -36,6 +36,10 @@ export interface SparkDraft {
   roleCount?: number;
   sceneCount?: number;
   propCount?: number;
+  /** Full extracted text is cached server-side under this ref for produce mode. */
+  textRef?: string;
+  sourceChars?: number;
+  sourceExcerpt?: string;
 }
 
 /** Limit picked to be friendly for typical novel/script uploads while

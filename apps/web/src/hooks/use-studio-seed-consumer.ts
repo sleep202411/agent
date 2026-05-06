@@ -7,10 +7,12 @@ import {
   sendUserMessage,
   setAgentType,
   setDraft,
+  setForcedPersona,
 } from "@/src/store/slices/assistantSlice";
 import { setActivePanel } from "@/src/store/slices/projectSlice";
 import type { AssistantAgentType } from "@/src/types/assistant-contracts";
 import type { StudioAgent, StudioSeed } from "@/src/types/studio-seed";
+import type { ForcedPersonaKey } from "@repo/shared";
 import { useStudioSeed } from "./use-studio-seed";
 
 /**
@@ -30,6 +32,28 @@ function mapSeedAgent(agent: StudioAgent): AssistantAgentType {
     case "prop":
     default:
       return "general";
+  }
+}
+
+/**
+ * Maps the studio composer's chip selection to the forced-persona wire
+ * key consumed by the supervisor. This is the same Redux field the
+ * in-chat ForcePersonaPills writes to, so a pill click in the studio
+ * composer behaves identically to clicking it after the chat opens —
+ * the first user message gets `metadata.forcedPersona` stamped, and
+ * the supervisor dispatches directly to the matching `ask_*` tool
+ * instead of routing through the general persona.
+ */
+function mapSeedAgentToForcedPersona(agent: StudioAgent): ForcedPersonaKey {
+  switch (agent) {
+    case "character":
+      return "character_designer";
+    case "scene":
+      return "scene_designer";
+    case "prop":
+      return "prop_designer";
+    case "episode":
+      return "episode_planner";
   }
 }
 
@@ -91,6 +115,9 @@ export function useStudioSeedConsumer(projectId: string | null | undefined): {
     }
 
     dispatch(setAgentType({ projectId, agentType: mapSeedAgent(seed.agent) }));
+    dispatch(
+      setForcedPersona({ projectId, forcedPersona: mapSeedAgentToForcedPersona(seed.agent) })
+    );
     dispatch(setDraft({ projectId, draft: seed.prompt }));
 
     // Defer one tick so the slice updates land before the thunk reads state.

@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { IconLoader2, IconChevronDown, IconChevronUp, IconAlertCircle } from "@tabler/icons-react";
+import {
+  IconLoader2,
+  IconChevronDown,
+  IconChevronUp,
+  IconCopy,
+  IconMinus,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 import { markdownComponents } from "../markdown-components";
@@ -118,8 +125,8 @@ function PersonaCard({
             {t("personaConsulting")}
           </span>
         ) : hasError ? (
-          <span className="inline-flex items-center gap-1 text-[11px] text-destructive/80">
-            <IconAlertCircle className="size-3" />
+          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/60">
+            <IconMinus className="size-3 text-muted-foreground/40" />
             {t("personaError")}
           </span>
         ) : (
@@ -152,7 +159,7 @@ function PersonaCard({
         </div>
       )}
 
-      {hasError && error && <div className="mt-2 text-[12px] text-destructive/80">{error}</div>}
+      {hasError && <PersonaErrorRow rawError={typeof error === "string" ? error : ""} />}
 
       {!hasError && summary && expanded && (
         <div className="mt-2 border-t border-border/40 pt-2 text-[13px] leading-relaxed text-foreground/90">
@@ -160,6 +167,40 @@ function PersonaCard({
             {summary}
           </Markdown>
         </div>
+      )}
+    </div>
+  );
+}
+
+// Friendly inline error indicator with copy-details affordance —
+// matches ToolIndicator's failed-tool style. Persona timeouts /
+// malformed structured outputs are common (DeepSeek under heavy
+// schema pressure); raw "<root> Required" type messages are noise
+// to the user but valuable for debugging via copy.
+function PersonaErrorRow({ rawError }: { rawError: string }) {
+  const t = useTranslations("ai");
+  const copy = useCallback(() => {
+    if (!rawError) return;
+    void navigator.clipboard.writeText(rawError).then(
+      () => toast.success(t("toolErrorCopied")),
+      () => toast.error(t("toolErrorCopyFailed"))
+    );
+  }, [rawError, t]);
+
+  return (
+    <div className="mt-2 flex items-center gap-2 text-[12px] text-muted-foreground/60">
+      <IconMinus className="size-3 text-muted-foreground/40" />
+      <span>{t("toolErrorFriendly")}</span>
+      {rawError && (
+        <button
+          type="button"
+          onClick={copy}
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground/50 transition-colors hover:bg-white/8 hover:text-muted-foreground"
+          title={t("toolErrorCopyHint")}
+        >
+          <IconCopy className="size-3" />
+          {t("toolErrorCopy")}
+        </button>
       )}
     </div>
   );

@@ -27,6 +27,7 @@ import {
 } from "./context-loader";
 import { askPersona, PersonaReplyFieldsSchema, type AskPersonaResult } from "./ask-persona";
 import { getContext, type StoryosContext } from "../../lib/workspace-client";
+import { resolveAttachmentText } from "../../lib/attachment-resolve";
 
 // ─── Shared output schema ──────────────────────────────────────────────
 //
@@ -129,10 +130,16 @@ function makeAskTool(cfg: AskToolConfig) {
       scope: ScopeSchema.optional().describe(
         "Manually pick which project context blocks to load; usually leave unset and accept the default."
       ),
+      textRef: z
+        .string()
+        .optional()
+        .describe(
+          "Attachment ref (e.g. `att_xxx`) when the user uploaded source material the persona should read directly. The full extracted text is loaded from Redis and injected as a `Source material` context block, so the persona can write/design against the user's actual content rather than hallucinating from the task line. Pass this whenever the user message includes an `[attachment \"att_xxx\"]` marker — even when the task itself doesn't mention the file (e.g. user pinned a persona, attached a script, said only '设计分镜' / 'design storyboard'). Without it the persona can't see the script."
+        ),
     }),
     outputSchema: ReplySchema,
     execute: async (
-      { task, scope }: { task: string; scope?: Scope },
+      { task, scope, textRef }: { task: string; scope?: Scope; textRef?: string },
       execCtx: ToolExecutionContext | undefined
     ): Promise<AskPersonaResult> => {
       let ctx: StoryosContext;
@@ -149,6 +156,27 @@ function makeAskTool(cfg: AskToolConfig) {
         };
       }
       const contextBlocks = await collectContext(ctx, scope, cfg.defaultScope);
+      // Optionally pull attachment text and inject as its own context
+      // block. Soft-fail (logged) so a stale / missing ref doesn't kill
+      // the whole persona call — the LLM still has project state to
+      // work from, and the supervisor will get a clear "fields=null"
+      // signal if the persona can't proceed without source material.
+      if (textRef) {
+        try {
+          const sourceText = await resolveAttachmentText(textRef, { projectId: ctx.projectId });
+          if (sourceText.trim()) {
+            contextBlocks.push({ heading: "Source material", body: sourceText });
+          } else {
+            console.warn(
+              `[ask-persona] textRef=${textRef} resolved to empty text (projectId=${ctx.projectId})`
+            );
+          }
+        } catch (err) {
+          console.warn(
+            `[ask-persona] failed to resolve textRef=${textRef}: ${err instanceof Error ? err.message : err}`
+          );
+        }
+      }
       return askPersona({
         mastra: execCtx?.mastra,
         requestContext: execCtx?.requestContext,
@@ -218,6 +246,6 @@ export const askEpisodePlanner = makeAskTool({
   toolId: "ask_episode_planner",
   agentId: "episodePlanner",
   description:
-    'Have the episode-planner persona discuss episode structure (suggested episode count, between-episode hooks, mainline distribution). Returns text only, no DB writes. Good for: "how many episodes does this story need?", "what hook should episode 4 end on?", "is it OK to swap episodes 3 and 5?". For batch episode-outline generation, use invoke_workflow(\'episode_phase\').',
+    'Have the episode-planner persona discuss episode structure (suggested episode count, between-episode hooks, mainline distribution). Returns text only, no DB writes. Good for: "how many episodes does this story need?", "what hook should episode 4 end on?", "is it OK to swap episodes 3 and 5?". To **save** the planner\'s episode outline (commit N episodes to Java), call this tool to draft, then pipe the resulting episodes into `batch_create_episode`. For renaming a single existing episode, use `update_episode` instead.',
   defaultScope: { includeProject: true, includeEpisodes: true, includeRoles: true },
 });

@@ -230,12 +230,8 @@ export default function CreateIPPage() {
                 value={form.title}
                 onChange={(e) => update({ title: e.target.value })}
                 placeholder="Enter your IP name"
-                maxLength={50}
                 className="h-10"
               />
-              <p className="mt-1 text-right text-xs text-muted-foreground">
-                {form.title.length}/50
-              </p>
             </div>
 
             <div>
@@ -268,13 +264,9 @@ export default function CreateIPPage() {
                 value={form.description}
                 onChange={(e) => update({ description: e.target.value })}
                 placeholder="Describe your IP project..."
-                maxLength={500}
                 rows={4}
                 className="min-h-24"
               />
-              <p className="mt-1 text-right text-xs text-muted-foreground">
-                {form.description.length}/500
-              </p>
             </div>
 
             <div>
@@ -329,12 +321,8 @@ export default function CreateIPPage() {
                 onChange={(e) => update({ story: e.target.value })}
                 placeholder="Describe your world-building, characters, and plot direction..."
                 rows={8}
-                maxLength={2000}
                 className="min-h-48"
               />
-              <p className="mt-1 text-right text-xs text-muted-foreground">
-                {form.story.length}/2000
-              </p>
             </div>
 
             <div>
@@ -346,7 +334,6 @@ export default function CreateIPPage() {
                 onChange={(e) => update({ whyThisIP: e.target.value })}
                 placeholder="What makes this project unique and worth supporting?"
                 rows={4}
-                maxLength={1000}
                 className="min-h-24"
               />
             </div>

@@ -116,6 +116,7 @@ async function finalizeCancelled(
 ): Promise<void> {
   await setStatus(runId, "cancelled");
   await clearCancel(runId);
+  if (workflowName === "produce_script_pipeline") return;
   try {
     await publishWorkflowFailed(projectId, runId, workflowName, {
       terminalStatus: "cancelled",
@@ -137,6 +138,7 @@ async function finalizeFailed(
   classification: ReturnType<typeof classifyError>,
   inputData?: unknown
 ): Promise<void> {
+  if (workflowName === "produce_script_pipeline") return;
   try {
     await publishWorkflowFailed(projectId, runId, workflowName, {
       terminalStatus: "failed",

@@ -10,10 +10,8 @@
  *      SDK auto-retries on schema failure.
  *
  * Endpoint config:
- *   - ALIBABA_API_KEY     — DashScope API key (provider auto-reads
- *                           `DASHSCOPE_API_KEY` too; we pass the
- *                           value explicitly so the env name doesn't
- *                           silently drift).
+ *   - ALIBABA_API_KEY     — DashScope API key. This project standardizes
+ *                           on this env name across server + agent.
  *
  * Model is hard-coded to `qwen3-max`. Previously this was an `AI_MODEL`
  * env var, but the name was misleadingly generic — ops set it to
@@ -25,11 +23,13 @@
  * separately once the user accepts.
  */
 
+import { randomBytes } from 'crypto';
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { createAlibaba } from '@ai-sdk/alibaba';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import mammoth from 'mammoth';
+import Redis from 'ioredis';
 // pdf-parse ships an `index.js` that runs a debug self-test on import,
 // reading a fixture file from disk. The deep import below skips that.
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
@@ -44,12 +44,16 @@ export interface SparkUpload {
 }
 
 const MAX_INPUT_CHARS = 40_000;
+const ATTACHMENT_TTL_SEC = 6 * 3600;
 
 const NAME_MAX = 80;
 const DESCRIPTION_MAX = 500;
 const TAG_MAX_LEN = 20;
 const TAGS_MAX = 5;
 const BANNER_PROMPT_MAX = 800;
+const parsePdf = pdfParse as unknown as (
+  buffer: Buffer,
+) => Promise<{ text?: string }>;
 
 /**
  * Loose schema by design: only structural shape (string / array of
@@ -137,7 +141,29 @@ const SparkDraftSchema = z.object({
     ),
 });
 
-export type SparkDraft = z.infer<typeof SparkDraftSchema>;
+type SparkModelDraft = z.infer<typeof SparkDraftSchema>;
+
+export type SparkDraft = SparkModelDraft & {
+  /** Redis attachment ref containing the full extracted source text. */
+  textRef?: string;
+  sourceChars?: number;
+  sourceExcerpt?: string;
+};
+
+let redisClient: Redis | null = null;
+function getRedis(): Redis {
+  if (redisClient) return redisClient;
+  const url = process.env.REDIS_URL;
+  redisClient = url ? new Redis(url) : new Redis();
+  redisClient.on('error', (err) => {
+    console.error('[spark redis]', err?.message ?? err);
+  });
+  return redisClient;
+}
+
+function newAttachmentRef(): string {
+  return `att_${randomBytes(6).toString('hex')}`;
+}
 
 @Injectable()
 export class SparkService {
@@ -151,6 +177,10 @@ export class SparkService {
         'Could not read any text from the uploaded file.',
       );
     }
+    const textRef = await this.cacheSourceText(trimmed, {
+      filename: file.originalname,
+      mimeType: file.mimetype,
+    });
     const input = trimmed.slice(0, MAX_INPUT_CHARS);
 
     const apiKey = process.env.ALIBABA_API_KEY;
@@ -208,7 +238,12 @@ export class SparkService {
       prompt: `Source text:\n\n${input}\n\nReturn { name, description, tags, bannerPrompt, episodeCount, runtimeMinutes, language, roleCount, sceneCount, propCount } as JSON. Omit any structural field you cannot honestly estimate.`,
     });
 
-    return this.clamp(object);
+    return {
+      ...this.clamp(object),
+      textRef,
+      sourceChars: trimmed.length,
+      sourceExcerpt: trimmed.slice(0, 800),
+    };
   }
 
   /** Apply length caps in code so a slightly-overrun model response
@@ -216,7 +251,7 @@ export class SparkService {
    *  and the user is free to edit before applying. Structural counts
    *  are clamped to plausible upper bounds — the model occasionally
    *  hallucinates 4-digit numbers from a multi-novel anthology. */
-  private clamp(draft: SparkDraft): SparkDraft {
+  private clamp(draft: SparkModelDraft): SparkModelDraft {
     const clampInt = (v: number | undefined, max: number) =>
       typeof v === 'number' && Number.isFinite(v) && v > 0
         ? Math.min(Math.round(v), max)
@@ -238,13 +273,34 @@ export class SparkService {
     };
   }
 
+  private async cacheSourceText(
+    text: string,
+    meta: { filename?: string; mimeType?: string },
+  ): Promise<string> {
+    const ref = newAttachmentRef();
+    const payload = JSON.stringify({
+      text,
+      filename: meta.filename,
+      mimeType: meta.mimeType,
+      chars: text.length,
+      cachedAt: Date.now(),
+    });
+    await getRedis().set(
+      `attachment:${ref}`,
+      payload,
+      'EX',
+      ATTACHMENT_TTL_SEC,
+    );
+    return ref;
+  }
+
   private async extractText(file: SparkUpload): Promise<string> {
     const name = (file.originalname ?? '').toLowerCase();
     const mime = file.mimetype ?? '';
 
     // PDFs
     if (mime === 'application/pdf' || name.endsWith('.pdf')) {
-      const result = await pdfParse(file.buffer);
+      const result = await parsePdf(file.buffer);
       return result.text ?? '';
     }
 

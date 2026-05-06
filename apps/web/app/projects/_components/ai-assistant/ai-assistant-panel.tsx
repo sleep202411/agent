@@ -27,6 +27,7 @@ import {
   finalizeMessage,
   finalizeTurnOnIdle,
   markAgentWorking,
+  setAgentState,
   streamError,
 } from "@/src/store/slices/assistantSlice";
 import { ensureSession, closeSession } from "@/src/lib/assistant/chat-session";
@@ -35,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { quickActionsByAgent } from "./constants";
 import { MessageBubble } from "./message-bubble";
 import { ChatComposer } from "./chat-composer";
+import type { TextEditorHandle } from "./text-editor";
 import { useAutoScroll } from "./use-auto-scroll";
 
 // ─── Empty defaults ────────────────────────────────────
@@ -59,7 +61,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   );
 
   const messagesRef = useRef<HTMLDivElement | null>(null);
-  const editorRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<TextEditorHandle | null>(null);
   const selectedAgent = conversation?.agentType ?? "general";
 
   useEffect(() => {
@@ -95,6 +97,14 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
           dispatch(streamError({ projectId, error: "Agent run failed" }));
         }
       },
+      onAgentStateChanged: (changedProjectId, agentState) => {
+        // Server-authoritative agent state — single source of truth
+        // for "can submit?" and the soft hint above the composer. We
+        // accept any project ID the server sends (it should match
+        // ours; the if-guard is belt-and-braces).
+        if (changedProjectId !== projectId) return;
+        dispatch(setAgentState({ projectId, agentState }));
+      },
       onError: (err) => {
         console.warn("[ai-assistant] chat-session error:", err.message);
       },
@@ -112,8 +122,8 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
   const error = conversation?.error ?? null;
 
   useEffect(() => {
-    if (!draftInput && editorRef.current && editorRef.current.innerText.trim()) {
-      editorRef.current.innerText = "";
+    if (!draftInput && editorRef.current && !editorRef.current.isEmpty()) {
+      editorRef.current.clear();
     }
   }, [draftInput]);
 
@@ -128,16 +138,8 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
       if (!detail || detail.projectId !== projectId) return;
       const editor = editorRef.current;
       if (!editor) return;
-      editor.innerText = detail.text ?? "";
+      editor.setText(detail.text ?? "");
       editor.focus();
-      const selection = window.getSelection();
-      if (selection) {
-        const range = document.createRange();
-        range.selectNodeContents(editor);
-        range.collapse(false);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
     };
     window.addEventListener("ai-assistant:set-draft", handler);
     return () => window.removeEventListener("ai-assistant:set-draft", handler);
@@ -278,7 +280,7 @@ export function AiAssistantPanel({ onClose }: AiAssistantPanelProps) {
                           onClick={() => {
                             if (!projectId) return;
                             dispatch(setDraft({ projectId, draft: prompt }));
-                            if (editorRef.current) editorRef.current.innerText = prompt;
+                            editorRef.current?.setText(prompt);
                           }}
                           className="w-full p-3 text-left"
                         >

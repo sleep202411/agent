@@ -41,7 +41,7 @@ type PatchKey = (typeof PATCHABLE_KEYS)[number];
 export const updateStoryboardRow = createTool({
   id: "update_storyboard_row",
   description:
-    'Patch one or more fields of a single shot in an episode\'s storyboard (scene / characters / description / dialogue / image prompt / video prompt / movement / shot size / perspective / duration / style). Call when the user explicitly says e.g. "change the dialogue of episode N shot M to X" / "set the scene of shot 1 to café" / "add Jack and Lina to shot 3". Pass scene as a name — existing scenes are reused, new names are auto-created. Pass characters as an array of names — only existing worldroles are accepted. For bulk changes across an episode or many episodes, use invoke_workflow.',
+    'Patch one or more fields of a single shot in an episode\'s storyboard (scene / characters / description / dialogue / image prompt / video prompt / movement / shot size / perspective / duration / style). Call when the user explicitly says e.g. "change the dialogue of episode N shot M to X" / "set the scene of shot 1 to café" / "add Jack and Lina to shot 3". Pass scene as a name — existing scenes are reused, new names are auto-created. Pass characters as an array of names — only existing worldroles are accepted. For bulk changes across an episode, use `batch_update_storyboard_rows` instead.',
   inputSchema: z.object({
     episodeId: z.string().describe("Java episode id — get from query_context"),
     shotNo: z
