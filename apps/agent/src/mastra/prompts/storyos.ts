@@ -169,20 +169,34 @@ Frontend rule: at the end of any text part, if there is a fenced \`\`\`json\`\`\
 
 ### When to emit
 
-1. **The persona returned a complete, persistable proposal** (the returned object's \`fields\` carries non-empty values) → put \`persona_result.fields\` directly into \`action.input.items\`. **Do not rewrite a single character** in those fields (don't normalise quotes, don't reword, don't merge or split).
+1. **The persona returned a complete, persistable proposal** (the returned object's \`fields\` carries non-empty values) → emit a save button. Map \`persona_result.fields\` to the save tool's input shape; **do not rewrite a single character** in the persona's values (don't normalise quotes, don't reword, don't merge or split).
 2. **The user's intent is itself an atomic operation** ("change episode 2's title to X", "delete this shot") → no buttons; call the atomic tool directly.
 
 **Hard rule**: case 1 is **mandatory** — the moment you receive a persona return whose \`fields\` is non-empty, **your reply must end with a JSON block**. Skipping the emit throws the persona's work away — the user has no "one-click save" and is forced to retype everything.
 
-**Scriptwriter exception to the items[] shape**: \`ask_scriptwriter\` for a whole episode returns \`fields.content\` (the full script as plain text), not \`fields.name/description/prompt\`. The save tool is \`save_episode_script\` with input \`{ episodeId, content }\` — **not** wrapped in an \`items\` array. Use the focused episode's id from \`<WORKSPACE_CONTEXT>\` (or a prior \`query_context\` if the user named a different episode):
+### Mapping \`persona_result.fields\` to \`action.input\`
+
+Every persona's \`fields\` follows one of four shapes. Pick the right one and route it to the matching save tool:
+
+- **Designer single** (role / scene / prop, single asset): \`fields = {name, role/category, prompt, ...}\` (flat keys).
+  → \`action.input.items = [persona_result.fields]\` (wrap once into a single-element items array).
+- **Designer multi** (role / scene / prop, batch): \`fields = {items: [{...}, {...}]}\`.
+  → \`action.input.items = persona_result.fields.items\` (use the array directly, **do not** double-wrap).
+- **Storyboarder multi** (storyboard rows): \`fields = {rows: [{shot_no, scene, description, ...}, ...]}\`.
+  → loop and call \`add_shot\` per row, OR if you have a batch tool registered, pass \`fields.rows\` to its rows-shaped input. **Do not** stuff rows into \`items\`.
+- **Episode planner**: \`fields = {episodes: [{title, introduction}, ...]}\`.
+  → \`action.input.episodes = persona_result.fields.episodes\` for \`batch_create_episode\`.
+- **Scriptwriter** (single episode): \`fields = {content: "..."}\`.
+  → \`action.input = {episodeId: "<from <WORKSPACE_CONTEXT>>", content: persona_result.fields.content}\` for \`save_episode_script\`. **Not** wrapped in items.
+  → For multi-episode save, \`action.input.items = [{episodeId, content}, ...]\` for \`batch_save_episode_scripts\`.
+
+Concrete scriptwriter button:
 
 \`\`\`json
 {"actions":[
   {"label":"Save script","tool":"save_episode_script","input":{"episodeId":"<from-context>","content":"<persona fields.content verbatim>"},"estimatedCost":0}
 ]}
 \`\`\`
-
-If the user asked to save several episodes at once, switch to \`batch_save_episode_scripts\` with \`input.items: [{episodeId, content}, …]\`.
 
 ### Format (strict)
 
@@ -204,7 +218,7 @@ The \`tool\` / \`input\` of two buttons can be identical — **the label decides
 - **Labels must be unique within an array** — when the user clicks a button the frontend posts back "apply the proposal above: \`<label>\`", and you locate the action by label; duplicates can't be disambiguated.
 - **Labels are user-facing** — never internal tool names.
 - \`tool\` must be the name of an actually registered tool (see the per-tool descriptions to know which are tools).
-- \`input\` must strictly match the target tool's schema. **\`fields\` returned from a persona goes verbatim into \`items\`** — string-level copy; no rewriting, no merging.
+- \`input\` must strictly match the target tool's schema. **Persona values go verbatim** — no rewriting, no merging — but follow the four mapping rules above (single → wrap into \`items:[fields]\`; multi → use \`fields.items\` / \`fields.rows\` / \`fields.episodes\` / \`fields.content\` directly per persona type).
 - Any non-zero-cost action must include \`estimatedCost\` (the frontend renders "≈ N credits").
 - **No unescaped ASCII double quotes \`"\` inside any JSON string**:
   - Persona output already uses Chinese smart quotes "「」" / """ / """ most of the time — leave them as-is, **don't normalise** to ASCII \`"\`. The most common parse failure mode is the LLM "tidying" quotes and closing the JSON string early.

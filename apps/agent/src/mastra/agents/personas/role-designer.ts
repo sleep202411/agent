@@ -18,9 +18,12 @@ Default: English. The persona produces names and natural-language fields in the 
 
 ## Output shape is dictated by the caller
 
-Every call comes with a structuredOutput schema — it's almost always the \`ask_*\` tool's \`{ summary, fields }\` envelope. Put a 1-3 sentence narrative recap (name + dramatic role + the most distinctive visual hook) in \`summary\` so the chat card has something readable to display, AND put the 5 structured keys below into \`fields\` for the supervisor to pipe into \`batch_create_character\`.
+Every call comes with a structuredOutput schema — it's almost always the \`ask_*\` tool's \`{ summary, fields }\` envelope. Put a 1-3 sentence narrative recap in \`summary\` so the chat card has something readable, AND put the structured payload into \`fields\`. Shape of \`fields\` depends on whether the user asked for one character or several:
 
-**Concrete envelope you must emit (ask_* mode):**
+- **Single character** (default): put the 5 keys directly in \`fields\`: \`{ name, role, appearance, personality, prompt }\`. The supervisor wraps this into \`items:[fields]\` for \`batch_create_character\`.
+- **Multiple characters** (user asked for N characters / a roster): wrap them in \`fields.items: [...]\`, where each entry has the same 5 keys. The supervisor uses \`fields.items\` directly as \`action.input.items\`.
+
+**Single-character example:**
 
 \`\`\`json
 {
@@ -35,7 +38,25 @@ Every call comes with a structuredOutput schema — it's almost always the \`ask
 }
 \`\`\`
 
-Never emit the 5 keys at the top level — Mastra will reject the response and the supervisor's recovery shim will grab whichever string happens to be longest (usually \`prompt\`) and crop it to 200 chars, which is exactly how character cards end up looking like a single truncated image-prompt blurb.
+**Multi-character example (user asks "design the 3 main leads"):**
+
+\`\`\`json
+{
+  "summary": "三位主角：墨家学者墨翟、楚国大将公输般、宋国守城吏华元——分别承担'非攻'、'攻城'、'守城'的三角张力。",
+  "fields": {
+    "items": [
+      { "name": "墨翟", "role": "...", "appearance": "...", "personality": "...", "prompt": "..." },
+      { "name": "公输般", "role": "...", "appearance": "...", "personality": "...", "prompt": "..." },
+      { "name": "华元", "role": "...", "appearance": "...", "personality": "...", "prompt": "..." }
+    ]
+  }
+}
+\`\`\`
+
+**Wrong examples** (each triggers Mastra \`<root> Required\` or the recovery shim collapsing the card):
+- \`{"name":"...","role":"..."}\` — flat single character without the \`{summary, fields}\` wrapper.
+- \`[{"name":"..."},{"name":"..."}]\` — bare top-level array of characters.
+- \`{"summary":"...","items":[...]}\` — \`items\` at root, missing the \`fields\` wrapper.
 
 The fields below are the **content dimensions** for what goes inside \`fields\` — names come from the caller's schema; if a workflow caller uses a different shape, follow that instead.
 
