@@ -39,6 +39,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { worldKeys } from "@/src/hooks/use-worlds";
 import { useSparkAnalyze } from "@/app/(site)/ips/_hooks/use-spark";
+import { saveProduceSeed } from "@/app/projects/[id]/produce/_hooks/use-produce-seed";
 
 /** Payload returned by `/api/user/world/create/quick/worldproduct`. */
 type CreateQuickWorldResult = {
@@ -46,8 +47,6 @@ type CreateQuickWorldResult = {
   projectId: string;
 };
 
-const MAX_NAME_LENGTH = 50;
-const MAX_DESCRIPTION_LENGTH = 500;
 const SOURCE_MAX_SIZE_MB = 25;
 const SOURCE_MAX_SIZE_BYTES = SOURCE_MAX_SIZE_MB * 1024 * 1024;
 const SOURCE_ACCEPT = ".pdf,.doc,.docx,.txt,.md";
@@ -68,6 +67,9 @@ type StoryOsInsights = {
   roleCount?: number;
   sceneCount?: number;
   propCount?: number;
+  textRef?: string;
+  sourceChars?: number;
+  sourceExcerpt?: string;
 };
 
 export function CreateWorldDialog({
@@ -153,11 +155,11 @@ export function CreateWorldDialog({
       try {
         const draft = await sparkAnalyze.mutateAsync(file);
         if (draft.name && !name.trim()) {
-          setName(draft.name.slice(0, MAX_NAME_LENGTH));
+          setName(draft.name);
           markAi("name");
         }
         if (draft.description && !description.trim()) {
-          setDescription(draft.description.slice(0, MAX_DESCRIPTION_LENGTH));
+          setDescription(draft.description);
           markAi("description");
         }
         if (draft.tags?.length) setTags(draft.tags);
@@ -168,6 +170,9 @@ export function CreateWorldDialog({
           roleCount: draft.roleCount,
           sceneCount: draft.sceneCount,
           propCount: draft.propCount,
+          textRef: draft.textRef,
+          sourceChars: draft.sourceChars,
+          sourceExcerpt: draft.sourceExcerpt,
         });
       } catch (analyzeErr) {
         console.warn("[CreateWorldDialog] spark analyze failed:", analyzeErr);
@@ -200,9 +205,6 @@ export function CreateWorldDialog({
     const next: FormErrors = {};
     const trimmedName = name.trim();
     if (!trimmedName) next.name = tw("createWorldNameRequired");
-    else if (trimmedName.length > MAX_NAME_LENGTH) {
-      next.name = tw("createWorldNameMaxLength", { max: MAX_NAME_LENGTH });
-    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -244,12 +246,47 @@ export function CreateWorldDialog({
       onOpenChange(false);
 
       if (result?.projectId && result?.worldId) {
-        router.push(
-          localizePath(
-            `/projects/${result.projectId}?worldId=${result.worldId}`,
-            getCurrentLocale()
-          )
-        );
+        // Branch on whether the user uploaded source material:
+        //   - With file → save the spark snapshot to sessionStorage
+        //     and land in the production pipeline (/produce). The
+        //     wizard's Step 1 reads the seed and renders pre-filled.
+        //   - Without file → there's nothing for the pipeline to
+        //     seed from, so we keep the legacy behaviour and drop
+        //     the user into the studio chat (/projects/[id]) where
+        //     they can describe what they want freeform.
+        if (sourceFile) {
+          const seedPayload = {
+            worldId: result.worldId,
+            worldName: name.trim(),
+            description: description.trim(),
+            tags,
+            episodeCount: insights.episodeCount,
+            runtimeMinutes: insights.runtimeMinutes,
+            language: insights.language,
+            roleCount: insights.roleCount,
+            sceneCount: insights.sceneCount,
+            propCount: insights.propCount,
+            sourceFile: {
+              name: sourceFile.name,
+              size: sourceFile.size,
+              mimeType: sourceFile.mimeType,
+              path: sourceFile.path,
+              textRef: insights.textRef,
+              chars: insights.sourceChars,
+              excerpt: insights.sourceExcerpt,
+            },
+            createdAt: Date.now(),
+          };
+          saveProduceSeed(result.projectId, seedPayload);
+          router.push(localizePath(`/projects/${result.projectId}/produce`, getCurrentLocale()));
+        } else {
+          router.push(
+            localizePath(
+              `/projects/${result.projectId}?worldId=${result.worldId}`,
+              getCurrentLocale()
+            )
+          );
+        }
         onCreated?.(result);
       }
     } catch (err) {
@@ -405,7 +442,6 @@ export function CreateWorldDialog({
               <Input
                 id="create-world-name"
                 value={name}
-                maxLength={MAX_NAME_LENGTH}
                 onChange={(event) => {
                   setName(event.target.value);
                   clearAi("name");
@@ -427,7 +463,6 @@ export function CreateWorldDialog({
               <Textarea
                 id="create-world-description"
                 value={description}
-                maxLength={MAX_DESCRIPTION_LENGTH}
                 rows={3}
                 onChange={(event) => {
                   setDescription(event.target.value);

@@ -1,0 +1,126 @@
+"use client";
+
+/**
+ * Produce wizard chrome — header (project title left, stepper center,
+ * account right) → content canvas → footer (status text + next CTA).
+ *
+ * Built on the app's shadcn design tokens (`bg-background`,
+ * `text-foreground`, `bg-muted`, `bg-primary`, etc.) so colors and
+ * radii match the rest of the app rather than inventing a parallel
+ * palette. Layout structure is borrowed from Jianying / 小云雀
+ * (verified via Chrome DevTools 2026-05-05).
+ */
+
+import { useParams, usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconCircleCheckFilled,
+  IconLayoutDashboard,
+} from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
+import { ProduceStepper } from "./_components/produce-stepper";
+import { PRODUCE_STEPS } from "./_data/steps";
+import { useProduceCommittedResult, useProduceSeed } from "./_hooks/use-produce-seed";
+
+export default function ProduceLayout({ children }: { children: React.ReactNode }) {
+  const params = useParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const projectId = String(params.id ?? "");
+  const seed = useProduceSeed(projectId);
+  const committed = useProduceCommittedResult(projectId, !seed);
+  const projectTitle = seed?.worldName || committed?.title || "Production Pipeline";
+
+  const currentIndex = Math.max(
+    0,
+    PRODUCE_STEPS.findIndex((step) => pathname.endsWith(`/${step.key}`))
+  );
+  const prevStep = currentIndex > 0 ? PRODUCE_STEPS[currentIndex - 1] : null;
+  const nextStep = currentIndex < PRODUCE_STEPS.length - 1 ? PRODUCE_STEPS[currentIndex + 1] : null;
+
+  return (
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex h-[68px] shrink-0 items-center px-6">
+        <div className="flex flex-1 items-center gap-3">
+          <Button
+            variant="ghost"
+            color="muted"
+            size="icon-sm"
+            onClick={() => router.push(`/projects/${projectId}`)}
+            aria-label="Back"
+          >
+            <IconArrowLeft className="size-4" />
+          </Button>
+          <h1 className="truncate text-base font-medium">{projectTitle}</h1>
+        </div>
+
+        <ProduceStepper currentIndex={currentIndex} projectId={projectId} />
+
+        {/* Right gutter — only the project-space jump for now.
+            Wrapped in a flex-1 + justify-end so the stepper stays
+            centered between this and the matching flex-1 on the
+            left. Mirrors the same affordance in the per-episode
+            video editor header. */}
+        <div className="flex flex-1 justify-end">
+          <Button
+            variant="outline"
+            color="muted"
+            size="sm"
+            onClick={() => router.push(`/projects/${projectId}`)}
+          >
+            <IconLayoutDashboard /> 进入项目空间
+          </Button>
+        </div>
+      </header>
+
+      {/* Each step page sets its own max-width inside `children`
+          (script narrow for readability, asset / video wide for the
+          card grids). Layout only owns the outer scroll container
+          and gutter padding. */}
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className="px-6 py-6">{children}</div>
+      </main>
+
+      {/* Footer — three-way row:
+            left:  上一步 (link or disabled at step 1)
+            center: status text
+            right:  下一步 (link or 完成 disabled at last step)
+          Stepper jumps in the header still work, this is the
+          linear back/forth path. */}
+      <footer className="grid h-16 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 px-6">
+        <div>
+          {prevStep ? (
+            <Button asChild variant="outline" color="muted" size="lg">
+              <Link href={`/projects/${projectId}/produce/${prevStep.key}`}>
+                <IconArrowLeft /> 上一步
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="outline" color="muted" size="lg" disabled>
+              <IconArrowLeft /> 上一步
+            </Button>
+          )}
+        </div>
+        <span className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <IconCircleCheckFilled className="size-4 opacity-60" />
+          {nextStep ? "本步内容整理完毕，可以进行下一步了" : "全部步骤已完成"}
+        </span>
+        <div className="flex justify-end">
+          {nextStep ? (
+            <Button asChild variant="solid" color="primary" size="lg">
+              <Link href={`/projects/${projectId}/produce/${nextStep.key}`}>
+                下一步 <IconArrowRight />
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="solid" color="muted" size="lg" disabled>
+              完成
+            </Button>
+          )}
+        </div>
+      </footer>
+    </div>
+  );
+}

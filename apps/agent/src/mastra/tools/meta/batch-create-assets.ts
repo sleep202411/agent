@@ -177,7 +177,7 @@ async function runBatch(
 export const batchCreateCharacter = createTool({
   id: "batch_create_character",
   description:
-    'Batch-create characters (worldrole) in the current project — direct write, no user confirmation needed. Use when the user has already confirmed they want to save these N new characters — typical trigger: user clicked the "save only" button and the supervisor applies the resulting action. For propose-and-review flows ("design a batch of characters for me to review"), use invoke_workflow: role_design instead.',
+    'Batch-create characters (worldrole) in the current project — direct write, no user confirmation needed. Use when the user has already confirmed they want to save these N new characters — typical trigger: user clicked the "save only" button and the supervisor applies the resulting action. For propose-and-review flows ("design a batch of characters for me to review"), call `ask_character_designer` first to draft, surface the drafts to the user, then call this tool once they confirm.',
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async ({ items }, execCtx) => runBatch("role", items, "batch_create_character", execCtx),

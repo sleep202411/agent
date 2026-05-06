@@ -10,13 +10,14 @@
  * agent machinery because there's no HITL, no multi-turn, no shared state
  * to worry about — just prompt-in / text-out on Qwen.
  *
- * Model: Qwen via DashScope's OpenAI-compat endpoint (`qwen-plus`). Plus
- * over max for cost — the transformation is short and structural.
+ * Model: Qwen via the official `@ai-sdk/alibaba` provider — pinned to
+ * `qwen3.6-plus` (the team-standard for every Alibaba-routed call;
+ * see `ALIBABA_DEFAULT_MODEL`).
  */
 import { registerApiRoute } from "@mastra/core/server";
 import { generateText, type LanguageModel } from "ai";
 import { z } from "zod";
-import { createAlibabaModel, defaultPersonaModel } from "../lib/models";
+import { createAlibabaModel } from "../lib/models";
 
 const ExpandRequestSchema = z.object({
   shotNumber: z.number().int().positive().optional(),
@@ -143,18 +144,16 @@ function buildUserMessage(input: ExpandRequest): string {
 }
 
 /**
- * Prefer Qwen via DashScope (the product ask), but fall back to whatever
- * STORYOS_PERSONA_PROVIDER is configured as if the Alibaba key isn't
- * wired up on this deployment. Keeps the feature usable in dev-env's
- * that only have DeepSeek configured, without silently changing
- * behaviour when Qwen *is* available.
+ * Pinned to **alibaba/qwen3.6-plus** — same single-model standard as
+ * episode-planner / storyboarder. No env override, no `||` fallback to
+ * a different provider: a missing `ALIBABA_API_KEY` should throw at
+ * the first call and surface the misconfig immediately, rather than
+ * silently degrade to a different model that produces different (often
+ * worse) output for the user. `defaultPersonaModel` import kept off
+ * the call path to avoid future temptations to re-introduce a fallback.
  */
 function resolveVideoPromptModel(): LanguageModel {
-  const alibabaKey = (process.env.ALIBABA_API_KEY || process.env.DASHSCOPE_API_KEY)?.trim();
-  if (alibabaKey) {
-    return createAlibabaModel(process.env.VIDEO_PROMPT_MODEL?.trim() || "qwen-plus");
-  }
-  return defaultPersonaModel();
+  return createAlibabaModel("qwen3.6-plus");
 }
 
 // ─── /video-prompt/translate ────────────────────────────

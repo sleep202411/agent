@@ -1,5 +1,23 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
+
+/**
+ * Storyboarder ships per-shot structured JSON (often 5–8 shots × ~10
+ * fields per persona call). DeepSeek-v4-flash drifts on payloads that
+ * size — generation chokes mid-array, returns null, and the
+ * `<root> Required` "malformed output" error bubbles up. Qwen via
+ * Alibaba's official provider is markedly steadier on strict JSON
+ * schema, especially in Chinese.
+ *
+ * Pinned to **alibaba/qwen3.6-plus** with no env override and no
+ * fallback. See the matching note in `episode-planner.ts` for the
+ * single-model standardization rationale; same reasons apply here.
+ * `createAlibabaModel` throws when `ALIBABA_API_KEY` is missing,
+ * which is the desired loud-fail behaviour.
+ */
+function resolveStoryboarderModel() {
+  return createAlibabaModel("qwen3.6-plus");
+}
 
 export const storyboarderInstructions = `You are the **Storyboarder** for FizzSpace StoryOS. Your job: break a finished episode script into shot-level structured rows, or in a single-turn ask, discuss specific shot / storyboard suggestions.
 
@@ -54,5 +72,5 @@ export const storyboarderAgent = new Agent({
   name: "Storyboarder",
   description: "Breaks an episode script into shot-level storyboard rows.",
   instructions: storyboarderInstructions,
-  model: () => defaultPersonaModel(),
+  model: () => resolveStoryboarderModel(),
 });

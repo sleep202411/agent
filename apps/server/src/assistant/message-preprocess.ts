@@ -47,7 +47,15 @@ type Attachment = {
   name?: string;
   mimeType?: string;
   url?: string;
+  /** Storage identifier — either an OSS path (legacy URL-fetch flow)
+   *  or the Redis ref (`att_xxx`) returned by `/upload-attachment`. We
+   *  detect which by looking at the prefix in `extractAttachmentText`. */
+  path?: string;
   excerpt?: string;
+  /** Set explicitly when the attachment was uploaded via the
+   *  direct-buffer endpoint (`/upload-attachment`). Tail-fall-through:
+   *  if missing, we also accept `path` when it starts with `att_`. */
+  ref?: string;
 };
 
 type MessagePart = {
@@ -119,6 +127,31 @@ async function fetchBinary(url: string): Promise<Buffer> {
   );
 }
 
+async function extractFromDocxBuffer(buf: Buffer): Promise<string> {
+  // Same logic as extractFromDocx but takes the buffer directly — used
+  // by the upload-attachment endpoint where the file body arrives as
+  // multipart and we don't need to re-fetch it from OSS.
+  const result = await mammoth.convertToHtml({ buffer: buf });
+  const plain = result.value
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+  return plain.trim();
+}
+
+async function extractFromPdfBuffer(buf: Buffer): Promise<string> {
+  const mod = (await import('pdf-parse')) as
+    | { default: (b: Buffer) => Promise<{ text: string }> }
+    | ((b: Buffer) => Promise<{ text: string }>);
+  const fn = typeof mod === 'function' ? mod : mod.default;
+  const result = await fn(buf);
+  return (result.text ?? '').trim();
+}
+
 async function extractFromDocx(url: string): Promise<string> {
   const buf = await fetchBinary(url);
   // Use convertToHtml instead of extractRawText so soft line breaks (<w:br/>)
@@ -164,6 +197,33 @@ async function extractFromText(url: string): Promise<string> {
 }
 
 async function extractAttachmentText(attachment: Attachment): Promise<string> {
+  // Direct-upload path — full text already in Redis, just read it.
+  // Accept either an explicit `ref` or a `path` that looks like one
+  // (the chat slice ships its ref through `path` for back-compat with
+  // the existing AssistantAttachment shape).
+  const directRef =
+    attachment.ref ??
+    (attachment.path && attachment.path.startsWith('att_')
+      ? attachment.path
+      : undefined);
+  if (directRef) {
+    try {
+      const cached = await getRedis().get(`attachment:${directRef}`);
+      if (cached) {
+        const parsed = JSON.parse(cached) as { text?: string };
+        if (typeof parsed.text === 'string' && parsed.text.length > 0) {
+          return parsed.text;
+        }
+      }
+      log.warn(
+        `Attachment ref=${directRef} not found in Redis (TTL expired?); falling back to excerpt.`,
+      );
+    } catch (err) {
+      log.warn(
+        `Failed to read attachment:${directRef}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
   // Prefer client-provided excerpt when available (txt/md are read client-side).
   if (attachment.excerpt && attachment.excerpt.length > 0) {
     return attachment.excerpt;
@@ -234,6 +294,53 @@ function buildAttachmentBlock(
  *   - For each user message with attachments, injects their text into the
  *     existing `text` part (or prepends a new one if none exists).
  */
+/**
+ * Direct buffer ingestion path — bypasses OSS entirely. Called by
+ * the upload-attachment HTTP endpoint when web ships the raw file
+ * body. Mirrors the legacy URL-fetch flow but keeps the file in
+ * memory: extract → cache the text in Redis under `attachment:{ref}`
+ * → return the ref + a short excerpt.
+ *
+ * Web embeds the returned `ref` (and the excerpt for the file card
+ * preview) in the user message just like before. Downstream
+ * `preprocessMessages` finds the cached text under that ref and
+ * inlines it into the LLM-facing message body — no OSS round-trip,
+ * no NoSuchKey races.
+ */
+export async function ingestAttachmentBuffer(input: {
+  buffer: Buffer;
+  filename: string;
+  mimeType: string;
+}): Promise<{ ref: string; chars: number; excerpt: string }> {
+  const { buffer, filename, mimeType } = input;
+  let text = '';
+  try {
+    if (isDocx(mimeType, filename)) {
+      text = await extractFromDocxBuffer(buffer);
+    } else if (isPdf(mimeType, filename)) {
+      text = await extractFromPdfBuffer(buffer);
+    } else if (isTextLike(mimeType, filename)) {
+      text = buffer.toString('utf-8').trim();
+    } else {
+      throw new Error(`Unsupported file type: ${mimeType}`);
+    }
+  } catch (err) {
+    log.warn(
+      `ingestAttachmentBuffer extract failed for ${filename}: ${err instanceof Error ? err.message : err}`,
+    );
+    throw err;
+  }
+  const ref = await cacheAttachment(text, { filename, mimeType });
+  log.log(
+    `Ingested attachment ${filename} as ${ref} (${text.length} chars, direct buffer)`,
+  );
+  return {
+    ref,
+    chars: text.length,
+    excerpt: text.slice(0, 800),
+  };
+}
+
 export async function preprocessMessages(messages: Message[]): Promise<void> {
   for (const msg of messages) {
     if (msg.role !== 'user') continue;
@@ -253,12 +360,23 @@ export async function preprocessMessages(messages: Message[]): Promise<void> {
     for (const attachment of attachments) {
       const raw = await extractAttachmentText(attachment);
       if (!raw) continue;
-      const ref = await cacheAttachment(raw, {
-        filename: attachment.name,
-        mimeType: attachment.mimeType,
-      });
+      // Reuse the existing cache key when the client uploaded via the
+      // direct-buffer endpoint; only mint a fresh one for legacy
+      // url-fetch paths. Avoids doubling the Redis footprint and
+      // keeps the ref the user's chat history already references.
+      const existingRef =
+        attachment.ref ??
+        (attachment.path && attachment.path.startsWith('att_')
+          ? attachment.path
+          : undefined);
+      const ref =
+        existingRef ??
+        (await cacheAttachment(raw, {
+          filename: attachment.name,
+          mimeType: attachment.mimeType,
+        }));
       log.log(
-        `Cached attachment ${attachment.name ?? 'file'} as ${ref} (${raw.length} chars)`,
+        `Attachment ${attachment.name ?? 'file'} → ${ref} (${raw.length} chars${existingRef ? ', reused' : ', re-cached'})`,
       );
       extractedBlocks.push(buildAttachmentBlock(raw, ref, attachment.name));
     }

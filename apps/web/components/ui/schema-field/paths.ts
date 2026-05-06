@@ -9,6 +9,11 @@ export const AI_MODEL_PATHS = {
   characterFusion: "/api/ai/image/compose/character",
   // Video
   video: "/api/ai/task/video/generate/basic",
+  /** Sync variant — Java holds the connection and returns the video
+   *  path inline. Used by the per-episode produce editor; same model
+   *  registry as the async task path but registered as its own key
+   *  so we don't conflate model availability between the two. */
+  videoSync: "/api/ai/video/generate/basic",
   videoFrames: "/api/ai/task/video/generate/start-end-frame",
   videoMultiRef: "/api/ai/task/video/generate/multiplereference",
   videoMultimodal: "/api/ai/task/video/generate/multimodalvideo",

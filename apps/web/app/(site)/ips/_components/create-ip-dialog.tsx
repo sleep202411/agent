@@ -305,7 +305,6 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
                     clearAi("name");
                   }}
                   placeholder={t("fieldNamePlaceholder")}
-                  maxLength={20}
                 />
               </div>
 
@@ -349,7 +348,6 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
                     clearAi("description");
                   }}
                   placeholder={t("fieldDescriptionPlaceholder")}
-                  maxLength={500}
                   rows={3}
                   className="text-base md:text-base"
                 />

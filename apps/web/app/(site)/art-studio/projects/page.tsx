@@ -1,15 +1,17 @@
-import { redirect } from "next/navigation";
-import { headers } from "next/headers";
+"use client";
+
+import { ProjectsSection } from "../_components/projects-section";
 
 /**
- * `/art-studio/projects` is a legacy alias of `/art-studio` — the
- * studio home itself is the projects list. Bounce to the canonical
- * URL with an explicit locale prefix so the redirect doesn't kick the
- * user back to en-US when their NEXT_LOCALE cookie hasn't been set
- * yet (first visit after deploy, cleared cookies, etc).
+ * Dedicated projects list page reached from the studio sidebar's
+ * Projects icon. Mirrors the my-projects block on /art-studio (same
+ * padding shell, same `ProjectsSection`), just without the composer
+ * hero so users can drill straight into the full project directory.
  */
-export default async function ProjectsIndex(): Promise<never> {
-  const hdrs = await headers();
-  const locale = hdrs.get("x-locale") ?? "en-US";
-  redirect(`/${locale}/art-studio`);
+export default function ArtStudioProjectsPage() {
+  return (
+    <div className="px-8 pb-24 pt-16">
+      <ProjectsSection />
+    </div>
+  );
 }

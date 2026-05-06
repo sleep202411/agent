@@ -39,7 +39,7 @@ type ShotRow = {
 
 export const batchUpdateStoryboardRows = createTool({
   id: "batch_update_storyboard_rows",
-  description: `Apply the same patch to multiple shots in one episode. Call when the user explicitly says e.g. "change the shot size of episode 3 shots 1-5 to close-up" / "add Jack to the first three shots of episode 1" / "switch the style of episode 2 shots 2, 4, and 6 to realistic".\n\nThe patch fields match update_storyboard_row (scene / characters / description / image_prompt / video_prompt / movement / dialogue / shot_size / perspective / duration / style_planting).\n\nshotNos must be an array of strings (e.g. ["1","2","3"]). Cap is ${MAX_SHOTS}; for anything larger, route to invoke_workflow. shotNo lookup follows update_storyboard_row: prefer matching the shot_no column value, fall back to 1-based position.`,
+  description: `Apply the same patch to multiple shots in one episode. Call when the user explicitly says e.g. "change the shot size of episode 3 shots 1-5 to close-up" / "add Jack to the first three shots of episode 1" / "switch the style of episode 2 shots 2, 4, and 6 to realistic".\n\nThe patch fields match update_storyboard_row (scene / characters / description / image_prompt / video_prompt / movement / dialogue / shot_size / perspective / duration / style_planting).\n\nshotNos must be an array of strings (e.g. ["1","2","3"]). Cap is ${MAX_SHOTS}; for anything larger, split into multiple calls of this tool — there is no longer a workflow path for bulk shot edits. shotNo lookup follows update_storyboard_row: prefer matching the shot_no column value, fall back to 1-based position.`,
   inputSchema: z.object({
     episodeId: z.string().describe("Java episode id — get from query_context"),
     shotNos: z

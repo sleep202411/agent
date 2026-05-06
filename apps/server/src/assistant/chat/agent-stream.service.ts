@@ -22,6 +22,7 @@ import {
   type StoredMessage,
   type ChatAgentState,
 } from './message-store.service';
+import { AgentStateService } from './agent-state.service';
 
 /**
  * Redis checkpoint interval during streaming. We publish a text-delta chunk
@@ -240,7 +241,10 @@ function toChunkStream(
 export class AgentStreamService {
   private readonly logger = new Logger(AgentStreamService.name);
 
-  constructor(private readonly store: MessageStoreService) {}
+  constructor(
+    private readonly store: MessageStoreService,
+    private readonly agentState: AgentStateService,
+  ) {}
 
   /**
    * Consume the Mastra SSE bytes, stream text-delta chunks to connected WS
@@ -267,6 +271,17 @@ export class AgentStreamService {
     const { projectId, seedMessage, rawStream } = opts;
     const chunkStream = toChunkStream(rawStream);
     const seedId = seedMessage.id;
+
+    // Sweep any stuck tool parts left behind by a prior agent run that
+    // died mid-execution (process kill / fatal exception / SSE
+    // interrupt). Without this, every refresh re-renders that orphan
+    // part as a perpetual "Consulting…" indicator. We mark them as
+    // output-error so the UI shows the soft "hiccup" state instead.
+    await this.markStuckToolPartsInterrupted(projectId).catch((err) => {
+      this.logger.warn(
+        `markStuckToolPartsInterrupted project=${projectId} failed: ${err instanceof Error ? err.message : err}`,
+      );
+    });
 
     await this.store.setAgentState(projectId, 'running');
 
@@ -412,7 +427,12 @@ export class AgentStreamService {
       this.logger.log(
         `consume done project=${projectId} iterations=${iterations} finalParts=${partCount}${shouldFallback ? ' (fallback bubble emitted)' : ''}`,
       );
+      // Release the gate. Both old and new state mechanisms are
+      // updated so any client still on the legacy `agent_state` event
+      // stays correct while the new `agent_state_changed` event is
+      // what gates submit / surfaces hints in the composer.
       await this.store.setAgentState(projectId, 'idle');
+      await this.agentState.set(projectId, { kind: 'idle' });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(
@@ -442,6 +462,9 @@ export class AgentStreamService {
           .catch(() => {});
       }
       await this.store.setAgentState(projectId, 'failed').catch(() => {});
+      await this.agentState
+        .set(projectId, { kind: 'failed', lastError: msg })
+        .catch(() => {});
     }
   }
 
@@ -455,5 +478,58 @@ export class AgentStreamService {
 
   async markState(projectId: string, state: ChatAgentState): Promise<void> {
     await this.store.setAgentState(projectId, state);
+  }
+
+  /**
+   * Walk the conversation's most recent messages and, for any
+   * assistant message that has tool parts still in non-terminal
+   * states (`input-streaming` / `input-available`), rewrite those
+   * parts as `output-error` with a friendly "interrupted" note.
+   *
+   * Why: when the agent process dies mid-execute (kill / crash /
+   * deploy), the SSE stream cuts off without sending tool-output
+   * chunks. The stored message blob keeps the half-finished tool
+   * part forever, and every time the user refreshes the page the UI
+   * re-renders it as a perpetual `Consulting…` indicator. Sweeping
+   * here at the start of each new turn guarantees the chat never
+   * shows a phantom in-flight tool from a prior run.
+   *
+   * Cap at the last 20 messages — typical chat histories are short,
+   * but we don't want to scan thousands of messages on every submit.
+   */
+  private async markStuckToolPartsInterrupted(
+    projectId: string,
+  ): Promise<void> {
+    const allIds = await this.store.getMessageIds(projectId);
+    if (allIds.length === 0) return;
+    const recent = allIds.slice(-20);
+    const messages = await this.store.getMessages(projectId, recent);
+    for (const msg of messages) {
+      if (!msg || msg.role !== 'assistant') continue;
+      const parts = (msg.parts ?? []) as Array<Record<string, unknown>>;
+      let mutated = false;
+      for (const part of parts) {
+        const type = part.type as string | undefined;
+        const state = part.state as string | undefined;
+        if (
+          typeof type === 'string' &&
+          type.startsWith('tool-') &&
+          state !== 'output-available' &&
+          state !== 'output-error' &&
+          state !== 'output-denied'
+        ) {
+          part.state = 'output-error';
+          part.errorText = 'Interrupted (agent restarted mid-execution)';
+          mutated = true;
+        }
+      }
+      if (mutated) {
+        await this.store.updateMessage(projectId, msg).catch(() => {});
+        await this.store.finalizeMessage(projectId, msg).catch(() => {});
+        this.logger.log(
+          `swept stuck tool parts in msg=${msg.id} project=${projectId}`,
+        );
+      }
+    }
   }
 }

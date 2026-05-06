@@ -8,31 +8,30 @@ type WorkspaceSidebarItemProps = Readonly<{
   isActive: boolean;
 }>;
 
+/**
+ * Icon-only nav button styled as a circular glass pill — matches the
+ * studio sidebar reference (OiiOii / Liblib studio): no labels, no
+ * heavy chrome. Label sits in `aria-label` + native tooltip so screen
+ * readers + hover discovery still work.
+ *
+ * Active state: filled glass + soft ring glow. Inactive: dim icon, no
+ * background until hover. Sized at 44px to read as a tap target.
+ */
 export function WorkspaceSidebarItem({ href, label, icon, isActive }: WorkspaceSidebarItemProps) {
   return (
     <Link
       href={href}
       aria-current={isActive ? "page" : undefined}
-      className="flex flex-col items-center transition-colors"
+      aria-label={label}
+      title={label}
+      className={cn(
+        "flex size-11 items-center justify-center rounded-full transition-all",
+        isActive
+          ? "bg-white/10 text-foreground ring-1 ring-white/15 shadow-[0_0_20px_-6px_rgb(255_255_255/0.2)]"
+          : "text-muted-foreground/70 hover:bg-white/5 hover:text-foreground"
+      )}
     >
-      <div
-        className={cn(
-          "flex size-10 items-center justify-center rounded-lg transition-colors",
-          isActive
-            ? "bg-primary/15 text-primary"
-            : "text-muted-foreground hover:bg-muted-foreground/10 hover:text-foreground"
-        )}
-      >
-        {icon}
-      </div>
-      <p
-        className={cn(
-          "m-0 p-0 text-center text-[10px] leading-5",
-          isActive ? "text-primary" : "text-muted-foreground"
-        )}
-      >
-        {label}
-      </p>
+      {icon}
     </Link>
   );
 }

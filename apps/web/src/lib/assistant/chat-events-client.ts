@@ -23,6 +23,7 @@
  *        — server-initiated close
  */
 import { env } from "@/src/env";
+import type { AgentState } from "@repo/shared";
 
 export type ChatAgentState = "idle" | "running" | "waiting" | "failed" | string;
 
@@ -46,6 +47,14 @@ export type ChatEventFrame =
     }
   | { event: "message_finalize"; data: { messageId: string } }
   | { event: "agent_state"; data: { state: ChatAgentState } }
+  | {
+      // Rich agent-state event from AgentStateService — replaces the
+      // simpler `agent_state` event for new clients. Both flow on the
+      // same WS for the migration window; this carries turnId /
+      // lastError / enteredAt for richer composer hints.
+      event: "agent_state_changed";
+      data: { projectId: string; state: AgentState };
+    }
   | {
       event: "heartbeat";
       data: { conversationHash: string; serverTime: number };
@@ -75,6 +84,10 @@ export interface ChatEventsClientHandlers {
    */
   onMessageFinalize?: (messageId: string) => void;
   onAgentState?: (state: ChatAgentState) => void;
+  /** Rich agent-state callback. Receives the full AgentState from
+   *  the server-authoritative AgentStateService — projectId is
+   *  passed through so multi-project consumers can route. */
+  onAgentStateChanged?: (projectId: string, state: AgentState) => void;
   onTerminate?: (reason: string, code: number) => void;
   /**
    * Fires only when the client gives up — either `close()` was called,
@@ -203,6 +216,9 @@ export function openChatEventsClient(
           break;
         case "agent_state":
           handlers.onAgentState?.(frame.data.state);
+          break;
+        case "agent_state_changed":
+          handlers.onAgentStateChanged?.(frame.data.projectId, frame.data.state);
           break;
         case "terminate":
           lastTerminateCode = frame.data.code;

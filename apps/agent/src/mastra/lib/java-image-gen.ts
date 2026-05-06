@@ -22,8 +22,8 @@ import { javaRequest, type StoryosContext } from "./workspace-client";
 // Sentinel values matching apps/web/src/lib/asset-paths.ts — DO NOT CHANGE
 // without coordinating with the frontend and Java's column_id handling.
 export const ROLE_RECORD_COLUMN_ID = -1;
-export const SCENE_RECORD_COLUMN_ID = -2; // (guess — confirm with Java team before using)
-export const PROP_RECORD_COLUMN_ID = -3; // (ditto)
+export const SCENE_RECORD_COLUMN_ID = -3;
+export const PROP_RECORD_COLUMN_ID = -2;
 
 /**
  * Shape of the /api/ai/image/generate/basic response. Java typically

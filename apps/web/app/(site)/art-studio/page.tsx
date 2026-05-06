@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { ProjectsSection } from "./_components/projects-section";
+import { RecentProjectsPreview } from "./_components/recent-projects-preview";
 import { StickyComposerPill } from "./_components/sticky-composer-pill";
 import { StudioHomeComposer } from "./_components/studio-home-composer";
 
@@ -14,7 +14,7 @@ export default function StudioHomePage() {
         <div ref={heroRef}>
           <StudioHomeComposer />
         </div>
-        <ProjectsSection />
+        <RecentProjectsPreview />
       </div>
       <StickyComposerPill heroRef={heroRef} />
     </div>

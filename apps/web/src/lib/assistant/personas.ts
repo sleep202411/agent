@@ -98,6 +98,28 @@ const TOOL_TO_PERSONA: Record<string, AssistantPersonaKey> = {
   ask_episode_planner: "episodePlanner",
 };
 
+/**
+ * Map from the wire-format `ForcedPersonaKey` (snake_case, lives in
+ * @repo/shared) to this file's UI persona key (camelCase). The wire
+ * format matches the agent's `ask_*` tool names; the UI key looks up
+ * icon / tone / display name. Two shapes exist on purpose — see the
+ * comment in @repo/shared/forced-persona.ts.
+ */
+import type { ForcedPersonaKey } from "@repo/shared";
+
+export const FORCED_PERSONA_TO_UI_KEY: Record<ForcedPersonaKey, AssistantPersonaKey> = {
+  scriptwriter: "scriptwriter",
+  episode_planner: "episodePlanner",
+  character_designer: "characterDesigner",
+  scene_designer: "sceneDesigner",
+  prop_designer: "propDesigner",
+  storyboard_designer: "storyboardDesigner",
+};
+
+export function getPersonaFromForcedKey(key: ForcedPersonaKey): AssistantPersonaMeta {
+  return ASSISTANT_PERSONAS[FORCED_PERSONA_TO_UI_KEY[key]];
+}
+
 export function getPersonaFromToolName(toolName: string): AssistantPersonaMeta | null {
   const key = TOOL_TO_PERSONA[toolName];
   return key ? ASSISTANT_PERSONAS[key] : null;
@@ -121,4 +143,26 @@ export const PERSONA_TONE_CLASSES: Record<AssistantPersonaMeta["tone"], string> 
   sky: "bg-sky-500/10 text-sky-300 border-sky-400/30",
   lime: "bg-lime-500/10 text-lime-300 border-lime-400/30",
   orange: "bg-orange-500/10 text-orange-300 border-orange-400/30",
+};
+
+/** Text-only tone — for inline labels on backgrounds we don't want to tint. */
+export const PERSONA_TONE_TEXT: Record<AssistantPersonaMeta["tone"], string> = {
+  violet: "text-violet-300",
+  amber: "text-amber-300",
+  teal: "text-teal-300",
+  rose: "text-rose-300",
+  sky: "text-sky-300",
+  lime: "text-lime-300",
+  orange: "text-orange-300",
+};
+
+/** Outer ring + glow used by the composer to signal "force-mode active". */
+export const PERSONA_TONE_RING: Record<AssistantPersonaMeta["tone"], string> = {
+  violet: "border-violet-400/50 shadow-[0_0_24px_-8px_rgb(139_92_246/0.6)]",
+  amber: "border-amber-400/50 shadow-[0_0_24px_-8px_rgb(245_158_11/0.6)]",
+  teal: "border-teal-400/50 shadow-[0_0_24px_-8px_rgb(20_184_166/0.6)]",
+  rose: "border-rose-400/50 shadow-[0_0_24px_-8px_rgb(244_63_94/0.6)]",
+  sky: "border-sky-400/50 shadow-[0_0_24px_-8px_rgb(14_165_233/0.6)]",
+  lime: "border-lime-400/50 shadow-[0_0_24px_-8px_rgb(132_204_22/0.6)]",
+  orange: "border-orange-400/50 shadow-[0_0_24px_-8px_rgb(249_115_22/0.6)]",
 };

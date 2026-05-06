@@ -1,21 +1,17 @@
 /**
- * Standalone worker process — consumes workflow jobs from BullMQ and drives
- * Mastra's workflow runtime. Runs as its own Node process so a crash in the
- * API server doesn't kill in-flight workflow runs (and vice versa).
+ * Standalone worker process — consumes produce workflow jobs and
+ * image-generation jobs from BullMQ. Runs as its own Node process so a
+ * crash in the API server doesn't kill in-flight jobs (and vice versa).
  *
  * Dev:  npm run worker
- * Prod: node dist/worker.js   (after `mastra build` + separate bundle — or
- *       simply `tsx src/worker.ts` in a container that ships source)
+ * Prod: node dist/worker.js
  *
- * The worker imports the same `mastra` instance as the API server so it sees
- * the same registered workflows and storage configuration. Mastra's snapshot
- * store (LibSQL by default) must be reachable from both processes.
+ * StoryOS chat no longer dispatches phase workflows. Produce mode still
+ * uses one isolated workflow for Step 1 draft analysis, so the workflow
+ * worker is enabled again without remounting the legacy chat workflow API.
  */
 export {}; // mark this file as a module so top-level await is permitted
 
-// Load apps/agent/.env — `mastra dev` auto-loads it for the API server, but
-// this worker runs as its own tsx process and wouldn't otherwise see it.
-// Must happen BEFORE importing anything that reads env (models.ts etc).
 try {
   process.loadEnvFile();
 } catch {
@@ -23,67 +19,28 @@ try {
 }
 
 const { mastra } = await import("./mastra/index.js");
-const { startWorker, startImageWorker, startReaper } =
-  await import("./mastra/workflows/engine/index.js");
-const { broadcastQueuePositions } = await import("./mastra/lib/workflow-messages.js");
+const { startImageWorker, startWorker } = await import("./mastra/workflows/engine/index.js");
 
-// Alias ALIBABA_API_KEY to DASHSCOPE_API_KEY before any Mastra LLM call —
-// same shim as the API server's index.ts so the worker uses the same model.
-if (!process.env.DASHSCOPE_API_KEY && process.env.ALIBABA_API_KEY) {
-  process.env.DASHSCOPE_API_KEY = process.env.ALIBABA_API_KEY;
-}
+// Image-generation worker on its own queue. Serial (concurrency=1) by
+// default — dashscope burst-rate-limits at >1 per few seconds. Bump via
+// IMAGE_WORKER_CONCURRENCY if provider quota allows true parallelism.
+const workflowConcurrency = Number(process.env.WORKFLOW_WORKER_CONCURRENCY ?? 2);
+const workflowWorker = startWorker({ mastra, concurrency: workflowConcurrency });
 
-const concurrency = Number(process.env.WORKER_CONCURRENCY ?? 4);
-const worker = startWorker({ mastra, concurrency });
-
-// Image-generation worker runs in the same process but on a separate queue.
-// Serial (concurrency=1) by default — dashscope burst-rate-limits at >1 per
-// few seconds, and the prior concurrency=16 caused whole-batch 429 storms
-// that cost retry time and noisy logs. The provider's typical 8-20s gen
-// latency paces calls naturally. Bump via IMAGE_WORKER_CONCURRENCY if
-// provider quota is known to allow true parallelism.
 const imageConcurrency = Number(process.env.IMAGE_WORKER_CONCURRENCY ?? 1);
 const imageWorker = startImageWorker({ concurrency: imageConcurrency });
 
-// Stale-run reaper: scans queued/running workflow runs every ~15s and
-// cancels any whose client hasn't sent a heartbeat in 30s. Frees worker
-// slots when users close the page mid-run; without it a single rude
-// disconnect would pin a slot until BullMQ stalled-job recovery (minutes).
-const reaper = startReaper();
-
-worker.on("ready", () => {
+workflowWorker.on("ready", () => {
   // eslint-disable-next-line no-console
-  console.log(`[storyos-worker] ready (concurrency=${concurrency})`);
+  console.log(`[workflow-worker] ready (concurrency=${workflowConcurrency})`);
 });
-
-worker.on("error", (err) => {
+workflowWorker.on("failed", (job, err) => {
   // eslint-disable-next-line no-console
-  console.error("[storyos-worker] error:", err);
+  console.error(`[workflow-worker] job ${job?.id} failed:`, err?.message ?? err);
 });
-
-// Whenever a job leaves the queue (success or failure), every other
-// waiting run's position shifts down by one. Re-broadcast so cards
-// animate `position: N → N-1` smoothly. Fire-and-forget — broadcaster
-// already swallows per-publish failures internally.
-const onJobLeftQueue = (jobId: string | undefined): void => {
-  void broadcastQueuePositions().catch((err) => {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[storyos-worker] queue rebroadcast after job ${jobId ?? "?"} failed: ${err instanceof Error ? err.message : String(err)}`
-    );
-  });
-};
-
-worker.on("failed", (job, err) => {
+workflowWorker.on("completed", (job) => {
   // eslint-disable-next-line no-console
-  console.error(`[storyos-worker] job ${job?.id} failed:`, err?.message ?? err);
-  onJobLeftQueue(job?.id);
-});
-
-worker.on("completed", (job) => {
-  // eslint-disable-next-line no-console
-  console.log(`[storyos-worker] job ${job.id} completed`);
-  onJobLeftQueue(job.id);
+  console.log(`[workflow-worker] job ${job.id} completed`);
 });
 
 imageWorker.on("ready", () => {
@@ -102,8 +59,8 @@ imageWorker.on("completed", (job) => {
 async function shutdown(signal: string): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`[storyos-worker] received ${signal}, draining…`);
-  reaper.stop();
-  await Promise.all([worker.close(), imageWorker.close()]);
+  await workflowWorker.close();
+  await imageWorker.close();
   process.exit(0);
 }
 

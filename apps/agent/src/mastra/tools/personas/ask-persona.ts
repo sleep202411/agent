@@ -19,7 +19,21 @@
 import type { RequestContext } from "@mastra/core/request-context";
 import { z } from "zod";
 
-export const DEFAULT_ASK_TIMEOUT_MS = 30_000;
+/**
+ * Per-persona-call deadline. We're generous on purpose: heavy
+ * structured-JSON tasks on `alibaba/qwen3.6-plus` (storyboarder with 6
+ * shots × 10 fields, scene-designer with 8 scenes, scriptwriter with a
+ * full-episode script + uploaded source material) routinely take 60-150s
+ * end-to-end. The previous 30s ceiling caused `<root> Required` /
+ * `object=null` cascades when the model was still mid-generation when
+ * the abort fired.
+ *
+ * 240s is the new default. It's intentionally bigger than typical p99
+ * persona latency so a slow turn completes rather than fails — we'd
+ * rather make the user wait once than show them a malformed-output
+ * error. Tuneable via `STORYOS_ASK_TIMEOUT_MS` env.
+ */
+export const DEFAULT_ASK_TIMEOUT_MS = Number(process.env.STORYOS_ASK_TIMEOUT_MS ?? 240_000);
 
 /**
  * Persona reply fields — intentionally open. Each persona's own prompt
@@ -164,11 +178,27 @@ export async function askPersona(opts: AskPersonaOptions): Promise<AskPersonaRes
         const record = rawObj as Record<string, unknown>;
         const alreadyWrapped = typeof record.summary === "string" && record.summary.length > 0;
         if (!alreadyWrapped) {
-          const synth =
+          // Try named keys first (description / setting / image_prompt
+          // are the role/scene/prop/storyboarder common shapes), then
+          // fall back to "longest string value in the payload" so
+          // personas with novel field names (scriptwriter emits
+          // script/content/dialogue, story_outliner emits outline,
+          // etc.) still get a meaningful preview line — without us
+          // having to enumerate every persona's schema here.
+          const namedSynth =
             (typeof record.description === "string" && record.description) ||
             (typeof record.setting === "string" && record.setting) ||
             (typeof record.image_prompt === "string" && record.image_prompt) ||
             "";
+          let bestStringSynth = "";
+          if (!namedSynth) {
+            for (const value of Object.values(record)) {
+              if (typeof value === "string" && value.length > bestStringSynth.length) {
+                bestStringSynth = value;
+              }
+            }
+          }
+          const synth = (namedSynth || bestStringSynth || "").slice(0, 200).trim();
           const wrapped = {
             summary: synth || "(persona did not provide a summary)",
             fields: record,
