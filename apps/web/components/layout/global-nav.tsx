@@ -92,7 +92,7 @@ export function GlobalNav() {
     { href: "/ips", label: t("ipPlaza") },
     { href: "/crews", label: t("studioHall") },
     { href: "/creators", label: t("creators") },
-    { href: "/art-studio/projects", label: t("studio"), Icon: IconWand },
+    { href: "/art-studio", label: t("studio"), Icon: IconWand },
     // Legacy uni-app route — flip to "/courses" once the native page in
     // app/(site)/courses/ ships per its README migration plan.
     {
