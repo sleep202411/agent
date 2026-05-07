@@ -5,6 +5,7 @@
  * Step 1 creates an ephemeral draft, and only /commit persists it.
  */
 import {
+  BadRequestException,
   Body,
   Controller,
   HttpException,
@@ -12,9 +13,13 @@ import {
   Logger,
   Post,
   Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../auth';
+import { SparkService, type SparkUpload } from '../spark/spark.service';
 
 type JsonBody = Record<string, unknown>;
 
@@ -30,6 +35,8 @@ type ContextHeader = {
 @Controller('produce')
 export class ProduceProxyController {
   private readonly logger = new Logger(ProduceProxyController.name);
+
+  constructor(private readonly spark: SparkService) {}
 
   private get mastraUrl(): string {
     return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
@@ -81,6 +88,21 @@ export class ProduceProxyController {
     body: JsonBody,
   ): Promise<T> {
     const url = `${this.mastraUrl}${path}`;
+    // Diagnostic — log the full satoken value on every produce/*
+    // forward so we can verify the browser is attaching the session
+    // cookie. Remove once Step 2 / Step 3 are stable.
+    const cookie = req.headers.cookie;
+    if (cookie) {
+      const m = /(?:^|;\s*)satoken=([^;]+)/.exec(String(cookie));
+      const satoken = m?.[1];
+      this.logger.log(
+        satoken
+          ? `→ ${path} satoken=${satoken} cookie=${String(cookie)}`
+          : `→ ${path} cookie=${String(cookie)} (no satoken pair)`,
+      );
+    } else {
+      this.logger.warn(`→ ${path} cookie=MISSING`);
+    }
     // Sit just above Mastra's 30-min server.timeout so Mastra's clean
     // 504 wins the race when the workflow truly overruns. Without an
     // explicit signal, Node's undici defaults `headersTimeout` to
@@ -88,6 +110,7 @@ export class ProduceProxyController {
     // itself decides to give up.
     const FORWARD_TIMEOUT_MS = 31 * 60 * 1000;
     let upstream: globalThis.Response;
+    const startedAt = Date.now();
     try {
       upstream = await fetch(url, {
         method: 'POST',
@@ -97,20 +120,31 @@ export class ProduceProxyController {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Mastra produce fetch failed (${path}): ${msg}`);
+      this.logger.error(
+        `← ${path} fetch FAILED after=${Date.now() - startedAt}ms reason=${msg}`,
+      );
       throw new HttpException(
         { message: `Mastra unavailable: ${msg}` },
         HttpStatus.BAD_GATEWAY,
       );
     }
+    this.logger.log(
+      `← ${path} status=${upstream.status} after=${Date.now() - startedAt}ms`,
+    );
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => '');
       const code =
         upstream.status >= 400 && upstream.status < 500
           ? upstream.status
           : HttpStatus.BAD_GATEWAY;
+      // Bumped from 400 → 6000 chars so Mastra's full failure dump
+      // (including the failing step's name + thrown message) reaches
+      // the browser's network tab. The dump is JSON-encoded inside
+      // a JSON string so DevTools shows it but doesn't pretty-print
+      // the inner shape — copy + pipe through a JSON pretty-printer
+      // when triaging.
       throw new HttpException(
-        { message: text.slice(0, 400) || 'Mastra error' },
+        { message: text.slice(0, 6000) || 'Mastra error' },
         code,
       );
     }
@@ -163,6 +197,158 @@ export class ProduceProxyController {
     }
     const context = this.buildContext(user, body);
     return this.forward('/produce/script-draft/committed', req, context, body);
+  }
+
+  // ─── Step 1 (episodes + scripts) ──────────────────────────────────
+  // Mirrors `script-draft/sync` + `/commit` but runs the slimmer
+  // `produce_step1_episodes` workflow that stops after scripts. Phase
+  // A1 of the produce pipeline split — Step 2 (assets) and Step 3
+  // (storyboard) follow with their own routes.
+  @Post('step1/generate')
+  async step1Generate(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = scalarString(body.projectId);
+    if (!projectId) {
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    const context = this.buildContext(user, body);
+    return this.forward('/produce/step1/generate', req, context, body);
+  }
+
+  @Post('step1/commit')
+  async step1Commit(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = scalarString(body.projectId);
+    if (!projectId) {
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    const context = this.buildContext(user, body);
+    return this.forward('/produce/step1/commit', req, context, body);
+  }
+
+  // ─── Step 2: asset extraction ─────────────────────────────────────
+  @Post('step2/generate')
+  async step2Generate(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = scalarString(body.projectId);
+    if (!projectId) {
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    const context = this.buildContext(user, body);
+    return this.forward('/produce/step2/generate', req, context, body);
+  }
+
+  @Post('step2/commit')
+  async step2Commit(
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    const projectId = scalarString(body.projectId);
+    if (!projectId) {
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    const context = this.buildContext(user, body);
+    return this.forward('/produce/step2/commit', req, context, body);
+  }
+
+  // ─── Step 1 multipart variant — single-shot upload + run ──────────
+  //
+  // The reseed flow doesn't need spark/analyze's LLM-based
+  // name/description suggestions (the project already exists). We
+  // skip that round-trip and pipe the file straight into Step 1:
+  //   1. Extract text via SparkService (mammoth / pdf-parse, no LLM).
+  //   2. Cache it in Redis under `att_xxx` for the workflow to read.
+  //   3. Build the seed inline from the form fields the dropzone sent.
+  //   4. Forward to the agent's JSON `/produce/step1/generate`.
+  //
+  // The browser issues exactly one POST and gets back `{runId, draft}`,
+  // same envelope as the JSON variant — the page renders the draft
+  // review card unchanged.
+  @Post('step1/generate-from-file')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
+  async step1GenerateFromFile(
+    @UploadedFile() file: SparkUpload | undefined,
+    @Body() body: JsonBody,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Missing "file" field in upload.');
+    }
+    const projectId = scalarString(body.projectId);
+    if (!projectId) {
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    const worldId = scalarString(body.worldId);
+    const worldName = scalarString(body.worldName) ?? '';
+    const description = scalarString(body.description) ?? '';
+    const language = scalarString(body.language);
+    const episodeCountRaw = body.episodeCount;
+    const episodeCount =
+      typeof episodeCountRaw === 'number' && Number.isFinite(episodeCountRaw)
+        ? episodeCountRaw
+        : typeof episodeCountRaw === 'string' && /^\d+$/.test(episodeCountRaw)
+          ? Number.parseInt(episodeCountRaw, 10)
+          : undefined;
+
+    // One-line diagnostic so we know whether the browser actually
+    // forwarded a session cookie. Step 1's resolve_source throws
+    // "Missing cookie in requestContext" when the agent gets no
+    // cookie — the trail starts here.
+    const cookieHint = req.headers.cookie
+      ? `cookie=${String(req.headers.cookie).slice(0, 64)}…`
+      : 'cookie=MISSING';
+    this.logger.log(
+      `step1 generate-from-file projectId=${projectId} fileSize=${file.size} ${cookieHint}`,
+    );
+
+    let extracted: { textRef: string; text: string; excerpt: string };
+    try {
+      extracted = await this.spark.extractAndCacheUpload(file);
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`step1 extract failed: ${msg}`);
+      throw new HttpException(
+        { message: msg || 'Could not read uploaded file' },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const seedPayload = {
+      worldId,
+      worldName,
+      description,
+      tags: [] as string[],
+      episodeCount,
+      language,
+      sourceFile: {
+        name: file.originalname,
+        size: file.size,
+        mimeType: file.mimetype,
+        path: '',
+        textRef: extracted.textRef,
+        chars: extracted.text.length,
+        excerpt: extracted.excerpt,
+      },
+      createdAt: Date.now(),
+    };
+
+    const context = this.buildContext(user, { projectId, worldId });
+    const forwardBody = { projectId, worldId, seed: seedPayload };
+    return this.forward('/produce/step1/generate', req, context, forwardBody);
   }
 }
 

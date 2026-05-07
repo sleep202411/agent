@@ -278,6 +278,10 @@ export function CreateWorldDialog({
             },
             createdAt: Date.now(),
           };
+          // One-shot hand-off — `useProducePipeline`'s mount effect
+          // calls `consumeProduceSeed`, which reads + immediately
+          // deletes this entry. Refresh / new tab from then on shows
+          // the upload card instead of auto-firing a stale run.
           saveProduceSeed(result.projectId, seedPayload);
           router.push(localizePath(`/projects/${result.projectId}/produce`, getCurrentLocale()));
         } else {

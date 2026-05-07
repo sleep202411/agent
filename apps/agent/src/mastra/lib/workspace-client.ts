@@ -47,11 +47,17 @@ export function getContext(rc: RequestContext | undefined): StoryosContext {
   const cookie = rc.get("cookie") as string | undefined;
   const userId = rc.get("userId") as string | undefined;
   const projectId = rc.get("projectId") as string | undefined;
-  if (!cookie) throw new Error("Missing cookie in requestContext");
+  // Cookie is only required for Java calls. LLM-only steps (Step 1
+  // produce: plan + script) never touch Java, and demanding a cookie
+  // here used to fail those calls early. Downstream `javaRequest`
+  // surfaces its own auth error when an actual Java call runs without
+  // a session cookie — and that error is more actionable for the user
+  // than a generic "Missing cookie in requestContext" thrown three
+  // layers above the call site.
   if (!userId) throw new Error("Missing userId in requestContext");
   if (!projectId) throw new Error("Missing projectId in requestContext");
   return {
-    cookie,
+    cookie: cookie ?? "",
     userId,
     projectId,
     worldId: rc.get("worldId") as string | undefined,

@@ -3,9 +3,11 @@
 import { IconPhoto, IconRefresh, IconSparkles } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { ossUrl } from "@/src/lib/asset-paths";
 import type { ProduceJavaAsset } from "@/src/lib/produce/java-produce-data";
 import type { ProduceAssetImageStatus } from "../../_hooks/use-produce-asset-image";
+import { DraftBadge, draftCardClass, isDraftAsset } from "./draft-marker";
 
 interface CharacterCardProps {
   card: ProduceJavaAsset;
@@ -42,9 +44,10 @@ export function CharacterCard({ card, status, onGenerate, onRetryPersist }: Char
   const persistFailed = status.state === "persist_error";
   const variantTotal = card.imagePaths.length || (hasImage ? 1 : 0);
   const variantCurrent = variantTotal === 0 ? 0 : 1;
+  const draft = isDraftAsset(card);
 
   return (
-    <Card className="flex-row gap-0 overflow-hidden p-0">
+    <Card className={cn("flex-row gap-0 overflow-hidden p-0", draft && draftCardClass)}>
       {/* Left — portrait-aspect thumbnail. 5:7 mirrors the reference
           mockup; loading / busy state overlays the thumb so the
           right column stays readable. */}
@@ -63,6 +66,7 @@ export function CharacterCard({ card, status, onGenerate, onRetryPersist }: Char
             <IconRefresh className="size-4 animate-spin" />
           </div>
         ) : null}
+        {draft ? <DraftBadge className="absolute right-1.5 top-1.5" /> : null}
       </div>
 
       {/* Right — name + variant counter + description + action. */}
@@ -92,9 +96,14 @@ export function CharacterCard({ card, status, onGenerate, onRetryPersist }: Char
           size="sm"
           className="self-start"
           onClick={persistFailed ? onRetryPersist : onGenerate}
-          disabled={busy}
+          disabled={busy || draft}
+          title={draft ? "保存草稿后才能生图" : undefined}
         >
-          {status.state === "generating" ? (
+          {draft ? (
+            <>
+              <IconSparkles /> 保存后可生图
+            </>
+          ) : status.state === "generating" ? (
             <>
               <IconRefresh className="animate-spin" /> 生成中
             </>

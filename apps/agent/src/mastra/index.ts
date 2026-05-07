@@ -23,6 +23,8 @@ import { videoPromptRoutes } from "./routes/video-prompt";
 import { produceRoutes } from "./routes/produce";
 import { logStartupSelfCheck } from "./lib/startup-self-check";
 import { produceScriptPipelineWorkflow } from "./workflows/produce-script-pipeline";
+import { produceStep1EpisodesWorkflow } from "./workflows/produce-step1-episodes";
+import { produceStep2AssetsWorkflow } from "./workflows/produce-step2-assets";
 
 // StoryOS chat no longer owns workflow orchestration. The only workflow
 // registered here is the dedicated produce-mode analysis pipeline; it is
@@ -126,6 +128,8 @@ export const mastra = new Mastra({
   },
   workflows: {
     produceScriptPipeline: produceScriptPipelineWorkflow,
+    produceStep1Episodes: produceStep1EpisodesWorkflow,
+    produceStep2Assets: produceStep2AssetsWorkflow,
   },
   storage: new LibSQLStore({
     id: "storyos-storage",

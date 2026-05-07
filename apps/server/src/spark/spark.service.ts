@@ -273,6 +273,37 @@ export class SparkService {
     };
   }
 
+  /**
+   * Public-from-package equivalents of the private helpers — the
+   * produce-proxy controller's multipart `step1/generate-from-file`
+   * endpoint reuses both: extract the raw text out of the upload,
+   * push it into Redis under `att_xxx`, and hand the textRef to the
+   * step1 workflow. No LLM-based "insights" pass, since the produce
+   * flow already has the project's name / description.
+   */
+  async extractAndCacheUpload(file: SparkUpload): Promise<{
+    textRef: string;
+    text: string;
+    excerpt: string;
+  }> {
+    const text = await this.extractText(file);
+    const trimmed = text.trim();
+    if (!trimmed) {
+      throw new BadRequestException(
+        'Could not read any text from the uploaded file.',
+      );
+    }
+    const textRef = await this.cacheSourceText(trimmed, {
+      filename: file.originalname,
+      mimeType: file.mimetype,
+    });
+    return {
+      textRef,
+      text: trimmed,
+      excerpt: trimmed.slice(0, 800),
+    };
+  }
+
   private async cacheSourceText(
     text: string,
     meta: { filename?: string; mimeType?: string },

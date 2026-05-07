@@ -62,6 +62,8 @@ export const WORKFLOW_LABEL_KEYS: Record<WorkflowName, string> = {
   script_phase: "workflowScriptPhase",
   storyboard_phase: "workflowStoryboardPhase",
   produce_script_pipeline: "workflowProduceScriptPipeline",
+  produce_step1_episodes: "workflowProduceStep1Episodes",
+  produce_step2_assets: "workflowProduceStep2Assets",
 };
 
 interface WorkflowPersona {
@@ -88,6 +90,8 @@ export const WORKFLOW_PERSONA: Record<WorkflowName, WorkflowPersona> = {
   script_phase: { nameKey: "personas.scriptwriter", icon: IconPencil },
   storyboard_phase: { nameKey: "personas.storyboardDesigner", icon: IconCamera },
   produce_script_pipeline: { nameKey: "personas.storyboardDesigner", icon: IconSparkles },
+  produce_step1_episodes: { nameKey: "personas.episodePlanner", icon: IconLayoutList },
+  produce_step2_assets: { nameKey: "personas.episodePlanner", icon: IconUsers },
   batch_create_asset: { nameKey: "personas.assetImporter", icon: IconPackage },
   script_edit: { nameKey: "personas.scriptwriter", icon: IconPencil },
 };

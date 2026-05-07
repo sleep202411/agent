@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { IconEdit, IconFileX, IconLayout2, IconPlayerPlay, IconRefresh } from "@tabler/icons-react";
+import { IconEdit, IconFileX, IconLayout2, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -152,10 +152,6 @@ function EpisodeRow({
       <Card className="flex-1 flex-row items-stretch gap-0 overflow-hidden p-0">
         <div className="relative flex w-[110px] shrink-0 items-center justify-center bg-muted">
           <span className="text-2xl font-semibold text-muted-foreground/35">{episode.no}</span>
-          <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[11px] font-medium text-white">
-            <IconPlayerPlay className="size-2.5 fill-current" />
-            {typeof shotCount === "number" ? `${Math.max(shotCount * 5, 30)}s` : "--"}
-          </span>
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 p-4">

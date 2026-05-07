@@ -312,6 +312,64 @@ export async function loadProduceJavaEpisodes(projectId: string): Promise<Produc
     .sort((a, b) => a.sort - b.sort);
 }
 
+/**
+ * Fetches the script content for a single episode via Java's
+ * `/api/user/project/scripts/episode/detail/{episodeId}` endpoint.
+ *
+ * Java stores the script as TipTap-style HTML (or a similar rich
+ * text envelope). We strip tags here so callers can render it as
+ * plain prose; if a downstream view needs the rich form, expose
+ * the raw response separately.
+ */
+export interface ProduceEpisodeScriptDetail {
+  episodeId: string;
+  content: string;
+  /** Raw response from Java in case callers need fields we haven't
+   *  surfaced yet (lastUpdatedAt, version, etc.). */
+  raw: Record<string, unknown>;
+}
+
+export async function loadProduceEpisodeScript(
+  episodeId: string
+): Promise<ProduceEpisodeScriptDetail> {
+  const data = await backendApi.post<Record<string, unknown>>(
+    `/api/user/project/scripts/episode/detail/${encodeURIComponent(episodeId)}`,
+    { data: {} }
+  );
+  // Java may return the script under a few different keys depending
+  // on which path produced it (produce pipeline / chat save / manual
+  // edit). Pick the first non-empty string field that looks like
+  // script content; fall back to nothing rather than guessing.
+  const candidates = ["content", "script", "scriptContent", "html"];
+  let raw = "";
+  for (const key of candidates) {
+    const value = data?.[key];
+    if (typeof value === "string" && value.trim()) {
+      raw = value;
+      break;
+    }
+  }
+  return { episodeId, content: scriptContentToPlain(raw), raw: data ?? {} };
+}
+
+function scriptContentToPlain(input: string): string {
+  if (!input) return "";
+  // The save side wraps each line in a <p> tag. Reverse that here so
+  // the UI can render line-by-line without relying on a sanitiser.
+  // Other tags get stripped for the plain readout.
+  return input
+    .replace(/<\/p>\s*<p[^>]*>/g, "\n")
+    .replace(/<p[^>]*>/g, "")
+    .replace(/<\/p>/g, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
 export async function loadEpisodeShotCount(episodeId: string): Promise<number> {
   const response = await backendApi.post<Paginated<ShotRow>>("/api/user/shot/queryPage", {
     data: {
