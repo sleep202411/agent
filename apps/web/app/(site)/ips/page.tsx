@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
 import { IPCinematicHero } from "@/app/(site)/ips/_components/ip-cinematic-hero";
 import { IPPlazaCard } from "@/app/(site)/ips/_components/ip-plaza-card";
-import { useIPList, useIPTypes, type IPProject } from "./_hooks/use-ip";
+import { useInfiniteIPList, useIPTypes, type IPProject } from "./_hooks/use-ip";
 
 // ─── Filter panel (shared between sidebar + sheet) ──
 
@@ -109,14 +109,50 @@ export default function IPPlazaPage() {
   // Server-side filtering: backend filters by `key` + `typeId`. Tag
   // filter was removed from the UI — the IP plaza is a category-first
   // discovery surface and the tag chip rail just added noise.
-  const { data: listData, isLoading: loading } = useIPList({
-    page: 1,
-    pageSize: 50,
+  //
+  // Pagination is infinite-scroll: each page fetches `pageSize` rows
+  // and the sentinel `<div ref={loadMoreRef}>` below the grid fires
+  // `fetchNextPage` once it intersects the viewport. `getNextPageParam`
+  // (in `useInfiniteIPList`) stops paging when accumulated rows hit
+  // the backend-reported `total`.
+  const {
+    data: listData,
+    isLoading: loading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteIPList({
+    pageSize: 20,
     key: search,
     typeId: selectedTypeId,
   });
   const { data: typesData = [] } = useIPTypes();
-  const projects = useMemo<IPProject[]>(() => listData?.list ?? [], [listData]);
+  const projects = useMemo<IPProject[]>(
+    () => listData?.pages.flatMap((p) => p.list) ?? [],
+    [listData]
+  );
+
+  // Infinite-scroll sentinel observer — fires fetchNextPage when the
+  // sentinel below the grid intersects the viewport (with a 400px
+  // rootMargin so the next page is already loading by the time the
+  // user actually hits the bottom of the visible list).
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+            void fetchNextPage();
+          }
+        }
+      },
+      { rootMargin: "400px", threshold: 0 }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
   // Card still expects the legacy `{ "<id>": "<name>" }` lookup map for
   // the category badge under the title; build it from the flat list.
   const categoriesMap = useMemo(
@@ -198,11 +234,23 @@ export default function IPPlazaPage() {
             {loading ? (
               <div className="py-20 text-center text-sm text-muted-foreground">{t("loading")}</div>
             ) : projects.length > 0 ? (
-              <div className="columns-2 gap-6 sm:columns-3 lg:columns-3 xl:columns-4">
-                {projects.map((p) => (
-                  <IPPlazaCard key={p.id} project={p} categories={categoriesMap} />
-                ))}
-              </div>
+              <>
+                <div className="columns-2 gap-6 sm:columns-3 lg:columns-3 xl:columns-4">
+                  {projects.map((p) => (
+                    <IPPlazaCard key={p.id} project={p} categories={categoriesMap} />
+                  ))}
+                </div>
+                {/* Infinite-scroll sentinel — when this enters the
+                    viewport, fetch the next page. `rootMargin` of 400px
+                    pre-fetches before the user actually hits the
+                    bottom so they don't see a "loading" gap. */}
+                <div ref={loadMoreRef} className="h-px" aria-hidden />
+                {hasNextPage ? (
+                  <div className="py-6 text-center text-xs text-muted-foreground">
+                    {isFetchingNextPage ? t("loading") : ""}
+                  </div>
+                ) : null}
+              </>
             ) : (
               <div className="py-20 text-center text-muted-foreground">
                 <IconSparkles className="mx-auto mb-3 size-10 opacity-30" />
