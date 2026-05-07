@@ -33,8 +33,11 @@ import {
   useMyProjects,
   useMyJoinedProjects,
   useMyPersonalWorks,
+  useUpdatePersonalWork,
 } from "@/src/hooks/use-my-projects";
-import { updateProject, type Project } from "@/src/services/project";
+import { updateProject, type PersonalWork, type Project } from "@/src/services/project";
+import { ApiRequestError } from "@/src/lib/api";
+import { PublishWorkDialog } from "./publish-work-dialog";
 import { useProjectEditUrl } from "@/app/(site)/ips/_hooks/use-ip";
 import { env } from "@/src/env";
 import { RecruitmentStrip } from "@/app/(site)/art-studio/_components/recruitment-strip";
@@ -389,7 +392,9 @@ function PersonalWorksTab() {
   const locale = useLocale() as Locale;
   const { data: works, isLoading } = useMyPersonalWorks();
   const { data: kycStatus } = useKycAuthStatus();
+  const { mutateAsync: updateWork, isPending: updatingWork } = useUpdatePersonalWork();
   const [kycAlertOpen, setKycAlertOpen] = useState(false);
+  const [editing, setEditing] = useState<PersonalWork | null>(null);
 
   // Click-time gate: ask the backend whether KYC is required for this
   // user (mirrors fizzdragon-web's `/user/needAuth` check). The .com
@@ -402,6 +407,38 @@ function PersonalWorksTab() {
       return;
     }
     router.push(localizePath("/publish", locale));
+  };
+
+  /**
+   * Toggle a work's visibility (`viewStatus`):
+   *   1 → 0 = delist (hide from public discovery, keep in personal library)
+   *   0 → 1 = relist (re-expose to public — does NOT re-trigger review;
+   *           the work was already approved before being delisted)
+   *
+   * Mirrors legacy fizzdragon-web's `handleOfflinePerson` /
+   * `editHandle` permission-popup options. Confirm before delisting
+   * because it's user-visible; relisting is one-tap since users want
+   * to undo their own action quickly.
+   */
+  const toggleVisibility = async (work: PersonalWork) => {
+    const next = work.viewStatus === 1 ? 0 : 1;
+    if (next === 0 && !window.confirm(t("confirmDelist"))) return;
+    try {
+      await updateWork({ id: work.id, viewStatus: next });
+      toast.success(t(next === 0 ? "delistSuccess" : "relistSuccess"));
+    } catch (err) {
+      // Surface the raw backend response so a hidden 401 / 422 isn't
+      // masked behind a generic toast — same pattern as the experience
+      // dialog. Long bodies are clipped at 1k chars to avoid overflow.
+      if (err instanceof ApiRequestError) {
+        toast.error(`HTTP ${err.status}`, {
+          description: err.responseBody?.slice(0, 1000) || err.message,
+          duration: 10000,
+        });
+      } else {
+        toast.error(err instanceof Error ? err.message : t("delistFailed"));
+      }
+    }
   };
 
   if (isLoading) {
@@ -444,16 +481,39 @@ function PersonalWorksTab() {
               ? `${videoPath}?x-oss-process=video/snapshot,t_0,m_fast`
               : `${env.OSS_BASE_URL}/${videoPath.replace(/^\/+/, "")}?x-oss-process=video/snapshot,t_0,m_fast`
             : "";
+
+        // Backend `review` codes (legacy fizzdragon-web parity):
+        //   0 = pending review,        3 = rejected,       5 = approved.
+        // Anything else (incl. legacy `1`) is treated as approved so
+        // historical rows that never went through the new review queue
+        // still render their action bar.
         const isReviewing = work.review === 0;
+        const isRejected = work.review === 3;
+        const isApproved = !isReviewing && !isRejected;
+        const isPrivate = work.viewStatus !== 1;
 
         return (
           <div
             key={work.id}
             className="group relative overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
           >
+            {/* Top-left: privacy state. Only meaningful once the work
+                has cleared review — pending rows can't be visible to
+                anyone yet, so the chip would be redundant. */}
+            {isPrivate && isApproved && (
+              <div className="absolute left-2 top-2 z-10 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-medium text-white">
+                {t("onlyVisibleToSelf")}
+              </div>
+            )}
+            {/* Top-right: review status badge */}
             {isReviewing && (
               <div className="absolute right-2 top-2 z-10 rounded-full bg-yellow-500/80 px-2 py-0.5 text-[10px] font-medium text-white">
                 {t("reviewing")}
+              </div>
+            )}
+            {isRejected && (
+              <div className="absolute right-2 top-2 z-10 rounded-full bg-red-500/80 px-2 py-0.5 text-[10px] font-medium text-white">
+                {t("auditFailed")}
               </div>
             )}
             <div className="aspect-video overflow-hidden bg-muted">
@@ -467,14 +527,42 @@ function PersonalWorksTab() {
                 className="h-full w-full object-cover"
               />
             </div>
-            <div className="p-3">
+            <div className="space-y-2 p-3">
               <div className="truncate text-sm font-medium">{title || t("noData")}</div>
+              {/* Action bar — only on approved works. Pending / rejected
+                  rows are read-only until review resolves. */}
+              {isApproved && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(work)}
+                    disabled={updatingWork}
+                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
+                  >
+                    <IconEdit className="size-3.5" />
+                    {t("edit")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleVisibility(work)}
+                    disabled={updatingWork}
+                    className="inline-flex flex-1 items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
+                  >
+                    {work.viewStatus === 1 ? t("delist") : t("relist")}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         );
       })}
 
       <KycRequiredAlert open={kycAlertOpen} onOpenChange={setKycAlertOpen} />
+      <PublishWorkDialog
+        open={editing !== null}
+        onOpenChange={(open) => !open && setEditing(null)}
+        editWork={editing}
+      />
     </div>
   );
 }
