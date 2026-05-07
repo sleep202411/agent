@@ -50,10 +50,60 @@ export function IPCinematicHero() {
     return () => window.clearTimeout(handle);
   }, [index, paused, total]);
 
-  // Backend not ready / empty result — render a placeholder at the
-  // hero's full fixed height so the rail below doesn't jump up. Plaza
-  // listing further down is unaffected.
+  // Featured-empty branch. Featured comes from `/project/featured/list`
+  // which the backend hasn't shipped yet, but the For You rail (sourced
+  // from the regular `/project/list`) usually has data — so we show the
+  // rail by itself rather than gating the entire hero on Featured. When
+  // both are empty we fall back to the original placeholder.
   if (total === 0) {
+    if (rail.length > 0) {
+      return (
+        <section className="relative pt-20">
+          <div className="mx-auto max-w-[1800px] px-6 sm:px-10">
+            <div className="mb-3">
+              <h2 className="text-lg font-semibold text-foreground">{t("forYou")}</h2>
+            </div>
+            <div className="-mx-6 flex gap-3 overflow-x-auto px-6 pb-4 sm:-mx-10 sm:px-10 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {rail.map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/ips/${item.id}`}
+                  className="group block w-64 shrink-0 sm:w-72"
+                >
+                  <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={item.cover}
+                      alt=""
+                      className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-black/85 to-transparent" />
+                    <div className="absolute inset-x-3 bottom-3 pr-10">
+                      <h3 className="line-clamp-1 text-sm font-semibold text-white">
+                        {item.title}
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Add to list"
+                      onClick={(e) => e.preventDefault()}
+                      className="absolute bottom-3 right-3 inline-flex size-8 items-center justify-center rounded-full border border-white/20 bg-black/50 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
+                    >
+                      <IconPlus className="size-4" />
+                    </button>
+                  </div>
+                  {item.episodes > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                      <span>{t("detailEpisodeCount", { count: item.episodes })}</span>
+                    </div>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    }
     return (
       <section className="relative">
         <div className="relative flex h-[100svh] w-full items-center justify-center overflow-hidden bg-black">
@@ -303,9 +353,11 @@ export function IPCinematicHero() {
                     <IconPlus className="size-4" />
                   </button>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                  <span>{t("detailEpisodeCount", { count: item.episodes })}</span>
-                </div>
+                {item.episodes > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                    <span>{t("detailEpisodeCount", { count: item.episodes })}</span>
+                  </div>
+                )}
               </Link>
             ))}
           </div>
