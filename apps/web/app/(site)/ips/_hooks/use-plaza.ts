@@ -2,13 +2,10 @@
  * Plaza homepage data: Featured carousel + For You rail (P1).
  *
  *   - `usePlazaFeatured`  — POST /project/featured/list (queryFeaturedProject)
- *   - `usePlazaForYou`    — POST /project/list (TEMPORARY)
+ *   - `usePlazaForYou`    — POST /project/foryou/list
  *
- * For You note: backend hasn't shipped a dedicated `/project/plaza/for-you`
- * endpoint yet, but it will return the **same wire shape as
- * `/project/list`** when it does. We therefore hit `/project/list`
- * directly today; when the real endpoint lands, change the URL inside
- * `fetchPlazaForYou` and nothing else needs to move.
+ * Both return the same wire shape as `/project/list`
+ * (`{code, data: WireProject[], sum}`).
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -64,9 +61,7 @@ async function fetchPlazaFeatured(): Promise<FeaturedSlide[]> {
   return rows.map(mapFeaturedRow);
 }
 
-// Wire shape from `/project/list` — `/project/plaza/for-you` will
-// return the same shape when backend ships it, so this mapping
-// transitions cleanly with a URL change.
+// Wire shape from `/project/foryou/list` — same as `/project/list`.
 interface WireForYouRow {
   id: number | null;
   projectId: number;
@@ -86,10 +81,8 @@ function mapForYouRow(row: WireForYouRow): RailItem {
     id: String(row.projectId),
     title: row.title ?? "",
     cover: ipImageUrl(row.videoBanner),
-    // `/project/list` doesn't currently include episode count; the
-    // dedicated `/project/plaza/for-you` endpoint may add it later.
-    // Falls through to 0 today; the rail card hides the "N episodes"
-    // line when count is 0.
+    // Rail card hides the "N episodes" line when count is 0, so a
+    // missing field on the wire degrades quietly.
     episodes: row.videoNumber ?? 0,
   };
 }
@@ -98,12 +91,8 @@ async function fetchPlazaForYou(
   page: number,
   pageSize: number
 ): Promise<{ list: RailItem[]; total: number }> {
-  // TEMPORARY: hits `/project/list` until backend ships
-  // `/project/plaza/for-you`. The two are expected to share a wire
-  // shape — flip the URL here when the real endpoint lands and the
-  // mapper above keeps working unchanged.
   const qs = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-  const res = await fetch(`/project/list?${qs.toString()}`, {
+  const res = await fetch(`/project/foryou/list?${qs.toString()}`, {
     method: "POST",
     credentials: "include",
     headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
