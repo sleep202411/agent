@@ -43,7 +43,7 @@ export type {
   ProjectJob,
 } from "./types";
 
-export { useIPList, useIPTypes, useIPTagList } from "./use-ip-list";
+export { useIPList, useInfiniteIPList, useIPTypes, useIPTagList } from "./use-ip-list";
 
 export {
   useProjectDetail,
