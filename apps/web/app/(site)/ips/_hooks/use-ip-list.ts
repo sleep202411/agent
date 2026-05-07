@@ -8,7 +8,7 @@
  *                           the same React Query cache)
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { acceptLanguage, bearerHeader, ipKeys } from "./shared";
 import type { IPProject, IPListResult, IPType, IPTag } from "./types";
 
@@ -103,6 +103,45 @@ export function useIPList(params?: {
   return useQuery<IPListResult>({
     queryKey: ipKeys.list({ page, pageSize, key, typeId, tag }),
     queryFn: () => fetchIPList({ page, pageSize, key, typeId, tag }),
+  });
+}
+
+/**
+ * Infinite-scroll variant of `useIPList` for the IP plaza homepage.
+ * Wraps the same `fetchIPList` fetcher but pages on demand: each
+ * `fetchNextPage()` call loads the next contiguous page; `getNextPageParam`
+ * compares accumulated rows against the backend-reported `total` (which
+ * comes back as `sum` on `/project/list`) to decide when to stop.
+ *
+ * Filter changes (key / typeId / tag) reset the cursor automatically by
+ * keying off them — TanStack treats a different `queryKey` as a fresh
+ * scroll, so flipping a category chip resets the list.
+ */
+export function useInfiniteIPList(params?: {
+  pageSize?: number;
+  key?: string;
+  typeId?: string;
+  tag?: string;
+}) {
+  const pageSize = params?.pageSize ?? 20;
+  const key = params?.key ?? "";
+  const typeId = params?.typeId ?? "";
+  const tag = params?.tag ?? "";
+  return useInfiniteQuery<
+    IPListResult,
+    Error,
+    { pages: IPListResult[]; pageParams: number[] },
+    readonly unknown[],
+    number
+  >({
+    queryKey: ["ip", "list-infinite", { pageSize, key, typeId, tag }] as const,
+    queryFn: ({ pageParam }) => fetchIPList({ page: pageParam, pageSize, key, typeId, tag }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.list.length, 0);
+      if (loaded >= lastPage.total) return undefined;
+      return allPages.length + 1;
+    },
   });
 }
 
