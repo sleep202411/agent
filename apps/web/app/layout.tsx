@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import { headers } from "next/headers";
+import { dehydrate } from "@tanstack/react-query";
 import { RootLayoutClient } from "@/app/root-layout-client";
+import { getServerQueryClient } from "@/src/lib/react-query/server";
+import { fetchUserInfoServerSide } from "@/src/lib/auth/server-user";
+import { userKeys } from "@/src/hooks/use-user";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,7 +13,15 @@ export const metadata: Metadata = {
   description: "AI Animation & IP Co-creation Platform",
 };
 
-const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;}catch(e){}})();`;
+// Default to dark on the server-rendered HTML so the first paint is
+// already dark — fixes the white-flash users saw on slow networks
+// while the theme-init script downloaded. The script (kept below) is
+// still authoritative: if the user's stored preference / OS resolved
+// to light, it strips the `dark` class on first interactive tick.
+// We bias toward "dark by default" because the brand surfaces are
+// dark-leaning and a brief dark→light flip on the small light-mode
+// minority is less jarring than the previous light→dark.
+const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;root.style.backgroundColor=resolved==='dark'?'#0c0e14':'#ffffff';}catch(e){}})();`;
 
 export default async function RootLayout({
   children,
@@ -20,8 +32,37 @@ export default async function RootLayout({
   const headerBag = await headers();
   const locale = headerBag.get("x-locale") ?? "en-US";
 
+  // SSR auth bootstrap.
+  // Fetch the current user against the Java content service using the
+  // request's `satoken` cookie, then seed the React Query cache so the
+  // first client paint already has the logged-in state. This is the
+  // fix for the post-login / F5 flash where the navbar briefly
+  // rendered the visitor variant before client-side `useUserInfo()`
+  // resolved.
+  //
+  // Scope is intentionally narrow: this is auth *data hydration*, not
+  // a redirect gate. Pages that need a logged-in user still decide
+  // when to redirect on the client (`useCurrentUser()` + page logic) —
+  // SSR's only job is to make sure that decision sees real data, not
+  // a cold cache.
+  const queryClient = getServerQueryClient();
+  const userInfo = await fetchUserInfoServerSide();
+  if (userInfo) {
+    queryClient.setQueryData(userKeys.info, userInfo);
+  }
+  const dehydratedState = dehydrate(queryClient);
+
   return (
-    <html lang={locale} suppressHydrationWarning className="h-full antialiased font-sans">
+    <html
+      lang={locale}
+      suppressHydrationWarning
+      className="h-full antialiased font-sans dark"
+      // Inline background + color-scheme guarantees the page is dark
+      // before any CSS bundle (or external Google Fonts CSS link) lands.
+      // The theme-init script overrides this when needed; until then the
+      // viewport stays dark so the slow-network flash never happens.
+      style={{ backgroundColor: "#0c0e14", colorScheme: "dark" }}
+    >
       <head>
         <Script id="theme-init" strategy="beforeInteractive">
           {THEME_INIT_SCRIPT}
@@ -31,8 +72,10 @@ export default async function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap"
         />
       </head>
-      <body className="min-h-full flex flex-col">
-        <RootLayoutClient initialLocale={locale}>{children}</RootLayoutClient>
+      <body className="min-h-full flex flex-col bg-background">
+        <RootLayoutClient initialLocale={locale} dehydratedState={dehydratedState}>
+          {children}
+        </RootLayoutClient>
       </body>
     </html>
   );
