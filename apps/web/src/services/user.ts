@@ -132,7 +132,7 @@ export const resetPassword = (email: string, pwd: string, code: string) =>
  * absolute URLs through unchanged; return undefined for empty input
  * so consumers can render fallbacks.
  */
-function resolveAssetUrl(path: string | null | undefined, base: string): string | undefined {
+export function resolveAssetUrl(path: string | null | undefined, base: string): string | undefined {
   if (!path) return undefined;
   if (path.startsWith("http")) return path;
   return base ? `${base}/${path}` : undefined;
