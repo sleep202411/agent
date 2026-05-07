@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
+import { ApiRequestError } from "@/src/lib/api";
 import {
   useCreateExperience,
   useUpdateExperience,
@@ -67,8 +68,21 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
       }
       toast.success(t("updateSuccess"));
       onOpenChange(false);
-    } catch {
-      toast.error(t("updateFailed"));
+    } catch (err) {
+      // Surface the raw backend response so the underlying cause is
+      // never hidden by a generic "Failed to update profile" toast.
+      // For ApiRequestError we have status + body; for anything else
+      // (network drop, JSON parse fail, …) fall through to message.
+      if (err instanceof ApiRequestError) {
+        toast.error(`HTTP ${err.status}`, {
+          description: err.responseBody?.slice(0, 1000) || err.message,
+          duration: 10000,
+        });
+      } else {
+        toast.error(err instanceof Error ? err.message : String(err), {
+          duration: 10000,
+        });
+      }
     }
   };
 
