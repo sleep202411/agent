@@ -87,19 +87,19 @@ export default function ProduceAssetPage() {
       const resolvedWorldId = committedWorldId || (await loadProjectWorldId(projectId));
       if (!resolvedWorldId) {
         setAssets(EMPTY_LISTS);
-        setError("未找到项目世界，请先完成剧本步骤。");
+        setError(t("step2NoWorld"));
         return;
       }
       setWorldId(resolvedWorldId);
       setAssets(await loadProduceJavaAssets(resolvedWorldId));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "资产加载失败";
+      const message = err instanceof Error ? err.message : t("step2LoadFailed");
       setAssets(EMPTY_LISTS);
       setError(message);
     } finally {
       setLoading(false);
     }
-  }, [committedWorldId, projectId]);
+  }, [committedWorldId, projectId, t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -174,7 +174,7 @@ export default function ProduceAssetPage() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
           <IconRefresh className="size-5 animate-spin" />
-          正在读取项目资产
+          {t("step2LoadingAssets")}
         </div>
       </div>
     );
@@ -187,7 +187,7 @@ export default function ProduceAssetPage() {
           <EmptyMedia variant="icon">
             <IconFileX />
           </EmptyMedia>
-          <EmptyTitle>还没有可生图的资产</EmptyTitle>
+          <EmptyTitle>{t("step2NoAssetsTitle")}</EmptyTitle>
           <EmptyDescription>{error}</EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -260,8 +260,8 @@ export default function ProduceAssetPage() {
             <EmptyMedia variant="icon">
               <IconFileX />
             </EmptyMedia>
-            <EmptyTitle>当前分类暂无资产</EmptyTitle>
-            <EmptyDescription>Step1 确认后写入的 Java 资产会显示在这里。</EmptyDescription>
+            <EmptyTitle>{t("step2EmptyCategoryTitle")}</EmptyTitle>
+            <EmptyDescription>{t("step2EmptyCategoryHint")}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -376,6 +376,7 @@ interface Step2ActionBannerProps {
 function Step2ActionBanner(props: Step2ActionBannerProps) {
   const { status, error, hasDrafts, canGenerate, onGenerate, onCancel, onRetry, onDiscardDrafts } =
     props;
+  const t = useTranslations("produce");
 
   if (status === "running") {
     return (
@@ -383,13 +384,11 @@ function Step2ActionBanner(props: Step2ActionBannerProps) {
         <div className="flex items-center gap-3">
           <Spinner className="size-5 text-primary" />
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold">正在抽取角色 / 场景 / 道具</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              基于已入库剧集的简介推断关键资产，去重后填进下方列表。
-            </p>
+            <h3 className="text-sm font-semibold">{t("step2RunningTitle")}</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t("step2RunningHint")}</p>
           </div>
           <Button variant="outline" color="muted" size="sm" onClick={onCancel}>
-            <IconPlayerStop className="size-3.5" /> 取消
+            <IconPlayerStop className="size-3.5" /> {t("scriptDraftCancel")}
           </Button>
         </div>
       </Card>
@@ -403,16 +402,16 @@ function Step2ActionBanner(props: Step2ActionBannerProps) {
           <IconAlertCircle className="mt-0.5 size-5 shrink-0 text-destructive" />
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-semibold">
-              {status === "cancelled" ? "已取消抽取" : "资产抽取失败"}
+              {status === "cancelled" ? t("step2CancelledTitle") : t("step2FailedTitle")}
             </h3>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              {error || "请重试，或先去 Step 1 确认有可读的剧集简介。"}
+              {error || t("step2FailedHint")}
             </p>
           </div>
         </div>
         <div className="flex justify-end">
           <Button variant="solid" color="primary" size="sm" onClick={onRetry}>
-            <IconRefresh className="size-3.5" /> 重试
+            <IconRefresh className="size-3.5" /> {t("scriptDraftRetry")}
           </Button>
         </div>
       </Card>
@@ -425,19 +424,17 @@ function Step2ActionBanner(props: Step2ActionBannerProps) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-xs text-primary">
-              <IconSparkles className="size-3.5" /> 草稿已就绪 · 尚未入库
+              <IconSparkles className="size-3.5" /> {t("step2DraftBadge")}
             </div>
-            <h3 className="mt-1 text-sm font-semibold">下方列表已并入新生成的角色 / 场景 / 道具</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              草稿条目暂未生成图片。点击右下角"下一步"写入 Java 后再去 Step 3 生成分镜。
-            </p>
+            <h3 className="mt-1 text-sm font-semibold">{t("step2DraftTitle")}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{t("step2DraftHint")}</p>
           </div>
           <div className="flex shrink-0 gap-2">
             <Button variant="outline" color="muted" size="sm" onClick={onDiscardDrafts}>
-              <IconTrash className="size-3.5" /> 放弃
+              <IconTrash className="size-3.5" /> {t("resumeDiscard")}
             </Button>
             <Button variant="outline" color="muted" size="sm" onClick={onRetry}>
-              <IconRefresh className="size-3.5" /> 重试
+              <IconRefresh className="size-3.5" /> {t("scriptDraftRetry")}
             </Button>
           </div>
         </div>
@@ -450,11 +447,8 @@ function Step2ActionBanner(props: Step2ActionBannerProps) {
     <Card className="gap-3 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold">从剧集简介中抽取角色 / 场景 / 道具</h3>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            读取项目已入库的剧集简介，AI
-            会推断出关键角色、场景、道具，自动去重已有的，结果会并入下方列表，由你确认后入库。
-          </p>
+          <h3 className="text-sm font-semibold">{t("step2IdleTitle")}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("step2IdleHint")}</p>
         </div>
         <Button
           variant="solid"
@@ -463,7 +457,7 @@ function Step2ActionBanner(props: Step2ActionBannerProps) {
           disabled={!canGenerate}
           onClick={onGenerate}
         >
-          <IconSparkles className="size-4" /> 生成资产
+          <IconSparkles className="size-4" /> {t("step2GenerateAction")}
         </Button>
       </div>
     </Card>

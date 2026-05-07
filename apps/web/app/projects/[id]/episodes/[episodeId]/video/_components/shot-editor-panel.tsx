@@ -207,11 +207,11 @@ export function ShotEditorPanel({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <Card className="relative min-h-0 flex-1 overflow-hidden p-4">
+      <Card className="relative min-h-0 flex-1 overflow-hidden">
         <RichMentionEditor
           value={promptValue}
           onChange={(value) => void saveTextCell(value)}
-          placeholder="输入片段画面、动作、镜头、对白，可输入 @ 引用资产"
+          placeholder="Please enter the video description and generation prompt here. You can mention assets from the left panel to include them in the generation context."
           mentionItems={mentionItems}
           className="flex h-full min-h-0 flex-1 flex-col rounded-xl bg-muted/45 px-3 py-2 text-sm leading-7 [&>div]:flex [&>div]:min-h-0 [&>div]:flex-1 [&>div]:flex-col **:[[contenteditable]]:min-h-0 **:[[contenteditable]]:flex-1"
         />

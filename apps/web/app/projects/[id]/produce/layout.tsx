@@ -21,6 +21,7 @@ import {
   IconLayoutDashboard,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "@/src/i18n/i18n";
 import { ProduceStepper } from "./_components/produce-stepper";
 import { PRODUCE_STEPS } from "./_data/steps";
 import { useProduceCommittedResult, useProduceSeed } from "./_hooks/use-produce-seed";
@@ -36,6 +37,7 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
   const projectTitle = seed?.worldName || committed?.title || "Production Pipeline";
   const advanceHandler = useStepAdvanceHandler();
   const [advancing, setAdvancing] = useState(false);
+  const t = useTranslations("produce");
 
   const currentIndex = Math.max(
     0,
@@ -131,13 +133,13 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
                   }
                 }}
               >
-                {advancing ? "正在保存…" : "下一步"}
+                {advancing ? t("wizardSavingNext") : t("wizardNextStep")}
                 <IconArrowRight />
               </Button>
             ) : (
               <Button asChild variant="solid" color="primary" size="lg">
                 <Link href={`/projects/${projectId}/produce/${nextStep.key}`}>
-                  下一步 <IconArrowRight />
+                  {t("wizardNextStep")} <IconArrowRight />
                 </Link>
               </Button>
             )

@@ -1,15 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconSparkles } from "@tabler/icons-react";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { useTranslations } from "@/src/i18n/i18n";
 import { loadProduceEpisodeScript } from "@/src/lib/produce/java-produce-data";
 import type { ProjectScriptEpisode } from "../../_hooks/use-project-scripts";
 
 interface ProjectEpisodeCardProps {
   episode: ProjectScriptEpisode;
+  /**
+   * Pre-resolved script content for a draft episode (Step 1's
+   * `pipeline.draft` items aren't in Java yet, so the lazy fetch
+   * would 404). When provided, the card skips fetch and shows the
+   * in-memory text directly + flags the row as a draft.
+   */
+  draftScript?: string;
 }
 
 /**
@@ -25,12 +33,14 @@ interface ProjectEpisodeCardProps {
  *
  * Lazy fetch keeps the page snappy even with 30+ episodes.
  */
-export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
+export function ProjectEpisodeCard({ episode, draftScript }: ProjectEpisodeCardProps) {
+  const t = useTranslations("produce");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [scriptText, setScriptText] = useState<string>("");
-  const [loaded, setLoaded] = useState(false);
+  const [scriptText, setScriptText] = useState<string>(draftScript ?? "");
+  const [loaded, setLoaded] = useState(draftScript !== undefined);
   const [error, setError] = useState<string | null>(null);
+  const isDraft = draftScript !== undefined;
 
   const ensureLoaded = async () => {
     if (loaded || loading || !episode.id) return;
@@ -41,7 +51,7 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
       setScriptText(detail.content);
       setLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "加载剧本失败");
+      setError(err instanceof Error ? err.message : t("loadEpisodeScriptFailed"));
     } finally {
       setLoading(false);
     }
@@ -56,7 +66,7 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
   const scriptChars = scriptText.length;
 
   return (
-    <Card className="gap-3 p-4">
+    <Card className={cn("gap-3 p-4", isDraft && "ring-1 ring-amber-500/40 bg-amber-500/[0.02]")}>
       <button
         type="button"
         onClick={toggle}
@@ -69,8 +79,13 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
             <IconChevronRight className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           )}
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold">
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold">
               第 {episode.no} 集：{episode.title}
+              {isDraft && (
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/95 px-1.5 py-0.5 text-[10px] font-medium text-amber-950">
+                  <IconSparkles className="size-2.5" /> {t("draftBadge")}
+                </span>
+              )}
             </h3>
             {episode.synopsis ? (
               <p
@@ -85,14 +100,16 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {open && loaded && scriptChars > 0 ? (
+          {(open || isDraft) && scriptChars > 0 ? (
             <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
-              {scriptChars} 字
+              {t("scriptCharsBadge", { count: scriptChars })}
             </span>
           ) : null}
-          <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
-            {episode.shotCount} 分镜
-          </span>
+          {!isDraft && (
+            <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+              {t("episodeShotCountBadge", { count: episode.shotCount })}
+            </span>
+          )}
         </div>
       </button>
 
@@ -101,12 +118,12 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
           {loading ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Spinner className="size-3.5" />
-              正在加载剧本…
+              {t("loadingEpisodeScript")}
             </div>
           ) : error ? (
             <div className="text-xs text-destructive">{error}</div>
           ) : !scriptText ? (
-            <div className="text-xs text-muted-foreground">本集尚无剧本内容</div>
+            <div className="text-xs text-muted-foreground">{t("episodeNoScript")}</div>
           ) : (
             <ScriptReadout text={scriptText} />
           )}
