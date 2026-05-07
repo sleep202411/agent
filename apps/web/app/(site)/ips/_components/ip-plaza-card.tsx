@@ -49,16 +49,21 @@ export function IPPlazaCard({
       href={`/ips/${project.id}`}
       className="group mb-6 inline-block w-full break-inside-avoid overflow-hidden rounded-2xl bg-card align-top transition-all hover:shadow-lg hover:shadow-black/20"
     >
-      {/* Cover */}
-      <div className="relative overflow-hidden">
+      {/* Cover. Forced to 16:9 so the layout reserves the slot before
+          the image arrives — without a fixed aspect ratio, cards in the
+          CSS-columns masonry shift downward as each image loads, which
+          looks broken on slow networks. 16:9 matches the source banner
+          ratio + the For You rail above, so cropping is minimal. */}
+      <div className="relative aspect-video w-full overflow-hidden bg-secondary">
         {cover ? (
           <img
             src={cover}
             alt={project.name}
-            className="block w-full transition-transform duration-500 group-hover:scale-105"
+            loading="lazy"
+            className="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (
-          <div className="flex aspect-video w-full items-center justify-center bg-secondary">
+          <div className="flex size-full items-center justify-center">
             <IconSparkles className="size-8 text-muted-foreground/20" />
           </div>
         )}
