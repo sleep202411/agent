@@ -10,7 +10,7 @@
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { acceptLanguage, bearerHeader, ipKeys } from "./shared";
-import type { IPProject, IPListResult, IPType, IPTag } from "./types";
+import type { IPProject, IPListResult, IPType } from "./types";
 
 // ─── /project/list ──────────────────────────────────
 
@@ -56,13 +56,23 @@ async function fetchIPList(params: {
   typeId: string;
   tag: string;
 }): Promise<IPListResult> {
-  // Backend takes page / pageSize as query params (Swagger §queryProject).
-  // key / typeId / tag aren't surfaced yet — kept in the hook signature so
-  // the call sites don't change once filters are wired in.
+  // Backend contract (`README.md` §`/project/list`):
+  //   page     int    required
+  //   pageSize int    required
+  //   key      string optional — omit = "no keyword filter"
+  //   typeId   string optional — omit = "all categories"
+  //   tag      string optional — omit = "all tags"
+  // Empty filters are sent by *omission*, not as `key=` empty
+  // params — keeps the URL legible (`?page=1&pageSize=20`) and
+  // avoids any backend that might LIKE `%%` on a literal empty
+  // string instead of skipping the WHERE clause.
   const qs = new URLSearchParams({
     page: String(params.page),
     pageSize: String(params.pageSize),
   });
+  if (params.key) qs.set("key", params.key);
+  if (params.typeId) qs.set("typeId", params.typeId);
+  if (params.tag) qs.set("tag", params.tag);
   const res = await fetch(`/project/list?${qs.toString()}`, {
     method: "POST",
     credentials: "include",
