@@ -123,6 +123,29 @@ export function clearProduceSeed(projectId: string): void {
   notifyStorageKey(key);
 }
 
+/**
+ * Atomically read+remove the seed. Used by `useProducePipeline`'s mount
+ * effect to bootstrap an in-memory run from the dialog hand-off. After
+ * the page mount consumes it, sessionStorage is empty — refresh /
+ * direct nav from then on shows the upload card. The pipeline keeps
+ * its own React-state copy so the same seed survives retry without
+ * leaving state behind across page navigations.
+ */
+export function consumeProduceSeed(projectId: string): ProduceSeed | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = seedKey(projectId);
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    window.sessionStorage.removeItem(key);
+    notifyStorageKey(key);
+    return JSON.parse(raw) as ProduceSeed;
+  } catch (err) {
+    console.warn("[produce] consumeProduceSeed failed:", err);
+    return null;
+  }
+}
+
 export function saveProduceCommittedResult(
   projectId: string,
   result: ProduceCommittedResult

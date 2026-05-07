@@ -11,6 +11,7 @@
  * (verified via Chrome DevTools 2026-05-05).
  */
 
+import { useState } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -20,9 +21,11 @@ import {
   IconLayoutDashboard,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from "@/src/i18n/i18n";
 import { ProduceStepper } from "./_components/produce-stepper";
 import { PRODUCE_STEPS } from "./_data/steps";
 import { useProduceCommittedResult, useProduceSeed } from "./_hooks/use-produce-seed";
+import { useStepAdvanceHandler } from "./_hooks/use-step-advance";
 
 export default function ProduceLayout({ children }: { children: React.ReactNode }) {
   const params = useParams();
@@ -32,6 +35,9 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
   const seed = useProduceSeed(projectId);
   const committed = useProduceCommittedResult(projectId, !seed);
   const projectTitle = seed?.worldName || committed?.title || "Production Pipeline";
+  const advanceHandler = useStepAdvanceHandler();
+  const [advancing, setAdvancing] = useState(false);
+  const t = useTranslations("produce");
 
   const currentIndex = Math.max(
     0,
@@ -106,11 +112,37 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
             </Button>
           )}
           {nextStep ? (
-            <Button asChild variant="solid" color="primary" size="lg">
-              <Link href={`/projects/${projectId}/produce/${nextStep.key}`}>
-                下一步 <IconArrowRight />
-              </Link>
-            </Button>
+            // When the current page registers an advance handler (e.g.
+            // /produce/asset has step2 drafts pending commit), call
+            // that handler — it owns commit + navigation. Otherwise
+            // fall through to plain link navigation.
+            advanceHandler ? (
+              <Button
+                variant="solid"
+                color="primary"
+                size="lg"
+                disabled={advancing}
+                onClick={async () => {
+                  setAdvancing(true);
+                  try {
+                    await advanceHandler();
+                  } catch (err) {
+                    console.error("[produce/layout] advance handler failed:", err);
+                  } finally {
+                    setAdvancing(false);
+                  }
+                }}
+              >
+                {advancing ? t("wizardSavingNext") : t("wizardNextStep")}
+                <IconArrowRight />
+              </Button>
+            ) : (
+              <Button asChild variant="solid" color="primary" size="lg">
+                <Link href={`/projects/${projectId}/produce/${nextStep.key}`}>
+                  {t("wizardNextStep")} <IconArrowRight />
+                </Link>
+              </Button>
+            )
           ) : (
             <Button variant="solid" color="muted" size="lg" disabled>
               完成

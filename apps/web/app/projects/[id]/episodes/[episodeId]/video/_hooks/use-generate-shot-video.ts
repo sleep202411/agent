@@ -53,24 +53,45 @@ export interface UseGenerateShotVideoResult {
   error: string | null;
 }
 
-interface SyncVideoEnvelope {
-  success?: boolean;
-  code?: string;
-  message?: string;
-  data?: unknown;
-}
-
-/** Pull the first non-empty path string out of the response's
- *  `data` array. Defensive against the envelope returning a single
- *  string or null. */
-function parseVideoPath(envelope: SyncVideoEnvelope): string {
-  const data = envelope.data;
-  if (typeof data === "string") return data.trim();
-  if (Array.isArray(data)) {
-    const first = data.find(
+/**
+ * Pick the durable Java-relative path out of the wan2.6 sync-gen
+ * response. The endpoint returns a 2-tuple
+ * `[signedOssUrl, javaRelativePath]`:
+ *
+ *   [0] = "https://…oss-accelerate…?Expires=… &Signature=…"
+ *   [1] = "history/vedio/62/2026-05-07/1778…mp4"
+ *
+ * The signed URL expires (typically 60-120 min); the relative path
+ * survives forever and can be re-signed on demand via `ossUrl()`.
+ * Persist the second one so the shot's video column keeps working
+ * after the signature window closes.
+ *
+ * IMPORTANT: `backendApi.post` strips the Java envelope and returns
+ * `body.data` directly — meaning the value passed to this function
+ * is the *array itself*, NOT a `{data: [...]}` envelope. Earlier
+ * callers that typed it as an envelope hit the bug where
+ * `envelope.data` was always undefined and we lost the path.
+ *
+ * Shape handling, in priority order:
+ *   - string         → use as-is
+ *   - string[]       → prefer the non-http(s) entry, else first
+ *   - {data: ...}    → defensive unwrap (in case `raw: true` ever
+ *                       gets flipped on the call site)
+ *   - anything else  → empty string
+ */
+function parseVideoPath(input: unknown): string {
+  if (typeof input === "string") return input.trim();
+  if (Array.isArray(input)) {
+    const strings = input.filter(
       (item): item is string => typeof item === "string" && item.trim().length > 0
     );
-    return String(first ?? "").trim();
+    const durable = strings.find((s) => !/^https?:\/\//i.test(s));
+    if (durable) return durable.trim();
+    return strings[0]?.trim() ?? "";
+  }
+  if (input && typeof input === "object") {
+    const inner = (input as { data?: unknown }).data;
+    if (inner !== undefined) return parseVideoPath(inner);
   }
   return "";
 }
@@ -118,7 +139,11 @@ export function useGenerateShotVideo(options?: {
       try {
         // Step 1 — sync video gen. Omit shotId / shotColumnId so
         // Java doesn't auto-persist; we'll save explicitly below.
-        const envelope = await backendApi.post<SyncVideoEnvelope>(SYNC_VIDEO_ENDPOINT, {
+        // backendApi unwraps the envelope and returns body.data
+        // directly; for this endpoint that's a `[signedUrl, path]`
+        // tuple. parseVideoPath handles both shapes (raw array OR
+        // envelope) defensively.
+        const result = await backendApi.post<unknown>(SYNC_VIDEO_ENDPOINT, {
           data: {
             prompt,
             startImageUrl: startImagePath ? ossUrl(startImagePath) : undefined,
@@ -129,11 +154,11 @@ export function useGenerateShotVideo(options?: {
           },
           timeout: VIDEO_GEN_TIMEOUT_MS,
         });
-        if (envelope?.success === false) {
-          throw new Error(envelope.message || envelope.code || "视频生成失败");
+        console.log("[generate-shot-video] sync gen response:", result);
+        const storagePath = parseVideoPath(result);
+        if (!storagePath) {
+          throw new Error(`视频生成未返回路径 (response: ${JSON.stringify(result).slice(0, 200)})`);
         }
-        const storagePath = parseVideoPath(envelope ?? {});
-        if (!storagePath) throw new Error("视频生成未返回路径");
 
         // Step 2 — persist into the shot's video column.
         await saveProduceShotValuesCell(shotId, videoColumnId, [storagePath]);

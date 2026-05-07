@@ -26,6 +26,8 @@ export const WORKFLOW_NAMES = [
   "script_phase",
   "storyboard_phase",
   "produce_script_pipeline",
+  "produce_step1_episodes",
+  "produce_step2_assets",
 ] as const;
 
 export type WorkflowName = (typeof WORKFLOW_NAMES)[number];

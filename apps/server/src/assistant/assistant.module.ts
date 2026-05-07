@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { SparkModule } from '../spark/spark.module';
 import { WorkspaceService } from './workspace.service';
 import { MastraProxyController } from './mastra-proxy.controller';
 import { AssetsProxyController } from './assets-proxy.controller';
@@ -17,7 +18,7 @@ import { WorkflowProxyController } from './workflow/workflow-proxy.controller';
 import { DraftsProxyController } from './workflow/drafts-proxy.controller';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, SparkModule],
   controllers: [
     MastraProxyController,
     AssetsProxyController,

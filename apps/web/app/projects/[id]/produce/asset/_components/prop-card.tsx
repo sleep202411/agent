@@ -3,9 +3,11 @@
 import { IconPhoto, IconRefresh, IconSparkles } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { ossUrl } from "@/src/lib/asset-paths";
 import type { ProduceJavaAsset } from "@/src/lib/produce/java-produce-data";
 import type { ProduceAssetImageStatus } from "../../_hooks/use-produce-asset-image";
+import { DraftBadge, draftCardClass, isDraftAsset } from "./draft-marker";
 
 interface PropCardProps {
   card: ProduceJavaAsset;
@@ -35,9 +37,10 @@ export function PropCard({ card, status, onGenerate, onRetryPersist }: PropCardP
   const busy = status.state === "generating" || status.state === "persisting";
   const persistFailed = status.state === "persist_error";
   const variantTotal = card.imagePaths.length || (hasImage ? 1 : 0);
+  const draft = isDraftAsset(card);
 
   return (
-    <Card className="gap-0 overflow-hidden p-0">
+    <Card className={cn("gap-0 overflow-hidden p-0", draft && draftCardClass)}>
       {/* Top — square thumbnail. 1:1 since props are objects with
           no canonical orientation, and square tiles read cleanest
           in a dense grid. */}
@@ -56,6 +59,7 @@ export function PropCard({ card, status, onGenerate, onRetryPersist }: PropCardP
             <IconRefresh className="size-4 animate-spin" />
           </div>
         ) : null}
+        {draft ? <DraftBadge className="absolute right-1.5 top-1.5" /> : null}
       </div>
 
       {/* Bottom — title row + variant counter / status text. */}
@@ -87,8 +91,9 @@ export function PropCard({ card, status, onGenerate, onRetryPersist }: PropCardP
           }
           size="icon-xs"
           onClick={persistFailed ? onRetryPersist : onGenerate}
-          disabled={busy}
-          aria-label={hasImage ? "重新生成" : "生成图片"}
+          disabled={busy || draft}
+          aria-label={draft ? "保存草稿后才能生图" : hasImage ? "重新生成" : "生成图片"}
+          title={draft ? "保存草稿后才能生图" : undefined}
         >
           {busy ? (
             <IconRefresh className="animate-spin" />

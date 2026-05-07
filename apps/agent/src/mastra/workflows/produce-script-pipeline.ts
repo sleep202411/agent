@@ -130,7 +130,7 @@ const PlanSchema = z.object({
     .describe("Production asset registry. Empty arrays are acceptable, but the object must exist."),
 });
 
-const ScriptedEpisodeSchema = EpisodePlanSchema.extend({
+export const ScriptedEpisodeSchema = EpisodePlanSchema.extend({
   clientRefId: z.string().min(1),
   no: z.number().int().positive(),
   script: z.string().min(1),
@@ -219,7 +219,7 @@ type FinalizedInput = ScriptedInput & {
   finalizedAssets: ProducePipelineOutput["assets"];
 };
 
-const ResolvedInputSchema = ProducePipelineInputSchema.extend({
+export const ResolvedInputSchema = ProducePipelineInputSchema.extend({
   sourceText: z.string().min(1),
   sourceExcerpt: z.string().min(1),
   targetEpisodeCount: z.number().int().positive(),
@@ -227,11 +227,11 @@ const ResolvedInputSchema = ProducePipelineInputSchema.extend({
   languageLabel: z.string().min(1),
 });
 
-const PlannedInputSchema = ResolvedInputSchema.extend({
+export const PlannedInputSchema = ResolvedInputSchema.extend({
   plan: PlanSchema,
 });
 
-const ScriptedInputSchema = PlannedInputSchema.extend({
+export const ScriptedInputSchema = PlannedInputSchema.extend({
   episodes: z.array(ScriptedEpisodeSchema).min(1),
 });
 
@@ -239,12 +239,17 @@ const FinalizedInputSchema = ScriptedInputSchema.extend({
   finalizedAssets: ProducePipelineOutputSchema.shape.assets,
 });
 
-const resolveSourceStep = createStep({
+export const resolveSourceStep = createStep({
   id: "resolve_source",
   inputSchema: ProducePipelineInputSchema,
   outputSchema: ResolvedInputSchema,
   execute: async ({ inputData, requestContext }) => {
-    const ctx = getContext(requestContext);
+    // We deliberately read individual keys off requestContext here
+    // instead of calling `getContext`. The wider `getContext` helper
+    // requires a non-empty cookie for Java calls — but resolve_source
+    // never talks to Java (it only pulls cached source text from
+    // Redis), so demanding a cookie blocked legitimate runs whenever
+    // the browser hadn't established a session yet.
     const seed = inputData.seed;
     const sourceRef = seed.sourceFile?.textRef?.trim();
     let sourceText = "";
@@ -262,9 +267,15 @@ const resolveSourceStep = createStep({
       throw new Error("缺少可分析的剧本文本。请重新上传剧本文件后再试。");
     }
 
+    const shotsPerEpisodeRaw = requestContext?.get("shotsPerEpisode");
+    const dialogLanguageRaw = requestContext?.get("dialogLanguage");
+    const shotsPerEpisodeNumber =
+      typeof shotsPerEpisodeRaw === "number" ? shotsPerEpisodeRaw : undefined;
+    const dialogLanguage = typeof dialogLanguageRaw === "string" ? dialogLanguageRaw : undefined;
+
     const targetEpisodeCount = clampInt(seed.episodeCount, 1, 30, 10);
-    const shotsPerEpisode = clampInt(ctx.shotsPerEpisode, 4, 24, 8);
-    const languageLabel = seed.language?.trim() || dialogLanguageLabel(ctx.dialogLanguage);
+    const shotsPerEpisode = clampInt(shotsPerEpisodeNumber, 4, 24, 8);
+    const languageLabel = seed.language?.trim() || dialogLanguageLabel(dialogLanguage);
     const runId = requestContext?.get("runId") as string | undefined;
     if (runId) {
       await reportProgress(runId, {
@@ -287,7 +298,7 @@ const resolveSourceStep = createStep({
   },
 });
 
-const planStep = createStep({
+export const planStep = createStep({
   id: "plan_story",
   inputSchema: ResolvedInputSchema,
   outputSchema: PlannedInputSchema,
@@ -323,7 +334,7 @@ const planStep = createStep({
   },
 });
 
-const scriptStep = createStep({
+export const scriptStep = createStep({
   id: "write_scripts",
   inputSchema: PlannedInputSchema,
   outputSchema: ScriptedInputSchema,
