@@ -87,10 +87,6 @@ function committedKey(projectId: string): string {
   return `produce-committed:${projectId}`;
 }
 
-function autoStartKey(projectId: string): string {
-  return `produce-auto-start:${projectId}`;
-}
-
 const PRODUCE_STORAGE_EVENT = "produce-storage-change";
 
 function notifyStorageKey(key: string): void {
@@ -128,29 +124,26 @@ export function clearProduceSeed(projectId: string): void {
 }
 
 /**
- * One-shot "auto-start the pipeline on next mount" marker. Set by the
- * create-world dialog right after `saveProduceSeed`; consumed by
- * `useProducePipeline`'s mount effect via `consumeProduceAutoStart` so
- * the pipeline only fires for fresh dialog hand-offs — refresh / direct
- * navigation never auto-fires (avoids orphan LLM runs).
+ * Atomically read+remove the seed. Used by `useProducePipeline`'s mount
+ * effect to bootstrap an in-memory run from the dialog hand-off. After
+ * the page mount consumes it, sessionStorage is empty — refresh /
+ * direct nav from then on shows the upload card. The pipeline keeps
+ * its own React-state copy so the same seed survives retry without
+ * leaving state behind across page navigations.
  */
-export function saveProduceAutoStart(projectId: string): void {
-  if (typeof window === "undefined") return;
-  const key = autoStartKey(projectId);
-  window.sessionStorage.setItem(key, "1");
-  notifyStorageKey(key);
-}
-
-/** Atomically read+remove the auto-start marker. Returns true if it was set. */
-export function consumeProduceAutoStart(projectId: string): boolean {
-  if (typeof window === "undefined") return false;
-  const key = autoStartKey(projectId);
-  const present = window.sessionStorage.getItem(key) === "1";
-  if (present) {
+export function consumeProduceSeed(projectId: string): ProduceSeed | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const key = seedKey(projectId);
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
     window.sessionStorage.removeItem(key);
     notifyStorageKey(key);
+    return JSON.parse(raw) as ProduceSeed;
+  } catch (err) {
+    console.warn("[produce] consumeProduceSeed failed:", err);
+    return null;
   }
-  return present;
 }
 
 export function saveProduceCommittedResult(

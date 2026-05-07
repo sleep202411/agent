@@ -244,7 +244,12 @@ export const resolveSourceStep = createStep({
   inputSchema: ProducePipelineInputSchema,
   outputSchema: ResolvedInputSchema,
   execute: async ({ inputData, requestContext }) => {
-    const ctx = getContext(requestContext);
+    // We deliberately read individual keys off requestContext here
+    // instead of calling `getContext`. The wider `getContext` helper
+    // requires a non-empty cookie for Java calls — but resolve_source
+    // never talks to Java (it only pulls cached source text from
+    // Redis), so demanding a cookie blocked legitimate runs whenever
+    // the browser hadn't established a session yet.
     const seed = inputData.seed;
     const sourceRef = seed.sourceFile?.textRef?.trim();
     let sourceText = "";
@@ -262,9 +267,15 @@ export const resolveSourceStep = createStep({
       throw new Error("缺少可分析的剧本文本。请重新上传剧本文件后再试。");
     }
 
+    const shotsPerEpisodeRaw = requestContext?.get("shotsPerEpisode");
+    const dialogLanguageRaw = requestContext?.get("dialogLanguage");
+    const shotsPerEpisodeNumber =
+      typeof shotsPerEpisodeRaw === "number" ? shotsPerEpisodeRaw : undefined;
+    const dialogLanguage = typeof dialogLanguageRaw === "string" ? dialogLanguageRaw : undefined;
+
     const targetEpisodeCount = clampInt(seed.episodeCount, 1, 30, 10);
-    const shotsPerEpisode = clampInt(ctx.shotsPerEpisode, 4, 24, 8);
-    const languageLabel = seed.language?.trim() || dialogLanguageLabel(ctx.dialogLanguage);
+    const shotsPerEpisode = clampInt(shotsPerEpisodeNumber, 4, 24, 8);
+    const languageLabel = seed.language?.trim() || dialogLanguageLabel(dialogLanguage);
     const runId = requestContext?.get("runId") as string | undefined;
     if (runId) {
       await reportProgress(runId, {

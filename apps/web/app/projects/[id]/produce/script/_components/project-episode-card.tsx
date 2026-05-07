@@ -5,8 +5,7 @@ import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { loadProduceStoryboard, type ProduceShotColumn } from "@/src/lib/produce/java-produce-data";
-import type { ShotRow, ShotValue } from "@/src/store/slices/projectSlice";
+import { loadProduceEpisodeScript } from "@/src/lib/produce/java-produce-data";
 import type { ProjectScriptEpisode } from "../../_hooks/use-project-scripts";
 
 interface ProjectEpisodeCardProps {
@@ -15,19 +14,21 @@ interface ProjectEpisodeCardProps {
 
 /**
  * One row of the read-only "existing project" view on the script
- * step. Collapsed by default; expanding fetches the episode's shots
- * once and renders them as a screenplay-shaped readout (shot number
- * + scene heading + description + dialogue per row).
+ * step. Collapsed by default; expanding fetches the episode's script
+ * content (NOT the storyboard) and renders it as plain prose, line
+ * by line.
  *
- * Lazy fetch keeps the project page snappy even with 30+ episodes —
- * the storyboard endpoint costs us a paged query per episode, and
- * most users only open one or two.
+ * Why script and not storyboard: this is the Step 1 view — Step 1's
+ * deliverable is the per-episode script. Storyboard rows belong to
+ * Step 3 and are reviewed on the storyboard tab. Showing shot rows
+ * here was misleading — the user came to confirm scripts.
+ *
+ * Lazy fetch keeps the page snappy even with 30+ episodes.
  */
 export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [columns, setColumns] = useState<ProduceShotColumn[]>([]);
-  const [rows, setRows] = useState<ShotRow[]>([]);
+  const [scriptText, setScriptText] = useState<string>("");
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,9 +37,8 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
     setLoading(true);
     setError(null);
     try {
-      const data = await loadProduceStoryboard(episode.id);
-      setColumns(data.columns);
-      setRows(data.rows);
+      const detail = await loadProduceEpisodeScript(episode.id);
+      setScriptText(detail.content);
       setLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载剧本失败");
@@ -52,6 +52,8 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
     setOpen(next);
     if (next) void ensureLoaded();
   };
+
+  const scriptChars = scriptText.length;
 
   return (
     <Card className="gap-3 p-4">
@@ -82,24 +84,31 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
             ) : null}
           </div>
         </div>
-        <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
-          {episode.shotCount} 分镜
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {open && loaded && scriptChars > 0 ? (
+            <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+              {scriptChars} 字
+            </span>
+          ) : null}
+          <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+            {episode.shotCount} 分镜
+          </span>
+        </div>
       </button>
 
       {open ? (
         <div className="border-t pt-3">
-          {loading && rows.length === 0 ? (
+          {loading ? (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Spinner className="size-3.5" />
               正在加载剧本…
             </div>
           ) : error ? (
             <div className="text-xs text-destructive">{error}</div>
-          ) : rows.length === 0 ? (
-            <div className="text-xs text-muted-foreground">本集尚无分镜内容</div>
+          ) : !scriptText ? (
+            <div className="text-xs text-muted-foreground">本集尚无剧本内容</div>
           ) : (
-            <ScreenplayReadout rows={rows} columns={columns} />
+            <ScriptReadout text={scriptText} />
           )}
         </div>
       ) : null}
@@ -107,63 +116,27 @@ export function ProjectEpisodeCard({ episode }: ProjectEpisodeCardProps) {
   );
 }
 
-// ─── Screenplay readout ───────────────────────────────────────
+// ─── Script readout ───────────────────────────────────────────
 
-/** Render rows as a screenplay-shaped block. Pulls the most useful
- *  fields by `presetColumnKey` so it works regardless of the column
- *  order Java returns. */
-function ScreenplayReadout({ rows, columns }: { rows: ShotRow[]; columns: ProduceShotColumn[] }) {
-  const sceneCol = columns.find((c) => c.presetColumnKey === "scene") ?? null;
-  const descCol = columns.find((c) => c.presetColumnKey === "description") ?? null;
-  const dialogueCol = columns.find((c) => c.presetColumnKey === "dialogue") ?? null;
-
+/** Render the script as plain prose, one line per source line. The
+ *  upstream stripper turns `</p><p>` and `<br>` into `\n`, so split
+ *  on newlines and trust each segment is a paragraph. Empty segments
+ *  become spacer rows so paragraph breaks are visually preserved. */
+function ScriptReadout({ text }: { text: string }) {
+  const lines = text.split(/\r?\n/);
   return (
-    <ol className="flex flex-col gap-3 text-[13px] leading-relaxed">
-      {rows.map((row, index) => {
-        const scene = readCell(row, sceneCol);
-        const desc = readCell(row, descCol);
-        const dialogue = readCell(row, dialogueCol);
-        return (
-          <li
-            key={String(row.shotId ?? index)}
-            className="flex gap-3 border-l-2 border-border/60 pl-3"
-          >
-            <span className="shrink-0 select-none font-mono text-xs text-muted-foreground/80">
-              {String(index + 1).padStart(2, "0")}
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              {scene ? (
-                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {scene}
-                </div>
-              ) : null}
-              {desc ? <div className="text-foreground/90">{desc}</div> : null}
-              {dialogue ? (
-                <div className="text-xs text-muted-foreground">「{dialogue}」</div>
-              ) : null}
-            </div>
-          </li>
-        );
-      })}
-    </ol>
+    <div className="max-h-96 overflow-y-auto pr-1">
+      <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-foreground/90">
+        {lines.map((line, index) => {
+          const trimmed = line.trim();
+          if (!trimmed) return <div key={index} className="h-2" aria-hidden />;
+          return (
+            <p key={index} className="whitespace-pre-wrap break-words">
+              {trimmed}
+            </p>
+          );
+        })}
+      </div>
+    </div>
   );
-}
-
-function readCell(row: ShotRow, column: ProduceShotColumn | null): string {
-  if (!column?.id) return "";
-  const cell = row.shotValues?.find((value) => String(value.shotColumnId ?? "") === column.id);
-  return readText(cell);
-}
-
-function readText(cell?: ShotValue): string {
-  const richText = typeof cell?.richText?.content === "string" ? cell.richText.content : "";
-  if (richText.trim()) {
-    // Strip mention/HTML tags for a plain readable view; the editor
-    // surfaces will use the rich form, but this readout is plain.
-    return richText
-      .replace(/<mention[^>]*>([\s\S]*?)<\/mention>/g, "$1")
-      .replace(/<[^>]+>/g, "")
-      .trim();
-  }
-  return String(cell?.value ?? "").trim();
 }

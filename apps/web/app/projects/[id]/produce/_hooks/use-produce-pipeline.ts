@@ -1,62 +1,65 @@
 "use client";
 
 /**
- * Synchronous produce-script driver.
+ * Step 1 (episodes + scripts) sync driver.
  *
- * Trade-off vs the previous async/queue approach: a single POST holds
- * open for ~30-120s while Mastra runs `produce_script_pipeline` inline.
- * If the user closes the tab the fetch aborts; if the agent process
- * crashes the request fails outright. We picked simple over resilient
- * — the user just hits "重试" and re-runs.
+ * The hook owns its own seed in React state. State machine:
  *
- *   start  → POST /aurora/produce/script-draft/sync (blocks until
- *            workflow completes; returns { runId, draft })
- *   commit → POST /aurora/produce/script-draft/commit (writes Java
- *            via the runId)
+ *   idle (no seed)              → page shows upload card
+ *   running                     → spinner + cancel
+ *   completed | committing      → draft review + 保存继续
+ *   committed                   → about to navigate to /produce/asset
+ *   failed | cancelled          → error + retry (re-uses the same
+ *                                 in-memory seed; nothing is lost
+ *                                 between retries on the same page)
  *
- * No polling, no resume-on-refresh, no /cancel endpoint. "取消分析" is
- * implemented as `controller.abort()`; the server keeps running until
- * the workflow finishes (we trade some wasted LLM tokens for a much
- * smaller client surface area).
+ * Page mount consumes any sessionStorage seed left by the create-world
+ * dialog (one-shot read+delete) and bootstraps the run. After that the
+ * sessionStorage slot is gone — refresh / new tab / direct navigation
+ * sees no seed and falls through to the upload card. This is the
+ * deliberate trade: in exchange for losing in-flight runs on refresh,
+ * we drop the auto-start marker / "previous run didn't finish"
+ * recovery path entirely.
+ *
+ *   /produce/step1/generate (POST) → { runId, draft }
+ *   /produce/step1/commit   (POST) → writes episodes + scripts to Java,
+ *                                    idempotent on the same runId.
+ *
+ * Browser tab close / route change aborts the in-flight fetch; the
+ * agent's route handler picks that up via `c.req.raw.signal` and
+ * cancels the in-flight LLM run. The user's wasted compute is
+ * bounded by network propagation, not by the workflow's max length.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  clearProduceSeed,
-  consumeProduceAutoStart,
+  consumeProduceSeed,
   saveProduceCommittedResult,
   type ProduceCommittedResult,
   type ProduceSeed,
 } from "./use-produce-seed";
 
-export interface ProduceDraftAsset {
-  clientRefId: string;
-  name: string;
-  description: string;
-  prompt: string;
-}
-
-export interface ProduceDraftEpisode {
+export interface Step1DraftEpisode {
   clientRefId: string;
   no: number;
   title: string;
   introduction: string;
+  /**
+   * Style modifiers applied to every shot in this episode at storyboard
+   * time (Step 3). Carried through Step 1 commit so `worldepisode`
+   * rows have them populated when Step 3 runs.
+   */
+  frontPrompt?: string;
+  behindPrompt?: string;
   script: string;
-  storyboardRows: Array<{
-    shot_no: string;
-    scene?: string;
-    description: string;
-    image_prompt?: string;
-    video_prompt?: string;
-    movement?: string;
-    dialogue?: string;
-    shot_size?: string;
-    perspective?: string;
-    duration?: number;
-  }>;
 }
 
-export interface ProduceDraft {
+/**
+ * Wire shape returned by /produce/step1/generate. Mirrors the agent's
+ * Step1OutputSchema — no assets, no storyboard rows (those land in
+ * Step 2 / Step 3 drafts respectively).
+ */
+export interface Step1Draft {
   projectId: string;
   worldId?: string;
   title: string;
@@ -67,25 +70,12 @@ export interface ProduceDraft {
   logline?: string;
   genre?: string;
   tone?: string;
-  episodes: ProduceDraftEpisode[];
-  assets: {
-    characters: ProduceDraftAsset[];
-    scenes: ProduceDraftAsset[];
-    props: ProduceDraftAsset[];
-  };
+  episodes: Step1DraftEpisode[];
   generatedAt: number;
 }
 
 type PipelineStatus =
   | "idle"
-  /**
-   * Seed exists but the auto-start marker was already consumed (or never
-   * set). Distinct from `idle` so the page can render a "previous run
-   * was interrupted — retry / abandon" recovery card instead of a blank
-   * spinner. Reached when the user refreshes mid-run, or navigates back
-   * to the wizard from elsewhere with a stale seed.
-   */
-  | "ready"
   | "running"
   | "completed"
   | "failed"
@@ -96,36 +86,43 @@ type PipelineStatus =
 interface PipelineState {
   runId?: string;
   status: PipelineStatus;
-  draft?: ProduceDraft;
+  draft?: Step1Draft;
   committed?: ProduceCommittedResult;
   error?: string;
 }
 
-export function useProducePipeline(projectId: string, seed: ProduceSeed | null) {
+/**
+ * Either a seed (dialog hand-off) OR a raw file (reseed flow). The
+ * pipeline holds whichever the caller gave it so retry replays the
+ * exact same source without forcing the user to re-upload.
+ */
+type RunSource =
+  | { kind: "seed"; seed: ProduceSeed }
+  | { kind: "file"; file: File; worldId?: string; worldName: string; description: string };
+
+export function useProducePipeline(projectId: string) {
+  const [source, setSource] = useState<RunSource | null>(null);
   const [state, setState] = useState<PipelineState>({ status: "idle" });
   const abortRef = useRef<AbortController | null>(null);
-  // `attempt` is bumped by `start()` / `retry()` to (re)trigger the
-  // analysis effect. Initial value 0 = no run requested yet; the mount
-  // effect below converts the auto-start marker (when present) into the
-  // first attempt.
+  // `attempt` re-fires the run effect when bumped — used by the
+  // initial mount handoff and by `retry()`.
   const [attempt, setAttempt] = useState(0);
 
-  // Mount-only auto-start gate: consume the one-shot marker the dialog
-  // dropped in sessionStorage. If present → bump attempt to fire the
-  // run effect once. Refresh / direct nav with a lingering seed sees
-  // no marker → settles into `ready` so the page can offer retry
-  // / discard. Effect runs once per projectId.
+  // Mount: take any seed the dialog dropped in sessionStorage, hold
+  // it in React state, and immediately bump attempt to fire the run.
+  // sessionStorage is wiped in the same call so refresh / new tab
+  // never re-fires from a stale handoff.
   useEffect(() => {
-    if (!projectId || !seed) return;
-    if (consumeProduceAutoStart(projectId)) {
+    if (!projectId) return;
+    const persisted = consumeProduceSeed(projectId);
+    if (persisted) {
+      setSource({ kind: "seed", seed: persisted });
       setAttempt((n) => n + 1);
-    } else {
-      setState((prev) => (prev.status === "idle" ? { status: "ready" } : prev));
     }
-  }, [projectId, seed]);
+  }, [projectId]);
 
   useEffect(() => {
-    if (!projectId || !seed || attempt === 0) return;
+    if (!projectId || !source || attempt === 0) return;
     const controller = new AbortController();
     abortRef.current = controller;
     let stopped = false;
@@ -133,19 +130,14 @@ export function useProducePipeline(projectId: string, seed: ProduceSeed | null) 
     const run = async () => {
       setState({ status: "running" });
       try {
-        const res = await fetch("/aurora/produce/script-draft/sync", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, worldId: seed.worldId, seed }),
-          signal: controller.signal,
-        });
+        const res = await postPipelineRun(projectId, source, controller.signal);
         if (stopped) return;
         if (!res.ok) {
           const text = await res.text().catch(() => "");
-          throw new Error(text ? text.slice(0, 200) : `HTTP ${res.status}`);
+          console.error(`[step1/generate] HTTP ${res.status}:`, text);
+          throw new Error(text ? text.slice(0, 400) : `HTTP ${res.status}`);
         }
-        const body = (await res.json()) as { runId: string; draft: ProduceDraft };
+        const body = (await res.json()) as { runId: string; draft: Step1Draft };
         if (stopped) return;
         setState({ runId: body.runId, status: "completed", draft: body.draft });
       } catch (err) {
@@ -170,42 +162,60 @@ export function useProducePipeline(projectId: string, seed: ProduceSeed | null) 
       stopped = true;
       controller.abort();
     };
-  }, [projectId, seed, attempt]);
+  }, [projectId, source, attempt]);
 
   const cancel = useCallback(async () => {
     abortRef.current?.abort();
   }, []);
 
   /**
-   * User-initiated start (retry from `ready`, or from the upload entry
-   * after writing a fresh seed). Bumps `attempt` to fire the run effect.
+   * Reseed-card entry point: send the file directly. The pipeline
+   * keeps the File in React state so a retry on this mount sends the
+   * same bytes again — no re-upload required.
    */
-  const start = useCallback(() => {
-    setAttempt((n) => n + 1);
-  }, []);
-
-  const retry = useCallback(() => {
-    setAttempt((n) => n + 1);
-  }, []);
+  const runWithFile = useCallback(
+    (file: File, opts: { worldId?: string; worldName: string; description?: string }) => {
+      setSource({
+        kind: "file",
+        file,
+        worldId: opts.worldId,
+        worldName: opts.worldName,
+        description: opts.description ?? "",
+      });
+      setAttempt((n) => n + 1);
+    },
+    []
+  );
 
   /**
-   * Drop the seed entirely — sends the page to the "no seed" branch
-   * (project-data view). Used by the recovery card's "abandon" action.
+   * Re-run with the same in-memory source (seed from dialog OR file
+   * from reseed). No-op if nothing has been captured yet.
+   */
+  const retry = useCallback(() => {
+    if (!source) return;
+    setAttempt((n) => n + 1);
+  }, [source]);
+
+  /**
+   * Forget the current source — sends the page back to the upload
+   * card. Used by the failure card's "discard" action and the
+   * post-commit cleanup.
    */
   const discard = useCallback(() => {
-    clearProduceSeed(projectId);
+    setSource(null);
     setState({ status: "idle" });
-  }, [projectId]);
+  }, []);
 
   const commit = useCallback(async (): Promise<ProduceCommittedResult> => {
     const runId = state.runId;
     if (!runId) throw new Error("No analysis run to commit");
+    const worldId = source?.kind === "seed" ? source.seed.worldId : source?.worldId;
     setState((prev) => ({ ...prev, status: "committing", error: undefined }));
-    const res = await fetch("/aurora/produce/script-draft/commit", {
+    const res = await fetch("/aurora/produce/step1/commit", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ runId, projectId, worldId: seed?.worldId }),
+      body: JSON.stringify({ runId, projectId, worldId }),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -215,10 +225,58 @@ export function useProducePipeline(projectId: string, seed: ProduceSeed | null) 
     }
     const body = (await res.json()) as { ok: boolean; result: ProduceCommittedResult };
     saveProduceCommittedResult(projectId, body.result);
-    clearProduceSeed(projectId);
+    setSource(null);
     setState((prev) => ({ ...prev, status: "committed", committed: body.result }));
     return body.result;
-  }, [projectId, seed?.worldId, state.runId]);
+  }, [projectId, source, state.runId]);
 
-  return { ...state, cancel, retry, start, discard, commit };
+  return {
+    ...state,
+    hasSource: source !== null,
+    cancel,
+    retry,
+    runWithFile,
+    discard,
+    commit,
+  };
+}
+
+/**
+ * Fire the appropriate endpoint for the current run source. Seed
+ * sources go to the JSON `step1/generate` (textRef already lives in
+ * Redis from spark/analyze). File sources go to the multipart
+ * `step1/generate-from-file` so the browser ships the file in one
+ * round-trip; the server extracts text before kicking off the
+ * workflow.
+ */
+async function postPipelineRun(
+  projectId: string,
+  source: RunSource,
+  signal: AbortSignal
+): Promise<Response> {
+  if (source.kind === "seed") {
+    return fetch("/aurora/produce/step1/generate", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        worldId: source.seed.worldId,
+        seed: source.seed,
+      }),
+      signal,
+    });
+  }
+  const form = new FormData();
+  form.append("file", source.file);
+  form.append("projectId", projectId);
+  if (source.worldId) form.append("worldId", source.worldId);
+  form.append("worldName", source.worldName);
+  form.append("description", source.description);
+  return fetch("/aurora/produce/step1/generate-from-file", {
+    method: "POST",
+    credentials: "include",
+    body: form,
+    signal,
+  });
 }

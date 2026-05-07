@@ -40,10 +40,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { worldKeys } from "@/src/hooks/use-worlds";
 import { useSparkAnalyze } from "@/app/(site)/ips/_hooks/use-spark";
-import {
-  saveProduceAutoStart,
-  saveProduceSeed,
-} from "@/app/projects/[id]/produce/_hooks/use-produce-seed";
+import { saveProduceSeed } from "@/app/projects/[id]/produce/_hooks/use-produce-seed";
 
 /** Payload returned by `/api/user/world/create/quick/worldproduct`. */
 type CreateQuickWorldResult = {
@@ -281,11 +278,11 @@ export function CreateWorldDialog({
             },
             createdAt: Date.now(),
           };
+          // One-shot hand-off — `useProducePipeline`'s mount effect
+          // calls `consumeProduceSeed`, which reads + immediately
+          // deletes this entry. Refresh / new tab from then on shows
+          // the upload card instead of auto-firing a stale run.
           saveProduceSeed(result.projectId, seedPayload);
-          // One-shot auto-start marker — script page consumes it on mount
-          // and fires the pipeline. Refresh / direct nav won't see the
-          // marker so they fall through to the project-data view instead.
-          saveProduceAutoStart(result.projectId);
           router.push(localizePath(`/projects/${result.projectId}/produce`, getCurrentLocale()));
         } else {
           router.push(

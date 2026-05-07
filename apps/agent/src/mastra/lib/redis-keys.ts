@@ -53,9 +53,10 @@ export const WORKFLOW_NAMES = [
   // returns an ephemeral draft; Java writes happen only on explicit commit.
   "produce_script_pipeline",
   // Produce-mode split workflows (Phase A onwards) — Step 1 generates
-  // episodes + scripts only; Step 2 / Step 3 will follow with assets
-  // and storyboards. Each step has its own generate / commit cycle.
+  // episodes + scripts only; Step 2 / Step 3 follow with assets and
+  // storyboards. Each step has its own generate / commit cycle.
   "produce_step1_episodes",
+  "produce_step2_assets",
 ] as const;
 
 export type WorkflowName = (typeof WORKFLOW_NAMES)[number];
@@ -160,6 +161,17 @@ export const K = {
   produceStep1Active: (projectId: string) => {
     assertSafeId(projectId, "projectId");
     return `produce:${projectId}:step1:active`;
+  },
+  /** Step 2 (asset extraction) per-run commit state. */
+  produceStep2Commit: (projectId: string, runId: string) => {
+    assertSafeId(projectId, "projectId");
+    assertSafeId(runId, "runId");
+    return `produce:${projectId}:step2:commit:${runId}`;
+  },
+  /** Step 2 active runId — same recovery semantics as step 1. */
+  produceStep2Active: (projectId: string) => {
+    assertSafeId(projectId, "projectId");
+    return `produce:${projectId}:step2:active`;
   },
 
   // ─── Workflow indices (sorted sets by startedAt) ──────────────────

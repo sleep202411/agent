@@ -2,10 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
-import { IconFileX, IconRefresh } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconArrowRight,
+  IconFileX,
+  IconPlayerStop,
+  IconRefresh,
+  IconSparkles,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Empty,
   EmptyDescription,
@@ -22,6 +32,12 @@ import {
 import { ASSET_TABS, type AssetTabKey } from "../_data/steps";
 import { useProduceCommittedResult } from "../_hooks/use-produce-seed";
 import { useProduceAssetImage } from "../_hooks/use-produce-asset-image";
+import {
+  useProduceStep2,
+  type Step2Draft,
+  type Step2DraftAsset,
+} from "../_hooks/use-produce-step2";
+import { useStepAdvanceController } from "../_hooks/use-step-advance";
 import { CharacterCard } from "./_components/character-card";
 import { PropCard } from "./_components/prop-card";
 import { SceneCard } from "./_components/scene-card";
@@ -92,6 +108,52 @@ export default function ProduceAssetPage() {
     return () => window.clearTimeout(timer);
   }, [reloadAssets]);
 
+  // Step 2 pipeline (asset extraction). When the LLM returns a draft,
+  // we splat each item into the same `assets` map as a `draft_*`-id
+  // entry so it shows up in-line with already-committed cards. The
+  // user reviews them inline; clicking 保存继续 commits to Java and
+  // navigates to /produce/episodes (Step 3).
+  const step2 = useProduceStep2(projectId, worldId);
+  const draftIds = useMemo(() => collectDraftIds(assets), [assets]);
+  const hasDrafts = draftIds.size > 0;
+
+  useEffect(() => {
+    if (step2.status !== "completed" || !step2.draft) return;
+    setAssets((current) => mergeDraftIntoAssets(current, step2.draft as Step2Draft));
+    // After we've consumed the draft into the displayed list, clear
+    // the hook's local state so generating again won't double-merge
+    // the same items.
+    step2.discard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step2.status]);
+
+  const handleDiscardDrafts = useCallback(() => {
+    setAssets((current) => stripDraftsFromAssets(current));
+    step2.discard();
+  }, [step2]);
+
+  // Wire the layout's footer 下一步 button to commit pending drafts
+  // before navigating. When there are no drafts (or step2 isn't in
+  // a committable state), we leave the handler clear so the layout
+  // falls through to plain link navigation.
+  const { setHandler } = useStepAdvanceController();
+  useEffect(() => {
+    if (!hasDrafts || step2.status !== "completed") {
+      setHandler(null);
+      return;
+    }
+    setHandler(async () => {
+      try {
+        await step2.commit();
+        await reloadAssets();
+        router.push(`/projects/${projectId}/produce/episodes`);
+      } catch (err) {
+        console.error("[asset/page] commit failed:", err);
+      }
+    });
+    return () => setHandler(null);
+  }, [hasDrafts, step2, setHandler, reloadAssets, router, projectId]);
+
   const totals = useMemo(
     () => ({
       character: assets.character.length,
@@ -134,6 +196,23 @@ export default function ProduceAssetPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-450 flex-col gap-7">
+      <Step2ActionBanner
+        status={step2.status}
+        error={step2.error}
+        hasDrafts={hasDrafts}
+        canGenerate={!!worldId}
+        onGenerate={() => void step2.generate()}
+        onCancel={step2.cancel}
+        onRetry={() => {
+          // Drop the previous draft batch first so the new run
+          // doesn't double-stack on the existing list.
+          setAssets((curr) => stripDraftsFromAssets(curr));
+          step2.discard();
+          void step2.generate();
+        }}
+        onDiscardDrafts={handleDiscardDrafts}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         {ASSET_TABS.map((tab) => {
           const active = tab.key === activeTab;
@@ -219,5 +298,174 @@ export default function ProduceAssetPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Step 2 helpers ──────────────────────────────────────────────
+
+/**
+ * Promote a Step 2 draft into the displayed asset list. We synthesise
+ * a `draft_*` id (Java hasn't issued real ids yet — that happens on
+ * commit) and leave imagePaths empty so the existing CharacterCard /
+ * SceneCard / PropCard render their "no image yet" state. The items
+ * sit alongside committed rows so the user reviews everything in one
+ * grid; the action banner makes the draft / committed split visible
+ * via the [N drafts pending] hint.
+ */
+function mergeDraftIntoAssets(
+  current: ProduceJavaAssetLists,
+  draft: Step2Draft
+): ProduceJavaAssetLists {
+  const buildItems = (
+    items: Step2DraftAsset[],
+    kind: "character" | "scene" | "prop"
+  ): ProduceJavaAsset[] =>
+    items.map((item, index) => ({
+      kind,
+      id: `draft_${kind}_${draft.generatedAt}_${index}`,
+      name: item.name,
+      description: item.description,
+      prompt: item.prompt,
+      imagePaths: [],
+      referenceImagePaths: [],
+      raw: { __draft: true } as Record<string, unknown>,
+    }));
+  // Drafts go at the front so they're the first thing the user sees
+  // after the LLM run finishes. Saves a scroll on long lists, and the
+  // "yellow ring" treatment is most readable when grouped at the top.
+  return {
+    character: [...buildItems(draft.characters, "character"), ...current.character],
+    scene: [...buildItems(draft.scenes, "scene"), ...current.scene],
+    prop: [...buildItems(draft.props, "prop"), ...current.prop],
+  };
+}
+
+function collectDraftIds(assets: ProduceJavaAssetLists): Set<string> {
+  const ids = new Set<string>();
+  for (const kind of ["character", "scene", "prop"] as const) {
+    for (const item of assets[kind]) {
+      if (item.id.startsWith("draft_")) ids.add(item.id);
+    }
+  }
+  return ids;
+}
+
+function stripDraftsFromAssets(current: ProduceJavaAssetLists): ProduceJavaAssetLists {
+  const filterCommitted = (list: ProduceJavaAsset[]) =>
+    list.filter((item) => !item.id.startsWith("draft_"));
+  return {
+    character: filterCommitted(current.character),
+    scene: filterCommitted(current.scene),
+    prop: filterCommitted(current.prop),
+  };
+}
+
+// ─── Step 2 action banner ────────────────────────────────────────
+
+interface Step2ActionBannerProps {
+  status: "idle" | "running" | "completed" | "failed" | "cancelled" | "committing" | "committed";
+  error?: string;
+  hasDrafts: boolean;
+  canGenerate: boolean;
+  onGenerate: () => void;
+  onCancel: () => void;
+  onRetry: () => void;
+  onDiscardDrafts: () => void;
+}
+
+function Step2ActionBanner(props: Step2ActionBannerProps) {
+  const { status, error, hasDrafts, canGenerate, onGenerate, onCancel, onRetry, onDiscardDrafts } =
+    props;
+
+  if (status === "running") {
+    return (
+      <Card className="gap-3 p-4">
+        <div className="flex items-center gap-3">
+          <Spinner className="size-5 text-primary" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold">正在抽取角色 / 场景 / 道具</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              基于已入库剧集的简介推断关键资产，去重后填进下方列表。
+            </p>
+          </div>
+          <Button variant="outline" color="muted" size="sm" onClick={onCancel}>
+            <IconPlayerStop className="size-3.5" /> 取消
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (status === "failed" || status === "cancelled") {
+    return (
+      <Card className="gap-3 p-4">
+        <div className="flex items-start gap-3">
+          <IconAlertCircle className="mt-0.5 size-5 shrink-0 text-destructive" />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold">
+              {status === "cancelled" ? "已取消抽取" : "资产抽取失败"}
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {error || "请重试，或先去 Step 1 确认有可读的剧集简介。"}
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button variant="solid" color="primary" size="sm" onClick={onRetry}>
+            <IconRefresh className="size-3.5" /> 重试
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (hasDrafts) {
+    return (
+      <Card className="gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-xs text-primary">
+              <IconSparkles className="size-3.5" /> 草稿已就绪 · 尚未入库
+            </div>
+            <h3 className="mt-1 text-sm font-semibold">下方列表已并入新生成的角色 / 场景 / 道具</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              草稿条目暂未生成图片。点击右下角"下一步"写入 Java 后再去 Step 3 生成分镜。
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button variant="outline" color="muted" size="sm" onClick={onDiscardDrafts}>
+              <IconTrash className="size-3.5" /> 放弃
+            </Button>
+            <Button variant="outline" color="muted" size="sm" onClick={onRetry}>
+              <IconRefresh className="size-3.5" /> 重试
+            </Button>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  // Idle — show the "Generate assets" CTA.
+  return (
+    <Card className="gap-3 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">从剧集简介中抽取角色 / 场景 / 道具</h3>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            读取项目已入库的剧集简介，AI
+            会推断出关键角色、场景、道具，自动去重已有的，结果会并入下方列表，由你确认后入库。
+          </p>
+        </div>
+        <Button
+          variant="solid"
+          color="primary"
+          size="lg"
+          disabled={!canGenerate}
+          onClick={onGenerate}
+        >
+          <IconSparkles className="size-4" /> 生成资产
+        </Button>
+      </div>
+    </Card>
   );
 }

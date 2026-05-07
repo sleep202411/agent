@@ -19,6 +19,16 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Next.js dev-server default `proxyTimeout` is 30s — too short for the
+  // produce-mode sync workflows (Step 1 / Step 2 / Step 3 each block
+  // for 1-10 min while Mastra runs LLM calls in-process). Without this
+  // override the dev rewrite returns 500 to the browser at the 30s
+  // mark, even though Nest + agent are still happily working on the
+  // request. Production behind nginx doesn't hit this since nginx has
+  // its own timeout knob; this is purely a `next dev` ergonomics fix.
+  experimental: {
+    proxyTimeout: 31 * 60 * 1000,
+  },
   async rewrites() {
     return {
       beforeFiles: [],
