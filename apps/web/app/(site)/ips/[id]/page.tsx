@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { VideoPlayer } from "@/components/media/video-player";
@@ -21,6 +21,7 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCurrentUser } from "@/src/hooks/use-user";
+import { useTagList } from "@/src/hooks/use-tag-list";
 import { cn } from "@/lib/utils";
 import { env } from "@/src/env";
 import {
@@ -33,6 +34,8 @@ import {
   useEpisodeVideoLink,
   useLegacyJobsByRole,
   ipImageUrl,
+  parseTagIds,
+  resolveTagNames,
   type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
 import type { ProjectJob } from "@/app/(site)/ips/_hooks/types";
@@ -99,14 +102,15 @@ export default function IPDetailPage() {
     !!selectedEpisodeId
   );
 
-  const realTags: string[] = (() => {
-    try {
-      const parsed = JSON.parse(project?.tag ?? "[]");
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return [];
-    }
-  })();
+  // Tags come back as `JSON.stringify(numericIds[])` from `/project/query`.
+  // Translate IDs → display names via the shared tag taxonomy so chips
+  // read e.g. "#Animation" instead of the raw "#11" they used to.
+  const { data: tagOptions = [] } = useTagList();
+  const tagMap = useMemo(() => new Map(tagOptions.map((tag) => [tag.id, tag.name])), [tagOptions]);
+  const realTags: string[] = useMemo(
+    () => resolveTagNames(parseTagIds(project?.tag), tagMap),
+    [project?.tag, tagMap]
+  );
   const team: IPTeamMember[] = (Array.isArray(members) ? members : []).map((m) => {
     const role =
       m.role === 10 ? "Owner" : m.role === 8 ? "Admin" : m.roleName || m.remark || "Member";
@@ -195,12 +199,25 @@ export default function IPDetailPage() {
             {title || t("detailUntitled")}
           </h1>
           {tagline && <p className="mb-3 text-sm text-muted-foreground">{tagline}</p>}
-          <div className="mb-3 flex items-center justify-center gap-3">
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-400/10 px-2.5 py-1 text-xs font-medium text-green-400">
-              <IconCircleCheck className="size-3.5" />
-              {t("detailReleased")}
-            </span>
-          </div>
+          {/* Status badge — `projectStatus === 0` is the published/Live
+              state ("已上线"); `=== 8` is a draft. Anything else is
+              treated as unknown and the badge is hidden so we don't
+              keep claiming "Released" on rows that aren't actually
+              live (the original always-on badge was misleading). */}
+          {(project?.projectStatus === 0 || project?.projectStatus === 8) && (
+            <div className="mb-3 flex items-center justify-center gap-3">
+              {project.projectStatus === 0 ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-400/10 px-2.5 py-1 text-xs font-medium text-green-400">
+                  <IconCircleCheck className="size-3.5" />
+                  {t("detailReleased")}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300">
+                  {t("detailDraft")}
+                </span>
+              )}
+            </div>
+          )}
           {realTags.length > 0 && (
             <div className="flex flex-wrap items-center justify-center gap-2">
               {realTags.map((tag) => (
