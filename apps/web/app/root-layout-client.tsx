@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import type { DehydratedState } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "@/components/providers";
 import i18n, { setLanguage, useLocale } from "@/src/i18n/i18n";
@@ -9,9 +10,11 @@ import { setCurrentLocale, localeFromPathname } from "@/src/i18n/locale-url";
 
 export function RootLayoutClient({
   initialLocale,
+  dehydratedState,
   children,
 }: {
   initialLocale: string;
+  dehydratedState?: DehydratedState;
   children: React.ReactNode;
 }) {
   // Synchronously align i18next language with request locale BEFORE first render.
@@ -37,7 +40,7 @@ export function RootLayoutClient({
 
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
-      <Providers>{children}</Providers>
+      <Providers dehydratedState={dehydratedState}>{children}</Providers>
     </ThemeProvider>
   );
 }

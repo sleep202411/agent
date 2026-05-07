@@ -1,6 +1,11 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  HydrationBoundary,
+  QueryClient,
+  QueryClientProvider,
+  type DehydratedState,
+} from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -26,7 +31,19 @@ function EntityEventsSession({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  dehydratedState,
+}: {
+  children: React.ReactNode;
+  /**
+   * SSR-prefetched React Query cache. When supplied (from
+   * `app/layout.tsx`), the HydrationBoundary seeds the client cache
+   * before the first paint — so screens that read `useUserInfo()`
+   * already see the logged-in user and don't flash the visitor state.
+   */
+  dehydratedState?: DehydratedState;
+}) {
   const initialized = useRef(false);
 
   const [queryClient] = useState(
@@ -51,12 +68,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <StoreProvider>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <ApexRedirect />
-          <AuthInterceptor />
-          <EntityEventsSession>{children}</EntityEventsSession>
-          <Toaster position="top-center" />
-        </TooltipProvider>
+        <HydrationBoundary state={dehydratedState}>
+          <TooltipProvider>
+            <ApexRedirect />
+            <AuthInterceptor />
+            <EntityEventsSession>{children}</EntityEventsSession>
+            <Toaster position="top-center" />
+          </TooltipProvider>
+        </HydrationBoundary>
       </QueryClientProvider>
     </StoreProvider>
   );
