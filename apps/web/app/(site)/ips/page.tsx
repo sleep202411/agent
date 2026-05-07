@@ -79,7 +79,17 @@ function FilterPanel({
 
 export default function IPPlazaPage() {
   const t = useTranslations("ip");
+  // `search` is the controlled-input value (changes every keystroke).
+  // `debouncedSearch` lags by 300ms and is what the query hook actually
+  // reads — so typing "墨家小说" fires one request after the user
+  // pauses, not five separate ones as each character lands.
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
   const [selectedTypeId, setSelectedTypeId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
@@ -123,7 +133,7 @@ export default function IPPlazaPage() {
     isFetchingNextPage,
   } = useInfiniteIPList({
     pageSize: 20,
-    key: search,
+    key: debouncedSearch,
     typeId: selectedTypeId,
   });
   const { data: typesData = [] } = useIPTypes();
