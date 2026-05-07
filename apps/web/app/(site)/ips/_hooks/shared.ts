@@ -164,8 +164,12 @@ export function userAvatarUrl(path?: string | null): string {
 
 // ─── Misc utilities ─────────────────────────────────
 
-/** Backend stores tags as a single string (comma / pipe / semi-colon /
- *  space / Chinese-comma separated). Split tolerantly, capped at 3. */
+/** Legacy: backend used to store tags as a single string (comma /
+ *  pipe / semi-colon / space / Chinese-comma separated). Newer rows
+ *  store `JSON.stringify([id, id])` instead — prefer `parseTagIds`
+ *  + `resolveTagNames` for new code. This shim is kept for the
+ *  homepage Featured / ForYou rails which haven't been migrated yet
+ *  and accept whatever shape the backend hands back. */
 export function splitTags(raw: string | null | undefined): string[] {
   if (!raw || typeof raw !== "string") return [];
   return raw
@@ -173,6 +177,33 @@ export function splitTags(raw: string | null | undefined): string[] {
     .map((t) => t.trim())
     .filter(Boolean)
     .slice(0, 3);
+}
+
+/** Backend stores `project.tag` as a JSON-stringified array of numeric
+ *  tag IDs (e.g. `"[11,4]"`). Returns the parsed IDs or `[]` for any
+ *  unparseable / empty value. Pair with `resolveTagNames` to surface
+ *  human-readable labels. */
+export function parseTagIds(raw: string | null | undefined): number[] {
+  if (!raw || typeof raw !== "string") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((v) => Number(v)).filter((n) => Number.isFinite(n));
+  } catch {
+    return [];
+  }
+}
+
+/** Translate tag IDs to display names against a `id → name` map (built
+ *  from `useTagList()`). Unknown IDs fall through as `#${id}` so a
+ *  stale cache or out-of-band tag never renders blank. */
+export function resolveTagNames(
+  ids: number[],
+  tagMap: Map<number, string> | Record<number, string>
+): string[] {
+  const lookup = (id: number): string | undefined =>
+    tagMap instanceof Map ? tagMap.get(id) : tagMap[id];
+  return ids.map((id) => lookup(id) ?? `#${id}`);
 }
 
 /** Deterministic 32-bit string hash (FNV-ish). Plenty for picking

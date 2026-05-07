@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { headers } from "next/headers";
 import { dehydrate } from "@tanstack/react-query";
+import NextTopLoader from "nextjs-toploader";
 import { RootLayoutClient } from "@/app/root-layout-client";
 import { getServerQueryClient } from "@/src/lib/react-query/server";
 import { fetchUserInfoServerSide } from "@/src/lib/auth/server-user";
@@ -73,6 +74,19 @@ export default async function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col bg-background">
+        {/* Top progress bar for App Router navigation. App Router
+            blocks URL change until the destination route's RSC
+            payload arrives — without feedback, slow page transitions
+            (e.g. /ips/[id], /projects/[id]) feel like the click did
+            nothing. The bar shows immediately on click and finishes
+            when navigation lands. Brand-tinted (amber, matches the
+            primary token) + thin (3px) so it doesn't dominate. */}
+        <NextTopLoader
+          color="#f59e0b"
+          height={3}
+          showSpinner={false}
+          shadow="0 0 10px rgba(245,158,11,0.4)"
+        />
         <RootLayoutClient initialLocale={locale} dehydratedState={dehydratedState}>
           {children}
         </RootLayoutClient>

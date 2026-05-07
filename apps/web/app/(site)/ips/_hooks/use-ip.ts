@@ -20,6 +20,8 @@ export {
   ipImageUrl,
   userAvatarUrl,
   splitTags,
+  parseTagIds,
+  resolveTagNames,
   avatarFallbackTone,
   hashId,
   legacyProjectEditUrl,

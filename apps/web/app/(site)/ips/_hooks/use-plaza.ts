@@ -2,7 +2,13 @@
  * Plaza homepage data: Featured carousel + For You rail (P1).
  *
  *   - `usePlazaFeatured`  — POST /project/featured/list (queryFeaturedProject)
- *   - `usePlazaForYou`    — GET /project/plaza/for-you?page=&pageSize=
+ *   - `usePlazaForYou`    — POST /project/list (TEMPORARY)
+ *
+ * For You note: backend hasn't shipped a dedicated `/project/plaza/for-you`
+ * endpoint yet, but it will return the **same wire shape as
+ * `/project/list`** when it does. We therefore hit `/project/list`
+ * directly today; when the real endpoint lands, change the URL inside
+ * `fetchPlazaForYou` and nothing else needs to move.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -58,20 +64,58 @@ async function fetchPlazaFeatured(): Promise<FeaturedSlide[]> {
   return rows.map(mapFeaturedRow);
 }
 
+// Wire shape from `/project/list` — `/project/plaza/for-you` will
+// return the same shape when backend ships it, so this mapping
+// transitions cleanly with a URL change.
+interface WireForYouRow {
+  id: number | null;
+  projectId: number;
+  title: string | null;
+  introduction: string | null;
+  creator: string | null;
+  videoBanner: string | null;
+  contact: string | null;
+  tags: string | null;
+  viewStatus: number | null;
+  videoNumber?: number | null;
+  createTime: string | null;
+}
+
+function mapForYouRow(row: WireForYouRow): RailItem {
+  return {
+    id: String(row.projectId),
+    title: row.title ?? "",
+    cover: ipImageUrl(row.videoBanner),
+    // `/project/list` doesn't currently include episode count; the
+    // dedicated `/project/plaza/for-you` endpoint may add it later.
+    // Falls through to 0 today; the rail card hides the "N episodes"
+    // line when count is 0.
+    episodes: row.videoNumber ?? 0,
+  };
+}
+
 async function fetchPlazaForYou(
   page: number,
   pageSize: number
 ): Promise<{ list: RailItem[]; total: number }> {
-  const res = await fetch(`/project/plaza/for-you?page=${page}&pageSize=${pageSize}`, {
+  // TEMPORARY: hits `/project/list` until backend ships
+  // `/project/plaza/for-you`. The two are expected to share a wire
+  // shape — flip the URL here when the real endpoint lands and the
+  // mapper above keeps working unchanged.
+  const qs = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  const res = await fetch(`/project/list?${qs.toString()}`, {
+    method: "POST",
     credentials: "include",
     headers: { "accept-language": acceptLanguage(), Authorization: bearerHeader() },
   });
   if (!res.ok) return { list: [], total: 0 };
   const json = (await res.json()) as {
     code: number;
-    data: { list: RailItem[]; total: number };
+    data?: WireForYouRow[];
+    sum?: number;
   };
-  return { list: json.data?.list ?? [], total: json.data?.total ?? 0 };
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return { list: rows.map(mapForYouRow), total: json.sum ?? rows.length };
 }
 
 export function usePlazaFeatured() {

@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import {
   ipImageUrl,
   userAvatarUrl,
-  splitTags,
+  parseTagIds,
+  resolveTagNames,
   avatarFallbackTone,
   type IPProject,
   type CategoryMap,
@@ -23,16 +24,22 @@ import {
 export function IPPlazaCard({
   project,
   categories,
+  tagMap,
 }: {
   project: IPProject;
   categories: CategoryMap;
+  /** `id → name` map built from `useTagList()`. Optional so callers
+   *  that don't render tags (e.g. compact card variants) can skip it;
+   *  when missing, tags fall back to `#${id}` rather than the misleading
+   *  raw "[11]" the legacy `splitTags` shim produced. */
+  tagMap?: Map<number, string>;
 }) {
   const t = useTranslations("ip");
 
   const cover = ipImageUrl(project.bannerLink);
   const avatar = userAvatarUrl(project.ownerAvatar);
   const cat = categories[String(project.typeId)] ?? "";
-  const tags = splitTags(project.tag);
+  const tags = resolveTagNames(parseTagIds(project.tag), tagMap ?? new Map()).slice(0, 3);
   const ownerName = (project.ownerName || "").trim() || "Anonymous";
   const initial = ownerName.slice(0, 1).toUpperCase();
   const fallbackTone = avatarFallbackTone(project.ownerId ?? project.id);
