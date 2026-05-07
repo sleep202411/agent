@@ -7,7 +7,6 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconPlayerPlay,
-  IconPlus,
   IconShare3,
   IconVolumeOff,
   IconMovie,
@@ -78,19 +77,11 @@ export function IPCinematicHero() {
                       className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                     <div className="absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-black/85 to-transparent" />
-                    <div className="absolute inset-x-3 bottom-3 pr-10">
+                    <div className="absolute inset-x-3 bottom-3">
                       <h3 className="line-clamp-1 text-sm font-semibold text-white">
                         {item.title}
                       </h3>
                     </div>
-                    <button
-                      type="button"
-                      aria-label="Add to list"
-                      onClick={(e) => e.preventDefault()}
-                      className="absolute bottom-3 right-3 inline-flex size-8 items-center justify-center rounded-full border border-white/20 bg-black/50 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
-                    >
-                      <IconPlus className="size-4" />
-                    </button>
                   </div>
                   {item.episodes > 0 && (
                     <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
@@ -341,17 +332,9 @@ export function IPCinematicHero() {
                     className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                   <div className="absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-black/85 to-transparent" />
-                  <div className="absolute inset-x-3 bottom-3 pr-10">
+                  <div className="absolute inset-x-3 bottom-3">
                     <h3 className="line-clamp-1 text-sm font-semibold text-white">{item.title}</h3>
                   </div>
-                  <button
-                    type="button"
-                    aria-label="Add to list"
-                    onClick={(e) => e.preventDefault()}
-                    className="absolute bottom-3 right-3 inline-flex size-8 items-center justify-center rounded-full border border-white/20 bg-black/50 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
-                  >
-                    <IconPlus className="size-4" />
-                  </button>
                 </div>
                 {item.episodes > 0 && (
                   <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
