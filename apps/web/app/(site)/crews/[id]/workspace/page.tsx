@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import {
   MEMBER_STATUS_META,
   useCrewWorkspace,
+  useCrewDetail,
   useEpisodeMemberAction,
   useSubmitEpisodeToClient,
   useCrewMembers,
@@ -91,6 +92,13 @@ export default function CrewWorkspacePage() {
   // Pending member-remove target. `null` = dialog closed.
   // `{userId, name}` = AlertDialog showing "remove {name}?".
   const [pendingRemove, setPendingRemove] = useState<{ userId: number; name: string } | null>(null);
+
+  // Real crew detail (banner / video / description) for the visual
+  // hero strip rendered above the header. Independent from the
+  // workspace aggregate (which still mocks members / todos / etc.)
+  // so the hero shows real assets even before backend ships the
+  // richer endpoints.
+  const { data: crewDetail } = useCrewDetail(id);
 
   // Real crew members + role taxonomy for the Members tab. Replaces
   // the legacy mock `currentEpMembers` everywhere downstream.
@@ -199,8 +207,57 @@ export default function CrewWorkspacePage() {
     });
   };
 
+  // Resolve OSS keys into renderable URLs. Guard the leading-slash
+  // case so `/foo/bar.jpg` doesn't produce a `//` join with the base.
+  const resolveAsset = (path: string | null | undefined, base: string): string => {
+    if (!path) return "";
+    if (path.startsWith("http")) return path;
+    return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  };
+  const heroBanner = resolveAsset(crewDetail?.banner, env.BANNER_BASE_URL);
+  const heroVideo = resolveAsset(crewDetail?.video, env.OSS_BASE_URL);
+  const heroDescription = (crewDetail?.description ?? "").trim();
+
   return (
     <div className="min-h-screen bg-background">
+      {/* Visual hero strip — shows the crew's banner (and optional
+          autoplay video loop) above the textual header. Sourced
+          from `useCrewDetail` so it's the real backend data, not the
+          mock workspace aggregate. Hidden when the crew has no
+          banner yet (during a fresh load or detail-fetch failure)
+          so we don't render an empty grey box. */}
+      {heroBanner && (
+        <div className="relative h-48 w-full overflow-hidden bg-black sm:h-64">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={heroBanner} alt="" className="absolute inset-0 size-full object-cover" />
+          {heroVideo && (
+            <video
+              src={heroVideo}
+              poster={heroBanner}
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="metadata"
+              className="absolute inset-0 size-full object-cover"
+              aria-hidden
+            />
+          )}
+          {/* Bottom legibility scrim so the title bar below can blend
+              into the hero without the banner stealing focus. */}
+          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
+          {/* Description overlay (if any) — bottom-left so it sits
+              above the scrim and reads cleanly against the banner. */}
+          {heroDescription && (
+            <div className="absolute inset-x-0 bottom-3 px-6">
+              <div className="mx-auto max-w-screen-xl">
+                <p className="line-clamp-2 max-w-2xl text-sm text-white/90">{heroDescription}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-border bg-card/50">
         <div className="mx-auto max-w-screen-xl px-6 py-5">
