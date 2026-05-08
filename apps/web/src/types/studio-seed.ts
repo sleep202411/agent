@@ -21,7 +21,11 @@ export interface StudioSeedAttachment {
 }
 
 export interface StudioSeed {
-  agent: StudioAgent;
+  /** Pinned persona from the chip rail. `null` means the user didn't
+   *  pick one — workspace lets the supervisor route freely instead of
+   *  pinning a forced persona, so a casual "你好" doesn't get prefixed
+   *  with "角色设计师 / "向 character_designer hard-routed. */
+  agent: StudioAgent | null;
   prompt: string;
   /** 剧本附件；可选 */
   attachment?: StudioSeedAttachment;
