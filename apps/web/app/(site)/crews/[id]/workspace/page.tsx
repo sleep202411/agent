@@ -17,7 +17,10 @@ import {
   IconMovie,
   IconPackage,
   IconActivity,
+  IconTrash,
+  IconLoader2,
 } from "@tabler/icons-react";
+import { env } from "@/src/env";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
@@ -26,13 +29,26 @@ import {
   useCrewWorkspace,
   useEpisodeMemberAction,
   useSubmitEpisodeToClient,
+  useCrewMembers,
+  useRemoveMember,
   type EpMember,
 } from "@/app/(site)/crews/_hooks/use-crew";
+import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
 import { useDevIdentity } from "@/app/(site)/crews/_hooks/use-dev-identity";
 import { EpisodeAccordion } from "@/app/(site)/crews/_components/episode-accordion";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },
@@ -58,6 +74,7 @@ const BTN_STYLES: Record<string, string> = {
 
 export default function CrewWorkspacePage() {
   const t = useTranslations("workspace");
+  const tc = useTranslations("common");
   const params = useParams<{ id: string }>();
   const id = params.id;
   const identity = useDevIdentity();
@@ -71,6 +88,19 @@ export default function CrewWorkspacePage() {
   const submitToClient = useSubmitEpisodeToClient(id);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [publishJobOpen, setPublishJobOpen] = useState(false);
+  // Pending member-remove target. `null` = dialog closed.
+  // `{userId, name}` = AlertDialog showing "remove {name}?".
+  const [pendingRemove, setPendingRemove] = useState<{ userId: number; name: string } | null>(null);
+
+  // Real crew members + role taxonomy for the Members tab. Replaces
+  // the legacy mock `currentEpMembers` everywhere downstream.
+  const { data: crewMembers = [], isLoading: membersLoading } = useCrewMembers(id);
+  const { data: projectRoles = [] } = useProjectRoles();
+  const roleNameById = useMemo(
+    () => new Map(projectRoles.map((r) => [r.id, r.name])),
+    [projectRoles]
+  );
+  const removeMember = useRemoveMember();
 
   // Derived stats stay reactive to cache mutations.
   const pendingReviewCount = useMemo(
@@ -132,6 +162,32 @@ export default function CrewWorkspacePage() {
 
   const handleInvite = () => {
     setAddMemberOpen(true);
+  };
+
+  // Open the styled <AlertDialog> instead of the OS-native confirm —
+  // the latter shows "localhost:3000 says" + light theme that clashes
+  // with the rest of the app.
+  const handleRemoveMember = (userId: number, displayName: string) => {
+    setPendingRemove({ userId, name: displayName });
+  };
+
+  const confirmRemoveMember = () => {
+    if (!pendingRemove) return;
+    const { userId, name } = pendingRemove;
+    removeMember.mutate(
+      { crewId: id, userId },
+      {
+        onSuccess: () => {
+          toast.success(t("removeMemberSuccess", { name }));
+          setPendingRemove(null);
+        },
+        onError: (err) => {
+          const msg = err instanceof Error ? err.message : "";
+          toast.error(msg || t("removeMemberFailed"));
+          setPendingRemove(null);
+        },
+      }
+    );
   };
 
   const toggleTodo = (i: number) => {
@@ -580,12 +636,15 @@ export default function CrewWorkspacePage() {
             </div>
           )}
 
-          {/* Members */}
+          {/* Members — real backend list (`useCrewMembers`) joined with
+              `useProjectRoles` to render the role label. Owner sees
+              a "+ Add Member" CTA + per-row delete button; non-owners
+              see a read-only list. */}
           {activeTab === "members" && (
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-bold">
-                  {t("memberManagement")} · {s.memberCount} {t("people")}
+                  {t("memberManagement")} · {crewMembers.length} {t("people")}
                 </h3>
                 {isOwner && (
                   <button
@@ -597,32 +656,66 @@ export default function CrewWorkspacePage() {
                   </button>
                 )}
               </div>
-              <div className="space-y-2">
-                {currentEpMembers.map((m) => (
-                  <div
-                    key={m.name}
-                    className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
-                        {m.name[0]}
+              {membersLoading ? (
+                <div className="flex h-32 items-center justify-center text-muted-foreground">
+                  <IconLoader2 className="size-4 animate-spin" />
+                </div>
+              ) : crewMembers.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
+                  {t("noMembersYet")}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {crewMembers.map((m) => {
+                    const displayName = m.nick?.trim() || `User ${m.userId}`;
+                    const initial = (displayName[0] ?? "?").toUpperCase();
+                    const avatarUrl = m.avatar
+                      ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar.replace(/^\/+/, "")}`
+                      : "";
+                    const roleLabel =
+                      (m.roleId != null && roleNameById.get(m.roleId)) || t("memberRoleUnknown");
+                    return (
+                      <div
+                        key={m.userId}
+                        className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          {avatarUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={avatarUrl}
+                              alt=""
+                              className="size-8 rounded-xl object-cover"
+                            />
+                          ) : (
+                            <div className="flex size-8 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
+                              {initial}
+                            </div>
+                          )}
+                          <div>
+                            <div className="text-sm font-semibold text-foreground">
+                              {displayName}
+                            </div>
+                            <div className="text-xs text-muted-foreground">{roleLabel}</div>
+                          </div>
+                        </div>
+                        {isOwner && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(m.userId, displayName)}
+                            disabled={removeMember.isPending}
+                            className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                            aria-label={t("removeMember")}
+                            title={t("removeMember")}
+                          >
+                            <IconTrash className="size-4" />
+                          </button>
+                        )}
                       </div>
-                      <div>
-                        <div className="text-sm font-semibold text-foreground">{m.name}</div>
-                        <div className="text-xs text-muted-foreground">{m.role}</div>
-                      </div>
-                    </div>
-                    <span
-                      className={cn(
-                        "rounded-full border px-2 py-0.5 text-xs font-semibold",
-                        m.color
-                      )}
-                    >
-                      {t(MEMBER_STATUS_META[m.status].labelKey)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -711,6 +804,44 @@ export default function CrewWorkspacePage() {
       <DevIdentitySwitcher />
       <AddCrewMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} crewId={id} />
       <CreateCrewJobDialog open={publishJobOpen} onOpenChange={setPublishJobOpen} crewId={id} />
+
+      {/* Member-remove confirmation. Project-styled (vs. window.confirm,
+          which leaks "localhost:3000 says" + light theme). The
+          destructive variant on the action button matches the
+          delete-experience pattern in project-team-dialog. */}
+      <AlertDialog
+        open={pendingRemove !== null}
+        onOpenChange={(v) => {
+          if (!v) setPendingRemove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("removeMember")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingRemove ? t("removeMemberConfirm", { name: pendingRemove.name }) : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeMember.isPending}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="solid"
+              color="destructive"
+              disabled={removeMember.isPending}
+              onClick={(e) => {
+                // Prevent default close-on-action so the dialog stays
+                // open while the request is in flight; we'll close it
+                // ourselves in onSuccess / onError.
+                e.preventDefault();
+                confirmRemoveMember();
+              }}
+            >
+              {removeMember.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {tc("confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

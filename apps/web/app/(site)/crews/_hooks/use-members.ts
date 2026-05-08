@@ -15,44 +15,35 @@ import { crewKeys, delay } from "./shared";
  * Wire-shape of a single crew member returned by
  * `POST /project/crew/member/query?crewId={id}`.
  *
- * **TODO(crew-phase-1)**: backend response example wasn't documented
- * in swagger as of 2026-05-08 (placeholder `additionalProp1` only).
- * The field set below is best-guess based on:
- *   - the IP `ProjectMember` shape (the closest existing precedent)
- *   - the `addCrewMember` payload (we send `role` int + `contact`)
- *   - what the workspace UI needs to render (avatar / name / role)
+ * Captured from a live response 2026-05-08:
  *
- * When the user shares a real response, tighten the optional-vs-
- * required markers and drop fields backend doesn't actually return.
+ *   {
+ *     "userId": 23,
+ *     "nick": "你好哦",
+ *     "roleId": 2,
+ *     "avatar": "23/5e5479a4-..."
+ *   }
+ *
+ * Notes:
+ *   - `avatar` is an OSS storage key — prefix with `env.USER_BASE_URL`
+ *     at the render site for the actual `<img src>`.
+ *   - `roleId` joins against `useProjectRoles` (`/project/role/list`)
+ *     to derive the display label.
+ *   - The catch-all index signature lets unknown fields round-trip
+ *     in case backend adds more later (createTime / remark / etc.).
  */
 export interface CrewMemberWire {
-  /** Backend user id — used by `removeMember({crewId, userId})`. */
   userId: number;
-  /** Display name, falls back through nickName / userName / phone. */
-  nickName?: string | null;
-  userName?: string | null;
-  /** OSS storage key for the avatar (resolved to a URL via
-   *  `env.USER_BASE_URL` at the render site). */
+  nick?: string | null;
   avatar?: string | null;
-  /** Project role id — looked up against the `/project/role/list`
-   *  taxonomy for the display label. */
-  role?: number;
-  /** Free-form note attached when added (passed in via remark). */
-  remark?: string | null;
-  /** Backend-relative timestamp string. */
-  createTime?: string | null;
-  /** Backend may flag the crew owner / admin separately from `role`;
-   *  catch-all for fields we discover in the real response. */
+  roleId?: number;
   [key: string]: unknown;
 }
 
 interface CrewMemberQueryEnvelope {
   code?: number;
   msg?: string;
-  // Backend pattern across this module is `data: T[]` for list reads
-  // (see e.g. /project/role/list shape). Until we've seen a real
-  // response, accept the legacy `{list: [...]}` nest as a fallback.
-  data?: CrewMemberWire[] | { list?: CrewMemberWire[] };
+  data?: CrewMemberWire[];
 }
 
 async function fetchCrewMembers(crewId: string): Promise<CrewMemberWire[]> {
@@ -67,10 +58,7 @@ async function fetchCrewMembers(crewId: string): Promise<CrewMemberWire[]> {
   if (res?.code !== 200) {
     throw new Error(res?.msg || "fetchCrewMembers: backend response invalid");
   }
-  const raw = res.data;
-  if (Array.isArray(raw)) return raw;
-  if (raw && typeof raw === "object" && Array.isArray(raw.list)) return raw.list;
-  return [];
+  return Array.isArray(res.data) ? res.data : [];
 }
 
 export function useCrewMembers(crewId: string) {
