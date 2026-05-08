@@ -57,6 +57,10 @@ export interface LipsyncVideoPanelProps {
   onGenerateVideo: () => void;
   onRetryVideo: (item: VideoResultItem) => void;
   onOpenPicker: (target: PickerTarget) => void;
+  /** Called when the user clicks "View error" on a failed card. Lifts
+   * the message up to the dialog so a single shadcn AlertDialog can
+   * render it (instead of native window.alert). */
+  onShowError: (message: string) => void;
   isGenerating: boolean;
   shotNumber?: number;
   shotId: string;
@@ -84,6 +88,7 @@ export function LipsyncVideoPanel({
   onGenerateVideo,
   onRetryVideo,
   onOpenPicker,
+  onShowError,
   isGenerating,
   shotNumber,
   shotId,
@@ -133,7 +138,11 @@ export function LipsyncVideoPanel({
               </div>
             ) : (
               allVideoItems.map((item, index) => {
-                const selected = item.path === currentPreviewPath;
+                // Failed items have empty path; without the Boolean guard,
+                // `"" === ""` would mark every failed card as "selected"
+                // and the red "previewing" banner would cover the
+                // "View error" link below.
+                const selected = Boolean(item.path) && item.path === currentPreviewPath;
                 return (
                   <button
                     key={item.id || `${item.path}_${index}`}
@@ -159,6 +168,30 @@ export function LipsyncVideoPanel({
                       <div className="flex aspect-video flex-col items-center justify-center gap-1 text-[#E52227]">
                         <IconRefresh className="size-4" />
                         <span className="text-[10px]">{tc("retry")}</span>
+                        {/* "View error" link — surfaces the captured
+                            backend detail via the dialog-level shadcn
+                            AlertDialog. stopPropagation so the parent
+                            retry click doesn't also fire. */}
+                        {item.errorMessage ? (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onShowError(item.errorMessage!);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                onShowError(item.errorMessage!);
+                              }
+                            }}
+                            className="text-[10px] underline underline-offset-2 hover:opacity-80"
+                          >
+                            {t("viewError")}
+                          </span>
+                        ) : null}
                       </div>
                     ) : (
                       <>

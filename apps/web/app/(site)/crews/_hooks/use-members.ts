@@ -15,44 +15,35 @@ import { crewKeys, delay } from "./shared";
  * Wire-shape of a single crew member returned by
  * `POST /project/crew/member/query?crewId={id}`.
  *
- * **TODO(crew-phase-1)**: backend response example wasn't documented
- * in swagger as of 2026-05-08 (placeholder `additionalProp1` only).
- * The field set below is best-guess based on:
- *   - the IP `ProjectMember` shape (the closest existing precedent)
- *   - the `addCrewMember` payload (we send `role` int + `contact`)
- *   - what the workspace UI needs to render (avatar / name / role)
+ * Captured from a live response 2026-05-08:
  *
- * When the user shares a real response, tighten the optional-vs-
- * required markers and drop fields backend doesn't actually return.
+ *   {
+ *     "userId": 23,
+ *     "nick": "你好哦",
+ *     "roleId": 2,
+ *     "avatar": "23/5e5479a4-..."
+ *   }
+ *
+ * Notes:
+ *   - `avatar` is an OSS storage key — prefix with `env.USER_BASE_URL`
+ *     at the render site for the actual `<img src>`.
+ *   - `roleId` joins against `useProjectRoles` (`/project/role/list`)
+ *     to derive the display label.
+ *   - The catch-all index signature lets unknown fields round-trip
+ *     in case backend adds more later (createTime / remark / etc.).
  */
 export interface CrewMemberWire {
-  /** Backend user id — used by `removeMember({crewId, userId})`. */
   userId: number;
-  /** Display name, falls back through nickName / userName / phone. */
-  nickName?: string | null;
-  userName?: string | null;
-  /** OSS storage key for the avatar (resolved to a URL via
-   *  `env.USER_BASE_URL` at the render site). */
+  nick?: string | null;
   avatar?: string | null;
-  /** Project role id — looked up against the `/project/role/list`
-   *  taxonomy for the display label. */
-  role?: number;
-  /** Free-form note attached when added (passed in via remark). */
-  remark?: string | null;
-  /** Backend-relative timestamp string. */
-  createTime?: string | null;
-  /** Backend may flag the crew owner / admin separately from `role`;
-   *  catch-all for fields we discover in the real response. */
+  roleId?: number;
   [key: string]: unknown;
 }
 
 interface CrewMemberQueryEnvelope {
   code?: number;
   msg?: string;
-  // Backend pattern across this module is `data: T[]` for list reads
-  // (see e.g. /project/role/list shape). Until we've seen a real
-  // response, accept the legacy `{list: [...]}` nest as a fallback.
-  data?: CrewMemberWire[] | { list?: CrewMemberWire[] };
+  data?: CrewMemberWire[];
 }
 
 async function fetchCrewMembers(crewId: string): Promise<CrewMemberWire[]> {
@@ -67,10 +58,7 @@ async function fetchCrewMembers(crewId: string): Promise<CrewMemberWire[]> {
   if (res?.code !== 200) {
     throw new Error(res?.msg || "fetchCrewMembers: backend response invalid");
   }
-  const raw = res.data;
-  if (Array.isArray(raw)) return raw;
-  if (raw && typeof raw === "object" && Array.isArray(raw.list)) return raw.list;
-  return [];
+  return Array.isArray(res.data) ? res.data : [];
 }
 
 export function useCrewMembers(crewId: string) {
@@ -84,32 +72,30 @@ export function useCrewMembers(crewId: string) {
 // ─── Member mutations ─────────────────────────────────
 
 /**
- * Input shape for the add-member call. Backend's stated direction is
- * to merge the prior phone-only and email-only endpoints into one
- * that accepts `contact` (auto-detected as phone or email server-side)
- * — see the conversation thread on 2026-05-08. Until backend confirms
- * the final shape, this is the best-guess contract:
+ * Input shape for the add-member call.
  *
- *   POST /project/crew/member/add
+ * Backend ships this as a unified endpoint with **separate** `email`
+ * and `phone` fields (not the `contact` auto-detect we'd hoped for):
+ *
+ *   POST /project/crew/add/members
  *   {
  *     "crewId": 3,
- *     "contact": "13800138000" | "user@example.com",
- *     "role": 1,
- *     "remark": "..." | optional
+ *     "email": "user@example.com",   ← only present when adding by email
+ *     "phone": "13800138000",        ← only present when adding by phone
+ *     "remark": "...",
+ *     "role": 1
  *   }
  *
- * **TODO(crew-phase-1)**: when backend ships, verify and update:
- *   - the URL path (currently `/project/crew/member/add`)
- *   - the field names (especially `contact` — backend may settle on
- *     `phone`, `account`, or two fields)
- *   - the response wrapper / data shape
+ * The dialog still asks for one input ("phone or email") — this hook
+ * detects which kind the user typed (`@` = email, otherwise phone)
+ * and **omits the other field entirely** (per backend's request — they
+ * don't want empty strings, they want the field absent).
  *
- * The hook signature stays stable — call sites pass `{ contact, role,
- * remark }`, so only this file changes when backend lands.
+ * Response is `{code: 200, msg: "成功"}` (no `data` payload).
  */
 export interface AddCrewMemberInput {
   crewId: string;
-  /** Phone number or email — backend auto-detects which. */
+  /** Phone number or email — frontend splits on `@`. */
   contact: string;
   /** Project role id from `GET /project/role/list`. */
   role: number;
@@ -120,21 +106,23 @@ export interface AddCrewMemberInput {
 interface AddCrewMemberEnvelope {
   code?: number;
   msg?: string;
-  data?: unknown;
 }
 
 async function addCrewMember(input: AddCrewMemberInput): Promise<void> {
-  // TODO(crew-phase-1): swap path + body field names per final backend
-  // spec. Until then we best-guess against the swagger we last saw
-  // (`addCrewMemberByPhone`) and the conversation note that phone +
-  // email will merge into one endpoint.
-  const res = await api.post<AddCrewMemberEnvelope>("/project/crew/member/add", {
-    data: {
-      crewId: Number(input.crewId),
-      contact: input.contact.trim(),
-      role: input.role,
-      remark: input.remark?.trim() ?? "",
-    },
+  const trimmedContact = input.contact.trim();
+  const isEmail = trimmedContact.includes("@");
+  const payload: Record<string, unknown> = {
+    crewId: Number(input.crewId),
+    role: input.role,
+    remark: input.remark?.trim() ?? "",
+  };
+  // Send exactly one of email / phone — never both, never empty.
+  // Backend explicitly does not want the unused field as `""`.
+  if (isEmail) payload.email = trimmedContact;
+  else payload.phone = trimmedContact;
+
+  const res = await api.post<AddCrewMemberEnvelope>("/project/crew/add/members", {
+    data: payload,
     raw: true,
   });
   if (res?.code !== 200) {

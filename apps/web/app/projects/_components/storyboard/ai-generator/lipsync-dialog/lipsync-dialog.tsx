@@ -15,6 +15,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
@@ -33,6 +42,7 @@ import {
   parseMediaResultPath,
   toAudioHistoryItem,
   buildVideoHistory,
+  formatErrorDetail,
   type AiLipSyncGeneratorDialogProps,
   type AudioResultItem,
   type VideoResultItem,
@@ -80,6 +90,11 @@ export function AiLipSyncGeneratorDialog({
   const [currentPreviewPath, setCurrentPreviewPath] = useState("");
   const [playingAudioPath, setPlayingAudioPath] = useState("");
   const [playingVoiceId, setPlayingVoiceId] = useState("");
+  // Error message displayed by the shadcn AlertDialog at the bottom of
+  // the lipsync dialog. `null` keeps the alert closed; a string opens it.
+  // Both audio and video panels lift their "View error" clicks here so
+  // we render exactly one AlertDialog instance instead of one per card.
+  const [errorAlertMessage, setErrorAlertMessage] = useState<string | null>(null);
   const [loadingVideoHistory, setLoadingVideoHistory] = useState(false);
   const [loadingAudioHistory, setLoadingAudioHistory] = useState(false);
   const [loadingLipSyncModels, setLoadingLipSyncModels] = useState(false);
@@ -139,6 +154,10 @@ export function AiLipSyncGeneratorDialog({
           path,
           name: path ? `LipSync_${task.createdAt}` : undefined,
           status,
+          // Propagate backend failure detail off the Redux task. When the
+          // queue processor caught an error it stashed the message in
+          // `task.error`; the failed card surfaces it via "View error".
+          errorMessage: status === "failed" ? task.error : undefined,
         };
       }),
     [lipSyncTasks]
@@ -630,8 +649,11 @@ export function AiLipSyncGeneratorDialog({
       toast.success(tc("generateSuccess"));
     } catch (error) {
       console.error("[AiLipSyncGeneratorDialog] 生成音频失败:", error);
+      const detail = formatErrorDetail(error);
       setAudioQueue((current) =>
-        current.map((item) => (item.id === queueId ? { ...item, status: "failed" } : item))
+        current.map((item) =>
+          item.id === queueId ? { ...item, status: "failed", errorMessage: detail } : item
+        )
       );
       toast.error(tc("generateFailed"));
     }
@@ -663,8 +685,11 @@ export function AiLipSyncGeneratorDialog({
       toast.success(tc("generateSuccess"));
     } catch (error) {
       console.error("[AiLipSyncGeneratorDialog] 重试音频失败:", error);
+      const detail = formatErrorDetail(error);
       setAudioQueue((current) =>
-        current.map((q) => (q.id === item.id ? { ...q, status: "failed" } : q))
+        current.map((q) =>
+          q.id === item.id ? { ...q, status: "failed", errorMessage: detail } : q
+        )
       );
       toast.error(tc("generateFailed"));
     }
@@ -747,6 +772,7 @@ export function AiLipSyncGeneratorDialog({
                 onSelectAudio={setReferenceAudio}
                 onGenerateAudio={() => void handleGenerateAudio()}
                 onRetryAudio={(item) => void handleRetryAudio(item)}
+                onShowError={setErrorAlertMessage}
                 // Queue-based: a submit is ~instant. Keep the button
                 // clickable so the user can keep queueing more batches
                 // without waiting for in-flight tasks to drain.
@@ -779,6 +805,7 @@ export function AiLipSyncGeneratorDialog({
                 onGenerateVideo={() => void handleGenerateVideo()}
                 onRetryVideo={(item) => void handleRetryVideo(item)}
                 onOpenPicker={setPickerTarget}
+                onShowError={setErrorAlertMessage}
                 // Same queue reasoning as above — Generate Lip Sync
                 // stays clickable; submission is a cheap Redux dispatch
                 // and the lip-sync queue caps concurrency itself.
@@ -812,6 +839,32 @@ export function AiLipSyncGeneratorDialog({
           setPickerTarget(null);
         }}
       />
+
+      {/* Backend-error display — opened by either panel via `onShowError`.
+          The message is rendered as a `<pre>` so newlines + JSON shape
+          from `formatErrorDetail()` survive intact. Closes via state
+          flip; AlertDialog's onOpenChange catches backdrop + Escape. */}
+      <AlertDialog
+        open={errorAlertMessage !== null}
+        onOpenChange={(next) => {
+          if (!next) setErrorAlertMessage(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("viewError")}</AlertDialogTitle>
+            <AlertDialogDescription className="sr-only">{t("viewError")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 font-mono text-xs leading-relaxed">
+            {errorAlertMessage}
+          </pre>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setErrorAlertMessage(null)}>
+              {tc("close")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

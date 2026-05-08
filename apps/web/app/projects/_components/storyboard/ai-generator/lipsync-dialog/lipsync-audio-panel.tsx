@@ -63,6 +63,10 @@ export interface LipsyncAudioPanelProps {
   onSelectAudio: (path: string) => void;
   onGenerateAudio: () => void;
   onRetryAudio: (item: AudioResultItem) => void;
+  /** Called when the user clicks "View error" on a failed card.
+   * Lifts the message up to the dialog so a single shadcn AlertDialog
+   * can render it (instead of native window.alert). */
+  onShowError: (message: string) => void;
   isGenerating: boolean;
   audioColumnId: string;
 }
@@ -106,6 +110,7 @@ export function LipsyncAudioPanel({
   onSelectAudio,
   onGenerateAudio,
   onRetryAudio,
+  onShowError,
   isGenerating,
   audioColumnId,
 }: LipsyncAudioPanelProps) {
@@ -175,6 +180,31 @@ export function LipsyncAudioPanel({
                           ? t("failedRetry")
                           : item.name || t("audioIndex", { index: index + 1 })}
                     </div>
+
+                    {/* "View error" link — surfaces the captured backend
+                        detail via the dialog-level shadcn AlertDialog.
+                        stopPropagation so the link doesn't trigger the
+                        parent button's retry. */}
+                    {item.status === "failed" && item.errorMessage ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onShowError(item.errorMessage!);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            onShowError(item.errorMessage!);
+                          }
+                        }}
+                        className="text-[11px] text-[#E52227] underline underline-offset-2 hover:opacity-80"
+                      >
+                        {t("viewError")}
+                      </span>
+                    ) : null}
 
                     {/* Selected badge */}
                     {selected ? (
