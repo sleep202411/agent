@@ -3,6 +3,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/src/lib/api";
 import { MOCK_OPEN_JOBS, crewKeys, delay } from "./shared";
 import type { CreateJobInput, OpenJob, UpdateJobInput } from "./types";
 
@@ -12,57 +13,57 @@ async function searchOpenJobs(filter: { roleName?: string } = {}): Promise<OpenJ
   return MOCK_OPEN_JOBS.filter((j) => j.roleName === filter.roleName);
 }
 
+/**
+ * Wire response for `POST /project/crew/job/create`. Backend surfaces
+ * the new job's id at the **envelope root** (not nested under `data`),
+ * captured 2026-05-08:
+ *
+ *   {"msg":"成功","code":200,"id":121}
+ *
+ * `data` is left optional in case backend later restructures.
+ */
 interface CreateCrewJobEnvelope {
   code?: number;
   msg?: string;
+  id?: number | string;
   data?: { id?: number | string } | null;
 }
 
 /**
  * Create a recruitment job under a crew.
  *
- * Backend signature today: query params on POST. Same consistency
- * issue we flagged on `addCrewMember`, with extra concern for
- * `jobDescription` running into URL-length limits — we've asked
- * backend to migrate to JSON body. Until they do, build the URL.
+ * Endpoint: `POST /project/crew/job/create` (createCrewJob).
  *
- * **TODO(crew-phase-1)** — verify with backend:
- *   1. query → JSON body migration (matches createCrew)
- *   2. `projectId` field semantics (we send crewId here; confirm it
- *      really is the crew id and not an IP project id)
- *   3. whether `jobName` is required or denormalized server-side from
- *      the chosen `roleId` (we send both today)
+ * Body (JSON, application/json):
+ *
+ *   { jobDescription, jobName, jobNumber, projectId, roleId }
+ *
+ * `projectId` is the crew id (created via `/project/crew/create`) —
+ * backend reuses the project entity for crews so the field name reads
+ * as "project" but carries the crew id.
+ *
+ * `jobName` is required alongside `roleId` — backend doesn't denormalise
+ * the role name itself, so the dialog passes the selected role's
+ * display label as `jobName` to keep the wire payload self-describing.
  */
 async function createJob(input: CreateJobInput): Promise<{ id: number }> {
-  const qs = new URLSearchParams({
-    projectId: String(input.crewId),
-    roleId: String(input.roleId),
-    jobName: input.jobName,
-    jobDescription: input.jobDescription,
-    jobNumber: String(input.jobNumber),
+  const res = await api.post<CreateCrewJobEnvelope>("/project/crew/job/create", {
+    data: {
+      projectId: Number(input.crewId),
+      roleId: input.roleId,
+      jobName: input.jobName,
+      jobDescription: input.jobDescription,
+      jobNumber: input.jobNumber,
+    },
+    raw: true,
   });
-  const res = await fetch(`/project/crew/job/create?${qs.toString()}`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) {
-    throw new Error(`createCrewJob: HTTP ${res.status}`);
+  if (res?.code !== 200) {
+    throw new Error(res?.msg || "createCrewJob: backend response invalid");
   }
-  let body: CreateCrewJobEnvelope = {};
-  try {
-    body = (await res.json()) as CreateCrewJobEnvelope;
-  } catch {
-    // Some create endpoints return empty body on success; if the HTTP
-    // status is OK, treat as success even without a parseable body.
-    return { id: 0 };
-  }
-  if (body.code !== 200) {
-    throw new Error(body.msg || "createCrewJob: backend response invalid");
-  }
-  // Some Java endpoints return the new id at envelope-level alongside
-  // `data`, others nest; accept either and fall back to 0 if neither
-  // is present (not all callers need the id).
-  const rawId = body.data?.id;
+  // Backend currently returns the new id at envelope root (`res.id`).
+  // Fall back to `res.data?.id` if backend ever restructures, then
+  // 0 as a last resort (callers can ignore missing ids).
+  const rawId = res.id ?? res.data?.id;
   return { id: rawId == null ? 0 : Number(rawId) };
 }
 
