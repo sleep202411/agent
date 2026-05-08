@@ -203,6 +203,27 @@
   }
 }
 
+/*
+ * Studio CTA inner-orb breath — used by `components/layout/global-nav.tsx`.
+ * The blurred red disc behind the glass surface scales+brightens on a 2.6s
+ * cycle so the button reads as "live, waiting for you" instead of static.
+ * Cycle length tuned slightly slower than a human resting-breath beat so it
+ * registers as a presence cue without inducing anxiety. `group-hover:animate-none`
+ * on the consuming span kills the animation while hover-state takes over the
+ * transform — keyframe + hover transition would otherwise fight each other.
+ */
+@keyframes studio-breath {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.85;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
