@@ -92,13 +92,17 @@ export default function CrewsPage() {
                 </span>
               ))}
             </div>
-            {/* Hero CTA — opens the create-crew dialog. Sits below the
-                stats line so users see "what this surface is" before
-                "what they can do here". */}
-            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            {/* Hero CTA temporarily hidden 2026-05-08 ahead of a
+                deployment cut — backend hasn't shipped the full crew
+                CRUD yet (update / delete / "my crews" list), so the
+                creation entry is being held back to avoid users making
+                crews they can't manage. Re-enable by un-commenting the
+                Button below; the dialog itself stays mounted and
+                wired so re-enabling is a one-line change. */}
+            {/* <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
               <IconPlus className="size-4" />
               {tCrew("createStudio")}
-            </Button>
+            </Button> */}
           </div>
         </div>
       </div>

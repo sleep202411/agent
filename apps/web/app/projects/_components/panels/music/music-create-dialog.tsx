@@ -76,8 +76,12 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
   };
 
   const handleGenerate = async () => {
-    if (!formData.prompt.trim()) {
-      toast.warning(t("musicDescriptionPlaceholder"));
+    // Title is required (it's how the user later finds the track in
+    // the music panel list); lyrics are optional — the model is happy
+    // to invent them from the title + tags when the user leaves the
+    // textarea blank.
+    if (!formData.title.trim()) {
+      toast.warning(t("musicTitleRequired"));
       return;
     }
 
@@ -116,7 +120,7 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
         <div className="p-4">
           <FieldGroup>
             <Field>
-              <FieldLabel>{t("musicTitle")}</FieldLabel>
+              <FieldLabel required>{t("musicTitle")}</FieldLabel>
               <Input
                 value={formData.title}
                 onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
@@ -125,11 +129,11 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
             </Field>
 
             <Field>
-              <FieldLabel required>{t("musicDescription")}</FieldLabel>
+              <FieldLabel>{t("musicLyrics")}</FieldLabel>
               <Textarea
                 value={formData.prompt}
                 onChange={(e) => setFormData((prev) => ({ ...prev, prompt: e.target.value }))}
-                placeholder={t("musicDescriptionPlaceholder")}
+                placeholder={t("musicLyricsPlaceholder")}
                 rows={4}
               />
             </Field>
