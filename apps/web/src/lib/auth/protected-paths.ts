@@ -31,6 +31,7 @@ const PUBLIC_PATTERNS: RegExp[] = [
   /^\/courses(\/|$)/,
   /^\/news(\/|$)/,
   /^\/invite(\/|$)/,
+  /^\/ips(\/|$)/,
   // Legal pages.
   /^\/privacy-policy(\/|$)/,
   /^\/terms-of-service(\/|$)/,
