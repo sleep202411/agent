@@ -92,7 +92,6 @@ export function GlobalNav() {
     { href: "/ips", label: t("ipPlaza") },
     { href: "/crews", label: t("studioHall") },
     { href: "/creators", label: t("creators") },
-    { href: "/art-studio", label: t("studio"), Icon: IconWand },
     // Legacy uni-app route — flip to "/courses" once the native page in
     // app/(site)/courses/ ships per its README migration plan.
     {
@@ -103,6 +102,18 @@ export function GlobalNav() {
     },
     { href: "/news", label: t("news"), Icon: IconNews },
   ];
+
+  // The Studio entry lives outside the regular nav array so the right
+  // cluster can render it as a liquid-glass CTA — the brand-forward
+  // primary action on the page, distinct from the text-link directory
+  // items above. `requiresAuth: true` keeps logged-out clicks routed
+  // through /login?redirect= like the others.
+  const studioItem = {
+    href: "/art-studio",
+    label: t("studio"),
+    Icon: IconWand,
+    requiresAuth: true,
+  };
 
   const onNavClick = (e: React.MouseEvent<HTMLAnchorElement>, item: (typeof navItems)[number]) => {
     if (!item.requiresAuth) return;
@@ -146,7 +157,7 @@ export function GlobalNav() {
           : "border-b border-transparent bg-transparent"
       )}
     >
-      <div className="mx-auto flex h-16 max-w-450 items-center gap-4 px-6">
+      <div className="mx-auto flex h-16 max-w-450 items-center gap-0 px-6">
         {/* Logo */}
         <Link href="/" className="flex shrink-0 items-center">
           <img src="/logo.png" alt="FizzDragon" className="h-6 w-auto object-contain" />
@@ -229,6 +240,66 @@ export function GlobalNav() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          {/* Studio liquid-glass CTA — brand-red forward, the visual anchor of
+              the right cluster. Three layers stack to balance "glass" + "red":
+              - layer 0 (Link surface): warm-tinted translucent gradient + red
+                rim border + heavy backdrop-blur. The glass plane.
+              - layer 1 (red orb span): an absolute-positioned blurred red disc
+                glowing through from underneath. This is what makes the red
+                feel like it's *inside* the glass, not painted on top.
+              - layer 2 (sheen sweep): on hover, a diagonal white highlight
+                wipes across, the premium-feel finish.
+              Outer box-shadow stack adds a tight 1px brand ring + a wide
+              soft red glow (the "ember" radiating into the page chrome).
+           */}
+          <Link
+            href={localizePath(studioItem.href, locale as Locale)}
+            onClick={(e) => onNavClick(e, studioItem)}
+            className={cn(
+              "mr-4 group relative ml-2 inline-flex h-9 items-center gap-1.5 overflow-hidden rounded-full px-4 text-sm font-medium",
+              // Glass body — warm-tinted (top-left blush, bottom-right ember)
+              // so red bleeds through the surface instead of just orbiting it.
+              "bg-linear-to-br from-[rgba(255,200,200,0.28)] via-white/8 to-[rgba(229,34,39,0.18)]",
+              "dark:from-[rgba(255,140,140,0.18)] dark:via-white/4 dark:to-[rgba(229,34,39,0.22)]",
+              "backdrop-blur-xl backdrop-saturate-150",
+              // Red-tinted rim (replaces white border) — subtle in light, more
+              // pronounced in dark where contrast against bg-popover demands it.
+              "border border-[rgba(229,34,39,0.45)] dark:border-[rgba(255,90,90,0.45)]",
+              // Outer shadow stack: 1px brand ring + soft red bloom + inset
+              // top-edge gloss for the glass rim. Two-layer red (tight ring
+              // + wide spread) reads as "this thing is glowing", not "this
+              // thing has a drop shadow".
+              "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55),0_0_0_1px_rgba(229,34,39,0.25),0_6px_24px_-4px_rgba(229,34,39,0.55),0_2px_8px_-2px_rgba(229,34,39,0.4)]",
+              "dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.3),0_0_0_1px_rgba(229,34,39,0.3),0_6px_28px_-4px_rgba(229,34,39,0.7),0_2px_10px_-2px_rgba(229,34,39,0.5)]",
+              "text-foreground",
+              "transition-all duration-300 ease-out",
+              // Hover pumps both inner gradient (more red) and outer bloom.
+              "hover:from-[rgba(255,200,200,0.4)] hover:via-white/12 hover:to-[rgba(229,34,39,0.3)]",
+              "hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.65),0_0_0_1px_rgba(229,34,39,0.45),0_8px_32px_-4px_rgba(229,34,39,0.75),0_4px_14px_-2px_rgba(229,34,39,0.55)]",
+              "dark:hover:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.4),0_0_0_1px_rgba(229,34,39,0.5),0_8px_36px_-4px_rgba(229,34,39,0.9),0_4px_16px_-2px_rgba(229,34,39,0.65)]",
+              "hover:-translate-y-px active:translate-y-0",
+              isActive(studioItem.href) && "ring-1 ring-primary/60"
+            )}
+            aria-label={studioItem.label}
+          >
+            {/* Inner red orb — blurred disc sitting behind the glass surface.
+                Breathes on a 2.6s loop (see `@keyframes studio-breath`) so the
+                button reads as live. On hover, the keyframe is killed
+                (`group-hover:animate-none`) and the transition takes over to
+                pump scale+brightness — a single source of motion at any time. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -right-2 -bottom-2 h-8 w-8 rounded-full bg-primary/50 blur-md animate-[studio-breath_2.6s_ease-in-out_infinite] transition-all duration-500 group-hover:scale-150 group-hover:bg-primary/70 group-hover:animate-none"
+            />
+            {/* Sheen sweep — diagonal white highlight that wipes across on hover. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-linear-to-r from-transparent via-white/45 to-transparent opacity-0 transition-all duration-700 ease-out group-hover:left-[150%] group-hover:opacity-100 dark:via-white/30"
+            />
+            <studioItem.Icon className="relative size-4 text-primary drop-shadow-[0_0_4px_rgba(229,34,39,0.6)] transition-transform duration-300 group-hover:rotate-[-8deg] group-hover:scale-110" />
+            <span className="relative tracking-wide">{studioItem.label}</span>
+          </Link>
+
           {user ? (
             <SiteUserMenu />
           ) : (
@@ -260,6 +331,37 @@ export function GlobalNav() {
       {mobileOpen && (
         <div className="border-t border-white/5 bg-popover text-popover-foreground lg:hidden">
           <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3">
+            {/* Studio CTA — hero entry, same red-forward liquid-glass treatment
+                as the desktop right cluster, sized up for thumb reach. */}
+            <Link
+              href={localizePath(studioItem.href, locale as Locale)}
+              onClick={(e) => {
+                onNavClick(e, studioItem);
+                setMobileOpen(false);
+              }}
+              className={cn(
+                "group relative mb-2 inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl px-5 text-base font-semibold",
+                "bg-linear-to-br from-[rgba(255,200,200,0.28)] via-white/8 to-[rgba(229,34,39,0.18)]",
+                "dark:from-[rgba(255,140,140,0.18)] dark:via-white/4 dark:to-[rgba(229,34,39,0.22)]",
+                "backdrop-blur-xl backdrop-saturate-150",
+                "border border-[rgba(229,34,39,0.45)] dark:border-[rgba(255,90,90,0.45)]",
+                "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55),0_0_0_1px_rgba(229,34,39,0.25),0_8px_28px_-4px_rgba(229,34,39,0.6),0_2px_10px_-2px_rgba(229,34,39,0.45)]",
+                "dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.3),0_0_0_1px_rgba(229,34,39,0.3),0_8px_32px_-4px_rgba(229,34,39,0.75),0_2px_12px_-2px_rgba(229,34,39,0.55)]",
+                "text-foreground transition-all duration-300 ease-out active:scale-[0.98]"
+              )}
+            >
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -right-3 -bottom-3 h-12 w-12 rounded-full bg-primary/50 blur-lg animate-[studio-breath_2.6s_ease-in-out_infinite]"
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-linear-to-r from-transparent via-white/45 to-transparent opacity-0 transition-all duration-700 ease-out group-hover:left-[150%] group-hover:opacity-100 dark:via-white/30"
+              />
+              <studioItem.Icon className="relative size-5 text-primary drop-shadow-[0_0_4px_rgba(229,34,39,0.6)]" />
+              <span className="relative tracking-wide">{studioItem.label}</span>
+            </Link>
+
             {navItems.map((item) => {
               const { href, label, Icon } = item;
               const target = href.startsWith("/pages/")

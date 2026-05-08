@@ -44,7 +44,7 @@ export function Hero() {
   // Already-signed-in visitors landing here from a refresh / back-nav
   // shouldn't be bounced to /login. Send them straight into the
   // platform's main work surface; logged-out users still get /login.
-  const primaryCtaHref = localizePath(user ? "/art-studio/projects" : "/login", locale);
+  const primaryCtaHref = localizePath(user ? "/art-studio" : "/login", locale);
 
   // Pick the video on mount only — server-rendered HTML omits `src` so
   // the SSR/CSR markup stays identical (no hydration mismatch). The
