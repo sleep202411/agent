@@ -40,7 +40,6 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { worldKeys } from "@/src/hooks/use-worlds";
 import { useSparkAnalyze } from "@/app/(site)/ips/_hooks/use-spark";
-import { saveProduceSeed } from "@/app/projects/[id]/produce/_hooks/use-produce-seed";
 
 /** Payload returned by `/api/user/world/create/quick/worldproduct`. */
 type CreateQuickWorldResult = {
@@ -247,51 +246,20 @@ export function CreateWorldDialog({
       onOpenChange(false);
 
       if (result?.projectId && result?.worldId) {
-        // Branch on whether the user uploaded source material:
-        //   - With file → save the spark snapshot to sessionStorage
-        //     and land in the production pipeline (/produce). The
-        //     wizard's Step 1 reads the seed and renders pre-filled.
-        //   - Without file → there's nothing for the pipeline to
-        //     seed from, so we keep the legacy behaviour and drop
-        //     the user into the studio chat (/projects/[id]) where
-        //     they can describe what they want freeform.
-        if (sourceFile) {
-          const seedPayload = {
-            worldId: result.worldId,
-            worldName: name.trim(),
-            description: description.trim(),
-            tags,
-            episodeCount: insights.episodeCount,
-            runtimeMinutes: insights.runtimeMinutes,
-            language: insights.language,
-            roleCount: insights.roleCount,
-            sceneCount: insights.sceneCount,
-            propCount: insights.propCount,
-            sourceFile: {
-              name: sourceFile.name,
-              size: sourceFile.size,
-              mimeType: sourceFile.mimeType,
-              path: sourceFile.path,
-              textRef: insights.textRef,
-              chars: insights.sourceChars,
-              excerpt: insights.sourceExcerpt,
-            },
-            createdAt: Date.now(),
-          };
-          // One-shot hand-off — `useProducePipeline`'s mount effect
-          // calls `consumeProduceSeed`, which reads + immediately
-          // deletes this entry. Refresh / new tab from then on shows
-          // the upload card instead of auto-firing a stale run.
-          saveProduceSeed(result.projectId, seedPayload);
-          router.push(localizePath(`/projects/${result.projectId}/produce`, getCurrentLocale()));
-        } else {
-          router.push(
-            localizePath(
-              `/projects/${result.projectId}?worldId=${result.worldId}`,
-              getCurrentLocale()
-            )
-          );
-        }
+        // Always land in the studio chat (`/projects/[id]`), regardless
+        // of whether the user attached source material. The 一键成片
+        // pipeline (`/produce`) is intentionally **not reachable from
+        // this entry point right now** — even with a file uploaded, we
+        // keep the user in the freeform chat surface where they can
+        // describe what they want and let the supervisor route from
+        // there. Re-enable the `/produce` branch once that pipeline is
+        // ready for end-users again.
+        router.push(
+          localizePath(
+            `/projects/${result.projectId}?worldId=${result.worldId}`,
+            getCurrentLocale()
+          )
+        );
         onCreated?.(result);
       }
     } catch (err) {
@@ -524,12 +492,12 @@ export function CreateWorldDialog({
             disabled={submitting || sourceUploading || sparkAnalyze.isPending}
           >
             {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-            {/* When the user uploaded a brief, handleSubmit lands them
-                in the /produce wizard (1-click pipeline); label the
-                button "一键成片" so the destination matches the words.
-                Without a file, fall back to the generic Studio entry
-                label. */}
-            {sourceFile ? tw("createWorldSubmitOneClick") : tw("createWorldSubmit")}
+            {/* Always the generic Studio entry label — the file-aware
+                "一键成片" variant is suppressed for now because the
+                `/produce` pipeline isn't reachable from this dialog
+                (see handleSubmit above). Reinstate the conditional
+                when /produce is wired back in. */}
+            {tw("createWorldSubmit")}
           </Button>
         </DialogFooter>
       </DialogContent>
