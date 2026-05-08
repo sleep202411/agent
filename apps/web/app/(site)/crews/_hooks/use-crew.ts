@@ -79,7 +79,14 @@ export {
 } from "./use-applications";
 
 // ─── Members ───────────────────────────────────────────
-export { useInviteMember, useRemoveMember } from "./use-members";
+export {
+  useCrewMembers,
+  useAddCrewMember,
+  useInviteMember,
+  useRemoveMember,
+  type AddCrewMemberInput,
+  type CrewMemberWire,
+} from "./use-members";
 
 // ─── Workspace ─────────────────────────────────────────
 export {

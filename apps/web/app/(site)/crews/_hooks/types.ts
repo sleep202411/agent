@@ -78,18 +78,41 @@ export interface UpdateCrewInput extends Partial<CreateCrewInput> {
   id: string;
 }
 
+/**
+ * Wire-shape for `POST /project/crew/job/create` (createCrewJob).
+ *
+ * Backend takes the fields below as **query params** today
+ * (consistency-flagged TODO; same migration we're asking for as the
+ * earlier add-member call). The mapping is:
+ *
+ *   crewId         (frontend) → projectId (wire)  — phase-1 backend
+ *                                                   reuses the project
+ *                                                   schema for crews
+ *   roleId         (frontend) → roleId    (wire)  — id from
+ *                                                   /project/role/list
+ *   jobName        (frontend) → jobName   (wire)  — display label;
+ *                                                   defaults to the
+ *                                                   selected role's name
+ *   jobDescription (frontend) → jobDescription    — recruiter copy
+ *   jobNumber      (frontend) → jobNumber         — headcount
+ *
+ * **TODO(crew-phase-1)**: when backend ships query → JSON body and
+ * confirms whether `jobName` should be denormalized or omitted, update
+ * this type + the mutationFn body in `use-jobs.ts`.
+ */
 export interface CreateJobInput {
+  /** Crew id (created via /project/crew/create). Sent as `projectId` on
+   *  the wire because backend reuses the project entity for crews. */
   crewId: string;
-  roleName: string;
-  budget: string;
-  /** Display string ("2 weeks") or ISO duration. */
-  period?: string;
-  deadline: string;
-  skills?: string[];
-  /** Optional headcount; backend defaults to 1. */
-  count?: number;
-  /** Free-form description of what the role delivers. */
-  deliverable?: string;
+  /** Role id from `/project/role/list`. Required. */
+  roleId: number;
+  /** Display label for the job. Phase-1 frontend uses the role's name
+   *  by default; explicit override comes later if backend wants it. */
+  jobName: string;
+  /** Recruiter-authored description of the role. Required. */
+  jobDescription: string;
+  /** Headcount to recruit. Required, ≥ 1. */
+  jobNumber: number;
 }
 
 export interface UpdateJobInput extends Partial<CreateJobInput> {
