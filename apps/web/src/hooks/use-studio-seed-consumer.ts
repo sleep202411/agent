@@ -19,10 +19,10 @@ import { useStudioSeed } from "./use-studio-seed";
  * Maps the studio composer's chip selection to the legacy assistantSlice
  * agent type. "episode" and "prop" have no dedicated agent — we fall back
  * to "general" which is the catch-all persona that can still reason about
- * those domains. Post-v3-merge this mapping can route to dedicated
- * ask_episode_planner / future prop designer instead.
+ * those domains. Null (no chip selected) also returns "general" so the
+ * supervisor routes freely without a pinned persona.
  */
-function mapSeedAgent(agent: StudioAgent): AssistantAgentType {
+function mapSeedAgent(agent: StudioAgent | null): AssistantAgentType {
   switch (agent) {
     case "character":
       return "character";
@@ -37,14 +37,12 @@ function mapSeedAgent(agent: StudioAgent): AssistantAgentType {
 
 /**
  * Maps the studio composer's chip selection to the forced-persona wire
- * key consumed by the supervisor. This is the same Redux field the
- * in-chat ForcePersonaPills writes to, so a pill click in the studio
- * composer behaves identically to clicking it after the chat opens —
- * the first user message gets `metadata.forcedPersona` stamped, and
- * the supervisor dispatches directly to the matching `ask_*` tool
- * instead of routing through the general persona.
+ * key consumed by the supervisor. Returns null when no chip is selected
+ * so the workspace skips the forced-persona dispatch entirely — that's
+ * the path that lets a casual "你好" reach the supervisor unprefixed,
+ * avoiding the "角色设计师 / 你好" hard-route into character_designer.
  */
-function mapSeedAgentToForcedPersona(agent: StudioAgent): ForcedPersonaKey {
+function mapSeedAgentToForcedPersona(agent: StudioAgent | null): ForcedPersonaKey | null {
   switch (agent) {
     case "character":
       return "character_designer";
@@ -54,6 +52,8 @@ function mapSeedAgentToForcedPersona(agent: StudioAgent): ForcedPersonaKey {
       return "prop_designer";
     case "episode":
       return "episode_planner";
+    default:
+      return null;
   }
 }
 
@@ -115,9 +115,13 @@ export function useStudioSeedConsumer(projectId: string | null | undefined): {
     }
 
     dispatch(setAgentType({ projectId, agentType: mapSeedAgent(seed.agent) }));
-    dispatch(
-      setForcedPersona({ projectId, forcedPersona: mapSeedAgentToForcedPersona(seed.agent) })
-    );
+    // Only pin a forced persona when the user explicitly picked a chip.
+    // Null = freeform prompt → leave forcedPersona alone so the
+    // supervisor routes by content, not by a default fallback.
+    const forced = mapSeedAgentToForcedPersona(seed.agent);
+    if (forced) {
+      dispatch(setForcedPersona({ projectId, forcedPersona: forced }));
+    }
     dispatch(setDraft({ projectId, draft: seed.prompt }));
 
     // Defer one tick so the slice updates land before the thunk reads state.

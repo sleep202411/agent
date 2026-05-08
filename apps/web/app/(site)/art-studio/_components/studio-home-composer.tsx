@@ -215,9 +215,12 @@ export function StudioHomeComposer() {
       // iframe; now that everything is same-origin Next.js, the storage
       // hop is enough.
       const seed: StudioSeed = {
-        // Pin pill choice; fall back to "character" so the seed shape
-        // stays valid when no pill is selected (matches old default).
-        agent: agent ?? "character",
+        // Honour the user's explicit choice: a null agent means the
+        // user didn't pin a persona, so the workspace will let the
+        // supervisor route freely instead of forcing character_designer
+        // (the previous default that prefixed every casual prompt with
+        // "角色设计师 / ").
+        agent: agent,
         prompt: prompt.trim(),
         attachment: scriptAttachment ?? undefined,
       };
