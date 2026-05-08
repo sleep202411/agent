@@ -1,5 +1,6 @@
 import type { AssetRecord, VoiceOptionItem } from "@/src/types/workspace";
 import type { ShotRow, ShotValue } from "@/src/store/slices/projectSlice";
+import { ApiRequestError } from "@/src/lib/api";
 import { env } from "@/src/env";
 
 // ─── Constants ─────────────────────────────────────────
@@ -16,6 +17,10 @@ export interface AudioResultItem {
   path: string;
   name?: string;
   status?: QueueStatus;
+  /** Raw backend error detail when status === "failed" — surfaced via the
+   * "View error" link on failed cards so users can read the actual
+   * upstream response instead of a generic "generation failed" toast. */
+  errorMessage?: string;
 }
 
 export interface VideoResultItem {
@@ -23,6 +28,30 @@ export interface VideoResultItem {
   path: string;
   name?: string;
   status?: QueueStatus;
+  errorMessage?: string;
+}
+
+/**
+ * Stringify any caught error into something human-readable for the
+ * "View error" alert. Preserves backend response body when the api-client
+ * threw an `ApiRequestError` (HTTP status + raw body), falls back to
+ * `error.message` for thrown Errors and `JSON.stringify` for plain
+ * objects. Used by every failure path that wants to retain wire detail
+ * past the generic toast.
+ */
+export function formatErrorDetail(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    const header = `HTTP ${error.status} (code: ${error.code})`;
+    const body = error.responseBody?.trim() || error.message || "";
+    return body ? `${header}\n\n${body}` : header;
+  }
+  if (error instanceof Error) return error.message || error.name || "Unknown error";
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error, null, 2);
+  } catch {
+    return String(error);
+  }
 }
 
 export interface AiLipSyncGeneratorDialogProps {

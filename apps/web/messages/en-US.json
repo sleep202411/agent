@@ -1464,6 +1464,7 @@
     "noAudio": "No audio",
     "loadingAudio": "Loading audio...",
     "failedRetry": "Failed, click to retry",
+    "viewError": "View error",
     "audioIndex": "Audio {index}",
     "narrationPlaceholder": "Enter narration text...",
     "voiceModel": "Voice Model",
