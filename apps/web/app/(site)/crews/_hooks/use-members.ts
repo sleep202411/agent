@@ -84,32 +84,30 @@ export function useCrewMembers(crewId: string) {
 // ─── Member mutations ─────────────────────────────────
 
 /**
- * Input shape for the add-member call. Backend's stated direction is
- * to merge the prior phone-only and email-only endpoints into one
- * that accepts `contact` (auto-detected as phone or email server-side)
- * — see the conversation thread on 2026-05-08. Until backend confirms
- * the final shape, this is the best-guess contract:
+ * Input shape for the add-member call.
  *
- *   POST /project/crew/member/add
+ * Backend ships this as a unified endpoint with **separate** `email`
+ * and `phone` fields (not the `contact` auto-detect we'd hoped for):
+ *
+ *   POST /project/crew/add/members
  *   {
  *     "crewId": 3,
- *     "contact": "13800138000" | "user@example.com",
- *     "role": 1,
- *     "remark": "..." | optional
+ *     "email": "user@example.com",   ← only present when adding by email
+ *     "phone": "13800138000",        ← only present when adding by phone
+ *     "remark": "...",
+ *     "role": 1
  *   }
  *
- * **TODO(crew-phase-1)**: when backend ships, verify and update:
- *   - the URL path (currently `/project/crew/member/add`)
- *   - the field names (especially `contact` — backend may settle on
- *     `phone`, `account`, or two fields)
- *   - the response wrapper / data shape
+ * The dialog still asks for one input ("phone or email") — this hook
+ * detects which kind the user typed (`@` = email, otherwise phone)
+ * and **omits the other field entirely** (per backend's request — they
+ * don't want empty strings, they want the field absent).
  *
- * The hook signature stays stable — call sites pass `{ contact, role,
- * remark }`, so only this file changes when backend lands.
+ * Response is `{code: 200, msg: "成功"}` (no `data` payload).
  */
 export interface AddCrewMemberInput {
   crewId: string;
-  /** Phone number or email — backend auto-detects which. */
+  /** Phone number or email — frontend splits on `@`. */
   contact: string;
   /** Project role id from `GET /project/role/list`. */
   role: number;
@@ -120,21 +118,23 @@ export interface AddCrewMemberInput {
 interface AddCrewMemberEnvelope {
   code?: number;
   msg?: string;
-  data?: unknown;
 }
 
 async function addCrewMember(input: AddCrewMemberInput): Promise<void> {
-  // TODO(crew-phase-1): swap path + body field names per final backend
-  // spec. Until then we best-guess against the swagger we last saw
-  // (`addCrewMemberByPhone`) and the conversation note that phone +
-  // email will merge into one endpoint.
-  const res = await api.post<AddCrewMemberEnvelope>("/project/crew/member/add", {
-    data: {
-      crewId: Number(input.crewId),
-      contact: input.contact.trim(),
-      role: input.role,
-      remark: input.remark?.trim() ?? "",
-    },
+  const trimmedContact = input.contact.trim();
+  const isEmail = trimmedContact.includes("@");
+  const payload: Record<string, unknown> = {
+    crewId: Number(input.crewId),
+    role: input.role,
+    remark: input.remark?.trim() ?? "",
+  };
+  // Send exactly one of email / phone — never both, never empty.
+  // Backend explicitly does not want the unused field as `""`.
+  if (isEmail) payload.email = trimmedContact;
+  else payload.phone = trimmedContact;
+
+  const res = await api.post<AddCrewMemberEnvelope>("/project/crew/add/members", {
+    data: payload,
     raw: true,
   });
   if (res?.code !== 200) {
