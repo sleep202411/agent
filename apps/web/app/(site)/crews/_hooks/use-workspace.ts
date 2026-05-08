@@ -11,6 +11,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiRequestError, api } from "@/src/lib/api";
 import {
   ACTIVITY_LIST,
   CURRENT_EP_MEMBERS,
@@ -21,12 +22,55 @@ import {
   TODOS,
 } from "../_components/workspace-mock";
 import { STATUS_COLOR, STATUS_LABEL_KEY, crewKeys, delay } from "./shared";
+import type { CrewWire } from "./use-crew-detail";
 import type { EpMemberAction, EpMemberStatus, WorkspaceData } from "./types";
 
-async function fetchCrewWorkspace(_id: string): Promise<WorkspaceData> {
-  await delay(260);
+interface CrewEnvelope {
+  code?: number;
+  msg?: string;
+  data?: CrewWire;
+}
+
+/**
+ * Workspace aggregate fetch.
+ *
+ * Today the only endpoint backend has shipped is `GET /project/crew/detail/{id}`
+ * which returns the basic crew (name / description / banner / video).
+ * The page however needs richer state — current-episode members,
+ * roles progress, todos, activity, episodes, delivery records — none
+ * of which has a backing endpoint yet. So we hybrid-merge:
+ *
+ *   - studio header  ← real backend (CrewWire fields)
+ *   - everything else ← MOCK_* constants
+ *
+ * As backend ships each section's endpoint, swap that one read for a
+ * real fetch + drop the matching MOCK_* import.
+ */
+async function fetchCrewWorkspace(id: string): Promise<WorkspaceData | null> {
+  let crew: CrewWire | null = null;
+  try {
+    const res = await api.get<CrewEnvelope>(`/project/crew/detail/${id}`, { raw: true });
+    if (res?.code === 200 && res.data && res.data.id != null) {
+      crew = res.data;
+    }
+  } catch (err) {
+    if (err instanceof ApiRequestError && err.status === 404) {
+      // 404 → return null so the page can render its not-found state.
+      return null;
+    }
+    throw err;
+  }
+  if (!crew) return null;
+
   return {
-    studio: MOCK_WORKSPACE,
+    // Merge real crew fields into the prototype's WorkspaceStudio
+    // shape. Prototype-only fields (status string, type, tags,
+    // currentEpisode, totalEpisodes, …) keep their MOCK_WORKSPACE
+    // values until backend ships the corresponding endpoints.
+    studio: {
+      ...MOCK_WORKSPACE,
+      name: crew.name,
+    },
     currentEpMembers: CURRENT_EP_MEMBERS,
     rolesProgress: ROLES_PROGRESS,
     todos: TODOS,
