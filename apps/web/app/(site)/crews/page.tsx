@@ -7,14 +7,14 @@
  */
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IconMovie, IconUsers } from "@tabler/icons-react";
+import { IconMovie, IconPlus, IconUsers } from "@tabler/icons-react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { PLATFORM_STATS, useCrewLanding } from "@/app/(site)/crews/_hooks/use-crew";
 import {
   useProjectRoles,
@@ -22,6 +22,7 @@ import {
   type ProjectListItem,
   type ProjectRole,
 } from "@/app/(site)/crews/_hooks/use-projects";
+import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 
 const ALL_ROLE_ID = -1;
 
@@ -31,6 +32,7 @@ export default function CrewsPage() {
   const locale = useLocale() as Locale;
 
   const [activeRoleId, setActiveRoleId] = useState<number>(ALL_ROLE_ID);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: roles = [] } = useProjectRoles();
   const roleById = useMemo(() => {
@@ -83,16 +85,25 @@ export default function CrewsPage() {
             <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
               {tCrew("heroDesc")}
             </p>
-            <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
+            <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
               {(landing?.stats ?? PLATFORM_STATS).map((s) => (
                 <span key={s.labelKey}>
                   <strong className="text-foreground">{s.value}</strong> {tCrew(s.labelKey)}
                 </span>
               ))}
             </div>
+            {/* Hero CTA — opens the create-crew dialog. Sits below the
+                stats line so users see "what this surface is" before
+                "what they can do here". */}
+            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+              <IconPlus className="size-4" />
+              {tCrew("createStudio")}
+            </Button>
           </div>
         </div>
       </div>
+
+      <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
 
       {/* ── Browse ──────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-7xl px-6 pb-24 pt-8">

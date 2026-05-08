@@ -51,20 +51,27 @@ export interface JobApplicant {
 
 // ─── Crew + job mutations ──────────────────────────────
 
+/**
+ * Wire-shape for `POST /project/crew/create` (backend `createCrew`
+ * controller). Four fields, all under the "crew basic info" CRUD step
+ * of the phase-1 spec:
+ *
+ *   name        — required; crew display name
+ *   banner      — required; OSS storage path of the cover image
+ *   video       — optional; OSS storage path of the cover video
+ *   description — required; freeform description
+ *
+ * Backend also takes a fifth `ipId` field but the frontend does not
+ * surface it (crews are not bound to an IP at the user-facing layer);
+ * a 0 default would have to be sent if backend rejects missing fields.
+ * Per product 2026-05-08: `ipId` is intentionally excluded from this
+ * type so callers can't accidentally ship it.
+ */
 export interface CreateCrewInput {
   name: string;
-  ipName?: string;
-  description?: string;
-  /** Project category code, e.g. "basicAIDrama" / "premiumAd". */
-  projectType: string;
-  /** ISO date (YYYY-MM-DD). */
-  deadline?: string;
-  /** Free-form display string, e.g. "¥3k-8k". */
-  budgetRange?: string;
-  /** Initial production phase, e.g. "preProduction". */
-  startPhase: string;
-  /** Open roles to recruit. */
-  roles: { name: string; count: number }[];
+  banner: string;
+  video?: string;
+  description: string;
 }
 
 export interface UpdateCrewInput extends Partial<CreateCrewInput> {

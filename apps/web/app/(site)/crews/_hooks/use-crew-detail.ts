@@ -3,6 +3,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/src/lib/api";
 import { MOCK_CREWS, MOCK_CREW_DETAIL } from "../_components/crew-mock";
 import { crewKeys, delay } from "./shared";
 import type { CreateCrewInput, CrewDetail, UpdateCrewInput } from "./types";
@@ -15,11 +16,56 @@ async function fetchCrewDetail(id: string): Promise<CrewDetail | null> {
   return { ...MOCK_CREW_DETAIL, id };
 }
 
-async function createCrew(_input: CreateCrewInput): Promise<{ id: string }> {
-  // Mock until backend ships; mirrors the IP module pattern (no fallback —
-  // a real backend failure will surface via the mutation's onError).
-  await delay(300);
-  return { id: `s_${Date.now()}` };
+/**
+ * Wire-shape of a single crew row, as returned by `POST /project/crew/create`
+ * (and presumably read endpoints once they ship). Captured 2026-05-08
+ * from a live response — keep this in sync if backend evolves the
+ * payload.
+ *
+ * `ipId` is intentionally not part of the surfaced type even though
+ * backend includes it — per product 2026-05-08 the frontend doesn't
+ * model a crew → IP relationship.
+ */
+export interface CrewWire {
+  id: number;
+  name: string;
+  description: string;
+  banner: string;
+  /** Empty string when user didn't upload a cover video. */
+  video: string;
+  /** Java owner / 管理员 user id. */
+  adminUserId: number;
+  /** 0 = active. Other values reserved for backend lifecycle states. */
+  status: number;
+  createTime: string | null;
+  updateTime: string | null;
+}
+
+interface CrewEnvelope {
+  code?: number;
+  msg?: string;
+  data?: CrewWire;
+}
+
+async function createCrew(input: CreateCrewInput): Promise<{ id: string; crew: CrewWire }> {
+  const res = await api.post<CrewEnvelope>("/project/crew/create", {
+    data: {
+      name: input.name,
+      banner: input.banner,
+      video: input.video ?? "",
+      description: input.description,
+    },
+    raw: true,
+  });
+  // Java conventions: HTTP 200 + `code: 200` + non-null `data` on
+  // success; HTTP 200 + `code: !200` for business-level failures
+  // (validation, auth, etc). Surface the backend `msg` so the caller's
+  // error-toast layer (see DESIGN.md § "Error toasts") shows the
+  // actionable detail instead of a generic "create failed".
+  if (res?.code !== 200 || !res.data || res.data.id == null) {
+    throw new Error(res?.msg || "createCrew: backend response invalid");
+  }
+  return { id: String(res.data.id), crew: res.data };
 }
 
 async function updateCrew(_input: UpdateCrewInput): Promise<void> {
