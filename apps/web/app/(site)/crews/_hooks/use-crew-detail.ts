@@ -3,17 +3,29 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/src/lib/api";
-import { MOCK_CREWS, MOCK_CREW_DETAIL } from "../_components/crew-mock";
-import { crewKeys, delay } from "./shared";
-import type { CreateCrewInput, CrewDetail, UpdateCrewInput } from "./types";
+import { ApiRequestError, api } from "@/src/lib/api";
+import { crewKeys } from "./shared";
+import type { CreateCrewInput, UpdateCrewInput } from "./types";
 
-async function fetchCrewDetail(id: string): Promise<CrewDetail | null> {
-  await delay(220);
-  if (id !== MOCK_CREW_DETAIL.id && !MOCK_CREWS.some((c) => c.id === id)) {
-    return null;
+async function fetchCrewDetail(id: string): Promise<CrewWire | null> {
+  try {
+    const res = await api.get<CrewEnvelope>(`/project/crew/detail/${id}`, { raw: true });
+    if (res?.code !== 200 || !res.data || res.data.id == null) {
+      // Java's "not found" path returns HTTP 200 with `code !== 200`
+      // (separate from the literal 404 caught below). Treat as "no
+      // crew with this id" and let the caller render a not-found UI.
+      return null;
+    }
+    return res.data;
+  } catch (err) {
+    // Genuine HTTP 404 → null (same UX as the envelope-level miss).
+    // 401 / 403 / 5xx → re-throw so the caller can surface the
+    // backend `msg` via the platform error-toast pattern.
+    if (err instanceof ApiRequestError && err.status === 404) {
+      return null;
+    }
+    throw err;
   }
-  return { ...MOCK_CREW_DETAIL, id };
 }
 
 /**
@@ -69,11 +81,13 @@ async function createCrew(input: CreateCrewInput): Promise<{ id: string; crew: C
 }
 
 async function updateCrew(_input: UpdateCrewInput): Promise<void> {
-  await delay(200);
+  // TODO(crew-phase-1): wire to the real `POST /project/crew/update`
+  // endpoint when backend ships it. Mock no-op so the existing edit UI
+  // doesn't blow up while we wait.
 }
 
 async function deleteCrew(_id: string): Promise<void> {
-  await delay(200);
+  // TODO(crew-phase-1): wire to the real delete endpoint.
 }
 
 export function useCrewDetail(id: string) {

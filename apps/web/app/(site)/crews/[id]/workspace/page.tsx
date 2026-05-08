@@ -26,12 +26,13 @@ import {
   useCrewWorkspace,
   useEpisodeMemberAction,
   useSubmitEpisodeToClient,
-  useInviteMember,
   type EpMember,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useDevIdentity } from "@/app/(site)/crews/_hooks/use-dev-identity";
 import { EpisodeAccordion } from "@/app/(site)/crews/_components/episode-accordion";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
+import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
+import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
 
 const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },
@@ -68,7 +69,8 @@ export default function CrewWorkspacePage() {
   const { data, isLoading } = useCrewWorkspace(id);
   const memberAction = useEpisodeMemberAction(id);
   const submitToClient = useSubmitEpisodeToClient(id);
-  const inviteMember = useInviteMember(id);
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [publishJobOpen, setPublishJobOpen] = useState(false);
 
   // Derived stats stay reactive to cache mutations.
   const pendingReviewCount = useMemo(
@@ -129,15 +131,7 @@ export default function CrewWorkspacePage() {
   };
 
   const handleInvite = () => {
-    const identifier = window.prompt(t("inviteByPrompt"));
-    if (!identifier) return;
-    inviteMember.mutate(
-      { crewId: id, identifier },
-      {
-        onSuccess: () => toast.success(t("tInviteSent", { who: identifier })),
-        onError: () => toast.error(t("tActionFailed")),
-      }
-    );
+    setAddMemberOpen(true);
   };
 
   const toggleTodo = (i: number) => {
@@ -535,7 +529,18 @@ export default function CrewWorkspacePage() {
           {/* Recruitment */}
           {activeTab === "roles" && (
             <div className="rounded-xl border border-border bg-card p-5">
-              <h3 className="mb-4 text-sm font-bold">{t("tabRecruitment")}</h3>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-sm font-bold">{t("tabRecruitment")}</h3>
+                {isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => setPublishJobOpen(true)}
+                    className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
+                  >
+                    + {t("publishJob")}
+                  </button>
+                )}
+              </div>
               <div className="space-y-3">
                 {rolesProgress.map((r) => (
                   <div
@@ -585,9 +590,8 @@ export default function CrewWorkspacePage() {
                 {isOwner && (
                   <button
                     type="button"
-                    disabled={inviteMember.isPending}
                     onClick={handleInvite}
-                    className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
+                    className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
                   >
                     + {t("inviteMember")}
                   </button>
@@ -705,6 +709,8 @@ export default function CrewWorkspacePage() {
         </div>
       </div>
       <DevIdentitySwitcher />
+      <AddCrewMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} crewId={id} />
+      <CreateCrewJobDialog open={publishJobOpen} onOpenChange={setPublishJobOpen} crewId={id} />
     </div>
   );
 }
