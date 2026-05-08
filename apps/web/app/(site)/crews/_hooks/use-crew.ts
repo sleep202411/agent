@@ -80,10 +80,12 @@ export {
 
 // ─── Members ───────────────────────────────────────────
 export {
+  useCrewMembers,
   useAddCrewMember,
   useInviteMember,
   useRemoveMember,
   type AddCrewMemberInput,
+  type CrewMemberWire,
 } from "./use-members";
 
 // ─── Workspace ─────────────────────────────────────────
