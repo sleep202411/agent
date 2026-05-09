@@ -7,10 +7,67 @@ import { api } from "@/src/lib/api";
 import { MOCK_OPEN_JOBS, crewKeys, delay } from "./shared";
 import type { CreateJobInput, OpenJob, UpdateJobInput } from "./types";
 
+/**
+ * Wire-shape for `POST /project/crew/job/find/jobs` (findCrewJobs).
+ *
+ * Backend takes `crewId` as a query param and returns the recruitment
+ * jobs that crew has posted. Phase-1 backend hasn't shipped a formal
+ * schema yet — these are the fields we expect to see based on:
+ *
+ *   - `CreateJobInput` (the create-side payload)
+ *   - `ProjectJob` (the older `/project/job/find/jobs` response shape)
+ *
+ * **TODO(crew-phase-1)**: confirm exact field names against the live
+ * response — especially `roleName` (denormalised?), and any
+ * `filledNumber` / `status` / `createTime` fields. Update fields below
+ * once verified, then drop this comment.
+ */
+export interface CrewJob {
+  id: number;
+  /** Crew id — backend reuses the project entity for crews so this is
+   *  named `projectId` on the wire. */
+  projectId?: number;
+  /** Role id from `/project/role/list`. */
+  roleId: number;
+  /** Display label for the job — defaults to the role's name. */
+  jobName?: string;
+  /** Recruiter-authored description. */
+  jobDescription?: string;
+  /** Headcount to recruit (planned total). */
+  jobNumber?: number;
+  /** Optional denormalised role name; backend may or may not include
+   *  this depending on join. Frontend should fall back to looking up
+   *  via `roleId` against `useProjectRoles()` if absent. */
+  roleName?: string;
+  /** How many of the headcount have been approved so far. Backend
+   *  may not surface this in phase-1 — treat as 0 if missing. */
+  filledNumber?: number;
+  /** Phase-1 backend job status — values not yet documented. */
+  status?: number | string;
+  createTime?: string;
+}
+
 async function searchOpenJobs(filter: { roleName?: string } = {}): Promise<OpenJob[]> {
   await delay(180);
   if (!filter.roleName) return MOCK_OPEN_JOBS;
   return MOCK_OPEN_JOBS.filter((j) => j.roleName === filter.roleName);
+}
+
+/**
+ * Fetch the recruitment jobs of a single crew.
+ *
+ * Endpoint: `POST /project/crew/job/find/jobs` (findCrewJobs).
+ * `crewId` goes on the query string per the swagger contract — we
+ * pass it through `params` so the api-client URL-encodes it.
+ *
+ * Backend may return the array directly or wrapped in an envelope —
+ * api-client unwraps `body.data` for us, so callers see the array.
+ */
+async function findCrewJobs(crewId: string | number): Promise<CrewJob[]> {
+  const data = await api.post<CrewJob[]>("/project/crew/job/find/jobs", {
+    params: { crewId: Number(crewId) },
+  });
+  return data ?? [];
 }
 
 /**
@@ -86,12 +143,26 @@ export function useOpenJobs(filter: { roleName?: string } = {}) {
   });
 }
 
+/**
+ * Live recruitment jobs for a single crew. Powers the recruitment
+ * tab on the crew workspace. Disabled until `crewId` resolves so we
+ * don't hit the wire with `NaN`.
+ */
+export function useCrewJobs(crewId: string | number | undefined) {
+  return useQuery({
+    queryKey: crewKeys.jobs(crewId ?? ""),
+    enabled: crewId != null && crewId !== "",
+    queryFn: () => findCrewJobs(crewId!),
+  });
+}
+
 export function useCreateJob(crewId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: createJob,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.jobs(crewId) });
       qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
     },
   });
@@ -103,6 +174,7 @@ export function useUpdateJob() {
     mutationFn: updateJob,
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(vars.crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.jobs(vars.crewId) });
       qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
     },
   });
@@ -114,6 +186,7 @@ export function useDeleteJob() {
     mutationFn: deleteJob,
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(vars.crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.jobs(vars.crewId) });
       qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
     },
   });

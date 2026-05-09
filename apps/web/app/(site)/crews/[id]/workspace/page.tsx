@@ -28,6 +28,7 @@ import {
   MEMBER_STATUS_META,
   useCrewWorkspace,
   useCrewDetail,
+  useCrewJobs,
   useEpisodeMemberAction,
   useSubmitEpisodeToClient,
   useCrewMembers,
@@ -110,6 +111,23 @@ export default function CrewWorkspacePage() {
   );
   const removeMember = useRemoveMember();
 
+  // Real recruitment jobs for the "招聘 / Recruitment" tab. Replaces
+  // the mock `rolesProgress` derived from workspace-mock — backend
+  // shipped `/project/crew/job/find/jobs` so the tab now reads from
+  // the source of truth. Maps each job → `{ role, filled, total }`
+  // shape the existing UI already understands. `filled` falls back
+  // to 0 until the backend response is confirmed to carry it.
+  const { data: crewJobs = [] } = useCrewJobs(id);
+  const realRolesProgress = useMemo(
+    () =>
+      crewJobs.map((job) => ({
+        role: job.jobName || job.roleName || roleNameById.get(job.roleId) || `#${job.roleId}`,
+        filled: Number(job.filledNumber ?? 0),
+        total: Number(job.jobNumber ?? 0),
+      })),
+    [crewJobs, roleNameById]
+  );
+
   // Derived stats stay reactive to cache mutations.
   const pendingReviewCount = useMemo(
     () => data?.currentEpMembers.filter((m) => m.status === "submitted").length ?? 0,
@@ -130,7 +148,9 @@ export default function CrewWorkspacePage() {
 
   const s = data.studio;
   const currentEpMembers = data.currentEpMembers;
-  const rolesProgress = data.rolesProgress;
+  // Recruitment now reads from `/project/crew/job/find/jobs` (real
+  // wire) instead of the mock workspace aggregate.
+  const rolesProgress = realRolesProgress;
   const todos = data.todos;
   const activityList = data.activity;
   const deliveryRecords = data.delivery;
