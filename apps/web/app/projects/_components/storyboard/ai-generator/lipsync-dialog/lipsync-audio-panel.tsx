@@ -260,7 +260,7 @@ export function LipsyncAudioPanel({
           <div className="flex shrink-0 items-center gap-2 px-2.5 py-2">
             <NativeSelect
               value={voiceModel}
-              onChange={(event) => onVoiceModelChange(event.target.value)}
+              onChange={onVoiceModelChange}
               disabled={loadingVoiceModels}
               className="h-8 max-w-[160px] bg-transparent text-xs dark:bg-transparent"
             >

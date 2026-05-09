@@ -61,14 +61,14 @@ export function VideoModeSettings({
       <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] px-4 py-3 text-xs text-muted-foreground">
         <Field orientation="horizontal" className="w-auto">
           <FieldLabel className="text-xs text-muted-foreground">{t("maskTypeLabel")}</FieldLabel>
-          <select
+          <ToolbarSelect
             value={maskType}
-            onChange={(event) => onMaskTypeChange(event.target.value as "tracking" | "fixed")}
-            className="rounded-lg bg-white/[0.06] px-3 py-2 text-white/85 outline-none"
-          >
-            <option value="tracking">{t("tracking")}</option>
-            <option value="fixed">{t("fixed")}</option>
-          </select>
+            options={[
+              { label: t("tracking"), value: "tracking" },
+              { label: t("fixed"), value: "fixed" },
+            ]}
+            onChange={(value) => onMaskTypeChange(value as "tracking" | "fixed")}
+          />
         </Field>
         {maskType === "tracking" ? (
           <Field orientation="horizontal" className="w-auto">

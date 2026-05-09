@@ -1,12 +1,10 @@
 /**
  * Locale helpers for Next.js.
  *
- * Default locale (en-US) has no URL prefix: /projects
- * Other locales get prefixed: /zh-CN/projects, /zh-HK/projects
- *
- * URL-level rewriting is handled by `proxy.ts` at the network layer.
- * This module exposes helpers for client-side code that needs to know the
- * current locale or build locale-aware hrefs.
+ * All locales carry a URL prefix: /en-US/projects, /zh-CN/projects,
+ * /zh-HK/projects (default included). Hitting an unprefixed path 307s
+ * to the resolved locale via `proxy.ts`. Helpers here build locale-aware
+ * hrefs for client-side code so we don't rely on the redirect.
  */
 
 import { defaultLocale, isValidLocale, detectBrowserLocale, type Locale } from "./config";
@@ -46,10 +44,10 @@ export function stripLocalePrefix(pathname: string): string {
   return pathname;
 }
 
-/** Add locale prefix: /projects → /en-US/projects (default locale stays clean) */
+/** Add locale prefix: /projects → /en-US/projects.
+ *  All locales (including the default) get prefixed — see proxy.ts. */
 export function localizePath(pathname: string, locale: Locale = currentLocale): string {
   if (IGNORED_PATH.test(pathname)) return pathname;
-  if (locale === defaultLocale) return pathname;
   if (pathname === "/") return `/${locale}`;
   return `/${locale}${pathname}`;
 }

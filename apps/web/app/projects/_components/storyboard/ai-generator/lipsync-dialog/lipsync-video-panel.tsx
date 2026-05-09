@@ -295,7 +295,7 @@ export function LipsyncVideoPanel({
         <div className="mt-auto flex shrink-0 items-center gap-3 pt-2">
           <NativeSelect
             value={lipSyncModel}
-            onChange={(event) => onLipSyncModelChange(event.target.value)}
+            onChange={onLipSyncModelChange}
             disabled={loadingLipSyncModels}
             className="h-8 max-w-[160px] text-xs"
           >
