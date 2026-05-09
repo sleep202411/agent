@@ -62,6 +62,7 @@ export const crewKeys = {
   workspace: (id: string) => ["crew", "workspace", id] as const,
   members: (id: string) => ["crew", "members", id] as const,
   openJobs: (filter: { roleName?: string }) => ["crew", "openJobs", filter] as const,
+  jobs: (crewId: string | number) => ["crew", "jobs", String(crewId)] as const,
   myApplications: ["crew", "applications", "mine"] as const,
   hasApplied: (jobId: number) => ["crew", "applications", "hasApplied", jobId] as const,
   applicants: (jobId: number) => ["crew", "applicants", jobId] as const,

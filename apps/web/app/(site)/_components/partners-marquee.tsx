@@ -21,11 +21,23 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 
 interface Partner {
-  /** Filename stem inside `public/logos/`. Component appends a list of
-   *  candidate extensions (svg → png) until one resolves. */
+  /** Filename stem inside `public/logos/` (without extension). */
   slug: string;
   /** Display name shown as a fallback before a logo file is uploaded. */
   name: string;
+  /** File extension under `public/logos/<slug>.<ext>`. Required so
+   *  the tile builds an exact URL — earlier versions tried svg → png →
+   *  jpg → webp in turn, which produced a 404 for every PNG-only
+   *  partner before the fallback resolved. Specifying the real
+   *  extension keeps the network panel quiet. */
+  ext: "svg" | "png";
+  /** Set when the logo is a single dark colour on transparent
+   *  background (e.g. recoloured-from-white wordmarks like sipivt).
+   *  These are invisible on the dark theme without help — we apply
+   *  `dark:invert` so the dark pixels flip to light. Leave undefined
+   *  for multi-colour brand marks: inverting their hues would mangle
+   *  the brand colour. */
+  mono?: boolean;
 }
 
 /**
@@ -35,75 +47,85 @@ interface Partner {
  */
 const PARTNERS: Partner[] = [
   // ─── Tech & honors ─────────────────────────────────
-  { slug: "nvidia-inception", name: "NVIDIA Inception" },
+  { slug: "nvidia-inception", name: "NVIDIA Inception", ext: "svg" },
   // No dedicated "Microsoft for Startups" mark — fall back to the
   // generic Microsoft logo and let the hover title carry the full
   // sub-brand name.
-  { slug: "microsoft", name: "Microsoft for Startups" },
+  { slug: "microsoft", name: "Microsoft for Startups", ext: "svg" },
   // Same pattern as Microsoft — generic Alibaba mark + hover title
   // for the JUMPSTARTER sub-brand.
-  { slug: "alibaba", name: "Alibaba JUMPSTARTER" },
+  { slug: "alibaba", name: "Alibaba JUMPSTARTER", ext: "svg" },
   // Separate from Alibaba JUMPSTARTER above — Alibaba Cloud is the
   // sister sub-brand that hosts our production infra (ECS).
-  { slug: "alibaba-cloud", name: "Alibaba Cloud" },
-  { slug: "cyberport", name: "Cyberport" },
-  { slug: "sgtech", name: "SGTech" },
-  { slug: "block71", name: "BLOCK71 (NUS Enterprise)" },
-  { slug: "ipos-international", name: "IPOS International" },
-  { slug: "acm", name: "ACM (Association for Computing Machinery)" },
-  { slug: "rsm", name: "RSM" },
-  { slug: "mddi", name: "Ministry of Digital Development and Information (Singapore)" },
-  { slug: "mdec", name: "MDEC — Malaysia Digital Economy Corporation" },
-  { slug: "iproa", name: "iProA — Internet Professional Association" },
-  { slug: "enterprise-singapore", name: "Enterprise Singapore" },
-  { slug: "ite", name: "ITE — Institute of Technical Education (Singapore)" },
-  { slug: "cnsa", name: "CNSA — China National Space Administration" },
-  { slug: "world-internet-conference", name: "World Internet Conference" },
-  { slug: "digital-china-summit", name: "Digital China Summit" },
+  { slug: "alibaba-cloud", name: "Alibaba Cloud", ext: "png" },
+  { slug: "cyberport", name: "Cyberport", ext: "png" },
+  { slug: "sgtech", name: "SGTech", ext: "png" },
+  { slug: "block71", name: "BLOCK71 (NUS Enterprise)", ext: "png" },
+  { slug: "ipos-international", name: "IPOS International", ext: "png" },
+  { slug: "acm", name: "ACM (Association for Computing Machinery)", ext: "png" },
+  { slug: "rsm", name: "RSM", ext: "png" },
+  {
+    slug: "mddi",
+    name: "Ministry of Digital Development and Information (Singapore)",
+    ext: "png",
+  },
+  { slug: "mdec", name: "MDEC — Malaysia Digital Economy Corporation", ext: "png" },
+  { slug: "iproa", name: "iProA — Internet Professional Association", ext: "png" },
+  { slug: "enterprise-singapore", name: "Enterprise Singapore", ext: "png" },
+  { slug: "ite", name: "ITE — Institute of Technical Education (Singapore)", ext: "png" },
+  { slug: "cnsa", name: "CNSA — China National Space Administration", ext: "png" },
+  {
+    slug: "world-internet-conference",
+    name: "World Internet Conference",
+    ext: "png",
+    mono: true,
+  },
+  { slug: "digital-china-summit", name: "Digital China Summit", ext: "png" },
 
   // ─── IP partners ───────────────────────────────────
-  { slug: "hip-studios", name: "HIP Studios" },
-  { slug: "8letters", name: "8Letters" },
-  { slug: "stars-collective", name: "Stars Collective" },
+  { slug: "hip-studios", name: "HIP Studios", ext: "png" },
+  { slug: "8letters", name: "8Letters", ext: "png" },
+  { slug: "stars-collective", name: "Stars Collective", ext: "png" },
 
   // ─── Other partners ────────────────────────────────
-  { slug: "mm2-asia", name: "mm2 Asia" },
-  { slug: "reskills", name: "Reskills" },
-  { slug: "hkbu", name: "Hong Kong Baptist University" },
+  { slug: "mm2-asia", name: "mm2 Asia", ext: "svg" },
+  { slug: "reskills", name: "Reskills", ext: "png" },
+  { slug: "hkbu", name: "Hong Kong Baptist University", ext: "png" },
   // HKAPA's source SVG had pure-white fills (extracted from a dark
   // navbar). Re-coloured to slate-800 (#1f2937) so the logo reads
   // on both light- and dark-theme page backgrounds — the marquee's
   // grayscale + opacity-60 treatment desaturates colour but
   // preserves luminance, so a mid-dark fill works in both.
-  { slug: "hkapa", name: "Hong Kong Academy for Performing Arts" },
-  { slug: "birmingham", name: "University of Birmingham" },
-  { slug: "soochow", name: "Soochow University" },
-  { slug: "lanzhou", name: "Lanzhou University" },
-  { slug: "sripatum", name: "Sripatum University (SPU)" },
-  { slug: "padua", name: "Università degli Studi di Padova" },
-  { slug: "cuhk", name: "The Chinese University of Hong Kong" },
-  { slug: "tongxing-shuyuan", name: "童行书院 Tongxing Academy" },
-  { slug: "jscn", name: "JSCN 江苏有线" },
-  { slug: "asia-farm", name: "Asia Farm" },
-  { slug: "point-college", name: "POINT College" },
-  { slug: "riff", name: "RIFF Film Festival" },
-  { slug: "zero-wellness", name: "Zero — beyond wellness" },
+  { slug: "hkapa", name: "Hong Kong Academy for Performing Arts", ext: "svg", mono: true },
+  { slug: "birmingham", name: "University of Birmingham", ext: "svg" },
+  { slug: "soochow", name: "Soochow University", ext: "png" },
+  { slug: "lanzhou", name: "Lanzhou University", ext: "svg" },
+  { slug: "sripatum", name: "Sripatum University (SPU)", ext: "svg" },
+  { slug: "padua", name: "Università degli Studi di Padova", ext: "svg" },
+  { slug: "cuhk", name: "The Chinese University of Hong Kong", ext: "svg" },
+  { slug: "tongxing-shuyuan", name: "童行书院 Tongxing Academy", ext: "png" },
+  { slug: "jscn", name: "JSCN 江苏有线", ext: "png" },
+  { slug: "asia-farm", name: "Asia Farm", ext: "png" },
+  { slug: "point-college", name: "POINT College", ext: "png" },
+  { slug: "riff", name: "RIFF Film Festival", ext: "png" },
+  { slug: "zero-wellness", name: "Zero — beyond wellness", ext: "png" },
   {
     slug: "china-intangible-heritage",
     name: "中国非物质文化遗产 China Intangible Cultural Heritage",
+    ext: "png",
   },
-  { slug: "shue-yan", name: "Hong Kong Shue Yan University 香港樹仁大學" },
-  { slug: "dongfeng", name: "Dongfeng Motor 东风汽车" },
-  { slug: "cqifte", name: "Chongqing Institute of Foreign Trade & Economics" },
-  { slug: "sipivt", name: "SIP Institute of Services Outsourcing" },
+  { slug: "shue-yan", name: "Hong Kong Shue Yan University 香港樹仁大學", ext: "png" },
+  { slug: "dongfeng", name: "Dongfeng Motor 东风汽车", ext: "png" },
+  { slug: "cqifte", name: "Chongqing Institute of Foreign Trade & Economics", ext: "png" },
+  { slug: "sipivt", name: "SIP Institute of Services Outsourcing", ext: "png", mono: true },
   // Future Studios (Malaysia), Beijing Xinghong, Chinese Nebula Awards,
   // and the Sci-Fi & Future Tech Development Research Center are real
   // partners — but no public logo URL exists for them yet (Future
   // Studios has no domain, Xinghong/Starrise blocks scraping, Nebula
   // runs through WeChat, the research center is a sub-committee with
   // no standalone brand). Re-add entries here as the marketing team
-  // sources brand-kit files; the dropzone takes any svg/png/jpg/webp
-  // matching the slug, no code change needed.
+  // sources brand-kit files; drop the file at `public/logos/<slug>.<ext>`
+  // and add the entry above with its actual `ext`.
 ];
 
 export function PartnersMarquee() {
@@ -180,42 +202,43 @@ function MarqueeRow({
 }
 
 function LogoTile({ partner }: { partner: Partner }) {
-  // Try formats in order of preference (vector first → raster
-  // fallbacks). When all 404 the slot renders the partner name as
-  // a styled text tile so the marquee rhythm stays intact while
-  // logos are still being sourced.
-  const [srcIndex, setSrcIndex] = useState(0);
-  const sources = [
-    `/logos/${partner.slug}.svg`,
-    `/logos/${partner.slug}.png`,
-    `/logos/${partner.slug}.jpg`,
-    `/logos/${partner.slug}.webp`,
-  ];
-  const exhausted = srcIndex >= sources.length;
+  // Each partner declares its file extension explicitly (see the
+  // `Partner` interface), so we go straight to the right URL — no
+  // probe, no 404s. If `onError` fires (file missing or corrupt)
+  // we fall back to a styled text tile so the marquee rhythm stays
+  // intact while the asset is being fixed.
+  const [errored, setErrored] = useState(false);
+  const src = `/logos/${partner.slug}.${partner.ext}`;
 
   return (
     <div
       className="flex h-16 w-44 shrink-0 items-center justify-center rounded-lg px-4"
       title={partner.name}
     >
-      {exhausted ? (
+      {errored ? (
         <span className="text-center text-sm font-medium text-muted-foreground/60">
           {partner.name}
         </span>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={sources[srcIndex]!}
+          src={src}
           alt={partner.name}
           className={cn(
             "max-h-10 max-w-full object-contain",
             // Monochromatic treatment + hover restores color, matching
             // the shadcnblocks `logos24` aesthetic.
             "opacity-60 grayscale transition-all duration-300",
-            "hover:opacity-100 hover:grayscale-0"
+            "hover:opacity-100 hover:grayscale-0",
+            // Single-colour dark logos (recoloured wordmarks etc.) are
+            // invisible against the dark-theme background. Flipping
+            // their luminance via `invert` puts them at the equivalent
+            // contrast they have on the light theme. Hover removes the
+            // invert alongside the grayscale so colour mostly recovers.
+            partner.mono && "dark:invert dark:hover:invert-0"
           )}
           loading="lazy"
-          onError={() => setSrcIndex((i) => i + 1)}
+          onError={() => setErrored(true)}
         />
       )}
     </div>
