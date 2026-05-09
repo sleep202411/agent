@@ -6,6 +6,7 @@ import {
   IconDeviceFloppy,
   IconLanguage,
   IconLoader2,
+  IconPhoto,
   IconTrash,
   IconWand,
   IconX,
@@ -54,6 +55,7 @@ import {
 } from "./character-utils";
 import { CharacterReferenceUploader } from "./character-reference-uploader";
 import { VoicePickerDialog } from "./character-voice-picker";
+import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { AssetAiRecordPanel, type AssetAiRecordPanelHandle } from "../asset-ai-record-panel";
 import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
 import {
@@ -142,6 +144,11 @@ export function CharacterEditDialog({
   const [voices, setVoices] = useState<Record<string, VoiceOptionItem[]>>({});
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [voicePickerOpen, setVoicePickerOpen] = useState(false);
+  // Asset library picker for the role portrait — alternative entry
+  // point alongside the right-side AI generator. Closed by default;
+  // the empty-state placeholder and a "Replace" button on the
+  // populated state both flip this open.
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState("");
   const aiPanelRef = useRef<AssetAiRecordPanelHandle | null>(null);
 
@@ -410,6 +417,17 @@ export function CharacterEditDialog({
                           className="h-full w-auto cursor-zoom-in"
                           onClick={() => setPreviewImage(roleImageUrl)}
                         />
+                        {/* Hover-revealed "Replace from assets" affordance —
+                            symmetric with the trash button so users can
+                            either remove + regenerate or swap in one click. */}
+                        <button
+                          type="button"
+                          onClick={() => setAssetPickerOpen(true)}
+                          className="absolute right-10 top-2 flex size-6 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity hover:bg-foreground/30 group-hover:opacity-100"
+                          title={t("pickFromAssets")}
+                        >
+                          <IconPhoto className="size-3" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => updateForm({ roleImgPath: [] })}
@@ -420,8 +438,20 @@ export function CharacterEditDialog({
                         </button>
                       </>
                     ) : (
-                      <div className="flex h-full items-center justify-center text-xs text-center text-muted-foreground/60">
-                        Pick one from "AI Generate" on the right
+                      <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center text-xs text-muted-foreground/60">
+                        <span>{t("pickFromAiGenerate")}</span>
+                        <span className="text-muted-foreground/40">{tc("or")}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          color="muted"
+                          size="xs"
+                          onClick={() => setAssetPickerOpen(true)}
+                          className="h-7 gap-1.5"
+                        >
+                          <IconPhoto className="size-3" />
+                          {t("pickFromAssets")}
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -434,7 +464,9 @@ export function CharacterEditDialog({
                     the rotating portrait list. */}
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="text-[11px] text-muted-foreground/80">Global reference</div>
+                    <div className="text-[11px] text-muted-foreground/80">
+                      {t("globalReference")}
+                    </div>
                     <Button
                       type="button"
                       size="xs"
@@ -448,7 +480,7 @@ export function CharacterEditDialog({
                       ) : (
                         <IconWand className="size-3" />
                       )}
-                      Generate global reference
+                      {t("generateGlobalReference")}
                     </Button>
                   </div>
                   <div className="group relative h-[160px] overflow-hidden rounded-lg border border-dashed border-border bg-muted/20">
@@ -476,7 +508,7 @@ export function CharacterEditDialog({
                       </>
                     ) : (
                       <div className="flex h-full items-center justify-center text-xs text-muted-foreground/60">
-                        Click "Generate global reference" above
+                        {t("clickGenerateGlobalReference")}
                       </div>
                     )}
                   </div>
@@ -595,7 +627,7 @@ export function CharacterEditDialog({
                       />
                     ) : (
                       <p className="rounded-md border border-dashed border-border/40 p-3 text-[11px] text-muted-foreground/60">
-                        Save first to enable AI character image generation
+                        {t("saveFirstToEnableAiGen")}
                       </p>
                     )}
                   </div>
@@ -765,6 +797,24 @@ export function CharacterEditDialog({
         loading={loadingVoices}
         selectedVoiceId={formData.voiceId}
         onSelect={(voice) => updateForm({ voiceId: String(voice.voiceId ?? "") })}
+      />
+
+      {/* Role-portrait asset picker — shared by both the empty-state
+          "from assets" button and the populated-state hover replace
+          button. AssetPickerDialog returns paths via its `onSelect`
+          callback; we normalise to a single-item array since
+          `roleImgPath` is modeled as a list (legacy from a multi-image
+          design that never shipped). */}
+      <AssetPickerDialog
+        open={assetPickerOpen}
+        onOpenChange={setAssetPickerOpen}
+        assetType="img"
+        multiple={false}
+        onSelect={(paths) => {
+          const next = paths[0];
+          if (next) updateForm({ roleImgPath: [normalizeStoragePath(next)] });
+          setAssetPickerOpen(false);
+        }}
       />
 
       <MediaPreviewModal

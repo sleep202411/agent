@@ -303,9 +303,7 @@ export const AssetAiRecordPanel = forwardRef<AssetAiRecordPanelHandle, Props>(
         </div>
 
         {items.length === 0 && !isLoadingHistory && (
-          <p className="text-[11px] text-muted-foreground/60">
-            No images yet. Enter a prompt below and hit Generate.
-          </p>
+          <p className="text-[11px] text-muted-foreground/60">{tc("aiPanelEmptyHint")}</p>
         )}
       </div>
     );
