@@ -9,7 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
-import { IconLoader2, IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
+import { IconDownload, IconLoader2, IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
   StoryboardComposition,
@@ -89,6 +89,11 @@ import {
   type TimelineFile,
   type TimelineShot,
 } from "./timeline-types";
+import {
+  exportTimelineToMp4,
+  triggerBlobDownload,
+  TimelineExportError,
+} from "@/src/lib/timeline-export-mediabunny";
 
 export function TimelineView() {
   const ts = useTranslations("storyboard");
@@ -110,6 +115,12 @@ export function TimelineView() {
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  // Client-side export state: tracks whether a Mediabunny encode is
+  // in progress + the latest progress ratio so the button can render
+  // a percentage. Single-flight by intent — the button is disabled
+  // while `isExporting` is true.
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [pxPerSecond, setPxPerSecond] = useState(50);
 
@@ -387,6 +398,43 @@ export function TimelineView() {
       playerRef.current.play();
     }
   }, []);
+
+  // Browser-side timeline → MP4 export. Stitches all shots that have
+  // a videoUrl into a single file via Mediabunny + WebCodecs (no
+  // round-trip to the server). On error, surfaces the message in a
+  // toast so the user gets at least the same diagnostic the lipsync
+  // dialog now provides; deeper "View error" UX is intentionally
+  // deferred until we know whether this PoC sticks.
+  const handleExportMp4 = useCallback(async () => {
+    if (isExporting) return;
+    if (previewShots.length === 0) {
+      toast.warning(tt("noShots"));
+      return;
+    }
+    setIsExporting(true);
+    setExportProgress(0);
+    try {
+      const blob = await exportTimelineToMp4(
+        previewShots.map((shot) => ({ id: shot.id, videoUrl: shot.videoUrl })),
+        {
+          onProgress: (ratio) => setExportProgress(ratio),
+        }
+      );
+      const filename = `timeline-${Date.now()}.mp4`;
+      triggerBlobDownload(blob, filename);
+      toast.success(tt("exportSuccess"));
+    } catch (error) {
+      console.error("[TimelineView] export failed:", error);
+      const detail =
+        error instanceof TimelineExportError || error instanceof Error
+          ? error.message
+          : String(error);
+      toast.error(tt("exportFailed"), { description: detail });
+    } finally {
+      setIsExporting(false);
+      setExportProgress(0);
+    }
+  }, [isExporting, previewShots, tt]);
 
   const handleShotResize = useCallback(
     async (shotId: string, nextDuration: number) => {
@@ -841,6 +889,34 @@ export function TimelineView() {
               <span className="mx-2 text-[#666]">/</span>
               <span className="text-[#888]">{formatClock(contentDuration)}</span>
             </div>
+
+            {/* Client-side MP4 export via Mediabunny. Sits in the
+                play-bar so it reads as "what to do with this preview"
+                next to playhead controls. While exporting, swap to a
+                spinner + percent label and disable the click. */}
+            <Button
+              variant="ghost"
+              color="muted"
+              size="sm"
+              className="ml-auto gap-1.5 text-[#E0E0E0] hover:bg-white/10 hover:text-white"
+              onClick={() => void handleExportMp4()}
+              disabled={shots.length === 0 || isExporting}
+              title={tt("exportMp4")}
+            >
+              {isExporting ? (
+                <>
+                  <IconLoader2 className="size-4 animate-spin" />
+                  <span className="font-mono text-xs tabular-nums">
+                    {Math.round(exportProgress * 100)}%
+                  </span>
+                </>
+              ) : (
+                <>
+                  <IconDownload className="size-4" />
+                  <span className="text-xs">{tt("exportMp4")}</span>
+                </>
+              )}
+            </Button>
           </div>
 
           <div ref={scrollAreaRef} className="overflow-x-auto overflow-y-hidden">

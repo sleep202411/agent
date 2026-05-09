@@ -48,8 +48,8 @@ const nextConfig: NextConfig = {
         // every build; api-client emits whichever prefix the env
         // configures, the others are dormant.
         { source: "/content/:path*", destination: `${JAVA_CONTENT_URL}/:path*` },
-        { source: "/test1/:path*", destination: `${JAVA_CONTENT_URL}/:path*` },
         { source: "/studio/:path*", destination: `${JAVA_STUDIO_URL}/:path*` },
+        { source: "/test1/:path*", destination: `${JAVA_CONTENT_URL}/:path*` },
         { source: "/test2/:path*", destination: `${JAVA_STUDIO_URL}/:path*` },
         // Legacy iframe content endpoint. The catch-all page in
         // `app/(site)/[...legacyPath]/page.tsx` builds an iframe whose
