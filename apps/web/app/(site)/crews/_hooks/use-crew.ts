@@ -66,7 +66,15 @@ export { useCrewLanding, useCrews, useMyJoinedCrews, useMyOwnedCrews } from "./u
 export { useCreateCrew, useCrewDetail, useDeleteCrew, useUpdateCrew } from "./use-crew-detail";
 
 // ─── Jobs ──────────────────────────────────────────────
-export { useCloseJob, useCreateJob, useDeleteJob, useOpenJobs, useUpdateJob } from "./use-jobs";
+export {
+  useCloseJob,
+  useCreateJob,
+  useCrewJobs,
+  useDeleteJob,
+  useOpenJobs,
+  useUpdateJob,
+} from "./use-jobs";
+export type { CrewJob } from "./use-jobs";
 
 // ─── Applications ──────────────────────────────────────
 export {
