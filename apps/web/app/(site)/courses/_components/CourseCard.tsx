@@ -80,7 +80,7 @@ export function CourseCard({ course, progress, variant }: CourseCardProps) {
 
         <div className="flex min-w-0 flex-col gap-3">
           <div className="space-y-1">
-            <h2 className="line-clamp-1 text-base font-bold text-white">{course.type}</h2>
+            <h2 className="line-clamp-2 text-base font-bold text-white">{course.type}</h2>
             <p className="line-clamp-2 text-sm leading-6 text-[#b6bed1]">{course.info}</p>
           </div>
           <div className="max-w-md">
@@ -128,7 +128,7 @@ export function CourseCard({ course, progress, variant }: CourseCardProps) {
       </div>
 
       <div className="flex min-h-[190px] flex-col px-4 py-4">
-        <h2 className="line-clamp-1 text-base font-bold text-white">{course.type}</h2>
+        <h2 className="line-clamp-2 text-base font-bold text-white">{course.type}</h2>
         <p className="mt-2 line-clamp-2 min-h-11 text-sm leading-6 text-[#b6bed1]">{course.info}</p>
         <div className="mt-4">
           <CourseProgress progress={progress} label={t("progress")} />

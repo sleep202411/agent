@@ -495,26 +495,36 @@ export function AiImageGeneratorDialog({
       key: "repaint",
       label: t("repaintAction"),
       icon: <IconBrush className="size-3.5" />,
+      disabled: true,
+      title: tc("comingSoon"),
     },
     {
       key: "erase",
       label: t("eraseAction"),
       icon: <IconEraser className="size-3.5" />,
+      disabled: true,
+      title: tc("comingSoon"),
     },
     {
       key: "enhance",
       label: t("enhanceAction"),
       icon: <IconShieldCheck className="size-3.5" />,
+      disabled: true,
+      title: tc("comingSoon"),
     },
     {
       key: "cutout",
       label: t("cutoutAction"),
       icon: <IconScissors className="size-3.5" />,
+      disabled: true,
+      title: tc("comingSoon"),
     },
     {
       key: "multi-angle",
       label: t("multiAngleAction"),
       icon: <IconRotate360 className="size-3.5" />,
+      disabled: true,
+      title: tc("comingSoon"),
     },
   ];
 

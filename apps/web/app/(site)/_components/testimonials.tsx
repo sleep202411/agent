@@ -3,11 +3,18 @@
 /**
  * Testimonials — masonry-style 3-column testimonial wall.
  *
- * NOTE: the quotes below are illustrative placeholders for development.
- * Replace with real user testimonials before any public launch.
- * Avatar images are pulled from anonymous platform user uploads (the
- * profiles themselves are seed/fake data) so no real public figures are
- * implied. Gradient stays as the load-state fallback behind the image.
+ * Quotes are deliberately NOT translated through i18n. Each card stays
+ * in the speaker's native language so the section reads as a global
+ * mix — a visitor browsing in en-US still sees the JP creator
+ * speaking Japanese, the FR creator in French, etc. That's the point
+ * the marketing wants to make: real users from many regions.
+ *
+ * Section labels (eyebrow / title / subtitle) DO translate via i18n
+ * because those are platform-voice copy, not user voice.
+ *
+ * Avatars are anonymous platform user uploads (the profiles are seed
+ * data) so no real public figures are implied. Replace with real
+ * testimonials + permission before any wider launch.
  */
 
 import { motion } from "motion/react";
@@ -16,58 +23,87 @@ import { GlitchText } from "@/components/ui/glitch-text";
 import { useTranslations } from "@/src/i18n/i18n";
 import { userAvatarUrl } from "@/src/lib/asset-paths";
 
-type TestimonialKey =
-  | "sarahChen"
-  | "alexJohnson"
-  | "michaelRodriguez"
-  | "emmaThompson"
-  | "chrisPark"
-  | "davidKim"
-  | "jessicaMartinez";
-
 interface Testimonial {
-  key: TestimonialKey;
+  /** Speaker's name in their own script. */
+  name: string;
+  /** Role — includes country/city + flag emoji to make the regional
+   *  origin scannable at a glance without an extra UI element. */
+  role: string;
+  /** Quote in the speaker's native language. */
+  quote: string;
   /** Tailwind gradient classes for the avatar fallback circle. */
   gradient: string;
   /** Avatar OSS path (relative — passed through `ossUrl`). */
   avatar: string;
+  /** BCP-47 lang attribute for the quote — improves screen-reader
+   *  pronunciation and lets browser-level translate features know to
+   *  leave the text alone. */
+  lang: string;
 }
 
 const TESTIMONIALS: Testimonial[] = [
   {
-    key: "sarahChen",
+    name: "Sarah Chen",
+    role: "Indie animator · Singapore 🇸🇬",
+    quote:
+      "Just tried FizzDragon and I'm genuinely blown away. As someone who always wrestles with the storyboard pipeline, having an AI crew that actually understands shot composition is wild. It's the first AI animation tool I'd hand to my peers without caveats.",
     gradient: "from-orange-500 to-pink-500",
     avatar: "avatar/53286d9b3b2fc2969d2691ce30437301.jpeg",
+    lang: "en",
   },
   {
-    key: "alexJohnson",
+    name: "王雨桐",
+    role: "短视频创作者 · 北京 🇨🇳",
+    quote:
+      "用了 FizzDragon 一周，本来以为又是个 demo 工具，结果分镜表导出居然能直接进剪辑流程。从脚本到成片不用反复改 prompt，对我们做日更的人是真的省事，团队也终于敢把试稿任务交给 AI 了。",
     gradient: "from-cyan-500 to-blue-500",
     avatar: "avatar/4f943eb36f588172f55c72ab75f8ba66.jpg",
+    lang: "zh-CN",
   },
   {
-    key: "michaelRodriguez",
+    name: "高橋 美咲",
+    role: "アニメーター · 東京 🇯🇵",
+    quote:
+      "AIエージェントが「カット割り」を理解しているのが衝撃でした。プロットから絵コンテまで一気に作れて、修正の手戻りが本当に少ないです。日本の制作現場でもそのまま使える品質だと思います。",
     gradient: "from-violet-500 to-fuchsia-500",
     avatar: "avatar/52f353e3b6c92be2facc0f69c531a660.jpeg",
+    lang: "ja",
   },
   {
-    key: "emmaThompson",
+    name: "Léa Dubois",
+    role: "Réalisatrice indépendante · Paris 🇫🇷",
+    quote:
+      "FizzDragon a vraiment changé ma façon de prototyper. Je peux tester trois directions visuelles en une matinée — ce qui m'aurait pris une semaine avant. L'éditeur image par image est ce qui fait la différence pour les projets sérieux.",
     gradient: "from-rose-500 to-red-500",
     avatar: "avatar/441ea6c761b0b69c3a148d4ed6435956.jpg",
+    lang: "fr",
   },
   {
-    key: "chrisPark",
+    name: "陳家豪",
+    role: "動畫導演 · 香港 🇭🇰",
+    quote:
+      "做了十幾年動畫，AI 工具看過很多，FizzDragon 是少數讓我覺得「能直接放進製作流程」的。鏡頭語言這部分尤其準，省了大量跟外包溝通的時間，分鏡稿也基本不用大改。",
     gradient: "from-amber-500 to-orange-500",
     avatar: "avatar/3b9201c5ad9e8389392ec361c368abc1.jpg",
+    lang: "zh-HK",
   },
   {
-    key: "davidKim",
+    name: "박지훈",
+    role: "영상 크리에이터 · 서울 🇰🇷",
+    quote:
+      "텍스트 한 문단으로 시작해서 한 시간 만에 영상이 나온다는 게 처음엔 안 믿겼습니다. 컷별 프롬프트 디테일까지 직접 수정할 수 있어서 제어감이 좋아요. 진짜 작업 도구로 쓸 만합니다.",
     gradient: "from-emerald-500 to-teal-500",
     avatar: "avatar/3a39e2d5fdb0908f5718ea6461965a68.jpg",
+    lang: "ko",
   },
   {
-    key: "jessicaMartinez",
+    name: "Carlos Hernández",
+    role: "Director de cortometrajes · CDMX 🇲🇽",
+    quote:
+      "Probé FizzDragon para un corto y terminé usándolo para todo el storyboard. La consistencia entre escenas es lo que más me sorprendió — no se siente como un generador, se siente como un equipo pequeño trabajando contigo.",
     gradient: "from-indigo-500 to-violet-500",
     avatar: "avatar/3036706459ec7d32e0178a57367e9928.jpg",
+    lang: "es",
   },
 ];
 
@@ -75,9 +111,9 @@ const TESTIMONIALS: Testimonial[] = [
 // columns balanced regardless of quote length without pulling in a
 // masonry library.
 const COLUMNS: Testimonial[][] = [
-  [TESTIMONIALS[0], TESTIMONIALS[1]],
-  [TESTIMONIALS[2], TESTIMONIALS[3], TESTIMONIALS[4]],
-  [TESTIMONIALS[5], TESTIMONIALS[6]],
+  [TESTIMONIALS[0]!, TESTIMONIALS[1]!],
+  [TESTIMONIALS[2]!, TESTIMONIALS[3]!, TESTIMONIALS[4]!],
+  [TESTIMONIALS[5]!, TESTIMONIALS[6]!],
 ];
 
 export function Testimonials() {
@@ -128,7 +164,7 @@ export function Testimonials() {
           {COLUMNS.map((col, colIndex) => (
             <div key={colIndex} className="flex flex-col gap-4">
               {col.map((item, rowIndex) => (
-                <Card key={item.key} testimonial={item} delay={(colIndex * 3 + rowIndex) * 0.06} />
+                <Card key={item.name} testimonial={item} delay={(colIndex * 3 + rowIndex) * 0.06} />
               ))}
             </div>
           ))}
@@ -139,10 +175,6 @@ export function Testimonials() {
 }
 
 function Card({ testimonial, delay }: { testimonial: Testimonial; delay: number }) {
-  const t = useTranslations("home");
-  const name = t(`testimonials.items.${testimonial.key}.name`);
-  const role = t(`testimonials.items.${testimonial.key}.role`);
-  const quote = t(`testimonials.items.${testimonial.key}.quote`);
   return (
     <motion.figure
       initial={{ opacity: 0, y: 16 }}
@@ -151,7 +183,12 @@ function Card({ testimonial, delay }: { testimonial: Testimonial; delay: number 
       transition={{ duration: 0.45, ease: "easeOut", delay }}
       className="group relative rounded-2xl border border-border/50 bg-card/40 p-6 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-border"
     >
-      <blockquote className="text-[15px] leading-relaxed text-foreground/85">{quote}</blockquote>
+      <blockquote
+        lang={testimonial.lang}
+        className="text-[15px] leading-relaxed text-foreground/85"
+      >
+        {testimonial.quote}
+      </blockquote>
       <figcaption className="mt-5 flex items-center gap-3">
         <div
           className={`size-11 shrink-0 overflow-hidden rounded-full bg-gradient-to-br ${testimonial.gradient} shadow-sm`}
@@ -164,8 +201,8 @@ function Card({ testimonial, delay }: { testimonial: Testimonial; delay: number 
           />
         </div>
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-foreground">{name}</div>
-          <div className="truncate text-xs text-muted-foreground">{role}</div>
+          <div className="truncate text-sm font-semibold text-foreground">{testimonial.name}</div>
+          <div className="truncate text-xs text-muted-foreground">{testimonial.role}</div>
         </div>
       </figcaption>
     </motion.figure>
