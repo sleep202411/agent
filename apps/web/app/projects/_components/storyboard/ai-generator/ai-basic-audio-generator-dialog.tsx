@@ -476,11 +476,7 @@ export function AiBasicAudioGeneratorDialog({
 
             <section className="space-y-2">
               <div className="text-sm font-medium text-foreground">{t("modelLabel")}</div>
-              <NativeSelect
-                value={modelCode}
-                onChange={(event) => setModelCode(event.target.value)}
-                disabled={loadingModels}
-              >
+              <NativeSelect value={modelCode} onChange={setModelCode} disabled={loadingModels}>
                 <option value="" disabled>
                   {t("selectModel")}
                 </option>
@@ -498,11 +494,7 @@ export function AiBasicAudioGeneratorDialog({
             </section>
 
             <section className="space-y-2 pt-4">
-              <NativeSelect
-                value={generateCount}
-                onChange={(event) => setGenerateCount(event.target.value)}
-                className="w-[120px]"
-              >
+              <NativeSelect value={generateCount} onChange={setGenerateCount} className="w-[120px]">
                 {countOptions.map((option) => (
                   <option key={String(option.value)} value={String(option.value)}>
                     {option.label}

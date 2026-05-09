@@ -189,7 +189,7 @@ export function StoryboardBatchVoiceDialog({
             <div className="text-sm font-medium">{t("modelLabel")}</div>
             <NativeSelect
               value={model}
-              onChange={(event) => handleModelChange(event.target.value)}
+              onChange={handleModelChange}
               disabled={loading || loadingModels}
               className="w-full"
             >
@@ -223,11 +223,7 @@ export function StoryboardBatchVoiceDialog({
             ) : (
               <>
                 {langTabs.length > 0 ? (
-                  <NativeSelect
-                    value={currentLang}
-                    onChange={(event) => setActiveLang(event.target.value)}
-                    className="w-full"
-                  >
+                  <NativeSelect value={currentLang} onChange={setActiveLang} className="w-full">
                     {langTabs.map((lang) => (
                       <NativeSelectOption key={lang} value={lang}>
                         {lang} ({voiceGroups[lang]?.length ?? 0})
