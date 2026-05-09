@@ -8,6 +8,7 @@ import {
   IconChevronRight,
   IconCredits,
   IconCrown,
+  IconPlus,
   IconRefresh,
   IconSparkles,
   IconUsers,
@@ -240,12 +241,12 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             </Button>
           ) : null}
 
-          {/* Credits + Upgrade as one segmented pill. Both halves
-              share the chip's neutral background so it reads as one
-              control; the upgrade half just borrows a soft primary
-              tint + primary text so it's discoverable without
-              shouting. Avoids the previous two-tone (transparent vs
-              full purple gradient) clash. */}
+          {/* Credits + Recharge + Upgrade as one 3-segment pill. The
+              shared chip background reads as one control; each half
+              uses hover tint to signal interactivity. Recharge sits
+              between the read-only count and the loud upgrade CTA so
+              the natural left-to-right reading is "you have N credits
+              → top up → upgrade tier". */}
           <div className="relative hidden xl:block">
             <div className="flex items-center overflow-hidden rounded-xl border border-border bg-background/60">
               <button
@@ -260,9 +261,19 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
               <span className="h-5 w-px bg-border/70" aria-hidden />
               <button
                 type="button"
+                data-tour-step="recharge"
+                onClick={() => setRechargeOpen(true)}
+                className="flex items-center gap-1 bg-amber-500/[0.1] px-3 py-2 text-sm font-medium text-amber-500 transition-colors hover:bg-amber-500/20"
+              >
+                <IconPlus className="size-3.5" />
+                {tc("rechargeCredits")}
+              </button>
+              <span className="h-5 w-px bg-border/70" aria-hidden />
+              <button
+                type="button"
                 data-tour-step="upgrade"
                 onClick={() => setUpgradeOpen(true)}
-                className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/10"
+                className="flex items-center gap-1 bg-red-500/[0.1] px-3 py-2 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/20"
               >
                 <IconCrown className="size-3.5" />
                 {tc("upgrade")}
@@ -378,7 +389,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
                   }}
                 >
                   <IconCredits className="size-3.5" />
-                  {t("rechargeCredits")}
+                  {tc("rechargeCredits")}
                 </Button>
               </div>
             ) : null}
