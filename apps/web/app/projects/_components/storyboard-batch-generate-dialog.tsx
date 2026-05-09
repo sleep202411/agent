@@ -307,7 +307,7 @@ export function StoryboardBatchGenerateDialog({
             <FieldLabel>{t("modelLabel")}</FieldLabel>
             <NativeSelect
               value={model}
-              onChange={(event) => handleModelChange(event.target.value)}
+              onChange={handleModelChange}
               disabled={loading || loadingModels}
               className="w-full"
             >
@@ -335,7 +335,7 @@ export function StoryboardBatchGenerateDialog({
                 <FieldLabel>{t("sizeLabel")}</FieldLabel>
                 <NativeSelect
                   value={size}
-                  onChange={(event) => setSize(event.target.value)}
+                  onChange={setSize}
                   disabled={loading || !sizeOptions.length}
                   className="w-full"
                 >
@@ -375,7 +375,7 @@ export function StoryboardBatchGenerateDialog({
                 <FieldLabel>{t("videoSizeLabel")}</FieldLabel>
                 <NativeSelect
                   value={videoSize}
-                  onChange={(event) => setVideoSize(event.target.value)}
+                  onChange={setVideoSize}
                   disabled={loading || !videoDescription.sizes.length}
                   className="w-full"
                 >
@@ -396,7 +396,7 @@ export function StoryboardBatchGenerateDialog({
                 <FieldLabel>{t("videoDurationLabel")}</FieldLabel>
                 <NativeSelect
                   value={videoLength}
-                  onChange={(event) => setVideoLength(event.target.value)}
+                  onChange={setVideoLength}
                   disabled={loading || !videoDescription.videoLengths.length}
                   className="w-full"
                 >

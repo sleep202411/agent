@@ -588,8 +588,7 @@ export function StoryboardFieldSettingsPanel({
 
                           <NativeSelect
                             value=""
-                            onChange={(event) => {
-                              const value = event.target.value;
+                            onChange={(value) => {
                               if (!value) return;
                               setEditingField((current) =>
                                 current.aiRef.includes(value)
@@ -694,14 +693,12 @@ export function StoryboardFieldSettingsPanel({
                     <div className="text-xs text-muted-foreground">{t("fieldType")}</div>
                     <NativeSelect
                       value={createField.type}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setCreateField((current) => ({
                           ...current,
-                          type: event.target.value as CreateFieldState["type"],
-                          options: event.target.value === "SINGLE_OPTION" ? current.options : [],
-                          aiRef: ["IMAGE", "VIDEO"].includes(event.target.value)
-                            ? current.aiRef
-                            : [],
+                          type: value as CreateFieldState["type"],
+                          options: value === "SINGLE_OPTION" ? current.options : [],
+                          aiRef: ["IMAGE", "VIDEO"].includes(value) ? current.aiRef : [],
                         }))
                       }
                     >
@@ -817,8 +814,7 @@ export function StoryboardFieldSettingsPanel({
 
                       <NativeSelect
                         value=""
-                        onChange={(event) => {
-                          const value = event.target.value;
+                        onChange={(value) => {
                           if (!value) return;
                           setCreateField((current) =>
                             current.aiRef.includes(value)
