@@ -43,17 +43,57 @@ const PARTNERS: Partner[] = [
   // Same pattern as Microsoft — generic Alibaba mark + hover title
   // for the JUMPSTARTER sub-brand.
   { slug: "alibaba", name: "Alibaba JUMPSTARTER" },
+  // Separate from Alibaba JUMPSTARTER above — Alibaba Cloud is the
+  // sister sub-brand that hosts our production infra (ECS).
+  { slug: "alibaba-cloud", name: "Alibaba Cloud" },
   { slug: "cyberport", name: "Cyberport" },
   { slug: "sgtech", name: "SGTech" },
+  { slug: "block71", name: "BLOCK71 (NUS Enterprise)" },
+  { slug: "ipos-international", name: "IPOS International" },
+  { slug: "acm", name: "ACM (Association for Computing Machinery)" },
+  { slug: "rsm", name: "RSM" },
+  { slug: "mddi", name: "Ministry of Digital Development and Information (Singapore)" },
+  { slug: "mdec", name: "MDEC — Malaysia Digital Economy Corporation" },
+  { slug: "iproa", name: "iProA — Internet Professional Association" },
+  { slug: "enterprise-singapore", name: "Enterprise Singapore" },
+  { slug: "ite", name: "ITE — Institute of Technical Education (Singapore)" },
+  { slug: "cnsa", name: "CNSA — China National Space Administration" },
   { slug: "world-internet-conference", name: "World Internet Conference" },
-  { slug: "suzhou-industrial-park", name: "Suzhou Industrial Park" },
+  { slug: "digital-china-summit", name: "Digital China Summit" },
 
   // ─── IP partners ───────────────────────────────────
   { slug: "hip-studios", name: "HIP Studios" },
   { slug: "8letters", name: "8Letters" },
+  { slug: "stars-collective", name: "Stars Collective" },
 
   // ─── Other partners ────────────────────────────────
   { slug: "mm2-asia", name: "mm2 Asia" },
+  { slug: "reskills", name: "Reskills" },
+  { slug: "hkbu", name: "Hong Kong Baptist University" },
+  // HKAPA's source SVG had pure-white fills (extracted from a dark
+  // navbar). Re-coloured to slate-800 (#1f2937) so the logo reads
+  // on both light- and dark-theme page backgrounds — the marquee's
+  // grayscale + opacity-60 treatment desaturates colour but
+  // preserves luminance, so a mid-dark fill works in both.
+  { slug: "hkapa", name: "Hong Kong Academy for Performing Arts" },
+  { slug: "birmingham", name: "University of Birmingham" },
+  { slug: "soochow", name: "Soochow University" },
+  { slug: "lanzhou", name: "Lanzhou University" },
+  { slug: "sripatum", name: "Sripatum University (SPU)" },
+  { slug: "padua", name: "Università degli Studi di Padova" },
+  { slug: "cuhk", name: "The Chinese University of Hong Kong" },
+  { slug: "tongxing-shuyuan", name: "童行书院 Tongxing Academy" },
+  { slug: "jscn", name: "JSCN 江苏有线" },
+  { slug: "asia-farm", name: "Asia Farm" },
+  { slug: "point-college", name: "POINT College" },
+  { slug: "riff", name: "RIFF Film Festival" },
+  { slug: "zero-wellness", name: "Zero — beyond wellness" },
+  {
+    slug: "china-intangible-heritage",
+    name: "中国非物质文化遗产 China Intangible Cultural Heritage",
+  },
+  { slug: "shue-yan", name: "Hong Kong Shue Yan University 香港樹仁大學" },
+  { slug: "dongfeng", name: "Dongfeng Motor 东风汽车" },
   { slug: "cqifte", name: "Chongqing Institute of Foreign Trade & Economics" },
   { slug: "sipivt", name: "SIP Institute of Services Outsourcing" },
   // Future Studios (Malaysia), Beijing Xinghong, Chinese Nebula Awards,

@@ -2,6 +2,7 @@
   "common": {
     "appName": "FizzDragon Studio",
     "loading": "加载中...",
+    "comingSoon": "即将推出",
     "save": "保存",
     "submit": "提交",
     "cancel": "取消",
@@ -219,7 +220,7 @@
     "validateStyle": "请选择画风"
   },
   "nav": {
-    "studio": "FizzStudio",
+    "studio": "进入 FizzStudio",
     "ipPlaza": "IP 广场",
     "studioHall": "剧组大厅",
     "creators": "人才集市",
@@ -1578,6 +1579,9 @@
     "exportMp4": "导出 MP4",
     "exportSuccess": "导出完成",
     "exportFailed": "导出失败",
+    "exportUnsupported": "当前浏览器不支持",
+    "exportUnsupportedDesc": "MP4 导出依赖 WebCodecs，请使用最新版 Chrome 或 Edge。",
+    "downloadChrome": "下载 Chrome",
     "setDurationDesc": "设置当前镜头在时间线中的播放时长",
     "enterSeconds": "请输入秒数",
     "confirmDeleteShot": "确认删除这个镜头吗？删除后不可恢复。",
@@ -3283,44 +3287,7 @@
       "eyebrow": "好评",
       "titleBefore": "创作者们怎么评价",
       "titleAfter": "。",
-      "subtitle": "听听用 FizzDragon 产出专业视觉内容的创作者怎么说。",
-      "items": {
-        "sarahChen": {
-          "quote": "刚试了 FizzDragon，真的被惊到了。作为一个一直跟分镜流程死磕的人，能用上一个真正懂构图的 AI 团队太爽了。这是我第一个会毫无保留推荐给同行的 AI 动画工具。",
-          "name": "Sarah Chen",
-          "role": "独立动画师"
-        },
-        "alexJohnson": {
-          "quote": "FizzDragon 的文字转视频流程能把一段文字变成我真愿意继续编辑的东西。跨集无缝的素材库这一点，没什么人提到，但很关键。",
-          "name": "Alex Johnson",
-          "role": "科技测评人"
-        },
-        "michaelRodriguez": {
-          "quote": "今年用过最好的视频创作工具。这套 Agent 系统不像玩具，更像一间你能真正指挥的小工作室。",
-          "name": "Michael Rodriguez",
-          "role": "视频导演"
-        },
-        "emmaThompson": {
-          "quote": "FizzDragon 彻底改变了我做短片的方式。文字转视频流程难以置信——我描述一个场景，午饭前就能拿到能直接上时间线的素材。最打动我的是逐帧精修。",
-          "name": "Emma Thompson",
-          "role": "内容创作者"
-        },
-        "chrisPark": {
-          "quote": "试了视频和图像增强工具——出专业级内容的便利度是真的。这是我第一次没有跟模型死磕。",
-          "name": "Chris Park",
-          "role": "自由设计师"
-        },
-        "davidKim": {
-          "quote": "FizzDragon 直接改变了我的内容工作流。新手友好的界面，底下的引擎却很硬核。我会推荐给任何想做系列内容的人。",
-          "name": "David Kim",
-          "role": "社交媒体经理"
-        },
-        "jessicaMartinez": {
-          "quote": "几行文字就能产出高质量视频，编辑器也很顺手。作为数字内容创作者，我用过的工具数不胜数——这一个我会一直回来用。",
-          "name": "Jessica Martinez",
-          "role": "数字内容创作者"
-        }
-      }
+      "subtitle": "听听用 FizzDragon 产出专业视觉内容的创作者怎么说。"
     },
     "faq": {
       "eyebrow": "常见问题",

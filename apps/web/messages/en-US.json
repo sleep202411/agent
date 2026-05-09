@@ -2,6 +2,7 @@
   "common": {
     "appName": "FizzDragon Studio",
     "loading": "Loading...",
+    "comingSoon": "Coming soon",
     "save": "Save",
     "submit": "Submit",
     "cancel": "Cancel",
@@ -219,7 +220,7 @@
     "validateStyle": "Please select an art style"
   },
   "nav": {
-    "studio": "FizzStudio",
+    "studio": "Enter FizzStudio",
     "ipPlaza": "IP Plaza",
     "studioHall": "Crews",
     "creators": "Talent Market",
@@ -1578,6 +1579,9 @@
     "exportMp4": "Export MP4",
     "exportSuccess": "Export complete",
     "exportFailed": "Export failed",
+    "exportUnsupported": "Browser not supported",
+    "exportUnsupportedDesc": "MP4 export needs WebCodecs. Use the latest Chrome or Edge.",
+    "downloadChrome": "Get Chrome",
     "setDurationDesc": "Set the playback duration of this shot on the timeline",
     "enterSeconds": "Enter seconds",
     "confirmDeleteShot": "Delete this shot? This cannot be undone.",
@@ -3283,44 +3287,7 @@
       "eyebrow": "Praise",
       "titleBefore": "What creators are saying about",
       "titleAfter": ".",
-      "subtitle": "Hear from creators who use FizzDragon to ship professional visual content.",
-      "items": {
-        "sarahChen": {
-          "quote": "Just tried FizzDragon and I'm genuinely blown away. As someone who always wrestles with the storyboard pipeline, having an AI crew that actually understands shot composition is wild. It's the first AI animation tool I'd hand to my peers without caveats.",
-          "name": "Sarah Chen",
-          "role": "Indie animator"
-        },
-        "alexJohnson": {
-          "quote": "FizzDragon's text-to-video pipeline turns a paragraph into something I'd actually keep editing. The seamless asset library across episodes is the part nobody talks about.",
-          "name": "Alex Johnson",
-          "role": "Tech reviewer"
-        },
-        "michaelRodriguez": {
-          "quote": "Best video creation tool I've used this year. The agent system feels less like a toy and more like a small studio you can actually direct.",
-          "name": "Michael Rodriguez",
-          "role": "Video director"
-        },
-        "emmaThompson": {
-          "quote": "FizzDragon completely changed how I produce short content. The text-to-video flow is unbelievable — I describe a scene and have something I'd put on the timeline by lunch. The frame-level refinement is what sealed it for me.",
-          "name": "Emma Thompson",
-          "role": "Content creator"
-        },
-        "chrisPark": {
-          "quote": "Played with the video and image enhancement tools — the convenience for producing professional-grade content is real. This is the first time I haven't fought the model.",
-          "name": "Chris Park",
-          "role": "Freelance designer"
-        },
-        "davidKim": {
-          "quote": "FizzDragon flat-out changed my content workflow. Beginner-friendly UI, but the engine underneath is serious. I'd hand this to anyone building a series.",
-          "name": "David Kim",
-          "role": "Social media manager"
-        },
-        "jessicaMartinez": {
-          "quote": "It took a few lines of text and turned them into a high-quality video, and the editor felt familiar. As a digital content creator I've burned through a lot of tools — this is the one I keep coming back to.",
-          "name": "Jessica Martinez",
-          "role": "Digital content creator"
-        }
-      }
+      "subtitle": "Hear from creators who use FizzDragon to ship professional visual content."
     },
     "faq": {
       "eyebrow": "FAQ",

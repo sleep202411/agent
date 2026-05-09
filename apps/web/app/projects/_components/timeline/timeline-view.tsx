@@ -41,7 +41,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import { useAppSelector, useAppDispatch } from "@/src/store";
@@ -91,14 +91,17 @@ import {
 } from "./timeline-types";
 import {
   exportTimelineToMp4,
+  isExportSupported,
   triggerBlobDownload,
   TimelineExportError,
+  TimelineExportUnsupportedError,
 } from "@/src/lib/timeline-export-mediabunny";
 
 export function TimelineView() {
   const ts = useTranslations("storyboard");
   const tc = useTranslations("common");
   const tt = useTranslations("timeline");
+  const locale = useLocale();
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((state) => state.project.currentProjectId);
   const detail = useAppSelector((state) => selectCurrentInstance(state).detail);
@@ -411,11 +414,38 @@ export function TimelineView() {
       toast.warning(tt("noShots"));
       return;
     }
+    // CN locale gets google.cn (Google's official mainland mirror —
+    // google.com is unreachable inside the GFW). Everyone else gets
+    // the canonical google.com page.
+    const chromeUrl =
+      locale === "zh-CN" ? "https://www.google.cn/chrome/" : "https://www.google.com/chrome/";
+    const showUnsupportedToast = () => {
+      toast.error(tt("exportUnsupported"), {
+        description: tt("exportUnsupportedDesc"),
+        duration: 10_000,
+        action: {
+          label: tt("downloadChrome"),
+          onClick: () => window.open(chromeUrl, "_blank", "noopener"),
+        },
+      });
+    };
+    // Pre-flight: WebCodecs encoders are Chromium-only today (with
+    // partial Safari coverage). Pop a sticky toast with a "Get
+    // Chrome" action instead of letting the user watch the export
+    // crash mid-way.
+    if (!isExportSupported()) {
+      showUnsupportedToast();
+      return;
+    }
     setIsExporting(true);
     setExportProgress(0);
     try {
       const blob = await exportTimelineToMp4(
-        previewShots.map((shot) => ({ id: shot.id, videoUrl: shot.videoUrl })),
+        previewShots.map((shot) => ({
+          id: shot.id,
+          videoUrl: shot.videoUrl,
+          duration: shot.duration,
+        })),
         {
           onProgress: (ratio) => setExportProgress(ratio),
         }
@@ -425,6 +455,10 @@ export function TimelineView() {
       toast.success(tt("exportSuccess"));
     } catch (error) {
       console.error("[TimelineView] export failed:", error);
+      if (error instanceof TimelineExportUnsupportedError) {
+        showUnsupportedToast();
+        return;
+      }
       const detail =
         error instanceof TimelineExportError || error instanceof Error
           ? error.message
@@ -434,7 +468,7 @@ export function TimelineView() {
       setIsExporting(false);
       setExportProgress(0);
     }
-  }, [isExporting, previewShots, tt]);
+  }, [isExporting, locale, previewShots, tt]);
 
   const handleShotResize = useCallback(
     async (shotId: string, nextDuration: number) => {
