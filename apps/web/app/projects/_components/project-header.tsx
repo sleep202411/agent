@@ -360,6 +360,22 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
                             return "creditsChange";
                         }
                       })();
+                      // AI label fallback chain: aiName (friendly) →
+                      // modelCode (raw id, e.g. STORY_OS / wan2.7-image-pro)
+                      // → last segment of apiPath (e.g. "basic"). Skip
+                      // entirely on recharge / system-gift rows where
+                      // there's no AI provider to credit.
+                      const aiLabel = (() => {
+                        if (String(record.recordType) !== "2") return "";
+                        if (record.aiName) return String(record.aiName);
+                        if (record.modelCode) return String(record.modelCode);
+                        if (record.apiPath) {
+                          const tail = String(record.apiPath).split("/").filter(Boolean).pop();
+                          return tail ?? "";
+                        }
+                        return "";
+                      })();
+                      const change = Number(record.integralChange ?? 0);
                       return (
                         <div
                           key={`${record.id ?? "record"}-${index}`}
@@ -367,10 +383,24 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-sm">{t(typeKey)}</span>
-                            <span className="text-sm font-semibold">
-                              {Number(record.integralChange ?? 0)}
+                            <span
+                              className={cn(
+                                "text-sm font-semibold tabular-nums",
+                                change > 0
+                                  ? "text-green-500"
+                                  : change < 0
+                                    ? "text-red-500"
+                                    : "text-muted-foreground"
+                              )}
+                            >
+                              {change > 0 ? `+${change}` : change}
                             </span>
                           </div>
+                          {aiLabel ? (
+                            <div className="mt-0.5 truncate text-xs text-foreground/70">
+                              {aiLabel}
+                            </div>
+                          ) : null}
                           <div className="mt-1 text-xs text-muted-foreground">
                             {String(record.createTime ?? "")}
                           </div>

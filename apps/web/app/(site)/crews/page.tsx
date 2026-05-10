@@ -54,12 +54,10 @@ export default function CrewsPage() {
   const { data: landing } = useCrewLanding();
 
   // Second data source — `POST /project/crew/list` (queryCrewList).
-  // Wired up so the response is visible in the network panel on prod
-  // (lets us validate the wire shape against real data) but **not
-  // rendered yet** — the dedicated section below is commented out for
-  // the 2026-05-10 production cut. Once the response shape is
-  // confirmed, swap the hook into a real consumer + un-comment the
-  // section.
+  // Wired so the request is visible in the network panel for shape
+  // validation, but **not rendered** ahead of the next prod cut.
+  // The "All Crews" section below is commented out; flip the hook
+  // result back into local vars + un-comment the section to enable.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _crewListProbe = useQueryCrewList({
     pageNum: 1,
@@ -111,12 +109,8 @@ export default function CrewsPage() {
                 </span>
               ))}
             </div>
-            {/* Create Crew CTA hidden 2026-05-10 ahead of the next
-                production cut. Crew CRUD endpoints (update / delete /
-                "my crews" listing) still need verification on prod
-                before we let users seed crews they may not be able
-                to manage afterwards. Re-enable by un-commenting; the
-                dialog (`<CreateCrewDialog>` below) stays mounted. */}
+            {/* Create Crew CTA hidden ahead of the next prod cut.
+                Re-enable by un-commenting; dialog stays mounted. */}
             {/* <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
               <IconPlus className="size-4" />
               {tCrew("createStudio")}
@@ -129,74 +123,11 @@ export default function CrewsPage() {
 
       {/* ── Browse ──────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-7xl px-6 pb-24 pt-8">
-        {/* Role pills */}
-        {roles.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <RolePill
-              label={t("filterAll")}
-              active={activeRoleId === ALL_ROLE_ID}
-              onClick={() => setActiveRoleId(ALL_ROLE_ID)}
-            />
-            {roles.map((role) => (
-              <RolePill
-                key={role.id}
-                label={role.name}
-                active={activeRoleId === role.id}
-                onClick={() =>
-                  // Click an already-active pill clears it (legacy parity).
-                  setActiveRoleId((prev) => (prev === role.id ? ALL_ROLE_ID : role.id))
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Project grid */}
-        <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {isLoading ? (
-            <CardSkeleton count={10} />
-          ) : items.length === 0 ? (
-            <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
-              {t("noData")}
-            </div>
-          ) : (
-            items.map((p) => (
-              <ProjectCard
-                key={p.project.id}
-                item={p}
-                roleById={roleById}
-                fallbackOwner={t("notAvailable")}
-                openRolesLabel={tCrew("openPositions")}
-                locale={locale}
-              />
-            ))
-          )}
-        </div>
-
-        {/* Load more */}
-        {items.length > 0 && (
-          <div className="mt-10 flex justify-center">
-            <button
-              type="button"
-              disabled={!hasNextPage || isFetchingNextPage}
-              onClick={() => fetchNextPage()}
-              className={cn(
-                "inline-flex h-11 items-center rounded-xl border border-border px-6 text-sm font-semibold transition-colors",
-                hasNextPage && !isFetchingNextPage
-                  ? "bg-secondary text-foreground hover:bg-secondary/80"
-                  : "cursor-not-allowed text-muted-foreground"
-              )}
-            >
-              {isFetchingNextPage ? t("loading") : hasNextPage ? t("loadMore") : t("noMore")}
-            </button>
-          </div>
-        )}
-
-        {/* Second data source — crews from `POST /project/crew/list`.
-            Disabled 2026-05-10 ahead of prod cut. Re-enable together
-            with the `useQueryCrewList` call above the return when
-            we've validated the response shape on staging. */}
-        {/* <section className="mt-16">
+        {/* Primary feed — crews from `POST /project/crew/list`
+            (queryCrewList). Disabled ahead of the next prod cut;
+            re-enable together with the `useQueryCrewList` consumer
+            up in the component body. */}
+        {/* <section>
           <div className="mb-6 flex items-baseline justify-between gap-4">
             <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
             {crewListPage ? (
@@ -217,20 +148,100 @@ export default function CrewsPage() {
             )}
           </div>
         </section> */}
+
+        {/* Legacy "projects with open jobs" feed — for now this is
+            the only thing rendered; the queryCrewList feed above is
+            disabled ahead of the prod cut. Section title removed
+            since it's the only grid on the page. */}
+        <section>
+          {/* Role pills */}
+          {roles.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <RolePill
+                label={t("filterAll")}
+                active={activeRoleId === ALL_ROLE_ID}
+                onClick={() => setActiveRoleId(ALL_ROLE_ID)}
+              />
+              {roles.map((role) => (
+                <RolePill
+                  key={role.id}
+                  label={role.name}
+                  active={activeRoleId === role.id}
+                  onClick={() =>
+                    // Click an already-active pill clears it (legacy parity).
+                    setActiveRoleId((prev) => (prev === role.id ? ALL_ROLE_ID : role.id))
+                  }
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Project grid */}
+          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {isLoading ? (
+              <CardSkeleton count={10} />
+            ) : items.length === 0 ? (
+              <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                {t("noData")}
+              </div>
+            ) : (
+              items.map((p) => (
+                <ProjectCard
+                  key={p.project.id}
+                  item={p}
+                  roleById={roleById}
+                  fallbackOwner={t("notAvailable")}
+                  openRolesLabel={tCrew("openPositions")}
+                  locale={locale}
+                />
+              ))
+            )}
+          </div>
+
+          {/* Load more */}
+          {items.length > 0 && (
+            <div className="mt-10 flex justify-center">
+              <button
+                type="button"
+                disabled={!hasNextPage || isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+                className={cn(
+                  "inline-flex h-11 items-center rounded-xl border border-border px-6 text-sm font-semibold transition-colors",
+                  hasNextPage && !isFetchingNextPage
+                    ? "bg-secondary text-foreground hover:bg-secondary/80"
+                    : "cursor-not-allowed text-muted-foreground"
+                )}
+              >
+                {isFetchingNextPage ? t("loading") : hasNextPage ? t("loadMore") : t("noMore")}
+              </button>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
 }
 
+// Currently unused — paired with the disabled "All Crews" feed above.
+// Kept around so re-enabling the feed is a one-line uncomment.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CrewCard({ item, locale }: { item: QueryCrewListItem; locale: Locale }) {
   const router = useRouter();
-  const banner = item.banner
-    ? `${env.BANNER_BASE_URL}/${item.banner.replace(/^\/+/, "")}`
+  // Backend sometimes returns the literal placeholder "string" or an
+  // empty value for legacy seed rows — skip those so the card just
+  // shows the default cover instead of a 404.
+  const isUsableBanner =
+    item.banner &&
+    item.banner !== "string" &&
+    !item.banner.startsWith("http://") &&
+    item.banner.length > 0;
+  const banner = isUsableBanner
+    ? `${env.BANNER_BASE_URL}/${(item.banner as string).replace(/^\/+/, "")}`
     : env.DEFAULT_COVER_URL;
-  const avatar = item.ownerAvatar
-    ? `${env.USER_BASE_URL}/${item.ownerAvatar.replace(/^\/+/, "")}`
-    : "";
-  const detailHref = localizePath(`/crews/${item.id}`, locale);
+  // New-feed cards route to the v2 detail page (PRD studio layout).
+  // Legacy `ProjectCard` (the open-jobs feed below) still goes to the
+  // old `/crews/[id]` page so we don't break in-flight applications.
+  const detailHref = localizePath(`/crews/${item.id}/v2`, locale);
 
   return (
     <button
@@ -252,23 +263,6 @@ function CrewCard({ item, locale }: { item: QueryCrewListItem; locale: Locale })
         {item.description ? (
           <p className="line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
         ) : null}
-        <div className="mt-auto flex items-center justify-between text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            {avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={avatar} alt="" className="size-5 rounded-full object-cover" />
-            ) : (
-              <div className="size-5 rounded-full bg-secondary" />
-            )}
-            <span className="truncate">{item.ownerNickName ?? "—"}</span>
-          </div>
-          {typeof item.memberCount === "number" ? (
-            <span className="flex items-center gap-1">
-              <IconUsers className="size-3" />
-              {item.memberCount}
-            </span>
-          ) : null}
-        </div>
       </div>
     </button>
   );

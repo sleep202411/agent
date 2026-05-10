@@ -55,11 +55,12 @@ export interface CrewListFilter {
 
 /**
  * Filter shape for `POST /project/crew/list` (queryCrewList).
- * Matches the backend body exactly so it doubles as the wire payload.
- * All fields optional so the caller only sets what it cares about.
+ * Matches the backend body except for `ipId`, which the frontend
+ * doesn't surface — crews aren't bound to an IP at the user-facing
+ * layer per phase-1 spec. Backend may still accept it; we just
+ * never send it.
  */
 export interface QueryCrewListFilter {
-  ipId?: number;
   name?: string;
   pageNum?: number;
   pageSize?: number;
