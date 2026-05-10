@@ -3000,7 +3000,9 @@
       "privacy": "隱私政策",
       "terms": "服務條款",
       "refund": "退款政策"
-    }
+    },
+    "singaporeLicense": "新加坡政府電視／電影／網絡內容牌照：BNC240003",
+    "copyright": "© {year} FizzDragon 保留所有版權，違者追究全部法律責任"
   },
   "kyc": {
     "identityVerification": "身份資訊認證",

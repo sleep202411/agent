@@ -186,11 +186,105 @@ export const MOCK_CREWS: CrewItem[] = [
   },
 ];
 
+/**
+ * Hero stats fallback values — match `getPlatformStats(epoch)` so the
+ * brief loading flash before `useCrewLanding` resolves looks identical
+ * to the steady state. Real numbers are produced by `getPlatformStats`
+ * below, which grows them deterministically each day.
+ */
 export const PLATFORM_STATS = [
   { labelKey: "statStudios", value: "128" },
   { labelKey: "statRoles", value: "340+" },
   { labelKey: "statCompleted", value: "89" },
 ];
+
+// ────────────────────────────────────────────────────────
+// Daily-growth model for hero stats.
+//
+// Goals:
+//   1. Same value for every user on the same UTC day — no per-user or
+//      per-session drift.
+//   2. Monotonic — refresh only ever shows ≥ yesterday's number.
+//   3. Looks organic — daily delta varies in a band, not a flat +N
+//      every day.
+//
+// Trade-off: not real data. This is a marketing flourish for a
+// pre-traction landing page; replace with a backend metrics endpoint
+// once one exists.
+// ────────────────────────────────────────────────────────
+
+/** Anchor day for the growth curve. On this UTC date every spec
+ *  reads as `base`; each subsequent day adds a hash-derived delta in
+ *  `[perDayMin, perDayMax]`. Bumping this date "resets" the displayed
+ *  numbers back to base — don't change it casually. */
+const STATS_EPOCH_UTC_MS = Date.UTC(2026, 4, 10); // 2026-05-10
+
+/** FNV-1a 32-bit. Cheap, deterministic, uniform — that's all we need
+ *  to derive a per-day jitter from a stat seed × day index. */
+function hash32(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** Days between the epoch and `now`, rounded down to UTC midnight on
+ *  both ends. Negative results clamp to 0 so values never dip below
+ *  the configured `base` for users on a fast/slow clock. */
+function daysSinceEpoch(now: Date): number {
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.max(0, Math.floor((todayUtc - STATS_EPOCH_UTC_MS) / 86400000));
+}
+
+interface GrowthSpec {
+  /** Value on the epoch day (today @ launch). */
+  base: number;
+  /** Lower bound for one day's growth. Must be ≥ 0 to keep monotonic. */
+  perDayMin: number;
+  /** Upper bound for one day's growth. */
+  perDayMax: number;
+  /** Hash scope. Different seeds → independent jitter even when min/max
+   *  bounds match between two specs. */
+  seed: string;
+}
+
+const PLATFORM_STATS_GROWTH: Array<{
+  labelKey: string;
+  spec: GrowthSpec;
+  /** Optional formatter — `statRoles` historically shows "N+". */
+  format?: (n: number) => string;
+}> = [
+  {
+    labelKey: "statStudios",
+    spec: { base: 128, perDayMin: 3, perDayMax: 7, seed: "studios" },
+  },
+  {
+    labelKey: "statRoles",
+    spec: { base: 340, perDayMin: 10, perDayMax: 25, seed: "roles" },
+    format: (n) => `${n}+`,
+  },
+  {
+    labelKey: "statCompleted",
+    spec: { base: 89, perDayMin: 1, perDayMax: 3, seed: "completed" },
+  },
+];
+
+/** Today's projected hero stats. The loop is O(days) — for landing
+ *  scale (a few hundred days × 3 stats) this is microseconds; if it
+ *  ever shows up on a profile, swap for a closed-form approximation. */
+export function getPlatformStats(now: Date = new Date()) {
+  const days = daysSinceEpoch(now);
+  return PLATFORM_STATS_GROWTH.map(({ labelKey, spec, format }) => {
+    let total = spec.base;
+    const span = spec.perDayMax - spec.perDayMin + 1;
+    for (let d = 1; d <= days; d++) {
+      total += spec.perDayMin + (hash32(`${spec.seed}:${d}`) % span);
+    }
+    return { labelKey, value: format ? format(total) : String(total) };
+  });
+}
 
 export const MOCK_ACTIVITIES: ActivityItem[] = [
   {
