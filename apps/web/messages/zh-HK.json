@@ -746,6 +746,8 @@
   },
   "crew": {
     "plaza": "劇組大廳",
+    "allCrewsTitle": "全部劇組",
+    "allCrewsCount": "共 {count} 個劇組",
     "heroTitle1": "找劇組，找人才",
     "heroTitle2": "讓創作發生",
     "heroDesc": "以劇組為單位組織協作：發佈、招募、報名、篩選、協作。",
