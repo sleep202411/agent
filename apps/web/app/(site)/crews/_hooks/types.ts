@@ -123,30 +123,6 @@ export interface UpdateJobInput extends Partial<CreateJobInput> {
 
 // ─── Workspace ─────────────────────────────────────────
 
-import type {
-  WorkspaceStudio,
-  EpMember,
-  RoleProgress,
-  TodoItem,
-  WorkspaceActivity,
-  EpisodeData,
-  DeliveryRecord,
-} from "../_components/workspace-mock";
-
-export interface WorkspaceData {
-  studio: WorkspaceStudio;
-  currentEpMembers: EpMember[];
-  rolesProgress: RoleProgress[];
-  todos: TodoItem[];
-  activity: WorkspaceActivity[];
-  episodes: EpisodeData[];
-  delivery: DeliveryRecord[];
-}
-
-export type EpMemberAction = "approve" | "reject" | "remind" | "submitReview";
-
-export type EpMemberStatus = "approved" | "submitted" | "in_progress" | "rejected";
-
 // ─── Producer Workbench ────────────────────────────────
 
 export interface ProducerProject {
@@ -212,13 +188,3 @@ export type {
   CrewMember,
   CrewDetail,
 } from "../_components/crew-mock";
-
-export type {
-  WorkspaceStudio,
-  EpMember,
-  RoleProgress,
-  TodoItem,
-  WorkspaceActivity,
-  EpisodeData,
-  DeliveryRecord,
-} from "../_components/workspace-mock";

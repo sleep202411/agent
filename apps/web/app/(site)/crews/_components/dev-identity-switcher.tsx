@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { IconUserCog, IconChevronDown, IconCheck } from "@tabler/icons-react";
 import {
@@ -10,7 +10,8 @@ import {
   useDevIdentityRaw,
   type Identity,
 } from "@/app/(site)/crews/_hooks/use-dev-identity";
-import { useCrewWorkspace } from "@/app/(site)/crews/_hooks/use-crew";
+import { useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
+import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,8 +24,23 @@ export function DevIdentitySwitcher() {
   const crewId = params.id;
   const raw = useDevIdentityRaw();
   const identity = parseIdentity(raw);
-  const { data } = useCrewWorkspace(crewId);
-  const members = data?.currentEpMembers ?? [];
+  // Real crew members (from `/project/crew/member/list`) replace the
+  // mock workspace aggregate's currentEpMembers list. The switcher
+  // just needs name + role for impersonation labels.
+  const { data: crewMembers = [] } = useCrewMembers(crewId);
+  const { data: projectRoles = [] } = useProjectRoles();
+  const roleNameById = useMemo(
+    () => new Map(projectRoles.map((r) => [r.id, r.name])),
+    [projectRoles]
+  );
+  const members = useMemo(
+    () =>
+      crewMembers.map((m) => ({
+        name: m.nick?.trim() || `User ${m.userId}`,
+        role: (m.roleId != null && roleNameById.get(m.roleId)) || "—",
+      })),
+    [crewMembers, roleNameById]
+  );
 
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
