@@ -4,7 +4,12 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { MOCK_ACTIVITIES, MOCK_CREWS, PLATFORM_STATS } from "../_components/crew-mock";
+import {
+  MOCK_ACTIVITIES,
+  MOCK_CREWS,
+  PLATFORM_STATS,
+  getPlatformStats,
+} from "../_components/crew-mock";
 import { crewKeys, delay, type CrewListFilter } from "./shared";
 import type { CrewItem } from "./types";
 
@@ -46,7 +51,11 @@ interface CrewLandingResult {
 
 async function fetchCrewLanding(): Promise<CrewLandingResult> {
   await delay(180);
-  return { recent: MOCK_ACTIVITIES, stats: PLATFORM_STATS };
+  // `getPlatformStats()` is the live, daily-growing version of
+  // PLATFORM_STATS — same value for every user on the same UTC day,
+  // never decreases on refresh. The static `PLATFORM_STATS` is kept
+  // around as the loading-state fallback in page.tsx.
+  return { recent: MOCK_ACTIVITIES, stats: getPlatformStats() };
 }
 
 export function useCrews(filter: CrewListFilter = {}) {
