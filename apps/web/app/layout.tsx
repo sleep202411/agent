@@ -7,11 +7,47 @@ import { RootLayoutClient } from "@/app/root-layout-client";
 import { getServerQueryClient } from "@/src/lib/react-query/server";
 import { fetchUserInfoServerSide } from "@/src/lib/auth/server-user";
 import { userKeys } from "@/src/hooks/use-user";
+import { CANONICAL_HOST, JsonLd, buildOrganization, buildWebSite } from "@/src/lib/seo";
 import "./globals.css";
 
+/**
+ * `metadataBase` is the absolute URL Next.js resolves all relative
+ * `og:image` / `twitter:image` / `alternates.canonical` against.
+ * Without it, those links serialise as relative paths in HTML head
+ * — fine for browsers, broken for crawlers and link previews. Pin
+ * to the canonical brand host (matches the schema.org @id graph).
+ */
 export const metadata: Metadata = {
-  title: "FizzDragon Studio",
+  metadataBase: new URL(CANONICAL_HOST),
+  title: {
+    default: "FizzDragon Studio",
+    template: "%s · FizzDragon",
+  },
   description: "AI Animation & IP Co-creation Platform",
+  applicationName: "FizzDragon",
+  keywords: [
+    "AI Animation",
+    "IP Co-creation",
+    "AI Storyboard",
+    "AI Short Film",
+    "Generative Video",
+    "Creator Platform",
+  ],
+  openGraph: {
+    type: "website",
+    siteName: "FizzDragon",
+    url: CANONICAL_HOST,
+    title: "FizzDragon — AI Animation & IP Co-creation Platform",
+    description: "Script to storyboard to render — with a creator marketplace and IP plaza.",
+    images: ["/logo.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "FizzDragon",
+    description: "AI Animation & IP Co-creation Platform",
+    images: ["/logo.png"],
+  },
+  icons: { icon: "/favicon.ico" },
 };
 
 // Default to dark on the server-rendered HTML so the first paint is
@@ -72,6 +108,13 @@ export default async function RootLayout({
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap"
         />
+        {/* Site-wide schema.org JSON-LD — Organization + WebSite.
+            Goes inside <head> so it lands in the SSR HTML before
+            any client JS, which is what crawlers + AI engines read.
+            Page-level structured data (Article / CreativeWork /
+            Course / FAQPage / …) is emitted from the page's own
+            server component using the same <JsonLd> helper. */}
+        <JsonLd data={[buildOrganization(), buildWebSite()]} />
       </head>
       <body className="min-h-full flex flex-col bg-background">
         {/* Top progress bar for App Router navigation. App Router
