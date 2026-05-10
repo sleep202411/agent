@@ -132,8 +132,20 @@ async function deleteJob(_input: { id: number; crewId: string }): Promise<void> 
   await delay(180);
 }
 
-async function closeJob(_jobId: number): Promise<void> {
-  await delay(180);
+/**
+ * Close (cancel) a recruitment job.
+ *
+ * Endpoint: `POST /project/crew/job/close` (cancelCrewJob).
+ * `jobId` goes on the query string per the swagger contract; no body.
+ *
+ * Backend response is the standard envelope — api-client will unwrap
+ * it and return whatever `data` is (probably empty / a status flag).
+ * We don't surface that to callers; resolution = success.
+ */
+async function closeJob(jobId: number): Promise<void> {
+  await api.post("/project/crew/job/close", {
+    params: { jobId: Number(jobId) },
+  });
 }
 
 export function useOpenJobs(filter: { roleName?: string } = {}) {
@@ -192,11 +204,13 @@ export function useDeleteJob() {
   });
 }
 
-export function useCloseJob() {
+export function useCloseJob(crewId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: closeJob,
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.jobs(crewId) });
       qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
     },
   });

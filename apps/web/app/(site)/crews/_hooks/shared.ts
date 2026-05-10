@@ -43,7 +43,7 @@
  */
 
 import { MOCK_CREWS } from "../_components/crew-mock";
-import type { EpMemberStatus, JobApplicant, JobApplication } from "./types";
+import type { JobApplicant, JobApplication } from "./types";
 
 // ─── Query keys ────────────────────────────────────────
 
@@ -230,20 +230,4 @@ const MOCK_APPLICANTS: Record<number, JobApplicant[]> = {
 export const mutationState = {
   applications: [...MOCK_MY_APPLICATIONS],
   applicantsByJob: structuredClone(MOCK_APPLICANTS) as Record<number, JobApplicant[]>,
-};
-
-// ─── Status presentation maps (workspace) ──────────────
-
-export const STATUS_COLOR: Record<EpMemberStatus, string> = {
-  approved: "text-green-400 bg-green-400/10 border-green-400/30",
-  submitted: "text-blue-400 bg-blue-400/10 border-blue-400/30",
-  in_progress: "text-amber-400 bg-amber-400/10 border-amber-400/30",
-  rejected: "text-red-400 bg-red-400/10 border-red-400/30",
-};
-
-export const STATUS_LABEL_KEY: Record<EpMemberStatus, string> = {
-  approved: "msApproved",
-  submitted: "msSubmitted",
-  in_progress: "msInProgress",
-  rejected: "msRejected",
 };
