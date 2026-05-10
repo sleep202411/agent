@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { IconBrandDiscord, IconBrandWechat, IconBrandWhatsapp } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
@@ -8,6 +8,7 @@ import { TextPressure } from "@/components/ui/text-pressure";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
+import { siteConfig } from "@/src/config/site";
 
 type LinkKey = string;
 type FooterLink = { key: LinkKey; href: string; external?: boolean };
@@ -74,10 +75,12 @@ const COLUMNS: FooterCol[] = [
 export function SiteFooter() {
   const t = useTranslations("footer");
   const locale = useLocale() as Locale;
-  const [isCnSite, setIsCnSite] = useState(false);
-  useEffect(() => {
-    setIsCnSite(window.location.hostname.endsWith(".cn"));
-  }, []);
+  // Region check is build-time, baked into the bundle from
+  // `NEXT_PUBLIC_SITE_REGION`. SSR and the client agree on the
+  // value from the very first render — no flash of "wrong" footer
+  // on the .cn deployment like the previous useEffect-based
+  // hostname sniff produced.
+  const isCnSite = siteConfig.region === "cn";
 
   const columns = useMemo(
     () =>
