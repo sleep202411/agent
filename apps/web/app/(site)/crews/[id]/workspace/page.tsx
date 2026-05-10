@@ -1,46 +1,55 @@
 "use client";
 
+/**
+ * Crew workspace — slim version.
+ *
+ * Three tabs (overview / recruitment / members), backed only by real
+ * endpoints:
+ *
+ *   - useCrewDetail        — header + hero (name / banner / video / description)
+ *   - useCrewMembers       — members tab + member-count stat
+ *   - useCrewJobs          — recruitment tab + slots / open-jobs stats
+ *   - useJobApplicants     — accordion-expanded applicant list inside recruitment
+ *   - useProjectRoles      — role-name lookup for jobs and members
+ *
+ * Mock-driven sections (todos, activity feed, episode timeline,
+ * delivery records, mock studio metadata) were dropped 2026-05-10
+ * along with `workspace-mock.ts` / `use-workspace.ts` — those
+ * features will return when their respective backends ship.
+ */
+
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   IconArrowLeft,
-  IconClock,
-  IconEdit,
-  IconSend,
-  IconEye,
-  IconUsers,
-  IconAlertCircle,
-  IconChevronRight,
   IconBook,
   IconBriefcase,
-  IconMovie,
-  IconPackage,
-  IconActivity,
-  IconTrash,
+  IconChevronDown,
+  IconChevronRight,
+  IconEdit,
   IconLoader2,
+  IconLock,
+  IconTrash,
+  IconUsers,
 } from "@tabler/icons-react";
 import { env } from "@/src/env";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
-  MEMBER_STATUS_META,
-  useCrewWorkspace,
   useCrewDetail,
   useCrewJobs,
-  useEpisodeMemberAction,
-  useSubmitEpisodeToClient,
   useCrewMembers,
   useRemoveMember,
-  type EpMember,
 } from "@/app/(site)/crews/_hooks/use-crew";
+import { useCloseJob } from "@/app/(site)/crews/_hooks/use-jobs";
 import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
 import { useDevIdentity } from "@/app/(site)/crews/_hooks/use-dev-identity";
-import { EpisodeAccordion } from "@/app/(site)/crews/_components/episode-accordion";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
+import { JobApplicantsList } from "@/app/(site)/crews/_components/job-applicants-list";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,89 +65,75 @@ const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },
   { id: "roles", labelKey: "tabRecruitment", icon: IconBriefcase },
   { id: "members", labelKey: "tabMembers", icon: IconUsers },
-  { id: "episodes", labelKey: "tabEpisodes", icon: IconMovie },
-  { id: "delivery", labelKey: "tabDelivery", icon: IconPackage },
-  { id: "activity", labelKey: "tabActivity", icon: IconActivity },
 ] as const;
 
-const ACTION_VARIANT: Record<string, string> = {
-  approved: "ghost",
-  submitted: "primary",
-  in_progress: "warn",
-  rejected: "ghost",
-};
-
-const BTN_STYLES: Record<string, string> = {
-  primary: "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20",
-  warn: "bg-amber-400/10 text-amber-400 border-amber-400/20 hover:bg-amber-400/20",
-  ghost: "bg-secondary text-muted-foreground border-border hover:text-foreground",
-};
+type TabId = (typeof TABS)[number]["id"];
 
 export default function CrewWorkspacePage() {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const params = useParams<{ id: string }>();
   const id = params.id;
+
+  // Owner gating still flows through the dev-identity switcher; once
+  // backend exposes a "current user vs crew.adminUserId" check we can
+  // swap this for a real ownership signal.
   const identity = useDevIdentity();
   const isOwner = identity.kind === "owner";
-  const selfMemberName = identity.kind === "member" ? identity.name : null;
-  const [activeTab, setActiveTab] = useState("overview");
-  const [completedTodos, setCompletedTodos] = useState<Set<number>>(new Set());
 
-  const { data, isLoading } = useCrewWorkspace(id);
-  const memberAction = useEpisodeMemberAction(id);
-  const submitToClient = useSubmitEpisodeToClient(id);
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [publishJobOpen, setPublishJobOpen] = useState(false);
-  // Pending member-remove target. `null` = dialog closed.
-  // `{userId, name}` = AlertDialog showing "remove {name}?".
   const [pendingRemove, setPendingRemove] = useState<{ userId: number; name: string } | null>(null);
 
-  // Real crew detail (banner / video / description) for the visual
-  // hero strip rendered above the header. Independent from the
-  // workspace aggregate (which still mocks members / todos / etc.)
-  // so the hero shows real assets even before backend ships the
-  // richer endpoints.
-  const { data: crewDetail } = useCrewDetail(id);
+  // Recruitment-tab accordion state. One row open at a time.
+  const [expandedJobId, setExpandedJobId] = useState<number | null>(null);
+  const [pendingCloseJob, setPendingCloseJob] = useState<{ id: number; name: string } | null>(null);
 
-  // Real crew members + role taxonomy for the Members tab. Replaces
-  // the legacy mock `currentEpMembers` everywhere downstream.
+  // Real data fetches
+  const { data: crewDetail, isLoading: detailLoading } = useCrewDetail(id);
   const { data: crewMembers = [], isLoading: membersLoading } = useCrewMembers(id);
+  const { data: crewJobs = [] } = useCrewJobs(id);
   const { data: projectRoles = [] } = useProjectRoles();
   const roleNameById = useMemo(
     () => new Map(projectRoles.map((r) => [r.id, r.name])),
     [projectRoles]
   );
   const removeMember = useRemoveMember();
+  const closeJob = useCloseJob(id);
 
-  // Real recruitment jobs for the "招聘 / Recruitment" tab. Replaces
-  // the mock `rolesProgress` derived from workspace-mock — backend
-  // shipped `/project/crew/job/find/jobs` so the tab now reads from
-  // the source of truth. Maps each job → `{ role, filled, total }`
-  // shape the existing UI already understands. `filled` falls back
-  // to 0 until the backend response is confirmed to carry it.
-  const { data: crewJobs = [] } = useCrewJobs(id);
-  const realRolesProgress = useMemo(
+  // Stats — all derived from live data.
+  const slotsTotal = useMemo(
+    () => crewJobs.reduce((s, j) => s + Number(j.jobNumber ?? 0), 0),
+    [crewJobs]
+  );
+  const slotsFilled = useMemo(
+    () => crewJobs.reduce((s, j) => s + Number(j.filledNumber ?? 0), 0),
+    [crewJobs]
+  );
+  const openJobsCount = useMemo(
+    () => crewJobs.filter((j) => Number(j.filledNumber ?? 0) < Number(j.jobNumber ?? 0)).length,
+    [crewJobs]
+  );
+
+  // Recruitment summary cards used on the overview tab. Same source as
+  // the recruitment tab itself — we just project a flatter shape.
+  const rolesProgress = useMemo(
     () =>
       crewJobs.map((job) => ({
-        role: job.jobName || job.roleName || roleNameById.get(job.roleId) || `#${job.roleId}`,
+        jobId: job.id,
+        role:
+          job.jobName ||
+          job.roleName ||
+          (job.roleId != null ? roleNameById.get(job.roleId) : undefined) ||
+          `#${job.roleId}`,
         filled: Number(job.filledNumber ?? 0),
         total: Number(job.jobNumber ?? 0),
       })),
     [crewJobs, roleNameById]
   );
 
-  // Derived stats stay reactive to cache mutations.
-  const pendingReviewCount = useMemo(
-    () => data?.currentEpMembers.filter((m) => m.status === "submitted").length ?? 0,
-    [data]
-  );
-  const inProgressCount = useMemo(
-    () => data?.currentEpMembers.filter((m) => m.status === "in_progress").length ?? 0,
-    [data]
-  );
-
-  if (isLoading || !data) {
+  if (detailLoading || !crewDetail) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
@@ -146,55 +141,12 @@ export default function CrewWorkspacePage() {
     );
   }
 
-  const s = data.studio;
-  const currentEpMembers = data.currentEpMembers;
-  // Recruitment now reads from `/project/crew/job/find/jobs` (real
-  // wire) instead of the mock workspace aggregate.
-  const rolesProgress = realRolesProgress;
-  const todos = data.todos;
-  const activityList = data.activity;
-  const deliveryRecords = data.delivery;
+  const heroBanner = resolveAsset(crewDetail.banner, env.BANNER_BASE_URL);
+  const heroVideo = resolveAsset(crewDetail.video, env.OSS_BASE_URL);
+  const heroDescription = (crewDetail.description ?? "").trim();
 
-  const handleMemberAction = (
-    member: EpMember,
-    action: "approve" | "reject" | "remind" | "submitReview"
-  ) => {
-    memberAction.mutate(
-      { crewId: id, memberName: member.name, action },
-      {
-        onSuccess: () => {
-          const labelKey =
-            action === "approve"
-              ? "tApproved"
-              : action === "reject"
-                ? "tRejected"
-                : action === "remind"
-                  ? "tReminderSent"
-                  : "tSubmittedForReview";
-          toast.success(t(labelKey, { name: member.name }));
-        },
-        onError: () => toast.error(t("tActionFailed")),
-      }
-    );
-  };
+  const handleInvite = () => setAddMemberOpen(true);
 
-  const handleSubmitToClient = () => {
-    submitToClient.mutate(
-      { crewId: id, episodeNumber: s.currentEpisode },
-      {
-        onSuccess: () => toast.success(t("tEpisodeSubmitted", { n: s.currentEpisode })),
-        onError: () => toast.error(t("tActionFailed")),
-      }
-    );
-  };
-
-  const handleInvite = () => {
-    setAddMemberOpen(true);
-  };
-
-  // Open the styled <AlertDialog> instead of the OS-native confirm —
-  // the latter shows "localhost:3000 says" + light theme that clashes
-  // with the rest of the app.
   const handleRemoveMember = (userId: number, displayName: string) => {
     setPendingRemove({ userId, name: displayName });
   };
@@ -218,39 +170,17 @@ export default function CrewWorkspacePage() {
     );
   };
 
-  const toggleTodo = (i: number) => {
-    setCompletedTodos((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
-      return next;
-    });
-  };
-
-  // Resolve OSS keys into renderable URLs. Guard the leading-slash
-  // case so `/foo/bar.jpg` doesn't produce a `//` join with the base.
-  const resolveAsset = (path: string | null | undefined, base: string): string => {
-    if (!path) return "";
-    if (path.startsWith("http")) return path;
-    return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
-  };
-  const heroBanner = resolveAsset(crewDetail?.banner, env.BANNER_BASE_URL);
-  const heroVideo = resolveAsset(crewDetail?.video, env.OSS_BASE_URL);
-  const heroDescription = (crewDetail?.description ?? "").trim();
-
   return (
     <div className="min-h-screen bg-background">
-      {/* Visual hero strip — shows the crew's banner (and optional
-          autoplay video loop) above the textual header. Sourced
-          from `useCrewDetail` so it's the real backend data, not the
-          mock workspace aggregate. Hidden when the crew has no
-          banner yet (during a fresh load or detail-fetch failure)
-          so we don't render an empty grey box. */}
-      {heroBanner && (
+      <DevIdentitySwitcher />
+
+      {/* Visual hero strip — banner with optional autoplay video loop.
+          Hidden when there's no banner (fresh crew or fetch error). */}
+      {heroBanner ? (
         <div className="relative h-48 w-full overflow-hidden bg-black sm:h-64">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={heroBanner} alt="" className="absolute inset-0 size-full object-cover" />
-          {heroVideo && (
+          {heroVideo ? (
             <video
               src={heroVideo}
               poster={heroBanner}
@@ -262,71 +192,38 @@ export default function CrewWorkspacePage() {
               className="absolute inset-0 size-full object-cover"
               aria-hidden
             />
-          )}
-          {/* Bottom legibility scrim so the title bar below can blend
-              into the hero without the banner stealing focus. */}
+          ) : null}
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
-          {/* Description overlay (if any) — bottom-left so it sits
-              above the scrim and reads cleanly against the banner. */}
-          {heroDescription && (
+          {heroDescription ? (
             <div className="absolute inset-x-0 bottom-3 px-6">
               <div className="mx-auto max-w-screen-xl">
                 <p className="line-clamp-2 max-w-2xl text-sm text-white/90">{heroDescription}</p>
               </div>
             </div>
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
 
       {/* Header */}
       <div className="border-b border-border bg-card/50">
         <div className="mx-auto max-w-screen-xl px-6 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
+            <div className="min-w-0">
               <div className="mb-1.5 flex flex-wrap items-center gap-2">
                 <Link
                   href="/crews"
                   className="mr-1 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label="Back to crews"
                 >
                   <IconArrowLeft className="size-4" />
                 </Link>
-                <h1 className="text-xl font-black text-foreground">{s.name}</h1>
-                <span className="rounded-full border border-blue-400/30 bg-blue-400/10 px-2 py-0.5 text-xs font-semibold text-blue-400">
-                  {s.status}
-                </span>
-                <span className="rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-xs font-semibold text-violet-400">
-                  {s.type}
-                </span>
-                {s.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full border border-border bg-secondary px-2 py-0.5 text-xs text-muted-foreground"
-                  >
-                    {tag}
-                  </span>
-                ))}
+                <h1 className="truncate text-xl font-black text-foreground">{crewDetail.name}</h1>
               </div>
-              <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-                <span>
-                  {t("wsClient")}：<span className="font-medium text-foreground">{s.client}</span>
-                </span>
-                <span>
-                  {t("wsProducer")}：
-                  <span className="font-medium text-foreground">{s.producer}</span>
-                </span>
-                <span>
-                  {t("wsCurrentEp")}：
-                  <span className="font-medium text-foreground">
-                    {t("epLabel", { n: s.currentEpisode })}
-                  </span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <IconClock className="size-3" />
-                  {t("wsLastUpdated")}：{s.lastUpdated}
-                </span>
-              </div>
+              {!heroBanner && heroDescription ? (
+                <p className="max-w-3xl text-xs text-muted-foreground">{heroDescription}</p>
+              ) : null}
             </div>
-            {isOwner && (
+            {isOwner ? (
               <div className="flex shrink-0 items-center gap-2">
                 <Link
                   href={`/crews/${id}/edit`}
@@ -334,39 +231,15 @@ export default function CrewWorkspacePage() {
                 >
                   <IconEdit className="size-3.5" /> {t("wsEditStudio")}
                 </Link>
-                <button
-                  type="button"
-                  disabled={submitToClient.isPending}
-                  onClick={handleSubmitToClient}
-                  className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                >
-                  <IconSend className="size-3.5" />{" "}
-                  {submitToClient.isPending ? t("wsSubmitting") : t("wsSubmitClient")}
-                </button>
               </div>
-            )}
+            ) : null}
           </div>
 
-          {/* Stats */}
+          {/* Stats — live counts only. */}
           <div className="mt-4 flex flex-wrap items-center gap-5 text-xs text-muted-foreground">
-            {[
-              { labelKey: "wsMembers", value: s.memberCount },
-              { labelKey: "wsSlots", value: `${s.slotsFilled}/${s.slotsTotal}` },
-              { labelKey: "wsEpParticipants", value: s.currentEpMembers },
-              { labelKey: "wsTodo", value: s.todoCount, highlight: true },
-            ].map((item) => (
-              <div key={item.labelKey} className="flex items-center gap-1">
-                <span
-                  className={cn(
-                    "text-sm font-black",
-                    item.highlight ? "text-amber-400" : "text-foreground"
-                  )}
-                >
-                  {item.value}
-                </span>
-                <span>{t(item.labelKey)}</span>
-              </div>
-            ))}
+            <Stat value={crewMembers.length} labelKey="wsMembers" t={t} />
+            <Stat value={`${slotsFilled}/${slotsTotal}`} labelKey="wsSlots" t={t} />
+            <Stat value={openJobsCount} labelKey="wsOpenJobs" t={t} highlight={openJobsCount > 0} />
           </div>
         </div>
       </div>
@@ -376,295 +249,47 @@ export default function CrewWorkspacePage() {
         {/* Sidebar */}
         <div className="w-36 shrink-0">
           <nav className="sticky top-6 space-y-0.5">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
-                  activeTab === tab.id
-                    ? "bg-primary/10 font-semibold text-primary"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                )}
-              >
-                <tab.icon className="size-3.5 shrink-0" />
-                {t(tab.labelKey)}
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                    activeTab === tab.id
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "text-muted-foreground hover:bg-secondary/50"
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {t(tab.labelKey)}
+                </button>
+              );
+            })}
           </nav>
         </div>
 
-        {/* Content */}
-        <div className="min-w-0 flex-1 space-y-4">
-          {/* Overview */}
-          {activeTab === "overview" && (
-            <>
-              {/* Current episode */}
-              <div className="rounded-xl border border-border bg-card p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm font-bold">
-                    {t("wsCurrentEp")}：{t("epLabel", { n: s.currentEpisode })}
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("episodes")}
-                      className="flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20"
-                    >
-                      <IconEye className="size-3.5" /> {t("viewCurrentEp")}
-                    </button>
-                    <button
-                      type="button"
-                      className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70"
-                    >
-                      <IconUsers className="size-3.5" /> {t("configMembers")}
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <span className="text-xs text-muted-foreground">{t("colEpStatus")}</span>
-                    <div className="mt-0.5 font-semibold text-blue-400">{t("epInProgress")}</div>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">{t("wsIncomplete")}</span>
-                    <div className="mt-0.5 font-semibold text-amber-400">
-                      {inProgressCount} {t("people")}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground">{t("colPending")}</span>
-                    <div className="mt-0.5 font-semibold text-foreground">{pendingReviewCount}</div>
-                  </div>
-                </div>
-              </div>
+        {/* Main */}
+        <div className="min-w-0 flex-1">
+          {activeTab === "overview" ? (
+            <OverviewTab
+              memberCount={crewMembers.length}
+              openJobsCount={openJobsCount}
+              slotsFilled={slotsFilled}
+              slotsTotal={slotsTotal}
+              rolesProgress={rolesProgress}
+              t={t}
+              onJumpRoles={() => setActiveTab("roles")}
+            />
+          ) : null}
 
-              {/* Member status */}
-              <div className="rounded-xl border border-border bg-card p-5">
-                <h3 className="mb-3 text-sm font-bold">{t("epMemberStatus")}</h3>
-                <div className="space-y-2">
-                  {currentEpMembers.map((m) => {
-                    const meta = MEMBER_STATUS_META[m.status];
-                    const isPending = memberAction.isPending;
-                    const isSelf = selfMemberName === m.name;
-                    return (
-                      <div
-                        key={m.name}
-                        className={cn(
-                          "flex items-center justify-between border-b border-border/50 py-2 last:border-0",
-                          isSelf && "rounded-lg bg-primary/5 px-2"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-xs font-bold text-foreground">
-                            {m.name[0]}
-                          </div>
-                          <div>
-                            <span className="text-sm font-medium text-foreground">{m.name}</span>
-                            {isSelf && (
-                              <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                                You
-                              </span>
-                            )}
-                            <span className="ml-2 text-xs text-muted-foreground">/ {m.role}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={cn(
-                              "rounded-full border px-2 py-0.5 text-xs font-semibold",
-                              m.color
-                            )}
-                          >
-                            {t(meta.labelKey)}
-                          </span>
-                          {/* Owner-only review actions */}
-                          {isOwner && m.status === "submitted" && (
-                            <>
-                              <button
-                                type="button"
-                                disabled={isPending}
-                                onClick={() => handleMemberAction(m, "approve")}
-                                className={cn(
-                                  "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
-                                  BTN_STYLES.primary
-                                )}
-                              >
-                                {t("actApprove")}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isPending}
-                                onClick={() => handleMemberAction(m, "reject")}
-                                className="rounded-lg border border-red-400/20 bg-red-400/10 px-2.5 py-1 text-xs font-semibold text-red-400 transition-colors hover:bg-red-400/20 disabled:opacity-50"
-                              >
-                                {t("actReject")}
-                              </button>
-                            </>
-                          )}
-                          {isOwner && m.status === "in_progress" && (
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={() => handleMemberAction(m, "remind")}
-                              className={cn(
-                                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
-                                BTN_STYLES.warn
-                              )}
-                            >
-                              {t("actRemind")}
-                            </button>
-                          )}
-                          {/* Member self-actions */}
-                          {isSelf && (m.status === "in_progress" || m.status === "rejected") && (
-                            <button
-                              type="button"
-                              disabled={isPending}
-                              onClick={() => handleMemberAction(m, "submitReview")}
-                              className={cn(
-                                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50",
-                                BTN_STYLES.primary
-                              )}
-                            >
-                              {t("actSubmitReview")}
-                            </button>
-                          )}
-                          {/* Read-only View button for everyone else */}
-                          {!isOwner && !isSelf && (
-                            <button
-                              type="button"
-                              className={cn(
-                                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors",
-                                BTN_STYLES.ghost
-                              )}
-                            >
-                              {t("actView")}
-                            </button>
-                          )}
-                          {isOwner && (m.status === "approved" || m.status === "rejected") && (
-                            <button
-                              type="button"
-                              className={cn(
-                                "rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors",
-                                BTN_STYLES.ghost
-                              )}
-                            >
-                              {t("actView")}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Recruitment progress */}
-              <div className="rounded-xl border border-border bg-card p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-sm font-bold">{t("recruitmentProgress")}</h3>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("roles")}
-                    className="flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    {t("viewRecruitment")} <IconChevronRight className="size-3" />
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  {rolesProgress.map((r) => (
-                    <div
-                      key={r.role}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold",
-                        r.filled === r.total
-                          ? "border-green-400/30 bg-green-400/10 text-green-400"
-                          : "border-amber-400/30 bg-amber-400/10 text-amber-400"
-                      )}
-                    >
-                      {r.role}{" "}
-                      <span className="opacity-70">
-                        {r.filled}/{r.total}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Todos */}
-              <div className="rounded-xl border border-border bg-card p-5">
-                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold">
-                  <IconAlertCircle className="size-4 text-amber-400" /> {t("todoItems")}
-                </h3>
-                <div className="space-y-1">
-                  {todos.length === 0 ? (
-                    <div className="py-2 text-sm text-muted-foreground">{t("noTodos")}</div>
-                  ) : (
-                    todos.map((todo, i) => {
-                      const done = completedTodos.has(i);
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => toggleTodo(i)}
-                          className="group flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left text-sm transition-colors hover:bg-secondary/40"
-                        >
-                          <div
-                            className={cn(
-                              "flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors",
-                              done
-                                ? "border-green-400 bg-green-400 text-black"
-                                : todo.urgent
-                                  ? "border-red-400/50"
-                                  : "border-amber-400/50"
-                            )}
-                          >
-                            {done && <span className="text-[10px] font-bold">✓</span>}
-                          </div>
-                          <span
-                            className={cn(
-                              "flex-1",
-                              done
-                                ? "text-muted-foreground line-through"
-                                : todo.urgent
-                                  ? "text-foreground"
-                                  : "text-foreground/80"
-                            )}
-                          >
-                            {todo.text}
-                          </span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Activity */}
-              <div className="rounded-xl border border-border bg-card p-5">
-                <h3 className="mb-3 text-sm font-bold">{t("recentActivity")}</h3>
-                <div className="space-y-0">
-                  {activityList.map((a, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between border-b border-border/50 py-2 text-sm last:border-0"
-                    >
-                      <span className="text-foreground/80">{a.text}</span>
-                      <span className="ml-4 shrink-0 text-xs text-muted-foreground">{a.time}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Recruitment */}
-          {activeTab === "roles" && (
+          {activeTab === "roles" ? (
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-bold">{t("tabRecruitment")}</h3>
-                {isOwner && (
+                {isOwner ? (
                   <button
                     type="button"
                     onClick={() => setPublishJobOpen(true)}
@@ -672,58 +297,112 @@ export default function CrewWorkspacePage() {
                   >
                     + {t("publishJob")}
                   </button>
-                )}
+                ) : null}
               </div>
-              <div className="space-y-3">
-                {rolesProgress.map((r) => (
-                  <div
-                    key={r.role}
-                    className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-3"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-foreground">{r.role}</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        {r.filled}/{r.total} {t("filled")}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-secondary">
-                        <div
-                          className={cn(
-                            "h-full rounded-full",
-                            r.filled === r.total ? "bg-green-400" : "bg-amber-400"
-                          )}
-                          style={{ width: `${(r.filled / r.total) * 100}%` }}
-                        />
-                      </div>
-                      <span
-                        className={cn(
-                          "rounded-full border px-2 py-0.5 text-xs font-semibold",
-                          r.filled === r.total
-                            ? "border-green-400/30 bg-green-400/10 text-green-400"
-                            : "border-amber-400/30 bg-amber-400/10 text-amber-400"
-                        )}
-                      >
-                        {r.filled < r.total ? t("statusRecruiting") : t("statusFull")}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {/* Members — real backend list (`useCrewMembers`) joined with
-              `useProjectRoles` to render the role label. Owner sees
-              a "+ Add Member" CTA + per-row delete button; non-owners
-              see a read-only list. */}
-          {activeTab === "members" && (
+              {crewJobs.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  {t("noJobsYet")}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {crewJobs.map((job) => {
+                    const filled = Number(job.filledNumber ?? 0);
+                    const total = Number(job.jobNumber ?? 0);
+                    const full = total > 0 && filled >= total;
+                    const roleLabel =
+                      job.jobName ||
+                      job.roleName ||
+                      (job.roleId != null ? roleNameById.get(job.roleId) : undefined) ||
+                      `#${job.roleId}`;
+                    const expanded = expandedJobId === job.id;
+                    return (
+                      <div
+                        key={job.id}
+                        className="overflow-hidden rounded-lg border border-border bg-secondary/30"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedJobId((prev) => (prev === job.id ? null : job.id))
+                          }
+                          className="flex w-full items-center justify-between gap-3 p-3 text-left transition-colors hover:bg-secondary/50"
+                        >
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <IconChevronDown
+                              className={cn(
+                                "size-4 shrink-0 text-muted-foreground transition-transform",
+                                expanded && "rotate-180"
+                              )}
+                            />
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-foreground">
+                                {roleLabel}
+                              </div>
+                              <div className="mt-0.5 text-xs text-muted-foreground">
+                                {filled}/{total} {t("filled")}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3">
+                            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-secondary">
+                              <div
+                                className={cn(
+                                  "h-full rounded-full",
+                                  full ? "bg-green-400" : "bg-amber-400"
+                                )}
+                                style={{
+                                  width: total > 0 ? `${(filled / total) * 100}%` : "0%",
+                                }}
+                              />
+                            </div>
+                            <span
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-xs font-semibold",
+                                full
+                                  ? "border-green-400/30 bg-green-400/10 text-green-400"
+                                  : "border-amber-400/30 bg-amber-400/10 text-amber-400"
+                              )}
+                            >
+                              {full ? t("statusFull") : t("statusRecruiting")}
+                            </span>
+                          </div>
+                        </button>
+                        {expanded ? (
+                          <div className="border-t border-border/60 bg-background/40 px-3 pb-3 pt-2">
+                            <JobApplicantsList jobId={job.id} canManage={isOwner} />
+                            {isOwner ? (
+                              <div className="mt-3 flex justify-end border-t border-border/60 pt-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPendingCloseJob({ id: job.id, name: roleLabel })
+                                  }
+                                  disabled={closeJob.isPending}
+                                  className="flex items-center gap-1 rounded-md border border-rose-400/30 bg-rose-400/10 px-2.5 py-1 text-xs font-semibold text-rose-400 transition-colors hover:bg-rose-400/20 disabled:opacity-50"
+                                >
+                                  <IconLock className="size-3.5" />
+                                  {t("closeJob")}
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {activeTab === "members" ? (
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-bold">
                   {t("memberManagement")} · {crewMembers.length} {t("people")}
                 </h3>
-                {isOwner && (
+                {isOwner ? (
                   <button
                     type="button"
                     onClick={handleInvite}
@@ -731,7 +410,7 @@ export default function CrewWorkspacePage() {
                   >
                     + {t("inviteMember")}
                   </button>
-                )}
+                ) : null}
               </div>
               {membersLoading ? (
                 <div className="flex h-32 items-center justify-center text-muted-foreground">
@@ -776,7 +455,7 @@ export default function CrewWorkspacePage() {
                             <div className="text-xs text-muted-foreground">{roleLabel}</div>
                           </div>
                         </div>
-                        {isOwner && (
+                        {isOwner ? (
                           <button
                             type="button"
                             onClick={() => handleRemoveMember(m.userId, displayName)}
@@ -787,105 +466,21 @@ export default function CrewWorkspacePage() {
                           >
                             <IconTrash className="size-4" />
                           </button>
-                        )}
+                        ) : null}
                       </div>
                     );
                   })}
                 </div>
               )}
             </div>
-          )}
-
-          {/* Episodes */}
-          {activeTab === "episodes" && (
-            <div>
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-foreground">{t("episodeProgress")}</h3>
-                <span className="text-xs text-muted-foreground">
-                  {t("epTotal", { total: s.totalEpisodes, current: s.currentEpisode })}
-                </span>
-              </div>
-              <EpisodeAccordion />
-            </div>
-          )}
-
-          {/* Delivery */}
-          {activeTab === "delivery" && (
-            <div className="space-y-4">
-              <a
-                href={`/delivery/${id}`}
-                className="group flex items-center justify-between rounded-xl border border-violet-400/30 bg-violet-400/5 px-5 py-4 transition-colors hover:bg-violet-400/10"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-violet-400/30 bg-violet-400/10">
-                    <IconPackage className="size-5 text-violet-400" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-foreground">{t("deliveryZone")}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {t("deliveryZoneDesc")}
-                    </div>
-                  </div>
-                </div>
-                <IconChevronRight className="size-4 text-violet-400 transition-transform group-hover:translate-x-0.5" />
-              </a>
-              <div className="rounded-xl border border-border bg-card p-5">
-                <h3 className="mb-3 text-sm font-bold">{t("deliveryHistory")}</h3>
-                {deliveryRecords.map((d) => (
-                  <div
-                    key={d.ep}
-                    className="flex items-center justify-between border-b border-border/50 py-2.5 last:border-0"
-                  >
-                    <div className="text-sm font-medium text-foreground">{d.ep}</div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground">{d.date}</span>
-                      <span
-                        className={cn(
-                          "rounded-full border px-2 py-0.5 text-xs font-semibold",
-                          d.ok
-                            ? "border-green-400/30 bg-green-400/10 text-green-400"
-                            : "border-amber-400/30 bg-amber-400/10 text-amber-400"
-                        )}
-                      >
-                        {t(d.statusKey)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Activity */}
-          {activeTab === "activity" && (
-            <div className="rounded-xl border border-border bg-card p-5">
-              <h3 className="mb-4 text-sm font-bold">{t("allActivity")}</h3>
-              <div className="space-y-0">
-                {activityList.map((a, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 border-b border-border/50 py-3 last:border-0"
-                  >
-                    <div className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/50" />
-                    <div className="flex-1">
-                      <div className="text-sm text-foreground/90">{a.text}</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">{a.time}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
-      <DevIdentitySwitcher />
+
       <AddCrewMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} crewId={id} />
       <CreateCrewJobDialog open={publishJobOpen} onOpenChange={setPublishJobOpen} crewId={id} />
 
-      {/* Member-remove confirmation. Project-styled (vs. window.confirm,
-          which leaks "localhost:3000 says" + light theme). The
-          destructive variant on the action button matches the
-          delete-experience pattern in project-team-dialog. */}
+      {/* Member-remove confirmation */}
       <AlertDialog
         open={pendingRemove !== null}
         onOpenChange={(v) => {
@@ -906,9 +501,6 @@ export default function CrewWorkspacePage() {
               color="destructive"
               disabled={removeMember.isPending}
               onClick={(e) => {
-                // Prevent default close-on-action so the dialog stays
-                // open while the request is in flight; we'll close it
-                // ourselves in onSuccess / onError.
                 e.preventDefault();
                 confirmRemoveMember();
               }}
@@ -919,6 +511,203 @@ export default function CrewWorkspacePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Close-job confirmation */}
+      <AlertDialog
+        open={pendingCloseJob !== null}
+        onOpenChange={(v) => {
+          if (!v) setPendingCloseJob(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("closeJob")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingCloseJob ? t("closeJobConfirm", { name: pendingCloseJob.name }) : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={closeJob.isPending}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="solid"
+              color="destructive"
+              disabled={closeJob.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!pendingCloseJob) return;
+                const { id: jobId, name } = pendingCloseJob;
+                closeJob.mutate(jobId, {
+                  onSuccess: () => {
+                    toast.success(t("closeJobSuccess", { name }));
+                    setPendingCloseJob(null);
+                    setExpandedJobId(null);
+                  },
+                  onError: (err) => {
+                    const msg = err instanceof Error ? err.message : "";
+                    toast.error(msg || t("closeJobFailed"));
+                  },
+                });
+              }}
+            >
+              {closeJob.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {tc("confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
+}
+
+// ─── Subcomponents ────────────────────────────────────
+
+interface StatProps {
+  value: string | number;
+  labelKey: string;
+  t: ReturnType<typeof useTranslations>;
+  highlight?: boolean;
+}
+
+function Stat({ value, labelKey, t, highlight = false }: StatProps) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className={cn("text-sm font-black", highlight ? "text-amber-400" : "text-foreground")}>
+        {value}
+      </span>
+      <span>{t(labelKey)}</span>
+    </div>
+  );
+}
+
+interface OverviewTabProps {
+  memberCount: number;
+  openJobsCount: number;
+  slotsFilled: number;
+  slotsTotal: number;
+  rolesProgress: Array<{ jobId: number; role: string; filled: number; total: number }>;
+  t: ReturnType<typeof useTranslations>;
+  onJumpRoles: () => void;
+}
+
+/**
+ * Overview tab — three KPI tiles + a recruitment-progress summary
+ * that links to the recruitment tab. All sourced from real
+ * endpoints; no mock data, no placeholder activity feed, no todos.
+ */
+function OverviewTab({
+  memberCount,
+  openJobsCount,
+  slotsFilled,
+  slotsTotal,
+  rolesProgress,
+  t,
+  onJumpRoles,
+}: OverviewTabProps) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <KpiTile labelKey="wsMembers" value={memberCount} t={t} />
+        <KpiTile
+          labelKey="wsSlots"
+          value={`${slotsFilled}/${slotsTotal}`}
+          t={t}
+          subtitle={slotsTotal > 0 ? `${Math.round((slotsFilled / slotsTotal) * 100)}%` : undefined}
+        />
+        <KpiTile labelKey="wsOpenJobs" value={openJobsCount} t={t} highlight />
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-bold">{t("recruitmentProgress")}</h3>
+          <button
+            type="button"
+            onClick={onJumpRoles}
+            className="flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            {t("viewRecruitment")} <IconChevronRight className="size-3" />
+          </button>
+        </div>
+        {rolesProgress.length === 0 ? (
+          <div className="py-6 text-center text-sm text-muted-foreground">{t("noJobsYet")}</div>
+        ) : (
+          <div className="space-y-2">
+            {rolesProgress.map((r) => {
+              const full = r.total > 0 && r.filled >= r.total;
+              return (
+                <div
+                  key={r.jobId}
+                  className="flex items-center justify-between rounded-lg border border-border bg-secondary/30 p-3"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-foreground">{r.role}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">
+                      {r.filled}/{r.total} {t("filled")}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-secondary">
+                      <div
+                        className={cn(
+                          "h-full rounded-full",
+                          full ? "bg-green-400" : "bg-amber-400"
+                        )}
+                        style={{
+                          width: r.total > 0 ? `${(r.filled / r.total) * 100}%` : "0%",
+                        }}
+                      />
+                    </div>
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-xs font-semibold",
+                        full
+                          ? "border-green-400/30 bg-green-400/10 text-green-400"
+                          : "border-amber-400/30 bg-amber-400/10 text-amber-400"
+                      )}
+                    >
+                      {full ? t("statusFull") : t("statusRecruiting")}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface KpiTileProps {
+  value: string | number;
+  labelKey: string;
+  t: ReturnType<typeof useTranslations>;
+  subtitle?: string;
+  highlight?: boolean;
+}
+
+function KpiTile({ value, labelKey, t, subtitle, highlight = false }: KpiTileProps) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{t(labelKey)}</div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span
+          className={cn("text-2xl font-black", highlight ? "text-amber-400" : "text-foreground")}
+        >
+          {value}
+        </span>
+        {subtitle ? <span className="text-xs text-muted-foreground">{subtitle}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+// ─── Helpers ──────────────────────────────────────────
+
+/** Concat OSS key with its base URL, guarding the leading-slash case
+ *  so `/foo/bar.jpg` doesn't produce a `//` join. Empty / missing
+ *  inputs return "" so callers can `if (...)` cleanly. */
+function resolveAsset(path: string | null | undefined, base: string): string {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }

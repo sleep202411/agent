@@ -7,8 +7,9 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/src/lib/api";
 import { MOCK_OPEN_JOBS, crewKeys, delay, mutationState } from "./shared";
-import type { JobApplicant, JobApplication } from "./types";
+import type { ApplicationStatus, JobApplicant, JobApplication } from "./types";
 
 async function applyToJob({
   jobId,
@@ -48,9 +49,72 @@ async function hasAppliedToJob(jobId: number): Promise<boolean> {
   return mutationState.applications.some((a) => a.jobId === jobId);
 }
 
+/**
+ * Wire shape for `POST /project/crew/job/apply/list` (applyCrewJobList).
+ *
+ * Backend takes `jobId` as a query-string param and returns the list
+ * of users who applied to that recruitment slot. Phase-1 backend
+ * hasn't published a formal response schema yet — these fields are
+ * inferred from the matching `JobApplicant` UI type plus the standard
+ * "user envelope" shape elsewhere in the project (`/project/member/query`).
+ *
+ * **TODO(crew-phase-1)**: validate against the live response — likely
+ * tweaks: nested `user` object vs flat fields, `status` numeric (1/2/3)
+ * vs string ("pending"/...), date format. Update `mapWireApplicant`
+ * once confirmed and drop this comment.
+ */
+interface WireJobApplicant {
+  id?: number;
+  jobId?: number;
+  userId?: number;
+  // User detail — backend may flatten or nest under `user: {...}`. We
+  // try both at map time so either layout works.
+  userName?: string;
+  userAvatar?: string;
+  nickName?: string;
+  avatar?: string;
+  user?: { userId?: number; nickName?: string; avatar?: string };
+  // Role / level — denormalised onto each applicant so the row can
+  // render without a second join. May be missing.
+  roleName?: string;
+  level?: string;
+  // Application body
+  status?: number | string;
+  message?: string;
+  portfolioUrl?: string;
+  appliedAt?: string;
+  createTime?: string;
+}
+
+/** Backend `status` may come as a numeric enum or a string label.
+ *  Map to the UI's discriminated union. Defaults to "pending". */
+function mapStatus(raw: WireJobApplicant["status"]): ApplicationStatus {
+  if (raw === 1 || raw === "1" || raw === "approved" || raw === "agreed") return "approved";
+  if (raw === 2 || raw === "2" || raw === "rejected" || raw === "refused") return "rejected";
+  return "pending";
+}
+
+function mapWireApplicant(w: WireJobApplicant): JobApplicant {
+  return {
+    id: Number(w.id ?? 0),
+    userId: Number(w.userId ?? w.user?.userId ?? 0),
+    userName: String(w.userName ?? w.nickName ?? w.user?.nickName ?? ""),
+    userAvatar: String(w.userAvatar ?? w.avatar ?? w.user?.avatar ?? ""),
+    jobId: Number(w.jobId ?? 0),
+    roleName: String(w.roleName ?? ""),
+    level: String(w.level ?? ""),
+    status: mapStatus(w.status),
+    message: String(w.message ?? ""),
+    portfolioUrl: String(w.portfolioUrl ?? ""),
+    appliedAt: String(w.appliedAt ?? w.createTime ?? ""),
+  };
+}
+
 async function fetchJobApplicants(jobId: number): Promise<JobApplicant[]> {
-  await delay(220);
-  return mutationState.applicantsByJob[jobId] ?? [];
+  const data = await api.post<WireJobApplicant[]>("/project/crew/job/apply/list", {
+    params: { jobId: Number(jobId) },
+  });
+  return (data ?? []).map(mapWireApplicant);
 }
 
 async function agreeApplicant(applicantId: number): Promise<void> {
