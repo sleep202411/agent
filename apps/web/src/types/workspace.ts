@@ -30,11 +30,22 @@ export interface ProjectOptionItem extends ProjectDetail {
 
 export interface IntegralRecord {
   id?: string;
-  recordType?: string;
+  recordType?: string | number;
   integralChange?: number;
   integralCost?: number;
   createTime?: string;
   serviceCode?: string;
+  /** Human-readable AI model label (e.g. "Wan2.7-image-pro").
+   *  Backend surfaces this on consumption rows so the UI can show
+   *  *which* AI burned the credits without surfacing the raw modelCode. */
+  aiName?: string | null;
+  /** Internal model id (e.g. "wan2.6-i2v-flash-free") — useful as a
+   *  fallback when aiName is null on legacy rows. */
+  modelCode?: string | null;
+  /** Java endpoint that produced the record (e.g. "/api/ai/image/...").
+   *  Used as a last-resort label when both aiName and modelCode are
+   *  missing — strips to the trailing path segment in display. */
+  apiPath?: string | null;
   [key: string]: unknown;
 }
 
