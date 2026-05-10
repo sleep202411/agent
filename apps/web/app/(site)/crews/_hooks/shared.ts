@@ -53,6 +53,20 @@ export interface CrewListFilter {
   role?: string;
 }
 
+/**
+ * Filter shape for `POST /project/crew/list` (queryCrewList).
+ * Matches the backend body exactly so it doubles as the wire payload.
+ * All fields optional so the caller only sets what it cares about.
+ */
+export interface QueryCrewListFilter {
+  ipId?: number;
+  name?: string;
+  pageNum?: number;
+  pageSize?: number;
+  /** Backend lifecycle status. 0 = active, others reserved. */
+  status?: number;
+}
+
 export const crewKeys = {
   all: ["crew"] as const,
   list: (filter: CrewListFilter) => ["crew", "list", filter] as const,
@@ -66,6 +80,7 @@ export const crewKeys = {
   myApplications: ["crew", "applications", "mine"] as const,
   hasApplied: (jobId: number) => ["crew", "applications", "hasApplied", jobId] as const,
   applicants: (jobId: number) => ["crew", "applicants", jobId] as const,
+  queryList: (filter: QueryCrewListFilter) => ["crew", "queryList", filter] as const,
   landing: ["crew", "landing"] as const,
   producerOverview: ["crew", "producer", "overview"] as const,
 };

@@ -15,7 +15,12 @@ import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { PLATFORM_STATS, useCrewLanding } from "@/app/(site)/crews/_hooks/use-crew";
+import {
+  PLATFORM_STATS,
+  useCrewLanding,
+  useQueryCrewList,
+  type QueryCrewListItem,
+} from "@/app/(site)/crews/_hooks/use-crew";
 import {
   useProjectRoles,
   useProjectsByJob,
@@ -47,6 +52,20 @@ export default function CrewsPage() {
   const items = useMemo(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
   const { data: landing } = useCrewLanding();
+
+  // Second data source — `POST /project/crew/list` (queryCrewList).
+  // Wired up so the response is visible in the network panel on prod
+  // (lets us validate the wire shape against real data) but **not
+  // rendered yet** — the dedicated section below is commented out for
+  // the 2026-05-10 production cut. Once the response shape is
+  // confirmed, swap the hook into a real consumer + un-comment the
+  // section.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _crewListProbe = useQueryCrewList({
+    pageNum: 1,
+    pageSize: 20,
+    status: 0,
+  });
 
   return (
     <div className="min-h-screen bg-background">
@@ -92,10 +111,16 @@ export default function CrewsPage() {
                 </span>
               ))}
             </div>
-            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            {/* Create Crew CTA hidden 2026-05-10 ahead of the next
+                production cut. Crew CRUD endpoints (update / delete /
+                "my crews" listing) still need verification on prod
+                before we let users seed crews they may not be able
+                to manage afterwards. Re-enable by un-commenting; the
+                dialog (`<CreateCrewDialog>` below) stays mounted. */}
+            {/* <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
               <IconPlus className="size-4" />
               {tCrew("createStudio")}
-            </Button>
+            </Button> */}
           </div>
         </div>
       </div>
@@ -166,8 +191,86 @@ export default function CrewsPage() {
             </button>
           </div>
         )}
+
+        {/* Second data source — crews from `POST /project/crew/list`.
+            Disabled 2026-05-10 ahead of prod cut. Re-enable together
+            with the `useQueryCrewList` call above the return when
+            we've validated the response shape on staging. */}
+        {/* <section className="mt-16">
+          <div className="mb-6 flex items-baseline justify-between gap-4">
+            <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
+            {crewListPage ? (
+              <span className="text-xs text-muted-foreground">
+                {tCrew("allCrewsCount", { count: crewListPage.totalCount })}
+              </span>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {crewListLoading ? (
+              <CardSkeleton count={10} />
+            ) : crewListItems.length === 0 ? (
+              <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                {t("noData")}
+              </div>
+            ) : (
+              crewListItems.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
+            )}
+          </div>
+        </section> */}
       </div>
     </div>
+  );
+}
+
+function CrewCard({ item, locale }: { item: QueryCrewListItem; locale: Locale }) {
+  const router = useRouter();
+  const banner = item.banner
+    ? `${env.BANNER_BASE_URL}/${item.banner.replace(/^\/+/, "")}`
+    : env.DEFAULT_COVER_URL;
+  const avatar = item.ownerAvatar
+    ? `${env.USER_BASE_URL}/${item.ownerAvatar.replace(/^\/+/, "")}`
+    : "";
+  const detailHref = localizePath(`/crews/${item.id}`, locale);
+
+  return (
+    <button
+      type="button"
+      onClick={() => router.push(detailHref)}
+      className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-left transition-colors hover:border-primary/40"
+    >
+      <div className="relative aspect-[4/3] w-full overflow-hidden bg-secondary">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={banner}
+          alt={item.name}
+          className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+          loading="lazy"
+        />
+      </div>
+      <div className="flex flex-1 flex-col gap-2 p-3">
+        <h3 className="line-clamp-2 text-sm font-semibold text-foreground">{item.name}</h3>
+        {item.description ? (
+          <p className="line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
+        ) : null}
+        <div className="mt-auto flex items-center justify-between text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            {avatar ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatar} alt="" className="size-5 rounded-full object-cover" />
+            ) : (
+              <div className="size-5 rounded-full bg-secondary" />
+            )}
+            <span className="truncate">{item.ownerNickName ?? "—"}</span>
+          </div>
+          {typeof item.memberCount === "number" ? (
+            <span className="flex items-center gap-1">
+              <IconUsers className="size-3" />
+              {item.memberCount}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </button>
   );
 }
 

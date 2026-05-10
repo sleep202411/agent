@@ -746,6 +746,8 @@
   },
   "crew": {
     "plaza": "Crew Hall",
+    "allCrewsTitle": "All Crews",
+    "allCrewsCount": "{count} crews",
     "heroTitle1": "Find Crews, Find Talent",
     "heroTitle2": "Make Creation Happen",
     "heroDesc": "Organize collaboration around crews: publish, recruit, apply, screen, and collaborate.",

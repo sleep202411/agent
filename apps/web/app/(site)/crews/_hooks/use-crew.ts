@@ -49,7 +49,14 @@ export {
 } from "../_components/crew-mock";
 
 // ─── List + landing ────────────────────────────────────
-export { useCrewLanding, useCrews, useMyJoinedCrews, useMyOwnedCrews } from "./use-crew-list";
+export {
+  useCrewLanding,
+  useCrews,
+  useMyJoinedCrews,
+  useMyOwnedCrews,
+  useQueryCrewList,
+} from "./use-crew-list";
+export type { QueryCrewListItem } from "./use-crew-list";
 
 // ─── Detail + crew CRUD ────────────────────────────────
 export { useCreateCrew, useCrewDetail, useDeleteCrew, useUpdateCrew } from "./use-crew-detail";
