@@ -89,17 +89,10 @@ export function useCrewLanding() {
 
 /**
  * Wire shape for one row of `POST /project/crew/list` (queryCrewList).
- *
- * The endpoint takes a JSON body (NOT query params) — see
- * `QueryCrewListFilter`. Response field names below are inferred
- * from the existing `CrewWire` shape (returned by `/project/query`
- * and the create endpoint) plus the conventional joined fields
- * Java endpoints add for list views (memberCount / jobCount /
- * owner subtree). Validate against the live response and adjust.
- *
- * **TODO(crew-phase-1)**: confirm exact response shape — particularly
- * whether the envelope is `{ list, totalCount }` or a flat array,
- * and whether owner detail is nested or flattened. */
+ * Verified against live response 2026-05-10. Backend returns the
+ * raw crew row only — no joined member / job / owner detail. If
+ * the UI needs those it'll have to fan out additional calls.
+ */
 export interface QueryCrewListItem {
   id: number;
   name: string;
@@ -110,15 +103,21 @@ export interface QueryCrewListItem {
   adminUserId?: number;
   /** 0 = active, others reserved. */
   status?: number;
-  ipId?: number;
   createTime?: string | null;
   updateTime?: string | null;
-  // Optional joined fields commonly added on list views — set if backend
-  // surfaces them, otherwise UI just displays a placeholder.
-  memberCount?: number;
-  jobCount?: number;
-  ownerNickName?: string;
-  ownerAvatar?: string;
+}
+
+/**
+ * Wire envelope from `/project/crew/list`. Total count rides on a
+ * top-level `sum` field — NOT nested in `data` — so we have to read
+ * the raw envelope (`raw: true`) instead of letting api-client
+ * auto-unwrap `data`.
+ */
+interface QueryCrewListEnvelope {
+  code?: number;
+  msg?: string;
+  data?: QueryCrewListItem[];
+  sum?: number;
 }
 
 interface QueryCrewListPage {
@@ -127,25 +126,27 @@ interface QueryCrewListPage {
 }
 
 async function queryCrewList(filter: QueryCrewListFilter): Promise<QueryCrewListPage> {
-  // Backend takes the body fields raw; api-client unwraps `data` for us.
-  // It returns either `{ list, totalCount }` or a bare array depending on
-  // how the controller is wired — handle both so the UI doesn't break
-  // while we wait on the contract to settle.
-  const data = await api.post<QueryCrewListPage | QueryCrewListItem[]>("/project/crew/list", {
-    data: {
-      ipId: filter.ipId ?? 0,
-      name: filter.name ?? "",
-      pageNum: filter.pageNum ?? 1,
-      pageSize: filter.pageSize ?? 20,
-      status: filter.status ?? 0,
-    },
+  // Build body conditionally so optional filters that aren't set
+  // don't leak through as empty / zero noise on the wire. `name` in
+  // particular matters: backend treats `""` as a search predicate
+  // and would otherwise filter out every crew that doesn't have an
+  // empty-string name (none). Pagination + status always go through.
+  // `ipId` is intentionally NOT sent — crews aren't bound to an IP
+  // in the frontend's mental model per phase-1 spec.
+  const body: Record<string, unknown> = {
+    pageNum: filter.pageNum ?? 1,
+    pageSize: filter.pageSize ?? 20,
+    status: filter.status ?? 0,
+  };
+  if (filter.name && filter.name.trim() !== "") body.name = filter.name.trim();
+
+  const envelope = await api.post<QueryCrewListEnvelope>("/project/crew/list", {
+    data: body,
+    raw: true,
   });
-  if (Array.isArray(data)) {
-    return { list: data, totalCount: data.length };
-  }
   return {
-    list: data?.list ?? [],
-    totalCount: Number(data?.totalCount ?? 0),
+    list: envelope?.data ?? [],
+    totalCount: Number(envelope?.sum ?? 0),
   };
 }
 
