@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getNewsList } from "../_data/news";
 import { NewsDetail, NewsNotFound } from "../_components/news-detail";
+import { JsonLd, buildArticle, buildBreadcrumbList, localeCanonicalUrl } from "@/src/lib/seo";
 
 export default async function NewsDetailPage(props: { params: Promise<{ id: string }> }) {
   const { id } = await props.params;
@@ -19,5 +20,26 @@ export default async function NewsDetailPage(props: { params: Promise<{ id: stri
     redirect(item.url);
   }
 
-  return <NewsDetail item={item} all={all} />;
+  const path = `/news/${item.id}`;
+  const article = buildArticle({
+    url: localeCanonicalUrl(path, lang),
+    inLanguage: lang,
+    headline: item.title,
+    description: item.info,
+    image: item.cover,
+    datePublished: item.createTime,
+    authors: item.author ? [{ name: item.author }] : undefined,
+  });
+  const breadcrumb = buildBreadcrumbList([
+    { name: "FizzDragon", url: localeCanonicalUrl("/", lang) },
+    { name: "News", url: localeCanonicalUrl("/news", lang) },
+    { name: item.title, url: localeCanonicalUrl(path, lang) },
+  ]);
+
+  return (
+    <>
+      <JsonLd data={[article, breadcrumb]} />
+      <NewsDetail item={item} all={all} />
+    </>
+  );
 }

@@ -1,0 +1,48 @@
+# FizzDragon
+
+> AI-driven animation and IP co-creation platform. Users generate short-form animated series, storyboards, voice-overs and lip-sync videos from natural-language prompts; IP holders crowdsource production through co-creation "crews."
+
+FizzDragon (operated by FizzDragon Pte Ltd, Singapore) runs a multi-agent
+studio backend: a supervisor LLM (StoryOS) plans a series, then routes
+work to specialised personas — storyboarder, role designer, scene
+designer, prop designer — that produce the visual assets. Users assemble
+episodes from those assets and ship to a public storefront.
+
+The platform serves international users at https://fizzdragon.com and
+Mainland China users at https://fizzdragon.fizzspace.cn. Both deployments
+share one canonical brand identity.
+
+## Core pages
+
+- [Home](https://fizzdragon.com/): platform overview, featured IPs, hero stats.
+- [About](https://fizzdragon.com/en-US/about): company background and mission.
+- [News](https://fizzdragon.com/en-US/news): announcements, launch posts, partner news.
+- [IPs](https://fizzdragon.com/en-US/ips): catalogue of all IPs on the platform.
+- [Creators](https://fizzdragon.com/en-US/creators): directory of platform creators.
+- [Courses](https://fizzdragon.com/en-US/courses): tutorials and learning paths for AI animation.
+- [Crews](https://fizzdragon.com/en-US/crews): co-creation crews — recruitment and collaborative production.
+
+## Policies
+
+- [Terms of Service](https://fizzdragon.com/en-US/terms-of-service)
+- [Privacy Policy](https://fizzdragon.com/en-US/privacy-policy)
+- [Refund Policy](https://fizzdragon.com/en-US/refund-policy)
+
+## Localisation
+
+The same site is also available in zh-CN (Simplified Chinese) and zh-HK
+(Traditional Chinese). Substitute `/zh-CN/` or `/zh-HK/` for `/en-US/` in
+any path. Mainland China users are served from the .cn mirror.
+
+## Discoverability
+
+- [XML sitemap](https://fizzdragon.com/sitemap.xml) — all routes × locales with hreflang.
+- [robots.txt](https://fizzdragon.com/robots.txt) — explicit allowlist for AI crawlers.
+- Per-page schema.org JSON-LD is present in the SSR HTML on every detail page (Article on /news/[id], CreativeWork + FAQPage on /ips/[id], Organization + WebSite on every page).
+
+## Brand
+
+- Legal name: FizzDragon Pte Ltd
+- Brand: FizzDragon (Chinese: 气泡龙)
+- Studio product: FizzStudio
+- Contact: business@fizzdragon.com
