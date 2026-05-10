@@ -127,9 +127,21 @@ export function SiteFooter() {
                 </div>
               ))}
             </div>
-            <p className="mt-8 text-xs text-muted-foreground">
-              Copyright © {new Date().getFullYear()} FizzDragon.
-            </p>
+            <div className="mt-8 space-y-2">
+              {/* Singapore IMDA content licence — only shown on the
+                  international (.com) site, since the .cn deployment
+                  surfaces Chinese ICP filing in its own footer block
+                  below. The licence sits above the copyright per the
+                  legal team's preferred ordering. */}
+              {!isCnSite ? (
+                <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+                  {t("singaporeLicense")}
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                {t("copyright", { year: new Date().getFullYear() })}
+              </p>
+            </div>
           </div>
           <div className="grid flex-1 grid-cols-2 gap-8 lg:grid-cols-3">
             {columns.map((col) => (

@@ -3000,7 +3000,9 @@
       "privacy": "Privacy Policy",
       "terms": "Terms of Service",
       "refund": "Refund Policy"
-    }
+    },
+    "singaporeLicense": "Singapore Government TV / Film / Internet Content Licence: BNC240003",
+    "copyright": "© {year} FizzDragon. All rights reserved. Violators will be prosecuted to the fullest extent of the law."
   },
   "kyc": {
     "identityVerification": "Identity Verification",
