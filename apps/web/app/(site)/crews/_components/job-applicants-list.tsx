@@ -6,11 +6,9 @@
  * it lazily on expand without juggling that lifecycle itself.
  *
  * Owner sees Approve / Reject buttons on pending rows; non-owners
- * see a read-only roster. Approve/reject mutations are still pointed
- * at the mock implementations in `use-applications.ts` — when backend
- * ships the real endpoints (likely `/project/crew/job/apply/agree`
- * and `.../reject`), swap the mutationFn there and this component
- * doesn't need to change.
+ * see a read-only roster. Approve / reject mutations are wired to
+ * `/project/crew/job/aggree` and `/project/crew/job/refuse` via
+ * `use-applications.ts`.
  */
 
 import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";

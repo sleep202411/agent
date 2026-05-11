@@ -15,12 +15,7 @@ import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  PLATFORM_STATS,
-  useCrewLanding,
-  useQueryCrewList,
-  type QueryCrewListItem,
-} from "@/app/(site)/crews/_hooks/use-crew";
+import { useQueryCrewList, type QueryCrewListItem } from "@/app/(site)/crews/_hooks/use-crew";
 import {
   useProjectRoles,
   useProjectsByJob,
@@ -28,6 +23,7 @@ import {
   type ProjectRole,
 } from "@/app/(site)/crews/_hooks/use-projects";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
+import { PlazaHero } from "@/components/layout/plaza-hero";
 
 const ALL_ROLE_ID = -1;
 
@@ -58,8 +54,6 @@ export default function CrewsPage() {
     useProjectsByJob(filterRoleId);
   const items = useMemo(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
-  const { data: landing } = useCrewLanding();
-
   // Second data source — `POST /project/crew/list` (queryCrewList).
   // Only rendered when `?preview=1` is in the URL; otherwise the request
   // still fires (kept visible in the network panel for shape validation),
@@ -75,60 +69,27 @@ export default function CrewsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden">
-        <img
-          src="https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=2400&q=80"
-          alt=""
-          aria-hidden
-          className="absolute inset-0 size-full object-cover object-[80%_center] opacity-50"
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/85 to-background/30" />
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-background" />
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 15% 50%, hsl(210 100% 56% / 0.12) 0%, transparent 55%), radial-gradient(circle at 85% 20%, hsl(0 78% 52% / 0.1) 0%, transparent 50%)",
-          }}
-        />
-        <div className="relative mx-auto max-w-[1800px] px-6 pb-12 pt-14">
-          <div className="mb-3 flex items-center gap-2">
-            <IconMovie className="size-4 text-primary" />
-            <span className="text-xs font-semibold uppercase tracking-widest text-primary">
-              {tCrew("plaza")}
-            </span>
-          </div>
-          <div className="max-w-2xl">
-            <h1 className="mb-3 text-3xl font-black leading-tight text-foreground md:text-4xl">
-              {tCrew("heroTitle1")}
-              <br />
-              <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                {tCrew("heroTitle2")}
-              </span>
-            </h1>
-            <p className="mb-5 text-sm leading-relaxed text-muted-foreground">
-              {tCrew("heroDesc")}
-            </p>
-            <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
-              {(landing?.stats ?? PLATFORM_STATS).map((s) => (
-                <span key={s.labelKey}>
-                  <strong className="text-foreground">{s.value}</strong> {tCrew(s.labelKey)}
-                </span>
-              ))}
-            </div>
-            {/* Create Crew CTA — gated by `?preview=1`. Dialog itself
-                stays mounted unconditionally below so the same flag can
-                drive opening it. */}
-            {previewMode && (
-              <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-                <IconPlus className="size-4" />
-                {tCrew("createStudio")}
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+      <PlazaHero
+        ambient="blue"
+        backgroundImage="https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=2400&q=80"
+        eyebrow={{ icon: IconMovie, label: tCrew("plaza") }}
+        title={{
+          plain: tCrew("heroTitle1"),
+          accent: tCrew("heroTitle2"),
+        }}
+        subtitle={tCrew("heroDesc")}
+        rightSlot={
+          <Button
+            type="button"
+            size="lg"
+            onClick={() => setCreateOpen(true)}
+            className="h-11 gap-2 px-5 text-sm"
+          >
+            <IconPlus className="size-4" />
+            {tCrew("createStudio")}
+          </Button>
+        }
+      />
 
       <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
 
@@ -249,10 +210,10 @@ function CrewCard({ item, locale }: { item: QueryCrewListItem; locale: Locale })
   const banner = isUsableBanner
     ? `${env.BANNER_BASE_URL}/${(item.banner as string).replace(/^\/+/, "")}`
     : env.DEFAULT_COVER_URL;
-  // New-feed cards route to the v2 detail page (PRD studio layout).
-  // Legacy `ProjectCard` (the open-jobs feed below) still goes to the
-  // old `/crews/[id]` page so we don't break in-flight applications.
-  const detailHref = localizePath(`/crews/${item.id}/v2`, locale);
+  // Both new (queryCrewList) and legacy (projectsByJob) cards route to
+  // the same `/crews/[id]` route now — the page orchestrator picks the
+  // right layout via data fallback (`useCrewDetail` → `useProjectDetail`).
+  const detailHref = localizePath(`/crews/${item.id}`, locale);
 
   return (
     <button

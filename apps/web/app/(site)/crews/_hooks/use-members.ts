@@ -7,7 +7,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/src/lib/api";
-import { crewKeys, delay } from "./shared";
+import { crewKeys } from "./shared";
 
 // ─── Member list ──────────────────────────────────────
 
@@ -187,36 +187,14 @@ export function useAddCrewMember(crewId: string) {
   });
 }
 
-/**
- * @deprecated Use `useAddCrewMember`. Kept as a thin shim so legacy
- * call sites in the workspace page (passing `{crewId, identifier}`)
- * keep compiling until they migrate.
- *
- * **Warning:** the legacy contract used `identifier`; the new add-
- * member dialog calls the new hook directly with `{contact, role,
- * remark}`. Do not add new callers of this shim.
- */
-export function useInviteMember(crewId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (_args: { crewId: string; identifier: string }): Promise<void> => {
-      await delay(240);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.workspace(crewId) });
-    },
-  });
-}
-
 export function useRemoveMember() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: removeMember,
     onSuccess: (_data, vars) => {
-      // Refresh detail (member count surface) + workspace (legacy
-      // mock currentEpMembers) + members list (the new
-      // `useCrewMembers` query). Same invalidation pattern as
-      // useAddCrewMember so the lists stay in sync.
+      // Refresh detail (member count) + workspace + members list so
+      // every surface that reads them stays in sync. Same invalidation
+      // pattern as useAddCrewMember.
       qc.invalidateQueries({ queryKey: crewKeys.detail(vars.crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.workspace(vars.crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.members(vars.crewId) });

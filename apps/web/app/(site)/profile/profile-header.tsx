@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import {
   IconCamera,
@@ -78,12 +79,41 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
   const tc = useTranslations("common");
   const router = useRouter();
   const [referralLink, setReferralLink] = useState("");
+  const [referralQrDataUrl, setReferralQrDataUrl] = useState("");
   const [referralDialogOpen, setReferralDialogOpen] = useState(false);
   const [certDialogOpen, setCertDialogOpen] = useState(false);
   const [availableAlertOpen, setAvailableAlertOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  // Regenerate the share QR whenever the referral link changes. The
+  // PNG data-uri is small (~3 KB at 200px) so we can render it inline
+  // without uploading anywhere. Dark-on-white is intentional — most
+  // scanners struggle with inverted colours when the QR is photographed
+  // off another screen.
+  useEffect(() => {
+    if (!referralLink) {
+      setReferralQrDataUrl("");
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(referralLink, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 200,
+      color: { dark: "#0a0a0b", light: "#ffffff" },
+    })
+      .then((url) => {
+        if (!cancelled) setReferralQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setReferralQrDataUrl("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [referralLink]);
 
   const kycVariant = resolveKycVariant(userInfo?.authStatus);
   const kycChipLabel = {
@@ -119,7 +149,6 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
 
   const info = userInfo;
   const displayName = info?.nickName || info?.userName || info?.name || "User";
-  const initials = displayName.slice(0, 1).toUpperCase();
   // Default-visible: treat undefined / null as opted-in. Only an explicit
   // `false` from the backend means hidden. Keeps existing users discoverable
   // in the talent market without forcing them to flip a switch first.
@@ -389,29 +418,45 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
             <DialogTitle>{t("referralLinkTitle")}</DialogTitle>
             <DialogDescription>{t("referralLinkDesc")}</DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-2 p-4">
-            <input
-              readOnly
-              value={referralLink}
-              className="h-10 flex-1 rounded-lg border border-border bg-muted px-3 text-sm text-foreground"
-              onFocus={(e) => e.target.select()}
-            />
-            <Button
-              size="sm"
-              variant={copied ? "outline" : "solid"}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(referralLink);
-                  setCopied(true);
-                  toast.success(t("referralLinkCopied"));
-                } catch {
-                  toast.error(t("referralLinkManualCopy"));
-                }
-              }}
-            >
-              {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
-              {copied ? t("copied") : t("copy")}
-            </Button>
+          <div className="flex flex-col gap-4 p-4">
+            {/* QR — phone-scannable shortcut for the same link. Rendered
+                inline as a data-uri so we don't depend on any image
+                host, and so the QR refreshes automatically when the
+                code changes between sessions. */}
+            {referralQrDataUrl ? (
+              <div className="flex justify-center">
+                <img
+                  src={referralQrDataUrl}
+                  alt={t("referralLinkTitle")}
+                  className="size-44 rounded-lg bg-white p-2"
+                />
+              </div>
+            ) : null}
+
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={referralLink}
+                className="h-10 flex-1 rounded-lg border border-border bg-muted px-3 text-sm text-foreground"
+                onFocus={(e) => e.target.select()}
+              />
+              <Button
+                size="sm"
+                variant={copied ? "outline" : "solid"}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(referralLink);
+                    setCopied(true);
+                    toast.success(t("referralLinkCopied"));
+                  } catch {
+                    toast.error(t("referralLinkManualCopy"));
+                  }
+                }}
+              >
+                {copied ? <IconCheck className="size-4" /> : <IconCopy className="size-4" />}
+                {copied ? t("copied") : t("copy")}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

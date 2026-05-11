@@ -4,8 +4,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/src/lib/api";
-import { MOCK_OPEN_JOBS, crewKeys, delay } from "./shared";
-import type { CreateJobInput, OpenJob, UpdateJobInput } from "./types";
+import { crewKeys } from "./shared";
+import type { CreateJobInput } from "./types";
 
 /**
  * Wire-shape for `POST /project/crew/job/find/jobs` (findCrewJobs).
@@ -51,24 +51,34 @@ export interface CrewJob {
   createTime?: string;
 }
 
-async function searchOpenJobs(filter: { roleName?: string } = {}): Promise<OpenJob[]> {
-  await delay(180);
-  if (!filter.roleName) return MOCK_OPEN_JOBS;
-  return MOCK_OPEN_JOBS.filter((j) => j.roleName === filter.roleName);
-}
-
 /**
- * Fetch the recruitment jobs of a single crew.
+ * Fetch the recruitment jobs of a single crew — **owner view**.
  *
- * Endpoint: `POST /project/crew/job/find/jobs` (findCrewJobs).
+ * Endpoint: `POST /project/crew/job/find/jobs` (findCrewJobs). Returns
+ * every job the crew owns, including closed / fully-staffed rows. Use
+ * this in the workspace where the owner needs the full picture.
+ *
  * `crewId` goes on the query string per the swagger contract — we
  * pass it through `params` so the api-client URL-encodes it.
- *
- * Backend may return the array directly or wrapped in an envelope —
- * api-client unwraps `body.data` for us, so callers see the array.
  */
 async function findCrewJobs(crewId: string | number): Promise<CrewJob[]> {
   const data = await api.post<CrewJob[]>("/project/crew/job/find/jobs", {
+    params: { crewId: Number(crewId) },
+  });
+  return data ?? [];
+}
+
+/**
+ * Fetch the recruitment jobs of a single crew — **public view**.
+ *
+ * Endpoint: `POST /project/crew/job/find/public/jobs` (findPublicCrewJobs).
+ * Returns the publicly visible subset (open + recruiting jobs), suitable
+ * for the crew detail page that any visitor / applicant can land on.
+ *
+ * Same query-string contract as the owner endpoint.
+ */
+async function findPublicCrewJobs(crewId: string | number): Promise<CrewJob[]> {
+  const data = await api.post<CrewJob[]>("/project/crew/job/find/public/jobs", {
     params: { crewId: Number(crewId) },
   });
   return data ?? [];
@@ -128,14 +138,6 @@ async function createJob(input: CreateJobInput): Promise<{ id: number }> {
   return { id: rawId == null ? 0 : Number(rawId) };
 }
 
-async function updateJob(_input: UpdateJobInput): Promise<void> {
-  await delay(200);
-}
-
-async function deleteJob(_input: { id: number; crewId: string }): Promise<void> {
-  await delay(180);
-}
-
 /**
  * Close (cancel) a recruitment job.
  *
@@ -152,23 +154,34 @@ async function closeJob(jobId: number): Promise<void> {
   });
 }
 
-export function useOpenJobs(filter: { roleName?: string } = {}) {
-  return useQuery({
-    queryKey: crewKeys.openJobs(filter),
-    queryFn: () => searchOpenJobs(filter),
-  });
-}
-
 /**
- * Live recruitment jobs for a single crew. Powers the recruitment
- * tab on the crew workspace. Disabled until `crewId` resolves so we
- * don't hit the wire with `NaN`.
+ * Live recruitment jobs for a single crew — owner view. Powers the
+ * recruitment tab on the crew workspace; surfaces closed + fully-
+ * staffed jobs too. Disabled until `crewId` resolves so we don't hit
+ * the wire with `NaN`.
  */
 export function useCrewJobs(crewId: string | number | undefined) {
   return useQuery({
     queryKey: crewKeys.jobs(crewId ?? ""),
     enabled: crewId != null && crewId !== "",
     queryFn: () => findCrewJobs(crewId!),
+  });
+}
+
+/**
+ * Live recruitment jobs for a single crew — **public view**. Use this
+ * on the crew detail page (`/crews/[id]`) where the audience is
+ * visitors / would-be applicants; the workspace continues using
+ * `useCrewJobs` for the owner-side full list.
+ *
+ * Separate cache key so the two views don't trample each other if the
+ * same user visits both surfaces in one session.
+ */
+export function usePublicCrewJobs(crewId: string | number | undefined) {
+  return useQuery({
+    queryKey: ["crew", "jobs", "public", String(crewId ?? "")] as const,
+    enabled: crewId != null && crewId !== "",
+    queryFn: () => findPublicCrewJobs(crewId!),
   });
 }
 
@@ -179,31 +192,6 @@ export function useCreateJob(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.jobs(crewId) });
-      qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
-    },
-  });
-}
-
-export function useUpdateJob() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: updateJob,
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: crewKeys.detail(vars.crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.jobs(vars.crewId) });
-      qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
-    },
-  });
-}
-
-export function useDeleteJob() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: deleteJob,
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: crewKeys.detail(vars.crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.jobs(vars.crewId) });
-      qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
     },
   });
 }
@@ -215,7 +203,6 @@ export function useCloseJob(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.jobs(crewId) });
-      qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
     },
   });
 }

@@ -1,52 +1,26 @@
 /**
- * Job application flow: apply / list-mine / hasApplied + applicant
- * approve / reject from the crew owner side.
- *
- * Demo state lives in `shared.ts#mutationState` so the apply / approve
- * cycle is observable across components without a backend.
+ * Job application flow: apply (real) + applicant list (real) + agree /
+ * reject (stubbed — backend not wired yet).
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/src/lib/api";
-import { MOCK_OPEN_JOBS, crewKeys, delay, mutationState } from "./shared";
-import type { ApplicationStatus, JobApplicant, JobApplication } from "./types";
+import { crewKeys } from "./shared";
+import type { ApplicationStatus, JobApplicant } from "./types";
 
-async function applyToJob({
-  jobId,
-  message,
-}: {
-  jobId: number;
-  message: string;
-}): Promise<JobApplication> {
-  await delay(300);
-  const job = MOCK_OPEN_JOBS.find((j) => j.id === jobId);
-  if (!job) throw new Error("Job not found");
-  if (mutationState.applications.some((a) => a.jobId === jobId)) {
-    throw new Error("Already applied");
-  }
-  const application: JobApplication = {
-    id: Date.now(),
-    jobId,
-    crewId: job.crewId,
-    crewName: job.crewName,
-    crewCover: job.crewCover,
-    roleName: job.roleName,
-    status: "pending",
-    message,
-    appliedAt: new Date().toISOString(),
-  };
-  mutationState.applications = [application, ...mutationState.applications];
-  return application;
-}
-
-async function fetchMyApplications(): Promise<JobApplication[]> {
-  await delay(180);
-  return [...mutationState.applications];
-}
-
-async function hasAppliedToJob(jobId: number): Promise<boolean> {
-  await delay(120);
-  return mutationState.applications.some((a) => a.jobId === jobId);
+/**
+ * Apply to a crew recruitment job.
+ *
+ * Endpoint: `POST /project/crew/job/apply?jobId={id}` (applyCrewJob).
+ * Per swagger only `jobId` is required — no body. Backend returns the
+ * standard `{ code, msg, data }` envelope; api-client throws on
+ * `code !== 200` so the mutation's `onError` fires with the surfaced
+ * `msg`.
+ */
+async function applyToJob({ jobId }: { jobId: number }): Promise<void> {
+  await api.post("/project/crew/job/apply", {
+    params: { jobId: Number(jobId) },
+  });
 }
 
 /**
@@ -117,49 +91,35 @@ async function fetchJobApplicants(jobId: number): Promise<JobApplicant[]> {
   return (data ?? []).map(mapWireApplicant);
 }
 
-async function agreeApplicant(applicantId: number): Promise<void> {
-  await delay(200);
-  for (const [jobId, list] of Object.entries(mutationState.applicantsByJob)) {
-    const idx = list.findIndex((a) => a.id === applicantId);
-    if (idx >= 0) {
-      list[idx] = { ...list[idx], status: "approved" };
-      mutationState.applicantsByJob[Number(jobId)] = [...list];
-      return;
-    }
-  }
-  throw new Error("Applicant not found");
-}
-
-async function rejectApplicant({
-  applicantId,
-}: {
-  applicantId: number;
-  reason?: string;
-}): Promise<void> {
-  await delay(200);
-  for (const [jobId, list] of Object.entries(mutationState.applicantsByJob)) {
-    const idx = list.findIndex((a) => a.id === applicantId);
-    if (idx >= 0) {
-      list[idx] = { ...list[idx], status: "rejected" };
-      mutationState.applicantsByJob[Number(jobId)] = [...list];
-      return;
-    }
-  }
-  throw new Error("Applicant not found");
-}
-
-export function useMyApplications() {
-  return useQuery({
-    queryKey: crewKeys.myApplications,
-    queryFn: fetchMyApplications,
+/**
+ * Approve an applicant.
+ *
+ * Endpoint: `POST /project/crew/job/aggree?applyId={id}` (aggreeCrewJob —
+ * yes, backend mis-spells "agree" with double-g; we match the wire).
+ * Per swagger: `applyId` query param only, no body. `applyId` is the
+ * apply record's id (= `JobApplicant.id`, mapped from the wire `id`
+ * field on `/project/crew/job/apply/list`).
+ */
+async function agreeApplicant(applyId: number): Promise<void> {
+  await api.post("/project/crew/job/aggree", {
+    params: { applyId: Number(applyId) },
   });
 }
 
-export function useHasApplied(jobId: number | null) {
-  return useQuery({
-    queryKey: crewKeys.hasApplied(jobId ?? 0),
-    queryFn: () => hasAppliedToJob(jobId!),
-    enabled: jobId != null,
+/**
+ * Reject an applicant.
+ *
+ * Endpoint: `POST /project/crew/job/refuse?applyId={id}&message={...}`
+ * (refuseCrewJob). Both params on the query string per swagger.
+ * `message` is the rejection reason shown back to the applicant;
+ * empty string is acceptable when the UI doesn't collect one.
+ */
+async function rejectApplicant(input: { applicantId: number; message?: string }): Promise<void> {
+  await api.post("/project/crew/job/refuse", {
+    params: {
+      applyId: Number(input.applicantId),
+      message: input.message ?? "",
+    },
   });
 }
 
@@ -176,8 +136,7 @@ export function useApplyToJob() {
   return useMutation({
     mutationFn: applyToJob,
     onSuccess: (_app, vars) => {
-      qc.invalidateQueries({ queryKey: crewKeys.myApplications });
-      qc.invalidateQueries({ queryKey: crewKeys.hasApplied(vars.jobId) });
+      qc.invalidateQueries({ queryKey: crewKeys.applicants(vars.jobId) });
     },
   });
 }

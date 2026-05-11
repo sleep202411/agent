@@ -814,6 +814,8 @@
     "tabCrews": "Crews",
     "tabOpenRoles": "Open Roles",
     "applyNow": "Apply",
+    "applySuccess": "Application submitted",
+    "applyFailed": "Application failed. Please try again.",
     "viewCrew": "View Crew",
     "budgetLabel": "Budget",
     "periodLabel": "Period",

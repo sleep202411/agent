@@ -24,9 +24,8 @@ export function DevIdentitySwitcher() {
   const crewId = params.id;
   const raw = useDevIdentityRaw();
   const identity = parseIdentity(raw);
-  // Real crew members (from `/project/crew/member/list`) replace the
-  // mock workspace aggregate's currentEpMembers list. The switcher
-  // just needs name + role for impersonation labels.
+  // Real crew members from `/project/crew/member/query`. Switcher
+  // only needs name + role for impersonation labels.
   const { data: crewMembers = [] } = useCrewMembers(crewId);
   const { data: projectRoles = [] } = useProjectRoles();
   const roleNameById = useMemo(
@@ -72,7 +71,7 @@ export function DevIdentitySwitcher() {
         className="flex items-center gap-2 rounded-full border border-white/15 bg-black/80 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md transition-colors hover:bg-black/90"
       >
         <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-white/60">
-          <IconUserCog className="size-3.5" /> Mock
+          <IconUserCog className="size-3.5" /> Dev
         </span>
         <span className="text-[11px] font-medium text-white">{label}</span>
         <IconChevronDown
