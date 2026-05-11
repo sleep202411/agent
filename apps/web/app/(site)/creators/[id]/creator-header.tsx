@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { IconMail, IconCopy, IconCheck } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -40,7 +40,6 @@ export function CreatorHeader({ creator }: CreatorHeaderProps) {
   const [copied, setCopied] = useState(false);
 
   const name = (creator.name || "").trim() || "Unknown";
-  const initials = name.slice(0, 1).toUpperCase();
   const bio = (creator.bio || "").trim();
   const joined = formatJoined(creator.joinedAt);
   const levels = Array.isArray(creator.levels) ? creator.levels.filter((l) => !!l?.name) : [];
@@ -66,12 +65,12 @@ export function CreatorHeader({ creator }: CreatorHeaderProps) {
         <div className="flex max-w-3xl flex-col gap-3">
           <div className="flex items-center space-x-4">
             <div className="shrink-0">
-              <Avatar className="size-24 border-3 border-white/20 text-3xl shadow-2xl">
-                {creator.avatar ? <AvatarImage src={creator.avatar} alt={name} /> : null}
-                <AvatarFallback className="bg-muted text-muted-foreground">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
+              <UserAvatar
+                src={creator.avatar}
+                seed={creator.id}
+                name={name}
+                className="size-24 border-3 border-white/20 shadow-2xl"
+              />
             </div>
 
             <div>

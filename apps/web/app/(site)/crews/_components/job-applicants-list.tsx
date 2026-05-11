@@ -17,6 +17,7 @@ import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { ossUrl } from "@/src/lib/asset-paths";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   useJobApplicants,
   useAgreeApplicant,
@@ -81,17 +82,12 @@ export function JobApplicantsList({ jobId, canManage }: JobApplicantsListProps) 
           (reject.isPending && reject.variables?.applicantId === a.id);
         return (
           <div key={a.id} className="flex items-start gap-3 py-3">
-            <div className="size-9 shrink-0 overflow-hidden rounded-full bg-secondary">
-              {a.userAvatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={a.userAvatar.startsWith("http") ? a.userAvatar : ossUrl(a.userAvatar)}
-                  alt=""
-                  className="size-full object-cover"
-                  loading="lazy"
-                />
-              ) : null}
-            </div>
+            <UserAvatar
+              src={a.userAvatar?.startsWith("http") ? a.userAvatar : ossUrl(a.userAvatar)}
+              seed={a.userId}
+              name={a.userName}
+              className="size-9 shrink-0"
+            />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-foreground">

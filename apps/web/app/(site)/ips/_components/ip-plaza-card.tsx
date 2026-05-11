@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { IconSparkles, IconPlayerPlay } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   ipImageUrl,
   userAvatarUrl,
   parseTagIds,
   resolveTagNames,
-  avatarFallbackTone,
   type IPProject,
   type CategoryMap,
 } from "../_hooks/use-ip";
@@ -41,8 +40,6 @@ export function IPPlazaCard({
   const cat = categories[String(project.typeId)] ?? "";
   const tags = resolveTagNames(parseTagIds(project.tag), tagMap ?? new Map()).slice(0, 3);
   const ownerName = (project.ownerName || "").trim() || "Anonymous";
-  const initial = ownerName.slice(0, 1).toUpperCase();
-  const fallbackTone = avatarFallbackTone(project.ownerId ?? project.id);
 
   return (
     <Link
@@ -113,18 +110,12 @@ export function IPPlazaCard({
 
         {/* Owner row */}
         <div className="flex items-center gap-2 text-xs">
-          {avatar ? (
-            <img src={avatar} alt="" className="size-6 shrink-0 rounded-full object-cover" />
-          ) : (
-            <span
-              className={cn(
-                "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-                fallbackTone
-              )}
-            >
-              {initial}
-            </span>
-          )}
+          <UserAvatar
+            src={avatar}
+            seed={project.ownerId ?? project.id}
+            name={ownerName}
+            className="size-6 shrink-0"
+          />
           <span className="truncate font-medium text-foreground">{ownerName}</span>
         </div>
       </div>

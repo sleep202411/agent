@@ -24,12 +24,14 @@ import { useParams } from "next/navigation";
 import {
   IconArrowLeft,
   IconBook,
+  IconBookmark,
   IconBriefcase,
   IconChevronDown,
   IconChevronRight,
   IconEdit,
   IconLoader2,
   IconLock,
+  IconRocket,
   IconTrash,
   IconUsers,
 } from "@tabler/icons-react";
@@ -42,12 +44,14 @@ import {
   useCrewJobs,
   useCrewMembers,
   useRemoveMember,
+  useUpdateCrewStatus,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useCloseJob } from "@/app/(site)/crews/_hooks/use-jobs";
 import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
-import { useDevIdentity } from "@/app/(site)/crews/_hooks/use-dev-identity";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
+import { useUserInfo } from "@/src/hooks/use-user";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
+import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
 import { JobApplicantsList } from "@/app/(site)/crews/_components/job-applicants-list";
 import {
@@ -75,15 +79,10 @@ export default function CrewWorkspacePage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
-  // Owner gating still flows through the dev-identity switcher; once
-  // backend exposes a "current user vs crew.adminUserId" check we can
-  // swap this for a real ownership signal.
-  const identity = useDevIdentity();
-  const isOwner = identity.kind === "owner";
-
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [publishJobOpen, setPublishJobOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<{ userId: number; name: string } | null>(null);
 
   // Recruitment-tab accordion state. One row open at a time.
@@ -91,16 +90,27 @@ export default function CrewWorkspacePage() {
   const [pendingCloseJob, setPendingCloseJob] = useState<{ id: number; name: string } | null>(null);
 
   // Real data fetches
+  const { data: userInfo } = useUserInfo();
   const { data: crewDetail, isLoading: detailLoading } = useCrewDetail(id);
   const { data: crewMembers = [], isLoading: membersLoading } = useCrewMembers(id);
   const { data: crewJobs = [] } = useCrewJobs(id);
   const { data: projectRoles = [] } = useProjectRoles();
+
+  // Owner gate — real ownership from `crewDetail.adminUserId` matched
+  // against the logged-in user. Null-safe so it stays `false` until
+  // both userInfo and crewDetail have resolved.
+  const currentUserId = userInfo?.id != null ? Number(userInfo.id) : undefined;
+  const isOwner =
+    currentUserId != null &&
+    crewDetail?.adminUserId != null &&
+    crewDetail.adminUserId === currentUserId;
   const roleNameById = useMemo(
     () => new Map(projectRoles.map((r) => [r.id, r.name])),
     [projectRoles]
   );
   const removeMember = useRemoveMember();
   const closeJob = useCloseJob(id);
+  const updateStatus = useUpdateCrewStatus();
 
   // Stats — all derived from live data.
   const slotsTotal = useMemo(
@@ -111,8 +121,13 @@ export default function CrewWorkspacePage() {
     () => crewJobs.reduce((s, j) => s + Number(j.filledNumber ?? 0), 0),
     [crewJobs]
   );
+  // Closed (status === 9) jobs no longer accept applicants regardless of
+  // their headcount fill state — exclude them from the "open jobs" stat.
   const openJobsCount = useMemo(
-    () => crewJobs.filter((j) => Number(j.filledNumber ?? 0) < Number(j.jobNumber ?? 0)).length,
+    () =>
+      crewJobs.filter(
+        (j) => Number(j.status ?? 0) !== 9 && Number(j.filledNumber ?? 0) < Number(j.jobNumber ?? 0)
+      ).length,
     [crewJobs]
   );
 
@@ -129,6 +144,7 @@ export default function CrewWorkspacePage() {
           `#${job.roleId}`,
         filled: Number(job.filledNumber ?? 0),
         total: Number(job.jobNumber ?? 0),
+        closed: Number(job.status ?? 0) === 9,
       })),
     [crewJobs, roleNameById]
   );
@@ -225,12 +241,62 @@ export default function CrewWorkspacePage() {
             </div>
             {isOwner ? (
               <div className="flex shrink-0 items-center gap-2">
-                <Link
-                  href={`/crews/${id}/edit`}
+                {/* Status toggles — Publish / Save as Draft are mirror
+                    actions; whichever matches the current `crewDetail.status`
+                    is disabled so the user can read state from the chrome.
+                    Both call `useUpdateCrewStatus` which posts ONLY id +
+                    status (no field-edit bundling). */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateStatus.mutate(
+                      { id: crewDetail.id, status: 1 },
+                      {
+                        onSuccess: () => toast.success(t("publishSuccess")),
+                        onError: (err) =>
+                          toast.error(err instanceof Error ? err.message : t("publishFailed")),
+                      }
+                    )
+                  }
+                  disabled={crewDetail.status === 1 || updateStatus.isPending}
+                  className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {updateStatus.isPending && updateStatus.variables?.status === 1 ? (
+                    <IconLoader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <IconRocket className="size-3.5" />
+                  )}
+                  {t("publishCrew")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateStatus.mutate(
+                      { id: crewDetail.id, status: 0 },
+                      {
+                        onSuccess: () => toast.success(t("draftSuccess")),
+                        onError: (err) =>
+                          toast.error(err instanceof Error ? err.message : t("draftFailed")),
+                      }
+                    )
+                  }
+                  disabled={crewDetail.status === 0 || updateStatus.isPending}
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {updateStatus.isPending && updateStatus.variables?.status === 0 ? (
+                    <IconLoader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <IconBookmark className="size-3.5" />
+                  )}
+                  {t("saveDraft")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(true)}
                   className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70"
                 >
                   <IconEdit className="size-3.5" /> {t("wsEditStudio")}
-                </Link>
+                </button>
               </div>
             ) : null}
           </div>
@@ -309,6 +375,7 @@ export default function CrewWorkspacePage() {
                   {crewJobs.map((job) => {
                     const filled = Number(job.filledNumber ?? 0);
                     const total = Number(job.jobNumber ?? 0);
+                    const closed = Number(job.status ?? 0) === 9;
                     const full = total > 0 && filled >= total;
                     const roleLabel =
                       job.jobName ||
@@ -349,7 +416,11 @@ export default function CrewWorkspacePage() {
                               <div
                                 className={cn(
                                   "h-full rounded-full",
-                                  full ? "bg-green-400" : "bg-amber-400"
+                                  closed
+                                    ? "bg-muted-foreground/40"
+                                    : full
+                                      ? "bg-green-400"
+                                      : "bg-amber-400"
                                 )}
                                 style={{
                                   width: total > 0 ? `${(filled / total) * 100}%` : "0%",
@@ -359,19 +430,25 @@ export default function CrewWorkspacePage() {
                             <span
                               className={cn(
                                 "rounded-full border px-2 py-0.5 text-xs font-semibold",
-                                full
-                                  ? "border-green-400/30 bg-green-400/10 text-green-400"
-                                  : "border-amber-400/30 bg-amber-400/10 text-amber-400"
+                                closed
+                                  ? "border-muted-foreground/30 bg-muted-foreground/10 text-muted-foreground"
+                                  : full
+                                    ? "border-green-400/30 bg-green-400/10 text-green-400"
+                                    : "border-amber-400/30 bg-amber-400/10 text-amber-400"
                               )}
                             >
-                              {full ? t("statusFull") : t("statusRecruiting")}
+                              {closed
+                                ? t("statusClosed")
+                                : full
+                                  ? t("statusFull")
+                                  : t("statusRecruiting")}
                             </span>
                           </div>
                         </button>
                         {expanded ? (
                           <div className="border-t border-border/60 bg-background/40 px-3 pb-3 pt-2">
                             <JobApplicantsList jobId={job.id} canManage={isOwner} />
-                            {isOwner ? (
+                            {isOwner && !closed ? (
                               <div className="mt-3 flex justify-end border-t border-border/60 pt-3">
                                 <button
                                   type="button"
@@ -479,6 +556,17 @@ export default function CrewWorkspacePage() {
 
       <AddCrewMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} crewId={id} />
       <CreateCrewJobDialog open={publishJobOpen} onOpenChange={setPublishJobOpen} crewId={id} />
+      <CreateCrewDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        initial={{
+          id: crewDetail.id,
+          name: crewDetail.name,
+          description: crewDetail.description,
+          banner: crewDetail.banner,
+          video: crewDetail.video,
+        }}
+      />
 
       {/* Member-remove confirmation */}
       <AlertDialog
@@ -584,7 +672,13 @@ interface OverviewTabProps {
   openJobsCount: number;
   slotsFilled: number;
   slotsTotal: number;
-  rolesProgress: Array<{ jobId: number; role: string; filled: number; total: number }>;
+  rolesProgress: Array<{
+    jobId: number;
+    role: string;
+    filled: number;
+    total: number;
+    closed: boolean;
+  }>;
   t: ReturnType<typeof useTranslations>;
   onJumpRoles: () => void;
 }
@@ -649,7 +743,11 @@ function OverviewTab({
                       <div
                         className={cn(
                           "h-full rounded-full",
-                          full ? "bg-green-400" : "bg-amber-400"
+                          r.closed
+                            ? "bg-muted-foreground/40"
+                            : full
+                              ? "bg-green-400"
+                              : "bg-amber-400"
                         )}
                         style={{
                           width: r.total > 0 ? `${(r.filled / r.total) * 100}%` : "0%",
@@ -659,12 +757,18 @@ function OverviewTab({
                     <span
                       className={cn(
                         "rounded-full border px-2 py-0.5 text-xs font-semibold",
-                        full
-                          ? "border-green-400/30 bg-green-400/10 text-green-400"
-                          : "border-amber-400/30 bg-amber-400/10 text-amber-400"
+                        r.closed
+                          ? "border-muted-foreground/30 bg-muted-foreground/10 text-muted-foreground"
+                          : full
+                            ? "border-green-400/30 bg-green-400/10 text-green-400"
+                            : "border-amber-400/30 bg-amber-400/10 text-amber-400"
                       )}
                     >
-                      {full ? t("statusFull") : t("statusRecruiting")}
+                      {r.closed
+                        ? t("statusClosed")
+                        : full
+                          ? t("statusFull")
+                          : t("statusRecruiting")}
                     </span>
                   </div>
                 </div>

@@ -11,7 +11,7 @@ import {
   IconShare2,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   Dialog,
   DialogContent,
@@ -223,12 +223,12 @@ export function ProfileHeader({ userInfo, onEditProfile }: ProfileHeaderProps) {
           <div className="flex max-w-3xl flex-col gap-3">
             <div className="flex items-center space-x-4">
               <div className="group relative shrink-0">
-                <Avatar className="size-24 border-3 border-white/20 text-3xl shadow-2xl">
-                  <AvatarImage src={resolveAvatarUrl(info)} alt={displayName} />
-                  <AvatarFallback className="bg-muted text-muted-foreground">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
+                <UserAvatar
+                  src={resolveAvatarUrl(info)}
+                  seed={info?.id}
+                  name={displayName}
+                  className="size-24 border-3 border-white/20 shadow-2xl"
+                />
                 <button
                   type="button"
                   onClick={handleAvatarClick}

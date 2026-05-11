@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { UserAvatar } from "@/components/user-avatar";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -580,15 +581,16 @@ export function MediaManagerDialog({
                             )}
                           </div>
                           <div className="mt-2 flex items-center gap-2 text-xs text-white/45">
-                            {String(
-                              detailMatchesActiveFile
-                                ? (fileDetails?.userAvatarImagePath ?? "")
-                                : ""
-                            ) ? (
-                              <img
-                                src={ossUrl(String(fileDetails?.userAvatarImagePath))}
-                                alt=""
-                                className="size-4 rounded-full object-cover"
+                            {detailMatchesActiveFile && fileDetails?.userName ? (
+                              <UserAvatar
+                                src={
+                                  fileDetails?.userAvatarImagePath
+                                    ? ossUrl(String(fileDetails.userAvatarImagePath))
+                                    : undefined
+                                }
+                                seed={String(fileDetails?.userName ?? fileDetails?.nickname ?? "")}
+                                name={String(fileDetails?.userName ?? "")}
+                                className="size-4"
                               />
                             ) : (
                               <IconUser className="size-4" />

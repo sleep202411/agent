@@ -23,6 +23,7 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTagList } from "@/src/hooks/use-tag-list";
 import { cn } from "@/lib/utils";
 import { env } from "@/src/env";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   useProjectDetail,
   useProjectVideoLink,
@@ -640,14 +641,7 @@ function RailProducer({
     >
       <h3 className="mb-3 text-sm font-semibold text-foreground">{t("detailProducer")}</h3>
       <div className="flex items-center gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-base font-semibold text-foreground/80">
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatarUrl} alt="" className="size-full object-cover" />
-          ) : (
-            (name?.[0] ?? "?").toUpperCase()
-          )}
-        </div>
+        <UserAvatar src={avatarUrl} seed={ownerId} name={name} className="size-10 shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-foreground">{name || "—"}</div>
           <span className="text-xs text-muted-foreground">{t("detailProducerLabel")}</span>
