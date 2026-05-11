@@ -1,11 +1,9 @@
 "use client";
 
 /**
- * Crew detail v2 — design layout follows fizzdragon-prd's
- * `app/studio/[id]/page.tsx` reference. Routed to from the new
- * "All Crews" feed on /crews (queryCrewList items). Legacy detail
- * at `/crews/[id]/page.tsx` is left untouched so in-flight
- * job-application flows from the old grid keep working.
+ * Crew detail — primary layout. Renders when the new
+ * `/project/crew/detail/:id` endpoint returns a record. Composition
+ * follows fizzdragon-prd's `app/studio/[id]/page.tsx` reference.
  *
  * Real-data sources:
  *   - useCrewDetail   — hero (banner / video / name / description)
@@ -13,11 +11,13 @@
  *   - useCrewJobs     — open positions list
  *   - useProjectRoles — role-name lookup
  *
- * Sections from the PRD that don't yet have a backend
- * (Project Roadmap phase steps, Latest Activity feed, status enum,
- * deadline, budget range) are intentionally omitted rather than
- * mocked — keeps this page truthful while we slim the rest of the
- * crews surface area.
+ * Sections from the PRD that don't yet have a backend (Roadmap, Latest
+ * Activity, deadline, budget range) are intentionally omitted rather
+ * than mocked.
+ *
+ * Orchestrator: `app/(site)/crews/[id]/page.tsx` mounts this when the
+ * new endpoint has data, and falls back to `crew-detail-legacy.tsx`
+ * otherwise.
  */
 
 import { useMemo } from "react";
@@ -29,17 +29,24 @@ import {
   IconClock,
   IconLoader2,
   IconMovie,
-  IconSettings,
   IconUserPlus,
   IconUsers,
 } from "@tabler/icons-react";
 import { env } from "@/src/env";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { useCrewDetail, useCrewJobs, useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
+import { toast } from "sonner";
+import {
+  useCrewDetail,
+  useCrewMembers,
+  usePublicCrewJobs,
+} from "@/app/(site)/crews/_hooks/use-crew";
+import { useApplyToJob } from "@/app/(site)/crews/_hooks/use-applications";
 import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
+import { useUserInfo } from "@/src/hooks/use-user";
+import { ApiRequestError } from "@/src/lib/api";
 
-export default function CrewDetailV2Page() {
+export function CrewDetailNew() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const t = useTranslations("workspace");
@@ -47,8 +54,22 @@ export default function CrewDetailV2Page() {
 
   const { data: crewDetail, isLoading: detailLoading } = useCrewDetail(id);
   const { data: crewMembers = [] } = useCrewMembers(id);
-  const { data: crewJobs = [] } = useCrewJobs(id);
+  // Public view — owner workspace uses `useCrewJobs` for the full list
+  // (including closed / drafted). Visitors landing here only need the
+  // public subset, served by `/project/crew/job/find/public/jobs`.
+  const { data: crewJobs = [] } = usePublicCrewJobs(id);
   const { data: projectRoles = [] } = useProjectRoles();
+  const { data: userInfo } = useUserInfo();
+  const applyMutation = useApplyToJob();
+
+  // Real ownership check — Workspace entry only shows for the user
+  // whose id matches the crew's adminUserId. Null-safe so the button
+  // stays hidden until both queries resolve.
+  const currentUserId = userInfo?.id != null ? Number(userInfo.id) : undefined;
+  const isOwner =
+    currentUserId != null &&
+    crewDetail?.adminUserId != null &&
+    crewDetail.adminUserId === currentUserId;
   const roleNameById = useMemo(
     () => new Map(projectRoles.map((r) => [r.id, r.name])),
     [projectRoles]
@@ -62,6 +83,25 @@ export default function CrewDetailV2Page() {
   const slotsFilled = useMemo(
     () => crewJobs.reduce((s, j) => s + Number(j.filledNumber ?? 0), 0),
     [crewJobs]
+  );
+
+  // "Hiring: ..." chips on the Project Overview card. Excludes closed
+  // jobs (status === 9) and roles that are already fully staffed —
+  // only show roles a visitor could still join.
+  const hiringRoles = useMemo(
+    () =>
+      crewJobs
+        .filter((job) => Number(job.status ?? 0) !== 9)
+        .filter((job) => Number(job.filledNumber ?? 0) < Number(job.jobNumber ?? 0))
+        .map((job) => ({
+          jobId: job.id,
+          label:
+            job.jobName ||
+            job.roleName ||
+            (job.roleId != null ? roleNameById.get(job.roleId) : undefined) ||
+            `#${job.roleId}`,
+        })),
+    [crewJobs, roleNameById]
   );
 
   if (detailLoading || !crewDetail) {
@@ -116,22 +156,19 @@ export default function CrewDetailV2Page() {
                 </p>
               ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Link
-                href={`/crews/${id}/workspace`}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10"
-              >
-                <IconMovie className="size-4" />
-                {tCrew("workspace")}
-              </Link>
-              <Link
-                href={`/crews/${id}/edit`}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10"
-              >
-                <IconSettings className="size-4" />
-                {tCrew("settings")}
-              </Link>
-            </div>
+            {/* Workspace entry — owner-only. Settings dropped: editing
+                crew metadata lives inside the workspace header now. */}
+            {isOwner ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <Link
+                  href={`/crews/${id}/workspace`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10"
+                >
+                  <IconMovie className="size-4" />
+                  {tCrew("workspace")}
+                </Link>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -168,14 +205,28 @@ export default function CrewDetailV2Page() {
           {/* Main content */}
           <div className="space-y-6 lg:col-span-2">
             {/* Project Overview */}
-            {crewDetail.description ? (
+            {crewDetail.description || hiringRoles.length > 0 ? (
               <section className="rounded-xl border border-border bg-card p-5">
                 <h2 className="mb-3 text-sm font-semibold text-foreground">
-                  {tCrew("createDescriptionLabel")}
+                  {tCrew("projectOverview")}
                 </h2>
-                <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                  {crewDetail.description}
-                </p>
+                {crewDetail.description ? (
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+                    {crewDetail.description}
+                  </p>
+                ) : null}
+                {hiringRoles.length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {hiringRoles.map((role) => (
+                      <span
+                        key={role.jobId}
+                        className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300"
+                      >
+                        {tCrew("hiring")}: {role.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -229,7 +280,35 @@ export default function CrewDetailV2Page() {
                           {!full ? (
                             <button
                               type="button"
-                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                              disabled={
+                                applyMutation.isPending &&
+                                applyMutation.variables?.jobId === Number(job.id)
+                              }
+                              onClick={() =>
+                                applyMutation.mutate(
+                                  { jobId: Number(job.id) },
+                                  {
+                                    onSuccess: () => {
+                                      toast.success(tCrew("applySuccess"));
+                                    },
+                                    onError: (err) => {
+                                      if (err instanceof ApiRequestError) {
+                                        const detail =
+                                          err.responseBody?.slice(0, 800) || err.message;
+                                        toast.error(`HTTP ${err.status}`, {
+                                          description: detail,
+                                          duration: 10000,
+                                        });
+                                      } else {
+                                        toast.error(
+                                          err instanceof Error ? err.message : tCrew("applyFailed")
+                                        );
+                                      }
+                                    },
+                                  }
+                                )
+                              }
+                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <IconUserPlus className="size-3.5" />
                               {tCrew("applyNow")}
@@ -297,17 +376,6 @@ export default function CrewDetailV2Page() {
                 </div>
               )}
             </section>
-
-            {/* Apply-to-join CTA — actual application flow needs backend
-                wiring (the legacy /crews/[id] page has the apply
-                modal). v2 shows the affordance only. */}
-            <button
-              type="button"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <IconUserPlus className="size-4" />
-              {tCrew("applyToJoin")}
-            </button>
           </aside>
         </div>
       </div>

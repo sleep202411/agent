@@ -5,6 +5,7 @@ import { IconAlertCircle, IconSparkles } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
+import { PlazaHero } from "@/components/layout/plaza-hero";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCourseList, useCourseProgressMap, useFilteredCourses } from "@/src/hooks/use-courses";
 import { isCourseApiError } from "@/src/services/courses";
@@ -15,55 +16,6 @@ interface PageFilters {
   searchQuery: string;
   selectedCategory: string | null;
   selectedPriceRange: string | null;
-}
-
-function CoursesHero({ total }: { total: number }) {
-  const t = useTranslations("courses");
-
-  return (
-    <section className="relative overflow-hidden border-b border-border">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage:
-            "radial-gradient(ellipse 50% 50% at 20% 30%, hsl(42 95% 55% / 0.08) 0%, transparent 60%), radial-gradient(ellipse 40% 40% at 80% 60%, hsl(280 60% 55% / 0.06) 0%, transparent 60%)",
-        }}
-      />
-
-      <div className="relative mx-auto max-w-screen-2xl px-6 pb-12 pt-16">
-        <div className="max-w-3xl">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400">
-            <IconSparkles className="size-4" />
-            {t("heroEyebrow")}
-            <span className="text-muted-foreground/60">/</span>
-            <span className="text-muted-foreground">{t("heroMeta")}</span>
-          </div>
-
-          <h1 className="mt-4 text-4xl font-black leading-[1.1] tracking-tight text-foreground md:text-5xl">
-            {t("heroTitle")}
-            <br />
-            <span className="bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-              {t("heroTitleAccent")}
-            </span>
-          </h1>
-
-          <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground md:text-base">
-            {t("heroDescription")}
-          </p>
-
-          <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <span className="size-1.5 rounded-full bg-amber-400" />
-              <strong className="text-foreground">{total}</strong>
-              <span>{t("courseCountSuffix")}</span>
-            </div>
-            <span className="text-xs text-muted-foreground/70">{t("courseCountCap")}</span>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
 }
 
 /**
@@ -112,7 +64,16 @@ export default function CoursesPage() {
 
   return (
     <main className="min-h-[calc(100vh-4rem)] overflow-hidden bg-background text-foreground">
-      <CoursesHero total={outerCourses.length} />
+      <PlazaHero
+        eyebrow={{ icon: IconSparkles, label: t("heroEyebrow"), meta: t("heroMeta") }}
+        title={{ plain: t("heroTitle"), accent: t("heroTitleAccent") }}
+        subtitle={t("heroDescription")}
+        stats={{
+          items: [{ value: outerCourses.length, label: t("courseCountSuffix") }],
+          cap: t("courseCountCap"),
+          dotted: true,
+        }}
+      />
 
       <div className="mx-auto grid w-full max-w-[1540px] grid-cols-1 items-start gap-6 px-5 py-8 md:px-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-8">
         <div>

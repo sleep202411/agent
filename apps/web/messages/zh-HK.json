@@ -814,6 +814,8 @@
     "tabCrews": "劇組",
     "tabOpenRoles": "招募職位",
     "applyNow": "申請",
+    "applySuccess": "已提交申請",
+    "applyFailed": "申請失敗,請稍後重試",
     "viewCrew": "查看劇組",
     "budgetLabel": "預算",
     "periodLabel": "週期",

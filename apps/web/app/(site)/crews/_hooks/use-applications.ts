@@ -8,35 +8,22 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/src/lib/api";
-import { MOCK_OPEN_JOBS, crewKeys, delay, mutationState } from "./shared";
+import { crewKeys, delay, mutationState } from "./shared";
 import type { ApplicationStatus, JobApplicant, JobApplication } from "./types";
 
-async function applyToJob({
-  jobId,
-  message,
-}: {
-  jobId: number;
-  message: string;
-}): Promise<JobApplication> {
-  await delay(300);
-  const job = MOCK_OPEN_JOBS.find((j) => j.id === jobId);
-  if (!job) throw new Error("Job not found");
-  if (mutationState.applications.some((a) => a.jobId === jobId)) {
-    throw new Error("Already applied");
-  }
-  const application: JobApplication = {
-    id: Date.now(),
-    jobId,
-    crewId: job.crewId,
-    crewName: job.crewName,
-    crewCover: job.crewCover,
-    roleName: job.roleName,
-    status: "pending",
-    message,
-    appliedAt: new Date().toISOString(),
-  };
-  mutationState.applications = [application, ...mutationState.applications];
-  return application;
+/**
+ * Apply to a crew recruitment job.
+ *
+ * Endpoint: `POST /project/crew/job/apply?jobId={id}` (applyCrewJob).
+ * Per swagger only `jobId` is required — no body. Backend returns the
+ * standard `{ code, msg, data }` envelope; api-client throws on
+ * `code !== 200` so the mutation's `onError` fires with the surfaced
+ * `msg`.
+ */
+async function applyToJob({ jobId }: { jobId: number }): Promise<void> {
+  await api.post("/project/crew/job/apply", {
+    params: { jobId: Number(jobId) },
+  });
 }
 
 async function fetchMyApplications(): Promise<JobApplication[]> {

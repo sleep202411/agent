@@ -58,17 +58,33 @@ async function searchOpenJobs(filter: { roleName?: string } = {}): Promise<OpenJ
 }
 
 /**
- * Fetch the recruitment jobs of a single crew.
+ * Fetch the recruitment jobs of a single crew — **owner view**.
  *
- * Endpoint: `POST /project/crew/job/find/jobs` (findCrewJobs).
+ * Endpoint: `POST /project/crew/job/find/jobs` (findCrewJobs). Returns
+ * every job the crew owns, including closed / fully-staffed rows. Use
+ * this in the workspace where the owner needs the full picture.
+ *
  * `crewId` goes on the query string per the swagger contract — we
  * pass it through `params` so the api-client URL-encodes it.
- *
- * Backend may return the array directly or wrapped in an envelope —
- * api-client unwraps `body.data` for us, so callers see the array.
  */
 async function findCrewJobs(crewId: string | number): Promise<CrewJob[]> {
   const data = await api.post<CrewJob[]>("/project/crew/job/find/jobs", {
+    params: { crewId: Number(crewId) },
+  });
+  return data ?? [];
+}
+
+/**
+ * Fetch the recruitment jobs of a single crew — **public view**.
+ *
+ * Endpoint: `POST /project/crew/job/find/public/jobs` (findPublicCrewJobs).
+ * Returns the publicly visible subset (open + recruiting jobs), suitable
+ * for the crew detail page that any visitor / applicant can land on.
+ *
+ * Same query-string contract as the owner endpoint.
+ */
+async function findPublicCrewJobs(crewId: string | number): Promise<CrewJob[]> {
+  const data = await api.post<CrewJob[]>("/project/crew/job/find/public/jobs", {
     params: { crewId: Number(crewId) },
   });
   return data ?? [];
@@ -160,15 +176,33 @@ export function useOpenJobs(filter: { roleName?: string } = {}) {
 }
 
 /**
- * Live recruitment jobs for a single crew. Powers the recruitment
- * tab on the crew workspace. Disabled until `crewId` resolves so we
- * don't hit the wire with `NaN`.
+ * Live recruitment jobs for a single crew — owner view. Powers the
+ * recruitment tab on the crew workspace; surfaces closed + fully-
+ * staffed jobs too. Disabled until `crewId` resolves so we don't hit
+ * the wire with `NaN`.
  */
 export function useCrewJobs(crewId: string | number | undefined) {
   return useQuery({
     queryKey: crewKeys.jobs(crewId ?? ""),
     enabled: crewId != null && crewId !== "",
     queryFn: () => findCrewJobs(crewId!),
+  });
+}
+
+/**
+ * Live recruitment jobs for a single crew — **public view**. Use this
+ * on the crew detail page (`/crews/[id]`) where the audience is
+ * visitors / would-be applicants; the workspace continues using
+ * `useCrewJobs` for the owner-side full list.
+ *
+ * Separate cache key so the two views don't trample each other if the
+ * same user visits both surfaces in one session.
+ */
+export function usePublicCrewJobs(crewId: string | number | undefined) {
+  return useQuery({
+    queryKey: ["crew", "jobs", "public", String(crewId ?? "")] as const,
+    enabled: crewId != null && crewId !== "",
+    queryFn: () => findPublicCrewJobs(crewId!),
   });
 }
 

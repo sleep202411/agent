@@ -75,6 +75,7 @@ export {
   useCrewJobs,
   useDeleteJob,
   useOpenJobs,
+  usePublicCrewJobs,
   useUpdateJob,
 } from "./use-jobs";
 export type { CrewJob } from "./use-jobs";
