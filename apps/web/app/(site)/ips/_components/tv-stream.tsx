@@ -8,9 +8,12 @@
  * time with a fade swap on advance, keyboard / wheel / chevron
  * navigation, top-right close, top-center counter. The substantive
  * difference vs the mock is that we play real trailers — each IP's
- * `videoLink` is an opaque OSS key, resolved on demand through
- * `useProjectVideoLink` (`POST /vedio/play/project/getLink`) and
- * piped into a `<video>` background.
+ * trailer URL is resolved on demand through `useProjectVideoLink`
+ * (`POST /vedio/play/project/getLink`) and piped into a `<video>`.
+ * IPs without a resolvable trailer fall back to a full-bleed cover
+ * image, so every card in the queue is renderable rather than
+ * filtered out — `videoLink !== null` on the list payload is not a
+ * reliable trailer flag, only `getLink` is.
  *
  * Caller owns the IP list (so the same `useInfiniteIPList` data the
  * Plaza grid renders also fuels the stream — no second fetch). When
@@ -22,14 +25,14 @@
  * lean-back surface, not a setting we want to leak elsewhere.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   IconChevronDown,
   IconChevronUp,
   IconDeviceTv,
-  IconLoader2,
   IconPlayerPlay,
+  IconSparkles,
   IconUser,
   IconVolume,
   IconVolumeOff,
@@ -63,10 +66,6 @@ export function TVStream({ ips, onClose, onLoadMore, hasNextPage, isFetchingMore
   const t = useTranslations("ip");
   const locale = useLocale() as Locale;
 
-  // Filter to IPs with a trailer — without `videoLink` there's
-  // nothing to play, so showing them in a video stream wastes a slot.
-  const playable = useMemo(() => ips.filter((ip) => !!ip.videoLink), [ips]);
-
   const [current, setCurrent] = useState(0);
   // Animation direction drives the fade-in/out class. `null` between
   // transitions so the entered card sits at full opacity.
@@ -99,12 +98,12 @@ export function TVStream({ ips, onClose, onLoadMore, hasNextPage, isFetchingMore
 
   const goNext = useCallback(() => {
     setCurrent((c) => {
-      if (c >= playable.length - 1) return c;
+      if (c >= ips.length - 1) return c;
       setAnimDir("up");
       window.setTimeout(() => setAnimDir(null), 220);
       return c + 1;
     });
-  }, [playable.length]);
+  }, [ips.length]);
 
   const goPrev = useCallback(() => {
     setCurrent((c) => {
@@ -118,8 +117,8 @@ export function TVStream({ ips, onClose, onLoadMore, hasNextPage, isFetchingMore
   // Pre-fetch when nearing end of queue.
   useEffect(() => {
     if (!hasNextPage || !onLoadMore || isFetchingMore) return;
-    if (current >= playable.length - LOAD_MORE_BUFFER) onLoadMore();
-  }, [current, playable.length, hasNextPage, onLoadMore, isFetchingMore]);
+    if (current >= ips.length - LOAD_MORE_BUFFER) onLoadMore();
+  }, [current, ips.length, hasNextPage, onLoadMore, isFetchingMore]);
 
   // Keyboard nav. ↑/↓ for the conventional path, j/k for the
   // vim-mode crowd, ESC to bail. Bound to window so focus state
@@ -161,11 +160,11 @@ export function TVStream({ ips, onClose, onLoadMore, hasNextPage, isFetchingMore
     return () => window.removeEventListener("wheel", onWheel);
   }, [goNext, goPrev]);
 
-  if (playable.length === 0) {
+  if (ips.length === 0) {
     return <EmptyState onClose={onClose} />;
   }
 
-  const ip = playable[current];
+  const ip = ips[current];
 
   return (
     <div className="fixed inset-0 z-100 flex flex-col bg-black">
@@ -176,7 +175,7 @@ export function TVStream({ ips, onClose, onLoadMore, hasNextPage, isFetchingMore
           <IconDeviceTv className="size-5" />
           <span>{t("tvLabel")}</span>
           <span className="ml-1 text-xs font-normal text-white/40 tabular-nums">
-            {current + 1} / {playable.length}
+            {current + 1} / {ips.length}
             {hasNextPage ? "+" : ""}
           </span>
         </div>
@@ -220,7 +219,7 @@ export function TVStream({ ips, onClose, onLoadMore, hasNextPage, isFetchingMore
         <button
           type="button"
           onClick={goNext}
-          disabled={current >= playable.length - 1 && !hasNextPage}
+          disabled={current >= ips.length - 1 && !hasNextPage}
           aria-label={t("tvNext")}
           className="flex size-10 items-center justify-center rounded-full bg-white/10 text-white transition-all hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-20"
         >
@@ -252,11 +251,13 @@ export function TVStream({ ips, onClose, onLoadMore, hasNextPage, isFetchingMore
 
 function TVCard({ ip, muted, locale }: { ip: IPProject; muted: boolean; locale: Locale }) {
   const t = useTranslations("ip");
-  // Lazy resolve the playable URL. Hook gates on truthy `videoLink`;
-  // since `playable` upstream filtered to IPs with a trailer, this
-  // always fires. Result is cached per IP id, so flipping back and
-  // forth doesn't re-hit the backend.
-  const { data: playableUrl, isLoading } = useProjectVideoLink(String(ip.id), !!ip.videoLink);
+  // Always ask `getLink` — the `videoLink` field on the list payload
+  // is not authoritative; trailers exist for some IPs whose listing
+  // record reads null/empty. The hook caches per IP id, so flipping
+  // back and forth doesn't re-hit the backend. When the call returns
+  // empty / errors, `playableUrl` stays falsy and the card degrades
+  // to its cover image.
+  const { data: playableUrl } = useProjectVideoLink(String(ip.id));
   const cover = ipImageUrl(ip.bannerLink);
   const avatar = userAvatarUrl(ip.ownerAvatar);
   const ownerName = (ip.ownerName || "").trim() || t("anonymousOwner");
@@ -270,48 +271,50 @@ function TVCard({ ip, muted, locale }: { ip: IPProject; muted: boolean; locale: 
   }, [muted]);
 
   return (
-    <div className="relative size-full overflow-hidden">
-      {/* Backdrop — cover image stays visible during getLink + first
-          frame paint. Slight scale + dim so it reads as ambient
-          rather than primary. */}
-      {cover && (
+    <div className="relative size-full overflow-hidden bg-black">
+      {/* Layer 0 — full-bleed cover. Always rendered so the card has
+          something to show during getLink in-flight and so IPs without
+          a trailer still feel like a poster card rather than blank.
+          object-cover trades a bit of cropping for an immersive feel
+          (banners are 16:9 and the viewport is roughly landscape). */}
+      {cover ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={cover}
-          alt=""
-          className="absolute inset-0 size-full scale-110 object-cover blur-2xl opacity-40"
-        />
+        <img src={cover} alt="" className="absolute inset-0 size-full object-cover" />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <IconSparkles className="size-16 text-white/20" />
+        </div>
       )}
 
-      {/* Centered video — object-contain so 16:9 trailers don't get
-          cropped to fit a portrait viewport. The ambient backdrop
-          above fills the bars. */}
-      {playableUrl ? (
-        <video
-          ref={videoRef}
-          // Keying on ip.id forces a clean remount on advance so
-          // autoplay attribute kicks in fresh; sidesteps having to
-          // call .load()/.play() imperatively when src changes.
-          key={ip.id}
-          src={playableUrl}
-          autoPlay
-          muted={muted}
-          playsInline
-          loop
-          preload="auto"
-          className="relative size-full object-contain"
-        />
-      ) : (
-        <div className="relative flex size-full items-center justify-center">
-          {isLoading ? (
-            <IconLoader2 className="size-10 animate-spin text-white/60" />
-          ) : (
-            <div className="flex flex-col items-center gap-2 text-white/40">
-              <IconPlayerPlay className="size-12" />
-              <span className="text-sm">{t("tvNoStream")}</span>
-            </div>
+      {/* Layers 1 + 2 — only when getLink resolved a playable URL.
+          Blurred-cover backdrop fills the letterbox bars left by the
+          contained video so the screen never goes hard-black around a
+          16:9 trailer in a portrait window. */}
+      {playableUrl && (
+        <>
+          {cover && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={cover}
+              alt=""
+              className="absolute inset-0 size-full scale-110 object-cover opacity-40 blur-2xl"
+            />
           )}
-        </div>
+          <video
+            ref={videoRef}
+            // Key on ip.id so advance triggers a clean remount and
+            // autoplay attribute kicks in fresh — sidesteps
+            // .load()/.play() bookkeeping when src changes.
+            key={ip.id}
+            src={playableUrl}
+            autoPlay
+            muted={muted}
+            playsInline
+            loop
+            preload="auto"
+            className="relative size-full object-contain"
+          />
+        </>
       )}
 
       {/* Bottom-left overlay — title, owner, description, CTA. */}
