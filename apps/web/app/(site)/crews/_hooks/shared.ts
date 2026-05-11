@@ -82,6 +82,7 @@ export const crewKeys = {
   hasApplied: (jobId: number) => ["crew", "applications", "hasApplied", jobId] as const,
   applicants: (jobId: number) => ["crew", "applicants", jobId] as const,
   queryList: (filter: QueryCrewListFilter) => ["crew", "queryList", filter] as const,
+  mine: ["crew", "mine"] as const,
   landing: ["crew", "landing"] as const,
   producerOverview: ["crew", "producer", "overview"] as const,
 };

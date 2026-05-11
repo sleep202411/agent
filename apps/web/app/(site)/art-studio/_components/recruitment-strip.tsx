@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { IconCheck, IconUserSearch, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -101,10 +101,7 @@ function RecruitmentRow({
 
   return (
     <div className="flex flex-wrap items-center gap-4 p-4">
-      <Avatar size="lg">
-        <AvatarImage src={avatar} alt={name} />
-        <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
-      </Avatar>
+      <UserAvatar src={avatar} seed={item.applyUsername} name={name} size="lg" />
 
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="truncate text-sm font-medium">{name}</p>

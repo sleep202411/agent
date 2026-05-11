@@ -42,7 +42,11 @@ export interface CrewJob {
   /** How many of the headcount have been approved so far. Backend
    *  may not surface this in phase-1 — treat as 0 if missing. */
   filledNumber?: number;
-  /** Phase-1 backend job status — values not yet documented. */
+  /** Job lifecycle status.
+   *   - 0 → open (created, accepting applicants — backend default)
+   *   - 9 → closed (no longer accepting; closed via `useCloseJob`)
+   *  Other values reserved. UI treats anything other than 9 as "open"
+   *  to stay forward-compatible with new phases the backend may add. */
   status?: number | string;
   createTime?: string;
 }

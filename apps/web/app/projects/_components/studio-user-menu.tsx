@@ -17,7 +17,7 @@ import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { useTheme } from "next-themes";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -66,7 +66,6 @@ export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: Studi
 
   const displayName = user?.nickname || "User";
   const avatarUrl = user?.avatar || undefined;
-  const initials = displayName.slice(0, 1).toUpperCase();
   const userLevel = user?.userLevel || "";
 
   return (
@@ -76,20 +75,14 @@ export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: Studi
           type="button"
           className="flex items-center rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Avatar className="size-8">
-            <AvatarImage src={avatarUrl} alt={displayName} />
-            <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-          </Avatar>
+          <UserAvatar src={avatarUrl} seed={user?.id} name={displayName} className="size-8" />
         </button>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-80 p-0">
         {/* User info */}
         <div className="flex items-center gap-3 px-4 py-4">
-          <Avatar className="size-12">
-            <AvatarImage src={avatarUrl} alt={displayName} />
-            <AvatarFallback className="text-sm">{initials}</AvatarFallback>
-          </Avatar>
+          <UserAvatar src={avatarUrl} seed={user?.id} name={displayName} className="size-12" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <p className="truncate text-sm font-semibold">{displayName}</p>

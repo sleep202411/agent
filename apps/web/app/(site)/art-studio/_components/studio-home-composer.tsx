@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import {
   IconArrowUp,
   IconBuildingStore,
+  IconCamera,
   IconLayoutList,
   IconLoader2,
   IconMask,
   IconPaperclip,
+  IconPencil,
   IconSparkles,
   IconUsers,
   IconX,
@@ -78,6 +80,15 @@ const STUDIO_AGENT_PILLS: {
     personaKey: "personas.episodePlanner",
   },
   {
+    agent: "scriptwriter",
+    labelKey: "forcePersonaScriptwriter",
+    icon: IconPencil,
+    active: "bg-violet-500/10 text-violet-300 border-violet-400/30",
+    composerRing: "ring-violet-400/60 shadow-[0_0_32px_-8px_rgb(139_92_246/0.55)]",
+    prefixTone: "text-violet-300",
+    personaKey: "personas.scriptwriter",
+  },
+  {
     agent: "character",
     labelKey: "forcePersonaCharacter",
     icon: IconUsers,
@@ -103,6 +114,15 @@ const STUDIO_AGENT_PILLS: {
     composerRing: "ring-orange-400/60 shadow-[0_0_32px_-8px_rgb(249_115_22/0.55)]",
     prefixTone: "text-orange-300",
     personaKey: "personas.propDesigner",
+  },
+  {
+    agent: "storyboard",
+    labelKey: "forcePersonaStoryboard",
+    icon: IconCamera,
+    active: "bg-sky-500/10 text-sky-300 border-sky-400/30",
+    composerRing: "ring-sky-400/60 shadow-[0_0_32px_-8px_rgb(56_189_248/0.55)]",
+    prefixTone: "text-sky-300",
+    personaKey: "personas.storyboardDesigner",
   },
 ];
 

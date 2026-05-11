@@ -35,6 +35,7 @@ import {
   useMyPersonalWorks,
   useUpdatePersonalWork,
 } from "@/src/hooks/use-my-projects";
+import { useMyCrews, type QueryCrewListItem } from "@/app/(site)/crews/_hooks/use-crew";
 import { updateProject, type PersonalWork, type Project } from "@/src/services/project";
 import { ApiRequestError } from "@/src/lib/api";
 import { PublishWorkDialog } from "./publish-work-dialog";
@@ -76,8 +77,8 @@ export default function ProfilePage() {
           <MyIPsTab />
         </ProfileSection>
 
-        <ProfileSection title={t("joinedCrews")}>
-          <JoinedTab />
+        <ProfileSection title={t("myCrews")}>
+          <MyCrewsTab />
         </ProfileSection>
 
         {/* RecruitmentStrip self-hides when there are no applicants. */}
@@ -567,33 +568,120 @@ function PersonalWorksTab() {
   );
 }
 
-// ─── Joined Tab ───────────────────────────────────────
+// ─── My Crews Tab ─────────────────────────────────────
+//
+// Two stacked sub-blocks under one section:
+//   1. Top    — crews from `/project/crew/mycrew` (the real phase-1 crew
+//               endpoint). Owner badge is rendered when the row's
+//               adminUserId matches the logged-in user.
+//   2. Bottom — legacy "joined IPs" via `useMyJoinedProjects` — predates
+//               the crew module; kept visible so historical participation
+//               records don't disappear. Will retire once the data is
+//               migrated under the crew model.
 
-function JoinedTab() {
+function MyCrewsTab() {
   const t = useTranslations("profile");
-  const { data: projects, isLoading } = useMyJoinedProjects();
+  const { data: userInfo } = useUserInfo();
+  const { data: myCrews, isLoading: loadingCrews } = useMyCrews();
+  const { data: joinedProjects, isLoading: loadingJoined } = useMyJoinedProjects();
 
-  if (isLoading) {
-    return (
-      <div className="flex h-48 items-center justify-center">
-        <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!projects?.length) {
-    return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        {t("noData")}
-      </div>
-    );
-  }
+  const currentUserId = userInfo?.id != null ? Number(userInfo.id) : undefined;
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-      {projects.map((project) => (
-        <ProjectCard key={project.id} project={project} />
-      ))}
+    <div className="space-y-8">
+      {/* Block 1: new crew rows */}
+      {loadingCrews ? (
+        <div className="flex h-32 items-center justify-center">
+          <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : !myCrews?.length ? (
+        <p className="text-sm text-muted-foreground/70">{t("noData")}</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          {myCrews.map((crew) => (
+            <MyCrewCard
+              key={crew.id}
+              crew={crew}
+              isOwner={
+                currentUserId != null &&
+                crew.adminUserId != null &&
+                crew.adminUserId === currentUserId
+              }
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Block 2: legacy joined IPs */}
+      <div>
+        <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+          {t("joinedCrews")}
+        </h3>
+        {loadingJoined ? (
+          <div className="flex h-32 items-center justify-center">
+            <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : !joinedProjects?.length ? (
+          <p className="text-sm text-muted-foreground/70">{t("noData")}</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+            {joinedProjects.map((project) => (
+              <ProjectCard key={project.id} project={project} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── My Crew Card ─────────────────────────────────────
+
+function MyCrewCard({ crew, isOwner }: { crew: QueryCrewListItem; isOwner: boolean }) {
+  const t = useTranslations("profile");
+  const router = useRouter();
+  const locale = useLocale() as Locale;
+  const bannerUrl = crew.banner
+    ? crew.banner.startsWith("http")
+      ? crew.banner
+      : `${env.BANNER_BASE_URL}/${crew.banner.replace(/^\/+/, "")}`
+    : "";
+
+  return (
+    <div
+      className="group relative cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
+      onClick={() => router.push(localizePath(`/crews/${crew.id}`, locale))}
+    >
+      {isOwner && (
+        <div className="absolute left-2 top-2 z-10 rounded-full bg-primary/85 px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
+          {t("crewOwner")}
+        </div>
+      )}
+      <div className="aspect-[4/3] overflow-hidden bg-muted">
+        {bannerUrl ? (
+          <img src={bannerUrl} alt={crew.name} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-muted-foreground/30">
+            {crew.name.slice(0, 1)}
+          </div>
+        )}
+      </div>
+      <div className="space-y-2 p-3">
+        <div className="truncate text-sm font-medium">{crew.name}</div>
+        {crew.description && (
+          <div className="line-clamp-2 text-xs text-muted-foreground">{crew.description}</div>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
+          }}
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground transition-colors hover:border-primary/50 hover:text-primary"
+        >
+          {t("openWorkspace")}
+        </button>
+      </div>
     </div>
   );
 }

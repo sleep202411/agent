@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { DehydratedState } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Providers } from "@/components/providers";
+import { NicknameRequiredDialog } from "@/components/auth/nickname-required-dialog";
 import i18n, { setLanguage, useLocale } from "@/src/i18n/i18n";
 import { setCurrentLocale, localeFromPathname } from "@/src/i18n/locale-url";
 
@@ -40,7 +41,13 @@ export function RootLayoutClient({
 
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange>
-      <Providers dehydratedState={dehydratedState}>{children}</Providers>
+      <Providers dehydratedState={dehydratedState}>
+        {children}
+        {/* Logged-in gate — auto-renders when current user has no nickName.
+            Renders nothing for unauth visitors (id undefined) so /auth and
+            other public pages aren't affected. */}
+        <NicknameRequiredDialog />
+      </Providers>
     </ThemeProvider>
   );
 }
