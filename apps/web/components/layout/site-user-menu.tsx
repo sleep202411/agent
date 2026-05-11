@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { IconLogout } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,7 +33,6 @@ export function SiteUserMenu() {
 
   const displayName = user.nickname || "User";
   const avatarUrl = user.avatar;
-  const initials = displayName.slice(0, 1).toUpperCase();
 
   return (
     <div className="flex items-center gap-2">
@@ -42,10 +41,7 @@ export function SiteUserMenu() {
         aria-label={displayName}
         className="rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <Avatar className="size-8">
-          <AvatarImage src={avatarUrl} alt={displayName} />
-          <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-        </Avatar>
+        <UserAvatar src={avatarUrl} seed={user.id} name={displayName} className="size-8" />
       </Link>
       <AlertDialog>
         <AlertDialogTrigger asChild>

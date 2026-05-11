@@ -10,13 +10,13 @@ import {
   IconPlayerPause,
   IconPlayerPlay,
   IconPlayerStop,
-  IconRefresh,
   IconX,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { FailedResultCard } from "../failed-result-card";
 import {
   Dialog,
   DialogContent,
@@ -63,10 +63,6 @@ export interface LipsyncAudioPanelProps {
   onSelectAudio: (path: string) => void;
   onGenerateAudio: () => void;
   onRetryAudio: (item: AudioResultItem) => void;
-  /** Called when the user clicks "View error" on a failed card.
-   * Lifts the message up to the dialog so a single shadcn AlertDialog
-   * can render it (instead of native window.alert). */
-  onShowError: (message: string) => void;
   isGenerating: boolean;
   audioColumnId: string;
 }
@@ -110,7 +106,6 @@ export function LipsyncAudioPanel({
   onSelectAudio,
   onGenerateAudio,
   onRetryAudio,
-  onShowError,
   isGenerating,
   audioColumnId,
 }: LipsyncAudioPanelProps) {
@@ -138,18 +133,28 @@ export function LipsyncAudioPanel({
             <div className="grid grid-cols-2 gap-2">
               {allAudioItems.map((item, index) => {
                 const path = item.path;
+                // Failed audio gets the unified FailedResultCard. It
+                // owns its own retry / view-details actions, so we
+                // skip the regular button wrapper for this case.
+                if (item.status === "failed") {
+                  return (
+                    <FailedResultCard
+                      key={item.id || `${path}_${index}`}
+                      error={item.errorMessage}
+                      className="h-24"
+                      onRetry={() => onRetryAudio(item)}
+                    />
+                  );
+                }
+
                 const selected = Boolean(path) && referenceAudio === path;
                 const playing = Boolean(path) && playingAudioPath === path;
                 return (
                   <button
                     key={item.id || `${path}_${index}`}
                     type="button"
-                    disabled={!path && item.status !== "failed"}
+                    disabled={!path}
                     onClick={() => {
-                      if (item.status === "failed") {
-                        onRetryAudio(item);
-                        return;
-                      }
                       if (!path) return;
                       onSelectAudio(path);
                     }}
@@ -157,16 +162,13 @@ export function LipsyncAudioPanel({
                       "relative flex flex-col items-center justify-center gap-2 rounded-lg border px-3 py-4 transition-colors",
                       selected
                         ? "border-[#E52227] bg-[#E52227]/10"
-                        : "border-white/10 bg-white/[0.03] hover:border-white/20",
-                      item.status === "failed" && "border-[#E52227]/60"
+                        : "border-white/10 bg-white/[0.03] hover:border-white/20"
                     )}
                   >
                     {/* Status icon */}
                     <div className="flex size-10 items-center justify-center rounded-full bg-white/5">
                       {item.status === "generating" ? (
                         <IconLoader2 className="size-5 animate-spin text-white/80" />
-                      ) : item.status === "failed" ? (
-                        <IconRefresh className="size-5 text-[#E52227]" />
                       ) : (
                         <IconMicrophone className="size-5 text-white/70" />
                       )}
@@ -176,35 +178,8 @@ export function LipsyncAudioPanel({
                     <div className="w-full truncate text-center text-xs">
                       {item.status === "generating"
                         ? t("generatingStatus")
-                        : item.status === "failed"
-                          ? t("failedRetry")
-                          : item.name || t("audioIndex", { index: index + 1 })}
+                        : item.name || t("audioIndex", { index: index + 1 })}
                     </div>
-
-                    {/* "View error" link — surfaces the captured backend
-                        detail via the dialog-level shadcn AlertDialog.
-                        stopPropagation so the link doesn't trigger the
-                        parent button's retry. */}
-                    {item.status === "failed" && item.errorMessage ? (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onShowError(item.errorMessage!);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            onShowError(item.errorMessage!);
-                          }
-                        }}
-                        className="text-[11px] text-[#E52227] underline underline-offset-2 hover:opacity-80"
-                      >
-                        {t("viewError")}
-                      </span>
-                    ) : null}
 
                     {/* Selected badge */}
                     {selected ? (
