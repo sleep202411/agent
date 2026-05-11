@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { createAvatar } from "@dicebear/core";
-import { lorelei } from "@dicebear/collection";
+import { notionists } from "@dicebear/collection";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -21,28 +21,42 @@ import { cn } from "@/lib/utils";
  * caller's responsibility for this low-level helper. `<UserAvatar>`
  * wraps it and prefixes `user:` automatically.
  */
+// DiceBear `notionists` ships with a transparent background by default,
+// which leaves the line-art "floating" against whatever's behind the
+// avatar. Passing `backgroundColor` makes DiceBear pick a deterministic
+// pastel from the palette per seed — same user always gets the same
+// background, and the figure now has a proper Notion-style coloured
+// circle behind it. Palette matches DiceBear's recommended default.
+const DICEBEAR_BG_PALETTE = ["b6e3f4", "c0aede", "d1d4f9", "ffd5dc", "ffdfbf"];
+
 export function getDicebearAvatar(seed: string | number): string {
-  return createAvatar(lorelei, { seed: String(seed) }).toDataUri();
+  return createAvatar(notionists, {
+    seed: String(seed),
+    backgroundColor: DICEBEAR_BG_PALETTE,
+  }).toDataUri();
 }
 
 /**
- * Backend stores this exact path for users who never uploaded an avatar
- * (legacy placeholder image baked into the user OSS bucket). Treat it as
- * "no avatar set" so the DiceBear fallback kicks in instead of rendering
- * the generic placeholder PNG.
+ * Backend stores a specific placeholder PNG for users who never uploaded
+ * an avatar (legacy default image baked into the user OSS bucket). Treat
+ * it as "no avatar set" so the DiceBear fallback kicks in instead of
+ * rendering the generic silhouette.
+ *
+ * We match by UUID `includes` (not `endsWith`) so this also fires when
+ * the URL carries an OSS image-processing query string
+ * (`?x-oss-process=image/resize,w_120` etc), or when the bucket / prefix
+ * differs across deployments. Brittle to add new placeholders later, but
+ * a single UUID is unambiguous enough.
  *
  * Exported so other callers (profile-completion checks, condition for a
  * "Upload avatar" CTA, etc.) can apply the same rule without re-deriving
  * the magic string.
  */
-const PLACEHOLDER_AVATAR_PATH = "1/d17b1d5e-282e-47e0-bd99-9a72477adf93.png";
+const PLACEHOLDER_AVATAR_UUID = "d17b1d5e-282e-47e0-bd99-9a72477adf93";
 
 export function isPlaceholderAvatar(src: string | null | undefined): boolean {
   if (!src) return true;
-  // Match against the suffix so this works whether `src` is the raw
-  // backend path (`1/d17b…png`) or a fully-resolved URL
-  // (`https://…/1/d17b…png`).
-  return src.endsWith(PLACEHOLDER_AVATAR_PATH);
+  return src.includes(PLACEHOLDER_AVATAR_UUID);
 }
 
 interface UserAvatarProps {
@@ -101,7 +115,13 @@ export function UserAvatar({
   // a brief grey square instead of a DiceBear face that's about to be
   // replaced; on load failure they keep seeing the grey square (rare).
   return (
-    <Avatar size={radixSize} className={cn(className)} style={sizeStyle}>
+    // `overflow-hidden` is necessary because Radix's Avatar root keeps a
+    // `rounded-full` shape but doesn't clip children — the DiceBear SVG
+    // ships at its own aspect ratio with an opaque background, so without
+    // clipping the square corners of the fallback bleed past the circle.
+    // tailwind-merge lets the caller override `rounded-full` to e.g.
+    // `rounded-2xl` (talent card) and the clipping shape follows.
+    <Avatar size={radixSize} className={cn("overflow-hidden", className)} style={sizeStyle}>
       {effectiveSrc ? (
         <>
           <AvatarImage src={effectiveSrc} alt={name ?? ""} className={cn(imageClassName)} />

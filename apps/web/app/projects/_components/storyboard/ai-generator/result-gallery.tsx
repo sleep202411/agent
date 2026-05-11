@@ -5,8 +5,6 @@ import {
   IconDownload,
   IconLoader2,
   IconAlertCircle,
-  IconInfoCircle,
-  IconRefresh,
   IconReplace,
   IconCircleCheck,
   IconTrash,
@@ -14,9 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { buildOssImageUrl } from "@/src/lib/uploads/workspace-upload";
-
-const FAILED_IMAGE_URL = "https://static.fizzspace.cn/static/pc/generation_failed.jpg";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { FailedResultCard } from "./failed-result-card";
 import type { ResultItem } from "@/src/store/slices/projectSlice";
 
 interface ResultGalleryProps {
@@ -138,63 +134,13 @@ export function ResultGallery({
         // Queue: failed
         if (item.status === "failed") {
           return (
-            <div
+            <FailedResultCard
               key={item.id}
-              className={cn(
-                "relative overflow-hidden rounded-lg bg-muted/50",
-                aspectRatio === "video" ? "aspect-video" : "aspect-square"
-              )}
-            >
-              <img
-                src={FAILED_IMAGE_URL}
-                alt=""
-                className="h-full w-full object-cover opacity-80"
-              />
-              <div className="absolute inset-x-0 bottom-0 flex justify-center gap-1 bg-gradient-to-t from-black/60 to-transparent p-1.5">
-                {item.error ? (
-                  <TooltipProvider delayDuration={100}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={(event) => event.stopPropagation()}
-                          className="flex size-6 items-center justify-center rounded bg-black/40 text-white transition-colors hover:bg-white/10"
-                        >
-                          <IconInfoCircle className="size-3" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-[240px] break-all text-xs">
-                        {item.error}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                ) : null}
-                {onRetry ? (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onRetry(item);
-                    }}
-                    className="flex size-6 items-center justify-center rounded bg-black/40 text-white transition-colors hover:bg-primary"
-                  >
-                    <IconRefresh className="size-3" />
-                  </button>
-                ) : null}
-                {onDelete ? (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDelete(item);
-                    }}
-                    className="flex size-6 items-center justify-center rounded bg-black/40 text-white transition-colors hover:bg-destructive"
-                  >
-                    <IconTrash className="size-3" />
-                  </button>
-                ) : null}
-              </div>
-            </div>
+              error={item.error}
+              className={aspectRatio === "video" ? "aspect-video" : "aspect-square"}
+              onRetry={onRetry ? () => onRetry(item) : undefined}
+              onDelete={onDelete ? () => onDelete(item) : undefined}
+            />
           );
         }
 

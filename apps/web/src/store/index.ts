@@ -5,6 +5,7 @@ import { projectSlice } from "./slices/projectSlice";
 import { userSlice } from "./slices/userSlice";
 import { aiModelCacheSlice } from "./slices/aiModelCacheSlice";
 import { assistantSlice } from "./slices/assistantSlice";
+import { taskFailureToastListener } from "./task-failure-toast";
 
 export const store = configureStore({
   reducer: {
@@ -27,7 +28,7 @@ export const store = configureStore({
         ],
         ignoredPaths: ["assistant.projects"],
       },
-    }),
+    }).prepend(taskFailureToastListener.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;
