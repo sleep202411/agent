@@ -5,7 +5,13 @@
  * workspace picks it up on mount to bootstrap the first StoryOS turn.
  */
 
-export type StudioAgent = "character" | "episode" | "prop" | "scene";
+export type StudioAgent =
+  | "character"
+  | "episode"
+  | "prop"
+  | "scene"
+  | "scriptwriter"
+  | "storyboard";
 
 export interface StudioSeedAttachment {
   /** OSS 相对路径（后端拿这个去 OSS 下载） */

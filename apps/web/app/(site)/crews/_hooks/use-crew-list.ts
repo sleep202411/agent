@@ -136,7 +136,7 @@ async function queryCrewList(filter: QueryCrewListFilter): Promise<QueryCrewList
   const body: Record<string, unknown> = {
     pageNum: filter.pageNum ?? 1,
     pageSize: filter.pageSize ?? 20,
-    status: filter.status ?? 0,
+    // status: filter.status ?? 0,
   };
   if (filter.name && filter.name.trim() !== "") body.name = filter.name.trim();
 
@@ -160,5 +160,32 @@ export function useQueryCrewList(filter: QueryCrewListFilter = {}) {
   return useQuery({
     queryKey: crewKeys.queryList(filter),
     queryFn: () => queryCrewList(filter),
+  });
+}
+
+/**
+ * `POST /project/crew/mycrew` (queryMyCrew) — crews the current user
+ * belongs to, owner or member alike. Backend returns the same row shape
+ * as `/project/crew/list`; the caller decides ownership by comparing
+ * `adminUserId` to the logged-in user.
+ *
+ * No request body — auth cookie does the filtering. Envelope is read
+ * raw because some backend versions return the array directly and some
+ * wrap it in `{ data: [...] }`; we accept both.
+ */
+async function fetchMyCrews(): Promise<QueryCrewListItem[]> {
+  const envelope = await api.post<QueryCrewListEnvelope | QueryCrewListItem[] | null>(
+    "/project/crew/mycrew",
+    { raw: true }
+  );
+  if (!envelope) return [];
+  if (Array.isArray(envelope)) return envelope;
+  return envelope.data ?? [];
+}
+
+export function useMyCrews() {
+  return useQuery({
+    queryKey: crewKeys.mine,
+    queryFn: fetchMyCrews,
   });
 }

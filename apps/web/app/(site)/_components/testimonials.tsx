@@ -22,6 +22,7 @@ import { IconStar } from "@tabler/icons-react";
 import { GlitchText } from "@/components/ui/glitch-text";
 import { useTranslations } from "@/src/i18n/i18n";
 import { userAvatarUrl } from "@/src/lib/asset-paths";
+import { UserAvatar } from "@/components/user-avatar";
 
 interface Testimonial {
   /** Speaker's name in their own script. */
@@ -190,16 +191,12 @@ function Card({ testimonial, delay }: { testimonial: Testimonial; delay: number 
         {testimonial.quote}
       </blockquote>
       <figcaption className="mt-5 flex items-center gap-3">
-        <div
-          className={`size-11 shrink-0 overflow-hidden rounded-full bg-gradient-to-br ${testimonial.gradient} shadow-sm`}
-        >
-          <img
-            src={userAvatarUrl(testimonial.avatar)}
-            alt=""
-            loading="lazy"
-            className="size-full object-cover"
-          />
-        </div>
+        <UserAvatar
+          src={userAvatarUrl(testimonial.avatar)}
+          seed={testimonial.name}
+          name={testimonial.name}
+          className={`size-11 shrink-0 bg-gradient-to-br ${testimonial.gradient} shadow-sm`}
+        />
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-foreground">{testimonial.name}</div>
           <div className="truncate text-xs text-muted-foreground">{testimonial.role}</div>

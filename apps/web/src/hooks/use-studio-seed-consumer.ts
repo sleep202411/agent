@@ -28,6 +28,10 @@ function mapSeedAgent(agent: StudioAgent | null): AssistantAgentType {
       return "character";
     case "scene":
       return "scene";
+    case "scriptwriter":
+      return "script";
+    case "storyboard":
+      return "storyboard";
     case "episode":
     case "prop":
     default:
@@ -52,6 +56,10 @@ function mapSeedAgentToForcedPersona(agent: StudioAgent | null): ForcedPersonaKe
       return "prop_designer";
     case "episode":
       return "episode_planner";
+    case "scriptwriter":
+      return "scriptwriter";
+    case "storyboard":
+      return "storyboard_designer";
     default:
       return null;
   }

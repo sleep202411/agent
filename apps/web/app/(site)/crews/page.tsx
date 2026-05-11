@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { IconMovie, IconPlus, IconUsers } from "@tabler/icons-react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -39,6 +39,13 @@ export default function CrewsPage() {
   const [activeRoleId, setActiveRoleId] = useState<number>(ALL_ROLE_ID);
   const [createOpen, setCreateOpen] = useState(false);
 
+  // Preview flag — `?preview=1` re-enables the Create-Crew CTA and the
+  // queryCrewList feed for production smoke tests. Without the flag the
+  // page falls back to the legacy "projects with open jobs" grid only,
+  // which is what regular users see ahead of the next prod cut.
+  const searchParams = useSearchParams();
+  const previewMode = searchParams?.get("preview") === "1";
+
   const { data: roles = [] } = useProjectRoles();
   const roleById = useMemo(() => {
     const map = new Map<number, ProjectRole>();
@@ -54,16 +61,17 @@ export default function CrewsPage() {
   const { data: landing } = useCrewLanding();
 
   // Second data source — `POST /project/crew/list` (queryCrewList).
-  // Wired so the request is visible in the network panel for shape
-  // validation, but **not rendered** ahead of the next prod cut.
-  // The "All Crews" section below is commented out; flip the hook
-  // result back into local vars + un-comment the section to enable.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _crewListProbe = useQueryCrewList({
+  // Only rendered when `?preview=1` is in the URL; otherwise the request
+  // still fires (kept visible in the network panel for shape validation),
+  // but the All-Crews grid below stays hidden ahead of the next prod cut.
+  const crewListQuery = useQueryCrewList({
     pageNum: 1,
     pageSize: 20,
     status: 0,
   });
+  const crewListLoading = crewListQuery.isLoading;
+  const crewListItems = crewListQuery.data?.list ?? [];
+  const crewListPage = crewListQuery.data ?? null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -109,12 +117,15 @@ export default function CrewsPage() {
                 </span>
               ))}
             </div>
-            {/* Create Crew CTA hidden ahead of the next prod cut.
-                Re-enable by un-commenting; dialog stays mounted. */}
-            {/* <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-              <IconPlus className="size-4" />
-              {tCrew("createStudio")}
-            </Button> */}
+            {/* Create Crew CTA — gated by `?preview=1`. Dialog itself
+                stays mounted unconditionally below so the same flag can
+                drive opening it. */}
+            {previewMode && (
+              <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                <IconPlus className="size-4" />
+                {tCrew("createStudio")}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -124,30 +135,32 @@ export default function CrewsPage() {
       {/* ── Browse ──────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-7xl px-6 pb-24 pt-8">
         {/* Primary feed — crews from `POST /project/crew/list`
-            (queryCrewList). Disabled ahead of the next prod cut;
-            re-enable together with the `useQueryCrewList` consumer
-            up in the component body. */}
-        {/* <section>
-          <div className="mb-6 flex items-baseline justify-between gap-4">
-            <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
-            {crewListPage ? (
-              <span className="text-xs text-muted-foreground">
-                {tCrew("allCrewsCount", { count: crewListPage.totalCount })}
-              </span>
-            ) : null}
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {crewListLoading ? (
-              <CardSkeleton count={10} />
-            ) : crewListItems.length === 0 ? (
-              <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
-                {t("noData")}
-              </div>
-            ) : (
-              crewListItems.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
-            )}
-          </div>
-        </section> */}
+            (queryCrewList). Gated by `?preview=1` so we can smoke-test
+            the live feed in production without exposing it to regular
+            users yet. */}
+        {previewMode && (
+          <section className="mb-12">
+            <div className="mb-6 flex items-baseline justify-between gap-4">
+              <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
+              {crewListPage ? (
+                <span className="text-xs text-muted-foreground">
+                  {tCrew("allCrewsCount", { count: crewListPage.totalCount })}
+                </span>
+              ) : null}
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {crewListLoading ? (
+                <CardSkeleton count={10} />
+              ) : crewListItems.length === 0 ? (
+                <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                  {t("noData")}
+                </div>
+              ) : (
+                crewListItems.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Legacy "projects with open jobs" feed — for now this is
             the only thing rendered; the queryCrewList feed above is
@@ -222,9 +235,7 @@ export default function CrewsPage() {
   );
 }
 
-// Currently unused — paired with the disabled "All Crews" feed above.
-// Kept around so re-enabling the feed is a one-line uncomment.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// Used by the All-Crews feed that's gated behind `?preview=1`.
 function CrewCard({ item, locale }: { item: QueryCrewListItem; locale: Locale }) {
   const router = useRouter();
   // Backend sometimes returns the literal placeholder "string" or an

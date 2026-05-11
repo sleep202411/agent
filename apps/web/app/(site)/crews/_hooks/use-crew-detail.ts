@@ -47,7 +47,9 @@ export interface CrewWire {
   video: string;
   /** Java owner / 管理员 user id. */
   adminUserId: number;
-  /** 0 = active. Other values reserved for backend lifecycle states. */
+  /** Lifecycle status. 0 = draft (default; only visible to the owner),
+   *  1 = published (surfaced on the plaza / search). Other values
+   *  reserved for backend lifecycle states. Toggle via `useUpdateCrewStatus`. */
   status: number;
   createTime: string | null;
   updateTime: string | null;
@@ -80,14 +82,45 @@ async function createCrew(input: CreateCrewInput): Promise<{ id: string; crew: C
   return { id: String(res.data.id), crew: res.data };
 }
 
-async function updateCrew(_input: UpdateCrewInput): Promise<void> {
-  // TODO(crew-phase-1): wire to the real `POST /project/crew/update`
-  // endpoint when backend ships it. Mock no-op so the existing edit UI
-  // doesn't blow up while we wait.
+async function updateCrew(input: UpdateCrewInput): Promise<void> {
+  // Java's update convention mirrors create — `POST /project/crew/update`
+  // takes the same field shape plus `id`. Only `id` is required; the
+  // caller passes whichever fields changed and backend leaves the rest
+  // untouched. Surface backend `msg` on business-level failures so the
+  // dialog's error toast carries something actionable.
+  const body: Record<string, unknown> = { id: Number(input.id) };
+  if (input.name !== undefined) body.name = input.name;
+  if (input.description !== undefined) body.description = input.description;
+  if (input.banner !== undefined) body.banner = input.banner;
+  if (input.video !== undefined) body.video = input.video;
+
+  const res = await api.post<CrewEnvelope>("/project/crew/update", {
+    data: body,
+    raw: true,
+  });
+  if (res?.code !== 200) {
+    throw new Error(res?.msg || "updateCrew: backend response invalid");
+  }
 }
 
 async function deleteCrew(_id: string): Promise<void> {
   // TODO(crew-phase-1): wire to the real delete endpoint.
+}
+
+/**
+ * Status-only update — flips a crew between draft (0) and published (1)
+ * without touching any other field. Same endpoint as `updateCrew` but
+ * dedicated so the call site cannot accidentally bundle stale field
+ * values from a form snapshot. `id` and `status` are the only payload.
+ */
+async function updateCrewStatus(input: { id: number | string; status: number }): Promise<void> {
+  const res = await api.post<CrewEnvelope>("/project/crew/update", {
+    data: { id: Number(input.id), status: input.status },
+    raw: true,
+  });
+  if (res?.code !== 200) {
+    throw new Error(res?.msg || "updateCrewStatus: backend response invalid");
+  }
 }
 
 export function useCrewDetail(id: string) {
@@ -116,6 +149,7 @@ export function useUpdateCrew() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: ["crew", "list"] });
+      qc.invalidateQueries({ queryKey: crewKeys.mine });
     },
   });
 }
@@ -127,6 +161,18 @@ export function useDeleteCrew() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["crew", "list"] });
       qc.invalidateQueries({ queryKey: crewKeys.myOwned });
+    },
+  });
+}
+
+export function useUpdateCrewStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: updateCrewStatus,
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: crewKeys.detail(String(vars.id)) });
+      qc.invalidateQueries({ queryKey: ["crew", "list"] });
+      qc.invalidateQueries({ queryKey: crewKeys.mine });
     },
   });
 }

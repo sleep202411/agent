@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.146",
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.2",
     "@dnd-kit/react": "^0.3.2",
     "@hookform/resolvers": "^5.2.2",
     "@reduxjs/toolkit": "^2.11.2",

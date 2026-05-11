@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { IconCalendar } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import { UserAvatar } from "@/components/user-avatar";
 import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
 
 function formatJoined(value: string | null | undefined): string {
@@ -31,19 +32,13 @@ export function CreatorsTalentCard({ creator }: { creator: Creator }) {
       className="group relative mt-8 flex h-full w-full flex-col rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-white/6 hover:shadow-lg hover:shadow-primary/5"
     >
       {/* Avatar — half pokes above the card edge */}
-      <div className="absolute -top-8 left-4 h-16 w-16 overflow-hidden rounded-2xl border-2 border-background bg-white/6 shadow-lg shadow-black/30">
-        {avatar && (
-          <img
-            src={avatar}
-            alt=""
-            aria-hidden
-            className="block h-full w-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-          />
-        )}
-      </div>
+      <UserAvatar
+        src={avatar}
+        seed={id}
+        name={name}
+        className="absolute -top-8 left-4 size-16 rounded-2xl border-2 border-background bg-white/6 shadow-lg shadow-black/30 after:rounded-2xl"
+        imageClassName="rounded-2xl"
+      />
 
       <div className="flex flex-1 flex-col px-4 pb-4 pt-11">
         <div className="flex items-center gap-2">

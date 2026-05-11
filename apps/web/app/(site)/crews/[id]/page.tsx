@@ -18,6 +18,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/user-avatar";
 import {
   useApplyJob,
   useJobApplyStatus,
@@ -198,13 +199,14 @@ export default function CrewDetailPage() {
                   )}
                 </div>
 
-                {(owner?.nickName || ownerAvatar) && (
+                {(owner?.nickName || ownerAvatar || owner?.userId != null) && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    {ownerAvatar ? (
-                      <img src={ownerAvatar} alt="" className="size-7 rounded-full object-cover" />
-                    ) : (
-                      <div className="size-7 rounded-full bg-muted" />
-                    )}
+                    <UserAvatar
+                      src={ownerAvatar}
+                      seed={owner?.userId}
+                      name={owner?.nickName}
+                      className="size-7"
+                    />
                     <span>{owner?.nickName}</span>
                   </div>
                 )}

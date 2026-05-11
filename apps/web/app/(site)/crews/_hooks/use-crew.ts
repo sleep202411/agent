@@ -52,6 +52,7 @@ export {
 export {
   useCrewLanding,
   useCrews,
+  useMyCrews,
   useMyJoinedCrews,
   useMyOwnedCrews,
   useQueryCrewList,
@@ -59,7 +60,13 @@ export {
 export type { QueryCrewListItem } from "./use-crew-list";
 
 // ─── Detail + crew CRUD ────────────────────────────────
-export { useCreateCrew, useCrewDetail, useDeleteCrew, useUpdateCrew } from "./use-crew-detail";
+export {
+  useCreateCrew,
+  useCrewDetail,
+  useDeleteCrew,
+  useUpdateCrew,
+  useUpdateCrewStatus,
+} from "./use-crew-detail";
 
 // ─── Jobs ──────────────────────────────────────────────
 export {

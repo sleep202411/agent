@@ -18,6 +18,7 @@ import { DragDropProvider } from "@dnd-kit/react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -95,24 +96,14 @@ function MemberRow({
 }) {
   const display = member.nickName || member.userName || member.id || `#${member.userId ?? "?"}`;
   const avatar = userAvatarUrl(member.avatar);
-  const initial = String(display).charAt(0).toUpperCase() || "?";
   return (
     <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-      <div
-        className={cn(
-          "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full",
-          avatar
-            ? "bg-muted"
-            : "bg-gradient-to-br from-primary/25 to-secondary/40 text-sm font-semibold text-primary"
-        )}
-      >
-        {avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={avatar} alt="" className="size-full object-cover" />
-        ) : (
-          initial
-        )}
-      </div>
+      <UserAvatar
+        src={avatar}
+        seed={member.userId}
+        name={String(display)}
+        className="size-10 shrink-0"
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-foreground">{display}</span>

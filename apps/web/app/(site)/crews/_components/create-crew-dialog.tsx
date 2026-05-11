@@ -46,7 +46,7 @@ import { ApiRequestError } from "@/src/lib/api";
 import { uploadBanner } from "@/src/services/user";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
-import { useCreateCrew } from "@/app/(site)/crews/_hooks/use-crew";
+import { useCreateCrew, useUpdateCrew } from "@/app/(site)/crews/_hooks/use-crew";
 
 // Hero image — same static CDN we use for `<CreateIPDialog>`. Replace
 // when product gives a crew-specific illustration.
@@ -54,16 +54,32 @@ const CREATE_CREW_HERO_URL = encodeURI(
   "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 20_51_09.png"
 );
 
+/**
+ * `initial` is the gate for edit mode. When present, dialog prefills
+ * from it on open and routes submit through `updateCrew` instead of
+ * `createCrew`. Absent → original create flow, unchanged.
+ */
+export interface CrewFormInitial {
+  id: number | string;
+  name: string;
+  description?: string;
+  banner?: string;
+  video?: string;
+}
+
 interface CreateCrewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initial?: CrewFormInitial | null;
 }
 
-export function CreateCrewDialog({ open, onOpenChange }: CreateCrewDialogProps) {
+export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDialogProps) {
   const t = useTranslations("crew");
   const tc = useTranslations("common");
   const router = useRouter();
   const locale = useLocale() as Locale;
+
+  const isEdit = !!initial;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -78,19 +94,30 @@ export function CreateCrewDialog({ open, onOpenChange }: CreateCrewDialogProps) 
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   const create = useCreateCrew();
-  const creating = create.isPending;
+  const update = useUpdateCrew();
+  // Kept named `creating` in body so the existing JSX still reads
+  // naturally — in edit mode this just means "update in flight".
+  const creating = create.isPending || update.isPending;
 
-  // Reset on close — same pattern as CreateIPDialog so a previous
-  // failed attempt doesn't leak into the next open.
+  // Reset / prefill on open. Edit mode hydrates from `initial`; close
+  // clears so a previous failed attempt doesn't leak into the next open.
   useEffect(() => {
-    if (open) return;
-    setName("");
-    setDescription("");
-    setBannerLink("");
-    setVideoLink("");
-    setUploadingBanner(false);
-    setUploadingVideo(false);
-  }, [open]);
+    if (!open) {
+      setName("");
+      setDescription("");
+      setBannerLink("");
+      setVideoLink("");
+      setUploadingBanner(false);
+      setUploadingVideo(false);
+      return;
+    }
+    if (initial) {
+      setName(initial.name ?? "");
+      setDescription(initial.description ?? "");
+      setBannerLink(initial.banner ?? "");
+      setVideoLink(initial.video ?? "");
+    }
+  }, [open, initial]);
 
   // ─── Banner upload (image) ─────────────────────────
   const handleBannerFile = async (file: File) => {
@@ -137,9 +164,43 @@ export function CreateCrewDialog({ open, onOpenChange }: CreateCrewDialogProps) 
     }
   };
 
-  // ─── Create ─────────────────────────────────────────
-  const handleCreate = () => {
+  // Shared error handler — both flows surface the raw backend response
+  // so a hidden 401 / 422 isn't masked behind a generic toast (platform
+  // error convention — see DESIGN.md § "Error toasts").
+  const reportError = (err: unknown, fallbackKey: "createFailed" | "updateFailed") => {
+    if (err instanceof ApiRequestError) {
+      const detail = err.responseBody?.slice(0, 800) || err.message;
+      toast.error(`HTTP ${err.status}`, { description: detail, duration: 10000 });
+    } else {
+      const msg = err instanceof Error ? err.message : "";
+      toast.error(msg || t(fallbackKey));
+    }
+  };
+
+  // ─── Submit ─────────────────────────────────────────
+  const handleSubmit = () => {
     if (!name.trim() || !description.trim() || !bannerLink || creating) return;
+
+    if (isEdit && initial) {
+      update.mutate(
+        {
+          id: String(initial.id),
+          name: name.trim(),
+          banner: bannerLink,
+          video: videoLink || undefined,
+          description: description.trim(),
+        },
+        {
+          onSuccess: () => {
+            onOpenChange(false);
+            toast.success(t("updateSuccess"));
+          },
+          onError: (err) => reportError(err, "updateFailed"),
+        }
+      );
+      return;
+    }
+
     create.mutate(
       {
         name: name.trim(),
@@ -156,21 +217,7 @@ export function CreateCrewDialog({ open, onOpenChange }: CreateCrewDialogProps) 
           toast.success(t("createSuccess"));
           router.push(localizePath(`/crews/${id}/workspace`, locale));
         },
-        onError: (err) => {
-          // Surface the raw backend response so a hidden 401 / 422
-          // isn't masked behind a generic toast (platform error
-          // convention — see DESIGN.md § "Error toasts").
-          if (err instanceof ApiRequestError) {
-            const detail = err.responseBody?.slice(0, 800) || err.message;
-            toast.error(`HTTP ${err.status}`, {
-              description: detail,
-              duration: 10000,
-            });
-          } else {
-            const msg = err instanceof Error ? err.message : "";
-            toast.error(msg || t("createFailed"));
-          }
-        },
+        onError: (err) => reportError(err, "createFailed"),
       }
     );
   };
@@ -181,8 +228,8 @@ export function CreateCrewDialog({ open, onOpenChange }: CreateCrewDialogProps) 
         <DialogHero
           src={CREATE_CREW_HERO_URL}
           eyebrow={t("createDialogEyebrow")}
-          title={t("createDialogTitle")}
-          description={t("createDialogSubtitle")}
+          title={isEdit ? t("editDialogTitle") : t("createDialogTitle")}
+          description={isEdit ? t("editDialogSubtitle") : t("createDialogSubtitle")}
         />
 
         <DialogBody>
@@ -328,7 +375,7 @@ export function CreateCrewDialog({ open, onOpenChange }: CreateCrewDialogProps) 
           </Button>
           <Button
             type="button"
-            onClick={handleCreate}
+            onClick={handleSubmit}
             disabled={
               !name.trim() ||
               !description.trim() ||
@@ -339,7 +386,13 @@ export function CreateCrewDialog({ open, onOpenChange }: CreateCrewDialogProps) 
             }
           >
             {creating ? <IconLoader2 className="size-4 animate-spin" /> : null}
-            {creating ? t("createSubmitting") : t("createSubmit")}
+            {isEdit
+              ? creating
+                ? t("editSubmitting")
+                : t("editSubmit")
+              : creating
+                ? t("createSubmitting")
+                : t("createSubmit")}
           </Button>
         </DialogFooter>
       </DialogContent>
