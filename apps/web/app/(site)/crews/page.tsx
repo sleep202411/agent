@@ -87,28 +87,29 @@ export default function CrewsPage() {
 
       {/* ── Browse ──────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-7xl px-6 pb-24 pt-8">
-        {/* Primary feed — full crews list from `POST /project/crew/list`. */}
-        <section className="mb-12">
-          <div className="mb-6 flex items-baseline justify-between gap-4">
-            <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
-            {crewListPage ? (
-              <span className="text-xs text-muted-foreground">
-                {tCrew("allCrewsCount", { count: crewListPage.totalCount })}
-              </span>
-            ) : null}
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {crewListLoading ? (
-              <CardSkeleton count={10} />
-            ) : crewListItems.length === 0 ? (
-              <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
-                {t("noData")}
-              </div>
-            ) : (
-              crewListItems.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
-            )}
-          </div>
-        </section>
+        {/* Primary feed — full crews list from `POST /project/crew/list`.
+            Hidden entirely when the loaded list is empty so the page
+            doesn't lead with a barren "No projects yet" placeholder
+            above the (potentially populated) recruitment grid below. */}
+        {(crewListLoading || crewListItems.length > 0) && (
+          <section className="mb-12">
+            <div className="mb-6 flex items-baseline justify-between gap-4">
+              <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
+              {crewListPage ? (
+                <span className="text-xs text-muted-foreground">
+                  {tCrew("allCrewsCount", { count: crewListPage.totalCount })}
+                </span>
+              ) : null}
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {crewListLoading ? (
+                <CardSkeleton count={10} />
+              ) : (
+                crewListItems.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Secondary feed — legacy "projects with open jobs" filtered
             by role pill. Stays as a recruitment-focused view alongside
