@@ -570,7 +570,6 @@ export default function CrewWorkspacePage() {
           name: crewDetail.name,
           description: crewDetail.description,
           banner: crewDetail.banner,
-          video: crewDetail.video,
         }}
       />
 

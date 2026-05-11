@@ -66,7 +66,6 @@ async function createCrew(input: CreateCrewInput): Promise<{ id: string; crew: C
     data: {
       name: input.name,
       banner: input.banner,
-      video: input.video ?? "",
       description: input.description,
     },
     raw: true,
@@ -92,7 +91,6 @@ async function updateCrew(input: UpdateCrewInput): Promise<void> {
   if (input.name !== undefined) body.name = input.name;
   if (input.description !== undefined) body.description = input.description;
   if (input.banner !== undefined) body.banner = input.banner;
-  if (input.video !== undefined) body.video = input.video;
 
   const res = await api.post<CrewEnvelope>("/project/crew/update", {
     data: body,
