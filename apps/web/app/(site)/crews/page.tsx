@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { IconMovie, IconPlus, IconUsers } from "@tabler/icons-react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -35,13 +35,6 @@ export default function CrewsPage() {
   const [activeRoleId, setActiveRoleId] = useState<number>(ALL_ROLE_ID);
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Preview flag — `?preview=1` re-enables the Create-Crew CTA and the
-  // queryCrewList feed for production smoke tests. Without the flag the
-  // page falls back to the legacy "projects with open jobs" grid only,
-  // which is what regular users see ahead of the next prod cut.
-  const searchParams = useSearchParams();
-  const previewMode = searchParams?.get("preview") === "1";
-
   const { data: roles = [] } = useProjectRoles();
   const roleById = useMemo(() => {
     const map = new Map<number, ProjectRole>();
@@ -55,9 +48,8 @@ export default function CrewsPage() {
   const items = useMemo(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
   // Second data source — `POST /project/crew/list` (queryCrewList).
-  // Only rendered when `?preview=1` is in the URL; otherwise the request
-  // still fires (kept visible in the network panel for shape validation),
-  // but the All-Crews grid below stays hidden ahead of the next prod cut.
+  // Renders the full crews grid, sibling to the legacy "projects with
+  // open jobs" feed below.
   const crewListQuery = useQueryCrewList({
     pageNum: 1,
     pageSize: 20,
@@ -95,38 +87,32 @@ export default function CrewsPage() {
 
       {/* ── Browse ──────────────────────────────────────────────────── */}
       <div className="mx-auto max-w-7xl px-6 pb-24 pt-8">
-        {/* Primary feed — crews from `POST /project/crew/list`
-            (queryCrewList). Gated by `?preview=1` so we can smoke-test
-            the live feed in production without exposing it to regular
-            users yet. */}
-        {previewMode && (
-          <section className="mb-12">
-            <div className="mb-6 flex items-baseline justify-between gap-4">
-              <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
-              {crewListPage ? (
-                <span className="text-xs text-muted-foreground">
-                  {tCrew("allCrewsCount", { count: crewListPage.totalCount })}
-                </span>
-              ) : null}
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {crewListLoading ? (
-                <CardSkeleton count={10} />
-              ) : crewListItems.length === 0 ? (
-                <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
-                  {t("noData")}
-                </div>
-              ) : (
-                crewListItems.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
-              )}
-            </div>
-          </section>
-        )}
+        {/* Primary feed — full crews list from `POST /project/crew/list`. */}
+        <section className="mb-12">
+          <div className="mb-6 flex items-baseline justify-between gap-4">
+            <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
+            {crewListPage ? (
+              <span className="text-xs text-muted-foreground">
+                {tCrew("allCrewsCount", { count: crewListPage.totalCount })}
+              </span>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {crewListLoading ? (
+              <CardSkeleton count={10} />
+            ) : crewListItems.length === 0 ? (
+              <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                {t("noData")}
+              </div>
+            ) : (
+              crewListItems.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
+            )}
+          </div>
+        </section>
 
-        {/* Legacy "projects with open jobs" feed — for now this is
-            the only thing rendered; the queryCrewList feed above is
-            disabled ahead of the prod cut. Section title removed
-            since it's the only grid on the page. */}
+        {/* Secondary feed — legacy "projects with open jobs" filtered
+            by role pill. Stays as a recruitment-focused view alongside
+            the full crews grid above. */}
         <section>
           {/* Role pills */}
           {roles.length > 0 && (
