@@ -7,7 +7,6 @@ import {
   IconLoader2,
   IconMask,
   IconPlayerPlay,
-  IconRefresh,
   IconSparkles,
   IconUserCircle,
   IconVideo,
@@ -17,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { MediaPreviewPanel } from "../media-preview-panel";
+import { FailedResultCard } from "../failed-result-card";
 import type { ToolbarAction } from "@/components/ui/floating-toolbar";
 import type { RawAiModel } from "@/src/types/workspace";
 import {
@@ -57,10 +57,6 @@ export interface LipsyncVideoPanelProps {
   onGenerateVideo: () => void;
   onRetryVideo: (item: VideoResultItem) => void;
   onOpenPicker: (target: PickerTarget) => void;
-  /** Called when the user clicks "View error" on a failed card. Lifts
-   * the message up to the dialog so a single shadcn AlertDialog can
-   * render it (instead of native window.alert). */
-  onShowError: (message: string) => void;
   isGenerating: boolean;
   shotNumber?: number;
   shotId: string;
@@ -88,7 +84,6 @@ export function LipsyncVideoPanel({
   onGenerateVideo,
   onRetryVideo,
   onOpenPicker,
-  onShowError,
   isGenerating,
   shotNumber,
   shotId,
@@ -138,10 +133,21 @@ export function LipsyncVideoPanel({
               </div>
             ) : (
               allVideoItems.map((item, index) => {
+                // Failed items get a self-contained FailedResultCard
+                // (matches the unified design across all generators).
+                if (item.status === "failed") {
+                  return (
+                    <FailedResultCard
+                      key={item.id || `${item.path}_${index}`}
+                      error={item.errorMessage}
+                      className="aspect-video w-full"
+                      onRetry={() => onRetryVideo(item)}
+                    />
+                  );
+                }
+
                 // Failed items have empty path; without the Boolean guard,
-                // `"" === ""` would mark every failed card as "selected"
-                // and the red "previewing" banner would cover the
-                // "View error" link below.
+                // `"" === ""` would mark every other item as "selected".
                 const selected = Boolean(item.path) && item.path === currentPreviewPath;
                 return (
                   <button
@@ -152,10 +158,6 @@ export function LipsyncVideoPanel({
                       selected ? "border-[#E52227]" : "border-white/10 hover:border-white/20"
                     )}
                     onClick={() => {
-                      if (item.status === "failed") {
-                        onRetryVideo(item);
-                        return;
-                      }
                       if (!item.path) return;
                       onSelectPreview(item.path);
                     }}
@@ -163,35 +165,6 @@ export function LipsyncVideoPanel({
                     {item.status === "generating" ? (
                       <div className="flex aspect-video items-center justify-center">
                         <IconLoader2 className="size-5 animate-spin text-white/80" />
-                      </div>
-                    ) : item.status === "failed" ? (
-                      <div className="flex aspect-video flex-col items-center justify-center gap-1 text-[#E52227]">
-                        <IconRefresh className="size-4" />
-                        <span className="text-[10px]">{tc("retry")}</span>
-                        {/* "View error" link — surfaces the captured
-                            backend detail via the dialog-level shadcn
-                            AlertDialog. stopPropagation so the parent
-                            retry click doesn't also fire. */}
-                        {item.errorMessage ? (
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onShowError(item.errorMessage!);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                onShowError(item.errorMessage!);
-                              }
-                            }}
-                            className="text-[10px] underline underline-offset-2 hover:opacity-80"
-                          >
-                            {t("viewError")}
-                          </span>
-                        ) : null}
                       </div>
                     ) : (
                       <>
