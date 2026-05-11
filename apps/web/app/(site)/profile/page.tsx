@@ -41,7 +41,7 @@ import { ApiRequestError } from "@/src/lib/api";
 import { PublishWorkDialog } from "./publish-work-dialog";
 import { useProjectEditUrl } from "@/app/(site)/ips/_hooks/use-ip";
 import { env } from "@/src/env";
-import { RecruitmentStrip } from "@/app/(site)/art-studio/_components/recruitment-strip";
+import { RecruitmentStrip } from "@/app/(studio)/art-studio/_components/recruitment-strip";
 import { ProfileHeader } from "./profile-header";
 import { ProfileEditDialog } from "./profile-edit-dialog";
 

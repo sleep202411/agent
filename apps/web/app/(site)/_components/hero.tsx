@@ -158,6 +158,11 @@ export function Hero() {
           <StarBorder color="#ff8a4c" speed="5s" thickness={1.5}>
             <Link
               href={primaryCtaHref}
+              // Open studio in a new tab so the marketing site stays
+              // open in the original one. Login still navigates in
+              // place — `/login?redirect=` round-trips back here.
+              target={user ? "_blank" : undefined}
+              rel={user ? "noopener noreferrer" : undefined}
               className="flex h-14 items-center gap-3 rounded-full bg-white px-8 text-base font-semibold text-black transition-colors hover:bg-white/90"
             >
               {t("hero.primaryCta")}

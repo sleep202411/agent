@@ -33,7 +33,9 @@ function ossUrl(path: string | null | undefined): string | null {
  */
 export function RecentProjectsPreview() {
   const tw = useTranslations("workspace");
-  const { products, totalCount, isLoading } = useMyProducts({ pageSize: 8 });
+  // Fetch 4 — the Create card takes one slot so the strip caps at 5
+  // visible cards total. Bumping `viewAll` is the path to the rest.
+  const { products, totalCount, isLoading } = useMyProducts({ pageSize: 4 });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   return (
@@ -54,7 +56,7 @@ export function RecentProjectsPreview() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         <CreateButton onClick={() => setCreateDialogOpen(true)} />
         {isLoading && Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)}
         {!isLoading && products.map((p) => <ProductCard key={p.id} product={p} />)}
@@ -98,7 +100,7 @@ function CreateButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       className="group overflow-hidden rounded-xl border border-dashed border-border/70 bg-card transition-all hover:border-primary/40 hover:bg-muted/40"
     >
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-muted/30 py-10">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-muted/30 py-8">
         <div className="flex size-10 items-center justify-center rounded-full bg-foreground text-background">
           <IconPlus className="size-5" />
         </div>

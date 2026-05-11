@@ -111,6 +111,8 @@ export function UserMenu() {
             </div>
             <Link
               href="/art-studio/settings"
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <IconSettings className="size-4" />

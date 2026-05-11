@@ -237,7 +237,10 @@
     "workbench": "工作台",
     "getStarted": "免費開始",
     "language": "語言",
-    "menu": "選單"
+    "menu": "選單",
+    "recharge": "儲值",
+    "membership": "會員",
+    "theme": "主題"
   },
   "auth": {
     "nicknameRequiredTitle": "設定一個暱稱",
@@ -2478,6 +2481,9 @@
     "myProjects": "我的專案",
     "recentProjects": "最近專案",
     "viewAll": "查看全部",
+    "sidebarLabel": "工作室導覽",
+    "sidebarHome": "首頁",
+    "sidebarProjects": "專案列表",
     "noProjects": "還沒有專案",
     "noProjectsHint": "建立你的第一個專案開始創作吧",
     "createProject": "建立專案",

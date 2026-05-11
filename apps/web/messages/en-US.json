@@ -237,7 +237,10 @@
     "workbench": "Workbench",
     "getStarted": "Get Started",
     "language": "Language",
-    "menu": "Menu"
+    "menu": "Menu",
+    "recharge": "Top Up",
+    "membership": "Membership",
+    "theme": "Theme"
   },
   "auth": {
     "nicknameRequiredTitle": "Set your nickname",
@@ -2478,6 +2481,9 @@
     "myProjects": "My Projects",
     "recentProjects": "Recent Projects",
     "viewAll": "View all",
+    "sidebarLabel": "Studio navigation",
+    "sidebarHome": "Home",
+    "sidebarProjects": "Projects",
     "noProjects": "No projects yet",
     "noProjectsHint": "Create your first project to get started",
     "createProject": "Create Project",

@@ -145,7 +145,9 @@ export default function CreateIPPage() {
         <p className="mt-2 text-sm text-muted-foreground">{t("successDesc")}</p>
         <div className="mt-6 flex gap-3">
           <Button variant="outline" color="muted" asChild>
-            <Link href="/art-studio/projects">{t("goToStudio")}</Link>
+            <Link href="/art-studio/projects" target="_blank" rel="noopener noreferrer">
+              {t("goToStudio")}
+            </Link>
           </Button>
           <Button asChild>
             <Link href="/ips">{t("viewIPPlaza")}</Link>
