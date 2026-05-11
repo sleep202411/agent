@@ -18,7 +18,7 @@ import {
   IconWand,
   IconNews,
   IconBook,
-  IconHelp,
+  IconBook2,
   IconX,
   IconDotsVertical,
   IconUser,
@@ -195,11 +195,10 @@ export function GlobalNav() {
             href={USER_GUIDE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={t("userGuide")}
-            title={t("userGuide")}
-            className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
           >
-            <IconHelp className="size-4" />
+            <IconBook2 className="size-4" />
+            <span>{t("userGuide")}</span>
           </a>
 
           <button
@@ -255,6 +254,8 @@ export function GlobalNav() {
           <Link
             href={localizePath(studioItem.href, locale as Locale)}
             onClick={(e) => onNavClick(e, studioItem)}
+            target="_blank"
+            rel="noopener noreferrer"
             className={cn(
               "mr-4 group relative ml-2 inline-flex h-9 items-center gap-1.5 overflow-hidden rounded-full px-4 text-sm font-medium",
               // Glass body — warm-tinted (top-left blush, bottom-right ember)
@@ -395,7 +396,7 @@ export function GlobalNav() {
               onClick={() => setMobileOpen(false)}
               className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
             >
-              <IconHelp className="size-4" />
+              <IconBook2 className="size-4" />
               {t("userGuide")}
             </a>
 
