@@ -26,24 +26,22 @@ export interface JobApplicant {
 
 /**
  * Wire-shape for `POST /project/crew/create` (backend `createCrew`
- * controller). Four fields, all under the "crew basic info" CRUD step
- * of the phase-1 spec:
+ * controller). Three user-supplied fields (the "crew basic info" step
+ * of the phase-1 spec):
  *
  *   name        — required; crew display name
  *   banner      — required; OSS storage path of the cover image
- *   video       — optional; OSS storage path of the cover video
  *   description — required; freeform description
  *
- * Backend also takes a fifth `ipId` field but the frontend does not
- * surface it (crews are not bound to an IP at the user-facing layer);
- * a 0 default would have to be sent if backend rejects missing fields.
- * Per product 2026-05-08: `ipId` is intentionally excluded from this
- * type so callers can't accidentally ship it.
+ * Backend also accepts `video` (OSS path) and `ipId`; neither is
+ * surfaced in this type. The video upload UI is removed pending a
+ * proper presigned-URL endpoint for crews (the existing `uploadBanner`
+ * fallback was semantically wrong); `ipId` is excluded by product
+ * decision (2026-05-08) — crews are not bound to an IP in the UI.
  */
 export interface CreateCrewInput {
   name: string;
   banner: string;
-  video?: string;
   description: string;
 }
 
