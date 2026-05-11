@@ -103,10 +103,6 @@ async function updateCrew(input: UpdateCrewInput): Promise<void> {
   }
 }
 
-async function deleteCrew(_id: string): Promise<void> {
-  // TODO(crew-phase-1): wire to the real delete endpoint.
-}
-
 /**
  * Status-only update — flips a crew between draft (0) and published (1)
  * without touching any other field. Same endpoint as `updateCrew` but
@@ -136,8 +132,8 @@ export function useCreateCrew() {
   return useMutation({
     mutationFn: createCrew,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.myOwned });
-      qc.invalidateQueries({ queryKey: ["crew", "list"] });
+      qc.invalidateQueries({ queryKey: crewKeys.mine });
+      qc.invalidateQueries({ queryKey: ["crew", "queryList"] });
     },
   });
 }
@@ -148,19 +144,8 @@ export function useUpdateCrew() {
     mutationFn: updateCrew,
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(vars.id) });
-      qc.invalidateQueries({ queryKey: ["crew", "list"] });
+      qc.invalidateQueries({ queryKey: ["crew", "queryList"] });
       qc.invalidateQueries({ queryKey: crewKeys.mine });
-    },
-  });
-}
-
-export function useDeleteCrew() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: deleteCrew,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["crew", "list"] });
-      qc.invalidateQueries({ queryKey: crewKeys.myOwned });
     },
   });
 }
@@ -171,7 +156,7 @@ export function useUpdateCrewStatus() {
     mutationFn: updateCrewStatus,
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(String(vars.id)) });
-      qc.invalidateQueries({ queryKey: ["crew", "list"] });
+      qc.invalidateQueries({ queryKey: ["crew", "queryList"] });
       qc.invalidateQueries({ queryKey: crewKeys.mine });
     },
   });

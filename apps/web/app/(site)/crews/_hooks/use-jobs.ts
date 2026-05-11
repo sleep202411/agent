@@ -4,8 +4,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/src/lib/api";
-import { MOCK_OPEN_JOBS, crewKeys, delay } from "./shared";
-import type { CreateJobInput, OpenJob, UpdateJobInput } from "./types";
+import { crewKeys } from "./shared";
+import type { CreateJobInput } from "./types";
 
 /**
  * Wire-shape for `POST /project/crew/job/find/jobs` (findCrewJobs).
@@ -49,12 +49,6 @@ export interface CrewJob {
    *  to stay forward-compatible with new phases the backend may add. */
   status?: number | string;
   createTime?: string;
-}
-
-async function searchOpenJobs(filter: { roleName?: string } = {}): Promise<OpenJob[]> {
-  await delay(180);
-  if (!filter.roleName) return MOCK_OPEN_JOBS;
-  return MOCK_OPEN_JOBS.filter((j) => j.roleName === filter.roleName);
 }
 
 /**
@@ -144,14 +138,6 @@ async function createJob(input: CreateJobInput): Promise<{ id: number }> {
   return { id: rawId == null ? 0 : Number(rawId) };
 }
 
-async function updateJob(_input: UpdateJobInput): Promise<void> {
-  await delay(200);
-}
-
-async function deleteJob(_input: { id: number; crewId: string }): Promise<void> {
-  await delay(180);
-}
-
 /**
  * Close (cancel) a recruitment job.
  *
@@ -165,13 +151,6 @@ async function deleteJob(_input: { id: number; crewId: string }): Promise<void> 
 async function closeJob(jobId: number): Promise<void> {
   await api.post("/project/crew/job/close", {
     params: { jobId: Number(jobId) },
-  });
-}
-
-export function useOpenJobs(filter: { roleName?: string } = {}) {
-  return useQuery({
-    queryKey: crewKeys.openJobs(filter),
-    queryFn: () => searchOpenJobs(filter),
   });
 }
 
@@ -213,31 +192,6 @@ export function useCreateJob(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.jobs(crewId) });
-      qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
-    },
-  });
-}
-
-export function useUpdateJob() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: updateJob,
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: crewKeys.detail(vars.crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.jobs(vars.crewId) });
-      qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
-    },
-  });
-}
-
-export function useDeleteJob() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: deleteJob,
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: crewKeys.detail(vars.crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.jobs(vars.crewId) });
-      qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
     },
   });
 }
@@ -249,7 +203,6 @@ export function useCloseJob(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.jobs(crewId) });
-      qc.invalidateQueries({ queryKey: ["crew", "openJobs"] });
     },
   });
 }

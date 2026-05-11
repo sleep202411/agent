@@ -4,36 +4,9 @@
  * from there.
  */
 
-// ─── Open jobs / applications ──────────────────────────
-
-export interface OpenJob {
-  id: number;
-  crewId: string;
-  crewName: string;
-  crewCover: string;
-  roleName: string;
-  budget: string;
-  period: string;
-  deadline: string;
-  skills: string[];
-  postedAt: string;
-}
+// ─── Applicants ────────────────────────────────────────
 
 export type ApplicationStatus = "pending" | "approved" | "rejected";
-
-export interface JobApplication {
-  id: number;
-  jobId: number;
-  crewId: string;
-  crewName: string;
-  crewCover: string;
-  roleName: string;
-  status: ApplicationStatus;
-  message: string;
-  appliedAt: string;
-  respondedAt?: string;
-  rejectionReason?: string;
-}
 
 export interface JobApplicant {
   id: number;
@@ -95,10 +68,6 @@ export interface UpdateCrewInput extends Partial<CreateCrewInput> {
  *                                                   selected role's name
  *   jobDescription (frontend) → jobDescription    — recruiter copy
  *   jobNumber      (frontend) → jobNumber         — headcount
- *
- * **TODO(crew-phase-1)**: when backend ships query → JSON body and
- * confirms whether `jobName` should be denormalized or omitted, update
- * this type + the mutationFn body in `use-jobs.ts`.
  */
 export interface CreateJobInput {
   /** Crew id (created via /project/crew/create). Sent as `projectId` on
@@ -114,77 +83,3 @@ export interface CreateJobInput {
   /** Headcount to recruit. Required, ≥ 1. */
   jobNumber: number;
 }
-
-export interface UpdateJobInput extends Partial<CreateJobInput> {
-  id: number;
-  /** Used only for cache invalidation; not part of the backend payload. */
-  crewId: string;
-}
-
-// ─── Workspace ─────────────────────────────────────────
-
-// ─── Producer Workbench ────────────────────────────────
-
-export interface ProducerProject {
-  id: string;
-  name: string;
-  status: "Not Started" | "In Production" | "Post-production" | "Completed";
-  phase: string;
-  /** 0-100 progress percent. */
-  progress: number;
-  budget: number;
-  spent: number;
-  members: number;
-  urgentCheckpoints: number;
-  pendingTasks: number;
-  /** ISO date. */
-  deadline: string;
-  /** Health flag, drives the dot color in the workbench table. */
-  health: "good" | "warning" | "risk";
-}
-
-export interface PendingCheckpoint {
-  id: string;
-  project: string;
-  /** Production stage, e.g. "Storyboard" / "AI Image Gen". */
-  stage: string;
-  /** SLA copy, e.g. "6h until timeout" / "Due tomorrow". */
-  sla: string;
-  urgent: boolean;
-}
-
-export interface FinanceSummary {
-  /** Total committed budget across all the producer's active projects. */
-  totalBudget: number;
-  /** Already-disbursed amount. */
-  totalSpent: number;
-  /** Currently held in escrow pending checkpoint approval. */
-  escrowHeld: number;
-  /** Approved-but-not-yet-released funds. */
-  pendingRelease: number;
-}
-
-export interface ProducerOverview {
-  projects: ProducerProject[];
-  pendingCheckpoints: PendingCheckpoint[];
-  finance: FinanceSummary;
-  /** Aggregate counts for the top stat cards. */
-  stats: {
-    activeProjects: number;
-    pendingCheckpoints: number;
-    dueThisWeek: number;
-    totalTeam: number;
-  };
-}
-
-// ─── Re-exported nested types from mock (single import surface) ────
-
-export type {
-  CrewItem,
-  ActivityItem,
-  StatusStyle,
-  CrewPhase,
-  CrewRole,
-  CrewMember,
-  CrewDetail,
-} from "../_components/crew-mock";

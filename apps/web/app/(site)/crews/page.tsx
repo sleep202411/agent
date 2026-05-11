@@ -15,12 +15,7 @@ import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  PLATFORM_STATS,
-  useCrewLanding,
-  useQueryCrewList,
-  type QueryCrewListItem,
-} from "@/app/(site)/crews/_hooks/use-crew";
+import { useQueryCrewList, type QueryCrewListItem } from "@/app/(site)/crews/_hooks/use-crew";
 import {
   useProjectRoles,
   useProjectsByJob,
@@ -59,8 +54,6 @@ export default function CrewsPage() {
     useProjectsByJob(filterRoleId);
   const items = useMemo(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
-  const { data: landing } = useCrewLanding();
-
   // Second data source — `POST /project/crew/list` (queryCrewList).
   // Only rendered when `?preview=1` is in the URL; otherwise the request
   // still fires (kept visible in the network panel for shape validation),
@@ -85,12 +78,6 @@ export default function CrewsPage() {
           accent: tCrew("heroTitle2"),
         }}
         subtitle={tCrew("heroDesc")}
-        stats={{
-          items: (landing?.stats ?? PLATFORM_STATS).map((s) => ({
-            value: s.value,
-            label: tCrew(s.labelKey),
-          })),
-        }}
         rightSlot={
           <Button
             type="button"

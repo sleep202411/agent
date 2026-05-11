@@ -1,14 +1,14 @@
 /**
- * Dev-only identity store for testing mock crew flows before auth.
+ * Dev-only identity store — lets a developer flip between visitor /
+ * owner / specific-member without re-logging-in, so role-gated UI
+ * (workspace entry, approve/reject buttons, member-only views) is
+ * testable locally. Production builds drop the switcher and the
+ * pages fall back to the real `userInfo` + crew adminUserId check.
  *
  * Identity is a flat string so it survives a `localStorage` round-trip:
  *   - "visitor"            — not part of the crew
  *   - "owner"              — the crew owner / producer
  *   - "member:<name>"      — impersonating a specific crew member
- *
- * Use the helper `parseIdentity()` to branch on it cleanly. When real
- * auth lands, derive the identity from `authUser` + crew membership
- * and remove the floating switcher.
  */
 
 "use client";
