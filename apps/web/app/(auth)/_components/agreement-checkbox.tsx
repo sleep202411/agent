@@ -2,13 +2,15 @@
 
 import { useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 
 /**
  * Terms-of-service / privacy-policy acknowledgement. Ported from the
  * legacy fizzdragon-web login & register pages — submit is blocked
- * until this is checked. Links open the matching parent-site legal
- * pages in a new tab (those pages aren't hosted on the studio domain).
+ * until this is checked. Links open the in-app legal routes in a new
+ * tab, locale-prefixed so the page matches the user's current language.
  */
 export function AgreementCheckbox({
   id = "auth-agreement",
@@ -20,7 +22,14 @@ export function AgreementCheckbox({
   onCheckedChange: (next: boolean) => void;
 }) {
   const t = useTranslations("auth");
-  const urls = useMemo(resolveLegalUrls, []);
+  const locale = useLocale() as Locale;
+  const urls = useMemo(
+    () => ({
+      terms: localizePath("/terms-of-service", locale),
+      privacy: localizePath("/privacy-policy", locale),
+    }),
+    [locale]
+  );
 
   return (
     <label
@@ -61,27 +70,4 @@ export function AgreementCheckbox({
 
 function stop(event: React.MouseEvent) {
   event.stopPropagation();
-}
-
-function resolveLegalUrls(): { terms: string; privacy: string } {
-  const origin = resolveParentOrigin();
-  return {
-    terms: `${origin}/pages/terms-of-service/terms-of-service`,
-    privacy: `${origin}/pages/privacy-policy/privacy-policy`,
-  };
-}
-
-/**
- * Pick the matching parent-site origin for the current studio host.
- * The parent hosts the legacy legal pages, so terms/privacy links
- * point there. Defaults to staging when we can't recognize the host
- * (local dev, preview deploys, etc.).
- */
-function resolveParentOrigin(): string {
-  if (typeof window === "undefined") return "https://test.fizzdragon.com";
-  const host = window.location.hostname;
-  if (host === "fizzstudio.fizzdragon.com") return "https://fizzdragon.com";
-  if (host === "fizzstudio.fizzspace.cn") return "https://fizzdragon.fizzspace.cn";
-  if (host === "studio.test.fizzdragon.com") return "https://test.fizzdragon.com";
-  return "https://test.fizzdragon.com";
 }

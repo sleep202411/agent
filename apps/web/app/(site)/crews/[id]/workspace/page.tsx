@@ -24,7 +24,7 @@ import { useParams } from "next/navigation";
 import {
   IconArrowLeft,
   IconBook,
-  IconBookmark,
+  IconArchive,
   IconBriefcase,
   IconChevronDown,
   IconChevronRight,
@@ -241,55 +241,61 @@ export default function CrewWorkspacePage() {
             </div>
             {isOwner ? (
               <div className="flex shrink-0 items-center gap-2">
-                {/* Status toggles — Publish / Save as Draft are mirror
-                    actions; whichever matches the current `crewDetail.status`
-                    is disabled so the user can read state from the chrome.
+                {/* Status actions — mutex by current `crewDetail.status`:
+                      - status === 0 (draft)     → only Publish is visible
+                      - status === 1 (published) → only Unpublish is visible
                     Both call `useUpdateCrewStatus` which posts ONLY id +
-                    status (no field-edit bundling). */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateStatus.mutate(
-                      { id: crewDetail.id, status: 1 },
-                      {
-                        onSuccess: () => toast.success(t("publishSuccess")),
-                        onError: (err) =>
-                          toast.error(err instanceof Error ? err.message : t("publishFailed")),
-                      }
-                    )
-                  }
-                  disabled={crewDetail.status === 1 || updateStatus.isPending}
-                  className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {updateStatus.isPending && updateStatus.variables?.status === 1 ? (
-                    <IconLoader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <IconRocket className="size-3.5" />
-                  )}
-                  {t("publishCrew")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateStatus.mutate(
-                      { id: crewDetail.id, status: 0 },
-                      {
-                        onSuccess: () => toast.success(t("draftSuccess")),
-                        onError: (err) =>
-                          toast.error(err instanceof Error ? err.message : t("draftFailed")),
-                      }
-                    )
-                  }
-                  disabled={crewDetail.status === 0 || updateStatus.isPending}
-                  className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/70 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {updateStatus.isPending && updateStatus.variables?.status === 0 ? (
-                    <IconLoader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <IconBookmark className="size-3.5" />
-                  )}
-                  {t("saveDraft")}
-                </button>
+                    status (no field-edit bundling). Edit is independent
+                    and always shown — it opens the dialog that saves
+                    name / description / cover changes. */}
+                {crewDetail.status === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateStatus.mutate(
+                        { id: crewDetail.id, status: 1 },
+                        {
+                          onSuccess: () => toast.success(t("publishSuccess")),
+                          onError: (err) =>
+                            toast.error(err instanceof Error ? err.message : t("publishFailed")),
+                        }
+                      )
+                    }
+                    disabled={updateStatus.isPending}
+                    className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {updateStatus.isPending ? (
+                      <IconLoader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <IconRocket className="size-3.5" />
+                    )}
+                    {t("publishCrew")}
+                  </button>
+                ) : null}
+                {crewDetail.status === 1 ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateStatus.mutate(
+                        { id: crewDetail.id, status: 0 },
+                        {
+                          onSuccess: () => toast.success(t("unpublishSuccess")),
+                          onError: (err) =>
+                            toast.error(err instanceof Error ? err.message : t("unpublishFailed")),
+                        }
+                      )
+                    }
+                    disabled={updateStatus.isPending}
+                    className="flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {updateStatus.isPending ? (
+                      <IconLoader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <IconArchive className="size-3.5" />
+                    )}
+                    {t("unpublishCrew")}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setEditOpen(true)}
