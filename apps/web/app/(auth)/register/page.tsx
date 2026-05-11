@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -28,11 +29,17 @@ function identifierOk(value: string): boolean {
 export default function RegisterPage() {
   const t = useTranslations("auth");
   const locale = useLocale() as Locale;
+  const searchParams = useSearchParams();
   const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [recommendationCode, setRecommendationCode] = useState("");
+  // Prefill referral code from `?recommendationCode=` when the user
+  // lands here via someone's referral link. Read once at mount via
+  // useState lazy initializer so subsequent typing isn't clobbered.
+  const [recommendationCode, setRecommendationCode] = useState(
+    () => searchParams?.get("recommendationCode") ?? ""
+  );
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
