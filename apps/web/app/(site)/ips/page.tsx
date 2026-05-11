@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconSparkles, IconSearch, IconFilter, IconBolt } from "@tabler/icons-react";
+import { IconBolt, IconDeviceTv, IconFilter, IconSearch, IconSparkles } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { CreateIPDialog } from "@/app/(site)/ips/_components/create-ip-dialog";
 import { IPCinematicHero } from "@/app/(site)/ips/_components/ip-cinematic-hero";
 import { IPPlazaCard } from "@/app/(site)/ips/_components/ip-plaza-card";
+import { TVStream } from "@/app/(site)/ips/_components/tv-stream";
 import { useInfiniteIPList, useIPTypes, type IPProject } from "./_hooks/use-ip";
 
 // ─── Filter panel (shared between sidebar + sheet) ──
@@ -93,6 +94,7 @@ export default function IPPlazaPage() {
   const [selectedTypeId, setSelectedTypeId] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [tvOpen, setTvOpen] = useState(false);
 
   // Pin a small sentinel near the inline "Create IP" button. Once the
   // user scrolls *past* it we surface a floating-action variant in the
@@ -231,6 +233,19 @@ export default function IPPlazaPage() {
                     <div className="mt-4">{filterPanel}</div>
                   </SheetContent>
                 </Sheet>
+                {/* TV mode — opens a fullscreen modal that flips the
+                    plaza grid into a single-card-at-a-time trailer
+                    feed. Disabled until the first page lands so the
+                    modal has at least something to show. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTvOpen(true)}
+                  disabled={projects.length === 0}
+                >
+                  <IconDeviceTv className="size-4" />
+                  {t("tvMode")}
+                </Button>
                 <div ref={inlineCreateRef}>
                   <Button size="sm" onClick={() => setCreateOpen(true)}>
                     <IconBolt className="size-4" />
@@ -299,6 +314,16 @@ export default function IPPlazaPage() {
       </button>
 
       <CreateIPDialog open={createOpen} onOpenChange={setCreateOpen} />
+
+      {tvOpen && (
+        <TVStream
+          ips={projects}
+          onClose={() => setTvOpen(false)}
+          onLoadMore={fetchNextPage}
+          hasNextPage={hasNextPage}
+          isFetchingMore={isFetchingNextPage}
+        />
+      )}
     </div>
   );
 }
