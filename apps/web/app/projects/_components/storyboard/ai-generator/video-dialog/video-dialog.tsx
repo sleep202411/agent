@@ -1236,10 +1236,10 @@ export function AiVideoGeneratorDialog({
                   <ToolbarSelect
                     value={uploadMode}
                     options={[
+                      { label: t("multimodalTab"), value: "multimodal" },
+                      { label: t("multiReferenceTab"), value: "multiReference" },
                       { label: t("referenceImageUpload"), value: "reference" },
                       { label: t("framesTab"), value: "frames" },
-                      { label: t("multiReferenceTab"), value: "multiReference" },
-                      { label: t("multimodalTab"), value: "multimodal" },
                     ]}
                     onChange={(v) => void handleUploadModeChange(v as SimpleMode)}
                   />
