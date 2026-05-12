@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import {
   getMyProjects,
   getMyJoinedProjects,
@@ -7,10 +7,13 @@ import {
   uploadPersonalVideo,
   updatePersonalWork,
   getProjectProfits,
+  type MyProjectsResponse,
   type Project,
   type PersonalWork,
   type ProfitInfo,
 } from "@/src/services/project";
+
+const MY_PROJECTS_PAGE_SIZE = 20;
 
 export const myProjectKeys = {
   works: ["my", "works"] as const,
@@ -49,9 +52,21 @@ export function useUpdatePersonalWork() {
 }
 
 export function useMyProjects() {
-  return useQuery<Project[]>({
+  return useInfiniteQuery<
+    MyProjectsResponse,
+    Error,
+    { pages: MyProjectsResponse[]; pageParams: number[] },
+    readonly unknown[],
+    number
+  >({
     queryKey: myProjectKeys.projects,
-    queryFn: () => getMyProjects(1, 50),
+    queryFn: ({ pageParam }) => getMyProjects(pageParam, MY_PROJECTS_PAGE_SIZE),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((acc, p) => acc + (p.data?.length ?? 0), 0);
+      if (loaded >= (lastPage.sum ?? 0)) return undefined;
+      return allPages.length + 1;
+    },
   });
 }
 

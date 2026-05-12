@@ -3030,6 +3030,8 @@
     "interactiveUnsetEnding": "取消结局标记",
     "interactiveDeleteNode": "删除此片段",
     "noData": "暂无数据",
+    "loadMore": "加载更多",
+    "loadingMore": "加载中…",
     "myCertifications": "我的认证",
     "noCertifications": "暂无认证信息",
     "noCertificationsDesc": "添加认证后，您的个人资料将展示认证徽章，提升专业可信度。",

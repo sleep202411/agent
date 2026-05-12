@@ -3030,6 +3030,8 @@
     "interactiveUnsetEnding": "Unmark ending",
     "interactiveDeleteNode": "Delete segment",
     "noData": "No data",
+    "loadMore": "Load more",
+    "loadingMore": "Loading…",
     "myCertifications": "My Certifications",
     "noCertifications": "No certifications yet",
     "noCertificationsDesc": "Add certifications to display badges on your profile and boost your credibility.",

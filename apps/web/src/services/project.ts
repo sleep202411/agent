@@ -58,11 +58,20 @@ export interface ProfitInfo {
 // ─── API ──────────────────────────────────────────────
 
 /** 我的 IP（我创建的项目） */
+// Backend returns `{ code, msg, data: Project[], sum: number }` —
+// `sum` is the total row count (not `data.length`), so we read the raw
+// envelope to keep the count for pagination.
+export interface MyProjectsResponse {
+  data: Project[];
+  sum: number;
+}
+
 export const getMyProjects = (page = 1, pageSize = 10) =>
-  api.postForm<Project[]>("/project/myprojects", {
-    page: String(page),
-    pageSize: String(pageSize),
-  });
+  api.postForm<MyProjectsResponse>(
+    "/project/myprojects",
+    { page: String(page), pageSize: String(pageSize) },
+    { raw: true }
+  );
 
 /** 我加入的项目 */
 export const getMyJoinedProjects = (page = 1, pageSize = 10) =>
