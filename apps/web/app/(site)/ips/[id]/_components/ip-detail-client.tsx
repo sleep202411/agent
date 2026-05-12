@@ -41,6 +41,7 @@ import {
 import type { ProjectJob } from "@/app/(site)/ips/_hooks/types";
 
 interface IPTeamMember {
+  userId?: number;
   name: string;
   role: string;
   avatar: string;
@@ -114,6 +115,7 @@ export function IPDetailClient({ id }: { id: string }) {
     const role =
       m.role === 10 ? "Owner" : m.role === 8 ? "Admin" : m.roleName || m.remark || "Member";
     return {
+      userId: m.userId ?? undefined,
       name: m.nickName || m.userName || "Member",
       role,
       avatar: m.avatar ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar}` : "",
@@ -320,32 +322,46 @@ export function IPDetailClient({ id }: { id: string }) {
                   {t("detailCreativeTeam")}
                 </h2>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {team.map((member) => (
-                    <div
-                      key={member.name}
-                      className="flex items-start gap-3 rounded-xl border border-border bg-card p-4"
-                    >
-                      <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-lg">
-                        {member.avatar?.startsWith("http") ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={member.avatar} alt="" className="size-full object-cover" />
-                        ) : (
-                          (member.name?.[0] ?? "?").toUpperCase()
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="mb-0.5 flex items-center gap-1.5">
-                          <span className="truncate text-sm font-medium text-foreground">
-                            {member.name}
-                          </span>
-                          {member.certified && (
-                            <IconCircleCheck className="size-3 text-green-400" />
+                  {team.map((member, idx) => {
+                    const cardClass =
+                      "flex items-start gap-3 rounded-xl border border-border bg-card p-4";
+                    const inner = (
+                      <>
+                        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-lg">
+                          {member.avatar?.startsWith("http") ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={member.avatar} alt="" className="size-full object-cover" />
+                          ) : (
+                            (member.name?.[0] ?? "?").toUpperCase()
                           )}
                         </div>
-                        <div className="text-xs text-primary">{member.role}</div>
+                        <div className="min-w-0">
+                          <div className="mb-0.5 flex items-center gap-1.5">
+                            <span className="truncate text-sm font-medium text-foreground">
+                              {member.name}
+                            </span>
+                            {member.certified && (
+                              <IconCircleCheck className="size-3 text-green-400" />
+                            )}
+                          </div>
+                          <div className="text-xs text-primary">{member.role}</div>
+                        </div>
+                      </>
+                    );
+                    return member.userId ? (
+                      <Link
+                        key={member.userId}
+                        href={`/creators/${member.userId}`}
+                        className={`${cardClass} transition-colors hover:border-primary/40 hover:bg-card/80`}
+                      >
+                        {inner}
+                      </Link>
+                    ) : (
+                      <div key={`${member.name}-${idx}`} className={cardClass}>
+                        {inner}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -539,25 +555,43 @@ function RailTeam({ team, t }: { team: IPTeamMember[]; t: ReturnType<typeof useT
     <div className="rounded-xl border border-border bg-card p-4">
       <h3 className="mb-3 text-sm font-semibold text-foreground">{t("detailCreativeTeam")}</h3>
       <div className="space-y-3">
-        {team.map((member) => (
-          <div key={member.name} className="flex items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-sm">
-              {member.avatar?.startsWith("http") ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={member.avatar} alt="" className="size-full object-cover" />
-              ) : (
-                (member.name?.[0] ?? "?").toUpperCase()
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="truncate text-xs font-medium text-foreground">{member.name}</span>
-                {member.certified && <IconCircleCheck className="size-3 text-green-400" />}
+        {team.map((member, idx) => {
+          const rowClass = "flex items-center gap-3";
+          const inner = (
+            <>
+              <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-sm">
+                {member.avatar?.startsWith("http") ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={member.avatar} alt="" className="size-full object-cover" />
+                ) : (
+                  (member.name?.[0] ?? "?").toUpperCase()
+                )}
               </div>
-              <span className="text-[10px] text-muted-foreground">{member.role}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-xs font-medium text-foreground">
+                    {member.name}
+                  </span>
+                  {member.certified && <IconCircleCheck className="size-3 text-green-400" />}
+                </div>
+                <span className="text-[10px] text-muted-foreground">{member.role}</span>
+              </div>
+            </>
+          );
+          return member.userId ? (
+            <Link
+              key={member.userId}
+              href={`/creators/${member.userId}`}
+              className={`${rowClass} -mx-1 rounded-md px-1 py-0.5 transition-colors hover:bg-muted/40`}
+            >
+              {inner}
+            </Link>
+          ) : (
+            <div key={`${member.name}-${idx}`} className={rowClass}>
+              {inner}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
