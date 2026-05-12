@@ -504,7 +504,7 @@ function createDefaultVideoModeSettings(): VideoModeSettingsState {
 
 function createDefaultVideoInstance(): VideoInstanceState {
   return {
-    uploadMode: "reference",
+    uploadMode: "multimodal",
     editMode: null,
     formData: {
       prompt: "",
