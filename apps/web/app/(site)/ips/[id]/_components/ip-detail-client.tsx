@@ -597,16 +597,24 @@ function RailShare({ title, t }: { title: string; t: ReturnType<typeof useTransl
             </>
           )}
         </button>
+        {/* Like / Follow are disabled until backend exposes the
+            corresponding endpoints — buttons sit there as a visual
+            placeholder so the rail layout doesn't shift when they
+            ship. */}
         <button
           type="button"
-          className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-secondary py-2 text-xs text-foreground transition-colors hover:bg-secondary/80"
+          disabled
+          aria-disabled="true"
+          className="flex flex-1 cursor-not-allowed items-center justify-center gap-1 rounded-lg bg-secondary/50 py-2 text-xs text-muted-foreground"
         >
           <IconHeart className="size-3.5" />
           {t("detailLike")}
         </button>
         <button
           type="button"
-          className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-secondary py-2 text-xs text-foreground transition-colors hover:bg-secondary/80"
+          disabled
+          aria-disabled="true"
+          className="flex flex-1 cursor-not-allowed items-center justify-center gap-1 rounded-lg bg-secondary/50 py-2 text-xs text-muted-foreground"
         >
           <IconBookmark className="size-3.5" />
           {t("detailFollow")}
