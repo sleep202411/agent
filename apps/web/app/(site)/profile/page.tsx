@@ -358,7 +358,8 @@ function SocialsTab() {
 
 function MyIPsTab() {
   const t = useTranslations("profile");
-  const { data: projects, isLoading } = useMyProjects();
+  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } = useMyProjects();
+  const projects = data?.pages.flatMap((p) => p.data ?? []) ?? [];
 
   if (isLoading) {
     return (
@@ -368,7 +369,7 @@ function MyIPsTab() {
     );
   }
 
-  if (!projects?.length) {
+  if (!projects.length) {
     return (
       <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
         {t("noData")}
@@ -377,10 +378,31 @@ function MyIPsTab() {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-      {projects.map((project) => (
-        <ProjectCard key={project.id} project={project} />
-      ))}
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        {projects.map((project) => (
+          <ProjectCard key={project.id} project={project} />
+        ))}
+      </div>
+      {hasNextPage ? (
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            onClick={() => void fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2 text-sm text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isFetchingNextPage ? (
+              <>
+                <IconLoader2 className="size-4 animate-spin" />
+                {t("loadingMore")}
+              </>
+            ) : (
+              t("loadMore")
+            )}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
