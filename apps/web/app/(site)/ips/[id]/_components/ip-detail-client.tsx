@@ -10,6 +10,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconCircleCheck,
+  IconEye,
   IconHeart,
   IconLoader2,
   IconMessageCircle,
@@ -18,7 +19,8 @@ import {
   IconShare,
   IconUsers,
 } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { fakePlayCount, formatCompactCount } from "@/app/(site)/ips/[id]/_data/fake-play-count";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTagList } from "@/src/hooks/use-tag-list";
 import { cn } from "@/lib/utils";
@@ -68,6 +70,7 @@ function totalRuntime(eps: Episode[]): string {
 
 export function IPDetailClient({ id }: { id: string }) {
   const t = useTranslations("ip");
+  const locale = useLocale();
 
   const { data: project, isLoading } = useProjectDetail(id);
   const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
@@ -420,6 +423,7 @@ export function IPDetailClient({ id }: { id: string }) {
                   }
                 }}
                 t={t}
+                locale={locale}
               />
               <RailShare title={title} t={t} />
               <RailProducer
@@ -459,6 +463,7 @@ function ReleasedPanel({
   selectedEpisodeId,
   onSelectEpisode,
   t,
+  locale,
 }: {
   episodes: Episode[];
   runtime: string;
@@ -467,6 +472,7 @@ function ReleasedPanel({
   selectedEpisodeId: string | null;
   onSelectEpisode: (episodeId: string) => void;
   t: ReturnType<typeof useTranslations>;
+  locale: string;
 }) {
   return (
     <div className="rounded-xl border border-green-400/20 bg-card p-5">
@@ -497,6 +503,8 @@ function ReleasedPanel({
             {episodes.map((ep, i) => {
               const epId = ep.id ? String(ep.id) : "";
               const isPlaying = !!epId && epId === selectedEpisodeId;
+              const plays = fakePlayCount(epId || i, ep.createdAt);
+              const epDuration = ep.duration > 0 ? formatDuration(ep.duration) : "";
               return (
                 <div
                   key={epId || i}
@@ -516,14 +524,26 @@ function ReleasedPanel({
                     >
                       {String(ep.videoNumber || i + 1).padStart(2, "0")}
                     </div>
-                    <span
-                      className={cn(
-                        "truncate text-xs",
-                        isPlaying ? "font-medium text-primary" : "text-foreground"
-                      )}
-                    >
-                      {ep.title}
-                    </span>
+                    <div className="min-w-0">
+                      <div
+                        className={cn(
+                          "truncate text-xs",
+                          isPlaying ? "font-medium text-primary" : "text-foreground"
+                        )}
+                      >
+                        {ep.title}
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <IconEye className="size-3" />
+                        <span>{formatCompactCount(plays, locale)}</span>
+                        {epDuration && (
+                          <>
+                            <span className="opacity-60">·</span>
+                            <span>{epDuration}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <button
                     type="button"
