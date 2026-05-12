@@ -22,6 +22,14 @@
  *   above handles it.
  * - Paths that hit backend proxies (rewritten in next.config) are
  *   filtered out via the matcher.
+ *
+ * Studio host routing:
+ * - When the request host is in `STUDIO_HOSTS` (currently only
+ *   `studio.fizzdragon.com`), the root path lands on /art-studio rather
+ *   than the marketing homepage — the whole point of the dedicated
+ *   subdomain. Other paths are served as-is for now (a user landing on
+ *   studio.fizzdragon.com/ips/123 will see the marketing IP detail);
+ *   tighten that later if/when studio fully extracts to its own app.
  */
 
 import { NextResponse } from "next/server";
@@ -35,6 +43,17 @@ const LOCALE_COOKIE_NAME = "NEXT_LOCALE";
 
 function isSupportedLocale(value: string): value is SupportedLocale {
   return (LOCALES as readonly string[]).includes(value);
+}
+
+// Hosts that should land visitors on /art-studio when they hit the
+// root path. Only the canonical `studio.fizzdragon.com` is in here on
+// purpose — staging, CN, or the legacy `fizzstudio.*` aliases get
+// added explicitly when their nginx is wired up, no wildcard.
+const STUDIO_HOSTS = new Set<string>(["studio.fizzdragon.com"]);
+
+function isStudioHost(request: NextRequest): boolean {
+  const host = request.headers.get("host")?.toLowerCase().split(":")[0];
+  return host != null && STUDIO_HOSTS.has(host);
 }
 
 /**
@@ -82,6 +101,7 @@ function pickRedirectLocale(request: NextRequest): SupportedLocale {
 
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+  const studioHost = isStudioHost(request);
 
   // Try to extract a locale prefix.
   let matchedLocale: string | null = null;
@@ -101,7 +121,22 @@ export function proxy(request: NextRequest) {
   if (matchedLocale === null) {
     const target = pickRedirectLocale(request);
     const url = request.nextUrl.clone();
-    url.pathname = `/${target}${pathname === "/" ? "" : pathname}`;
+    // Studio subdomain at root: collapse the locale-redirect and the
+    // studio-home redirect into a single hop.
+    url.pathname =
+      studioHost && pathname === "/"
+        ? `/${target}/art-studio`
+        : `/${target}${pathname === "/" ? "" : pathname}`;
+    return NextResponse.redirect(url, 307);
+  }
+
+  // Locale prefix present, root path, studio host → bounce to
+  // /<locale>/art-studio so the studio surface is what the user sees
+  // when they land on the dedicated subdomain. Deep links continue to
+  // resolve normally; only `/` is intercepted.
+  if (studioHost && rewrittenPathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = `/${matchedLocale}/art-studio`;
     return NextResponse.redirect(url, 307);
   }
 
