@@ -55,6 +55,9 @@ export function useVideoReferences({
   const maxImages = currentModel?.maxImages ?? 3;
   const maxVideos = currentModel?.maxVideos ?? 0;
   const maxAudios = currentModel?.maxAudios ?? 0;
+  const minImages = currentModel?.minImages ?? 0;
+  const minVideos = currentModel?.minVideos ?? 0;
+  const minAudios = currentModel?.minAudios ?? 0;
 
   const {
     referenceImages,
@@ -435,6 +438,9 @@ export function useVideoReferences({
     maxImages,
     maxVideos,
     maxAudios,
+    minImages,
+    minVideos,
+    minAudios,
     refIsFull,
     // Setters
     onSetReferenceImages,

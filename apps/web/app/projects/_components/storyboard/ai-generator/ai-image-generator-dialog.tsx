@@ -176,6 +176,7 @@ export function AiImageGeneratorDialog({
   const normalizedModels = modeModels;
 
   const maxRefImages = currentModel?.maxImages ?? 3;
+  const minRefImages = currentModel?.minImages ?? 0;
 
   const sizeField = currentModel?.inputSchema?.properties?.size;
   const sizeOptions = useMemo(() => {
@@ -366,6 +367,12 @@ export function AiImageGeneratorDialog({
     // Edit-like modes require at least one reference image
     if (isEdit && refImages.length === 0) {
       toast.warning(t("uploadReferenceFirst"));
+      return;
+    }
+
+    // Model-declared minimum reference images (e.g. happy horse: [1, 9])
+    if (minRefImages > 0 && refImages.length < minRefImages) {
+      toast.warning(t("uploadAtLeastImages", { count: minRefImages }));
       return;
     }
 

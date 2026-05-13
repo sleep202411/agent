@@ -49,6 +49,12 @@ export interface AiModel {
   maxVideos: number;
   /** Max reference audios, from description `audios: [min, max]` tuple (0 = not supported) */
   maxAudios: number;
+  /** Min reference images, from description `images: [min, max]` tuple */
+  minImages: number;
+  /** Min reference videos, from description `videos: [min, max]` tuple */
+  minVideos: number;
+  /** Min reference audios, from description `audios: [min, max]` tuple */
+  minAudios: number;
 }
 
 // ─── Raw Backend Type ───────────────────────────────────
@@ -110,6 +116,13 @@ function parseMaxCount(raw: unknown): number {
   if (!Array.isArray(raw)) return 0;
   const nums = raw.map((n) => Number(n)).filter((n) => Number.isFinite(n));
   return nums.length > 0 ? Math.max(...nums) : 0;
+}
+
+/** Read the lower bound from a `[min, max]` tuple returned by backend. */
+function parseMinCount(raw: unknown): number {
+  if (!Array.isArray(raw)) return 0;
+  const nums = raw.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  return nums.length > 0 ? Math.max(0, Math.min(...nums)) : 0;
 }
 
 export function normalizeAiModel(raw: RawAiModel, locale = "en-US"): AiModel {
@@ -190,6 +203,9 @@ export function normalizeAiModel(raw: RawAiModel, locale = "en-US"): AiModel {
     maxImages: parseMaxCount(desc.images),
     maxVideos: parseMaxCount(desc.videos),
     maxAudios: parseMaxCount(desc.audios),
+    minImages: parseMinCount(desc.images),
+    minVideos: parseMinCount(desc.videos),
+    minAudios: parseMinCount(desc.audios),
   };
 }
 
