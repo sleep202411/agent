@@ -14,6 +14,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { AudioPlayer } from "@/components/media/audio-player";
+import { MentionPromptDisplay } from "@/components/media/mention-prompt-display";
 import { cn } from "@/lib/utils";
 
 type MediaPreviewType = "image" | "video" | "audio";
@@ -293,11 +294,7 @@ export function MediaPreviewModal({
             {prompt ? (
               <InfoBlock
                 label={t("labelPrompt")}
-                value={
-                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                    {prompt}
-                  </p>
-                }
+                value={<MentionPromptDisplay prompt={prompt} />}
               />
             ) : null}
             {details.map((detail) => (
