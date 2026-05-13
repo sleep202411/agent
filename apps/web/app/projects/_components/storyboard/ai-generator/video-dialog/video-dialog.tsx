@@ -906,6 +906,28 @@ export function AiVideoGeneratorDialog({
       return;
     }
 
+    // Enforce per-kind minimums on the shared referenceImages bucket.
+    // Skip frames-mode etc. — those have no min requirement on this bucket.
+    const refBucket = references.referenceImages ?? [];
+    const kindCounts = { image: 0, video: 0, audio: 0 } as Record<
+      "image" | "video" | "audio",
+      number
+    >;
+    for (const item of refBucket) {
+      kindCounts[classifyAsset(item)] += 1;
+    }
+    const minChecks: Array<["image" | "video" | "audio", number, string]> = [
+      ["image", videoRefs.minImages, "uploadAtLeastImages"],
+      ["video", videoRefs.minVideos, "uploadAtLeastVideos"],
+      ["audio", videoRefs.minAudios, "uploadAtLeastAudios"],
+    ];
+    for (const [kind, min, key] of minChecks) {
+      if (min > 0 && kindCounts[kind] < min) {
+        toast.warning(t(key, { count: min }));
+        return;
+      }
+    }
+
     onGeneratePrompt?.(prompt.trim());
 
     const inputBase: Record<string, unknown> = {
