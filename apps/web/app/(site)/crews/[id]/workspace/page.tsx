@@ -30,6 +30,7 @@ import {
   IconChevronRight,
   IconEdit,
   IconLoader2,
+  IconMovie,
   IconLock,
   IconRocket,
   IconTrash,
@@ -54,6 +55,7 @@ import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-d
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
 import { JobApplicantsList } from "@/app/(site)/crews/_components/job-applicants-list";
+import { EpisodesTab } from "@/app/(site)/crews/[id]/workspace/_components/episodes/episodes-tab";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,6 +71,7 @@ const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },
   { id: "roles", labelKey: "tabRecruitment", icon: IconBriefcase },
   { id: "members", labelKey: "tabMembers", icon: IconUsers },
+  { id: "episodes", labelKey: "tabEpisodes", icon: IconMovie },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -478,6 +481,8 @@ export default function CrewWorkspacePage() {
               )}
             </div>
           ) : null}
+
+          {activeTab === "episodes" ? <EpisodesTab crewId={id} /> : null}
 
           {activeTab === "members" ? (
             <div className="rounded-xl border border-border bg-card p-5">
