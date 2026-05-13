@@ -3,16 +3,17 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import {
+  IconBookmark,
+  IconCoin,
   IconFileText,
-  IconVideo,
+  IconLoader2,
   IconPlaylist,
-  IconUsers,
-  IconUpload,
-  IconX,
   IconPlus,
   IconTrash,
-  IconLoader2,
-  IconBookmark,
+  IconUpload,
+  IconUsers,
+  IconVideo,
+  IconX,
 } from "@tabler/icons-react";
 import { DragDropProvider } from "@dnd-kit/react";
 import { toast } from "sonner";
@@ -71,6 +72,8 @@ import { SortableEpisodeRow } from "./episode-row";
 import { FaqDialog, type FaqDraft } from "./faq-dialog";
 import { SortableFaqRow } from "./faq-row";
 import { EditHero } from "./edit-hero";
+import { PricingTab } from "./_pricing/pricing-tab";
+import { useLocale } from "@/src/i18n/i18n";
 import { SparkDialog } from "./spark-dialog";
 
 // ─── Member row ────────────────────────────────────
@@ -188,6 +191,7 @@ const TABS = [
   { id: "basic", labelKey: "editBasic", icon: IconFileText },
   { id: "trailer", labelKey: "editTrailer", icon: IconVideo },
   { id: "episodes", labelKey: "editEpisodes", icon: IconPlaylist },
+  { id: "pricing", labelKey: "editPricing", icon: IconCoin },
   { id: "team", labelKey: "editTeam", icon: IconUsers },
   { id: "faq", labelKey: "editFAQ", icon: IconFileText },
 ] as const;
@@ -261,6 +265,7 @@ function Section({
 
 export default function IPEditPage() {
   const { id } = useParams<{ id: string }>();
+  const locale = useLocale();
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
   const tEp = useTranslations("episode");
@@ -1025,6 +1030,13 @@ export default function IPEditPage() {
                 </AlertDialogContent>
               </AlertDialog>
             </Section>
+          )}
+
+          {/* ── Pricing ── */}
+          {activeTab === "pricing" && (
+            <div className="py-2">
+              <PricingTab ipId={id} locale={locale} />
+            </div>
           )}
 
           {/* ── Team ── */}
