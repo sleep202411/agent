@@ -108,24 +108,24 @@ export function AssignMemberDialog({
           <FieldGroup>
             <Field>
               <FieldLabel required>{t("assignMember")}</FieldLabel>
-              <Select value={userId} onValueChange={setUserId}>
-                <SelectTrigger>
-                  <SelectValue placeholder={t("assignMemberPlaceholder")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableMembers.length === 0 ? (
-                    <div className="px-3 py-2 text-xs text-muted-foreground">
-                      {t("noMembersAvailable")}
-                    </div>
-                  ) : (
-                    availableMembers.map((m) => (
+              {availableMembers.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                  {t("noMembersAvailable")}
+                </div>
+              ) : (
+                <Select value={userId} onValueChange={setUserId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("assignMemberPlaceholder")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableMembers.map((m) => (
                       <SelectItem key={m.userId} value={String(m.userId)}>
                         {m.nick?.trim() || `User ${m.userId}`}
                       </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
             <Field>
               <FieldLabel required>{t("assignmentRole")}</FieldLabel>
