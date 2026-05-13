@@ -1386,6 +1386,7 @@
     "uploadAtLeastImages": "請至少上傳 {count} 張參考圖",
     "uploadAtLeastVideos": "請至少上傳 {count} 個參考影片",
     "uploadAtLeastAudios": "請至少上傳 {count} 個參考音訊",
+    "tooManyActiveVideoTasks": "最多同時執行 {max} 個影片任務，請等待已有任務完成",
     "addedEditTasks": "已新增 {count} 個編輯任務",
     "addedGenerateTasks": "已新增 {count} 個生成任務",
     "removeAction": "移除",

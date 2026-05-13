@@ -1386,6 +1386,7 @@
     "uploadAtLeastImages": "Please upload at least {count} reference image(s)",
     "uploadAtLeastVideos": "Please upload at least {count} reference video(s)",
     "uploadAtLeastAudios": "Please upload at least {count} reference audio(s)",
+    "tooManyActiveVideoTasks": "Up to {max} video tasks can run at once. Please wait for some to finish.",
     "addedEditTasks": "Added {count} edit tasks",
     "addedGenerateTasks": "Added {count} generation tasks",
     "removeAction": "Remove",

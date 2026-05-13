@@ -8,6 +8,9 @@ export type { RawAiModel, AssetRecord };
 /** @deprecated Use VideoModeConfig from ai-model-schema.ts instead */
 export const API_PATH_VIDEO = "/api/ai/task/video/generate/basic";
 export const MAX_CONCURRENT = 4;
+/** Per-shot cap on active (pending + running) video tasks. Prevents
+ *  unlimited Generate clicks from flooding the queue. */
+export const MAX_ACTIVE_VIDEO_TASKS = 6;
 
 // ── Type definitions ───────────────────────────────────────────────────
 

@@ -43,21 +43,41 @@ const starStyle = (
 interface GenerateButtonProps {
   onClick: () => void;
   loading?: boolean;
+  disabled?: boolean;
+  /** Optional tooltip shown on hover when the button is disabled (native `title` attr). */
+  disabledHint?: string;
   cost?: number;
   className?: string;
 }
 
-export function GenerateButton({ onClick, loading, cost, className }: GenerateButtonProps) {
+export function GenerateButton({
+  onClick,
+  loading,
+  disabled,
+  disabledHint,
+  cost,
+  className,
+}: GenerateButtonProps) {
   useEffect(() => {
     injectKeyframes();
   }, []);
 
+  const isLoading = !!loading;
+  // `loading` blocks clicks outright; `disabled` lets clicks through so the
+  // caller can surface a toast — pointer-events-none would swallow them.
+  const isDisabled = !!disabled && !isLoading;
+
   return (
     <div
-      onClick={loading ? undefined : onClick}
+      onClick={isLoading ? undefined : onClick}
+      title={isDisabled ? disabledHint : undefined}
       className={cn(
-        "relative inline-flex cursor-pointer overflow-hidden rounded-xl",
-        loading && "pointer-events-none opacity-70",
+        "relative inline-flex overflow-hidden rounded-xl",
+        isLoading
+          ? "pointer-events-none opacity-60"
+          : isDisabled
+            ? "cursor-not-allowed opacity-60"
+            : "cursor-pointer",
         className
       )}
       style={{ padding: "1px" }}
