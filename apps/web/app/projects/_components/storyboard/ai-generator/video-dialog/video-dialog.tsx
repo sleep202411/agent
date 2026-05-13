@@ -98,6 +98,7 @@ import type {
 } from "@/src/lib/video-types";
 import {
   ensureVideoReference,
+  MAX_ACTIVE_VIDEO_TASKS,
   MAX_CONCURRENT,
   ossUrl,
   parseVideoGenerateResult,
@@ -394,6 +395,11 @@ export function AiVideoGeneratorDialog({
   const allShotTasks = useAppSelector((s) => selectShotTasks(s, shotId, shotColumnId));
   const videoTasks = useMemo(() => allShotTasks.filter((t) => t.type === "video"), [allShotTasks]);
   const isGenerating = videoTasks.some((t) => t.status === "pending" || t.status === "running");
+  const activeVideoTaskCount = useMemo(
+    () => videoTasks.filter((t) => t.status === "pending" || t.status === "running").length,
+    [videoTasks]
+  );
+  const isAtTaskCap = activeVideoTaskCount >= MAX_ACTIVE_VIDEO_TASKS;
   const successCount = videoTasks.filter((t) => t.status === "completed").length;
 
   const activeMode = editMode ?? uploadMode;
@@ -928,6 +934,12 @@ export function AiVideoGeneratorDialog({
       }
     }
 
+    const requestedCount = Math.max(1, count);
+    if (activeVideoTaskCount + requestedCount > MAX_ACTIVE_VIDEO_TASKS) {
+      toast.warning(t("tooManyActiveVideoTasks", { max: MAX_ACTIVE_VIDEO_TASKS }));
+      return;
+    }
+
     onGeneratePrompt?.(prompt.trim());
 
     const inputBase: Record<string, unknown> = {
@@ -1308,7 +1320,16 @@ export function AiVideoGeneratorDialog({
                   }
                 />
 
-                <GenerateButton onClick={handleGenerate} cost={cost > 0 ? cost : undefined} />
+                <GenerateButton
+                  onClick={handleGenerate}
+                  cost={cost > 0 ? cost : undefined}
+                  disabled={isAtTaskCap}
+                  disabledHint={
+                    isAtTaskCap
+                      ? t("tooManyActiveVideoTasks", { max: MAX_ACTIVE_VIDEO_TASKS })
+                      : undefined
+                  }
+                />
               </div>
             </div>
           </div>
