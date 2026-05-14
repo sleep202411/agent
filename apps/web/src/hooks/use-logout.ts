@@ -18,6 +18,7 @@
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import posthog from "posthog-js";
 import { logout as apiLogout } from "@/src/lib/auth/api";
 import { useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -42,6 +43,10 @@ export function useLogout() {
     queryClient.setQueryData(userKeys.info, null);
     queryClient.setQueryData(userKeys.credits, 0);
     queryClient.removeQueries({ queryKey: kycKeys.authStatus });
+
+    // Capture logout before resetting PostHog identity.
+    posthog.capture("user_logged_out");
+    posthog.reset();
 
     // Navigate first, so any unmount happens before the backend roundtrip.
     router.replace(localizePath("/", locale));

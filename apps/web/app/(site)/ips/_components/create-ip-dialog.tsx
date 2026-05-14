@@ -12,6 +12,7 @@ import {
   IconSparkles,
   IconX,
 } from "@tabler/icons-react";
+import posthog from "posthog-js";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { env } from "@/src/env";
@@ -153,6 +154,10 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
 
     setAnalyzedFileName(file.name);
     setAnalyzeStatus("analyzing");
+    posthog.capture("ip_spark_analysis_started", {
+      file_type: file.name.split(".").pop()?.toLowerCase(),
+      file_size_kb: Math.round(file.size / 1024),
+    });
 
     analyzeAbortRef.current?.abort();
     const controller = new AbortController();
@@ -228,6 +233,11 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
       },
       {
         onSuccess: ({ id }) => {
+          posthog.capture("ip_created", {
+            ip_id: id,
+            type_id: typeId,
+            used_spark_analysis: analyzeStatus === "success",
+          });
           onOpenChange(false);
           toast.success(t("createSuccess"));
           router.push(`/ips/${id}/edit`);
@@ -235,6 +245,7 @@ export function CreateIPDialog({ open, onOpenChange }: CreateIPDialogProps) {
         onError: (err) => {
           const msg = err instanceof Error ? err.message : "";
           toast.error(msg || t("createFailed"));
+          posthog.captureException(err);
         },
       }
     );

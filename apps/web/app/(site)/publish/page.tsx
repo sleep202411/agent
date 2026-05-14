@@ -18,6 +18,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import posthog from "posthog-js";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { IconArrowLeft, IconCheck, IconLoader2 } from "@tabler/icons-react";
@@ -127,6 +128,10 @@ export default function PublishPage() {
       toast.warning(t("pleaseUploadVideo"));
       return;
     }
+    posthog.capture("video_published", {
+      personal_id: personalId,
+      tag_count: form.tagIds.length,
+    });
     toast.success(t("publishSuccess"));
     setTimeout(goBackToProfile, 1200);
   };

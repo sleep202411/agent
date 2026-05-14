@@ -10,6 +10,7 @@ import { Field, FieldGroup, FieldError, FieldLabel } from "@/components/ui/field
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
+import posthog from "posthog-js";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailLogin, phoneLogin } from "@/src/lib/auth/api";
 import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
@@ -43,10 +44,20 @@ export default function LoginPage() {
         ? await phoneLogin({ phone: trimmedId, pwd: password })
         : await emailLogin({ email: trimmedId, pwd: password });
       toast.success(t("loginSuccess"));
+      const userId = String(result.user?.userId ?? trimmedId);
+      posthog.identify(userId, {
+        email: result.user?.email,
+        phone: result.user?.phone,
+        nickname: result.user?.nickname,
+      });
+      posthog.capture("user_logged_in", {
+        method: isPhoneIdentifier(trimmedId) ? "phone" : "email",
+      });
       handleAuthSuccess("login", result);
     } catch (err) {
       const message = err instanceof ApiRequestError ? err.message : t("loginError");
       setError(message);
+      posthog.captureException(err);
     } finally {
       setSubmitting(false);
     }

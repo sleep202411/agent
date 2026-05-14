@@ -11,6 +11,7 @@ import { Field, FieldGroup, FieldError, FieldLabel } from "@/components/ui/field
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
+import posthog from "posthog-js";
 import { ApiRequestError } from "@/src/lib/api";
 import { emailRegister, phoneRegister, sendEmailCode, sendPhoneCode } from "@/src/lib/auth/api";
 import { AuthSection, isPhoneIdentifier } from "../_components/auth-section";
@@ -98,10 +99,21 @@ export default function RegisterPage() {
             recommendationCode: recommendationCode.trim() || undefined,
           });
       toast.success(t("registerSuccess"));
+      const userId = String(result.user?.userId ?? trimmedId);
+      posthog.identify(userId, {
+        email: result.user?.email,
+        phone: result.user?.phone,
+        nickname: result.user?.nickname,
+      });
+      posthog.capture("user_registered", {
+        method: isPhoneIdentifier(trimmedId) ? "phone" : "email",
+        has_referral_code: Boolean(recommendationCode.trim()),
+      });
       handleAuthSuccess("register", result);
     } catch (err) {
       const message = err instanceof ApiRequestError ? err.message : t("registerError");
       setError(message);
+      posthog.captureException(err);
     } finally {
       setSubmitting(false);
     }
