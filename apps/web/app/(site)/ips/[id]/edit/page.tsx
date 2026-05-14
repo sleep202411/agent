@@ -9,6 +9,7 @@ import {
   IconLoader2,
   IconPlaylist,
   IconPlus,
+  IconShoppingBag,
   IconTrash,
   IconUpload,
   IconUsers,
@@ -73,6 +74,7 @@ import { FaqDialog, type FaqDraft } from "./faq-dialog";
 import { SortableFaqRow } from "./faq-row";
 import { EditHero } from "./edit-hero";
 import { PricingTab } from "./_pricing/pricing-tab";
+import { MerchandiseTab } from "./_merchandise/merchandise-tab";
 import { useLocale } from "@/src/i18n/i18n";
 import { SparkDialog } from "./spark-dialog";
 
@@ -196,6 +198,12 @@ const TABS = [
   // mock data layer (see ips/_hooks/pricing-mock.ts); flip `disabled`
   // to false once real wires are in place.
   { id: "pricing", labelKey: "editPricing", icon: IconCoin, disabled: true },
+  // Merchandise tab is visible-but-preview: the data layer is mock-
+  // backed (see ips/_hooks/merchandise-mock.ts) and the tab itself
+  // shows a "preview / coming soon" banner up top. Kept clickable on
+  // purpose so backend / colleagues can step through the full CRUD
+  // and see exactly which schema needs to land.
+  { id: "merchandise", labelKey: "editMerchandise", icon: IconShoppingBag },
   { id: "team", labelKey: "editTeam", icon: IconUsers },
   { id: "faq", labelKey: "editFAQ", icon: IconFileText },
 ] as const;
@@ -1029,6 +1037,13 @@ export default function IPEditPage() {
           {activeTab === "pricing" && (
             <div className="py-2">
               <PricingTab ipId={id} locale={locale} />
+            </div>
+          )}
+
+          {/* ── Merchandise ── */}
+          {activeTab === "merchandise" && (
+            <div className="py-2">
+              <MerchandiseTab ipId={id} />
             </div>
           )}
 
