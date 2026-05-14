@@ -141,6 +141,21 @@ export function useUpdateCrew() {
   return useMutation({
     mutationFn: updateCrew,
     onSuccess: (_data, vars) => {
+      // Merge the just-sent fields straight into the detail cache so
+      // the workspace hero / edit dialog reflects the change before
+      // the next refetch lands. Backend `POST /project/crew/update`
+      // returns void, so we trust the optimistic merge here and only
+      // fall back on the refetch for fields we didn't touch.
+      qc.setQueryData<CrewWire | null>(crewKeys.detail(vars.id), (prev) =>
+        prev
+          ? {
+              ...prev,
+              ...(vars.name !== undefined ? { name: vars.name } : {}),
+              ...(vars.description !== undefined ? { description: vars.description } : {}),
+              ...(vars.banner !== undefined ? { banner: vars.banner } : {}),
+            }
+          : prev
+      );
       qc.invalidateQueries({ queryKey: crewKeys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: ["crew", "queryList"] });
       qc.invalidateQueries({ queryKey: crewKeys.mine });

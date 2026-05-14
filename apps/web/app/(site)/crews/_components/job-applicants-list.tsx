@@ -7,7 +7,8 @@
  *
  * Owner sees Approve / Reject buttons on pending rows; non-owners
  * see a read-only roster. Approve / reject mutations are wired to
- * `/project/crew/job/aggree` and `/project/crew/job/refuse` via
+ * `/project/crew/job/aggree` (crew-scoped) and `/project/job/refuse`
+ * (legacy — backend never shipped the crew-scoped variant) via
  * `use-applications.ts`.
  */
 
