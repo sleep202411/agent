@@ -332,10 +332,10 @@ export default function IPEditPage() {
   // Save button is the explicit commit point).
   const [sparkOpen, setSparkOpen] = useState(false);
 
-  // Publish/unpublish — toggles `projectStatus` 0 ↔ 8 via the existing
-  // `useUpdateProject` mutation. Tracked separately from form-save
-  // because the action has its own confirm + toast flow.
-  const [publishing, setPublishing] = useState(false);
+  // Lifecycle transitions (5 = approved / 3 = rejected / 8 = taken
+  // down) are admin-only. Users can only save edits, which the backend
+  // resets `projectStatus` to 0 (pending review) automatically. The
+  // hero's Save button gates this via its own confirm dialog.
 
   // Populate form when project data loads
   useEffect(() => {
@@ -524,26 +524,6 @@ export default function IPEditPage() {
     );
   };
 
-  // Publish/unpublish — flip projectStatus 0 ↔ 8. Optimistic toast on
-  // success, refetch via React Query invalidation so the hero badge
-  // re-paints.
-  const handleTogglePublish = () => {
-    if (!project) return;
-    const isLive = project.projectStatus === 0;
-    const nextStatus = isLive ? 8 : 0;
-    setPublishing(true);
-    doUpdate(
-      { id: Number(id), projectStatus: nextStatus },
-      {
-        onSuccess: () => {
-          toast.success(isLive ? t("unpublishSuccess") : t("publishSuccess"));
-        },
-        onError: () => toast.error(t("publishFailed")),
-        onSettled: () => setPublishing(false),
-      }
-    );
-  };
-
   if (isLoading) {
     return (
       <div className="flex h-[calc(100vh-3.5rem)] items-center justify-center">
@@ -653,9 +633,7 @@ export default function IPEditPage() {
         projectStatus={project?.projectStatus}
         saving={saving}
         saved={saved}
-        publishing={publishing}
         onSave={handleSave}
-        onTogglePublish={handleTogglePublish}
         onSpark={() => setSparkOpen(true)}
       />
 

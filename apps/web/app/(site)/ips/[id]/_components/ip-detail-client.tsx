@@ -203,25 +203,13 @@ export function IPDetailClient({ id }: { id: string }) {
             {title || t("detailUntitled")}
           </h1>
           {tagline && <p className="mb-3 text-sm text-muted-foreground">{tagline}</p>}
-          {/* Status badge — `projectStatus === 0` is the published/Live
-              state ("已上线"); `=== 8` is a draft. Anything else is
-              treated as unknown and the badge is hidden so we don't
-              keep claiming "Released" on rows that aren't actually
-              live (the original always-on badge was misleading). */}
-          {(project?.projectStatus === 0 || project?.projectStatus === 8) && (
-            <div className="mb-3 flex items-center justify-center gap-3">
-              {project.projectStatus === 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-green-400/10 px-2.5 py-1 text-xs font-medium text-green-400">
-                  <IconCircleCheck className="size-3.5" />
-                  {t("detailReleased")}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300">
-                  {t("detailDraft")}
-                </span>
-              )}
-            </div>
-          )}
+          {/* Lifecycle status is intentionally NOT shown on this
+              consumer-facing detail page. The previous badge claimed
+              "Released" for `projectStatus === 0`, which under the
+              real 4-state model (0=pending / 3=rejected / 5=approved /
+              8=offline) is the *pending review* state — exactly the
+              opposite of "released". The owner sees the correct badge
+              on the edit page; consumers don't need lifecycle info. */}
           {realTags.length > 0 && (
             <div className="flex flex-wrap items-center justify-center gap-2">
               {realTags.map((tag) => (

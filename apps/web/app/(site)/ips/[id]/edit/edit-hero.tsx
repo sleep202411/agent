@@ -1,13 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  IconCheck,
-  IconLoader2,
-  IconSparkles,
-  IconWorldUp,
-  IconWorldOff,
-} from "@tabler/icons-react";
+import { IconCheck, IconLoader2, IconSparkles } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -20,48 +14,41 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useTranslations } from "@/src/i18n/i18n";
-import { cn } from "@/lib/utils";
+import { ProjectStatusBadge } from "@/app/(site)/ips/_components/project-status-badge";
 
 interface EditHeroProps {
   /** Display-only — the hero never edits these directly. */
   title: string;
-  /** `0` = listed/Live, `8` = unlisted/Archived. Anything else falls
-   *  through to "unknown" so we don't surface a wrong status. */
+  /**
+   * IP lifecycle status (display-only here):
+   *   0 = pending review (default after any user save)
+   *   3 = rejected by admin
+   *   5 = approved by admin (visible in Plaza)
+   *   8 = taken down by admin (admin-only — users can't trigger this)
+   * Anything else falls through to the "unknown" badge.
+   */
   projectStatus: number | undefined;
   saving: boolean;
   saved: boolean;
-  publishing: boolean;
   onSave: () => void;
-  onTogglePublish: () => void;
   onSpark: () => void;
 }
 
-export function EditHero({
-  title,
-  projectStatus,
-  saving,
-  saved,
-  publishing,
-  onSave,
-  onTogglePublish,
-  onSpark,
-}: EditHeroProps) {
+/**
+ * Hero strip on the IP edit page. Shows the lifecycle badge + the
+ * Spark / Save actions. Save always goes through a confirm dialog
+ * because any user-side save resets `projectStatus` back to 0
+ * (pending review) on the backend — the user needs to know their
+ * IP will temporarily disappear from the Plaza until admin re-approves.
+ *
+ * Users have no publish / unpublish surface here on purpose: lifecycle
+ * transitions out of "pending review" (5 = approve, 3 = reject, 8 =
+ * takedown) are all admin-only. The user's only knob is "save edits".
+ */
+export function EditHero({ title, projectStatus, saving, saved, onSave, onSpark }: EditHeroProps) {
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
   const [confirmOpen, setConfirmOpen] = useState(false);
-
-  const isLive = projectStatus === 0;
-  const isDraft = projectStatus === 8;
-  const statusLabel = isLive
-    ? t("heroStatusLive")
-    : isDraft
-      ? t("heroStatusDraft")
-      : t("heroStatusUnknown");
-  const statusTone = isLive
-    ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30"
-    : isDraft
-      ? "bg-amber-500/15 text-amber-300 ring-amber-500/30"
-      : "bg-muted text-muted-foreground ring-border";
 
   return (
     <div className="relative overflow-hidden border-b border-border bg-card">
@@ -75,20 +62,7 @@ export function EditHero({
             {title || t("heroSubtitle")}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset",
-                statusTone
-              )}
-            >
-              <span
-                className={cn(
-                  "size-1.5 rounded-full",
-                  isLive ? "bg-emerald-400" : isDraft ? "bg-amber-400" : "bg-muted-foreground"
-                )}
-              />
-              {statusLabel}
-            </span>
+            <ProjectStatusBadge status={projectStatus} />
             <span className="text-xs text-muted-foreground">{t("heroSubtitle")}</span>
           </div>
         </div>
@@ -108,25 +82,7 @@ export function EditHero({
 
           <Button
             size="sm"
-            variant="outline"
-            color={isLive ? "muted" : "primary"}
-            disabled={publishing || projectStatus === undefined}
             onClick={() => setConfirmOpen(true)}
-            className="min-w-[8rem] justify-center"
-          >
-            {publishing ? (
-              <IconLoader2 className="size-3.5 animate-spin" />
-            ) : isLive ? (
-              <IconWorldOff className="size-3.5" />
-            ) : (
-              <IconWorldUp className="size-3.5" />
-            )}
-            {isLive ? t("heroUnpublish") : t("heroPublish")}
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={onSave}
             disabled={saving}
             className="min-w-[8rem] justify-center"
           >
@@ -147,27 +103,25 @@ export function EditHero({
         </div>
       </div>
 
-      {/* Publish/unpublish confirm */}
+      {/* Save-confirm — fires for every save attempt so the user can't
+          miss the lifecycle effect (status resets to 0 / pending review,
+          IP temporarily off the plaza). */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {isLive ? t("unpublishConfirmTitle") : t("publishConfirmTitle")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {isLive ? t("unpublishConfirmDesc") : t("publishConfirmDesc")}
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t("saveConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("saveConfirmDesc")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              color={isLive ? "destructive" : "primary"}
+              color="primary"
               onClick={() => {
                 setConfirmOpen(false);
-                onTogglePublish();
+                onSave();
               }}
             >
-              {isLive ? t("unpublishConfirmAction") : t("publishConfirmAction")}
+              {t("saveConfirmAction")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

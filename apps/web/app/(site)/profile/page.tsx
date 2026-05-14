@@ -1,14 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  IconEdit,
-  IconArrowDown,
-  IconLoader2,
-  IconPlus,
-  IconExternalLink,
-  IconTrash,
-} from "@tabler/icons-react";
+import { IconEdit, IconLoader2, IconPlus, IconExternalLink, IconTrash } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
@@ -40,6 +33,7 @@ import { updateProject, type PersonalWork, type Project } from "@/src/services/p
 import { ApiRequestError } from "@/src/lib/api";
 import { PublishWorkDialog } from "./publish-work-dialog";
 import { useProjectEditUrl } from "@/app/(site)/ips/_hooks/use-ip";
+import { ProjectStatusBadge } from "@/app/(site)/ips/_components/project-status-badge";
 import { env } from "@/src/env";
 import { RecruitmentStrip } from "@/app/(studio)/art-studio/_components/recruitment-strip";
 import { ProfileHeader } from "./profile-header";
@@ -725,7 +719,7 @@ function ProjectCard({ project }: { project: Project }) {
       className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
       onClick={() => router.push(`/ips/${project.id}`)}
     >
-      <div className="aspect-[4/3] overflow-hidden bg-muted">
+      <div className="relative aspect-[4/3] overflow-hidden bg-muted">
         {bannerUrl ? (
           <img src={bannerUrl} alt={project.name} className="h-full w-full object-cover" />
         ) : (
@@ -733,6 +727,11 @@ function ProjectCard({ project }: { project: Project }) {
             {project.name.slice(0, 1)}
           </div>
         )}
+        {/* Lifecycle badge — same source of truth as the IP edit hero
+            (4-state model: 0 pending / 3 rejected / 5 approved / 8 offline). */}
+        <div className="absolute top-2 left-2">
+          <ProjectStatusBadge status={project.projectStatus} size="xs" />
+        </div>
       </div>
       <div className="p-3">
         <div className="truncate text-sm font-medium">{project.name}</div>
@@ -748,24 +747,6 @@ function ProjectCard({ project }: { project: Project }) {
             <IconEdit className="size-3" />
             {t("edit")}
           </button>
-          {project.projectStatus === 0 && (
-            <button
-              type="button"
-              onClick={async (e) => {
-                e.stopPropagation();
-                try {
-                  await updateProject({ id: project.id, projectStatus: 8 });
-                  toast.success(t("delistSuccess"));
-                } catch {
-                  toast.error(t("delistFailed"));
-                }
-              }}
-              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <IconArrowDown className="size-3" />
-              {t("delist")}
-            </button>
-          )}
         </div>
       </div>
     </div>
