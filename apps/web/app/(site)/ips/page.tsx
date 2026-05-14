@@ -173,10 +173,18 @@ export default function IPPlazaPage() {
   );
 
   // Categories: "All" + each entry from `/vedio/type/list`.
+  // `typeId === 53` is hidden product-side (decision 2026-05-14) — it
+  // returns from backend but shouldn't be selectable as a plaza filter.
+  // Card rendering still resolves the label via `categoriesMap` (built
+  // above from the unfiltered list) so existing IPs of this type still
+  // display their category name correctly on the card.
+  const HIDDEN_TYPE_IDS = new Set([53]);
   const categoryOptions = useMemo(
     () => [
       { id: "", name: t("allCategories") },
-      ...typesData.map((tp) => ({ id: String(tp.id), name: tp.name })),
+      ...typesData
+        .filter((tp) => !HIDDEN_TYPE_IDS.has(Number(tp.id)))
+        .map((tp) => ({ id: String(tp.id), name: tp.name })),
     ],
     [typesData, t]
   );
