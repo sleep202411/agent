@@ -46,9 +46,29 @@ export interface CrewJob {
    *   - 0 → open (created, accepting applicants — backend default)
    *   - 9 → closed (no longer accepting; closed via `useCloseJob`)
    *  Other values reserved. UI treats anything other than 9 as "open"
-   *  to stay forward-compatible with new phases the backend may add. */
+   *  to stay forward-compatible with new phases the backend may add.
+   *
+   *  Backend serialises the field as `jobStatus` on some endpoints and
+   *  `status` on others — `findCrewJobs` / `findPublicCrewJobs` below
+   *  normalise so the rest of the app only reads `status`. */
   status?: number | string;
+  /** Wire-only alias for `status` returned by `find/jobs` /
+   *  `find/public/jobs`. Don't read directly — `normalizeJob` below
+   *  copies it into `status`. */
+  jobStatus?: number | string;
   createTime?: string;
+}
+
+/**
+ * Normalize the on-wire status alias so consumers don't have to care
+ * which field the backend used. Java's `/find/jobs` / `/find/public/jobs`
+ * return `jobStatus`; other endpoints return `status`. Coerce both
+ * into a single canonical `status` field at the data-layer boundary.
+ */
+function normalizeJob(job: CrewJob): CrewJob {
+  if (job.status != null) return job;
+  if (job.jobStatus != null) return { ...job, status: job.jobStatus };
+  return job;
 }
 
 /**
@@ -65,7 +85,7 @@ async function findCrewJobs(crewId: string | number): Promise<CrewJob[]> {
   const data = await api.post<CrewJob[]>("/project/crew/job/find/jobs", {
     params: { crewId: Number(crewId) },
   });
-  return data ?? [];
+  return (data ?? []).map(normalizeJob);
 }
 
 /**
@@ -81,7 +101,7 @@ async function findPublicCrewJobs(crewId: string | number): Promise<CrewJob[]> {
   const data = await api.post<CrewJob[]>("/project/crew/job/find/public/jobs", {
     params: { crewId: Number(crewId) },
   });
-  return data ?? [];
+  return (data ?? []).map(normalizeJob);
 }
 
 /**
