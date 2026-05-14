@@ -742,7 +742,7 @@
     "merchTabTitle": "Merchandise",
     "merchTabSubtitle": "{count} SKU(s) — sell digital, physical, custom content, and licenses.",
     "merchBannerTitle": "Preview mode · coming soon",
-    "merchBannerDesc": "The merchandise schema is being designed. You can model SKUs here today, but data is not persisted and consumer-side purchase isn't wired yet.",
+    "merchBannerDesc": "Try the merchandise flow ahead of launch. Set up SKUs, pricing, and types — the public storefront opens soon.",
     "merchAddSku": "Add SKU",
     "merchEmpty": "No SKUs yet — add the first one to model how this IP makes money.",
     "merchEdit": "Edit",

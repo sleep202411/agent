@@ -742,7 +742,7 @@
     "merchTabTitle": "衍生品",
     "merchTabSubtitle": "{count} 件商品 —— 含数字 / 实物 / 定制内容 / 授权类。",
     "merchBannerTitle": "预览模式 · 即将上线",
-    "merchBannerDesc": "衍生品 schema 正在跟后端对齐。这里可以先建模 SKU，但数据不持久化，消费者侧购买流程也尚未接入。",
+    "merchBannerDesc": "提前体验衍生品上架流程：设置商品、价格、类型——面向观众的店铺即将开放。",
     "merchAddSku": "新增商品",
     "merchEmpty": "暂无商品——先新建一个，规划这个 IP 怎么变现。",
     "merchEdit": "编辑",

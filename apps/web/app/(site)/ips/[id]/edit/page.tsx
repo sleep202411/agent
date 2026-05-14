@@ -198,12 +198,12 @@ const TABS = [
   // mock data layer (see ips/_hooks/pricing-mock.ts); flip `disabled`
   // to false once real wires are in place.
   { id: "pricing", labelKey: "editPricing", icon: IconCoin, disabled: true },
-  // Merchandise tab is visible-but-preview: the data layer is mock-
-  // backed (see ips/_hooks/merchandise-mock.ts) and the tab itself
-  // shows a "preview / coming soon" banner up top. Kept clickable on
-  // purpose so backend / colleagues can step through the full CRUD
-  // and see exactly which schema needs to land.
-  { id: "merchandise", labelKey: "editMerchandise", icon: IconShoppingBag },
+  // Merchandise tab is feature-gated alongside Pricing. The full CRUD
+  // UI is built and exercises a mock data layer (see
+  // ips/_hooks/merchandise-mock.ts); flip `disabled` to false once
+  // backend ships the matching endpoints and the storefront is ready
+  // for owner-side use.
+  { id: "merchandise", labelKey: "editMerchandise", icon: IconShoppingBag, disabled: true },
   { id: "team", labelKey: "editTeam", icon: IconUsers },
   { id: "faq", labelKey: "editFAQ", icon: IconFileText },
 ] as const;
