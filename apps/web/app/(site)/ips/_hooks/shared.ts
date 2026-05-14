@@ -127,6 +127,7 @@ export const ipKeys = {
   plazaForYou: (page: number, pageSize: number) =>
     ["ip", "plaza", "for-you", page, pageSize] as const,
   pricing: (id: string) => ["ip", "pricing", id] as const,
+  merchandise: (id: string) => ["ip", "merchandise", id] as const,
 };
 
 // ─── Image URL helpers ──────────────────────────────

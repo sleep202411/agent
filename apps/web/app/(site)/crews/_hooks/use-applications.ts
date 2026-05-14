@@ -109,13 +109,17 @@ async function agreeApplicant(applyId: number): Promise<void> {
 /**
  * Reject an applicant.
  *
- * Endpoint: `POST /project/crew/job/refuse?applyId={id}&message={...}`
- * (refuseCrewJob). Both params on the query string per swagger.
- * `message` is the rejection reason shown back to the applicant;
- * empty string is acceptable when the UI doesn't collect one.
+ * Endpoint: `POST /project/job/refuse?applyId={id}&message={...}`.
+ * Despite the swagger doc suggesting a `/project/crew/job/refuse`
+ * variant (refuseCrewJob), backend did NOT actually ship the
+ * crew-scoped path — confirmed 2026-05-14 with a 404 on that route.
+ * Stay on the legacy `/project/job/refuse` until backend explicitly
+ * ships the crew-scoped one (and confirms it). `message` is the
+ * rejection reason shown back to the applicant; empty string is
+ * acceptable when the UI doesn't collect one.
  */
 async function rejectApplicant(input: { applicantId: number; message?: string }): Promise<void> {
-  await api.post("/project/crew/job/refuse", {
+  await api.post("/project/job/refuse", {
     params: {
       applyId: Number(input.applicantId),
       message: input.message ?? "",

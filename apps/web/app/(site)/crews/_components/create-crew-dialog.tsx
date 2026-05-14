@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconLoader2, IconPhoto } from "@tabler/icons-react";
 import { toast } from "sonner";
+import posthog from "posthog-js";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -171,11 +172,15 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
       },
       {
         onSuccess: ({ id }) => {
+          posthog.capture("crew_created", { crew_id: id });
           onOpenChange(false);
           toast.success(t("createSuccess"));
           router.push(localizePath(`/crews/${id}/workspace`, locale));
         },
-        onError: (err) => reportError(err, "createFailed"),
+        onError: (err) => {
+          posthog.captureException(err);
+          reportError(err, "createFailed");
+        },
       }
     );
   };

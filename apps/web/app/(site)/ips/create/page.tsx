@@ -13,6 +13,7 @@ import {
   IconInfoCircle,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import posthog from "posthog-js";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useTagList } from "@/src/hooks/use-tag-list";
 import { useIPTypes } from "@/app/(site)/ips/_hooks/use-ip-list";
@@ -574,7 +575,19 @@ export default function CreateIPPage() {
               Next <IconArrowRight className="size-4" />
             </Button>
           ) : (
-            <Button className="bg-green-500 hover:bg-green-600" onClick={() => setSubmitted(true)}>
+            <Button
+              className="bg-green-500 hover:bg-green-600"
+              onClick={() => {
+                posthog.capture("ip_create_wizard_submitted", {
+                  project_type: form.projectType,
+                  target_episodes: form.targetEpisodes,
+                  funding_mode: form.fundingMode,
+                  reward_tiers: form.rewards.length,
+                  tag_count: form.tags.length,
+                });
+                setSubmitted(true);
+              }}
+            >
               <IconCheck className="size-4" /> Submit & Publish
             </Button>
           )}

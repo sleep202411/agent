@@ -22,9 +22,12 @@ export const getRecruitmentList = (params: { page?: number; pageSize?: number } 
     pageSize: String(params.pageSize ?? 50),
   });
 
-/** 同意招募申请 */
-export const agreeJobApply = (applyId: string) => api.postForm("/project/job/aggree", { applyId });
+/** 同意招募申请 — backend renamed to crew-scoped path. */
+export const agreeJobApply = (applyId: string) =>
+  api.postForm("/project/crew/job/aggree", { applyId });
 
-/** 拒绝招募申请 */
+/** 拒绝招募申请. Path stays at the legacy `/project/job/refuse` —
+ *  backend did NOT rename this one alongside `aggree` (confirmed
+ *  2026-05-14: `/project/crew/job/refuse` returns 404). */
 export const refuseJobApply = (applyId: string, message = "") =>
   api.postForm("/project/job/refuse", { applyId, message });

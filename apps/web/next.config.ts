@@ -14,6 +14,8 @@ if (!SERVER_URL || !JAVA_STUDIO_URL || !JAVA_CONTENT_URL) {
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
+  // Required to support PostHog trailing slash API requests via the /ingest proxy.
+  skipTrailingSlashRedirect: true,
   // Pre-existing TS errors in storyboard-save / interactive-node / etc. need dedicated cleanup;
   // the old Vite build didn't gate on tsc either.
   typescript: {
@@ -31,7 +33,19 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return {
-      beforeFiles: [],
+      beforeFiles: [
+        // PostHog reverse proxy — routes /ingest/* to PostHog ingestion
+        // and /ingest/static/* + /ingest/array/* to the assets CDN.
+        {
+          source: "/ingest/static/:path*",
+          destination: "https://us-assets.i.posthog.com/static/:path*",
+        },
+        {
+          source: "/ingest/array/:path*",
+          destination: "https://us-assets.i.posthog.com/array/:path*",
+        },
+        { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
+      ],
       afterFiles: [
         // NestJS server (strip /aurora prefix)
         { source: "/aurora/:path*", destination: `${SERVER_URL}/:path*` },
