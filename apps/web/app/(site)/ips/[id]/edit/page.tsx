@@ -191,7 +191,11 @@ const TABS = [
   { id: "basic", labelKey: "editBasic", icon: IconFileText },
   { id: "trailer", labelKey: "editTrailer", icon: IconVideo },
   { id: "episodes", labelKey: "editEpisodes", icon: IconPlaylist },
-  { id: "pricing", labelKey: "editPricing", icon: IconCoin },
+  // Pricing tab is feature-gated until the community-score / unlock
+  // endpoints ship on the backend. UI is fully built and exercises a
+  // mock data layer (see ips/_hooks/pricing-mock.ts); flip `disabled`
+  // to false once real wires are in place.
+  { id: "pricing", labelKey: "editPricing", icon: IconCoin, disabled: true },
   { id: "team", labelKey: "editTeam", icon: IconUsers },
   { id: "faq", labelKey: "editFAQ", icon: IconFileText },
 ] as const;
@@ -659,22 +663,33 @@ export default function IPEditPage() {
       <div className="sticky top-14 z-30 border-b border-border bg-card/95 backdrop-blur supports-backdrop-filter:bg-card/70">
         <div className="relative flex items-center justify-center px-6">
           <nav className="flex items-center gap-1 overflow-x-auto">
-            {visibleTabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-3 text-sm transition-colors",
-                  activeTab === tab.id
-                    ? "border-primary font-semibold text-primary"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <tab.icon className="size-4" />
-                {t(tab.labelKey)}
-              </button>
-            ))}
+            {visibleTabs.map((tab) => {
+              const disabled = "disabled" in tab && tab.disabled;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    if (disabled) {
+                      toast.info(tc("comingSoon"));
+                      return;
+                    }
+                    setActiveTab(tab.id);
+                  }}
+                  className={cn(
+                    "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-3 text-sm transition-colors",
+                    disabled
+                      ? "cursor-not-allowed border-transparent text-muted-foreground/50"
+                      : activeTab === tab.id
+                        ? "border-primary font-semibold text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <tab.icon className="size-4" />
+                  {t(tab.labelKey)}
+                </button>
+              );
+            })}
           </nav>
         </div>
       </div>

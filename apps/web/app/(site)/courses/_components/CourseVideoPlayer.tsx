@@ -150,16 +150,22 @@ export function CourseVideoPlayer({
   }
 
   return (
+    // Mobile (<lg): sticky-top so the player stays visible while the
+    // page scrolls through title / description / playlist. Video itself
+    // is 16:9 (`aspect-video`) so the first paint doesn't eat the whole
+    // viewport. Desktop (lg+): fills its grid cell, content scrolls
+    // inside the sibling panel. `top-16` mirrors the global header's
+    // 4rem height — keeping this in sync is the only coupling.
     <section
       ref={containerRef}
-      className="relative flex h-full min-h-[420px] flex-col overflow-hidden bg-[radial-gradient(circle_at_20%_20%,#2b1832_0%,#121322_42%,#08080d_100%)] lg:min-h-0"
+      className="sticky top-16 z-10 flex flex-col overflow-hidden bg-[radial-gradient(circle_at_20%_20%,#2b1832_0%,#121322_42%,#08080d_100%)] lg:static lg:top-auto lg:z-auto lg:h-full lg:min-h-0"
     >
       {videoUrl ? (
         <video
           ref={videoRef}
           key={videoUrl}
           src={videoUrl}
-          className="min-h-0 flex-1 bg-black object-contain"
+          className="aspect-video w-full bg-black object-contain lg:aspect-auto lg:min-h-0 lg:flex-1"
           preload="metadata"
           onClick={togglePlay}
           onPlay={handlePlay}
@@ -168,7 +174,7 @@ export function CourseVideoPlayer({
           onTimeUpdate={handleTimeUpdate}
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="flex aspect-video w-full flex-col items-center justify-center gap-4 px-6 text-center lg:aspect-auto lg:min-h-0 lg:flex-1">
           <button
             type="button"
             className="flex size-16 items-center justify-center rounded-full bg-[#f0444c] text-black"

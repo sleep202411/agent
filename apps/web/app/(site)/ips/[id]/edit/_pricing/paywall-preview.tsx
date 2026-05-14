@@ -29,12 +29,11 @@ export function PaywallPreview({ episodes, pricing }: PaywallPreviewProps) {
     );
   }
 
-  // Episodes are persisted in `videoNumber` order; defensive sort
-  // keeps the preview correct even if the cache hands us a stale
-  // reorder mid-mutation.
-  const ordered = [...episodes].sort((a, b) => a.videoNumber - b.videoNumber);
-  const freeCount = Math.min(pricing.freeEpisodeCount, ordered.length);
-  const allFree = freeCount >= ordered.length;
+  // Position is the source of truth here, not `videoNumber` — backend
+  // doesn't reliably populate the latter, so the `useProjectEpisodes`
+  // array order (already dnd-kit-sorted) is what we trust.
+  const freeCount = Math.min(pricing.freeEpisodeCount, episodes.length);
+  const allFree = freeCount >= episodes.length;
 
   return (
     <div className="rounded-xl border border-border bg-card p-4">
@@ -47,13 +46,14 @@ export function PaywallPreview({ episodes, pricing }: PaywallPreviewProps) {
             ? t("pricingPreviewAllFree")
             : t("pricingPreviewSummary", {
                 free: freeCount,
-                paid: ordered.length - freeCount,
+                paid: episodes.length - freeCount,
               })}
         </div>
       </div>
 
       <div className="-mx-1 flex items-stretch gap-2 overflow-x-auto px-1 pb-1">
-        {ordered.map((ep, idx) => {
+        {episodes.map((ep, idx) => {
+          const position = idx + 1;
           const isFree = idx < freeCount;
           const showWall = !isFree && idx === freeCount;
           const override = pricing.overrides[ep.id];
@@ -66,7 +66,7 @@ export function PaywallPreview({ episodes, pricing }: PaywallPreviewProps) {
             <div key={ep.id} className="flex items-stretch gap-2">
               {showWall ? <PaywallDivider /> : null}
               <EpisodeChip
-                index={ep.videoNumber}
+                index={position}
                 title={ep.title}
                 price={price}
                 hasOverride={!isFree && typeof override === "number"}

@@ -35,9 +35,10 @@ export function EpisodeOverridesList({
   const t = useTranslations("ipEdit");
   const [open, setOpen] = useState(false);
 
-  const ordered = [...episodes].sort((a, b) => a.videoNumber - b.videoNumber);
+  // Trust the array order — `videoNumber` may be 0 / missing from
+  // some backend rows. Position is computed as `idx + 1` at render time.
   const overrideCount = Object.keys(overrides).filter(
-    (id) => ordered.some((e) => e.id === id) // ignore stale overrides for deleted episodes
+    (id) => episodes.some((e) => e.id === id) // ignore stale overrides for deleted episodes
   ).length;
 
   return (
@@ -65,23 +66,27 @@ export function EpisodeOverridesList({
 
       {open ? (
         <div className="border-t border-border/60 px-4 py-3">
-          {ordered.length === 0 ? (
+          {episodes.length === 0 ? (
             <div className="py-6 text-center text-xs text-muted-foreground">
               {t("pricingOverridesNoEpisodes")}
             </div>
           ) : (
             <ul className="space-y-1.5">
-              {ordered.map((ep) => (
-                <OverrideRow
-                  key={ep.id}
-                  episode={ep}
-                  isFree={ep.videoNumber <= freeEpisodeCount}
-                  defaultPrice={defaultPriceIntegral}
-                  override={overrides[ep.id]}
-                  onChange={(price) => onChangeOverride(ep.id, price)}
-                  onClear={() => onClearOverride(ep.id)}
-                />
-              ))}
+              {episodes.map((ep, idx) => {
+                const position = idx + 1;
+                return (
+                  <OverrideRow
+                    key={ep.id}
+                    episode={ep}
+                    position={position}
+                    isFree={position <= freeEpisodeCount}
+                    defaultPrice={defaultPriceIntegral}
+                    override={overrides[ep.id]}
+                    onChange={(price) => onChangeOverride(ep.id, price)}
+                    onClear={() => onClearOverride(ep.id)}
+                  />
+                );
+              })}
             </ul>
           )}
         </div>
@@ -92,6 +97,9 @@ export function EpisodeOverridesList({
 
 interface OverrideRowProps {
   episode: Episode;
+  /** 1-based position in the episode list (not `episode.videoNumber`,
+   *  which the backend leaves at 0 for some rows). */
+  position: number;
   isFree: boolean;
   defaultPrice: number;
   override: number | undefined;
@@ -101,6 +109,7 @@ interface OverrideRowProps {
 
 function OverrideRow({
   episode,
+  position,
   isFree,
   defaultPrice,
   override,
@@ -119,7 +128,7 @@ function OverrideRow({
       )}
     >
       <span className="w-12 shrink-0 font-mono text-[11px] font-semibold tabular-nums text-muted-foreground">
-        EP{String(episode.videoNumber).padStart(2, "0")}
+        EP{String(position).padStart(2, "0")}
       </span>
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">
         {episode.title || t("pricingOverridesUntitled")}
