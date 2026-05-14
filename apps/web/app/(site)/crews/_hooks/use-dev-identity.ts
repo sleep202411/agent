@@ -15,7 +15,11 @@
 
 import { useSyncExternalStore } from "react";
 
-export type Identity = { kind: "visitor" } | { kind: "owner" } | { kind: "member"; name: string };
+export type Identity =
+  | { kind: "visitor" }
+  | { kind: "owner" }
+  | { kind: "finance" }
+  | { kind: "member"; name: string };
 
 const KEY = "__crews_dev_identity";
 const listeners = new Set<() => void>();
@@ -38,6 +42,7 @@ export function setDevIdentity(raw: string) {
 export function parseIdentity(raw: string): Identity {
   if (raw === "visitor") return { kind: "visitor" };
   if (raw === "owner") return { kind: "owner" };
+  if (raw === "finance") return { kind: "finance" };
   if (raw.startsWith("member:")) return { kind: "member", name: raw.slice(7) };
   return { kind: "owner" };
 }

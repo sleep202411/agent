@@ -28,7 +28,12 @@ export function CourseDetailPanel({ courseDetail, onEpisodeSelect }: CourseDetai
   const { detail, series, currentId } = courseDetail;
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col border-l border-[#171722] bg-[#07070c] px-6 py-7 text-white lg:w-[360px] xl:w-[400px]">
+    // Mobile (<lg): flows under the sticky video and scrolls with the
+    // page — no internal scroll, no fixed height. A top border replaces
+    // the desktop left border so the seam between video and panel reads.
+    // Desktop (lg+): stays a fixed-width column with its own internal
+    // scroll for the playlist (mirrors YouTube / Bilibili PC chrome).
+    <aside className="flex w-full flex-col border-t border-[#171722] bg-[#07070c] px-6 py-7 text-white lg:h-full lg:min-h-0 lg:w-[360px] lg:border-t-0 lg:border-l xl:w-[400px]">
       <div className="border-b border-[#1d1d29] pb-6">
         <Link
           href={localizePath("/courses", locale)}
@@ -47,9 +52,9 @@ export function CourseDetailPanel({ courseDetail, onEpisodeSelect }: CourseDetai
         ) : null}
       </div>
 
-      <div className="mt-6 flex min-h-0 flex-1 flex-col">
+      <div className="mt-6 flex flex-col lg:min-h-0 lg:flex-1">
         <h2 className="text-base font-bold">{t("courseDirectory")}</h2>
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-4 pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="space-y-2">
             {series.map((course, index) => {
               const active = course.id === currentId;

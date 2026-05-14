@@ -30,6 +30,7 @@ import {
   IconChevronRight,
   IconEdit,
   IconLoader2,
+  IconMovie,
   IconLock,
   IconRocket,
   IconTrash,
@@ -54,6 +55,7 @@ import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-d
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
 import { JobApplicantsList } from "@/app/(site)/crews/_components/job-applicants-list";
+import { EpisodesTab } from "@/app/(site)/crews/[id]/workspace/_components/episodes/episodes-tab";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,6 +71,11 @@ const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },
   { id: "roles", labelKey: "tabRecruitment", icon: IconBriefcase },
   { id: "members", labelKey: "tabMembers", icon: IconUsers },
+  // Episodes tab is feature-gated until the backend ships its endpoints.
+  // The UI is fully built and exercises a mock data layer (see
+  // crews/_hooks/episode-mock.ts); flip `disabled` to false once the
+  // real wire is in place.
+  { id: "episodes", labelKey: "tabEpisodes", icon: IconMovie, disabled: true },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -323,16 +330,25 @@ export default function CrewWorkspacePage() {
           <nav className="sticky top-6 space-y-0.5">
             {TABS.map((tab) => {
               const Icon = tab.icon;
+              const disabled = "disabled" in tab && tab.disabled;
               return (
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    if (disabled) {
+                      toast.info(tc("comingSoon"));
+                      return;
+                    }
+                    setActiveTab(tab.id);
+                  }}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
-                    activeTab === tab.id
-                      ? "bg-primary/10 font-semibold text-primary"
-                      : "text-muted-foreground hover:bg-secondary/50"
+                    disabled
+                      ? "cursor-not-allowed text-muted-foreground/50 hover:bg-secondary/30"
+                      : activeTab === tab.id
+                        ? "bg-primary/10 font-semibold text-primary"
+                        : "text-muted-foreground hover:bg-secondary/50"
                   )}
                 >
                   <Icon className="size-4" />
@@ -478,6 +494,8 @@ export default function CrewWorkspacePage() {
               )}
             </div>
           ) : null}
+
+          {activeTab === "episodes" ? <EpisodesTab crewId={id} /> : null}
 
           {activeTab === "members" ? (
             <div className="rounded-xl border border-border bg-card p-5">

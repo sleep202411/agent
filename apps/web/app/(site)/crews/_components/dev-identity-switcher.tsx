@@ -97,6 +97,14 @@ export function DevIdentitySwitcher() {
               subtitle="Producer / creator"
             />
           </Section>
+          <Section label="Finance">
+            <Row
+              active={identity.kind === "finance"}
+              onClick={() => choose({ kind: "finance" })}
+              title="Finance"
+              subtitle="Sets per-episode revenue"
+            />
+          </Section>
           {members.length > 0 && (
             <Section label="Members">
               <div className="max-h-64 overflow-y-auto">
@@ -161,6 +169,7 @@ function Row({
 function identityLabel(identity: Identity, members: { name: string; role: string }[]): string {
   if (identity.kind === "visitor") return "Visitor";
   if (identity.kind === "owner") return "Owner";
+  if (identity.kind === "finance") return "Finance";
   const m = members.find((x) => x.name === identity.name);
   return m ? `${m.name} · ${m.role}` : identity.name;
 }

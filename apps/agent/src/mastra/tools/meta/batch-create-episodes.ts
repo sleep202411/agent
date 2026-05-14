@@ -114,7 +114,7 @@ function buildPayload(projectId: string, items: EpisodeItem[]): JavaEpisodeCreat
 export const batchCreateEpisode = createTool({
   id: "batch_create_episode",
   description:
-    'Batch-create episodes (worldepisode) in the current project — direct write, no user confirmation needed. Use when the user has already confirmed they want to save N new episode outlines (typical trigger: user clicked the "save" button on an episode-planner proposal, or said "就这么定 / 继续 / 保存这 N 集"). Each episode needs a `title` and `introduction` (synopsis); `frontPrompt` / `behindPrompt` are optional style modifiers applied to every shot in that episode. **Do not use** for renaming a single episode — use `update_episode` instead. **Do not use** for character / scene / prop saves — those have their own batch_create_* tools. Sister tool of batch_create_character / _scene / _prop, mirroring the same direct-commit pattern. **Auto-cleanup** (two passes, both opportunistic): (1) deletes pre-existing episodes whose introduction is blank (Java seeds one when a project is first created), reported in `cleanedDefaults`; (2) for each just-created episode, lists its shots and deletes the ones with blank `description` (Java also seeds a single empty stub shot per new episode), reported in `cleanedDefaultShots`. Mention either in your recap when non-zero ("saved 8 episodes, removed 1 default placeholder, removed 8 empty default shots") so the user knows their counts match what they asked for.',
+    'Batch-create episodes (worldepisode) in the current project — direct write, no user confirmation needed. Use when the user has already confirmed they want to save N new episode outlines (typical trigger: user clicked the "save" button on an episode-planner proposal, or said "就这么定 / 继续 / 保存这 N 集"). Each episode needs a `title` and `introduction` (synopsis); `frontPrompt` / `behindPrompt` are optional style modifiers applied to every shot in that episode. **Do not use** for renaming a single episode — use `update_episode` instead. **Do not use** for character / scene / prop saves — those have their own batch_create_* tools. Sister tool of batch_create_character / _scene / _prop, mirroring the same direct-commit pattern. **Auto-cleanup** (two passes, both opportunistic): (1) deletes pre-existing episodes whose title still matches the bare Java-seed pattern (`第N集` with no extra content) AND whose introduction is blank — never touches anything renamed by the user or with any intro filled in. Reported in `cleanedDefaults`; (2) for each just-created episode, lists its shots and deletes the ones with blank `description` (Java also seeds a single empty stub shot per new episode), reported in `cleanedDefaultShots`. Mention either in your recap when non-zero ("saved 8 episodes, removed 1 default placeholder, removed 8 empty default shots") so the user knows their counts match what they asked for.',
   inputSchema: InputSchema,
   outputSchema: OutputSchema,
   execute: async ({ items }, execCtx) => {
@@ -207,16 +207,23 @@ export const batchCreateEpisode = createTool({
 
     // ─── Cleanup: drop Java's untouched-default placeholders ───────────
     //
-    // Java auto-creates a stub episode when a project is initialised. If
-    // the user never edited it (introduction stayed empty), it'll sit
-    // alongside the freshly-saved real episodes as an orphan "第N+1集".
-    // Detect any pre-existing episode whose introduction is empty/blank
-    // and isn't one we just wrote, then DELETE it. Conservative on
-    // purpose: we only check `introduction` — empty title alone isn't
-    // enough signal (Java often picks "第1集" by default which a user
-    // might genuinely keep), and we don't query storyboard rows because
-    // (a) it costs an extra Java round-trip per candidate, and (b)
-    // empty-intro is already a strong "untouched" signal in practice.
+    // Java auto-creates a stub episode when a project is initialised
+    // with a default title shaped like "第N集" and an empty
+    // introduction. If the user never edits it, it sits alongside the
+    // real episodes as an orphan. We delete it on commit.
+    //
+    // Two AND-ed signals are required:
+    //   1. introduction is empty after trim
+    //   2. title matches the bare Java-seed pattern /^第\s*\d+\s*集\s*$/
+    //
+    // Both gates exist because seeing only an empty intro caused
+    // collateral damage in the past — a user's prior batch_create
+    // commit had episodes with intros that *became* empty on the Java
+    // side (separate bug), and the cleanup nuked them on the next
+    // batch. Requiring the title to also look like Java's default
+    // makes this near-impossible to misfire: any user-edited title
+    // (e.g. "第1集 荧惑守心" or "Pilot") is automatically protected.
+    const DEFAULT_TITLE_PATTERN = /^第\s*\d+\s*集\s*$/;
     const justCommittedIds = new Set(created.map((c) => c.id));
     const cleanedDefaults: { id: string; title: string }[] = [];
     for (const ep of listedEpisodes) {
@@ -224,6 +231,8 @@ export const batchCreateEpisode = createTool({
       if (justCommittedIds.has(id)) continue;
       const intro = String(ep.introduction ?? "").trim();
       if (intro !== "") continue;
+      const title = String(ep.title ?? "").trim();
+      if (!DEFAULT_TITLE_PATTERN.test(title)) continue;
       try {
         await javaRequest<unknown>(
           ctx,

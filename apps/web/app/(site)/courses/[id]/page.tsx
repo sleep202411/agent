@@ -32,15 +32,19 @@ export default function CourseDetailPage() {
   }, [currentCourseId, videoLinkError]);
 
   return (
-    <main className="h-[calc(100vh-4rem)] overflow-hidden bg-[#08080d] text-white">
+    // Mobile (<lg): natural page height so the playlist can scroll with
+    // the whole page — sticky video pins the player at the top while
+    // the user browses episodes. Desktop (lg+): locked to viewport with
+    // independent scroll regions per pane.
+    <main className="bg-[#08080d] text-white lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       {isLoading ? (
-        <div className="flex h-full items-center justify-center">
+        <div className="flex min-h-[60vh] items-center justify-center lg:h-full lg:min-h-0">
           <Spinner className="size-7 text-[#ff5967]" />
         </div>
       ) : null}
 
       {error ? (
-        <div className="flex h-full items-center justify-center px-5">
+        <div className="flex min-h-[60vh] items-center justify-center px-5 lg:h-full lg:min-h-0">
           <Alert variant="destructive" className="max-w-xl border-[#3a2230] bg-[#111119]">
             <IconAlertCircle />
             <AlertTitle>{t("loadFailedTitle")}</AlertTitle>
@@ -50,7 +54,7 @@ export default function CourseDetailPage() {
       ) : null}
 
       {!isLoading && !error ? (
-        <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_400px]">
           <CourseVideoPlayer
             key={detail.currentId}
             courseId={detail.currentId}

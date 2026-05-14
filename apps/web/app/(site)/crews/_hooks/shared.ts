@@ -38,4 +38,9 @@ export const crewKeys = {
   applicants: (jobId: number) => ["crew", "applicants", jobId] as const,
   queryList: (filter: QueryCrewListFilter) => ["crew", "queryList", filter] as const,
   mine: ["crew", "mine"] as const,
+  episodes: (crewId: string) => ["crew", "episodes", crewId] as const,
+  episodeAssignments: (crewId: string, episodeId: number) =>
+    ["crew", "episode", crewId, episodeId, "assignments"] as const,
+  episodeActivity: (crewId: string, episodeId: number) =>
+    ["crew", "episode", crewId, episodeId, "activity"] as const,
 };
