@@ -15,7 +15,12 @@ export interface Project {
   bannerLink?: string | null;
   videoLink?: string | null;
   description?: string | null;
-  projectStatus?: number; // 0=正常, 1=下架
+  /** Lifecycle status (admin-controlled except for 0):
+   *  0 = pending review (default after any user save)
+   *  3 = rejected by admin
+   *  5 = approved by admin (visible in Plaza)
+   *  8 = taken down by admin (admin-only) */
+  projectStatus?: number;
   contact?: string | null;
   tag?: string | null;
   background?: string | null;

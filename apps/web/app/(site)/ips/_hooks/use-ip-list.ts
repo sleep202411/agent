@@ -26,6 +26,11 @@ interface WireProject {
   videoBanner: string | null;
   contact: string | null;
   tags: string | null;
+  /** Backend names this `viewStatus` on the list endpoint, but the
+   *  values are the IP lifecycle enum (0=pending / 3=rejected /
+   *  5=approved / 8=offline) — same shape as `projectStatus`
+   *  elsewhere. Don't confuse it with the personal-video viewStatus
+   *  (0/1 visibility toggle). Mapped onto `projectStatus` below. */
   viewStatus: number | null;
   createTime: string | null;
 }
