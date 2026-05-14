@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { IconLoader2 } from "@tabler/icons-react";
+import { IconClock, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SwitchControl } from "@/components/ui/schema-field/switch-control";
 import { ApiRequestError } from "@/src/lib/api";
 import { useCreateJob } from "@/app/(site)/crews/_hooks/use-jobs";
 import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
@@ -60,6 +61,14 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: CreateCrewJo
   const [roleId, setRoleId] = useState<string>("");
   const [jobDescription, setJobDescription] = useState("");
   const [jobNumber, setJobNumber] = useState<string>("1");
+  // Salary composite — feature-gated until backend ships the matching
+  // fields on `/project/crew/job/create`. Kept as live state (rather
+  // than stubbed) so the day the gate flips we just include these in
+  // the mutate payload and drop the disabled prop.
+  const [salaryPeriod, setSalaryPeriod] = useState<string>("month");
+  const [salaryMin, setSalaryMin] = useState<string>("");
+  const [salaryMax, setSalaryMax] = useState<string>("");
+  const [salaryNegotiable, setSalaryNegotiable] = useState<boolean>(false);
 
   const { data: roles = [] } = useProjectRoles();
   const create = useCreateJob(crewId);
@@ -71,6 +80,10 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: CreateCrewJo
     setRoleId("");
     setJobDescription("");
     setJobNumber("1");
+    setSalaryPeriod("month");
+    setSalaryMin("");
+    setSalaryMax("");
+    setSalaryNegotiable(false);
   }, [open]);
 
   const selectedRole = useMemo(() => roles.find((r) => String(r.id) === roleId), [roles, roleId]);
@@ -168,6 +181,81 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: CreateCrewJo
                 placeholder={t("createJobNumberPlaceholder")}
                 disabled={submitting}
               />
+            </Field>
+
+            {/* Salary composite — feature-gated. Whole field is opacity-
+                halved + pointer-events-none so it reads as "preview, not
+                live". When backend adds the four matching fields
+                (salaryPeriod / salaryMin / salaryMax / salaryNegotiable),
+                drop `salaryDisabled` and include them in the mutate
+                payload — no other change needed. */}
+            <Field
+              data-disabled="true"
+              className="pointer-events-none rounded-lg border border-dashed border-border/60 bg-muted/20 p-3 opacity-60"
+            >
+              <FieldLabel className="flex items-center justify-between">
+                <span>{t("createJobSalaryLabel")}</span>
+                <span className="pointer-events-auto inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300 ring-1 ring-inset ring-amber-500/30">
+                  <IconClock className="size-2.5" />
+                  {tc("comingSoon")}
+                </span>
+              </FieldLabel>
+
+              <div className="space-y-2.5">
+                {/* Pay period — 月薪 / 集酬 / 项目费 */}
+                <Select value={salaryPeriod} onValueChange={setSalaryPeriod} disabled>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={t("createJobSalaryPeriodPlaceholder")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="month">{t("salaryPeriodMonth")}</SelectItem>
+                    <SelectItem value="episode">{t("salaryPeriodEpisode")}</SelectItem>
+                    <SelectItem value="project">{t("salaryPeriodProject")}</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Range — min ~ max, with currency suffix */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={salaryMin}
+                    onChange={(e) => setSalaryMin(e.target.value)}
+                    placeholder={t("createJobSalaryMinPlaceholder")}
+                    disabled
+                    className="flex-1 text-xs tabular-nums"
+                  />
+                  <span className="text-xs text-muted-foreground">–</span>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={salaryMax}
+                    onChange={(e) => setSalaryMax(e.target.value)}
+                    placeholder={t("createJobSalaryMaxPlaceholder")}
+                    disabled
+                    className="flex-1 text-xs tabular-nums"
+                  />
+                  <span className="w-12 shrink-0 text-center text-xs text-muted-foreground">
+                    {t("salaryCurrencyCNY")}
+                  </span>
+                </div>
+
+                {/* Negotiable toggle — when on, the backend will ignore
+                    min/max and just persist "面议" semantics. */}
+                <div className="flex items-center justify-between pt-1">
+                  <div>
+                    <div className="text-xs text-foreground">
+                      {t("createJobSalaryNegotiableLabel")}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {t("createJobSalaryNegotiableHint")}
+                    </div>
+                  </div>
+                  <SwitchControl value={salaryNegotiable} onChange={setSalaryNegotiable} disabled />
+                </div>
+              </div>
             </Field>
           </FieldGroup>
         </DialogBody>

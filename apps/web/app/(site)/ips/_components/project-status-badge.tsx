@@ -27,31 +27,36 @@ interface StatusMeta {
   dot: string;
 }
 
+// Palette tuned for overlay-on-image legibility — opaque-ish bg + white
+// text + bright dot + thin light ring so the chip reads against busy
+// poster art (profile My-IPs grid) as well as flat dark surfaces (the
+// IP edit hero). `backdrop-blur` applied on the wrapper smudges
+// whatever's behind it, even when the bg alpha rounds to 0.9.
 const STATUS_META: Record<string | number, StatusMeta> = {
   0: {
     labelKey: "heroStatusPendingReview",
-    tone: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
-    dot: "bg-amber-400",
+    tone: "bg-amber-500/90 text-white ring-amber-200/30",
+    dot: "bg-amber-100",
   },
   3: {
     labelKey: "heroStatusRejected",
-    tone: "bg-red-500/15 text-red-300 ring-red-500/30",
-    dot: "bg-red-400",
+    tone: "bg-rose-500/90 text-white ring-rose-200/30",
+    dot: "bg-rose-100",
   },
   5: {
     labelKey: "heroStatusApproved",
-    tone: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
-    dot: "bg-emerald-400",
+    tone: "bg-emerald-500/90 text-white ring-emerald-200/30",
+    dot: "bg-emerald-100",
   },
   8: {
     labelKey: "heroStatusOffline",
-    tone: "bg-muted text-muted-foreground ring-border",
-    dot: "bg-muted-foreground",
+    tone: "bg-zinc-800/90 text-zinc-100 ring-zinc-400/30",
+    dot: "bg-zinc-300",
   },
   unknown: {
     labelKey: "heroStatusUnknown",
-    tone: "bg-muted text-muted-foreground ring-border",
-    dot: "bg-muted-foreground",
+    tone: "bg-zinc-800/90 text-zinc-100 ring-zinc-400/30",
+    dot: "bg-zinc-300",
   },
 };
 
@@ -66,7 +71,7 @@ export function ProjectStatusBadge({ status, size = "sm", className }: ProjectSt
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full font-semibold ring-1 ring-inset",
+        "inline-flex items-center rounded-full font-semibold shadow-sm ring-1 ring-inset backdrop-blur-md",
         sizeCls,
         meta.tone,
         className
