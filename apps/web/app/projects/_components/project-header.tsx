@@ -279,151 +279,156 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
                 {tc("upgrade")}
               </button>
             </div>
-
-            {creditsOpen ? (
-              <div className="absolute right-0 top-12 z-50 w-96 rounded-2xl border border-border bg-popover p-3 shadow-2xl">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-semibold">{t("creditsRecord")}</div>
-                    <div className="text-xs text-muted-foreground">{t("creditsRecordDesc")}</div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      color="muted"
-                      size="icon-xs"
-                      onClick={async () => {
-                        dispatch(setCreditsLoading(true));
-                        dispatch(setIntegralRecordsLoading(true));
-                        try {
-                          const [score, records] = await Promise.all([
-                            backendApi.post<Record<string, unknown>>("/api/ai/record/myscore"),
-                            backendApi.post<Paginated<IntegralRecord>>(
-                              "/api/ai/record/integralrecord/list",
-                              { data: { page: 1, pageSize: 20 } }
-                            ),
-                          ]);
-                          const value = Number(
-                            score.scoreBalance ??
-                              score.score ??
-                              score.credits ??
-                              score.integral ??
-                              score.value ??
-                              0
-                          );
-                          dispatch(setCredits(Number.isFinite(value) ? value : 0));
-                          dispatch(setIntegralRecords(records?.list ?? []));
-                        } catch (error) {
-                          console.error("[ProjectHeader] 刷新积分失败:", error);
-                        } finally {
-                          dispatch(setCreditsLoading(false));
-                          dispatch(setIntegralRecordsLoading(false));
-                        }
-                      }}
-                    >
-                      <IconRefresh className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      color="muted"
-                      size="icon-xs"
-                      onClick={() => setCreditsOpen(false)}
-                    >
-                      ×
-                    </Button>
-                  </div>
-                </div>
-
-                {isIntegralRecordsLoading ? (
-                  <div className="flex h-32 items-center justify-center">
-                    <IconRefresh className="size-4 animate-spin text-muted-foreground" />
-                  </div>
-                ) : integralRecords.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
-                    {t("noCreditsRecord")}
-                  </div>
-                ) : (
-                  <div className="max-h-72 space-y-2 overflow-auto">
-                    {integralRecords.map((record, index) => {
-                      // Backend `recordType` enum: 1=recharge, 2=consume,
-                      // 3=system gift. Anything outside the enum (or null)
-                      // falls back to the generic "credits change" label.
-                      const typeKey = (() => {
-                        switch (String(record.recordType)) {
-                          case "1":
-                            return "recordTypeRecharge";
-                          case "2":
-                            return "recordTypeConsume";
-                          case "3":
-                            return "recordTypeSystemGift";
-                          default:
-                            return "creditsChange";
-                        }
-                      })();
-                      // AI label fallback chain: aiName (friendly) →
-                      // modelCode (raw id, e.g. STORY_OS / wan2.7-image-pro)
-                      // → last segment of apiPath (e.g. "basic"). Skip
-                      // entirely on recharge / system-gift rows where
-                      // there's no AI provider to credit.
-                      const aiLabel = (() => {
-                        if (String(record.recordType) !== "2") return "";
-                        if (record.aiName) return String(record.aiName);
-                        if (record.modelCode) return String(record.modelCode);
-                        if (record.apiPath) {
-                          const tail = String(record.apiPath).split("/").filter(Boolean).pop();
-                          return tail ?? "";
-                        }
-                        return "";
-                      })();
-                      const change = Number(record.integralChange ?? 0);
-                      return (
-                        <div
-                          key={`${record.id ?? "record"}-${index}`}
-                          className="rounded-xl border border-border px-3 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm">{t(typeKey)}</span>
-                            <span
-                              className={cn(
-                                "text-sm font-semibold tabular-nums",
-                                change > 0
-                                  ? "text-green-500"
-                                  : change < 0
-                                    ? "text-red-500"
-                                    : "text-muted-foreground"
-                              )}
-                            >
-                              {change > 0 ? `+${change}` : change}
-                            </span>
-                          </div>
-                          {aiLabel ? (
-                            <div className="mt-0.5 truncate text-xs text-foreground/70">
-                              {aiLabel}
-                            </div>
-                          ) : null}
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {String(record.createTime ?? "")}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <Button
-                  size="sm"
-                  className="mt-3 w-full"
-                  onClick={() => {
-                    setCreditsOpen(false);
-                    setRechargeOpen(true);
-                  }}
-                >
-                  <IconCredits className="size-3.5" />
-                  {tc("rechargeCredits")}
-                </Button>
-              </div>
-            ) : null}
           </div>
+
+          {/* Credits-records popover. Lifted out of the `hidden xl:block`
+              chip wrapper so it still renders on mobile/tablet, where the
+              avatar dropdown's "Credit history" entry is the only opener.
+              `fixed` positioning anchors to the viewport instead of the
+              (now-hidden) chip. */}
+          {creditsOpen ? (
+            <div className="fixed right-4 top-16 z-50 w-96 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-popover p-3 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold">{t("creditsRecord")}</div>
+                  <div className="text-xs text-muted-foreground">{t("creditsRecordDesc")}</div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    color="muted"
+                    size="icon-xs"
+                    onClick={async () => {
+                      dispatch(setCreditsLoading(true));
+                      dispatch(setIntegralRecordsLoading(true));
+                      try {
+                        const [score, records] = await Promise.all([
+                          backendApi.post<Record<string, unknown>>("/api/ai/record/myscore"),
+                          backendApi.post<Paginated<IntegralRecord>>(
+                            "/api/ai/record/integralrecord/list",
+                            { data: { page: 1, pageSize: 20 } }
+                          ),
+                        ]);
+                        const value = Number(
+                          score.scoreBalance ??
+                            score.score ??
+                            score.credits ??
+                            score.integral ??
+                            score.value ??
+                            0
+                        );
+                        dispatch(setCredits(Number.isFinite(value) ? value : 0));
+                        dispatch(setIntegralRecords(records?.list ?? []));
+                      } catch (error) {
+                        console.error("[ProjectHeader] 刷新积分失败:", error);
+                      } finally {
+                        dispatch(setCreditsLoading(false));
+                        dispatch(setIntegralRecordsLoading(false));
+                      }
+                    }}
+                  >
+                    <IconRefresh className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    color="muted"
+                    size="icon-xs"
+                    onClick={() => setCreditsOpen(false)}
+                  >
+                    ×
+                  </Button>
+                </div>
+              </div>
+
+              {isIntegralRecordsLoading ? (
+                <div className="flex h-32 items-center justify-center">
+                  <IconRefresh className="size-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : integralRecords.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
+                  {t("noCreditsRecord")}
+                </div>
+              ) : (
+                <div className="max-h-72 space-y-2 overflow-auto">
+                  {integralRecords.map((record, index) => {
+                    // Backend `recordType` enum: 1=recharge, 2=consume,
+                    // 3=system gift. Anything outside the enum (or null)
+                    // falls back to the generic "credits change" label.
+                    const typeKey = (() => {
+                      switch (String(record.recordType)) {
+                        case "1":
+                          return "recordTypeRecharge";
+                        case "2":
+                          return "recordTypeConsume";
+                        case "3":
+                          return "recordTypeSystemGift";
+                        default:
+                          return "creditsChange";
+                      }
+                    })();
+                    // AI label fallback chain: aiName (friendly) →
+                    // modelCode (raw id, e.g. STORY_OS / wan2.7-image-pro)
+                    // → last segment of apiPath (e.g. "basic"). Skip
+                    // entirely on recharge / system-gift rows where
+                    // there's no AI provider to credit.
+                    const aiLabel = (() => {
+                      if (String(record.recordType) !== "2") return "";
+                      if (record.aiName) return String(record.aiName);
+                      if (record.modelCode) return String(record.modelCode);
+                      if (record.apiPath) {
+                        const tail = String(record.apiPath).split("/").filter(Boolean).pop();
+                        return tail ?? "";
+                      }
+                      return "";
+                    })();
+                    const change = Number(record.integralChange ?? 0);
+                    return (
+                      <div
+                        key={`${record.id ?? "record"}-${index}`}
+                        className="rounded-xl border border-border px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm">{t(typeKey)}</span>
+                          <span
+                            className={cn(
+                              "text-sm font-semibold tabular-nums",
+                              change > 0
+                                ? "text-green-500"
+                                : change < 0
+                                  ? "text-red-500"
+                                  : "text-muted-foreground"
+                            )}
+                          >
+                            {change > 0 ? `+${change}` : change}
+                          </span>
+                        </div>
+                        {aiLabel ? (
+                          <div className="mt-0.5 truncate text-xs text-foreground/70">
+                            {aiLabel}
+                          </div>
+                        ) : null}
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {String(record.createTime ?? "")}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <Button
+                size="sm"
+                className="mt-3 w-full"
+                onClick={() => {
+                  setCreditsOpen(false);
+                  setRechargeOpen(true);
+                }}
+              >
+                <IconCredits className="size-3.5" />
+                {tc("rechargeCredits")}
+              </Button>
+            </div>
+          ) : null}
 
           <Button
             variant="outline"
