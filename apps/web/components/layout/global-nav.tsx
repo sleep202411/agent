@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { SiteUserMenu } from "@/components/layout/site-user-menu";
+import { CommunityCreditsChip } from "@/components/layout/community-credits-chip";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLogout } from "@/src/hooks/use-logout";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
@@ -302,7 +303,14 @@ export function GlobalNav() {
           </Link>
 
           {user ? (
-            <SiteUserMenu />
+            <>
+              {/* Community credits — entry point only for now. Popover
+                  surfaces balance + actions; the wallet itself is
+                  coming soon. Sits to the left of the avatar so it
+                  reads as "your wallet next to your identity". */}
+              <CommunityCreditsChip className="ml-1" />
+              <SiteUserMenu />
+            </>
           ) : (
             <button
               type="button"
@@ -447,6 +455,9 @@ export function GlobalNav() {
             {/* Account */}
             {user ? (
               <>
+                {/* Community credits — full-width row in the mobile
+                    drawer. Tapping opens the coming-soon toast. */}
+                <CommunityCreditsChip layout="row" />
                 <Link
                   href={localizePath("/profile", locale as Locale)}
                   onClick={() => setMobileOpen(false)}

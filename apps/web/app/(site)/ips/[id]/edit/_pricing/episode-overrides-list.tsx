@@ -10,7 +10,7 @@ import type { Episode } from "@/app/(site)/ips/_hooks/use-ip";
 
 interface EpisodeOverridesListProps {
   episodes: Episode[];
-  freeEpisodeCount: number;
+  freeEpisodeIds: string[];
   defaultPriceIntegral: number;
   overrides: Record<string, number>;
   onChangeOverride: (episodeId: string, price: number) => void;
@@ -21,12 +21,12 @@ interface EpisodeOverridesListProps {
  * Collapsible per-episode override editor. The common case (one price
  * for everything) doesn't need this; the panel stays folded by default
  * so it's discoverable but not noisy. Free episodes show a "Free" pill
- * and don't accept input — the IP owner has to lower freeEpisodeCount
- * first if they want to charge for an episode that's currently free.
+ * and don't accept input — the IP owner has to un-tick the episode
+ * from the Free preview card first if they want to charge for it.
  */
 export function EpisodeOverridesList({
   episodes,
-  freeEpisodeCount,
+  freeEpisodeIds,
   defaultPriceIntegral,
   overrides,
   onChangeOverride,
@@ -34,6 +34,7 @@ export function EpisodeOverridesList({
 }: EpisodeOverridesListProps) {
   const t = useTranslations("ipEdit");
   const [open, setOpen] = useState(false);
+  const freeSet = new Set(freeEpisodeIds);
 
   // Trust the array order — `videoNumber` may be 0 / missing from
   // some backend rows. Position is computed as `idx + 1` at render time.
@@ -79,7 +80,7 @@ export function EpisodeOverridesList({
                     key={ep.id}
                     episode={ep}
                     position={position}
-                    isFree={position <= freeEpisodeCount}
+                    isFree={freeSet.has(ep.id)}
                     defaultPrice={defaultPriceIntegral}
                     override={overrides[ep.id]}
                     onChange={(price) => onChangeOverride(ep.id, price)}
