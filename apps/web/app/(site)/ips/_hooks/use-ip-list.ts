@@ -153,26 +153,8 @@ export function useInfiniteIPList(params?: {
     queryFn: ({ pageParam }) => fetchIPList({ page: pageParam, pageSize, key, typeId, tag }),
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
-      // Defensive against backend short-page bug seen 2026-05-15:
-      // `/project/list?page=N&pageSize=20` returns 4 rows per page but
-      // reports `sum: 187` — naive "loaded < total" logic kept asking
-      // for more pages forever (IntersectionObserver re-triggers the
-      // sentinel because the list barely grows). Three independent
-      // halt conditions, any one stops the cursor:
-      //
-      // 1. Backend returned zero rows → it has nothing left regardless
-      //    of what `sum` claims.
-      // 2. We've already loaded what `sum` says exists (the original
-      //    intent — keep it).
-      // 3. Requesting more than `MAX_PAGES * pageSize` rows is almost
-      //    certainly a runaway loop. 50 × 20 = 1000 rows hard cap —
-      //    well above any realistic UX need; users hitting the wall
-      //    can refine filters or paginate explicitly.
-      const MAX_PAGES = 50;
-      if (lastPage.list.length === 0) return undefined;
       const loaded = allPages.reduce((sum, p) => sum + p.list.length, 0);
       if (loaded >= lastPage.total) return undefined;
-      if (allPages.length >= MAX_PAGES) return undefined;
       return allPages.length + 1;
     },
   });
