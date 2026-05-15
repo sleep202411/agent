@@ -40,6 +40,7 @@
     "selectImageFile": "Please select an image file",
     "credits": "Credits",
     "creditsLeft": "Credits Left",
+    "integralRecords": "Credit history",
     "myProfile": "My Profile",
     "usageAnalytics": "Usage Analytics",
     "rechargeCredits": "Top Up",
@@ -3255,6 +3256,7 @@
       "title": "Company",
       "about": "About",
       "creators": "For Creators",
+      "faq": "FAQ",
       "contact": "Contact us"
     },
     "legal": {
@@ -3590,7 +3592,8 @@
         "title": "Still have questions?",
         "body": "Drop us a line — we read every message.",
         "cta": "Contact us"
-      }
+      },
+      "viewAllCta": "View all FAQ"
     },
     "finalCta": {
       "title": "Ready to make something worth watching?",

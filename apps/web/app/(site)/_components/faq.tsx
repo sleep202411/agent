@@ -141,12 +141,20 @@ export function FAQ() {
               </p>
             </div>
           </div>
-          <Link
-            href={localizePath("/contact", locale)}
-            className="inline-flex shrink-0 items-center justify-center rounded-full border border-border/60 bg-background/50 px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-background"
-          >
-            {t("faq.stillHaveQuestions.cta")}
-          </Link>
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+            <Link
+              href={localizePath("/faq", locale)}
+              className="inline-flex items-center justify-center rounded-full bg-foreground px-5 py-2.5 text-sm font-semibold text-background transition-opacity hover:opacity-90"
+            >
+              {t("faq.viewAllCta")}
+            </Link>
+            <Link
+              href={localizePath("/contact", locale)}
+              className="inline-flex items-center justify-center rounded-full border border-border/60 bg-background/50 px-5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-background"
+            >
+              {t("faq.stillHaveQuestions.cta")}
+            </Link>
+          </div>
         </motion.div>
       </div>
     </section>

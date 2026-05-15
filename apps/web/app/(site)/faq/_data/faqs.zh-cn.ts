@@ -1,28 +1,16 @@
 /**
- * FAQ — "50 questions about FizzDragon and AI cinema".
+ * FAQ — Simplified Chinese (zh-CN) source content.
  *
  * Source: marketing/PR copy (50问.docx, 2026-05) — translated
- * verbatim from the source so any future update lands here. Each
- * `FaqItem.id` is the anchor (`#q-N`) used for both deep-linking
- * and the JSON-LD `mainEntity[].@id` field — keep them stable.
+ * verbatim from the original Chinese source. The English and
+ * Traditional Chinese variants live alongside in `faqs.en-us.ts`
+ * and `faqs.zh-hk.ts` and **must share the same `id` values** so
+ * `#q-N` deep links survive a language switch.
  */
 
-export interface FaqItem {
-  /** Stable anchor id, e.g. `q-1`..`q-50`. */
-  id: string;
-  question: string;
-  answer: string;
-}
+import type { FaqCategory } from "./types";
 
-export interface FaqCategory {
-  /** Anchor id for the category section, e.g. `cat-tech`. */
-  id: string;
-  title: string;
-  description: string;
-  items: FaqItem[];
-}
-
-export const FAQ_CATEGORIES: FaqCategory[] = [
+export const FAQ_ZH_CN: FaqCategory[] = [
   {
     id: "cat-ai-films",
     title: "关于 AI 电影",
@@ -359,5 +347,3 @@ export const FAQ_CATEGORIES: FaqCategory[] = [
     ],
   },
 ];
-
-export const TOTAL_FAQ_COUNT = FAQ_CATEGORIES.reduce((acc, cat) => acc + cat.items.length, 0);

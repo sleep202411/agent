@@ -1,4 +1,9 @@
-import { FAQ_CATEGORIES } from "../_data/faqs";
+import type { FaqCategory, FaqShell } from "../_data";
+
+interface CategoryRailProps {
+  categories: FaqCategory[];
+  shell: FaqShell;
+}
 
 /**
  * Category navigation. Renders **twice** with responsive show/hide:
@@ -13,16 +18,16 @@ import { FAQ_CATEGORIES } from "../_data/faqs";
  * set globally in the page; the URL hash deep-links to the section
  * (shareable + back-button friendly).
  */
-export function CategoryRail() {
+export function CategoryRail({ categories, shell }: CategoryRailProps) {
   return (
     <>
       {/* Desktop sidebar */}
       <aside className="hidden lg:block">
         <nav aria-label="FAQ categories" className="sticky top-20 space-y-1 pr-4">
           <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.24em] text-muted-foreground">
-            分类
+            {shell.railLabel}
           </p>
-          {FAQ_CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <a
               key={cat.id}
               href={`#${cat.id}`}
@@ -50,7 +55,7 @@ export function CategoryRail() {
         className="-mx-6 mb-6 overflow-x-auto px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:hidden"
       >
         <ul className="flex w-max gap-2">
-          {FAQ_CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <li key={cat.id}>
               <a
                 href={`#${cat.id}`}

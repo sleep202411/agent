@@ -12,6 +12,7 @@ import {
   IconCircleCheck,
   IconEye,
   IconHeart,
+  IconHeartFilled,
   IconLoader2,
   IconMessageCircle,
   IconPlayerPlay,
@@ -40,6 +41,11 @@ import {
   resolveTagNames,
   type Episode,
 } from "@/app/(site)/ips/_hooks/use-ip";
+import {
+  useIpLikeCount,
+  useIpLikeStatus,
+  useToggleIpLike,
+} from "@/app/(site)/ips/_hooks/use-ip-like";
 import type { ProjectJob } from "@/app/(site)/ips/_hooks/types";
 
 interface IPTeamMember {
@@ -413,7 +419,7 @@ export function IPDetailClient({ id }: { id: string }) {
                 t={t}
                 locale={locale}
               />
-              <RailShare title={title} t={t} />
+              <RailShare title={title} projectId={id} t={t} />
               <RailProducer
                 ownerId={project?.ownerId}
                 name={project?.ownerName ?? ""}
@@ -605,7 +611,15 @@ function RailTeam({ team, t }: { team: IPTeamMember[]; t: ReturnType<typeof useT
   );
 }
 
-function RailShare({ title, t }: { title: string; t: ReturnType<typeof useTranslations> }) {
+function RailShare({
+  title,
+  projectId,
+  t,
+}: {
+  title: string;
+  projectId: string;
+  t: ReturnType<typeof useTranslations>;
+}) {
   const [copied, setCopied] = useState(false);
   const handleShare = async () => {
     if (typeof window === "undefined") return;
@@ -617,6 +631,16 @@ function RailShare({ title, t }: { title: string; t: ReturnType<typeof useTransl
       /* clipboard denied — silent noop. */
     }
   };
+
+  // Like is wired to `/project/like/{id}` + matching unlike. Status
+  // and count fetch independently so the heart paints from `liked`
+  // (per-user) and the chip from `count` (global) — both update
+  // optimistically on click and roll back on backend failure.
+  const { data: liked = false } = useIpLikeStatus(projectId);
+  const { data: likeCount = 0 } = useIpLikeCount(projectId);
+  const toggleLike = useToggleIpLike(projectId);
+  const likeBusy = toggleLike.isPending;
+
   return (
     <div className="rounded-xl border border-border bg-card p-4">
       <h3 className="mb-3 text-sm font-semibold text-foreground">{t("detailShare")}</h3>
@@ -639,19 +663,24 @@ function RailShare({ title, t }: { title: string; t: ReturnType<typeof useTransl
             </>
           )}
         </button>
-        {/* Like / Follow are disabled until backend exposes the
-            corresponding endpoints — buttons sit there as a visual
-            placeholder so the rail layout doesn't shift when they
-            ship. */}
         <button
           type="button"
-          disabled
-          aria-disabled="true"
-          className="flex flex-1 cursor-not-allowed items-center justify-center gap-1 rounded-lg bg-secondary/50 py-2 text-xs text-muted-foreground"
+          onClick={() => toggleLike.mutate(liked)}
+          disabled={likeBusy}
+          aria-pressed={liked}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1 rounded-lg py-2 text-xs transition-colors disabled:cursor-wait",
+            liked
+              ? "bg-rose-500/15 text-rose-400 hover:bg-rose-500/25"
+              : "bg-secondary text-foreground hover:bg-secondary/80"
+          )}
         >
-          <IconHeart className="size-3.5" />
-          {t("detailLike")}
+          {liked ? <IconHeartFilled className="size-3.5" /> : <IconHeart className="size-3.5" />}
+          <span className="tabular-nums">{likeCount > 0 ? likeCount : t("detailLike")}</span>
         </button>
+        {/* Follow stays disabled until backend ships the bookmark
+            endpoint family — visual placeholder so the rail layout
+            doesn't shift when it lands. */}
         <button
           type="button"
           disabled

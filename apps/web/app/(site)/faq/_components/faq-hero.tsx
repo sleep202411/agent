@@ -1,11 +1,16 @@
-import { TOTAL_FAQ_COUNT } from "../_data/faqs";
+import type { FaqShell } from "../_data";
+
+interface FaqHeroProps {
+  shell: FaqShell;
+}
 
 /**
  * FAQ page header. Pure presentation, no interactivity — kept as a
  * Server Component so the H1 + intro paragraph land in the SSR HTML
- * (matters for LLM crawlers that don't run JS).
+ * (matters for LLM crawlers that don't run JS). Copy comes from
+ * `FaqShell` selected per-locale in the parent.
  */
-export function FaqHero() {
+export function FaqHero({ shell }: FaqHeroProps) {
   return (
     <header className="relative overflow-hidden border-b border-border bg-gradient-to-b from-card via-card to-background px-6 py-16 sm:py-20">
       {/* Background glow accent — purely decorative. */}
@@ -15,14 +20,13 @@ export function FaqHero() {
       />
       <div className="relative mx-auto max-w-5xl text-center">
         <p className="mb-3 text-xs font-bold uppercase tracking-[0.32em] text-primary/80">
-          FizzDragon · FAQ
+          {shell.heroEyebrow}
         </p>
         <h1 className="text-3xl font-black leading-tight text-foreground sm:text-5xl">
-          关于 FizzDragon 与 AI 电影的 {TOTAL_FAQ_COUNT} 个问题
+          {shell.heroTitle}
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-          从制作流程、技术原理，到价格、合作方式与未来路线 ——
-          覆盖创作者、客户、投资方与好奇者最常关心的核心问题。每一条都基于已落地的产品与作品事实。
+          {shell.heroIntro}
         </p>
       </div>
     </header>

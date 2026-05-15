@@ -1,6 +1,6 @@
 import { IconChevronDown } from "@tabler/icons-react";
 
-import type { FaqItem as FaqItemData } from "../_data/faqs";
+import type { FaqItem as FaqItemData } from "../_data";
 
 /**
  * Single Q&A row using the native `<details>` element.

@@ -1,12 +1,12 @@
-import type { FaqCategory } from "../_data/faqs";
+import type { FaqCategory } from "../_data";
 import { FaqItem } from "./faq-item";
 
 interface FaqSectionProps {
   category: FaqCategory;
   /** Ordinal of the **first** item in this section across the whole
-   *  page. Lets each FaqItem render its absolute 1-50 ordinal instead
-   *  of resetting to 1 per category — preserves the "50 questions"
-   *  framing and matches the `q-N` anchor ids. */
+   *  page. Each FaqItem renders its absolute 1..N ordinal instead of
+   *  resetting per category, so the visual numbering matches the
+   *  `q-N` anchor ids exactly. */
   startOrdinal: number;
 }
 
