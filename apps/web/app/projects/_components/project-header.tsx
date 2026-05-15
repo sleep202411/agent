@@ -446,6 +446,10 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
             onUpgrade={() => setUpgradeOpen(true)}
             onRecharge={() => setRechargeOpen(true)}
             onTeam={() => setTeamOpen(true)}
+            // Routes the dropdown entry into the same credits-records
+            // popover the header's credits chip uses (line 255). One
+            // panel, two ways in.
+            onIntegralRecords={() => setCreditsOpen(true)}
           />
         </div>
       </header>

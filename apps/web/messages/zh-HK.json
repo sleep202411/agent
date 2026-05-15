@@ -40,6 +40,7 @@
     "selectImageFile": "請選擇圖片檔案",
     "credits": "積分",
     "creditsLeft": "剩餘積分",
+    "integralRecords": "積分記錄",
     "myProfile": "個人主頁",
     "usageAnalytics": "用量統計",
     "rechargeCredits": "充值",
@@ -3255,6 +3256,7 @@
       "title": "公司",
       "about": "關於我們",
       "creators": "創作者中心",
+      "faq": "常見問題",
       "contact": "聯絡我們"
     },
     "legal": {
@@ -3590,7 +3592,8 @@
         "title": "還有問題？",
         "body": "給我們留言——每一條我們都看。",
         "cta": "聯絡我們"
-      }
+      },
+      "viewAllCta": "查看全部常見問題"
     },
     "finalCta": {
       "title": "準備好做點值得被看到的東西了嗎？",

@@ -7,6 +7,7 @@ import {
   IconCrown,
   IconCoin,
   IconLanguage,
+  IconListDetails,
   IconSun,
   IconMoon,
   IconDeviceDesktop,
@@ -35,9 +36,20 @@ interface StudioUserMenuProps {
   onUpgrade?: () => void;
   onRecharge?: () => void;
   onTeam?: () => void;
+  /** Opens the credits + integral-records popover that the project
+   *  header already owns. Without this entry the records view was
+   *  only reachable by clicking the credits chip elsewhere on the
+   *  header — easy to miss. */
+  onIntegralRecords?: () => void;
 }
 
-export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: StudioUserMenuProps) {
+export function StudioUserMenu({
+  credits,
+  onUpgrade,
+  onRecharge,
+  onTeam,
+  onIntegralRecords,
+}: StudioUserMenuProps) {
   const tc = useTranslations("common");
   const tn = useTranslations("nav");
   const logout = useLogout();
@@ -124,14 +136,27 @@ export function StudioUserMenu({ credits, onUpgrade, onRecharge, onTeam }: Studi
 
         <DropdownMenuSeparator />
 
-        {/* Team */}
-        {onTeam && (
+        {/* Account actions — integral records lives here alongside
+            Team so anything "about my account state" sits in one
+            grouped block. Each entry is independently feature-gated:
+            the project-header passes onIntegralRecords today; pages
+            that don't surface the credits popover can simply omit it
+            and the item won't render. */}
+        {(onIntegralRecords || onTeam) && (
           <>
             <div className="py-1">
-              <DropdownMenuItem className="px-4" onClick={onTeam}>
-                <IconUsers className="size-4" />
-                {tc("team")}
-              </DropdownMenuItem>
+              {onIntegralRecords && (
+                <DropdownMenuItem className="px-4" onClick={onIntegralRecords}>
+                  <IconListDetails className="size-4" />
+                  {tc("integralRecords")}
+                </DropdownMenuItem>
+              )}
+              {onTeam && (
+                <DropdownMenuItem className="px-4" onClick={onTeam}>
+                  <IconUsers className="size-4" />
+                  {tc("team")}
+                </DropdownMenuItem>
+              )}
             </div>
             <DropdownMenuSeparator />
           </>

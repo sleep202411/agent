@@ -44,12 +44,32 @@ interface JsonLdProps {
  *   not injected after hydrate.
  */
 export function JsonLd({ data }: JsonLdProps) {
-  const json = JSON.stringify(data).replace(/</g, "\\u003c");
+  // Emit one <script> tag per schema entity, never a top-level JSON
+  // array. Spec-wise an array of JSON-LD objects is legal, but in the
+  // wild we hit `TypeError: undefined is not an object (evaluating
+  // r["@context"].toLowerCase)` from third-party parsers (browser
+  // extensions, lightweight crawler bots) that read the JSON value
+  // and dereference `["@context"]` without checking for array shape.
+  // Captured 2026-05-15 from real users via PostHog Error Tracking.
+  //
+  // Per-entity tags also let crawlers selectively skip a malformed
+  // entry without losing the rest of the page's structured data.
+  const entries = Array.isArray(data) ? data : [data];
   return (
-    <script
-      type="application/ld+json"
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: json }}
-    />
+    <>
+      {entries.map((entry, idx) => (
+        <script
+          // Stable key from the @type field when present, falling back
+          // to index. Multiple Organisations on one page shouldn't be
+          // a real case but the suffix keeps React happy regardless.
+          key={`${(entry as { "@type"?: string })["@type"] ?? "ld"}-${idx}`}
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(entry).replace(/</g, "\\u003c"),
+          }}
+        />
+      ))}
+    </>
   );
 }

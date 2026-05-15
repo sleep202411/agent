@@ -27,6 +27,9 @@ const STATIC_PATHS = [
   { path: "/creators", priority: 0.8, changeFreq: "daily" as const },
   { path: "/courses", priority: 0.7, changeFreq: "weekly" as const },
   { path: "/news", priority: 0.7, changeFreq: "daily" as const },
+  // FAQ is high-priority for GEO: dense Q&A content is the format
+  // LLM answer engines preferentially cite.
+  { path: "/faq", priority: 0.8, changeFreq: "monthly" as const },
   { path: "/about", priority: 0.5, changeFreq: "monthly" as const },
   { path: "/privacy-policy", priority: 0.3, changeFreq: "yearly" as const },
   { path: "/terms-of-service", priority: 0.3, changeFreq: "yearly" as const },

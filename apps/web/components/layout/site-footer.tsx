@@ -59,6 +59,7 @@ const COLUMNS: FooterCol[] = [
     links: [
       { key: "company.about", href: "/about" },
       { key: "company.creators", href: "/creators" },
+      { key: "company.faq", href: "/faq" },
       { key: "company.contact", href: "mailto:business@fizzdragon.com", external: true },
     ],
   },
