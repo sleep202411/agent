@@ -20,6 +20,7 @@ import {
   IconLanguage,
   IconMoon,
   IconPlus,
+  IconSparkles,
   IconSun,
 } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
@@ -39,10 +40,12 @@ import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dia
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { useCredits } from "@/src/hooks/use-user";
 import { UserMenu } from "@/components/layout/user-menu";
+import { CreateWorldDialog } from "@/app/(studio)/art-studio/_components/create-world-dialog";
 import { cn } from "@/lib/utils";
 
 export function StudioNav() {
   const t = useTranslations("nav");
+  const tProject = useTranslations("project");
   const locale = useLocale();
   const { theme, setTheme } = useTheme();
   // Avoid hydration mismatch: theme is undefined on the server, only
@@ -59,6 +62,14 @@ export function StudioNav() {
 
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  // Mirrors the 一键成片 CTA from `project-header.tsx`. In the project
+  // surface that button deep-links to `/projects/[id]/produce`, but here
+  // we have no project context — opening `CreateWorldDialog` is the
+  // natural entry (it's the same dialog the studio home / projects
+  // section uses to create a new world; once the /produce pipeline is
+  // re-enabled in that dialog, the file-aware variant routes there
+  // automatically).
+  const [createWorldOpen, setCreateWorldOpen] = useState(false);
 
   // Background fades in once the user scrolls past the first ~16px so
   // the hero backdrop sits behind a fully transparent nav at rest.
@@ -105,6 +116,23 @@ export function StudioNav() {
 
         {/* Right cluster */}
         <div className="ml-auto flex items-center gap-1">
+          {/* 一键成片 — mirrors the gradient CTA on `project-header.tsx`
+              so users have a parallel entry from studio surfaces. Same
+              fuchsia→purple sparkle gradient + label so the affordance
+              reads identically across contexts. */}
+          <button
+            type="button"
+            onClick={() => setCreateWorldOpen(true)}
+            className={cn(
+              "mr-1 inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-semibold text-white",
+              "bg-gradient-to-r from-fuchsia-500 to-purple-500",
+              "transition-colors hover:from-fuchsia-400 hover:to-purple-400"
+            )}
+          >
+            <IconSparkles className="size-3.5" />
+            <span>{tProject("oneClickProduce")}</span>
+          </button>
+
           {/* Language switcher */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -214,6 +242,7 @@ export function StudioNav() {
 
       <CreditsRechargeDialog open={rechargeOpen} onOpenChange={setRechargeOpen} />
       <UpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
+      <CreateWorldDialog open={createWorldOpen} onOpenChange={setCreateWorldOpen} />
     </header>
   );
 }

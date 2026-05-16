@@ -236,7 +236,7 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
                 className="bg-gradient-to-r from-fuchsia-500 to-purple-500 text-white hover:from-fuchsia-400 hover:to-purple-400"
               >
                 <IconSparkles className="size-3.5" />
-                一键成片
+                {t("oneClickProduce")}
               </Link>
             </Button>
           ) : null}
