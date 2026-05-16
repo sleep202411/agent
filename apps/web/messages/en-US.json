@@ -117,6 +117,7 @@
   },
   "project": {
     "title": "Projects",
+    "oneClickProduce": "One-Click Produce",
     "newProject": "New Project",
     "editProject": "Edit Project",
     "unnamedProject": "Unnamed Project",

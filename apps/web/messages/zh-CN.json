@@ -117,6 +117,7 @@
   },
   "project": {
     "title": "项目",
+    "oneClickProduce": "一键成片",
     "newProject": "新建项目",
     "editProject": "编辑项目",
     "unnamedProject": "未命名项目",
