@@ -1497,6 +1497,8 @@
     "setFinalize": "Set as Finalized",
     "fullscreenPreview": "Fullscreen Preview",
     "viewDetails": "View Details",
+    "reusePrompt": "Reuse this prompt",
+    "reusePromptApplied": "Prompt loaded into editor",
     "editAction": "Edit",
     "repaintAction": "Repaint",
     "eraseAction": "Erase",

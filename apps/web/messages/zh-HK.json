@@ -1497,6 +1497,8 @@
     "setFinalize": "設為定稿",
     "fullscreenPreview": "全螢幕預覽",
     "viewDetails": "查看詳情",
+    "reusePrompt": "復用此提示詞",
+    "reusePromptApplied": "已填入當前提示詞",
     "editAction": "編輯",
     "repaintAction": "重繪",
     "eraseAction": "消除",

@@ -383,6 +383,14 @@ function taskStatusToLegacy(status: ReduxTaskStatus): ResultStatus {
 }
 
 function taskToResultItem(task: Task): ResultItem {
+  // Carry the originating prompt forward as `other` so the result-item
+  // preview popover (and its "reuse this prompt" action) shows the same
+  // text whether the row came from the live queue or a backend history
+  // record. Without this, freshly generated items had `other` undefined
+  // → empty meta popover → reuse button never rendered.
+  const promptFromInput =
+    typeof task.input?.prompt === "string" ? (task.input.prompt as string) : undefined;
+
   if (task.status === "completed" && task.output) {
     return {
       id: task.id,
@@ -394,6 +402,7 @@ function taskToResultItem(task: Task): ResultItem {
       // Without this, completed tasks look stuck in generating forever
       // (button stays disabled, spinner never clears).
       status: "success",
+      other: promptFromInput,
       fromQueue: true,
     };
   }
@@ -402,12 +411,14 @@ function taskToResultItem(task: Task): ResultItem {
       id: task.id,
       status: taskStatusToLegacy(task.status),
       error: task.error ?? undefined,
+      other: promptFromInput,
       fromQueue: true,
     };
   }
   return {
     id: task.id,
     status: taskStatusToLegacy(task.status),
+    other: promptFromInput,
     fromQueue: true,
   };
 }
@@ -545,11 +556,18 @@ function taskStatusToVideoStatus(status: ReduxTaskStatus): VideoResultStatus {
 }
 
 function taskToVideoResultItem(task: Task): VideoResultItem {
+  // Same `other = prompt` carryover as image side — keeps the meta
+  // popover + reuse button identical between live-queue rows and
+  // backend-history rows.
+  const promptFromInput =
+    typeof task.input?.prompt === "string" ? (task.input.prompt as string) : undefined;
+
   if (task.status === "completed" && task.output) {
     return {
       id: task.id,
       url: task.output.url,
       storagePath: task.output.storagePath,
+      other: promptFromInput,
       fromQueue: true,
     };
   }
@@ -558,12 +576,14 @@ function taskToVideoResultItem(task: Task): VideoResultItem {
       id: task.id,
       status: taskStatusToVideoStatus(task.status),
       error: task.error ?? undefined,
+      other: promptFromInput,
       fromQueue: true,
     };
   }
   return {
     id: task.id,
     status: taskStatusToVideoStatus(task.status),
+    other: promptFromInput,
     fromQueue: true,
   };
 }

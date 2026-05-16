@@ -478,6 +478,17 @@ export function AiImageGeneratorDialog({
       icon: <IconFileText className="size-4" />,
       title: t("viewDetails"),
       metaContent: previewItem.other,
+      applyMetaLabel: t("reusePrompt"),
+      onApplyMeta: () => {
+        const historyPrompt = previewItem.other ?? "";
+        handleUpdateForm({ prompt: historyPrompt });
+        // History prompt may contain <mention imgUrl> tags pointing to
+        // reference images that aren't yet in the current refs panel —
+        // syncMentionRefs picks those up and adds them so the chips
+        // stay clickable.
+        syncMentionRefs(historyPrompt);
+        toast.success(t("reusePromptApplied"));
+      },
     },
   ].filter(Boolean) as ToolbarAction[];
 
