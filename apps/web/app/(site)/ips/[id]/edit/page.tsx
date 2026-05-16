@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   IconBookmark,
   IconCoin,
@@ -195,8 +195,9 @@ const TABS = [
   { id: "episodes", labelKey: "editEpisodes", icon: IconPlaylist },
   // Pricing tab is feature-gated until the community-score / unlock
   // endpoints ship on the backend. UI is fully built and exercises a
-  // mock data layer (see ips/_hooks/pricing-mock.ts); flip `disabled`
-  // to false once real wires are in place.
+  // mock data layer (see ips/_hooks/pricing-mock.ts). Default state is
+  // disabled, but `?pricing=1` URL param unlocks it for opt-in preview /
+  // demo / internal review. Drop the gate once backend ships.
   { id: "pricing", labelKey: "editPricing", icon: IconCoin, disabled: true },
   // Merchandise tab is feature-gated alongside Pricing. The full CRUD
   // UI is built and exercises a mock data layer (see
@@ -302,7 +303,18 @@ export default function IPEditPage() {
   // Legacy job-recruitment compat — only surface the optional 6th tab
   // when historical data exists for this project. See useLegacyJobsByRole.
   const { data: legacyJobs = [] } = useLegacyJobsByRole(id);
-  const visibleTabs = legacyJobs.length > 0 ? [...TABS, LEGACY_JOBS_TAB] : TABS;
+
+  // Pricing tab opt-in via `?pricing=1` URL param — lets us share preview
+  // links with stakeholders before backend lands without making the tab
+  // generally available. Drop this when the feature ships properly.
+  const searchParams = useSearchParams();
+  const pricingEnabled = searchParams.get("pricing") === "1";
+  const visibleTabs = useMemo(() => {
+    const base = legacyJobs.length > 0 ? [...TABS, LEGACY_JOBS_TAB] : TABS;
+    return base.map((tab) =>
+      tab.id === "pricing" && pricingEnabled ? { ...tab, disabled: false } : tab
+    );
+  }, [legacyJobs.length, pricingEnabled]);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCover, setUploadingCover] = useState(false);

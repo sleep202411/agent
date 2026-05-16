@@ -15,7 +15,6 @@ import {
   IconHeartFilled,
   IconLoader2,
   IconMessageCircle,
-  IconPlayerPlay,
   IconPlaylist,
   IconShare,
   IconUsers,
@@ -47,6 +46,7 @@ import {
   useToggleIpLike,
 } from "@/app/(site)/ips/_hooks/use-ip-like";
 import type { ProjectJob } from "@/app/(site)/ips/_hooks/types";
+import { BundleHeroCta, EpisodePaywallChip, PreviewModeBar, PricingProvider } from "./paywall";
 
 interface IPTeamMember {
   userId?: number;
@@ -190,247 +190,261 @@ export function IPDetailClient({ id }: { id: string }) {
   const hasTrailer = !!trailerSrc;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Back link */}
-      <div className="mx-auto max-w-screen-2xl px-6 pt-4">
-        <Link
-          href="/ips"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <IconArrowLeft className="size-4" />
-          {t("detailBackToPlaza")}
-        </Link>
-      </div>
+    <PricingProvider ipId={id} isOwner={isOwner}>
+      <div className="min-h-screen bg-background">
+        {/* Preview-mode top bar — only renders when ?preview=pricing.
+            Sticky so identity switcher stays reachable while scrolling. */}
+        <PreviewModeBar />
 
-      {/* Hero */}
-      <div className="mx-auto max-w-screen-2xl px-6 py-6">
-        <div className="mb-8 text-center">
-          <h1 className="mb-2 text-4xl font-bold text-foreground">
-            {title || t("detailUntitled")}
-          </h1>
-          {tagline && <p className="mb-3 text-sm text-muted-foreground">{tagline}</p>}
-          {/* Lifecycle status is intentionally NOT shown on this
+        {/* Back link */}
+        <div className="mx-auto max-w-screen-2xl px-6 pt-4">
+          <Link
+            href="/ips"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <IconArrowLeft className="size-4" />
+            {t("detailBackToPlaza")}
+          </Link>
+        </div>
+
+        {/* Hero */}
+        <div className="mx-auto max-w-screen-2xl px-6 py-6">
+          <div className="mb-8 text-center">
+            <h1 className="mb-2 text-4xl font-bold text-foreground">
+              {title || t("detailUntitled")}
+            </h1>
+            {tagline && <p className="mb-3 text-sm text-muted-foreground">{tagline}</p>}
+            {/* Lifecycle status is intentionally NOT shown on this
               consumer-facing detail page. The previous badge claimed
               "Released" for `projectStatus === 0`, which under the
               real 4-state model (0=pending / 3=rejected / 5=approved /
               8=offline) is the *pending review* state — exactly the
               opposite of "released". The owner sees the correct badge
               on the edit page; consumers don't need lifecycle info. */}
-          {realTags.length > 0 && (
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {realTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary"
-                >
-                  #{tag}
-                </span>
-              ))}
-            </div>
-          )}
+            {realTags.length > 0 && (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {realTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs text-primary"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Two-column body */}
-      <div className="mx-auto max-w-screen-2xl px-6 pb-12">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-          {/* LEFT */}
-          <div className="space-y-8 lg:col-span-2">
-            {/* Trailer / cover */}
-            <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-secondary">
-              {playerSrc ? (
-                <VideoPlayer
-                  // Force remount when src swaps episodes — video.js
-                  // doesn't reliably reload mid-playback otherwise.
-                  key={playerSrc}
-                  src={playerSrc}
-                  autoplay={!!selectedEpisodeId}
-                  className="size-full"
-                />
-              ) : cover ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={cover} alt={title} className="size-full object-cover" />
-              ) : (
-                <div className="flex size-full items-center justify-center">
-                  <IconPlaylist className="size-12 text-muted-foreground/30" />
-                </div>
-              )}
-              {/* Episode-link resolution spinner. Shown only while the
+        {/* Bundle hero — top-of-page CTA for the "buy whole IP" offer.
+          Renders nothing when the paywall is inactive or the creator
+          didn't enable a bundle, so the layout stays unchanged for
+          free IPs. */}
+        <div className="mx-auto max-w-screen-2xl px-6 pb-2">
+          <BundleHeroCta />
+        </div>
+
+        {/* Two-column body */}
+        <div className="mx-auto max-w-screen-2xl px-6 pb-12">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            {/* LEFT */}
+            <div className="space-y-8 lg:col-span-2">
+              {/* Trailer / cover */}
+              <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-secondary">
+                {playerSrc ? (
+                  <VideoPlayer
+                    // Force remount when src swaps episodes — video.js
+                    // doesn't reliably reload mid-playback otherwise.
+                    key={playerSrc}
+                    src={playerSrc}
+                    autoplay={!!selectedEpisodeId}
+                    className="size-full"
+                  />
+                ) : cover ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={cover} alt={title} className="size-full object-cover" />
+                ) : (
+                  <div className="flex size-full items-center justify-center">
+                    <IconPlaylist className="size-12 text-muted-foreground/30" />
+                  </div>
+                )}
+                {/* Episode-link resolution spinner. Shown only while the
                   user just clicked Play and we're awaiting
                   /vedio/play/getLink — the underlying VideoPlayer is
                   unmounted (no src yet) so a separate overlay is the
                   only progress signal. */}
-              {selectedEpisodeId && episodeUrlLoading && !episodePlayUrl && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60">
-                  <IconLoader2 className="size-7 animate-spin text-white/80" />
+                {selectedEpisodeId && episodeUrlLoading && !episodePlayUrl && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60">
+                    <IconLoader2 className="size-7 animate-spin text-white/80" />
+                  </div>
+                )}
+              </div>
+
+              {/* Sticky section nav */}
+              {sections.length > 0 && (
+                <div className="sticky top-14 z-40 -mx-6 border-b border-border bg-background px-6">
+                  <div className="flex items-center gap-0 overflow-x-auto">
+                    {sections.map((section) => (
+                      <button
+                        key={section.key}
+                        type="button"
+                        onClick={() => scrollToSection(section.key)}
+                        className={cn(
+                          "shrink-0 border-b-2 px-5 py-3 text-sm font-medium transition-colors",
+                          activeSection === section.key
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {section.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Story */}
+              {story && (
+                <div
+                  data-section-key="story"
+                  ref={(el) => {
+                    sectionRefs.current.story = el;
+                  }}
+                >
+                  <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                    <IconBook className="size-5 text-primary" />
+                    {t("detailStoryTitle")}
+                  </h2>
+                  <Prose text={story} />
+                </div>
+              )}
+
+              {/* Creative Team */}
+              {team.length > 0 && (
+                <div
+                  data-section-key="team"
+                  ref={(el) => {
+                    sectionRefs.current.team = el;
+                  }}
+                >
+                  <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                    <IconUsers className="size-5 text-purple-400" />
+                    {t("detailCreativeTeam")}
+                  </h2>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {team.map((member, idx) => {
+                      const cardClass =
+                        "flex items-start gap-3 rounded-xl border border-border bg-card p-4";
+                      const inner = (
+                        <>
+                          <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-lg">
+                            {member.avatar?.startsWith("http") ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={member.avatar} alt="" className="size-full object-cover" />
+                            ) : (
+                              (member.name?.[0] ?? "?").toUpperCase()
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="mb-0.5 flex items-center gap-1.5">
+                              <span className="truncate text-sm font-medium text-foreground">
+                                {member.name}
+                              </span>
+                              {member.certified && (
+                                <IconCircleCheck className="size-3 text-green-400" />
+                              )}
+                            </div>
+                            <div className="text-xs text-primary">{member.role}</div>
+                          </div>
+                        </>
+                      );
+                      return member.userId ? (
+                        <Link
+                          key={member.userId}
+                          href={`/creators/${member.userId}`}
+                          className={`${cardClass} transition-colors hover:border-primary/40 hover:bg-card/80`}
+                        >
+                          {inner}
+                        </Link>
+                      ) : (
+                        <div key={`${member.name}-${idx}`} className={cardClass}>
+                          {inner}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Legacy job recruitment — only rendered when historical
+                data exists for this project. See useLegacyJobsByRole. */}
+              {legacyJobs.length > 0 && (
+                <div
+                  data-section-key="jobs"
+                  ref={(el) => {
+                    sectionRefs.current.jobs = el;
+                  }}
+                >
+                  <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                    <IconBookmark className="size-5 text-amber-400" />
+                    {t("detailJobRecruitment")}
+                  </h2>
+                  <LegacyJobsList jobs={legacyJobs} t={t} />
+                </div>
+              )}
+
+              {/* FAQ */}
+              {ipFaqs.length > 0 && (
+                <div
+                  data-section-key="faq"
+                  ref={(el) => {
+                    sectionRefs.current.faq = el;
+                  }}
+                >
+                  <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
+                    <IconMessageCircle className="size-5 text-cyan-400" />
+                    {t("sectionFAQ")}
+                  </h2>
+                  <FaqList faqs={ipFaqs} />
                 </div>
               )}
             </div>
 
-            {/* Sticky section nav */}
-            {sections.length > 0 && (
-              <div className="sticky top-14 z-40 -mx-6 border-b border-border bg-background px-6">
-                <div className="flex items-center gap-0 overflow-x-auto">
-                  {sections.map((section) => (
-                    <button
-                      key={section.key}
-                      type="button"
-                      onClick={() => scrollToSection(section.key)}
-                      className={cn(
-                        "shrink-0 border-b-2 px-5 py-3 text-sm font-medium transition-colors",
-                        activeSection === section.key
-                          ? "border-primary text-primary"
-                          : "border-transparent text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      {section.label}
-                    </button>
-                  ))}
-                </div>
+            {/* RIGHT */}
+            <div>
+              <div className="space-y-4 lg:sticky lg:top-28">
+                {team.length > 0 && <RailTeam team={team} t={t} />}
+                <ReleasedPanel
+                  episodes={episodes}
+                  runtime={totalRuntime(episodes)}
+                  editUrl={editUrl}
+                  isOwner={isOwner}
+                  selectedEpisodeId={selectedEpisodeId}
+                  onSelectEpisode={(epId) => {
+                    setSelectedEpisodeId(epId);
+                    // Bring the player back into view on small/medium
+                    // screens — the right rail sits below the player on
+                    // mobile so a click would otherwise scroll nothing.
+                    if (typeof window !== "undefined") {
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                  }}
+                  t={t}
+                  locale={locale}
+                />
+                <RailShare title={title} projectId={id} t={t} />
+                <RailProducer
+                  ownerId={project?.ownerId}
+                  name={project?.ownerName ?? ""}
+                  avatar={project?.ownerAvatar ?? ""}
+                  t={t}
+                />
               </div>
-            )}
-
-            {/* Story */}
-            {story && (
-              <div
-                data-section-key="story"
-                ref={(el) => {
-                  sectionRefs.current.story = el;
-                }}
-              >
-                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
-                  <IconBook className="size-5 text-primary" />
-                  {t("detailStoryTitle")}
-                </h2>
-                <Prose text={story} />
-              </div>
-            )}
-
-            {/* Creative Team */}
-            {team.length > 0 && (
-              <div
-                data-section-key="team"
-                ref={(el) => {
-                  sectionRefs.current.team = el;
-                }}
-              >
-                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
-                  <IconUsers className="size-5 text-purple-400" />
-                  {t("detailCreativeTeam")}
-                </h2>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {team.map((member, idx) => {
-                    const cardClass =
-                      "flex items-start gap-3 rounded-xl border border-border bg-card p-4";
-                    const inner = (
-                      <>
-                        <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-secondary text-lg">
-                          {member.avatar?.startsWith("http") ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={member.avatar} alt="" className="size-full object-cover" />
-                          ) : (
-                            (member.name?.[0] ?? "?").toUpperCase()
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="mb-0.5 flex items-center gap-1.5">
-                            <span className="truncate text-sm font-medium text-foreground">
-                              {member.name}
-                            </span>
-                            {member.certified && (
-                              <IconCircleCheck className="size-3 text-green-400" />
-                            )}
-                          </div>
-                          <div className="text-xs text-primary">{member.role}</div>
-                        </div>
-                      </>
-                    );
-                    return member.userId ? (
-                      <Link
-                        key={member.userId}
-                        href={`/creators/${member.userId}`}
-                        className={`${cardClass} transition-colors hover:border-primary/40 hover:bg-card/80`}
-                      >
-                        {inner}
-                      </Link>
-                    ) : (
-                      <div key={`${member.name}-${idx}`} className={cardClass}>
-                        {inner}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Legacy job recruitment — only rendered when historical
-                data exists for this project. See useLegacyJobsByRole. */}
-            {legacyJobs.length > 0 && (
-              <div
-                data-section-key="jobs"
-                ref={(el) => {
-                  sectionRefs.current.jobs = el;
-                }}
-              >
-                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
-                  <IconBookmark className="size-5 text-amber-400" />
-                  {t("detailJobRecruitment")}
-                </h2>
-                <LegacyJobsList jobs={legacyJobs} t={t} />
-              </div>
-            )}
-
-            {/* FAQ */}
-            {ipFaqs.length > 0 && (
-              <div
-                data-section-key="faq"
-                ref={(el) => {
-                  sectionRefs.current.faq = el;
-                }}
-              >
-                <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-foreground">
-                  <IconMessageCircle className="size-5 text-cyan-400" />
-                  {t("sectionFAQ")}
-                </h2>
-                <FaqList faqs={ipFaqs} />
-              </div>
-            )}
-          </div>
-
-          {/* RIGHT */}
-          <div>
-            <div className="space-y-4 lg:sticky lg:top-28">
-              {team.length > 0 && <RailTeam team={team} t={t} />}
-              <ReleasedPanel
-                episodes={episodes}
-                runtime={totalRuntime(episodes)}
-                editUrl={editUrl}
-                isOwner={isOwner}
-                selectedEpisodeId={selectedEpisodeId}
-                onSelectEpisode={(epId) => {
-                  setSelectedEpisodeId(epId);
-                  // Bring the player back into view on small/medium
-                  // screens — the right rail sits below the player on
-                  // mobile so a click would otherwise scroll nothing.
-                  if (typeof window !== "undefined") {
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }
-                }}
-                t={t}
-                locale={locale}
-              />
-              <RailShare title={title} projectId={id} t={t} />
-              <RailProducer
-                ownerId={project?.ownerId}
-                name={project?.ownerName ?? ""}
-                avatar={project?.ownerAvatar ?? ""}
-                t={t}
-              />
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </PricingProvider>
   );
 }
 
@@ -539,21 +553,20 @@ function ReleasedPanel({
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => epId && onSelectEpisode(epId)}
-                    disabled={!epId || isPlaying}
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-0.5 rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors",
-                      isPlaying
-                        ? "cursor-default bg-primary/20 text-primary"
-                        : "bg-primary/10 text-primary hover:bg-primary/20",
-                      "disabled:cursor-not-allowed"
-                    )}
-                  >
-                    <IconPlayerPlay className="size-3" />
-                    {isPlaying ? t("detailNowPlaying") : t("detailPlay")}
-                  </button>
+                  {/* Paywall-aware action: renders the lock CTA when
+                      this episode is gated, ✓ play tint when the
+                      viewer already owns it, otherwise the original
+                      compact play button. Drop-in dimension match —
+                      the row layout doesn't shift between modes. */}
+                  <EpisodePaywallChip
+                    episodeId={epId}
+                    episodeTitle={ep.title}
+                    episodeNumber={ep.videoNumber || i + 1}
+                    isPlaying={isPlaying}
+                    onPlay={() => epId && onSelectEpisode(epId)}
+                    playLabel={t("detailPlay")}
+                    nowPlayingLabel={t("detailNowPlaying")}
+                  />
                 </div>
               );
             })}

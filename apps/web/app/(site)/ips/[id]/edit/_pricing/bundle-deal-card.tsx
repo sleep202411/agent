@@ -79,6 +79,7 @@ export function BundleDealCard({
               ? t("pricingBundleSummary", { paid: paidEpisodeCount })
               : t("pricingBundleNoPaidEpisodes")}
           </p>
+          <p className="mt-1 text-[11px] text-amber-400/80">{t("pricingBundleCoversFuture")}</p>
         </>
       ) : (
         <p className="mt-4 text-xs text-muted-foreground">{t("pricingBundleDisabledHint")}</p>

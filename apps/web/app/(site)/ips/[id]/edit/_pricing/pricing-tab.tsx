@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { IconExternalLink, IconLoader2 } from "@tabler/icons-react";
+import { IconExternalLink, IconLoader2, IconRocket } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { useProjectEpisodes } from "@/app/(site)/ips/_hooks/use-ip";
-import { useIpPricing, useUpdateIpPricing } from "@/app/(site)/ips/_hooks/use-pricing";
+import { useIpPricing } from "@/app/(site)/ips/_hooks/use-pricing";
 import type { IpPricing } from "@/app/(site)/ips/_hooks/use-pricing";
 import { PaywallPreview } from "./paywall-preview";
 import { FreePreviewCard } from "./free-preview-card";
@@ -36,7 +36,9 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
 
   const { data: episodes = [], isLoading: episodesLoading } = useProjectEpisodes(ipId);
   const { data: remote, isLoading: pricingLoading } = useIpPricing(ipId);
-  const updatePricing = useUpdateIpPricing(ipId);
+  // `useUpdateIpPricing` intentionally not consumed yet — pricing save
+  // is gated behind a coming-soon toast until backend ships. Re-wire
+  // when /project/pricing/save lands.
 
   const [draft, setDraft] = useState<IpPricing | null>(remote ?? null);
 
@@ -52,12 +54,14 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
     return JSON.stringify(remote) !== JSON.stringify(draft);
   }, [remote, draft]);
 
-  const handleSave = () => {
-    if (!draft || !dirty) return;
-    updatePricing.mutate(draft, {
-      onSuccess: () => toast.success(t("pricingSaveSuccess")),
-      onError: (err) => toast.error(err instanceof Error ? err.message : t("pricingSaveFailed")),
-    });
+  // Save is gated until backend ships. UI is otherwise fully functional —
+  // creators can fiddle, see the preview update, and even open the
+  // viewer-preview route — they just can't persist yet. Wire the real
+  // mutation in when the `/project/pricing/save` endpoint lands (see
+  // pricing-spec.md). For now: clicking Save surfaces a toast that
+  // explains the status; the actual mutation never fires.
+  const handleSaveComingSoon = () => {
+    toast.info(t("pricingSaveComingSoonToast"));
   };
 
   const handleDiscard = () => {
@@ -73,10 +77,35 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
   }
 
   const totalEpisodes = episodes.length;
-  const paidEpisodeCount = Math.max(0, totalEpisodes - draft.freeEpisodeCount);
+  // Free episodes can be sparse picks — count by intersecting the
+  // draft's id list with currently-existing episodes (filters out
+  // stale ids for episodes that have since been deleted).
+  const episodeIds = new Set(episodes.map((e) => e.id));
+  const freeCount = draft.freeEpisodeIds.filter((id) => episodeIds.has(id)).length;
+  const paidEpisodeCount = Math.max(0, totalEpisodes - freeCount);
 
   return (
     <div className="space-y-4">
+      {/* Beta banner — pricing config persistence isn't wired yet, so
+          warn creators their changes are local-only until backend ships.
+          Drop this banner when /project/pricing/save lands. */}
+      <div className="flex items-start gap-3 rounded-lg border border-amber-400/30 bg-gradient-to-br from-amber-400/[0.08] to-orange-400/[0.04] px-4 py-3">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-amber-400">
+          <IconRocket className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">
+              {t("pricingBetaBannerTitle")}
+            </span>
+            <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+              {t("pricingBetaTag")}
+            </span>
+          </div>
+          <p className="mt-1 leading-relaxed text-muted-foreground">{t("pricingBetaBannerBody")}</p>
+        </div>
+      </div>
+
       {/* Header — title + save bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -85,7 +114,7 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href={`/${locale}/ip/${ipId}`}
+            href={`/${locale}/ips/${ipId}?preview=pricing`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground"
@@ -94,27 +123,25 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
             {t("pricingPreviewAsViewer")}
           </Link>
           {dirty ? (
-            <Button
-              type="button"
-              variant="outline"
-              color="muted"
-              size="sm"
-              onClick={handleDiscard}
-              disabled={updatePricing.isPending}
-            >
+            <Button type="button" variant="outline" color="muted" size="sm" onClick={handleDiscard}>
               {tc("discard")}
             </Button>
           ) : null}
+          {/* Save stays present in the layout — clicking shows the
+              coming-soon toast so creators discover the status without
+              hunting for an explanation. Disabled-but-clickable via
+              not setting `disabled`; visual treatment is muted to
+              telegraph the gate. */}
           <Button
             type="button"
             variant="solid"
             color="primary"
             size="sm"
-            onClick={handleSave}
-            disabled={!dirty || updatePricing.isPending}
+            onClick={handleSaveComingSoon}
+            className="cursor-not-allowed opacity-60"
+            title={t("pricingSaveComingSoonToast")}
           >
-            {updatePricing.isPending ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
-            {t("pricingSave")}
+            {t("pricingSaveComingSoon")}
           </Button>
         </div>
       </div>
@@ -125,9 +152,9 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
       {/* Middle — 3 config cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <FreePreviewCard
-          value={draft.freeEpisodeCount}
-          totalEpisodes={totalEpisodes}
-          onChange={(n) => setDraft({ ...draft, freeEpisodeCount: n })}
+          value={draft.freeEpisodeIds}
+          episodes={episodes}
+          onChange={(ids) => setDraft({ ...draft, freeEpisodeIds: ids })}
         />
         <DefaultPriceCard
           value={draft.defaultPriceIntegral}
@@ -144,7 +171,7 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
       {/* Bottom — per-episode overrides */}
       <EpisodeOverridesList
         episodes={episodes}
-        freeEpisodeCount={draft.freeEpisodeCount}
+        freeEpisodeIds={draft.freeEpisodeIds}
         defaultPriceIntegral={draft.defaultPriceIntegral}
         overrides={draft.overrides}
         onChangeOverride={(episodeId, price) => {

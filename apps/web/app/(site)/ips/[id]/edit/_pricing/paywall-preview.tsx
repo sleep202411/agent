@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { IconCoin, IconLock } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
@@ -15,11 +16,16 @@ interface PaywallPreviewProps {
  * The Pricing tab's visual centerpiece — a horizontal chip rail that
  * shows the IP owner what the viewer-side paywall will look like, at
  * a glance. Free episodes render as outlined chips, paid episodes as
- * locked chips with the resolved price (override wins over default).
- * A dotted divider marks where the paywall begins.
+ * locked chips with the resolved price (override > default).
+ *
+ * No paywall divider in this layout: free episodes can be sparse
+ * (e.g. EP01, EP05, EP12), so there's no single line where "free
+ * ends and paid begins". The chip color tells the whole story.
  */
 export function PaywallPreview({ episodes, pricing }: PaywallPreviewProps) {
   const t = useTranslations("ipEdit");
+
+  const freeSet = useMemo(() => new Set(pricing.freeEpisodeIds), [pricing.freeEpisodeIds]);
 
   if (episodes.length === 0) {
     return (
@@ -29,10 +35,8 @@ export function PaywallPreview({ episodes, pricing }: PaywallPreviewProps) {
     );
   }
 
-  // Position is the source of truth here, not `videoNumber` — backend
-  // doesn't reliably populate the latter, so the `useProjectEpisodes`
-  // array order (already dnd-kit-sorted) is what we trust.
-  const freeCount = Math.min(pricing.freeEpisodeCount, episodes.length);
+  const freeCount = episodes.filter((ep) => freeSet.has(ep.id)).length;
+  const paidCount = episodes.length - freeCount;
   const allFree = freeCount >= episodes.length;
 
   return (
@@ -44,34 +48,29 @@ export function PaywallPreview({ episodes, pricing }: PaywallPreviewProps) {
         <div className="text-xs text-muted-foreground">
           {allFree
             ? t("pricingPreviewAllFree")
-            : t("pricingPreviewSummary", {
-                free: freeCount,
-                paid: episodes.length - freeCount,
-              })}
+            : t("pricingPreviewSummary", { free: freeCount, paid: paidCount })}
         </div>
       </div>
 
       <div className="-mx-1 flex items-stretch gap-2 overflow-x-auto px-1 pb-1">
         {episodes.map((ep, idx) => {
           const position = idx + 1;
-          const isFree = idx < freeCount;
-          const showWall = !isFree && idx === freeCount;
+          const isFree = freeSet.has(ep.id);
           const override = pricing.overrides[ep.id];
-          const price = isFree
-            ? null
-            : typeof override === "number"
-              ? override
-              : pricing.defaultPriceIntegral;
+          const resolvedPrice =
+            typeof override === "number" ? override : pricing.defaultPriceIntegral;
+          // Override of 0 / default of 0 → effectively free even if
+          // the episode isn't in the explicit free list. Mirror the
+          // access-judgment rules in pricing-spec.md.
+          const effectivelyFree = isFree || resolvedPrice === 0;
           return (
-            <div key={ep.id} className="flex items-stretch gap-2">
-              {showWall ? <PaywallDivider /> : null}
-              <EpisodeChip
-                index={position}
-                title={ep.title}
-                price={price}
-                hasOverride={!isFree && typeof override === "number"}
-              />
-            </div>
+            <EpisodeChip
+              key={ep.id}
+              index={position}
+              title={ep.title}
+              price={effectivelyFree ? null : resolvedPrice}
+              hasOverride={!effectivelyFree && typeof override === "number"}
+            />
           );
         })}
       </div>
@@ -125,18 +124,6 @@ function EpisodeChip({
           </>
         )}
       </div>
-    </div>
-  );
-}
-
-function PaywallDivider() {
-  const t = useTranslations("ipEdit");
-  return (
-    <div className="relative flex w-px shrink-0 flex-col items-center self-stretch">
-      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 border-l-2 border-dashed border-amber-400/70" />
-      <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-[-90deg] whitespace-nowrap text-[9px] font-bold uppercase tracking-widest text-amber-400">
-        {t("pricingPaywallMarker")}
-      </span>
     </div>
   );
 }

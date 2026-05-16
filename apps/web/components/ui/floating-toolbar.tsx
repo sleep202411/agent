@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { IconLoader2 } from "@tabler/icons-react";
+import { IconLoader2, IconArrowBackUp } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { MentionPromptDisplay } from "@/components/media/mention-prompt-display";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -17,6 +18,13 @@ export interface ToolbarAction {
   title?: string;
   /** If provided, renders a meta info popover instead of a button */
   metaContent?: string;
+  /** Optional "reuse" action for meta popovers — renders a button that
+   *  the caller wires to e.g. refilling the current prompt input with
+   *  the historical content. Only rendered when `metaContent` is set. */
+  onApplyMeta?: () => void;
+  /** Label for the apply button. Caller supplies it (i18n) so this
+   *  component stays string-free. */
+  applyMetaLabel?: string;
   onClick?: () => void;
 }
 
@@ -71,19 +79,45 @@ function MetaPopoverButton({
   icon,
   content,
   title,
+  onApply,
+  applyLabel,
 }: {
   icon: React.ReactNode;
   content: string;
   title?: string;
+  onApply?: () => void;
+  applyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
+
+  const handleApply = () => {
+    onApply?.();
+    setOpen(false);
+  };
 
   return (
     <div className="relative">
       <ToolbarButton icon={icon} active={open} title={title} onClick={() => setOpen((v) => !v)} />
       {open ? (
         <div className="absolute right-0 top-full z-20 mt-2 w-[360px] rounded-lg border border-white/10 bg-black/90 p-3 text-xs leading-5 text-white shadow-2xl">
-          <div className="max-h-52 overflow-auto whitespace-pre-wrap break-all">{content}</div>
+          <div className="max-h-52 overflow-auto break-all">
+            <MentionPromptDisplay
+              prompt={content}
+              className="whitespace-pre-wrap text-xs leading-5 text-white/90"
+            />
+          </div>
+          {onApply ? (
+            <div className="mt-2 flex justify-end border-t border-white/10 pt-2">
+              <button
+                type="button"
+                onClick={handleApply}
+                className="inline-flex items-center gap-1 rounded-md bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/25"
+              >
+                <IconArrowBackUp className="size-3.5" />
+                {applyLabel ?? "Apply"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -126,6 +160,8 @@ export function FloatingToolbar({ actions, className, position = "none" }: Float
               icon={action.icon}
               content={action.metaContent}
               title={action.title}
+              onApply={action.onApplyMeta}
+              applyLabel={action.applyMetaLabel}
             />
           ) : (
             <ToolbarButton
