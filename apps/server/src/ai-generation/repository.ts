@@ -38,16 +38,41 @@ export interface AiJobListOptions {
   limit?: number;
 }
 
+/**
+ * Thrown by `repository.update(id, patch, expectedVersion)` when the
+ * row's current `version` no longer matches what the caller saw.
+ * Callers should re-read and decide whether to retry, merge, or skip.
+ */
+export class OptimisticLockError extends Error {
+  constructor(
+    public readonly jobId: string,
+    public readonly expectedVersion: number,
+  ) {
+    super(
+      `Optimistic lock failed on AiJob ${jobId} (expected version ${expectedVersion})`,
+    );
+    this.name = 'OptimisticLockError';
+  }
+}
+
 type JobWithOutputs = AiJobRow & { outputs: AiJobOutputRow[] };
 
 @Injectable()
 export class AiGenerationRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findById(id: string): Promise<AiJob | null> {
-    const row = await this.prisma.aiJob.findUnique({
-      where: { id },
-      include: { outputs: { orderBy: { outputIndex: 'asc' } } },
+  /**
+   * `findById` and friends hide soft-deleted rows by default. Pass
+   * `{ includeDeleted: true }` for admin / debug paths that need the
+   * tombstone — never expose those to end users.
+   */
+  async findById(
+    id: string,
+    opts: { includeDeleted?: boolean } = {},
+  ): Promise<AiJob | null> {
+    const row = await this.prisma.aiJob.findFirst({
+      where: { id, ...(opts.includeDeleted ? {} : { deletedAt: null }) },
+      include: { outputs: this.outputsInclude(opts.includeDeleted) },
     });
     return row ? this.toDomain(row) : null;
   }
@@ -57,11 +82,15 @@ export class AiGenerationRepository {
     modelId: string,
     idempotencyKey: string,
   ): Promise<AiJob | null> {
-    const row = await this.prisma.aiJob.findUnique({
-      where: {
-        uniq_user_model_idempotency: { userId, modelId, idempotencyKey },
-      },
-      include: { outputs: { orderBy: { outputIndex: 'asc' } } },
+    // Soft-deleted rows would shadow a re-submission today (the unique
+    // constraint is full, not partial — see TODO in schema.prisma).
+    // We still filter `deletedAt: null` here so callers don't get a
+    // tombstone back; the unique-constraint collision shows up as a
+    // create error if the user tries to resubmit, which surfaces a
+    // clearer signal than silently returning a deleted job.
+    const row = await this.prisma.aiJob.findFirst({
+      where: { userId, modelId, idempotencyKey, deletedAt: null },
+      include: { outputs: this.outputsInclude(false) },
     });
     return row ? this.toDomain(row) : null;
   }
@@ -77,21 +106,55 @@ export class AiGenerationRepository {
     return job;
   }
 
-  async update(id: string, patch: Partial<AiJob>): Promise<AiJob | null> {
+  /**
+   * Update a job. If `expectedVersion` is provided, the update is
+   * conditioned on `WHERE id = ? AND version = ?` and bumps `version`
+   * atomically; if nothing matched the call throws `OptimisticLockError`
+   * (some other writer got there first; caller should re-read).
+   *
+   * Without `expectedVersion` the update is an unconditional overwrite
+   * — fine for paths that already hold an external lock (BullMQ
+   * processor holds the job exclusively), or for callers that don't
+   * care about the race.
+   *
+   * Returns `null` if the row doesn't exist (or was soft-deleted in
+   * the unconditional path).
+   */
+  async update(
+    id: string,
+    patch: Partial<AiJob>,
+    expectedVersion?: number,
+  ): Promise<AiJob | null> {
     const data = this.patchToRow(patch);
-    try {
-      await this.prisma.aiJob.update({
-        where: { id },
-        data,
+    if (expectedVersion != null) {
+      const result = await this.prisma.aiJob.updateMany({
+        where: { id, version: expectedVersion },
+        data: { ...data, version: { increment: 1 } },
       });
-    } catch (err) {
-      if (
-        err instanceof Error &&
-        err.message.includes('Record to update not found')
-      ) {
-        return null;
+      if (result.count === 0) {
+        // Distinguish "missing" from "stale": one quick read tells us.
+        const exists = await this.prisma.aiJob.findUnique({
+          where: { id },
+          select: { id: true },
+        });
+        if (!exists) return null;
+        throw new OptimisticLockError(id, expectedVersion);
       }
-      throw err;
+    } else {
+      try {
+        await this.prisma.aiJob.update({
+          where: { id },
+          data: { ...data, version: { increment: 1 } },
+        });
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          err.message.includes('Record to update not found')
+        ) {
+          return null;
+        }
+        throw err;
+      }
     }
     if (patch.outputs) await this.replaceOutputs(id, patch.outputs);
     return this.findById(id);
@@ -102,11 +165,12 @@ export class AiGenerationRepository {
     const rows = await this.prisma.aiJob.findMany({
       where: {
         userId: options.userId,
+        deletedAt: null,
         ...(options.type ? { type: options.type } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
-      include: { outputs: { orderBy: { outputIndex: 'asc' } } },
+      include: { outputs: this.outputsInclude(false) },
     });
     return rows.map((r) => this.toDomain(r));
   }
@@ -115,18 +179,19 @@ export class AiGenerationRepository {
     const rows = await this.prisma.aiJob.findMany({
       where: {
         userId,
+        deletedAt: null,
         status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED', 'EXPIRED'] },
       },
-      include: { outputs: { orderBy: { outputIndex: 'asc' } } },
+      include: { outputs: this.outputsInclude(false) },
     });
     return rows.map((r) => this.toDomain(r));
   }
 
   async waitingInQueue(queueName: AiJob['queueName']): Promise<AiJob[]> {
     const rows = await this.prisma.aiJob.findMany({
-      where: { queueName, status: 'IN_QUEUE' },
+      where: { queueName, status: 'IN_QUEUE', deletedAt: null },
       orderBy: [{ queuedAt: 'asc' }, { createdAt: 'asc' }],
-      include: { outputs: { orderBy: { outputIndex: 'asc' } } },
+      include: { outputs: this.outputsInclude(false) },
     });
     return rows.map((r) => this.toDomain(r));
   }
@@ -156,6 +221,17 @@ export class AiGenerationRepository {
   }
 
   // ─── hydration helpers ────────────────────────────────────────
+
+  /**
+   * Standard `outputs` include clause — filters out soft-deleted
+   * output rows unless explicitly requested.
+   */
+  private outputsInclude(includeDeleted: boolean | undefined) {
+    return {
+      where: includeDeleted ? undefined : { deletedAt: null },
+      orderBy: { outputIndex: 'asc' as const },
+    };
+  }
 
   private toDomain(row: JobWithOutputs): AiJob {
     return {

@@ -14,75 +14,147 @@ datasource db {
 
 // ─────────────────────────────────────────────────────────────
 // AI Generation domain (src/ai-generation/)
-// One row per user submission across all providers (Foundry, fal-ai,
-// Replicate, …). `provider` discriminates which adapter handled it.
 // ─────────────────────────────────────────────────────────────
+
+// Enums get enforced at the DB level — typos can't write garbage
+// statuses. Adding a value still requires a migration (one ALTER TYPE),
+// which is the right amount of friction for a state machine.
+
+enum AiJobType {
+  image
+  video
+}
+
+enum AiJobStatus {
+  CREATED
+  IN_QUEUE
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum AiJobStage {
+  created
+  queued
+  validating
+  calling_provider
+  provider_queued
+  generating
+  fetching_output
+  uploading_to_oss
+  completed
+  failed
+  cancelled
+  expired
+}
+
+enum AiAttemptStatus {
+  succeeded
+  failed
+  aborted
+}
+
+enum AiProviderEventType {
+  queue_update
+  started
+  completed
+  failed
+  unknown
+}
+
+enum AiOutboxEventType {
+  /// Job lifecycle change (status/stage/queuePosition update). The
+  /// payload mirrors the Web PubSub `foundry_job_update` shape.
+  job_update
+}
 
 // AiJob — one row per user submission to a generation provider.
 // Production-grade conventions applied:
 //   - Soft delete via `deletedAt` (preserve evidence for audit / billing)
-//   - Optimistic locking via `version` (multi-worker safety net even
-//     though BullMQ already serializes claims)
+//   - Optimistic locking via `version` — repository.update() enforces
+//     when caller supplies `expectedVersion`; pure overwrite otherwise.
 //   - `requestId` for cross-system trace correlation
 //   - All timestamps Timestamptz(6) for sub-ms precision
 //   - Indexes are FULL today; future migration can switch to PARTIAL
-//     `WHERE deleted_at IS NULL` once table grows (Prisma 6.x lacks
-//     native partial-index DSL; do via raw migration)
+//     `WHERE deleted_at IS NULL` once table grows (Prisma 7 lacks
+//     native partial-index DSL; do via raw migration). See also the
+//     TODO note on `idempotencyKey` below.
+//
+// TODO(billing): `cost` is a *display* field. A real money ledger
+//   needs an immutable `ai_cost_ledger` table with idempotency_key,
+//   amount, currency, source, reversal_of FK. This Json is a stopgap
+//   until billing goes live.
+// TODO(product-context): add projectId / workspaceId / siteRegion
+//   ('global' | 'cn') / sourceSurface ('art-studio' | 'crew' | …)
+//   once the crew + project modules ship and the ID space settles.
+// TODO(soft-delete-partial-unique): swap @@unique below for a partial
+//   `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL` (raw SQL) so a
+//   re-submission after soft delete is not blocked by the tombstone.
 model AiJob {
-  id                    String    @id @default(uuid())
-  userId                String    @map("user_id")
-  userLevel             String?   @map("user_level")
-  type                  String // 'image' | 'video'
-  provider              String // 'microsoft-foundry' | 'fal-ai' | ...
-  modelId               String    @map("model_id")
+  id                    String          @id @default(uuid())
+  userId                String          @map("user_id")
+  /// Tier snapshot at submission time — for audit and (future) tier-
+  /// differentiated pricing. Runtime authz uses sa-token's live value.
+  userLevel             String?         @map("user_level")
+  type                  AiJobType
+  /// Adapter identifier — 'microsoft-foundry' | 'fal-ai' | …. Stays a
+  /// free-form String so new providers don't need migrations.
+  provider              String
+  modelId               String          @map("model_id")
   deployment            String
-  schemaVersion         String    @map("schema_version")
-  status                String // AiJobStatus
-  stage                 String // AiJobStage
-  queueName             String    @map("queue_name")
+  schemaVersion         String          @map("schema_version")
+  status                AiJobStatus
+  stage                 AiJobStage
+  queueName             String          @map("queue_name")
   prompt                String
-  idempotencyKey        String    @map("idempotency_key")
+  idempotencyKey        String          @map("idempotency_key")
   /// External trace id (X-Request-Id header), nullable until UI sends one.
-  requestId             String?   @map("request_id")
+  requestId             String?         @map("request_id")
   input                 Json
-  normalizedInput       Json      @map("normalized_input")
+  normalizedInput       Json            @map("normalized_input")
   error                 Json?
   logs                  Json
   metrics               Json
-  queuePosition         Int?      @map("queue_position")
+  queuePosition         Int?            @map("queue_position")
   progress              Float?
-  estimatedWaitSeconds  Int?      @map("estimated_wait_seconds")
-  estimatedRunSeconds   Int?      @map("estimated_run_seconds")
-  estimatedTotalSeconds Int?      @map("estimated_total_seconds")
-  etaConfidence         String?   @map("eta_confidence")
-  attempt               Int       @default(1)
-  retryOfJobId          String?   @map("retry_of_job_id")
-  providerJobId         String?   @map("provider_job_id")
-  /// Aggregated cost across all attempts. Updated when an attempt
-  /// completes. Shape:
-  ///   { currency, amount, meters: [{meter, unit, quantity, unitPrice, cost}], provider, billedAt }
+  estimatedWaitSeconds  Int?            @map("estimated_wait_seconds")
+  estimatedRunSeconds   Int?            @map("estimated_run_seconds")
+  estimatedTotalSeconds Int?            @map("estimated_total_seconds")
+  etaConfidence         String?         @map("eta_confidence")
+  attempt               Int             @default(1)
+  retryOfJobId          String?         @map("retry_of_job_id")
+  /// Provider-side job id for async providers (fal.ai request_id,
+  /// Replicate prediction id, Azure video job id). NULL for sync
+  /// providers like Azure Foundry images. Indexed with `provider` for
+  /// fast webhook reverse-lookup.
+  providerJobId         String?         @map("provider_job_id")
+  /// Aggregated cost across all attempts. See TODO(billing) above.
   cost                  Json?
   /// W3C distributed trace context (traceparent / tracestate) so logs
   /// from worker / DB / provider correlate in observability stack.
   trace                 Json?
   /// Client telemetry — abuse detection, UA-specific bug triage.
-  clientIp              String?   @map("client_ip")
-  userAgent             String?   @map("user_agent")
+  clientIp              String?         @map("client_ip")
+  userAgent             String?         @map("user_agent")
   /// Optimistic concurrency control. Increment on every update; readers
-  /// supply the version they saw in the WHERE clause.
-  version               Int       @default(0)
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  queuedAt              DateTime? @map("queued_at") @db.Timestamptz(6)
-  startedAt             DateTime? @map("started_at") @db.Timestamptz(6)
-  providerSubmittedAt   DateTime? @map("provider_submitted_at") @db.Timestamptz(6)
-  providerStartedAt     DateTime? @map("provider_started_at") @db.Timestamptz(6)
-  providerCompletedAt   DateTime? @map("provider_completed_at") @db.Timestamptz(6)
-  outputFetchedAt       DateTime? @map("output_fetched_at") @db.Timestamptz(6)
-  ossUploadedAt         DateTime? @map("oss_uploaded_at") @db.Timestamptz(6)
-  completedAt           DateTime? @map("completed_at") @db.Timestamptz(6)
-  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  /// Soft delete tombstone. Filter `deletedAt: null` in every read.
-  deletedAt             DateTime? @map("deleted_at") @db.Timestamptz(6)
+  /// supply the version they saw in the WHERE clause via
+  /// repository.update(id, patch, expectedVersion).
+  version               Int             @default(0)
+  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  queuedAt              DateTime?       @map("queued_at") @db.Timestamptz(6)
+  startedAt             DateTime?       @map("started_at") @db.Timestamptz(6)
+  providerSubmittedAt   DateTime?       @map("provider_submitted_at") @db.Timestamptz(6)
+  providerStartedAt     DateTime?       @map("provider_started_at") @db.Timestamptz(6)
+  providerCompletedAt   DateTime?       @map("provider_completed_at") @db.Timestamptz(6)
+  outputFetchedAt       DateTime?       @map("output_fetched_at") @db.Timestamptz(6)
+  ossUploadedAt         DateTime?       @map("oss_uploaded_at") @db.Timestamptz(6)
+  completedAt           DateTime?       @map("completed_at") @db.Timestamptz(6)
+  updatedAt             DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Soft delete tombstone. Repository helpers filter `deletedAt: null`;
+  /// raw Prisma callers must do the same.
+  deletedAt             DateTime?       @map("deleted_at") @db.Timestamptz(6)
 
   outputs  AiJobOutput[]
   attempts AiJobAttempt[]
@@ -91,24 +163,28 @@ model AiJob {
   @@unique([userId, modelId, idempotencyKey], name: "uniq_user_model_idempotency", map: "ai_jobs_idempotency_unique")
   @@index([userId, createdAt(sort: Desc)], map: "ai_jobs_user_created_idx")
   @@index([queueName, status, queuedAt], map: "ai_jobs_queue_claim_idx")
+  /// Fast reverse-lookup from a webhook `(provider, providerJobId)`
+  /// to the owning AiJob.
+  @@index([provider, providerJobId], map: "ai_jobs_provider_job_id_idx")
   @@index([deletedAt], map: "ai_jobs_deleted_at_idx")
   @@map("ai_jobs")
 }
 
-// AiJobOutput — one row per generated artifact (OSS-backed). ID is
-// composite `${jobId}#${outputIndex}-${contentHash}` so re-uploading
-// identical content collapses to the same row (idempotent recovery).
+// AiJobOutput — one row per generated artifact (OSS-backed). ID is a
+// random UUID; idempotent recovery on retry is provided by the
+// `(jobId, outputIndex)` unique constraint plus the worker's DELETE +
+// INSERT transaction in `replaceOutputs` (see repository.ts).
 model AiJobOutput {
   id              String    @id @default(uuid())
   jobId           String    @map("job_id")
-  type            String
+  type            AiJobType
   url             String
   /// CDN thumbnail variant — gallery uses this; original `url` is the
   /// full asset. Optional; populated by a post-processing step.
   thumbnailUrl    String?   @map("thumbnail_url")
   storagePath     String    @map("storage_path")
   /// SHA-256 (truncated to 12 hex) of the bytes — queryable separately
-  /// from the composite id for dedupe lookups across users.
+  /// from the id for cross-user dedupe lookups.
   contentHash     String?   @map("content_hash")
   width           Int?
   height          Int?
@@ -142,29 +218,29 @@ model AiJobOutput {
 // Stores the full request / response / headers / cost so any past
 // generation can be replayed or audited.
 model AiJobAttempt {
-  id                      String    @id @default(uuid())
-  jobId                   String    @map("job_id")
-  attemptNumber           Int       @map("attempt_number")
-  status                  String // 'succeeded' | 'failed' | 'aborted'
-  providerStatus          Int?      @map("provider_status")
+  id                      String          @id @default(uuid())
+  jobId                   String          @map("job_id")
+  attemptNumber           Int             @map("attempt_number")
+  status                  AiAttemptStatus
+  providerStatus          Int?            @map("provider_status")
   /// Full request body sent to the provider (after adapter mapping).
-  providerRequest         Json?     @map("provider_request")
+  providerRequest         Json?           @map("provider_request")
   /// Outbound headers (auth redacted server-side before write).
-  providerRequestHeaders  Json?     @map("provider_request_headers")
+  providerRequestHeaders  Json?           @map("provider_request_headers")
   /// Raw response body. Audit / debug / future re-parse.
-  providerResponse        Json?     @map("provider_response")
+  providerResponse        Json?           @map("provider_response")
   /// Response headers — Azure / fal often return rate limit / cost
   /// info here (x-ratelimit-*, x-fal-*).
-  providerResponseHeaders Json?     @map("provider_response_headers")
+  providerResponseHeaders Json?           @map("provider_response_headers")
   /// Provider-side logs (fal returns inference step logs; Azure returns
   /// content filter signals). Kept verbatim.
-  providerLogs            Json?     @map("provider_logs")
+  providerLogs            Json?           @map("provider_logs")
   /// This-attempt cost breakdown. Aggregated into AiJob.cost on success.
-  costAccounting          Json?     @map("cost_accounting")
+  costAccounting          Json?           @map("cost_accounting")
   error                   Json?
-  runDurationMs           Int?      @map("run_duration_ms")
-  startedAt               DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
-  completedAt             DateTime? @map("completed_at") @db.Timestamptz(6)
+  runDurationMs           Int?            @map("run_duration_ms")
+  startedAt               DateTime        @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt             DateTime?       @map("completed_at") @db.Timestamptz(6)
 
   job AiJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
@@ -185,19 +261,18 @@ model AiJobAttempt {
 // recognize (already cleaned, wrong tenant, race against creation);
 // store them anyway so we can investigate later.
 model AiProviderEvent {
-  id                String    @id @default(uuid())
-  jobId             String?   @map("job_id")
-  provider          String
+  id              String              @id @default(uuid())
+  jobId           String?             @map("job_id")
+  provider        String
   /// Provider's own ID for this event (fal: request_id; others may vary).
-  providerEventId   String?   @map("provider_event_id")
-  /// 'queue_update' | 'started' | 'completed' | 'failed' | 'unknown'
-  eventType         String    @map("event_type")
-  payload           Json
-  headers           Json
-  signatureValid    Boolean   @map("signature_valid")
-  receivedAt        DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
-  processedAt       DateTime? @map("processed_at") @db.Timestamptz(6)
-  processingError   String?   @map("processing_error")
+  providerEventId String?             @map("provider_event_id")
+  eventType       AiProviderEventType @map("event_type")
+  payload         Json
+  headers         Json
+  signatureValid  Boolean             @map("signature_valid")
+  receivedAt      DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt     DateTime?           @map("processed_at") @db.Timestamptz(6)
+  processingError String?             @map("processing_error")
 
   @@unique([provider, providerEventId], name: "uniq_provider_event_id", map: "ai_provider_events_provider_event_unique")
   @@index([jobId, receivedAt(sort: Desc)], map: "ai_provider_events_job_recent_idx")
@@ -207,18 +282,42 @@ model AiProviderEvent {
 
 // AiEventOutbox — durable Web PubSub fan-out. Dispatcher polls
 // `dispatched_at IS NULL` rows and publishes; success marks
-// dispatched_at. Internal-only; DB-mints UUIDs.
+// dispatched_at. Failures bump `attempt`, schedule `nextAttemptAt`
+// (exponential backoff), record `lastError`; after a cap rows go to
+// the DLQ via `deadAt`. Pod-level `lockedAt` / `lockedBy` let multiple
+// dispatcher instances coexist without double-publishing.
 model AiEventOutbox {
-  id           String    @id @default(uuid())
-  jobId        String    @map("job_id")
-  userId       String    @map("user_id")
-  payload      Json
-  dispatchedAt DateTime? @map("dispatched_at") @db.Timestamptz(6)
-  attempt      Int       @default(0)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String            @id @default(uuid())
+  jobId         String            @map("job_id")
+  userId        String            @map("user_id")
+  eventType     AiOutboxEventType @map("event_type")
+  payload       Json
+  dispatchedAt  DateTime?         @map("dispatched_at") @db.Timestamptz(6)
+  attempt       Int               @default(0)
+  /// When to retry next. NULL = ready immediately.
+  nextAttemptAt DateTime?         @map("next_attempt_at") @db.Timestamptz(6)
+  /// Last dispatch error, truncated. For ops triage.
+  lastError     String?           @map("last_error")
+  /// Pessimistic lock for multi-pod dispatcher safety.
+  /// `lockedBy` = pod hostname / random id; `lockedAt` = timestamp.
+  /// Stale locks (lockedAt > LOCK_TTL ago) are reclaimable.
+  lockedAt      DateTime?         @map("locked_at") @db.Timestamptz(6)
+  lockedBy      String?           @map("locked_by")
+  /// DLQ tombstone. Set when retries exhausted; dispatcher skips. Ops
+  /// can inspect / requeue from here.
+  deadAt        DateTime?         @map("dead_at") @db.Timestamptz(6)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
 
   job AiJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  @@index([dispatchedAt, createdAt], map: "ai_event_outbox_pending_idx")
+  /// Pending-events scan: dispatched_at NULL AND dead_at NULL AND
+  /// (nextAttemptAt NULL OR nextAttemptAt <= now()) AND lock free.
+  @@index([dispatchedAt, deadAt, nextAttemptAt], map: "ai_event_outbox_pending_idx")
+  /// Per-job event timeline (debug / ops).
+  @@index([jobId, createdAt(sort: Desc)], map: "ai_event_outbox_job_recent_idx")
+  /// Find stuck locks (lockedAt < cutoff).
+  @@index([lockedAt], map: "ai_event_outbox_locked_idx")
+  /// DLQ inspection.
+  @@index([deadAt], map: "ai_event_outbox_dead_idx")
   @@map("ai_event_outbox")
 }
