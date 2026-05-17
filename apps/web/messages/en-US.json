@@ -2610,6 +2610,7 @@
     "sidebarLabel": "Studio navigation",
     "sidebarHome": "Home",
     "sidebarProjects": "Projects",
+    "sidebarImageLab": "Image Lab",
     "sidebarFoundry": "Foundry",
     "noProjects": "No projects yet",
     "noProjectsHint": "Create your first project to get started",
@@ -3671,7 +3672,7 @@
       "subtitle": "Accelerators, publishers, broadcasters, and studios collaborating with FizzDragon to bring AI-assisted storytelling to global audiences."
     }
   },
-  "foundry": {
+  "aiGen": {
     "eyebrow": "Foundry Studio",
     "title": "Image and video generation",
     "subtitle": "Run member-only Foundry jobs with schema-driven controls, queue visibility, task history, and result inspection.",
@@ -3691,8 +3692,8 @@
     "estimateQueue": "Queue ~{time}",
     "queueCapacity": "Concurrency {count}",
     "generate": "Generate",
-    "promptPlaceholder": "Describe the image or video you want to generate...",
-    "referenceUrlPlaceholder": "Paste one reference URL per line",
+    "promptPlaceholder": "Describe the subject, style, composition, and mood...",
+    "referenceUrlPlaceholder": "Paste one reference image link per line",
     "queueTitle": "Generation queue",
     "activeJobs": "{count} active job(s)",
     "recentJobs": "Recent jobs",
@@ -3737,6 +3738,298 @@
       "retryFailed": "Failed to retry task",
       "loadJobDetail": "Failed to load task details",
       "modelDisabled": "This model is not enabled yet"
+    },
+    "schemaVersion": "Schema",
+    "requestId": "Request ID",
+    "backToStudio": "Back",
+    "modelLabel": "Model",
+    "imageLab": {
+      "tab": {
+        "history": "History",
+        "community": "Community",
+        "tutorial": "Tutorial",
+        "placeholder": "Coming soon."
+      },
+      "welcome": {
+        "title": "Welcome to Fizz Image Lab",
+        "subtitle": "Describe an image below. Every generation lands in your history."
+      },
+      "empty": {
+        "title": "Your gallery is empty",
+        "subtitle": "Try one of these to see {model} in action."
+      },
+      "example": {
+        "one": "A tiny dragon mascot reading a book in a cozy library, soft golden light, studio illustration",
+        "two": "Top-down shot of a desk covered in colorful sticky notes, pastel palette, isometric perspective",
+        "three": "A windswept lighthouse on a cliff at dusk, dramatic clouds, cinematic photography"
+      },
+      "compose": {
+        "placeholder": "Describe the image you imagine",
+        "create": "Create",
+        "addImage": "Add image",
+        "addReferences": "Add references",
+        "outputs": "Outputs"
+      },
+      "cell": {
+        "queued": "Queued",
+        "retry": "Retry",
+        "download": "Download"
+      },
+      "stage": {
+        "running": "Running",
+        "uploading": "Uploading",
+        "fetching": "Fetching"
+      },
+      "queue": {
+        "ready": "Ready",
+        "configuring": "Generation will be available after this region is enabled.",
+        "position": "#{n} in line"
+      },
+      "error": {
+        "submitFailed": "Failed to submit generation task.",
+        "timeout": "Generation took too long. Try again or pick a smaller size.",
+        "empty": "Generation completed without output.",
+        "failed": "Generation failed."
+      },
+      "eyebrow": "AI image",
+      "title": "Text to Image",
+      "subtitle": "Write the scene first. Add references and precise controls only when they help the result.",
+      "source": {
+        "label": "Source",
+        "live": "Online model",
+        "preview": "Local preview",
+        "previewNote": "Using a local preview."
+      },
+      "metric": {
+        "estimate": "Estimate",
+        "outputs": "Outputs"
+      },
+      "brief": {
+        "title": "Image setup",
+        "subtitle": "Start with subject, style, composition, and the moment you want to capture."
+      },
+      "cost": {
+        "helper": "Estimated credits are a guide; final usage is settled after generation.",
+        "final": "Final cost",
+        "providerUsage": "Provider usage"
+      },
+      "preview": {
+        "title": "Result canvas",
+        "ready": "Ready for review",
+        "waiting": "Results will appear here",
+        "copyPrompt": "Copy brief",
+        "download": "Download",
+        "emptyPrompt": "No image brief yet",
+        "ossReady": "Ready image",
+        "idleTitle": "Describe the image, then generate",
+        "idleDesc": "Defaults are tuned for a first pass. Open more settings when you need precision.",
+        "generatingTitle": "Generating",
+        "generatingDesc": "Keep this page open. The result will appear here when the image is ready.",
+        "queuedTitle": "Queued",
+        "queuedDesc": "The image is being prepared.",
+        "needsAttention": "Needs attention",
+        "previewRun": "Preparing preview",
+        "submitting": "Submitting generation"
+      },
+      "references": {
+        "title": "Reference images",
+        "helper": "Optional. Add references only when they clarify style or composition.",
+        "limit": "Up to {count}."
+      },
+      "sizePreset": {
+        "auto": "Auto",
+        "square": "1:1",
+        "landscape": "Landscape",
+        "portrait": "Portrait",
+        "wide": "Wide",
+        "vertical": "9:16 Vertical",
+        "squareHd": "1:1 HD",
+        "uhd": "4K UHD"
+      },
+      "options": {
+        "auto": "Auto",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "opaque": "Opaque",
+        "png": "PNG",
+        "jpeg": "JPEG",
+        "webp": "WebP"
+      },
+      "modelFit": {
+        "title": "Model fit",
+        "prompt": "Long prompts and visual direction",
+        "references": "Optional reference-guided edits",
+        "opaque": "Opaque-background outputs"
+      },
+      "capabilities": {
+        "title": "Capabilities",
+        "softLimit": "Related options appear automatically for the current setup."
+      },
+      "runState": {
+        "title": "Run state"
+      },
+      "availability": {
+        "label": "Region"
+      },
+      "docs": {
+        "title": "Docs"
+      },
+      "softWhen": {
+        "outputCompression": "Appears after choosing JPEG or WebP.",
+        "partialImages": "Appears after streaming previews are enabled.",
+        "currentChoice": "Not needed for the current choice.",
+        "default": "Appears when it is needed."
+      }
+    },
+    "schema": {
+      "preflight": {
+        "estimatedCredits": "Estimated credits"
+      },
+      "group": {
+        "prompt": {
+          "title": "Image brief"
+        },
+        "generation": {
+          "title": "Generation"
+        },
+        "references": {
+          "title": "References"
+        },
+        "output": {
+          "title": "Output"
+        },
+        "advanced": {
+          "title": "Advanced"
+        },
+        "media": {
+          "title": "Media"
+        },
+        "metadata": {
+          "title": "Metadata"
+        }
+      },
+      "field": {
+        "prompt": {
+          "title": "Brief",
+          "label": "Brief"
+        },
+        "size": {
+          "title": "Size",
+          "label": "Size"
+        },
+        "quality": {
+          "title": "Quality",
+          "label": "Quality"
+        },
+        "outputs": {
+          "title": "Outputs",
+          "label": "Outputs"
+        },
+        "referenceImages": {
+          "title": "Reference images",
+          "label": "Reference images"
+        },
+        "seed": {
+          "title": "Seed",
+          "label": "Seed"
+        },
+        "duration": {
+          "title": "Duration",
+          "label": "Duration"
+        },
+        "variants": {
+          "title": "Variants",
+          "label": "Variants"
+        },
+        "background": {
+          "title": "Background",
+          "label": "Background"
+        },
+        "outputFormat": {
+          "title": "Output format",
+          "label": "Output format"
+        },
+        "outputCompression": {
+          "title": "Compression",
+          "label": "Compression",
+          "description": "Compression level for JPEG or WebP output."
+        },
+        "moderation": {
+          "title": "Moderation",
+          "label": "Moderation"
+        },
+        "stream": {
+          "title": "Stream partial images",
+          "label": "Stream partial images"
+        },
+        "partialImages": {
+          "title": "Partial images",
+          "label": "Partial images",
+          "description": "Number of partial images to request for streaming."
+        }
+      },
+      "media": {
+        "url": {
+          "title": "URL"
+        },
+        "mimeType": {
+          "title": "MIME type"
+        },
+        "name": {
+          "title": "File name"
+        },
+        "bytes": {
+          "title": "Bytes"
+        }
+      },
+      "output": {
+        "images": {
+          "title": "Images",
+          "label": "Images"
+        },
+        "videos": {
+          "title": "Videos",
+          "label": "Videos"
+        },
+        "storagePath": {
+          "title": "Storage path"
+        },
+        "width": {
+          "title": "Width"
+        },
+        "height": {
+          "title": "Height"
+        },
+        "duration": {
+          "title": "Duration"
+        },
+        "mimeType": {
+          "title": "MIME type"
+        },
+        "bytes": {
+          "title": "Bytes"
+        },
+        "providerMetadata": {
+          "title": "Provider metadata",
+          "label": "Provider metadata"
+        }
+      }
+    },
+    "gptImage2": {
+      "prompt": {
+        "description": "Describe the image you want to generate or edit."
+      },
+      "size": {
+        "description": "Use auto or WIDTHxHEIGHT. Width and height must be multiples of 16; total pixels must be 655360-8294400; aspect ratio must be at most 3:1.",
+        "hint": "Choose a common ratio first. Custom WIDTHxHEIGHT remains available through schema/API."
+      },
+      "referenceImages": {
+        "description": "Reference images for style, composition, or details. Up to 16 images."
+      },
+      "background": {
+        "description": "Currently supports automatic or opaque backgrounds."
+      }
     }
   }
 }

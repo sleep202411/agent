@@ -66,7 +66,7 @@ enum AiProviderEventType {
 
 enum AiOutboxEventType {
   /// Job lifecycle change (status/stage/queuePosition update). The
-  /// payload mirrors the Web PubSub `foundry_job_update` shape.
+  /// payload mirrors the Web PubSub `ai_job_update` shape.
   job_update
 }
 

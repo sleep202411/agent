@@ -2610,6 +2610,7 @@
     "sidebarLabel": "工作室导航",
     "sidebarHome": "首页",
     "sidebarProjects": "项目列表",
+    "sidebarImageLab": "AI 生图",
     "sidebarFoundry": "Foundry",
     "noProjects": "还没有项目",
     "noProjectsHint": "创建你的第一个项目开始创作吧",
@@ -3671,7 +3672,7 @@
       "subtitle": "加速器、出版方、电视台与制作公司，与 FizzDragon 一同把 AI 辅助创作带给全球观众。"
     }
   },
-  "foundry": {
+  "aiGen": {
     "eyebrow": "Foundry Studio",
     "title": "生图与生视频",
     "subtitle": "面向会员开放的 Foundry 生成工具，支持 schema 驱动参数、队列可视化、任务历史和结果详情查看。",
@@ -3691,8 +3692,8 @@
     "estimateQueue": "排队约 {time}",
     "queueCapacity": "并发 {count}",
     "generate": "生成",
-    "promptPlaceholder": "描述你想生成的图片或视频...",
-    "referenceUrlPlaceholder": "每行粘贴一个参考图 URL",
+    "promptPlaceholder": "描述主体、风格、构图和画面氛围...",
+    "referenceUrlPlaceholder": "每行粘贴一张参考图链接",
     "queueTitle": "生成队列",
     "activeJobs": "{count} 个进行中的任务",
     "recentJobs": "最近任务",
@@ -3737,6 +3738,298 @@
       "retryFailed": "重试任务失败",
       "loadJobDetail": "加载任务详情失败",
       "modelDisabled": "该模型暂未启用"
+    },
+    "schemaVersion": "Schema",
+    "requestId": "请求 ID",
+    "backToStudio": "返回",
+    "modelLabel": "模型",
+    "imageLab": {
+      "tab": {
+        "history": "历史",
+        "community": "社区",
+        "tutorial": "教程",
+        "placeholder": "即将上线"
+      },
+      "welcome": {
+        "title": "欢迎来到 Fizz 图像实验室",
+        "subtitle": "在下方描述画面，每次生成都会归档到历史中"
+      },
+      "empty": {
+        "title": "历史为空",
+        "subtitle": "试试以下示例，看看 {model} 的表现"
+      },
+      "example": {
+        "one": "一只小龙吉祥物在温馨图书馆中读书，柔和金色光线，工作室插画风",
+        "two": "俯视一张贴满彩色便利贴的桌面，柔和粉彩，等距视角",
+        "three": "黄昏悬崖上孤独的灯塔，戏剧性云层，电影感摄影"
+      },
+      "compose": {
+        "placeholder": "描述你想生成的画面",
+        "create": "生成",
+        "addImage": "添加图片",
+        "addReferences": "添加参考图",
+        "outputs": "数量"
+      },
+      "cell": {
+        "queued": "排队中",
+        "retry": "重试",
+        "download": "下载"
+      },
+      "stage": {
+        "running": "生成中",
+        "uploading": "上传中",
+        "fetching": "拉取中"
+      },
+      "queue": {
+        "ready": "就绪",
+        "configuring": "该区域启用后即可生成",
+        "position": "排第 {n} 位"
+      },
+      "error": {
+        "submitFailed": "生成任务提交失败",
+        "timeout": "生成超时，换小一点的尺寸或稍后再试",
+        "empty": "生成完成但没有产出",
+        "failed": "生成失败"
+      },
+      "eyebrow": "AI 生图",
+      "title": "文生图",
+      "subtitle": "先把画面说清楚；需要更精确时，再补充参考图和细节参数。",
+      "source": {
+        "label": "来源",
+        "live": "在线模型",
+        "preview": "本地预览",
+        "previewNote": "已切换到本地预览。"
+      },
+      "metric": {
+        "estimate": "预估",
+        "outputs": "输出"
+      },
+      "brief": {
+        "title": "创作设置",
+        "subtitle": "写清楚主体、风格、构图和想捕捉的瞬间。"
+      },
+      "cost": {
+        "helper": "积分为预估值，最终以生成后的实际用量为准。",
+        "final": "最终计费",
+        "providerUsage": "服务用量"
+      },
+      "preview": {
+        "title": "结果画布",
+        "ready": "可检查",
+        "waiting": "结果会显示在这里",
+        "copyPrompt": "复制描述",
+        "download": "下载",
+        "emptyPrompt": "还没有画面描述",
+        "ossReady": "可保存图片",
+        "idleTitle": "先描述画面，再开始生成",
+        "idleDesc": "默认参数适合快速出第一版；需要精修时再展开更多设置。",
+        "generatingTitle": "生成中",
+        "generatingDesc": "请保持页面打开，图片完成后会显示在这里。",
+        "queuedTitle": "已排队",
+        "queuedDesc": "图片正在准备中。",
+        "needsAttention": "需要处理",
+        "previewRun": "正在准备预览",
+        "submitting": "正在提交生成"
+      },
+      "references": {
+        "title": "参考图",
+        "helper": "可选。只有当参考图能说明风格或构图时再添加。",
+        "limit": "最多 {count} 张。"
+      },
+      "sizePreset": {
+        "auto": "自动",
+        "square": "1:1",
+        "landscape": "横图",
+        "portrait": "竖图",
+        "wide": "宽屏",
+        "vertical": "9:16 竖屏",
+        "squareHd": "1:1 高清",
+        "uhd": "4K"
+      },
+      "options": {
+        "auto": "自动",
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "opaque": "不透明",
+        "png": "PNG",
+        "jpeg": "JPEG",
+        "webp": "WebP"
+      },
+      "modelFit": {
+        "title": "模型适配",
+        "prompt": "长提示词和视觉方向",
+        "references": "可选的参考图编辑",
+        "opaque": "不透明背景输出"
+      },
+      "capabilities": {
+        "title": "能力",
+        "softLimit": "相关选项会根据当前设置自动出现。"
+      },
+      "runState": {
+        "title": "运行状态"
+      },
+      "availability": {
+        "label": "区域"
+      },
+      "docs": {
+        "title": "文档"
+      },
+      "softWhen": {
+        "outputCompression": "切换到 JPEG 或 WebP 后可设置。",
+        "partialImages": "开启流式预览后可设置。",
+        "currentChoice": "当前选择暂时用不到。",
+        "default": "需要时会自动出现。"
+      }
+    },
+    "schema": {
+      "preflight": {
+        "estimatedCredits": "预估积分"
+      },
+      "group": {
+        "prompt": {
+          "title": "画面描述"
+        },
+        "generation": {
+          "title": "生成"
+        },
+        "references": {
+          "title": "参考素材"
+        },
+        "output": {
+          "title": "输出"
+        },
+        "advanced": {
+          "title": "高级"
+        },
+        "media": {
+          "title": "媒体"
+        },
+        "metadata": {
+          "title": "元数据"
+        }
+      },
+      "field": {
+        "prompt": {
+          "title": "描述内容",
+          "label": "描述内容"
+        },
+        "size": {
+          "title": "尺寸",
+          "label": "尺寸"
+        },
+        "quality": {
+          "title": "质量",
+          "label": "质量"
+        },
+        "outputs": {
+          "title": "输出数量",
+          "label": "输出数量"
+        },
+        "referenceImages": {
+          "title": "参考图",
+          "label": "参考图"
+        },
+        "seed": {
+          "title": "随机种子",
+          "label": "随机种子"
+        },
+        "duration": {
+          "title": "时长",
+          "label": "时长"
+        },
+        "variants": {
+          "title": "变体",
+          "label": "变体"
+        },
+        "background": {
+          "title": "背景",
+          "label": "背景"
+        },
+        "outputFormat": {
+          "title": "输出格式",
+          "label": "输出格式"
+        },
+        "outputCompression": {
+          "title": "压缩",
+          "label": "压缩",
+          "description": "JPEG 或 WebP 输出的压缩级别。"
+        },
+        "moderation": {
+          "title": "内容审核",
+          "label": "内容审核"
+        },
+        "stream": {
+          "title": "流式返回局部图",
+          "label": "流式返回局部图"
+        },
+        "partialImages": {
+          "title": "局部图数量",
+          "label": "局部图数量",
+          "description": "流式生成时请求返回的局部图数量。"
+        }
+      },
+      "media": {
+        "url": {
+          "title": "URL"
+        },
+        "mimeType": {
+          "title": "MIME 类型"
+        },
+        "name": {
+          "title": "文件名"
+        },
+        "bytes": {
+          "title": "字节数"
+        }
+      },
+      "output": {
+        "images": {
+          "title": "图片",
+          "label": "图片"
+        },
+        "videos": {
+          "title": "视频",
+          "label": "视频"
+        },
+        "storagePath": {
+          "title": "存储路径"
+        },
+        "width": {
+          "title": "宽度"
+        },
+        "height": {
+          "title": "高度"
+        },
+        "duration": {
+          "title": "时长"
+        },
+        "mimeType": {
+          "title": "MIME 类型"
+        },
+        "bytes": {
+          "title": "字节数"
+        },
+        "providerMetadata": {
+          "title": "服务元数据",
+          "label": "服务元数据"
+        }
+      }
+    },
+    "gptImage2": {
+      "prompt": {
+        "description": "描述你希望生成或编辑的画面。"
+      },
+      "size": {
+        "description": "使用 auto 或 WIDTHxHEIGHT。宽高必须是 16 的倍数；总像素范围为 655360-8294400；宽高比最高 3:1。",
+        "hint": "先选常用比例；自定义 WIDTHxHEIGHT 可通过 schema/API 使用。"
+      },
+      "referenceImages": {
+        "description": "用于说明风格、构图或局部细节的参考图片。最多 16 张。"
+      },
+      "background": {
+        "description": "当前支持自动或不透明背景。"
+      }
     }
   }
 }

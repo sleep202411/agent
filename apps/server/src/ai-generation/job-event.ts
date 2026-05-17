@@ -3,7 +3,7 @@ import type { AiJob } from './types';
 
 export function toAiJobEvent(job: AiJob): AssetEvent {
   return {
-    kind: 'foundry_job_update',
+    kind: 'ai_job_update',
     ts: Date.now(),
     job: {
       id: job.id,
