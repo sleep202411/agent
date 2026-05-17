@@ -65,7 +65,15 @@ export type AiJobStage =
 
 export type AiEtaConfidence = 'low' | 'medium' | 'high';
 
-export type AiProvider = 'microsoft-foundry';
+/**
+ * Provider id — open string because new providers ship as adapter
+ * packages without schema migrations. ProviderRegistry validates the
+ * value is registered at request time.
+ *
+ * Known values today: 'microsoft-foundry'. Planned: 'fal-ai',
+ * 'replicate', 'stability-self-hosted', 'dashscope'.
+ */
+export type AiProvider = string;
 
 /**
  * Membership tier ranks. Higher = more access. New tiers only need a

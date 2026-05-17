@@ -11,8 +11,9 @@ import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationEtaService } from './eta.service';
 import { AiGenerationRepository } from './repository';
 import { AiGenerationOutboxService } from './outbox.service';
+import type { AiModelDefinition } from './provider-adapter';
+import { ProviderRegistry } from './provider-registry.service';
 import { AiGenerationQueueService } from './queue.service';
-import { FoundrySchemaRegistry } from './providers/foundry/schema.registry';
 import { AiGenerationValidatorService } from './validator.service';
 import type {
   AiJob,
@@ -34,7 +35,7 @@ const TERMINAL_STATUSES = new Set([
 @Injectable()
 export class AiGenerationService {
   constructor(
-    private readonly registry: FoundrySchemaRegistry,
+    private readonly providers: ProviderRegistry,
     private readonly authz: AiGenerationAuthzService,
     private readonly validator: AiGenerationValidatorService,
     private readonly store: AiGenerationRepository,
@@ -70,11 +71,33 @@ export class AiGenerationService {
   }
 
   async listModels(user: AuthUser) {
-    const models = await this.registry.listModels();
+    // Fan out across every registered provider. Each adapter returns
+    // its own model definitions; we concat and stamp per-user access.
+    const results = await Promise.all(
+      this.providers.list().map((adapter) => adapter.listModels()),
+    );
+    const models = results.flat();
     return models.map((model) => ({
       ...model,
       access: this.authz.decideModelAccess(user, model),
     }));
+  }
+
+  /**
+   * Look up a model by id across all providers. Returns the first
+   * match; model ids are unique per provider so collisions shouldn't
+   * happen (Foundry uses `foundry/<deployment>`, fal will use
+   * `fal-ai/<model-path>`).
+   */
+  private async findModel(modelId: string): Promise<{
+    model: AiModelDefinition;
+    provider: string;
+  } | null> {
+    for (const adapter of this.providers.list()) {
+      const model = await adapter.getModel(modelId);
+      if (model) return { model, provider: adapter.provider };
+    }
+    return null;
   }
 
   async submitJob(
@@ -89,13 +112,14 @@ export class AiGenerationService {
       });
     }
 
-    const model = await this.registry.getModel(modelId);
-    if (!model) {
+    const found = await this.findModel(modelId);
+    if (!found) {
       throw new NotFoundException({
         code: 'MODEL_NOT_FOUND',
-        msg: 'Foundry model not found.',
+        msg: 'Model not found.',
       });
     }
+    const { model, provider } = found;
 
     if (!model.enabled) {
       throw new ServiceUnavailableException({
@@ -158,7 +182,10 @@ export class AiGenerationService {
       userId: user.userId,
       userLevel: user.userLevel ?? null,
       type: model.type,
-      provider: model.provider,
+      // `provider` is the adapter key (e.g. 'microsoft-foundry');
+      // `model.provider` happens to be the same Foundry string today
+      // but that's a coincidence — the adapter is the source of truth.
+      provider,
       modelId: model.id,
       deployment: model.deployment,
       schemaVersion: model.schemaVersion,
