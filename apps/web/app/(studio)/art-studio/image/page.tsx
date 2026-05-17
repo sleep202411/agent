@@ -17,7 +17,6 @@ import { ComposeBar } from "./_components/compose-bar";
 import { GalleryGrid, type GalleryItem } from "./_components/gallery-grid";
 
 type ModelSource = "loading" | "live" | "preview";
-type TopTab = "history" | "community" | "tutorial";
 
 const MOCK_RESULT_IMAGE =
   "https://images.unsplash.com/photo-1604079628040-94301bb21b91?auto=format&fit=crop&w=1400&q=86";
@@ -44,8 +43,6 @@ export default function AiImageLabPage() {
   const [prompt, setPrompt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [items, setItems] = useState<GalleryItem[]>([]);
-  const [activeTab, setActiveTab] = useState<TopTab>("history");
-
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -148,8 +145,8 @@ export default function AiImageLabPage() {
       const ratio = inferRatio(job, itemsRef.current);
       const promptText = job.prompt;
 
-      const status = job.status.toUpperCase();
-      if (status === "COMPLETED" && job.outputs.length > 0) {
+      const status = job.status.toLowerCase();
+      if (status === "completed" && job.outputs.length > 0) {
         const dones: GalleryItem[] = job.outputs.map((out) => ({
           id: out.id,
           kind: "done",
@@ -161,7 +158,7 @@ export default function AiImageLabPage() {
         replaceItem(job.id, dones);
         return;
       }
-      if (status === "FAILED" || status === "CANCELLED") {
+      if (status === "failed" || status === "cancelled") {
         replaceItem(job.id, [
           {
             id: job.id,
@@ -238,20 +235,26 @@ export default function AiImageLabPage() {
   }, [reconcileFromServer]);
 
   // ─── Compose bar wiring ───────────────────────────────────────
-  const sizeOptions = useMemo(() => {
-    const sizeField = model.input_schema.properties.size;
-    const ui = sizeField && typeof sizeField === "object" ? (sizeField as any)["x-ui"] : null;
-    const rawOptions: Array<{ value: string; label: string }> =
-      ui && Array.isArray(ui.options) ? ui.options : [];
-    return rawOptions.map((opt) => ({
-      value: opt.value,
-      label: opt.label,
-      ratio: extractRatio(opt.label, opt.value),
-    }));
-  }, [model]);
+  // Pull option lists straight from the schema's `x-ui.options`.
+  // The schema is the source of truth for both label *and* tier
+  // gating — server's `assertCanUseOptions` reads the same field.
+  const aspectRatioOptions = useMemo(
+    () => readOptions(model.input_schema.properties.aspect_ratio),
+    [model]
+  );
+  const resolutionTierOptions = useMemo(
+    () => readOptions(model.input_schema.properties.resolution_tier),
+    [model]
+  );
+  const aspectRatioValue =
+    typeof formData.aspect_ratio === "string" ? formData.aspect_ratio : "1:1";
+  const resolutionTierValue =
+    typeof formData.resolution_tier === "string" ? formData.resolution_tier : "hd";
 
-  const sizeValue = typeof formData.size === "string" ? formData.size : "auto";
   const outputs = typeof formData.n === "number" ? formData.n : 1;
+  // Flat segmented buttons for output count — schema allows 1-10 but
+  // ≥4 outputs balloons cost; cap UI at 4 (matches PoseAI).
+  const outputOptions = useMemo(() => [1, 2, 3, 4], []);
 
   // Quality: gpt-image-2 enum is auto/low/medium/high. We hide `auto`
   // because that path is chronically EngineOverloaded on Azure's
@@ -264,20 +267,38 @@ export default function AiImageLabPage() {
       qf && typeof qf === "object" && Array.isArray((qf as { enum?: unknown[] }).enum)
         ? ((qf as { enum: string[] }).enum as string[])
         : [];
-    return enumVals.filter((v) => v !== "auto").map((v) => ({ value: v, label: v }));
+    return enumVals.filter((v) => v !== "auto").map((v) => ({ value: v, label: v, tier: null }));
   }, [model]);
   const qualityValue = typeof formData.quality === "string" ? formData.quality : "low";
 
+  // In-flight jobs on this model — drives the "in queue / generating"
+  // badge on the model chip and disables the submit button. We allow
+  // only one concurrent generation per user; a queued/running card in
+  // `items` is either an unacknowledged optimistic submit (`temp:*`)
+  // or a real server-side job that hasn't completed yet.
+  const activeJobs = useMemo(() => items.filter((it) => it.kind === "queued"), [items]);
+  const activeJobCount = activeJobs.length;
+  // "排队中" only when the active job is truly waiting for a worker
+  // slot. Once the worker picks it up (any stage beyond `queued`),
+  // surface "生成中" so users with a 1-user dev queue don't see a
+  // misleading "queued" label for the whole 50 s run.
+  const isAnyJobRunning = activeJobs.some(
+    (it) => it.stage && it.stage !== "queued" && it.stage !== "created"
+  );
+
   const canSubmit =
-    prompt.trim().length > 0 && !isSubmitting && model.enabled && modelSource !== "loading";
+    prompt.trim().length > 0 &&
+    !isSubmitting &&
+    model.enabled &&
+    modelSource !== "loading" &&
+    activeJobCount === 0;
 
   // ─── Submit ──────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
     const promptText = prompt.trim();
     const tempId = `temp:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const activeSize = sizeOptions.find((o) => o.value === sizeValue);
-    const ratio = activeSize?.ratio ?? "1:1";
+    const ratio = aspectRatioValue;
     const count = Math.max(1, outputs);
 
     // Optimistic — single queued card with ×N badge. When the job
@@ -381,8 +402,7 @@ export default function AiImageLabPage() {
   }, [
     canSubmit,
     prompt,
-    sizeOptions,
-    sizeValue,
+    aspectRatioValue,
     outputs,
     modelSource,
     formData,
@@ -421,41 +441,15 @@ export default function AiImageLabPage() {
   // ─── Render ───────────────────────────────────────────────────
   return (
     <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
-      {/* Top tabs */}
-      <header className="shrink-0 px-4 pb-2 pt-4 md:px-6">
-        <div className="flex items-center gap-1">
-          {(["history", "community", "tutorial"] as const).map((tab) => {
-            const isActive = tab === activeTab;
-            const disabled = tab !== "history";
-            return (
-              <button
-                key={tab}
-                type="button"
-                disabled={disabled}
-                onClick={() => setActiveTab(tab)}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
-                  isActive ? "bg-zinc-900 text-foreground" : "text-zinc-500 hover:text-zinc-200"
-                } disabled:cursor-not-allowed disabled:hover:text-zinc-500`}
-              >
-                {t(`imageLab.tab.${tab}`, tab[0].toUpperCase() + tab.slice(1))}
-              </button>
-            );
-          })}
-        </div>
-      </header>
-
-      {/* Canvas */}
-      <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-40 md:px-4">
-        {activeTab === "history" && items.length > 0 && (
+      {/* Canvas — the scrollable content keeps a `pb-28` runway so the
+          last row can scroll past the fixed compose bar instead of
+          being permanently hidden underneath it. The bar itself
+          overlays this area with a soft blur. */}
+      <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-28 pt-4 md:px-4">
+        {items.length > 0 ? (
           <GalleryGrid items={items} onRetry={handleRetry} t={t} />
-        )}
-        {activeTab === "history" && items.length === 0 && (
+        ) : (
           <EmptyState t={t} onTry={(text) => setPrompt(text)} modelName={model.name} />
-        )}
-        {activeTab !== "history" && (
-          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-zinc-500">
-            {t("imageLab.tab.placeholder", "Coming soon.")}
-          </div>
         )}
       </main>
 
@@ -471,14 +465,22 @@ export default function AiImageLabPage() {
               setModel(next);
               setFormData(deriveDefaults(next.input_schema.properties));
             }}
-            sizeValue={sizeValue}
-            sizeOptions={sizeOptions}
-            onSizeChange={(v) => setFormData((prev) => ({ ...prev, size: v }))}
+            aspectRatioValue={aspectRatioValue}
+            aspectRatioOptions={aspectRatioOptions}
+            onAspectRatioChange={(v) => setFormData((prev) => ({ ...prev, aspect_ratio: v }))}
+            resolutionTierValue={resolutionTierValue}
+            resolutionTierOptions={resolutionTierOptions}
+            onResolutionTierChange={(v) => setFormData((prev) => ({ ...prev, resolution_tier: v }))}
             qualityValue={qualityValue}
             qualityOptions={qualityOptions}
             onQualityChange={(v) => setFormData((prev) => ({ ...prev, quality: v }))}
             outputs={outputs}
+            outputOptions={outputOptions}
             onOutputsChange={(n) => setFormData((prev) => ({ ...prev, n }))}
+            userTierRank={0}
+            tierRank={tierRank}
+            activeJobCount={activeJobCount}
+            activeJobRunning={isAnyJobRunning}
             canSubmit={canSubmit}
             isSubmitting={isSubmitting}
             onSubmit={handleSubmit}
@@ -556,16 +558,49 @@ function deriveDefaults(
   return output;
 }
 
+// Pull `x-ui.options` off a schema field into the `{value,label,tier}`
+// shape ComposeBar expects. Returns [] for fields without options so
+// callers can render nothing without an extra null check.
+function readOptions(
+  field: unknown
+): Array<{ value: string; label: string; tier?: string | null }> {
+  if (!field || typeof field !== "object") return [];
+  const ui = (field as { "x-ui"?: { options?: unknown } })["x-ui"];
+  const opts = ui?.options;
+  if (!Array.isArray(opts)) return [];
+  return opts
+    .filter(
+      (o): o is { value: string; label: string; tier?: string | null } =>
+        o != null && typeof o === "object" && typeof (o as any).value === "string"
+    )
+    .map((o) => ({ value: o.value, label: o.label ?? o.value, tier: o.tier ?? null }));
+}
+
+// Mirror of server-side AI_TIER_RANK. Kept tiny because we only need
+// the relative ordering for showing lock badges; server enforces.
+const TIER_RANK: Record<string, number> = { FREE: 0, VIP1: 1, VIP2: 2, VIP3: 3 };
+function tierRank(level: string | null | undefined): number {
+  if (!level) return 0;
+  return TIER_RANK[level.toUpperCase()] ?? 0;
+}
+
 function jobToItems(job: AiJobView): GalleryItem[] {
   const promptText =
     job.prompt ?? (typeof job.input?.prompt === "string" ? (job.input.prompt as string) : "");
+  // New schema: ratio is in input.aspect_ratio. Old jobs (input.size)
+  // still need to render until they age out of history.
+  const inputRatio =
+    typeof job.input?.aspect_ratio === "string" ? (job.input.aspect_ratio as string) : undefined;
   const inputSize = typeof job.input?.size === "string" ? (job.input.size as string) : "auto";
-  const ratio = ratioFromSize(inputSize);
+  const ratio = inputRatio ?? ratioFromSize(inputSize);
   const createdAt = job.completedAt
     ? new Date(job.completedAt).getTime()
     : new Date(job.createdAt).getTime();
 
-  if (job.status === "completed" && job.outputs.length > 0) {
+  // AiJobStatus is lowercase snake_case on the wire — lowercase once
+  // defensively in case a future caller passes mixed case.
+  const status = job.status.toLowerCase();
+  if (status === "completed" && job.outputs.length > 0) {
     return job.outputs.map((out) => ({
       id: out.id,
       kind: "done",
@@ -575,7 +610,7 @@ function jobToItems(job: AiJobView): GalleryItem[] {
       createdAt,
     }));
   }
-  if (job.status === "failed" || job.status === "cancelled") {
+  if (status === "failed" || status === "cancelled") {
     return [
       {
         id: job.id,
@@ -602,12 +637,17 @@ function inferRatio(job: AiJobUpdatePayload, knownItems: GalleryItem[]): string 
   // 1. First output's actual dimensions (most reliable when done)
   const out = job.outputs[0];
   if (out?.width && out?.height) return `${out.width}:${out.height}`;
-  // 2. Whatever ratio the queued cell already has (set when submitted
+  // 2. Submitted aspect ratio carried in the event payload (handles
+  //    reload-during-flight where there's no existing local card)
+  const inputRatio =
+    typeof job.input?.aspect_ratio === "string" ? (job.input.aspect_ratio as string) : undefined;
+  if (inputRatio) return inputRatio;
+  // 3. Whatever ratio the queued cell already has (set when submitted
   //    locally; preserves the user's chosen aspect ratio through the
   //    queued → done transition)
   const existing = knownItems.find((it) => it.id === job.id);
   if (existing?.ratio) return existing.ratio;
-  // 3. Fallback — square
+  // 4. Fallback — square
   return "1:1";
 }
 
@@ -619,13 +659,6 @@ function ratioFromSize(size: string): string {
   const h = Number(match[2]);
   if (!w || !h) return "1:1";
   return `${w}:${h}`;
-}
-
-function extractRatio(label: string, value: string): string {
-  // Labels look like "1024 × 1024  · 1:1" — pick the segment after "·".
-  const sep = label.split("·").pop()?.trim();
-  if (sep && /^\d/.test(sep)) return sep;
-  return ratioFromSize(value);
 }
 
 function friendlyError(error: unknown, fallback: string): string {

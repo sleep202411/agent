@@ -3766,6 +3766,10 @@
       "compose": {
         "placeholder": "描述你想生成的画面",
         "create": "生成",
+        "queued": "排队中",
+        "queuedShort": "排队中",
+        "generating": "生成中",
+        "busy": "上一张还在生成，请等待完成",
         "addImage": "添加图片",
         "addReferences": "添加参考图",
         "outputs": "数量"

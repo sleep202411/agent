@@ -229,49 +229,46 @@ const GPT_IMAGE_2_INPUT: FoundryObjectSchema = {
       },
       "x-provider": { parameter: "prompt" },
     },
-    size: {
+    aspect_ratio: {
       type: "string",
-      title: "Size",
-      titleKey: "foundry.schema.field.size.title",
-      default: "auto",
-      format: "gpt-image-2-size",
-      examples: [
-        "auto",
-        "1024x1024",
-        "1536x1024",
-        "1024x1536",
-        "2048x1152",
-        "2048x2048",
-        "3840x2160",
-        "2160x3840",
-      ],
+      title: "Aspect ratio",
+      titleKey: "foundry.schema.field.aspectRatio.title",
+      enum: ["1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4"],
+      default: "1:1",
       "x-ui": {
-        // 8 presets — too many to read at a glance in a segmented bar,
-        // so render as a dropdown. Custom WIDTHxHEIGHT still goes
-        // through the API (covered by `x-constraints.dimension2d`).
         control: "select",
         group: "generation",
         importance: "primary",
         order: 20,
-        // Labels are deliberately raw pixel dimensions — they're
-        // language-neutral and what every other image-gen UI shows
-        // (DALL-E, Midjourney, Flux, fal.ai). `auto` is the only one
-        // that needs i18n. The aspect-ratio hint is implicit in the
-        // numbers themselves; we keep an `aria-description` for users
-        // who want the ratio called out (added at the renderer).
         options: [
-          { value: "auto", label: "Auto", labelKey: "foundry.imageLab.sizePreset.auto" },
-          { value: "1024x1024", label: "1024 × 1024  · 1:1" },
-          { value: "1536x1024", label: "1536 × 1024  · 3:2" },
-          { value: "1024x1536", label: "1024 × 1536  · 2:3" },
-          { value: "2048x1152", label: "2048 × 1152  · 16:9" },
-          { value: "2160x3840", label: "2160 × 3840  · 9:16" },
-          { value: "2048x2048", label: "2048 × 2048  · 1:1 HD" },
-          { value: "3840x2160", label: "3840 × 2160  · 4K" },
+          { value: "1:1", label: "1:1" },
+          { value: "3:2", label: "3:2" },
+          { value: "2:3", label: "2:3" },
+          { value: "16:9", label: "16:9" },
+          { value: "9:16", label: "9:16" },
+          { value: "4:3", label: "4:3" },
+          { value: "3:4", label: "3:4" },
         ],
-        hint: "Choose a common ratio. Custom WIDTHxHEIGHT remains available through schema/API.",
-        labelKey: "foundry.schema.field.size.label",
-        hintKey: "foundry.gptImage2.size.hint",
+        labelKey: "foundry.schema.field.aspectRatio.label",
+      },
+    },
+    resolution_tier: {
+      type: "string",
+      title: "Resolution",
+      titleKey: "foundry.schema.field.resolutionTier.title",
+      enum: ["hd", "fhd", "uhd"],
+      default: "hd",
+      "x-ui": {
+        control: "segmented",
+        group: "generation",
+        importance: "primary",
+        order: 25,
+        options: [
+          { value: "hd", label: "HD", tier: null },
+          { value: "fhd", label: "FHD", tier: "VIP1" },
+          { value: "uhd", label: "4K", tier: "VIP2" },
+        ],
+        labelKey: "foundry.schema.field.resolutionTier.label",
       },
     },
     quality: {

@@ -3766,6 +3766,10 @@
       "compose": {
         "placeholder": "描述你想生成的畫面",
         "create": "生成",
+        "queued": "排隊中",
+        "queuedShort": "排隊中",
+        "generating": "生成中",
+        "busy": "上一張仍在生成，請稍候",
         "addImage": "添加圖片",
         "addReferences": "添加參考圖",
         "outputs": "數量"

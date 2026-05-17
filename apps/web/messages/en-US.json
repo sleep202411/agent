@@ -3766,6 +3766,10 @@
       "compose": {
         "placeholder": "Describe the image you imagine",
         "create": "Create",
+        "queued": "In queue",
+        "queuedShort": "In queue",
+        "generating": "Generating",
+        "busy": "Previous task is still running. Please wait.",
         "addImage": "Add image",
         "addReferences": "Add references",
         "outputs": "Outputs"

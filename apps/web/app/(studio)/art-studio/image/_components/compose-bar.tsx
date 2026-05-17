@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import {
-  IconChevronDown,
-  IconLock,
-  IconPaperclip,
-  IconPlus,
-  IconSparkles,
-} from "@tabler/icons-react";
+import { IconChevronDown, IconLock, IconPlus, IconSparkles } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import type { AiModel } from "../_data/mock-model";
+
+export interface AiOption {
+  value: string;
+  label: string;
+  /** Membership tier the option requires. `null` = open to all. */
+  tier?: string | null;
+}
 
 export type ComposeBarProps = {
   prompt: string;
@@ -17,14 +18,35 @@ export type ComposeBarProps = {
   model: AiModel;
   models: AiModel[];
   onModelChange: (m: AiModel) => void;
-  sizeValue: string;
-  sizeOptions: { value: string; label: string; ratio: string }[];
-  onSizeChange: (v: string) => void;
+  aspectRatioValue: string;
+  aspectRatioOptions: AiOption[];
+  onAspectRatioChange: (v: string) => void;
+  resolutionTierValue: string;
+  resolutionTierOptions: AiOption[];
+  onResolutionTierChange: (v: string) => void;
   qualityValue: string;
-  qualityOptions: { value: string; label: string }[];
+  qualityOptions: AiOption[];
   onQualityChange: (v: string) => void;
   outputs: number;
+  outputOptions: number[];
   onOutputsChange: (n: number) => void;
+  /** Current user's tier rank — used to lock high-tier options. */
+  userTierRank: number;
+  tierRank: (tier: string | null | undefined) => number;
+  /**
+   * Number of this user's image jobs currently queued or running on
+   * the selected model. When > 0 we surface a badge on the model
+   * chip and disable the submit button — only one in-flight job at
+   * a time per user.
+   */
+  activeJobCount: number;
+  /**
+   * True when at least one active job has progressed past the queue
+   * (worker has picked it up). Drives "生成中" vs "排队中" wording
+   * so a user alone in the queue doesn't see a confusing "queued"
+   * label for the entire 50 s provider run.
+   */
+  activeJobRunning: boolean;
   canSubmit: boolean;
   isSubmitting: boolean;
   onSubmit: () => void;
@@ -39,14 +61,22 @@ export function ComposeBar(props: ComposeBarProps) {
     model,
     models,
     onModelChange,
-    sizeValue,
-    sizeOptions,
-    onSizeChange,
+    aspectRatioValue,
+    aspectRatioOptions,
+    onAspectRatioChange,
+    resolutionTierValue,
+    resolutionTierOptions,
+    onResolutionTierChange,
     qualityValue,
     qualityOptions,
     onQualityChange,
     outputs,
+    outputOptions,
     onOutputsChange,
+    userTierRank,
+    tierRank,
+    activeJobCount,
+    activeJobRunning,
     canSubmit,
     isSubmitting,
     onSubmit,
@@ -55,12 +85,10 @@ export function ComposeBar(props: ComposeBarProps) {
   } = props;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [openPopover, setOpenPopover] = useState<null | "model" | "size" | "quality" | "more">(
-    null
-  );
+  const [openPopover, setOpenPopover] = useState<
+    null | "model" | "ratio" | "resolution" | "quality" | "outputs"
+  >(null);
 
-  // Auto-grow the textarea up to ~5 lines. Plain DOM measurement —
-  // avoids pulling in a dependency for one input.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -69,27 +97,27 @@ export function ComposeBar(props: ComposeBarProps) {
     el.style.height = `${next}px`;
   }, [prompt]);
 
-  const activeSize = sizeOptions.find((o) => o.value === sizeValue);
-  const ratioLabel = activeSize?.ratio ?? "auto";
-
-  // Server gates per-model access; mirror that gate in the UI so
-  // locked models can't be submitted. Backend will reject anyway,
-  // but pre-empting is friendlier than letting the user wait for a
-  // 403 round-trip.
   const modelLocked = model.access?.allowed === false;
   const modelLockedTier = model.access?.requiredTier ?? null;
+  const modelBusy = activeJobCount > 0;
+  const busyLabel = activeJobRunning
+    ? t("imageLab.compose.generating", "Generating")
+    : t("imageLab.compose.queued", "In queue");
 
   const handleKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Cmd/Ctrl + Enter submits; plain Enter inserts newline.
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       if (canSubmit) onSubmit();
     }
   };
 
+  const isOptionLocked = (opt: AiOption) => opt.tier != null && tierRank(opt.tier) > userTierRank;
+
+  const activeResolution = resolutionTierOptions.find((o) => o.value === resolutionTierValue);
+
   return (
     <div
-      className="rounded-2xl bg-zinc-900/95 px-3 py-3 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)] backdrop-blur"
+      className="rounded-2xl bg-zinc-900/80 px-3 py-3 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)] ring-1 ring-white/5 backdrop-blur-xl backdrop-saturate-150"
       onMouseLeave={() => setOpenPopover(null)}
     >
       {/* Row 1 — Prompt + Create */}
@@ -108,7 +136,7 @@ export function ComposeBar(props: ComposeBarProps) {
         <Button
           type="button"
           onClick={onSubmit}
-          disabled={!canSubmit || modelLocked}
+          disabled={!canSubmit || modelLocked || modelBusy}
           loading={isSubmitting}
           size="default"
           className="h-10 shrink-0 rounded-full bg-primary px-5 text-primary-foreground hover:bg-primary/90"
@@ -120,44 +148,60 @@ export function ComposeBar(props: ComposeBarProps) {
             ) : undefined
           }
           title={
-            modelLocked
-              ? modelLockedTier
-                ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
-                    "{tier}",
-                    modelLockedTier
-                  )
-                : t("imageLab.compose.lockedMember", "Available to members only")
-              : undefined
+            modelBusy
+              ? t("imageLab.compose.busy", "Previous task is still running.")
+              : modelLocked
+                ? modelLockedTier
+                  ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
+                      "{tier}",
+                      modelLockedTier
+                    )
+                  : t("imageLab.compose.lockedMember", "Available to members only")
+                : undefined
           }
         >
           <span>
-            {modelLocked
-              ? modelLockedTier
-                ? t("imageLab.compose.unlock", "Unlock {tier}").replace("{tier}", modelLockedTier)
-                : t("imageLab.compose.unlockMember", "Members only")
-              : t("imageLab.compose.create", "Create")}
+            {modelBusy
+              ? busyLabel
+              : modelLocked
+                ? modelLockedTier
+                  ? t("imageLab.compose.unlock", "Unlock {tier}").replace("{tier}", modelLockedTier)
+                  : t("imageLab.compose.unlockMember", "Members only")
+                : t("imageLab.compose.create", "Create")}
           </span>
         </Button>
       </div>
 
-      {/* Row 2 — chips + actions */}
-      <div className="mt-2 flex items-center gap-1.5 px-1">
-        {/* Add image (references) — disabled for text-to-image v1 */}
+      {/* Row 2 — chips. `flex-nowrap` + `shrink-0` on each chip keeps
+          one row on desktop (compose bar is `max-w-3xl`, fits all
+          chips comfortably). We intentionally do NOT add `overflow-
+          x-auto` here — CSS treats `overflow-x: auto` + `overflow-y:
+          visible` as both-auto, which would clip the chip popovers
+          that pop upward. Narrow viewports just let the row overflow
+          the bar (rare; mobile path can be revisited separately). */}
+      <div className="mt-2 flex flex-nowrap items-center gap-1.5 px-1">
+        {/* Add image (references) — placeholder for v1 */}
         <button
           type="button"
           disabled
           aria-label={t("imageLab.compose.addImage", "Add image")}
-          className="inline-flex size-8 items-center justify-center rounded-lg bg-zinc-800/70 text-zinc-500 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800/70 text-zinc-500 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed"
         >
           <IconPlus className="size-4" />
         </button>
 
-        {/* Model chip */}
+        {/* Model chip — always clickable so users can read the model's
+            name/description even when only one model is registered.
+            When the user has an in-flight job on this model we render
+            a "queued" pill inside the chip — same chip-affordance
+            (still openable to read details / switch model) but the
+            generate button is disabled. */}
         <ChipPopover
           open={openPopover === "model"}
           onOpenChange={(v) => setOpenPopover(v ? "model" : null)}
           label={model.name}
-          disabled={disabled || models.length < 2}
+          disabled={disabled}
+          trailing={modelBusy ? <QueueBadge count={activeJobCount} label={busyLabel} /> : undefined}
         >
           {models.map((option) => {
             const active = option.id === model.id;
@@ -168,22 +212,13 @@ export function ComposeBar(props: ComposeBarProps) {
                 key={option.id}
                 active={active}
                 onClick={() => {
-                  // Allow selection of locked models — selecting one
-                  // surfaces the unlock CTA in the Create button so
-                  // the user understands which tier they need. We
-                  // never silently swallow the click.
                   onModelChange(option);
                   setOpenPopover(null);
                 }}
               >
                 <div className="flex items-center gap-1.5">
                   <span className="block flex-1 truncate text-sm font-semibold">{option.name}</span>
-                  {locked && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-zinc-300">
-                      <IconLock className="size-3" />
-                      {tier ?? "VIP"}
-                    </span>
-                  )}
+                  {locked && <TierBadge tier={tier ?? "VIP"} />}
                 </div>
                 {option.description && (
                   <span className="block truncate text-[11px] text-zinc-400">
@@ -195,38 +230,79 @@ export function ComposeBar(props: ComposeBarProps) {
           })}
         </ChipPopover>
 
-        {/* Aspect ratio chip */}
+        {/* Ratio chip — visual icon */}
         <ChipPopover
-          open={openPopover === "size"}
-          onOpenChange={(v) => setOpenPopover(v ? "size" : null)}
-          label={ratioLabel}
+          open={openPopover === "ratio"}
+          onOpenChange={(v) => setOpenPopover(v ? "ratio" : null)}
+          label={aspectRatioValue}
+          leadingIcon={<RatioIcon ratio={aspectRatioValue} className="size-3.5" />}
           disabled={disabled}
         >
-          {sizeOptions.map((option) => {
-            const active = option.value === sizeValue;
-            return (
-              <PopoverItem
-                key={option.value}
-                active={active}
-                onClick={() => {
-                  onSizeChange(option.value);
-                  setOpenPopover(null);
-                }}
-              >
-                <span className="block text-sm font-medium">{option.label}</span>
-              </PopoverItem>
-            );
-          })}
+          <div className="grid grid-cols-3 gap-1">
+            {aspectRatioOptions.map((option) => {
+              const active = option.value === aspectRatioValue;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onAspectRatioChange(option.value);
+                    setOpenPopover(null);
+                  }}
+                  className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[11px] font-medium transition-colors ${
+                    active
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/50"
+                      : "text-zinc-300 hover:bg-zinc-800"
+                  }`}
+                >
+                  <RatioIcon ratio={option.value} className="size-5" />
+                  <span>{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </ChipPopover>
 
-        {/* Quality chip — gpt-image-2 supports low/medium/high. `auto`
-            is hidden because it routes to a chronically-overloaded
-            Azure preview pool that times out. */}
+        {/* Resolution chip — with crown on premium tiers */}
+        {resolutionTierOptions.length > 0 && (
+          <ChipPopover
+            open={openPopover === "resolution"}
+            onOpenChange={(v) => setOpenPopover(v ? "resolution" : null)}
+            label={activeResolution?.label ?? resolutionTierValue}
+            disabled={disabled}
+          >
+            {resolutionTierOptions.map((option) => {
+              const active = option.value === resolutionTierValue;
+              const locked = isOptionLocked(option);
+              return (
+                <PopoverItem
+                  key={option.value}
+                  active={active}
+                  onClick={() => {
+                    onResolutionTierChange(option.value);
+                    setOpenPopover(null);
+                  }}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="block flex-1 truncate text-sm font-medium">
+                      {option.label}
+                    </span>
+                    {locked && <TierBadge tier={option.tier ?? "VIP"} />}
+                  </div>
+                </PopoverItem>
+              );
+            })}
+          </ChipPopover>
+        )}
+
+        {/* Quality chip — low/medium/high (auto hidden) */}
         {qualityOptions.length > 0 && (
           <ChipPopover
             open={openPopover === "quality"}
             onOpenChange={(v) => setOpenPopover(v ? "quality" : null)}
-            label={qualityLabel(qualityValue, qualityOptions, t)}
+            label={`${t("imageLab.compose.qualityChip", "Quality")} · ${
+              qualityOptions.find((o) => o.value === qualityValue)?.label ?? qualityValue
+            }`}
             disabled={disabled}
           >
             {qualityOptions.map((option) => {
@@ -247,68 +323,105 @@ export function ComposeBar(props: ComposeBarProps) {
           </ChipPopover>
         )}
 
-        {/* Outputs chip — only show when n>1 supported (gpt-image-2: max 10) */}
-        <ChipPopover
-          open={openPopover === "more"}
-          onOpenChange={(v) => setOpenPopover(v ? "more" : null)}
-          label={`×${outputs}`}
-          disabled={disabled}
-        >
-          {[1, 2, 4].map((value) => {
+        {/* Outputs — flat segmented buttons (like PoseAI) */}
+        <div className="ml-1 inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full bg-zinc-800/60 px-0.5">
+          {outputOptions.map((value) => {
             const active = value === outputs;
             return (
-              <PopoverItem
+              <button
                 key={value}
-                active={active}
-                onClick={() => {
-                  onOutputsChange(value);
-                  setOpenPopover(null);
-                }}
+                type="button"
+                onClick={() => onOutputsChange(value)}
+                disabled={disabled}
+                className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-medium transition-colors ${
+                  active ? "bg-zinc-700 text-foreground" : "text-zinc-400 hover:text-zinc-200"
+                } disabled:cursor-not-allowed disabled:opacity-60`}
+                aria-label={`${value} ${value === 1 ? "image" : "images"}`}
               >
-                <span className="block text-sm font-medium">
-                  {t("imageLab.compose.outputs", "Outputs")} · ×{value}
-                </span>
-              </PopoverItem>
+                ×{value}
+              </button>
             );
           })}
-        </ChipPopover>
-
-        <span className="flex-1" />
-
-        {/* Add references (alias of attach) — placeholder pill for parity */}
-        <button
-          type="button"
-          disabled
-          className="hidden items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-zinc-500 ring-1 ring-inset ring-zinc-700 transition-colors hover:text-zinc-300 disabled:cursor-not-allowed sm:inline-flex"
-        >
-          <IconPaperclip className="size-3.5" />
-          <span>{t("imageLab.compose.addReferences", "Add references")}</span>
-        </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function qualityLabel(
-  value: string,
-  options: { value: string; label: string }[],
-  t: (key: string, fallback?: string) => string
-): string {
-  const match = options.find((o) => o.value === value);
-  const text = match?.label ?? value;
-  return `${t("imageLab.compose.qualityChip", "Quality")} · ${text}`;
+// ─── Visual ratio icon ────────────────────────────────────────
+// Draws a small proportional rectangle so users can see the shape
+// without parsing "1:1" / "9:16" strings. Falls back to a square
+// for unknown ratios.
+function RatioIcon({ ratio, className }: { ratio: string; className?: string }) {
+  const [w, h] = parseRatio(ratio);
+  // Normalize so the longer side is 100% and the shorter is < 100%.
+  const longest = Math.max(w, h);
+  const widthPct = (w / longest) * 100;
+  const heightPct = (h / longest) * 100;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center ${className ?? ""}`}
+      aria-hidden
+    >
+      <span
+        className="rounded-sm border border-current"
+        style={{ width: `${widthPct}%`, height: `${heightPct}%` }}
+      />
+    </span>
+  );
+}
+
+function parseRatio(ratio: string): [number, number] {
+  const match = ratio.match(/^(\d+):(\d+)$/);
+  if (!match) return [1, 1];
+  const a = Number(match[1]);
+  const b = Number(match[2]);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a <= 0 || b <= 0) {
+    return [1, 1];
+  }
+  return [a, b];
+}
+
+// ─── Tier badge (lock + tier name) ────────────────────────────
+function TierBadge({ tier }: { tier: string }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-zinc-300">
+      <IconLock className="size-3" />
+      {tier}
+    </span>
+  );
+}
+
+// ─── Queue badge (amber pulsing dot + count) ─────────────────
+// Tight single-line affordance: a pulsing dot + count, no text. The
+// submit button right next to the chip already says "生成中" /
+// "排队中"; repeating it inside the chip is visual noise.
+function QueueBadge({ count, label }: { count: number; label: string }) {
+  return (
+    <span
+      className="ml-1 inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-amber-300"
+      title={`${label} · ${count}`}
+    >
+      <span className="inline-block size-1.5 animate-pulse rounded-full bg-amber-400" />
+      {count}
+    </span>
+  );
 }
 
 function ChipPopover({
   open,
   onOpenChange,
   label,
+  leadingIcon,
+  trailing,
   disabled,
   children,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   label: string;
+  leadingIcon?: React.ReactNode;
+  trailing?: React.ReactNode;
   disabled?: boolean;
   children: React.ReactNode;
 }) {
@@ -318,9 +431,11 @@ function ChipPopover({
         type="button"
         onClick={() => !disabled && onOpenChange(!open)}
         disabled={disabled}
-        className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-3 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <span>{label}</span>
+        {leadingIcon && <span className="text-zinc-400">{leadingIcon}</span>}
+        <span className="truncate">{label}</span>
+        {trailing}
         <IconChevronDown className="size-3 text-zinc-500" />
       </button>
       {open && (
