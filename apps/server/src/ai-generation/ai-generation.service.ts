@@ -1,0 +1,375 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import type { AuthUser } from '../auth';
+import { AiGenerationAuthzService } from './authz.service';
+import { AiGenerationEtaService } from './eta.service';
+import { AiGenerationRepository } from './repository';
+import { AiGenerationOutboxService } from './outbox.service';
+import { AiGenerationQueueService } from './queue.service';
+import { FoundrySchemaRegistry } from './providers/foundry/schema.registry';
+import { AiGenerationValidatorService } from './validator.service';
+import type {
+  AiJob,
+  AiJobListQuery,
+  AiJobLog,
+  FoundryModelDefinition,
+  AiStatusResponse,
+  AiSubmitJobBody,
+  AiSubmitResponse,
+} from './types';
+
+const TERMINAL_STATUSES = new Set([
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+  'EXPIRED',
+]);
+
+@Injectable()
+export class AiGenerationService {
+  constructor(
+    private readonly registry: FoundrySchemaRegistry,
+    private readonly authz: AiGenerationAuthzService,
+    private readonly validator: AiGenerationValidatorService,
+    private readonly store: AiGenerationRepository,
+    private readonly eta: AiGenerationEtaService,
+    private readonly outbox: AiGenerationOutboxService,
+    private readonly queue: AiGenerationQueueService,
+  ) {}
+
+  /**
+   * Fire-and-forget realtime push for any job state transition. Built
+   * on the Assets hub so callers from other modules (future video
+   * worker, audio worker, etc.) can publish through the same channel
+   * with their own `kind`.
+   */
+  private emitJobUpdate(job: AiJob): void {
+    // Outbox-mediated emit: writes a durable row first, attempts an
+    // immediate Web PubSub publish, and the dispatcher retries on
+    // failure. Callers stay synchronous-fire-and-forget.
+    void this.outbox.record(job);
+  }
+
+  /**
+   * Fan out queue-position pushes after a recompute. Skips the job
+   * that triggered the recompute (it gets its own emit alongside the
+   * primary state change) so users don't see two pushes for the same
+   * change in the same tick.
+   */
+  private emitRepositioned(jobs: AiJob[], skipJobId?: string): void {
+    for (const job of jobs) {
+      if (job.id === skipJobId) continue;
+      this.emitJobUpdate(job);
+    }
+  }
+
+  async listModels(user: AuthUser) {
+    const models = await this.registry.listModels();
+    return models.map((model) => ({
+      ...model,
+      access: this.authz.decideModelAccess(user, model),
+    }));
+  }
+
+  async submitJob(
+    user: AuthUser,
+    body: AiSubmitJobBody,
+  ): Promise<AiSubmitResponse> {
+    const modelId = body.modelId?.trim();
+    if (!modelId) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        msg: 'modelId is required.',
+      });
+    }
+
+    const model = await this.registry.getModel(modelId);
+    if (!model) {
+      throw new NotFoundException({
+        code: 'MODEL_NOT_FOUND',
+        msg: 'Foundry model not found.',
+      });
+    }
+
+    if (!model.enabled) {
+      throw new ServiceUnavailableException({
+        code: 'PROVIDER_NOT_CONFIGURED',
+        msg: model.disabledReason ?? 'Foundry execution is not available.',
+      });
+    }
+
+    // Per-model tier gate. UI is supposed to keep locked models
+    // un-clickable, but never trust the client.
+    this.authz.assertCanUseModel(user, model);
+
+    if (body.schemaVersion !== model.schemaVersion) {
+      throw new ConflictException({
+        code: 'SCHEMA_VERSION_MISMATCH',
+        msg: 'The Foundry model schema changed. Refresh and try again.',
+      });
+    }
+
+    const input =
+      body.input && typeof body.input === 'object' ? body.input : {};
+    const normalizedInput = this.validator.normalizeInput(
+      model.input_schema,
+      input,
+    );
+    const prompt = String(normalizedInput.prompt ?? '').trim();
+    const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
+
+    const existing = await this.store.findByIdempotency(
+      user.userId,
+      model.id,
+      idempotencyKey,
+    );
+    if (existing) return this.toSubmitResponse(existing);
+
+    await this.assertUserQueueLimit(user.userId, model);
+
+    const now = new Date().toISOString();
+    // Generated app-side (matches schema `@default(uuid())`) so we
+    // know the id before insert — needed to enqueue BullMQ + emit
+    // the optimistic queued push before save() resolves.
+    const id = randomUUID();
+    const queueName = model.queue.queueName;
+    const queuePosition = (await this.store.waitingInQueue(queueName)).length;
+    const estimate = this.eta.estimateForNewJob(
+      model,
+      normalizedInput,
+      queuePosition,
+    );
+    const logs: AiJobLog[] = [
+      {
+        time: now,
+        stage: 'queued',
+        message: 'Request accepted and waiting for a generation slot.',
+      },
+    ];
+
+    const job: AiJob = {
+      id,
+      userId: user.userId,
+      userLevel: user.userLevel ?? null,
+      type: model.type,
+      provider: model.provider,
+      modelId: model.id,
+      deployment: model.deployment,
+      schemaVersion: model.schemaVersion,
+      status: 'IN_QUEUE',
+      stage: 'queued',
+      input,
+      normalizedInput,
+      prompt,
+      idempotencyKey,
+      outputs: [],
+      logs,
+      queueName,
+      queuePosition,
+      progress: null,
+      estimatedWaitSeconds: estimate.estimatedWaitSeconds,
+      estimatedRunSeconds: estimate.estimatedRunSeconds,
+      estimatedTotalSeconds: estimate.estimatedTotalSeconds,
+      etaConfidence: estimate.etaConfidence,
+      attempt: 1,
+      createdAt: now,
+      queuedAt: now,
+      updatedAt: now,
+      metrics: {},
+    };
+
+    await this.store.save(job);
+    // Hand off to BullMQ. The worker reads the canonical row from DB
+    // when it picks the message up, so the payload is just the jobId.
+    await this.queue.enqueue(queueName, id);
+    const repositioned = await this.store.recomputeQueuePositions(queueName);
+    const saved = (await this.store.findById(id)) ?? job;
+    this.emitJobUpdate(saved);
+    this.emitRepositioned(repositioned, saved.id);
+    return this.toSubmitResponse(saved);
+  }
+
+  async listJobs(user: AuthUser, query: AiJobListQuery) {
+    const limit = query.limit ? Number(query.limit) : 50;
+    const jobs = await this.store.listForUser({
+      userId: user.userId,
+      type: query.type,
+      limit: Number.isFinite(limit) ? limit : 50,
+    });
+    return {
+      jobs: jobs.map((job) => this.publicJob(job)),
+      nextCursor: null,
+    };
+  }
+
+  async getJob(user: AuthUser, id: string) {
+    const job = await this.getOwnedJob(user, id);
+    return this.publicJob(job, { detail: true });
+  }
+
+  async getStatus(user: AuthUser, id: string): Promise<AiStatusResponse> {
+    const job = await this.getOwnedJob(user, id);
+    return this.toStatusResponse(job);
+  }
+
+  async cancelJob(user: AuthUser, id: string) {
+    const job = await this.getOwnedJob(user, id);
+    if (TERMINAL_STATUSES.has(job.status))
+      return this.publicJob(job, { detail: true });
+
+    const now = new Date().toISOString();
+    const next = await this.store.update(id, {
+      status: 'CANCELLED',
+      stage: 'cancelled',
+      completedAt: now,
+      queuePosition: null,
+      logs: [
+        ...job.logs,
+        {
+          time: now,
+          stage: 'cancelled',
+          message: 'Cancelled by user.',
+        },
+      ],
+      error: {
+        code: 'CANCELLED_BY_USER',
+        message: 'Cancelled by user.',
+        userMessage: 'This generation was cancelled.',
+        retryable: true,
+        createdAt: now,
+      },
+    });
+    const repositioned = await this.store.recomputeQueuePositions(
+      job.queueName,
+    );
+    const updated = next ?? job;
+    this.emitJobUpdate(updated);
+    this.emitRepositioned(repositioned, updated.id);
+    return this.publicJob(updated, { detail: true });
+  }
+
+  async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
+    const job = await this.getOwnedJob(user, id);
+    return this.submitJob(user, {
+      modelId: job.modelId,
+      schemaVersion: job.schemaVersion,
+      input: job.normalizedInput,
+      idempotencyKey: randomUUID(),
+    });
+  }
+
+  private async getOwnedJob(user: AuthUser, id: string): Promise<AiJob> {
+    const job = await this.store.findById(id);
+    if (!job || job.userId !== user.userId) {
+      throw new NotFoundException({
+        code: 'JOB_NOT_FOUND',
+        msg: 'Foundry job not found.',
+      });
+    }
+    return job;
+  }
+
+  private async assertUserQueueLimit(
+    userId: string,
+    model: FoundryModelDefinition,
+  ): Promise<void> {
+    const active = await this.store.activeForUser(userId);
+    const activeSameType = active.filter((job) => job.type === model.type);
+    const queuedTotal = active.filter(
+      (job) => job.status === 'IN_QUEUE',
+    ).length;
+    const runningSameType = activeSameType.filter(
+      (job) => job.status === 'IN_PROGRESS',
+    ).length;
+
+    if (queuedTotal >= model.queue.perUserQueued) {
+      throw new ConflictException({
+        code: 'QUEUE_LIMIT_EXCEEDED',
+        msg: `You can queue up to ${model.queue.perUserQueued} generation task(s).`,
+      });
+    }
+
+    if (runningSameType >= model.queue.perUserRunning) {
+      throw new ConflictException({
+        code: 'RATE_LIMITED',
+        msg: `You can run up to ${model.queue.perUserRunning} ${model.type} generation task(s) at once.`,
+      });
+    }
+  }
+
+  private toSubmitResponse(job: AiJob): AiSubmitResponse {
+    return {
+      ...this.toStatusResponse(job),
+      status_url: `/aurora/foundry/jobs/${job.id}/status`,
+      cancel_url: `/aurora/foundry/jobs/${job.id}/cancel`,
+    };
+  }
+
+  private toStatusResponse(job: AiJob): AiStatusResponse {
+    return {
+      request_id: job.id,
+      status: job.status,
+      stage: job.stage,
+      progress: job.progress ?? null,
+      queue_position: job.queuePosition ?? null,
+      estimated_wait_seconds: job.estimatedWaitSeconds ?? null,
+      estimated_run_seconds: job.estimatedRunSeconds ?? null,
+      estimated_total_seconds: job.estimatedTotalSeconds ?? null,
+      eta_confidence: job.etaConfidence ?? 'low',
+      logs: job.logs.slice(-20),
+      response_url: `/aurora/foundry/jobs/${job.id}`,
+    };
+  }
+
+  private publicJob(job: AiJob, opts?: { detail?: boolean }) {
+    const base = {
+      id: job.id,
+      request_id: job.id,
+      type: job.type,
+      provider: job.provider,
+      modelId: job.modelId,
+      deployment: job.deployment,
+      status: job.status,
+      stage: job.stage,
+      queuePosition: job.queuePosition ?? null,
+      progress: job.progress ?? null,
+      estimatedWaitSeconds: job.estimatedWaitSeconds ?? null,
+      estimatedRunSeconds: job.estimatedRunSeconds ?? null,
+      estimatedTotalSeconds: job.estimatedTotalSeconds ?? null,
+      etaConfidence: job.etaConfidence ?? 'low',
+      prompt: job.prompt,
+      outputs: job.outputs,
+      error: job.error,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+      completedAt: job.completedAt,
+    };
+
+    if (!opts?.detail) return base;
+
+    return {
+      ...base,
+      input: job.normalizedInput,
+      schemaVersion: job.schemaVersion,
+      logs: job.logs,
+      metrics: job.metrics,
+      timings: {
+        createdAt: job.createdAt,
+        queuedAt: job.queuedAt,
+        startedAt: job.startedAt,
+        providerSubmittedAt: job.providerSubmittedAt,
+        providerStartedAt: job.providerStartedAt,
+        providerCompletedAt: job.providerCompletedAt,
+        outputFetchedAt: job.outputFetchedAt,
+        ossUploadedAt: job.ossUploadedAt,
+        completedAt: job.completedAt,
+      },
+    };
+  }
+}

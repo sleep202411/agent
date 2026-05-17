@@ -1,7 +1,8 @@
 // Prisma schema — DATABASE_URL configured in `prisma.config.ts`.
-// Models are added by the modules that own them (see
-// `src/<module>/...` for usage). Migrations live under
-// `prisma/migrations/` and are applied via `npm run db:migrate`.
+//
+// Migrations live under `prisma/migrations/` and are applied via
+// `npm run db:migrate`. Models live alongside the module that owns
+// them in src/<module>/.
 
 generator client {
   provider = "prisma-client-js"
@@ -9,4 +10,215 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// AI Generation domain (src/ai-generation/)
+// One row per user submission across all providers (Foundry, fal-ai,
+// Replicate, …). `provider` discriminates which adapter handled it.
+// ─────────────────────────────────────────────────────────────
+
+// AiJob — one row per user submission to a generation provider.
+// Production-grade conventions applied:
+//   - Soft delete via `deletedAt` (preserve evidence for audit / billing)
+//   - Optimistic locking via `version` (multi-worker safety net even
+//     though BullMQ already serializes claims)
+//   - `requestId` for cross-system trace correlation
+//   - All timestamps Timestamptz(6) for sub-ms precision
+//   - Indexes are FULL today; future migration can switch to PARTIAL
+//     `WHERE deleted_at IS NULL` once table grows (Prisma 6.x lacks
+//     native partial-index DSL; do via raw migration)
+model AiJob {
+  id                    String    @id @default(uuid())
+  userId                String    @map("user_id")
+  userLevel             String?   @map("user_level")
+  type                  String // 'image' | 'video'
+  provider              String // 'microsoft-foundry' | 'fal-ai' | ...
+  modelId               String    @map("model_id")
+  deployment            String
+  schemaVersion         String    @map("schema_version")
+  status                String // AiJobStatus
+  stage                 String // AiJobStage
+  queueName             String    @map("queue_name")
+  prompt                String
+  idempotencyKey        String    @map("idempotency_key")
+  /// External trace id (X-Request-Id header), nullable until UI sends one.
+  requestId             String?   @map("request_id")
+  input                 Json
+  normalizedInput       Json      @map("normalized_input")
+  error                 Json?
+  logs                  Json
+  metrics               Json
+  queuePosition         Int?      @map("queue_position")
+  progress              Float?
+  estimatedWaitSeconds  Int?      @map("estimated_wait_seconds")
+  estimatedRunSeconds   Int?      @map("estimated_run_seconds")
+  estimatedTotalSeconds Int?      @map("estimated_total_seconds")
+  etaConfidence         String?   @map("eta_confidence")
+  attempt               Int       @default(1)
+  retryOfJobId          String?   @map("retry_of_job_id")
+  providerJobId         String?   @map("provider_job_id")
+  /// Aggregated cost across all attempts. Updated when an attempt
+  /// completes. Shape:
+  ///   { currency, amount, meters: [{meter, unit, quantity, unitPrice, cost}], provider, billedAt }
+  cost                  Json?
+  /// W3C distributed trace context (traceparent / tracestate) so logs
+  /// from worker / DB / provider correlate in observability stack.
+  trace                 Json?
+  /// Client telemetry — abuse detection, UA-specific bug triage.
+  clientIp              String?   @map("client_ip")
+  userAgent             String?   @map("user_agent")
+  /// Optimistic concurrency control. Increment on every update; readers
+  /// supply the version they saw in the WHERE clause.
+  version               Int       @default(0)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  queuedAt              DateTime? @map("queued_at") @db.Timestamptz(6)
+  startedAt             DateTime? @map("started_at") @db.Timestamptz(6)
+  providerSubmittedAt   DateTime? @map("provider_submitted_at") @db.Timestamptz(6)
+  providerStartedAt     DateTime? @map("provider_started_at") @db.Timestamptz(6)
+  providerCompletedAt   DateTime? @map("provider_completed_at") @db.Timestamptz(6)
+  outputFetchedAt       DateTime? @map("output_fetched_at") @db.Timestamptz(6)
+  ossUploadedAt         DateTime? @map("oss_uploaded_at") @db.Timestamptz(6)
+  completedAt           DateTime? @map("completed_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Soft delete tombstone. Filter `deletedAt: null` in every read.
+  deletedAt             DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  outputs  AiJobOutput[]
+  attempts AiJobAttempt[]
+  events   AiEventOutbox[]
+
+  @@unique([userId, modelId, idempotencyKey], name: "uniq_user_model_idempotency", map: "ai_jobs_idempotency_unique")
+  @@index([userId, createdAt(sort: Desc)], map: "ai_jobs_user_created_idx")
+  @@index([queueName, status, queuedAt], map: "ai_jobs_queue_claim_idx")
+  @@index([deletedAt], map: "ai_jobs_deleted_at_idx")
+  @@map("ai_jobs")
+}
+
+// AiJobOutput — one row per generated artifact (OSS-backed). ID is
+// composite `${jobId}#${outputIndex}-${contentHash}` so re-uploading
+// identical content collapses to the same row (idempotent recovery).
+model AiJobOutput {
+  id              String    @id @default(uuid())
+  jobId           String    @map("job_id")
+  type            String
+  url             String
+  /// CDN thumbnail variant — gallery uses this; original `url` is the
+  /// full asset. Optional; populated by a post-processing step.
+  thumbnailUrl    String?   @map("thumbnail_url")
+  storagePath     String    @map("storage_path")
+  /// SHA-256 (truncated to 12 hex) of the bytes — queryable separately
+  /// from the composite id for dedupe lookups across users.
+  contentHash     String?   @map("content_hash")
+  width           Int?
+  height          Int?
+  durationSeconds Int?      @map("duration_seconds")
+  mimeType        String?   @map("mime_type")
+  bytes           Int?
+  outputIndex     Int       @map("output_index")
+  /// Actual seed the provider used. BigInt — fal seeds can exceed Int32.
+  seed            BigInt?
+  /// Content-safety signals returned by provider
+  /// (nsfw_score, violence, hate, …). Shape provider-specific.
+  safetyFlags     Json?     @map("safety_flags")
+  /// What model/version/checkpoint produced this output — used for
+  /// reproducibility, copyright accountability, watermark provenance.
+  provenance      Json?
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Soft delete tombstone. Audit / billing wants to see what was
+  /// generated even after the user hides a gallery item.
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  job AiJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, outputIndex], name: "uniq_job_output_index", map: "ai_outputs_job_index_unique")
+  @@index([jobId], map: "ai_outputs_job_idx")
+  @@index([contentHash], map: "ai_outputs_content_hash_idx")
+  @@index([deletedAt], map: "ai_outputs_deleted_at_idx")
+  @@map("ai_outputs")
+}
+
+// AiJobAttempt — append-only log of each provider call (initial + retries).
+// Stores the full request / response / headers / cost so any past
+// generation can be replayed or audited.
+model AiJobAttempt {
+  id                      String    @id @default(uuid())
+  jobId                   String    @map("job_id")
+  attemptNumber           Int       @map("attempt_number")
+  status                  String // 'succeeded' | 'failed' | 'aborted'
+  providerStatus          Int?      @map("provider_status")
+  /// Full request body sent to the provider (after adapter mapping).
+  providerRequest         Json?     @map("provider_request")
+  /// Outbound headers (auth redacted server-side before write).
+  providerRequestHeaders  Json?     @map("provider_request_headers")
+  /// Raw response body. Audit / debug / future re-parse.
+  providerResponse        Json?     @map("provider_response")
+  /// Response headers — Azure / fal often return rate limit / cost
+  /// info here (x-ratelimit-*, x-fal-*).
+  providerResponseHeaders Json?     @map("provider_response_headers")
+  /// Provider-side logs (fal returns inference step logs; Azure returns
+  /// content filter signals). Kept verbatim.
+  providerLogs            Json?     @map("provider_logs")
+  /// This-attempt cost breakdown. Aggregated into AiJob.cost on success.
+  costAccounting          Json?     @map("cost_accounting")
+  error                   Json?
+  runDurationMs           Int?      @map("run_duration_ms")
+  startedAt               DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt             DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  job AiJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, attemptNumber], map: "ai_attempts_job_attempt_unique")
+  @@index([jobId], map: "ai_attempts_job_idx")
+  @@map("ai_attempts")
+}
+
+// AiProviderEvent — inbound webhook / async callback log.
+//
+// fal.ai (and any async provider) push completion via webhook. Recording
+// the raw payload + signature verification result gives us:
+//   - audit trail (proof of what the provider told us)
+//   - replay capability (re-process if our handler crashed mid-handling)
+//   - idempotency (drop duplicates via provider_event_id unique)
+//
+// `jobId` is nullable because some events may arrive for jobs we don't
+// recognize (already cleaned, wrong tenant, race against creation);
+// store them anyway so we can investigate later.
+model AiProviderEvent {
+  id                String    @id @default(uuid())
+  jobId             String?   @map("job_id")
+  provider          String
+  /// Provider's own ID for this event (fal: request_id; others may vary).
+  providerEventId   String?   @map("provider_event_id")
+  /// 'queue_update' | 'started' | 'completed' | 'failed' | 'unknown'
+  eventType         String    @map("event_type")
+  payload           Json
+  headers           Json
+  signatureValid    Boolean   @map("signature_valid")
+  receivedAt        DateTime  @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt       DateTime? @map("processed_at") @db.Timestamptz(6)
+  processingError   String?   @map("processing_error")
+
+  @@unique([provider, providerEventId], name: "uniq_provider_event_id", map: "ai_provider_events_provider_event_unique")
+  @@index([jobId, receivedAt(sort: Desc)], map: "ai_provider_events_job_recent_idx")
+  @@index([processedAt], map: "ai_provider_events_pending_idx")
+  @@map("ai_provider_events")
+}
+
+// AiEventOutbox — durable Web PubSub fan-out. Dispatcher polls
+// `dispatched_at IS NULL` rows and publishes; success marks
+// dispatched_at. Internal-only; DB-mints UUIDs.
+model AiEventOutbox {
+  id           String    @id @default(uuid())
+  jobId        String    @map("job_id")
+  userId       String    @map("user_id")
+  payload      Json
+  dispatchedAt DateTime? @map("dispatched_at") @db.Timestamptz(6)
+  attempt      Int       @default(0)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  job AiJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([dispatchedAt, createdAt], map: "ai_event_outbox_pending_idx")
+  @@map("ai_event_outbox")
 }

@@ -5,5 +5,7 @@ export * from "./personas.js";
 export * from "./error-classification.js";
 export * from "./project-params.js";
 export * from "./entity-events.js";
+export * from "./asset-events.js";
 export * from "./agent-state.js";
 export * from "./forced-persona.js";
+export * from "./foundry-schema.js";
