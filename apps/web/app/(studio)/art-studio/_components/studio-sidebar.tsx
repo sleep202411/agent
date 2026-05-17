@@ -12,7 +12,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconHome, IconLayoutGrid } from "@tabler/icons-react";
+import { IconHome, IconLayoutGrid, IconSparkles } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -24,6 +24,11 @@ const ITEMS = [
     href: "/art-studio/projects",
     labelKey: "sidebarProjects" as const,
     Icon: IconLayoutGrid,
+  },
+  {
+    href: "/art-studio/image",
+    labelKey: "sidebarImageLab" as const,
+    Icon: IconSparkles,
   },
 ];
 
