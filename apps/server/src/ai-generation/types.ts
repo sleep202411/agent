@@ -42,12 +42,12 @@ export type FoundryCatalogSource =
   | 'seed-fallback';
 
 export type AiJobStatus =
-  | 'IN_QUEUE'
-  | 'IN_PROGRESS'
-  | 'COMPLETED'
-  | 'FAILED'
-  | 'CANCELLED'
-  | 'EXPIRED';
+  | 'in_queue'
+  | 'in_progress'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'expired';
 
 export type AiJobStage =
   | 'created'

@@ -194,11 +194,58 @@ function disabledReason(): string | undefined {
   return undefined;
 }
 
+/**
+ * Hand-curated user-facing names for SKUs we know well. Keys match
+ * the raw Azure deployment/model id (lowercase). Add entries here
+ * whenever a new model lands so the picker shows a polished name
+ * instead of "Gpt Image 2".
+ */
+const KNOWN_MODEL_DISPLAY: Record<
+  string,
+  { name: string; description: string }
+> = {
+  'gpt-image-2': {
+    name: 'GPT Image 2',
+    description: 'High-fidelity image generation and reference editing.',
+  },
+  'gpt-image-1': {
+    name: 'GPT Image 1',
+    description: 'Previous-generation image model. Lower cost, less detail.',
+  },
+  'dall-e-3': {
+    name: 'DALL·E 3',
+    description: 'OpenAI image model with strong prompt adherence.',
+  },
+  'sora-1': {
+    name: 'Sora 1',
+    description: 'Video generation. Slow, high-quality.',
+  },
+};
+
+export function curatedDisplay(
+  rawId: string | null | undefined,
+): { name: string; description: string } | null {
+  if (!rawId) return null;
+  return KNOWN_MODEL_DISPLAY[rawId.trim().toLowerCase()] ?? null;
+}
+
+/**
+ * Fallback polish for unknown ids. `gpt-image-2` → `GPT Image 2`.
+ * Tokens that look like all-caps (GPT, DALL-E) keep their case;
+ * everything else gets title-cased.
+ */
 function displayName(value: string): string {
   return value
     .split(/[-_/:\s]+/)
     .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) => {
+      const upper = part.toUpperCase();
+      // Known acronyms — keep them all-caps so we don't see "Gpt".
+      if (upper === 'GPT' || upper === 'DALL' || upper === 'AI') return upper;
+      // Numbers + version tokens (e.g. "2", "v3") stay literal.
+      if (/^\d+$/.test(part)) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
     .join(' ');
 }
 
@@ -466,75 +513,56 @@ function gptImage2InputSchema(): FoundryInputSchema {
     ],
     properties: {
       prompt: gptImage2PromptField(),
-      size: {
+      // Size is split into two user-facing fields — `aspect_ratio`
+      // (shape) and `resolution_tier` (sharpness) — combined back into
+      // a `WIDTHxHEIGHT` string in `mapAspectAndResolutionToSize()`
+      // before being sent to Azure. UX win: users think in shape +
+      // sharpness, not pixels. Schema win: per-option tier gating on
+      // resolution (2K = VIP1, 4K = VIP2).
+      aspect_ratio: {
         type: 'string',
-        title: 'Size',
-        titleKey: 'foundry.schema.field.size.title',
-        description:
-          'Use auto or WIDTHxHEIGHT. Width and height must be multiples of 16; total pixels must be 655360-8294400; aspect ratio must be at most 3:1.',
-        descriptionKey: 'foundry.gptImage2.size.description',
-        default: 'auto',
-        format: 'gpt-image-2-size',
-        examples: [
-          'auto',
-          '1024x1024',
-          '1536x1024',
-          '1024x1536',
-          '2048x1152',
-          '3840x2160',
-        ],
-        'x-constraints': [
-          {
-            kind: 'dimension2d',
-            allowAuto: true,
-            multipleOf: 16,
-            minPixels: 655360,
-            maxPixels: 8294400,
-            maxEdge: 3840,
-            maxAspectRatio: 3,
-          },
-        ],
+        title: 'Aspect ratio',
+        titleKey: 'aiGen.schema.field.aspectRatio.title',
+        enum: ['1:1', '3:2', '2:3', '16:9', '9:16', '4:3', '3:4'],
+        default: '1:1',
         'x-ui': {
           control: 'segmented',
           group: 'generation',
           importance: 'primary',
           order: 20,
           options: [
-            {
-              value: 'auto',
-              label: 'Auto',
-              labelKey: 'foundry.imageLab.sizePreset.auto',
-            },
-            {
-              value: '1024x1024',
-              label: '1:1',
-              labelKey: 'foundry.imageLab.sizePreset.square',
-            },
-            {
-              value: '1536x1024',
-              label: '3:2',
-              labelKey: 'foundry.imageLab.sizePreset.landscape',
-            },
-            {
-              value: '1024x1536',
-              label: '2:3',
-              labelKey: 'foundry.imageLab.sizePreset.portrait',
-            },
-            {
-              value: '2048x1152',
-              label: '16:9',
-              labelKey: 'foundry.imageLab.sizePreset.wide',
-            },
+            { value: '1:1', label: '1:1' },
+            { value: '3:2', label: '3:2' },
+            { value: '2:3', label: '2:3' },
+            { value: '16:9', label: '16:9' },
+            { value: '9:16', label: '9:16' },
+            { value: '4:3', label: '4:3' },
+            { value: '3:4', label: '3:4' },
           ],
-          hint: 'Choose a common ratio. Custom WIDTHxHEIGHT remains available through schema/API.',
-          labelKey: 'foundry.schema.field.size.label',
-          hintKey: 'foundry.gptImage2.size.hint',
+          labelKey: 'aiGen.schema.field.aspectRatio.label',
         },
-        'x-provider': {
-          parameter: 'size',
-          transform: 'omitAuto',
-          omitIfDefault: true,
+        // No `x-provider` — combined with resolution_tier into `size`
+        // by the request mapper.
+      },
+      resolution_tier: {
+        type: 'string',
+        title: 'Resolution',
+        titleKey: 'aiGen.schema.field.resolutionTier.title',
+        enum: ['hd', 'fhd', 'uhd'],
+        default: 'hd',
+        'x-ui': {
+          control: 'segmented',
+          group: 'generation',
+          importance: 'primary',
+          order: 21,
+          options: [
+            { value: 'hd', label: '1K HD', tier: null },
+            { value: 'fhd', label: '2K FHD', tier: 'VIP1' },
+            { value: 'uhd', label: '4K UHD', tier: 'VIP2' },
+          ],
+          labelKey: 'aiGen.schema.field.resolutionTier.label',
         },
+        // Same — combined with aspect_ratio into `size`.
       },
       quality: {
         type: 'string',
@@ -1371,9 +1399,27 @@ export class FoundrySchemaFactory {
     const type: AiJobType =
       capability === 'video_generation' ? 'video' : 'image';
     const isEnabled = executionConfigured() && executionEnabled();
+    // Curated > Azure-provided displayName > polished fallback. We
+    // distrust Azure's displayName when it equals the raw deployment
+    // id (which is what we'd render as a fallback ourselves).
+    const curated =
+      curatedDisplay(record.modelName) ?? curatedDisplay(record.deployment);
+    const fallbackName = displayName(
+      record.modelName || record.deployment || record.id,
+    );
+    const looksLikeRawId =
+      record.displayName &&
+      (record.displayName === record.deployment ||
+        record.displayName === record.modelName);
     const name =
-      record.displayName ??
-      displayName(record.modelName || record.deployment || record.id);
+      curated?.name ??
+      (looksLikeRawId ? fallbackName : (record.displayName ?? fallbackName));
+    const description =
+      curated?.description ??
+      (looksLikeRawId
+        ? `${name} deployment from Microsoft Foundry catalog.`
+        : (record.description ??
+          `${name} deployment from Microsoft Foundry catalog.`));
     const isGptImage2 = type === 'image' && isGptImage2Model(record);
     const matrix = capabilityMatrix(record, type);
 
@@ -1388,9 +1434,7 @@ export class FoundrySchemaFactory {
       capability,
       type,
       name,
-      description:
-        record.description ??
-        `${name} deployment from Microsoft Foundry catalog.`,
+      description,
       enabled: isEnabled,
       disabledReason: isEnabled ? undefined : disabledReason(),
       schemaDialect: FOUNDRY_SCHEMA_DIALECT,

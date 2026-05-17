@@ -180,7 +180,7 @@ export class AiGenerationRepository {
       where: {
         userId,
         deletedAt: null,
-        status: { notIn: ['COMPLETED', 'FAILED', 'CANCELLED', 'EXPIRED'] },
+        status: { notIn: ['completed', 'failed', 'cancelled', 'expired'] },
       },
       include: { outputs: this.outputsInclude(false) },
     });
@@ -189,7 +189,7 @@ export class AiGenerationRepository {
 
   async waitingInQueue(queueName: AiJob['queueName']): Promise<AiJob[]> {
     const rows = await this.prisma.aiJob.findMany({
-      where: { queueName, status: 'IN_QUEUE', deletedAt: null },
+      where: { queueName, status: 'in_queue', deletedAt: null },
       orderBy: [{ queuedAt: 'asc' }, { createdAt: 'asc' }],
       include: { outputs: this.outputsInclude(false) },
     });

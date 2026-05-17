@@ -25,23 +25,26 @@ export class AiGenerationController {
   }
 
   @Get('jobs')
-  listJobs(@CurrentUser() user: AuthUser, @Query() query: AiJobListQuery) {
-    return { code: 200, data: this.service.listJobs(user, query) };
+  async listJobs(
+    @CurrentUser() user: AuthUser,
+    @Query() query: AiJobListQuery,
+  ) {
+    return { code: 200, data: await this.service.listJobs(user, query) };
   }
 
   @Get('jobs/:id/status')
-  getStatus(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return { code: 200, data: this.service.getStatus(user, id) };
+  async getStatus(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return { code: 200, data: await this.service.getStatus(user, id) };
   }
 
   @Get('jobs/:id')
-  getJob(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return { code: 200, data: this.service.getJob(user, id) };
+  async getJob(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return { code: 200, data: await this.service.getJob(user, id) };
   }
 
   @Post('jobs/:id/cancel')
-  cancelJob(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return { code: 200, data: this.service.cancelJob(user, id) };
+  async cancelJob(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return { code: 200, data: await this.service.cancelJob(user, id) };
   }
 
   @Post('jobs/:id/retry')

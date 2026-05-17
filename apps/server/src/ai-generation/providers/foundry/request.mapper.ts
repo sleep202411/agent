@@ -51,6 +51,19 @@ export function mapFoundryProviderRequest(
 
   if (binding.passthroughUserId && options.userId) body.user = options.userId;
 
+  // aspect_ratio + resolution_tier → Azure's single `size` field.
+  // The two fields are user-facing (cleaner UX); Azure only takes
+  // `WIDTHxHEIGHT`, so we combine here, after generic field mapping.
+  // Backwards-compat: if a legacy caller sent `size` directly, the
+  // generic loop above already set body.size and we don't overwrite.
+  if (body.size === undefined) {
+    const composed = composeSize(
+      normalizedInput.aspect_ratio,
+      normalizedInput.resolution_tier,
+    );
+    if (composed) body.size = composed;
+  }
+
   return {
     provider: binding.provider,
     endpoint: selectEndpoint(binding, normalizedInput),
@@ -166,4 +179,60 @@ function isEmpty(value: unknown): boolean {
     value === '' ||
     (Array.isArray(value) && value.length === 0)
   );
+}
+
+// ─── aspect_ratio + resolution_tier → Azure size ──────────────
+//
+// 7 ratios × 3 tiers = 21 combos. Picking concrete pixel values per
+// combo (not just multiplying) so we respect Azure's constraints:
+//   * each dimension multiple of 16
+//   * total pixels 655_360 – 8_294_400
+//   * aspect ratio ≤ 3:1
+// The 4K tier intentionally caps "off-square" ratios at 16:9 / 9:16
+// so we stay under the 8.3M pixel ceiling.
+const SIZE_GRID: Record<string, Record<string, string>> = {
+  '1:1': {
+    hd: '1024x1024', // 1.0 MP
+    fhd: '2048x2048', // 4.2 MP
+    uhd: '2880x2880', // 8.3 MP — at the pixel ceiling, still 1:1
+  },
+  '3:2': {
+    hd: '1536x1024',
+    fhd: '2304x1536',
+    uhd: '3072x2048',
+  },
+  '2:3': {
+    hd: '1024x1536',
+    fhd: '1536x2304',
+    uhd: '2048x3072',
+  },
+  '16:9': {
+    hd: '1920x1088', // closest 16:9 with both dims multiples of 16
+    fhd: '2048x1152',
+    uhd: '3840x2160',
+  },
+  '9:16': {
+    hd: '1088x1920',
+    fhd: '1152x2048',
+    uhd: '2160x3840',
+  },
+  '4:3': {
+    hd: '1024x768',
+    fhd: '2048x1536',
+    uhd: '2880x2160',
+  },
+  '3:4': {
+    hd: '768x1024',
+    fhd: '1536x2048',
+    uhd: '2160x2880',
+  },
+};
+
+function composeSize(
+  aspectRatio: unknown,
+  resolutionTier: unknown,
+): string | undefined {
+  if (typeof aspectRatio !== 'string') return undefined;
+  if (typeof resolutionTier !== 'string') return undefined;
+  return SIZE_GRID[aspectRatio]?.[resolutionTier];
 }

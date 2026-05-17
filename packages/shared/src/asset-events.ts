@@ -23,6 +23,12 @@ export interface AiJobUpdatePayload {
   status: string;
   stage: string;
   prompt: string;
+  /**
+   * Normalized request input — included so reload-during-flight queued
+   * cards can render the correct aspect ratio (output rows don't have
+   * width/height yet until the upload phase finishes).
+   */
+  input?: Record<string, unknown>;
   outputs: Array<{
     id: string;
     type: "image" | "video";

@@ -95,4 +95,42 @@ export class AiGenerationAuthzService {
       requiredTier: decision.requiredTier,
     });
   }
+
+  /**
+   * Walk the input and reject any field value that maps to a schema
+   * option whose `tier` exceeds the user's. UI also gates these, but
+   * we never trust the client.
+   */
+  assertCanUseOptions(
+    user: AuthUser,
+    model: FoundryModelDefinition,
+    normalizedInput: Record<string, unknown>,
+  ): void {
+    const userRank = tierRank(user.userLevel);
+    for (const [fieldName, field] of Object.entries(
+      model.input_schema.properties,
+    )) {
+      const value = normalizedInput[fieldName];
+      if (value === undefined || value === null) continue;
+      const ui = (
+        field as {
+          'x-ui'?: {
+            options?: Array<{ value: unknown; tier?: string | null }>;
+          };
+        }
+      )['x-ui'];
+      const option = ui?.options?.find((o) => o.value === value);
+      if (!option?.tier) continue;
+      const required = option.tier.toUpperCase() as AiUserTier;
+      const requiredRank = AI_TIER_RANK[required];
+      if (requiredRank == null) continue; // unknown tier name, skip
+      if (userRank >= requiredRank) continue;
+      throw new ForbiddenException({
+        code: 'MEMBERSHIP_REQUIRED',
+        msg: `Option "${String(value)}" on field "${fieldName}" requires ${required}+ membership.`,
+        requiredTier: required,
+        field: fieldName,
+      });
+    }
+  }
 }

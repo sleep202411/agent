@@ -25,6 +25,14 @@ import { FoundrySchemaRegistry } from './schema.registry';
 
 const PROVIDER_TIMEOUT_MS = 240_000;
 
+// Tiny 1×1 transparent PNG — used by the FOUNDRY_DEBUG_DELAY_MS stub
+// path. Real bytes (not a string URL) so the rest of the worker's
+// upload → OSS pipeline runs end-to-end exactly like a real job.
+const STUB_PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+);
+
 interface FoundryImageResponseBody {
   data?: Array<{ b64_json?: string; url?: string }>;
 }
@@ -97,6 +105,32 @@ export class FoundryProviderAdapter implements ProviderAdapter {
     // deployment.
     mapped.body.model = model.deployment;
 
+    // Dev-only stub: when FOUNDRY_DEBUG_DELAY_MS is set, skip the
+    // Azure call entirely, sleep that long, and return a placeholder
+    // image. Lets us test queue mechanics + UI flow without burning
+    // Azure quota and without 50s round-trips.
+    const debugDelay = Number(process.env.FOUNDRY_DEBUG_DELAY_MS ?? 0);
+    if (debugDelay > 0) {
+      await new Promise((r) => setTimeout(r, debugDelay));
+      const stubBuffer = STUB_PNG_BYTES;
+      const { width, height } = parseSize(
+        typeof mapped.body.size === 'string' ? mapped.body.size : null,
+      );
+      const n = Number(mapped.body.n ?? 1) || 1;
+      const outputs: RawProviderOutput[] = Array.from(
+        { length: n },
+        (_, i) => ({
+          index: i,
+          buffer: stubBuffer,
+          mimeType: 'image/png',
+          ext: 'png',
+          width,
+          height,
+        }),
+      );
+      return { kind: 'completed', outputs };
+    }
+
     // Schema declares multipart for gpt-image-2 at the binding level,
     // but Azure's `images.generations` only reads `model` from a JSON
     // body (multipart fields are ignored, triggering NoModelName).
@@ -151,7 +185,11 @@ export class FoundryProviderAdapter implements ProviderAdapter {
     }
 
     const body = (await response.json()) as FoundryImageResponseBody;
-    const outputs = this.collectOutputs(input, body);
+    // Pass the *sent* body (which has the composed `size`) instead of
+    // the raw `input` — the new schema splits the user-facing form into
+    // `aspect_ratio` + `resolution_tier`, so `input.size` is undefined
+    // and only `mapped.body.size` reflects what Azure actually rendered.
+    const outputs = this.collectOutputs(mapped.body, body);
     if (outputs.length === 0) {
       throw this.makeError('UNKNOWN', 'Provider returned no image outputs');
     }

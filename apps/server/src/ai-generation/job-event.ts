@@ -12,6 +12,7 @@ export function toAiJobEvent(job: AiJob): AssetEvent {
       status: job.status,
       stage: job.stage,
       prompt: job.prompt,
+      input: job.normalizedInput,
       outputs: job.outputs.map((o) => ({
         id: o.id,
         type: o.type,

@@ -26,13 +26,13 @@ enum AiJobType {
 }
 
 enum AiJobStatus {
-  CREATED
-  IN_QUEUE
-  IN_PROGRESS
-  COMPLETED
-  FAILED
-  CANCELLED
-  EXPIRED
+  created
+  in_queue
+  in_progress
+  completed
+  failed
+  cancelled
+  expired
 }
 
 enum AiJobStage {

@@ -52,8 +52,17 @@ const RETRYABLE_CODES = new Set<AiJobError['code']>([
 // BullMQ worker concurrency per queue. Each Worker pulls this many
 // jobs in parallel and runs them as async fetches. Conservatively
 // low for image so we don't saturate provider RPM.
-const IMAGE_WORKER_CONCURRENCY = 4;
-const VIDEO_WORKER_CONCURRENCY = 2;
+// `AI_WORKER_IMAGE_CONCURRENCY` / `AI_WORKER_VIDEO_CONCURRENCY` env
+// vars override at boot — useful for forcing concurrency=1 in dev
+// to make the queue mechanic visually testable.
+const IMAGE_WORKER_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.AI_WORKER_IMAGE_CONCURRENCY ?? 4),
+);
+const VIDEO_WORKER_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.AI_WORKER_VIDEO_CONCURRENCY ?? 2),
+);
 
 // SIGTERM drain budget — how long we wait for in-flight provider
 // fetches to settle before letting the process exit. Set wider than
@@ -177,7 +186,7 @@ export class AiGenerationWorkerService
       );
       return;
     }
-    if (dbJob.status !== 'IN_QUEUE') {
+    if (dbJob.status !== 'in_queue') {
       // Already terminal or being processed elsewhere — defensive
       // skip so a queue replay can't restart a completed job.
       this.logger.warn(
@@ -197,7 +206,7 @@ export class AiGenerationWorkerService
   private async claim(job: AiJob): Promise<AiJob | null> {
     const now = new Date().toISOString();
     const next = await this.store.update(job.id, {
-      status: 'IN_PROGRESS',
+      status: 'in_progress',
       stage: 'calling_provider',
       startedAt: now,
       queuePosition: null,
@@ -327,7 +336,7 @@ export class AiGenerationWorkerService
 
     const now = new Date().toISOString();
     const completed = await this.store.update(job.id, {
-      status: 'COMPLETED',
+      status: 'completed',
       stage: 'completed',
       outputs,
       progress: 1,
@@ -356,7 +365,7 @@ export class AiGenerationWorkerService
       const delayMs = RETRY_BACKOFFS_MS[backoffIdx];
       const reQueuedAt = new Date(Date.now() + delayMs).toISOString();
       const requeued = await this.store.update(job.id, {
-        status: 'IN_QUEUE',
+        status: 'in_queue',
         stage: 'provider_queued',
         attempt,
         queuedAt: reQueuedAt,
@@ -386,7 +395,7 @@ export class AiGenerationWorkerService
   private async markFailed(job: AiJob, payload: AiJobError): Promise<void> {
     const now = new Date().toISOString();
     const failed = await this.store.update(job.id, {
-      status: 'FAILED',
+      status: 'failed',
       stage: 'failed',
       error: payload,
       completedAt: now,

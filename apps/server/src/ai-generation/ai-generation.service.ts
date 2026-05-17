@@ -26,10 +26,10 @@ import type {
 } from './types';
 
 const TERMINAL_STATUSES = new Set([
-  'COMPLETED',
-  'FAILED',
-  'CANCELLED',
-  'EXPIRED',
+  'completed',
+  'failed',
+  'cancelled',
+  'expired',
 ]);
 
 @Injectable()
@@ -145,6 +145,9 @@ export class AiGenerationService {
       model.input_schema,
       input,
     );
+    // Per-option tier gate (e.g. resolution_tier=uhd needs VIP2).
+    // Server-side enforcement; the UI already gates these.
+    this.authz.assertCanUseOptions(user, model, normalizedInput);
     const prompt = String(normalizedInput.prompt ?? '').trim();
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
 
@@ -189,7 +192,7 @@ export class AiGenerationService {
       modelId: model.id,
       deployment: model.deployment,
       schemaVersion: model.schemaVersion,
-      status: 'IN_QUEUE',
+      status: 'in_queue',
       stage: 'queued',
       input,
       normalizedInput,
@@ -252,7 +255,7 @@ export class AiGenerationService {
 
     const now = new Date().toISOString();
     const next = await this.store.update(id, {
-      status: 'CANCELLED',
+      status: 'cancelled',
       stage: 'cancelled',
       completedAt: now,
       queuePosition: null,
@@ -309,10 +312,10 @@ export class AiGenerationService {
     const active = await this.store.activeForUser(userId);
     const activeSameType = active.filter((job) => job.type === model.type);
     const queuedTotal = active.filter(
-      (job) => job.status === 'IN_QUEUE',
+      (job) => job.status === 'in_queue',
     ).length;
     const runningSameType = activeSameType.filter(
-      (job) => job.status === 'IN_PROGRESS',
+      (job) => job.status === 'in_progress',
     ).length;
 
     if (queuedTotal >= model.queue.perUserQueued) {
@@ -371,6 +374,10 @@ export class AiGenerationService {
       estimatedTotalSeconds: job.estimatedTotalSeconds ?? null,
       etaConfidence: job.etaConfidence ?? 'low',
       prompt: job.prompt,
+      // Always include the normalized input so the gallery can render
+      // the correct aspect ratio for queued/in-flight cards on reload
+      // (output rows don't carry width/height until upload finishes).
+      input: job.normalizedInput,
       outputs: job.outputs,
       error: job.error,
       createdAt: job.createdAt,
@@ -382,7 +389,6 @@ export class AiGenerationService {
 
     return {
       ...base,
-      input: job.normalizedInput,
       schemaVersion: job.schemaVersion,
       logs: job.logs,
       metrics: job.metrics,
