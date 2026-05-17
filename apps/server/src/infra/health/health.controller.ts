@@ -1,0 +1,113 @@
+/**
+ * Liveness + readiness endpoints for load balancers / K8s.
+ *
+ * `/healthz` — process is alive enough to answer HTTP. If this stops
+ *             returning 200, restart the pod.
+ *
+ * `/ready`   — the process is alive AND has every dependency it needs
+ *             to serve real traffic (provider creds present, Web PubSub
+ *             configured, future: Redis/PG/OSS reachable). LB should
+ *             stop routing to a pod whose `/ready` returns 503 but
+ *             keep the pod itself running (it may recover).
+ */
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Res,
+} from '@nestjs/common';
+import type { Response } from 'express';
+import type Redis from 'ioredis';
+import { Public } from '../../auth';
+import { PrismaService } from '../db/db.module';
+import { REDIS } from '../redis/redis.module';
+import { OutputStorageService } from '../storage/storage.types';
+
+interface ReadinessProbe {
+  name: string;
+  ok: boolean;
+  detail?: string;
+}
+
+@Controller()
+export class HealthController {
+  constructor(
+    private readonly storage: OutputStorageService,
+    private readonly prisma: PrismaService,
+    @Inject(REDIS) private readonly redis: Redis,
+  ) {}
+
+  @Public()
+  @Get('healthz')
+  @HttpCode(HttpStatus.OK)
+  liveness() {
+    return { status: 'ok' };
+  }
+
+  @Public()
+  @Get('ready')
+  async readiness(@Res({ passthrough: true }) res: Response) {
+    const [storageOk, dbOk, redisOk] = await Promise.all([
+      this.storage.isHealthy(),
+      this.probeDb(),
+      this.probeRedis(),
+    ]);
+    const checks: ReadinessProbe[] = [
+      {
+        name: 'web_pubsub',
+        ok: Boolean(process.env.AZURE_WEB_PUBSUB_CONNECTION_STRING),
+        detail: 'AZURE_WEB_PUBSUB_CONNECTION_STRING required for realtime',
+      },
+      {
+        name: 'foundry_provider',
+        ok:
+          Boolean(process.env.AZURE_OPENAI_API_KEY) &&
+          Boolean(process.env.AZURE_OPENAI_BASE_URL),
+        detail: 'AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL required',
+      },
+      {
+        name: 'output_storage',
+        ok: storageOk,
+        detail:
+          'AZURE_BLOB_CONNECTION_STRING (+ AZURE_BLOB_CONTAINER) required so worker can persist outputs',
+      },
+      {
+        name: 'postgres',
+        ok: dbOk,
+        detail: 'DATABASE_URL must point to a reachable Postgres',
+      },
+      {
+        name: 'redis',
+        ok: redisOk,
+        detail: 'REDIS_URL must point to a reachable Redis',
+      },
+    ];
+
+    const allOk = checks.every((c) => c.ok);
+    if (!allOk) res.status(HttpStatus.SERVICE_UNAVAILABLE);
+    return {
+      status: allOk ? 'ready' : 'unready',
+      checks,
+    };
+  }
+
+  private async probeDb(): Promise<boolean> {
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async probeRedis(): Promise<boolean> {
+    try {
+      const pong = await this.redis.ping();
+      return pong === 'PONG';
+    } catch {
+      return false;
+    }
+  }
+}

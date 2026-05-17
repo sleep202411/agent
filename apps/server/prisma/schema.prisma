@@ -1,0 +1,12 @@
+// Prisma schema — DATABASE_URL configured in `prisma.config.ts`.
+// Models are added by the modules that own them (see
+// `src/<module>/...` for usage). Migrations live under
+// `prisma/migrations/` and are applied via `npm run db:migrate`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

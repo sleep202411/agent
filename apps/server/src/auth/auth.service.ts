@@ -145,6 +145,7 @@ export class AuthService {
         userLevel: data.userLevel
           ? String(data.userLevel).toUpperCase()
           : undefined,
+        expireTime: data.expireTime ? String(data.expireTime) : undefined,
       };
 
       if (!user.userId) {

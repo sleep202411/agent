@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { Agent, setGlobalDispatcher } from 'undici';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from './app.module';
@@ -23,8 +24,49 @@ setGlobalDispatcher(
   }),
 );
 
+/**
+ * Worker-only mode: boot the Nest providers without binding an HTTP
+ * listener. Used by the dedicated `foundry-worker` pod in production —
+ * it consumes the Foundry queue and publishes Web PubSub events but
+ * doesn't serve any REST traffic. Toggled via `WORKER_ONLY=true`.
+ *
+ * Modules are loaded as-is from AppModule for symmetry with the API
+ * pod. Controllers exist as registered classes but are never invoked
+ * (no HTTP server to route to them), so this is a deliberate trade-off
+ * for one configuration surface over one bootstrap path.
+ */
+async function bootstrapWorker(): Promise<void> {
+  const logger = new Logger('WorkerBootstrap');
+  const ctx = await NestFactory.createApplicationContext(AppModule, {
+    abortOnError: false,
+  });
+  // Required so FoundryWorkerService.beforeApplicationShutdown can
+  // drain in-flight provider fetches on SIGTERM.
+  ctx.enableShutdownHooks();
+  logger.log('Foundry worker-only mode running; HTTP listener skipped.');
+
+  const shutdown = (signal: NodeJS.Signals) => {
+    logger.log(`Received ${signal}; closing Nest context.`);
+    void ctx
+      .close()
+      .catch((err) => logger.error('Nest close failed', err))
+      .finally(() => process.exit(0));
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+}
+
 async function bootstrap() {
+  if (process.env.WORKER_ONLY === 'true') {
+    await bootstrapWorker();
+    return;
+  }
+
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+  // SIGTERM → drain hooks (FoundryWorkerService awaits in-flight
+  // Azure fetches up to ~250s before exiting). LB should already
+  // have stopped routing via /ready=503 by the time we get here.
+  app.enableShutdownHooks();
 
   // Increase body size limit for large AI conversations
   const { json, urlencoded } = await import('express');

@@ -13,6 +13,8 @@ export interface AuthUser {
   phone?: string;
   headImg?: string;
   userLevel?: string; // "free" | "pro" | "enterprise" etc.
+  /** Membership expiry timestamp when Java returns it. */
+  expireTime?: string;
 }
 
 /**
