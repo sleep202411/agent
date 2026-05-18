@@ -122,7 +122,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 216f3703a69399754045027cf36cfbf979f688ab
+    tag: 900b829e856e4712a08a9aee599b98a8959d5da9
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -144,7 +144,7 @@ server:
   replicaCount: 1
   image:
     repository: fizzdragon-server
-    tag: 216f3703a69399754045027cf36cfbf979f688ab
+    tag: 900b829e856e4712a08a9aee599b98a8959d5da9
   containerPort: 3001
   env:
     PORT: "3001"
@@ -171,7 +171,7 @@ agent:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: 216f3703a69399754045027cf36cfbf979f688ab
+    tag: 900b829e856e4712a08a9aee599b98a8959d5da9
   containerPort: 4111
   env:
     PORT: "4111"
@@ -201,7 +201,7 @@ agentWorker:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: 216f3703a69399754045027cf36cfbf979f688ab
+    tag: 900b829e856e4712a08a9aee599b98a8959d5da9
   command: ["npx", "tsx", "src/worker.ts"]
   env:
     MASTRA_DB_URL: "file:/app/data/mastra.db"
