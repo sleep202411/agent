@@ -18,7 +18,7 @@ import type {
   ProduceShotColumn,
 } from "@/src/lib/produce/java-produce-data";
 import type { ShotRow, ShotValue } from "@/src/store/slices/projectSlice";
-import type { MentionItem } from "@/app/projects/_components/storyboard/editor/mention-node";
+import type { MentionItem } from "@/app/(studio)/art-studio/projects/_components/storyboard/editor/mention-node";
 
 export const EMPTY_ASSETS: ProduceJavaAssetLists = {
   character: [],

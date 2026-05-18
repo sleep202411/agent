@@ -9,7 +9,7 @@ import { ToolbarSelect } from "@/components/ui/schema-field/toolbar-select";
 import { calcModelCost, type AiModel } from "@/components/ui/schema-field/schema";
 import { AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 import { useAiModels, useEnsureAiModels } from "@/src/hooks/use-ai-models";
-import { RichMentionEditor } from "@/app/projects/_components/storyboard/editor/rich-mention-editor";
+import { RichMentionEditor } from "@/app/(studio)/art-studio/projects/_components/storyboard/editor/rich-mention-editor";
 import {
   saveProduceShotTextCell,
   type ProduceJavaAssetLists,
