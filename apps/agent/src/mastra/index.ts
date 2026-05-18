@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { Mastra } from "@mastra/core/mastra";
 import { RequestContext } from "@mastra/core/request-context";
 import { PinoLogger } from "@mastra/loggers";
-import { LibSQLStore } from "@mastra/libsql";
+import { PostgresStore } from "@mastra/pg";
 import { chatRoute } from "@mastra/ai-sdk";
 import { storyosAgent } from "./agents/storyos";
 import { roleDesignerAgent } from "./agents/personas/role-designer";
@@ -131,9 +131,18 @@ export const mastra = new Mastra({
     produceStep1Episodes: produceStep1EpisodesWorkflow,
     produceStep2Assets: produceStep2AssetsWorkflow,
   },
-  storage: new LibSQLStore({
+  // Storage: Azure PG (fizzdragon-ai-pg), schema-isolated. All Mastra-managed
+  // tables (workflows, threads, messages, runs, etc.) live in `mastra.*`,
+  // separate from server's Prisma-managed `public.*` business tables. Same
+  // DATABASE_URL injected from KV via envFrom on both apps; no shared ORM.
+  // See docs/AKS-MIGRATION.md "Storage strategy" + memory aks-migration-session
+  // for the rationale (replaced libsql-on-Azure-Files which couldn't survive
+  // SMB file-locking semantics across pods).
+  storage: new PostgresStore({
     id: "storyos-storage",
-    url: process.env.MASTRA_DB_URL ?? "file:./mastra.db",
+    connectionString: process.env.DATABASE_URL,
+    schemaName: "mastra",
+    ssl: { rejectUnauthorized: false },
   }),
   logger: new PinoLogger({
     name: "storyos-agent",

@@ -18,36 +18,37 @@
 
 ## Status (2026-05-18)
 
-| Phase | Step                                                                                                                                                                 | Status        |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| 0     | Azure PG migrated (existing)                                                                                                                                         | ✅            |
-| 0     | Local env file updated to point at Azure PG                                                                                                                          | ✅            |
-| 0     | Resource providers registered (ContainerRegistry / KeyVault / ContainerService / OperationalInsights)                                                                | ✅            |
-| 0     | RG `rg-fizzdragon-com-prod` created (southeastasia)                                                                                                                  | ✅            |
-| 0     | ACR `acrfizzdragoncom` Basic created                                                                                                                                 | ✅            |
-| 0     | Key Vault `kv-fizzdragon-com` Standard + RBAC created; current user has Admin role                                                                                   | ✅            |
-| 0     | Secrets migrated from `.env.production.com` → Key Vault (11 secrets total, hybrid naming)                                                                            | ✅            |
-| 0     | Azure Cache for Redis `redis-fizzdragon-com` Basic C0, TLS-only (6380)                                                                                               | ✅            |
-| 1     | AKS cluster `aks-fizzdragon-com` (Free tier, B2as_v2 system pool)                                                                                                    | ✅            |
-| 1     | Worker node pool (B2as_v2, 0-3 nodes, autoscaler)                                                                                                                    | ✅            |
-| 1     | `ingress-nginx` install (chart 4.15.1, LB IP `20.198.160.91`)                                                                                                        | ✅            |
-| 1     | `cert-manager` install (v1.20.2) + Let's Encrypt staging+prod ClusterIssuers                                                                                         | ✅            |
-| 1     | Secrets Store CSI Driver install + Azure provider + UAMI `id-fizzdragon-com-kv-reader` + federated credential + namespace `fizzdragon-com` + SA `fizzdragon-com-app` | ✅            |
-| 1     | ArgoCD install (chart 9.5.14)                                                                                                                                        | ✅            |
-| 1     | KEDA control plane install (v2.19.0); agent-worker ScaledObject deferred to Phase 2                                                                                  | ✅            |
-| 1     | ACR attached to AKS (`--attach-acr acrfizzdragoncom`) — kubelet can pull images without imagePullSecrets                                                             | ✅            |
-| 2     | Helm umbrella chart `deploy/helm/fizzdragon/` (web/server/agent/agent-worker/redis + SecretProviderClass + Azure Files PVC + KEDA template)                          | ✅            |
-| 3     | UAMI `id-fizzdragon-com-gh-actions` + AcrPush role + federated credential `fic-gh-env-aks-prod` (subject `environment:aks-prod`)                                     | ✅            |
-| 3     | `.github/workflows/build-com-aks.yml` — OIDC login → ACR push → values.yaml tag bump → bot commit                                                                    | ✅            |
-| 3     | `deploy/argocd/applications/fizzdragon-com.yaml` — Application manifest pointing at chart                                                                            | ✅            |
-| 3     | Add GH repo variables (AZURE_CLIENT_ID / TENANT_ID / SUBSCRIPTION_ID) — needs human in GH UI                                                                         | ⏳ pending    |
-| 3.5   | First end-to-end run: fire workflow → ArgoCD sync → verify pods + TLS + LB                                                                                           | ⏳ pending    |
-| 4     | DNS: switch `fizzstudio.fizzdragon.com` A record from 136 ECS → AKS LB `20.198.160.91` via HiChina DNS console                                                       | ⏳ pending    |
-| 4     | Decommission 136 ECS (Node-only host; Java runs on a separate ECS that stays unchanged)                                                                              | ⏳ pending    |
-| 4     | `fizzdragon.com` (bare domain) stays pointed at Java ECS so AKS pods can keep calling `JAVA_STUDIO_URL=https://fizzdragon.com/studio` unchanged                      | ⏳ keep as-is |
-| 5     | Container Insights / Prometheus / alerting                                                                                                                           | ⏳ pending    |
-| 5     | Cloudflare Free in front of LB for WAF/DDoS/source-IP hiding                                                                                                         | ⏳ pending    |
-| 5     | ArgoCD ingress + SSO + IP allowlist                                                                                                                                  | ⏳ pending    |
+| Phase | Step                                                                                                                                                                               | Status        |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 0     | Azure PG migrated (existing)                                                                                                                                                       | ✅            |
+| 0     | Local env file updated to point at Azure PG                                                                                                                                        | ✅            |
+| 0     | Resource providers registered (ContainerRegistry / KeyVault / ContainerService / OperationalInsights)                                                                              | ✅            |
+| 0     | RG `rg-fizzdragon-com-prod` created (southeastasia)                                                                                                                                | ✅            |
+| 0     | ACR `acrfizzdragoncom` Basic created                                                                                                                                               | ✅            |
+| 0     | Key Vault `kv-fizzdragon-com` Standard + RBAC created; current user has Admin role                                                                                                 | ✅            |
+| 0     | Secrets migrated from `.env.production.com` → Key Vault (11 secrets total, hybrid naming)                                                                                          | ✅            |
+| 0     | Azure Cache for Redis `redis-fizzdragon-com` Basic C0, TLS-only (6380)                                                                                                             | ✅            |
+| 1     | AKS cluster `aks-fizzdragon-com` (Free tier, B2as_v2 system pool)                                                                                                                  | ✅            |
+| 1     | Worker node pool (B2as_v2, 0-3 nodes, autoscaler)                                                                                                                                  | ✅            |
+| 1     | `ingress-nginx` install (chart 4.15.1, LB IP `20.198.160.91`)                                                                                                                      | ✅            |
+| 1     | `cert-manager` install (v1.20.2) + Let's Encrypt staging+prod ClusterIssuers                                                                                                       | ✅            |
+| 1     | Secrets Store CSI Driver install + Azure provider + UAMI `id-fizzdragon-com-kv-reader` + federated credential + namespace `fizzdragon-com` + SA `fizzdragon-com-app`               | ✅            |
+| 1     | ArgoCD install (chart 9.5.14)                                                                                                                                                      | ✅            |
+| 1     | KEDA control plane install (v2.19.0); agent-worker ScaledObject deferred to Phase 2                                                                                                | ✅            |
+| 1     | ACR attached to AKS (`--attach-acr acrfizzdragoncom`) — kubelet can pull images without imagePullSecrets                                                                           | ✅            |
+| 2     | Helm umbrella chart `deploy/helm/fizzdragon/` (web/server/agent/agent-worker + SecretProviderClass + KEDA ScaledObject + multi-host Ingress, no PVC)                               | ✅            |
+| 2     | Mastra storage migrated from libsql (file:/app/data) → Azure PG schema `mastra`; artifact-store also moved to `mastra.project_workflow_artifact`. No more shared filesystem state. | ✅            |
+| 3     | UAMI `id-fizzdragon-com-gh-actions` + AcrPush role + federated credential `fic-gh-env-aks-prod` (subject `environment:aks-prod`)                                                   | ✅            |
+| 3     | `.github/workflows/build-com-aks.yml` — OIDC login → ACR push → values.yaml tag bump → bot commit                                                                                  | ✅            |
+| 3     | `deploy/argocd/applications/fizzdragon-com.yaml` — Application manifest pointing at chart                                                                                          | ✅            |
+| 3     | Add GH repo variables (AZURE_CLIENT_ID / TENANT_ID / SUBSCRIPTION_ID) — needs human in GH UI                                                                                       | ⏳ pending    |
+| 3.5   | First end-to-end run: fire workflow → ArgoCD sync → verify pods + TLS + LB                                                                                                         | ⏳ pending    |
+| 4     | DNS: switch `fizzstudio.fizzdragon.com` A record from 136 ECS → AKS LB `20.198.160.91` via HiChina DNS console                                                                     | ⏳ pending    |
+| 4     | Decommission 136 ECS (Node-only host; Java runs on a separate ECS that stays unchanged)                                                                                            | ⏳ pending    |
+| 4     | `fizzdragon.com` (bare domain) stays pointed at Java ECS so AKS pods can keep calling `JAVA_STUDIO_URL=https://fizzdragon.com/studio` unchanged                                    | ⏳ keep as-is |
+| 5     | Container Insights / Prometheus / alerting                                                                                                                                         | ⏳ pending    |
+| 5     | Cloudflare Free in front of LB for WAF/DDoS/source-IP hiding                                                                                                                       | ⏳ pending    |
+| 5     | ArgoCD ingress + SSO + IP allowlist                                                                                                                                                | ⏳ pending    |
 
 ---
 
@@ -103,7 +104,7 @@
 | Azure Cache for Redis Basic C0             | $16            |
 | Public IP (LB)                             | ~$4            |
 | Standard LB rules (5 free)                 | $0             |
-| Azure Files (Mastra SQLite shared, ~10GB)  | ~$1            |
+| Azure Disk (managed-csi, on-demand)        | minimal        |
 | Outbound data transfer                     | varies         |
 | **Compute subtotal**                       | **~$60-75/mo** |
 | Azure PG (existing)                        | $23            |
@@ -185,7 +186,7 @@ The mapping `KV-secret-name → pod-env-var-name` lives in `deploy/helm/fizzdrag
 ### Kubernetes resource naming
 
 - Release name: `fizzdragon`, namespace: `fizzdragon-com`
-- Resource names: `{{ .Release.Name }}-<component>` → `fizzdragon-web`, `fizzdragon-server`, `fizzdragon-agent`, `fizzdragon-agent-worker`, `fizzdragon-redis`, `fizzdragon-kv` (SPC), `fizzdragon-agent-data` (PVC), `fizzdragon-ingress`, `fizzdragon-secrets` (projected from KV).
+- Resource names: `{{ .Release.Name }}-<component>` → `fizzdragon-web`, `fizzdragon-server`, `fizzdragon-agent`, `fizzdragon-agent-worker`, `fizzdragon-kv` (SPC), `fizzdragon-main-ingress` / `fizzdragon-studio-ingress`, `fizzdragon-secrets` (projected from KV), `fizzdragon-redis-auth` (KEDA TriggerAuth).
 - Labels: K8s recommended set (`app.kubernetes.io/{name,instance,version,managed-by,part-of,component}` + `helm.sh/chart`). See `templates/_helpers.tpl`.
 
 ---
@@ -203,7 +204,7 @@ The mapping `KV-secret-name → pod-env-var-name` lives in `deploy/helm/fizzdrag
 
 - Current peak: ~30MB / 900MB cap (3.4% utilization)
 - AKS sizing: same 1GB cap, 200-500MB request
-- Persistence: AOF on Azure Files PVC (~5GB)
+- Persistence: managed (Azure Cache for Redis Basic C0 — no pod-side persistence needed)
 - Eviction: `noeviction` (BullMQ + Mastra workflow state MUST NOT be dropped mid-run)
 
 ### Network policy

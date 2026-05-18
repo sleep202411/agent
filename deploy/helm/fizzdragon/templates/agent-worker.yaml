@@ -16,8 +16,10 @@ spec:
   # on every upgrade.
   replicas: {{ .Values.agentWorker.replicaCount }}
   {{- end }}
+  # Mastra state now in PG (schema `mastra`); pods are stateless at the
+  # filesystem layer. RollingUpdate is safe.
   strategy:
-    type: Recreate
+    type: RollingUpdate
   selector:
     matchLabels:
       {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
@@ -43,8 +45,6 @@ spec:
             - name: kv-secrets
               mountPath: /mnt/secrets
               readOnly: true
-            - name: agent-data
-              mountPath: /app/data
           resources:
             {{- toYaml .Values.agentWorker.resources | nindent 12 }}
       volumes:
@@ -54,9 +54,6 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-kv
-        - name: agent-data
-          persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-agent-data
       {{- with .Values.agentWorker.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

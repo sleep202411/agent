@@ -171,7 +171,7 @@ server:
       effect: NoSchedule
 
 # ---------------------------------------------------------------------------
-# agent — Mastra API. Internal. Shares libsql with agent-worker via PVC.
+# agent — Mastra API. Internal. Storage in PG schema `mastra` (no PVC).
 # ---------------------------------------------------------------------------
 agent:
   enabled: true
@@ -183,8 +183,9 @@ agent:
   env:
     PORT: "4111"
     MASTRA_HOST: "0.0.0.0"
-    MASTRA_DB_URL: "file:/app/data/mastra.db"
-    # REDIS_URL from KV via projected `fizzdragon-secrets` (envFrom).
+    # DATABASE_URL + REDIS_URL come from KV via projected `fizzdragon-secrets`
+    # (envFrom). Mastra storage uses PG schema `mastra` — see
+    # apps/agent/src/mastra/index.ts.
   resources:
     requests: { cpu: 250m, memory: 1Gi }
     limits:   { cpu: 2000m, memory: 3Gi }
@@ -198,8 +199,9 @@ agent:
 
 # ---------------------------------------------------------------------------
 # agent-worker — BullMQ consumer. Same image, different command.
-# Scales 0→N via KEDA (see agent-worker-scaledobject.yaml).
-# Shares /app/data PVC with agent for libsql snapshot/resume state.
+# Scales 0→N via KEDA on BullMQ queue depth (Redis Lists).
+# Storage in PG schema `mastra` — agent + agent-worker share PG, not a
+# libsql file.
 # ---------------------------------------------------------------------------
 agentWorker:
   enabled: true
@@ -212,8 +214,8 @@ agentWorker:
     tag: latest
   command: ["npx", "tsx", "src/worker.ts"]
   env:
-    MASTRA_DB_URL: "file:/app/data/mastra.db"
-    # REDIS_URL from KV via projected `fizzdragon-secrets` (envFrom).
+    # DATABASE_URL + REDIS_URL come from KV via projected `fizzdragon-secrets`
+    # (envFrom).
     # Lower per-pod concurrency than the ECS-era 90 because B2as_v2 nodes
     # are 2c8g (vs ECS 8c16g single-host). KEDA scales pod count to make
     # up total throughput: 6 pods × 15 = 90 ≈ ECS baseline.
@@ -249,15 +251,14 @@ agentWorker:
 # Redis — MANAGED via Azure Cache for Redis Basic C0 (`redis-fizzdragon-com`).
 # No in-cluster StatefulSet. Apps get rediss:// URL from KV `redis-conn-string`
 # projected as REDIS_URL. KEDA gets host:port + password via TriggerAuthentication
-# (templates/redis-trigger-auth.yaml) reading from the same projected Secret.
+# (templates/keda-trigger-authentication.yaml) reading from the same projected
+# Secret.
 #
 # Upgrade path: bump SKU in Azure (Basic C0 → Standard C0 for HA, ~$32/mo).
 # No chart change needed; KV connection string transparently rotates.
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Mastra libsql PVC — Azure Files RWX, shared between agent + agent-worker.
-# ---------------------------------------------------------------------------
-agentData:
-  storageClass: azurefile-csi  # Azure Files Standard LRS (cheapest tier)
-  size: 10Gi
+# Postgres — also managed (Azure PG `fizzdragon-ai-pg`). Same conn string is
+# in KV `db-conn-string`, projected as `DATABASE_URL`. server (Prisma) owns
+# `public.*` schema; agent (Mastra + raw pg for artifact-store) owns
+# `mastra.*` schema. No PVC, no in-cluster DB, no shared filesystem.
