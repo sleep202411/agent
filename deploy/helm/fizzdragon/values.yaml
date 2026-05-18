@@ -194,7 +194,7 @@ agent:
 # Shares /app/data PVC with agent for libsql snapshot/resume state.
 # ---------------------------------------------------------------------------
 agentWorker:
-  enabled: true
+  enabled: false   # TEMP — libsql-on-Azure-Files race; restore after migrating mastra state to Postgres
   # When keda.enabled=false this is the fixed replica count; when true,
   # KEDA's ScaledObject owns it (chart omits .spec.replicas in that case).
   # Start at 1 so the worker pool isn't empty before KEDA wakes up.
