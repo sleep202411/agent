@@ -41,6 +41,14 @@ RUN npm ci --ignore-scripts --omit=dev
 # `Cannot find module '@repo/shared/dist/entity-events.js'`.
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 
+# Copy Prisma's generated client. `npm ci --ignore-scripts` above skipped
+# the @prisma/client postinstall (which is what materializes .prisma/client/),
+# so we must lift the generated files from the builder stage where
+# `prisma generate` was run as part of the npm build script. Without
+# this, the server crashes at startup with
+# `Cannot find module '.prisma/client/default'`.
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
 # Copy compiled output
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 
