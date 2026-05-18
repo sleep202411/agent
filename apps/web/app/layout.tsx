@@ -8,6 +8,8 @@ import { getServerQueryClient } from "@/src/lib/react-query/server";
 import { fetchUserInfoServerSide } from "@/src/lib/auth/server-user";
 import { userKeys } from "@/src/hooks/use-user";
 import { CANONICAL_HOST, JsonLd, buildOrganization, buildWebSite } from "@/src/lib/seo";
+import { detectCountry } from "@/src/lib/region/country";
+import { RegionProvider } from "@/src/lib/region/provider";
 import "./globals.css";
 
 /**
@@ -68,6 +70,10 @@ export default async function RootLayout({
   // Locale is resolved by proxy.ts and attached to the request via x-locale header.
   const headerBag = await headers();
   const locale = headerBag.get("x-locale") ?? "en-US";
+  // Country normalized by proxy.ts from edge headers (CF / Azure FD /
+  // Vercel). Used by RegionProvider to drive country-gated features
+  // — see src/lib/region/features.ts.
+  const country = detectCountry(headerBag);
 
   // SSR auth bootstrap.
   // Fetch the current user against the Java content service using the
@@ -130,9 +136,11 @@ export default async function RootLayout({
           showSpinner={false}
           shadow="0 0 10px rgba(245,158,11,0.4)"
         />
-        <RootLayoutClient initialLocale={locale} dehydratedState={dehydratedState}>
-          {children}
-        </RootLayoutClient>
+        <RegionProvider country={country}>
+          <RootLayoutClient initialLocale={locale} dehydratedState={dehydratedState}>
+            {children}
+          </RootLayoutClient>
+        </RegionProvider>
       </body>
     </html>
   );

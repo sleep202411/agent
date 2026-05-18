@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { SiteUserMenu } from "@/components/layout/site-user-menu";
 import { CommunityCreditsChip } from "@/components/layout/community-credits-chip";
+import { BellButton } from "@/components/notifications/bell-button";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLogout } from "@/src/hooks/use-logout";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
@@ -304,6 +305,11 @@ export function GlobalNav() {
 
           {user ? (
             <>
+              {/* Notifications bell — badge + dropdown to recent items.
+                  Sits to the left of credits / avatar; opening drawer
+                  is independent of the user menu so they can coexist
+                  without z-index conflict. */}
+              <BellButton />
               {/* Community credits — entry point only for now. Popover
                   surfaces balance + actions; the wallet itself is
                   coming soon. Sits to the left of the avatar so it

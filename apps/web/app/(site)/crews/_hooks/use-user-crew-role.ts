@@ -1,20 +1,17 @@
 /**
- * Resolves the current viewer's effective role inside a crew —
- * `'admin' | 'finance' | 'member' | 'outsider'` — which the episode
- * UI uses to gate every action button.
+ * Resolves the current viewer's role inside a crew —
+ * `'admin' | 'finance' | 'member' | 'outsider'` — used by the
+ * workspace UI to gate every action.
  *
  * Dev mode: the floating `DevIdentitySwitcher` wins, so reviewers can
  * impersonate any role without re-logging-in. The chosen identity also
- * decides the *effective userId* used for member-scoped checks (e.g.
+ * decides the effective userId used for member-scoped checks (e.g.
  * "is this assignment mine?") so submit-for-review buttons appear on
  * the right rows.
  *
- * Production mode: derived from real `userInfo.id` matched against
- * `crewDetail.adminUserId` and the `crewMembers` list. The
- * "finance" branch is a *transitional* hook — until backend ships a
- * real role field, anyone whose userId is in `MOCK_FINANCE_USER_IDS`
- * is treated as finance. Swap to a real check (`crewMember.isFinance`
- * or similar) once the field exists.
+ * Production mode: derived from real `userInfo.id` matched against the
+ * crew's `founderId` and the membership list (each member carries a
+ * server-managed `isFinance` flag, so we read that directly now).
  */
 
 "use client";
@@ -22,16 +19,14 @@
 import { useUserInfo } from "@/src/hooks/use-user";
 import { useCrewDetail, useCrewMembers } from "./use-crew";
 import { useDevIdentity } from "./use-dev-identity";
-import { MOCK_FINANCE_USER_IDS } from "./episode-mock";
 
 export type CrewRole = "admin" | "finance" | "member" | "outsider";
 
 export interface UserCrewRole {
   /** Discriminated role, used to gate UI surfaces. */
   role: CrewRole;
-  /** Effective userId for action attribution — accounts for dev
-   *  impersonation. `undefined` for outsiders. */
-  effectiveUserId?: number;
+  /** Effective userId for action attribution — accounts for dev impersonation. */
+  effectiveUserId?: string;
   /** Display name of the effective viewer (used in toasts / activity). */
   effectiveName?: string;
   /** Convenience flags so call sites read like permission checks. */
@@ -46,21 +41,18 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
   const { data: crewMembers = [] } = useCrewMembers(crewId);
   const devIdentity = useDevIdentity();
 
-  const realUserId = userInfo?.id != null ? Number(userInfo.id) : undefined;
+  const realUserId = userInfo?.id != null ? String(userInfo.id) : undefined;
   const realIsAdmin =
-    realUserId != null && crewDetail?.adminUserId != null && crewDetail.adminUserId === realUserId;
+    realUserId != null && crewDetail?.founderId != null && crewDetail.founderId === realUserId;
   const realMember =
     realUserId != null ? crewMembers.find((m) => m.userId === realUserId) : undefined;
+  const realIsFinance = realMember?.isFinance === true;
 
-  // Dev mode overrides take effect only when the switcher is mounted
-  // (NODE_ENV !== 'production'). The switcher already hides itself in
-  // production builds, but the underlying store may still hold a value
-  // — guard here too so prod isn't accidentally lying.
   if (process.env.NODE_ENV !== "production") {
     if (devIdentity.kind === "owner") {
       return {
         role: "admin",
-        effectiveUserId: crewDetail?.adminUserId ?? realUserId,
+        effectiveUserId: crewDetail?.founderId ?? realUserId,
         effectiveName: userInfo?.nickName || userInfo?.userName || "Owner",
         isAdmin: true,
         isFinance: false,
@@ -68,11 +60,10 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
       };
     }
     if (devIdentity.kind === "finance") {
+      const financeMember = crewMembers.find((m) => m.isFinance);
       return {
         role: "finance",
-        // Pin to the mock finance id so revenue actions credit a
-        // recognizable actor in the activity log.
-        effectiveUserId: [...MOCK_FINANCE_USER_IDS][0] ?? 9001,
+        effectiveUserId: financeMember?.userId ?? realUserId,
         effectiveName: "Finance",
         isAdmin: false,
         isFinance: true,
@@ -80,28 +71,24 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
       };
     }
     if (devIdentity.kind === "member") {
-      const target = crewMembers.find(
-        (m) => (m.nick?.trim() || `User ${m.userId}`) === devIdentity.name
-      );
+      // Match by member id since we no longer have nicknames server-side.
+      const target = crewMembers.find((m) => m.userId === devIdentity.name);
       if (target) {
         return {
           role: "member",
           effectiveUserId: target.userId,
-          effectiveName: target.nick?.trim() || `User ${target.userId}`,
+          effectiveName: `User ${target.userId}`,
           isAdmin: false,
           isFinance: false,
           isMember: true,
         };
       }
-      // Fall through to outsider if the named member isn't in the
-      // list (renamed / removed since the switcher was opened).
     }
     if (devIdentity.kind === "visitor") {
       return { role: "outsider", isAdmin: false, isFinance: false, isMember: false };
     }
   }
 
-  // Production resolution
   if (realIsAdmin) {
     return {
       role: "admin",
@@ -112,7 +99,7 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
       isMember: false,
     };
   }
-  if (realUserId != null && MOCK_FINANCE_USER_IDS.has(realUserId)) {
+  if (realIsFinance) {
     return {
       role: "finance",
       effectiveUserId: realUserId,
@@ -126,7 +113,7 @@ export function useUserCrewRole(crewId: string): UserCrewRole {
     return {
       role: "member",
       effectiveUserId: realMember.userId,
-      effectiveName: realMember.nick?.trim() || userInfo?.nickName || `User ${realMember.userId}`,
+      effectiveName: userInfo?.nickName || `User ${realMember.userId}`,
       isAdmin: false,
       isFinance: false,
       isMember: true,

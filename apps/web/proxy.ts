@@ -160,6 +160,18 @@ export function proxy(request: NextRequest) {
   const headers = new Headers(request.headers);
   headers.set("x-locale", matchedLocale);
 
+  // Country detection at the edge. Cloudflare / Azure Front Door / Vercel
+  // each set their own header; we normalize all of them onto x-country so
+  // downstream code (server components, Nest middleware) has one place to
+  // read. Falls back to "US" when no edge has classified the request
+  // (local dev, internal traffic). See src/lib/region/country.ts.
+  const country =
+    request.headers.get("cf-ipcountry") ||
+    request.headers.get("x-vercel-ip-country") ||
+    request.headers.get("x-azure-clientip-country") ||
+    "US";
+  if (country !== "XX") headers.set("x-country", country.toUpperCase());
+
   const url = request.nextUrl.clone();
   url.pathname = internalPathname;
   url.search = search;

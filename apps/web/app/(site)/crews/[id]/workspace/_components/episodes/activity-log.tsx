@@ -10,7 +10,7 @@ import {
 
 interface ActivityLogProps {
   crewId: string;
-  episodeId: number;
+  episodeId: string;
 }
 
 /**
@@ -87,9 +87,14 @@ function renderActivity(a: EpisodeActivity, t: ReturnType<typeof useTranslations
       }),
     episode_approved: () => t("logEpisodeApproved", { actor }),
   };
-  return map[a.type]?.() ?? "";
+  // `a.type` is widened to `string` on the wire for forward-compat —
+  // new activity types can land without the client crashing. Guard
+  // the lookup so unknown types render as empty rather than throwing.
+  return (map as Record<string, (() => string) | undefined>)[a.type]?.() ?? "";
 }
 
-function formatTime(ts: number): string {
-  return new Date(ts).toISOString().replace("T", " ").slice(0, 16);
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toISOString().replace("T", " ").slice(0, 16);
 }

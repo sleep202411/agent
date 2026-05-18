@@ -1,5 +1,12 @@
 # 剧组剧集管理接口规范
 
+**实施状态（2026-05-18）**：本规范定义的全部 11 个接口已在 Nest
+后端（`apps/server/src/crews/episodes/`）实现，URL 由 `/project/crew/episode/*`
+迁移至 `/aurora/crews/:crewId/episodes/*` 与 `/aurora/episodes/:id/*` 与
+`/aurora/assignments/:id/*`。HTTP 协议从 `HTTP 200 + body.code` 改为真
+HTTP 状态码（200/201/204/400/403/404/409/422/423）。前端切真接口完成，
+`episode-mock.ts` 已删除。本文档保留作为接口契约与状态机的权威说明。
+
 关联：与 `pricing-spec.md` / `community-credits-spec.md` 并存。剧组
 内部的"生产管理"层，跟用户付费消费层（pricing）和钱包层
 （community-credits）**完全隔离**。

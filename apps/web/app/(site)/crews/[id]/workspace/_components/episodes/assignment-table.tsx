@@ -19,11 +19,11 @@ import { AssignmentStatusBadge } from "./episode-status-badge";
 import { RevenueCell } from "./revenue-cell";
 import { RejectModal } from "./reject-modal";
 import { AssignMemberDialog } from "./assign-member-dialog";
-import type { CrewRole, UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
+import type { UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
 
 interface AssignmentTableProps {
   crewId: string;
-  episodeId: number;
+  episodeId: string;
   episodeNumber: number;
   viewer: UserCrewRole;
 }
@@ -50,9 +50,7 @@ export function AssignmentTable({
   const [assignOpen, setAssignOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<EpisodeAssignment | null>(null);
 
-  const memberNameById = new Map(
-    crewMembers.map((m) => [m.userId, m.nick?.trim() || `User ${m.userId}`])
-  );
+  const memberNameById = new Map(crewMembers.map((m) => [m.userId, `User ${m.userId}`]));
 
   return (
     <div className="rounded-xl bg-secondary/30 p-4">
@@ -119,7 +117,7 @@ export function AssignmentTable({
 
 interface AssignmentRowProps {
   crewId: string;
-  episodeId: number;
+  episodeId: string;
   assignment: EpisodeAssignment;
   displayName: string;
   viewer: UserCrewRole;
@@ -265,7 +263,7 @@ function AssignmentRow({
 
 interface RejectAssignmentModalProps {
   crewId: string;
-  episodeId: number;
+  episodeId: string;
   target: EpisodeAssignment | null;
   displayName: string;
   onClose: () => void;

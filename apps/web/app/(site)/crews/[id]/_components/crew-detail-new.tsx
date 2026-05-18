@@ -1,127 +1,106 @@
 "use client";
 
 /**
- * Crew detail — primary layout. Renders when the new
- * `/project/crew/detail/:id` endpoint returns a record. Composition
- * follows fizzdragon-prd's `app/studio/[id]/page.tsx` reference.
+ * Crew detail — single canonical layout (public-facing).
  *
- * Real-data sources:
- *   - useCrewDetail   — hero (banner / video / name / description)
- *   - useCrewMembers  — team sidebar
- *   - useCrewJobs     — open positions list
- *   - useProjectRoles — role-name lookup
+ * Sections:
+ *   - Hero (cover image / optional autoplay video, name, description,
+ *     owner-only Workspace CTA)
+ *   - Stats bar (members + open slots)
+ *   - Main: Project Overview + Open Positions (with Apply buttons)
+ *   - Sidebar: Team Members
  *
- * Sections from the PRD that don't yet have a backend (Roadmap, Latest
- * Activity, deadline, budget range) are intentionally omitted rather
- * than mocked.
- *
- * Orchestrator: `app/(site)/crews/[id]/page.tsx` mounts this when the
- * new endpoint has data, and falls back to `crew-detail-legacy.tsx`
- * otherwise.
+ * Data:
+ *   - crew      (prop, fetched by parent page)
+ *   - positions (server-side counts)
+ *   - members   (server-side list — name/avatar shown as User <id> for
+ *                now; profile-info enrichment is a future step)
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import {
   IconArrowLeft,
   IconCalendar,
   IconClock,
-  IconLoader2,
+  IconLockSquare,
   IconMovie,
   IconUserPlus,
   IconUsers,
 } from "@tabler/icons-react";
-import { env } from "@/src/env";
-import { useTranslations } from "@/src/i18n/i18n";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import {
-  useCrewDetail,
-  useCrewMembers,
-  usePublicCrewJobs,
-} from "@/app/(site)/crews/_hooks/use-crew";
-import { useApplyToJob } from "@/app/(site)/crews/_hooks/use-applications";
-import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
+import { env } from "@/src/env";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
+import { cn } from "@/lib/utils";
 import { useUserInfo } from "@/src/hooks/use-user";
-import { ApiRequestError } from "@/src/lib/api";
+import {
+  CURRENCY_SYMBOLS,
+  ZERO_DECIMAL_CURRENCIES,
+  useCrewMembers,
+  useCrewPositions,
+  type CrewDTO,
+  type CrewMemberDTO,
+  type CrewPositionDTO,
+  type PresetPositionValue,
+} from "@/app/(site)/crews/_hooks/use-crew";
+import { ApplyPositionDialog } from "@/app/(site)/crews/_components/apply-position-dialog";
+import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 
-export function CrewDetailNew() {
-  const params = useParams<{ id: string }>();
-  const id = params.id;
+export function CrewDetail({ crew }: { crew: CrewDTO }) {
   const t = useTranslations("workspace");
   const tCrew = useTranslations("crew");
-
-  const { data: crewDetail, isLoading: detailLoading } = useCrewDetail(id);
-  const { data: crewMembers = [] } = useCrewMembers(id);
-  // Public view — owner workspace uses `useCrewJobs` for the full list
-  // (including closed / drafted). Visitors landing here only need the
-  // public subset, served by `/project/crew/job/find/public/jobs`.
-  const { data: crewJobs = [] } = usePublicCrewJobs(id);
-  const { data: projectRoles = [] } = useProjectRoles();
+  const locale = useLocale() as Locale;
+  const positionLabel = useTranslatePositionValue();
   const { data: userInfo } = useUserInfo();
-  const applyMutation = useApplyToJob();
 
-  // Real ownership check — Workspace entry only shows for the user
-  // whose id matches the crew's adminUserId. Null-safe so the button
-  // stays hidden until both queries resolve.
-  const currentUserId = userInfo?.id != null ? Number(userInfo.id) : undefined;
-  const isOwner =
-    currentUserId != null &&
-    crewDetail?.adminUserId != null &&
-    crewDetail.adminUserId === currentUserId;
-  const roleNameById = useMemo(
-    () => new Map(projectRoles.map((r) => [r.id, r.name])),
-    [projectRoles]
+  const id = crew.id;
+  const { data: positions = [] } = useCrewPositions(id);
+  const { data: members = [] } = useCrewMembers(id);
+
+  const currentUserId = userInfo?.id != null ? String(userInfo.id) : undefined;
+  const isOwner = currentUserId != null && crew.founderId === currentUserId;
+  const isMember = useMemo(
+    () => currentUserId != null && members.some((m) => m.userId === currentUserId),
+    [members, currentUserId]
   );
 
-  // Derived stats — same source as recruitment tab in workspace.
+  const visiblePositions = useMemo(
+    // Outsiders + visitors should not see frozen positions.
+    () => positions.filter((p) => p.status !== "frozen" || isOwner),
+    [positions, isOwner]
+  );
+
   const slotsTotal = useMemo(
-    () => crewJobs.reduce((s, j) => s + Number(j.jobNumber ?? 0), 0),
-    [crewJobs]
+    () => visiblePositions.reduce((s, p) => s + p.targetCount, 0),
+    [visiblePositions]
   );
   const slotsFilled = useMemo(
-    () => crewJobs.reduce((s, j) => s + Number(j.filledNumber ?? 0), 0),
-    [crewJobs]
+    () => visiblePositions.reduce((s, p) => s + p.recruitedCount, 0),
+    [visiblePositions]
   );
 
-  // "Hiring: ..." chips on the Project Overview card. Excludes closed
-  // jobs (status === 9) and roles that are already fully staffed —
-  // only show roles a visitor could still join.
-  const hiringRoles = useMemo(
+  const hiringChips = useMemo(
     () =>
-      crewJobs
-        .filter((job) => Number(job.status ?? 0) !== 9)
-        .filter((job) => Number(job.filledNumber ?? 0) < Number(job.jobNumber ?? 0))
-        .map((job) => ({
-          jobId: job.id,
-          label:
-            job.jobName ||
-            job.roleName ||
-            (job.roleId != null ? roleNameById.get(job.roleId) : undefined) ||
-            `#${job.roleId}`,
-        })),
-    [crewJobs, roleNameById]
+      visiblePositions
+        .filter((p) => p.status === "open")
+        .map((p) => ({ id: p.id, label: positionLabel(p.positionType) })),
+    [visiblePositions, positionLabel]
   );
 
-  if (detailLoading || !crewDetail) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <IconLoader2 className="size-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  const heroBanner = resolveAsset(crewDetail.banner, env.BANNER_BASE_URL);
-  const heroVideo = resolveAsset(crewDetail.video, env.OSS_BASE_URL);
+  const heroBanner = resolveBanner(crew.coverImage);
+  const heroVideo = resolveAsset(crew.coverVideo, env.OSS_BASE_URL);
+  const workspaceHref = localizePath(`/crews/${id}/workspace`, locale);
+  const plazaHref = localizePath("/crews", locale);
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Hero with cover image — banner + optional autoplay video. */}
+      {/* Hero */}
       <div className="relative h-56 overflow-hidden md:h-72">
         {heroBanner ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={heroBanner} alt={crewDetail.name} className="size-full object-cover" />
+          <img src={heroBanner} alt={crew.name} className="size-full object-cover" />
         ) : (
           <div className="size-full bg-secondary" />
         )}
@@ -141,7 +120,7 @@ export function CrewDetailNew() {
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 mx-auto max-w-screen-2xl px-6 pb-6">
           <Link
-            href="/crews"
+            href={plazaHref}
             className="mb-3 inline-flex items-center gap-1 text-sm text-white/70 transition-colors hover:text-white"
           >
             <IconArrowLeft className="size-4" />
@@ -149,19 +128,15 @@ export function CrewDetailNew() {
           </Link>
           <div className="flex items-end justify-between gap-4">
             <div className="min-w-0">
-              <h1 className="mb-1 text-3xl font-bold text-white">{crewDetail.name}</h1>
-              {crewDetail.description ? (
-                <p className="line-clamp-2 max-w-2xl text-sm text-white/70">
-                  {crewDetail.description}
-                </p>
+              <h1 className="mb-1 text-3xl font-bold text-white">{crew.name}</h1>
+              {crew.description ? (
+                <p className="line-clamp-2 max-w-2xl text-sm text-white/70">{crew.description}</p>
               ) : null}
             </div>
-            {/* Workspace entry — owner-only. Settings dropped: editing
-                crew metadata lives inside the workspace header now. */}
             {isOwner ? (
               <div className="flex shrink-0 items-center gap-2">
                 <Link
-                  href={`/crews/${id}/workspace`}
+                  href={workspaceHref}
                   className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10"
                 >
                   <IconMovie className="size-4" />
@@ -173,9 +148,7 @@ export function CrewDetailNew() {
         </div>
       </div>
 
-      {/* Stats bar — backend currently surfaces members + slots; phase
-          / deadline / budget are PRD design slots that need backend
-          fields before they can light up. Hidden for now. */}
+      {/* Stats bar */}
       <div className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-screen-2xl items-center gap-8 px-6 py-4">
           <div className="flex items-center gap-2">
@@ -183,7 +156,7 @@ export function CrewDetailNew() {
             <div>
               <div className="text-xs text-muted-foreground">{t("wsMembers")}</div>
               <div className="text-sm font-semibold text-foreground">
-                {crewMembers.length} {t("people")}
+                {crew.memberCount ?? members.length} {t("people")}
               </div>
             </div>
           </div>
@@ -199,30 +172,28 @@ export function CrewDetailNew() {
         </div>
       </div>
 
-      {/* Main content + sidebar */}
+      {/* Main + sidebar */}
       <div className="mx-auto max-w-screen-2xl px-6 py-6">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Main content */}
           <div className="space-y-6 lg:col-span-2">
-            {/* Project Overview */}
-            {crewDetail.description || hiringRoles.length > 0 ? (
+            {crew.description || hiringChips.length > 0 ? (
               <section className="rounded-xl border border-border bg-card p-5">
                 <h2 className="mb-3 text-sm font-semibold text-foreground">
                   {tCrew("projectOverview")}
                 </h2>
-                {crewDetail.description ? (
+                {crew.description ? (
                   <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                    {crewDetail.description}
+                    {crew.description}
                   </p>
                 ) : null}
-                {hiringRoles.length > 0 ? (
+                {hiringChips.length > 0 ? (
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {hiringRoles.map((role) => (
+                    {hiringChips.map((c) => (
                       <span
-                        key={role.jobId}
+                        key={c.id}
                         className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300"
                       >
-                        {tCrew("hiring")}: {role.label}
+                        {tCrew("hiring")}: {c.label}
                       </span>
                     ))}
                   </div>
@@ -230,149 +201,45 @@ export function CrewDetailNew() {
               </section>
             ) : null}
 
-            {/* Open Positions */}
             <section className="rounded-xl border border-border bg-card p-5">
               <h2 className="mb-4 text-sm font-semibold text-foreground">
                 {tCrew("openPositions")}
               </h2>
-              {crewJobs.length === 0 ? (
+              {visiblePositions.length === 0 ? (
                 <div className="py-8 text-center text-sm text-muted-foreground">
                   {t("noJobsYet")}
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {crewJobs.map((job) => {
-                    const filled = Number(job.filledNumber ?? 0);
-                    const total = Number(job.jobNumber ?? 0);
-                    const full = total > 0 && filled >= total;
-                    const roleLabel =
-                      job.jobName ||
-                      job.roleName ||
-                      (job.roleId != null ? roleNameById.get(job.roleId) : undefined) ||
-                      `#${job.roleId}`;
-                    return (
-                      <div
-                        key={job.id}
-                        className="rounded-lg border border-border bg-secondary/30 p-4"
-                      >
-                        <div className="mb-2 flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-semibold text-foreground">
-                              {roleLabel} × {total}
-                            </h3>
-                            <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                              <span>
-                                {filled}/{total} {t("filled")}
-                              </span>
-                              <span
-                                className={cn(
-                                  "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                                  full
-                                    ? "border-green-400/30 bg-green-400/10 text-green-400"
-                                    : "border-amber-400/30 bg-amber-400/10 text-amber-400"
-                                )}
-                              >
-                                <IconClock className="size-3" />
-                                {full ? t("statusFull") : t("statusRecruiting")}
-                              </span>
-                            </div>
-                          </div>
-                          {!full ? (
-                            <button
-                              type="button"
-                              disabled={
-                                applyMutation.isPending &&
-                                applyMutation.variables?.jobId === Number(job.id)
-                              }
-                              onClick={() =>
-                                applyMutation.mutate(
-                                  { jobId: Number(job.id) },
-                                  {
-                                    onSuccess: () => {
-                                      toast.success(tCrew("applySuccess"));
-                                    },
-                                    onError: (err) => {
-                                      if (err instanceof ApiRequestError) {
-                                        const detail =
-                                          err.responseBody?.slice(0, 800) || err.message;
-                                        toast.error(`HTTP ${err.status}`, {
-                                          description: detail,
-                                          duration: 10000,
-                                        });
-                                      } else {
-                                        toast.error(
-                                          err instanceof Error ? err.message : tCrew("applyFailed")
-                                        );
-                                      }
-                                    },
-                                  }
-                                )
-                              }
-                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <IconUserPlus className="size-3.5" />
-                              {tCrew("applyNow")}
-                            </button>
-                          ) : null}
-                        </div>
-                        {job.jobDescription ? (
-                          <p className="text-xs leading-relaxed text-muted-foreground">
-                            {job.jobDescription}
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                  {visiblePositions.map((p) => (
+                    <PositionRow
+                      key={p.id}
+                      crewId={id}
+                      crewName={crew.name}
+                      position={p}
+                      canApply={!isOwner && !isMember}
+                    />
+                  ))}
                 </div>
               )}
             </section>
           </div>
 
-          {/* Sidebar */}
           <aside className="space-y-4">
-            {/* Team Members */}
             <section className="rounded-xl border border-border bg-card p-4">
               <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <IconUsers className="size-4 text-primary" />
                 {t("memberManagement")}
               </h3>
-              {crewMembers.length === 0 ? (
+              {members.length === 0 ? (
                 <div className="py-4 text-center text-xs text-muted-foreground">
                   {t("noMembersYet")}
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {crewMembers.map((m) => {
-                    const displayName = m.nick?.trim() || `User ${m.userId}`;
-                    const initial = (displayName[0] ?? "?").toUpperCase();
-                    const avatarUrl = m.avatar
-                      ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar.replace(/^\/+/, "")}`
-                      : "";
-                    const roleLabel =
-                      (m.roleId != null && roleNameById.get(m.roleId)) || t("memberRoleUnknown");
-                    return (
-                      <div key={m.userId} className="flex items-center gap-3">
-                        {avatarUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={avatarUrl}
-                            alt=""
-                            className="size-9 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex size-9 items-center justify-center rounded-full bg-secondary text-xs font-medium text-foreground">
-                            {initial}
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-medium text-foreground">
-                            {displayName}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground">{roleLabel}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {members.map((m) => (
+                    <MemberRow key={m.id} member={m} />
+                  ))}
                 </div>
               )}
             </section>
@@ -383,9 +250,199 @@ export function CrewDetailNew() {
   );
 }
 
-/** Concat OSS key with its base URL, guarding the leading-slash case
- *  so `/foo/bar.jpg` doesn't produce a `//` join. Empty / missing
- *  inputs return "" so callers can branch cleanly. */
+function PositionRow({
+  crewId,
+  crewName,
+  position,
+  canApply,
+}: {
+  crewId: string;
+  crewName: string;
+  position: CrewPositionDTO;
+  canApply: boolean;
+}) {
+  const t = useTranslations("workspace");
+  const tCrew = useTranslations("crew");
+  const positionLabel = useTranslatePositionValue();
+  const [applyOpen, setApplyOpen] = useState(false);
+
+  const filled = position.recruitedCount;
+  const total = position.targetCount;
+  const isFull = position.status === "full" || filled >= total;
+  const isFrozen = position.status === "frozen";
+  const label = positionLabel(position.positionType);
+
+  return (
+    <div className="rounded-lg border border-border bg-secondary/30 p-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">
+            {label} × {total}
+          </h3>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>
+              {filled}/{total} {t("filled")}
+            </span>
+            <span
+              className={cn(
+                "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                isFrozen
+                  ? "border-muted text-muted-foreground"
+                  : isFull
+                    ? "border-green-400/30 bg-green-400/10 text-green-400"
+                    : "border-amber-400/30 bg-amber-400/10 text-amber-400"
+              )}
+            >
+              {isFrozen ? (
+                <>
+                  <IconLockSquare className="size-3" />
+                  {tCrew("statusFrozen")}
+                </>
+              ) : (
+                <>
+                  <IconClock className="size-3" />
+                  {isFull ? t("statusFull") : t("statusRecruiting")}
+                </>
+              )}
+            </span>
+            <PositionMetaChips position={position} t={t} />
+          </div>
+        </div>
+        {canApply && !isFull && !isFrozen ? (
+          <button
+            type="button"
+            onClick={() => setApplyOpen(true)}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <IconUserPlus className="size-3.5" />
+            {tCrew("applyNow")}
+          </button>
+        ) : null}
+      </div>
+
+      {position.description ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">{position.description}</p>
+      ) : null}
+
+      {position.requiredSkills.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {position.requiredSkills.map((s) => (
+            <span
+              key={`req-${s}`}
+              className="rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
+            >
+              {s}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <ApplyPositionDialog
+        open={applyOpen}
+        onOpenChange={setApplyOpen}
+        crewId={crewId}
+        positionId={position.id}
+        positionLabel={label}
+        crewName={crewName}
+      />
+    </div>
+  );
+}
+
+/** Metadata chips — work mode + employment type + experience + salary. */
+function PositionMetaChips({
+  position,
+  t,
+}: {
+  position: CrewPositionDTO;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const workModeKey =
+    position.workMode === "remote"
+      ? "positionRemote"
+      : position.workMode === "hybrid"
+        ? "positionHybrid"
+        : "positionOnsite";
+
+  const salaryLabel = formatSalary(position, t);
+
+  return (
+    <>
+      <Chip>{t(workModeKey)}</Chip>
+      {position.location ? <Chip>{position.location}</Chip> : null}
+      {position.experienceLevel !== "any" ? (
+        <Chip>{t(`experience${capitalize(position.experienceLevel)}`)}</Chip>
+      ) : null}
+      {salaryLabel ? <Chip className="text-amber-400">{salaryLabel}</Chip> : null}
+    </>
+  );
+}
+
+function Chip({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md border border-border bg-secondary/50 px-1.5 py-0.5 text-[10px] text-muted-foreground",
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Format salary range or "Negotiable" given the position fields. */
+function formatSalary(p: CrewPositionDTO, t: ReturnType<typeof useTranslations>): string | null {
+  if (p.salary.negotiable) return t("salaryNegotiable");
+  const { currency, minAmount, maxAmount } = p.salary;
+  if ((minAmount == null && maxAmount == null) || currency == null) return null;
+  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency);
+  // For JPY the integer IS the displayed value; for CNY/USD/EUR/... divide by 100.
+  const toDisplay = (smallest: number) => (isZeroDecimal ? smallest : smallest / 100);
+  const fmt = (smallest: number | null): string => {
+    if (smallest == null) return "—";
+    const v = toDisplay(smallest);
+    if (v >= 1000) return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}K`;
+    return String(v);
+  };
+  return `${CURRENCY_SYMBOLS[currency]}${fmt(minAmount)}-${fmt(maxAmount)}`;
+}
+
+function MemberRow({ member }: { member: CrewMemberDTO }) {
+  const t = useTranslations("workspace");
+  const positionLabel = useTranslatePositionValue();
+  const displayName = `User ${member.userId}`;
+  const initial = (displayName.replace("User ", "")[0] ?? "?").toUpperCase();
+  const roleLabel =
+    member.roleType === "owner"
+      ? t("memberRoleOwner")
+      : positionLabel(member.roleType as PresetPositionValue);
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex size-9 items-center justify-center rounded-full bg-secondary text-xs font-medium text-foreground">
+        {initial}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-xs font-medium text-foreground">{displayName}</div>
+        <div className="text-[10px] text-muted-foreground">
+          {roleLabel}
+          {member.isFinance ? " · Finance" : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function resolveBanner(path: string | null | undefined): string {
+  if (!path) return env.DEFAULT_COVER_URL;
+  if (path.startsWith("http")) return path;
+  return `${env.BANNER_BASE_URL.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
 function resolveAsset(path: string | null | undefined, base: string): string {
   if (!path) return "";
   if (path.startsWith("http")) return path;

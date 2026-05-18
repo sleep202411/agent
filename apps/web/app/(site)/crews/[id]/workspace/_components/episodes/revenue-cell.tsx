@@ -13,7 +13,7 @@ import {
 
 interface RevenueCellProps {
   crewId: string;
-  episodeId: number;
+  episodeId: string;
   assignment: EpisodeAssignment;
   /** Only finance can flip into edit mode. Others see the value read-only. */
   canEdit: boolean;
@@ -30,14 +30,16 @@ interface RevenueCellProps {
 export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueCellProps) {
   const t = useTranslations("workspace");
   const [editing, setEditing] = useState(false);
+  // Draft is in yuan (user-facing); we convert to 分 on submit. The
+  // server returns 分 so we divide by 100 for the initial display.
   const [draft, setDraft] = useState<string>(
-    assignment.revenue ? String(assignment.revenue.amount) : ""
+    assignment.revenue ? (assignment.revenue.amount / 100).toString() : ""
   );
   const setRevenue = useSetAssignmentRevenue(crewId, episodeId);
 
   // Reset draft when assignment changes externally.
   useEffect(() => {
-    setDraft(assignment.revenue ? String(assignment.revenue.amount) : "");
+    setDraft(assignment.revenue ? (assignment.revenue.amount / 100).toString() : "");
   }, [assignment.revenue]);
 
   const parsed = Number.parseFloat(draft);
@@ -53,8 +55,9 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
     setRevenue.mutate(
       {
         assignmentId: assignment.id,
-        amount: parsed,
-        currency: assignment.revenue?.currency ?? "CNY",
+        // Convert yuan → 分 for the server.
+        amount: Math.round(parsed * 100),
+        currency: "CNY",
       },
       {
         onSuccess: () => {
@@ -112,8 +115,10 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
     );
   }
 
+  // Server stores `amount` as CNY 分 (smallest integer unit). Display as
+  // yuan with two decimals.
   const display = assignment.revenue
-    ? `${assignment.revenue.currency} ${formatAmount(assignment.revenue.amount)}`
+    ? `${assignment.revenue.currency} ${formatAmount(assignment.revenue.amount / 100)}`
     : t("revenueNotSet");
 
   return (

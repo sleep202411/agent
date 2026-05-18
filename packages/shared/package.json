@@ -29,6 +29,18 @@
     "./entity-events": {
       "types": "./dist/entity-events.d.ts",
       "default": "./dist/entity-events.js"
+    },
+    "./notifications": {
+      "types": "./dist/notifications.d.ts",
+      "default": "./dist/notifications.js"
+    },
+    "./crew": {
+      "types": "./dist/crew.d.ts",
+      "default": "./dist/crew.js"
+    },
+    "./users": {
+      "types": "./dist/users.d.ts",
+      "default": "./dist/users.js"
     }
   },
   "scripts": {

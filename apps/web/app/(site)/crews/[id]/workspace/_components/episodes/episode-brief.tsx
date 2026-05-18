@@ -136,7 +136,9 @@ function Stat({
   );
 }
 
-function formatRelative(ts: number, t: ReturnType<typeof useTranslations>): string {
+function formatRelative(iso: string, t: ReturnType<typeof useTranslations>): string {
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return iso;
   const diff = Date.now() - ts;
   const min = 60_000;
   const hr = 60 * min;

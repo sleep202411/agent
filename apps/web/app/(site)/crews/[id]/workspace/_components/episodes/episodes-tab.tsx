@@ -34,7 +34,7 @@ export function EpisodesTab({ crewId }: EpisodesTabProps) {
     return next?.id ?? null;
   }, [episodes]);
 
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   // Open the current episode by default once data lands.

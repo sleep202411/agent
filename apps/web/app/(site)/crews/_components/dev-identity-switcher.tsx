@@ -11,7 +11,10 @@ import {
   type Identity,
 } from "@/app/(site)/crews/_hooks/use-dev-identity";
 import { useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
-import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
+import {
+  useTranslatedOwnerLabel,
+  useTranslatePositionValue,
+} from "@/app/(site)/crews/_hooks/use-position-label";
 import { cn } from "@/lib/utils";
 
 /**
@@ -24,21 +27,18 @@ export function DevIdentitySwitcher() {
   const crewId = params.id;
   const raw = useDevIdentityRaw();
   const identity = parseIdentity(raw);
-  // Real crew members from `/project/crew/member/query`. Switcher
-  // only needs name + role for impersonation labels.
+  const translatePosition = useTranslatePositionValue();
+  const ownerLabel = useTranslatedOwnerLabel();
+  // Real crew members from `/aurora/crews/:id/members`. Switcher only
+  // needs an impersonation identifier + readable role label.
   const { data: crewMembers = [] } = useCrewMembers(crewId);
-  const { data: projectRoles = [] } = useProjectRoles();
-  const roleNameById = useMemo(
-    () => new Map(projectRoles.map((r) => [r.id, r.name])),
-    [projectRoles]
-  );
   const members = useMemo(
     () =>
       crewMembers.map((m) => ({
-        name: m.nick?.trim() || `User ${m.userId}`,
-        role: (m.roleId != null && roleNameById.get(m.roleId)) || "—",
+        name: `User ${m.userId}`,
+        role: m.via === "founder" ? ownerLabel : translatePosition(m.roleType),
       })),
-    [crewMembers, roleNameById]
+    [crewMembers, ownerLabel, translatePosition]
   );
 
   const [open, setOpen] = useState(false);

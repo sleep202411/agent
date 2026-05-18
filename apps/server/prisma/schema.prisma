@@ -3,6 +3,11 @@
 // Migrations live under `prisma/migrations/` and are applied via
 // `npm run db:migrate`. Models live alongside the module that owns
 // them in src/<module>/.
+//
+// ID convention: every model uses `String @id @default(cuid())` —
+// CUID v1 (25 char, alphanumeric, time-ordered prefix for B-tree
+// locality, non-enumerable). Lined up across the whole schema so
+// devs / logs / URLs never have to guess the shape of an id.
 
 generator client {
   provider = "prisma-client-js"
@@ -13,9 +18,408 @@ datasource db {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Crew domain (src/crews/)
+// ─────────────────────────────────────────────────────────────
+//
+// Server-owned crew module (剧组). End-to-end ownership: every table
+// here is Prisma + Nest, NOT Java. Java's only contribution is satoken
+// auth — `userId` columns reference Java's user id space (string) but
+// no FK crosses the boundary; orphaned rows just render as "Unknown
+// user" client-side.
+//
+// Soft delete: `deletedAt` on Crew + CrewPosition (audit trail).
+//   CrewMember uses `removedAt`; CrewApplication transitions through
+//   status enum. Partial-unique indexes are defined in the migration
+//   SQL (Prisma DSL can't express WHERE clauses on @@unique).
+//
+// Optimistic locking: Crew carries `version` (incremented on every
+// update). The CrewsService.update path requires callers to supply
+// expectedVersion so concurrent edits don't silently lose-update.
+//
+// Data integrity: CHECK constraints (recruitedCount / targetCount /
+// revenue) are appended in the migration SQL — see comments below.
+
+enum CrewPositionStatus {
+  open
+  frozen
+  full
+}
+
+enum WorkMode {
+  remote
+  hybrid
+  onsite
+}
+
+enum EmploymentType {
+  full_time
+  part_time
+  contract
+  freelance
+  project_based
+}
+
+enum ExperienceLevel {
+  any
+  junior
+  mid
+  senior
+  lead
+}
+
+enum CrewMemberVia {
+  founder
+  application
+  manual
+}
+
+enum CrewApplicationStatus {
+  pending
+  approved
+  rejected
+}
+
+enum EpisodeStatus {
+  not_started
+  in_production
+  approved
+}
+
+enum AssignmentStatus {
+  in_progress
+  submitted
+  approved
+  rejected
+}
+
+model Crew {
+  id          String    @id @default(cuid())
+  name        String    @db.VarChar(128)
+  description String    @db.Text
+  /// OSS path to the cover image. Required for create — UI enforces.
+  coverImage  String    @map("cover_image")
+  /// OSS path to an optional cover video (autoplay loop in detail header).
+  coverVideo  String?   @map("cover_video")
+  /// Java userId (numeric string). FK not enforced — see header.
+  founderId   String    @map("founder_id")
+  /// Optimistic concurrency control. Bumped on every update; readers
+  /// supply the version they saw in the WHERE clause via
+  /// crewsService.update(id, patch, expectedVersion).
+  version     Int       @default(0)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  positions    CrewPosition[]
+  members      CrewMember[]
+  applications CrewApplication[]
+  episodes     Episode[]
+
+  @@index([founderId, deletedAt], map: "crews_founder_idx")
+  /// Public listing: WHERE deleted_at IS NULL ORDER BY created_at DESC.
+  @@index([deletedAt, createdAt(sort: Desc)], map: "crews_feed_idx")
+  @@map("crews")
+}
+
+model CrewPosition {
+  id             String             @id @default(cuid())
+  crewId         String             @map("crew_id")
+  /// Preset position key — validated against PRESET_POSITIONS in
+  /// packages/shared/src/crew.ts. Stored as String so adding presets
+  /// doesn't need migrations.
+  positionType   String             @map("position_type") @db.VarChar(64)
+  description    String             @db.Text
+  /// 招聘人数 (target headcount). CHECK target_count > 0 in migration SQL.
+  targetCount    Int                @map("target_count")
+  /// Incremented inside the approval transaction; decremented when a
+  /// member is removed. Reaches `targetCount` → status flips to `full`.
+  /// CHECK recruited_count >= 0 AND recruited_count <= target_count.
+  recruitedCount Int                @default(0) @map("recruited_count")
+  status         CrewPositionStatus @default(open)
+
+  /// ─── Employment ────────────────────────────────────────
+  workMode         WorkMode        @default(remote) @map("work_mode")
+  /// City / region — required at the controller layer when
+  /// workMode != 'remote'. Free-form so we don't need a city dict.
+  location         String?         @db.VarChar(128)
+  employmentType   EmploymentType  @default(project_based) @map("employment_type")
+  experienceLevel  ExperienceLevel @default(any) @map("experience_level")
+
+  /// ─── Skills ────────────────────────────────────────────
+  /// Free-form tags (e.g. ["Final Draft", "分镜思维"]). PG TEXT[].
+  /// Single list ("preferred" was dropped as separate field — the
+  /// distinction was always fuzzy in practice and UX favored simplicity.
+  requiredSkills   String[]        @default([]) @map("required_skills")
+
+  /// ─── Compensation ──────────────────────────────────────
+  /// Salary "shape" the recruiter is offering. NULL = not set.
+  /// 'month' = monthly pay; 'episode' = per-episode rate;
+  /// 'project' = single project fee (lump sum on completion).
+  /// When `salaryNegotiable = true`, min/max are ignored and the UI
+  /// shows "面议" (negotiable on application).
+  salaryPeriod     String?  @map("salary_period") @db.VarChar(16)
+  /// ISO 4217 currency code. cn cell allows only CNY; com cell allows
+  /// the whitelist defined in `apps/server/src/crews/currency.ts`.
+  /// CHECK enforced at DB level (see migration SQL).
+  salaryCurrency   String?  @map("salary_currency") @db.VarChar(3)
+  /// Smallest currency unit (CNY 分 / USD cents / JPY yen). Stored
+  /// integer so we never lose precision. UI converts for display.
+  /// CHECK salary_min_amount >= 0 in migration SQL.
+  salaryMinAmount  BigInt?  @map("salary_min_amount")
+  /// CHECK salary_max_amount >= salary_min_amount when both set.
+  salaryMaxAmount  BigInt?  @map("salary_max_amount")
+  salaryNegotiable Boolean  @default(false) @map("salary_negotiable")
+
+  /// ─── Lifecycle ─────────────────────────────────────────
+  /// Auto-archive at this date (cron flips status → frozen). Nullable.
+  closeDate        DateTime? @map("close_date") @db.Date
+
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  crew         Crew              @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  applications CrewApplication[]
+  members      CrewMember[]
+
+  @@index([crewId, status, deletedAt], map: "crew_positions_listing_idx")
+  /// Public discovery filter: positions by work mode (Remote-only browse).
+  @@index([workMode, status, deletedAt], map: "crew_positions_work_mode_idx")
+  /// Auto-archive cron scan.
+  @@index([closeDate, status], map: "crew_positions_close_date_idx")
+  @@map("crew_positions")
+}
+
+model CrewMember {
+  id         String        @id @default(cuid())
+  crewId     String        @map("crew_id")
+  userId     String        @map("user_id")
+  /// Preset position key OR literal "owner" for the founder.
+  roleType   String        @map("role_type") @db.VarChar(64)
+  /// Linked position when joined via application; null for owner /
+  /// manually-added members.
+  positionId String?       @map("position_id")
+  via        CrewMemberVia
+  /// Finance flag (per episodes-spec) — only finance can set revenue.
+  isFinance  Boolean       @default(false) @map("is_finance")
+  joinedAt   DateTime      @default(now()) @map("joined_at") @db.Timestamptz(6)
+  removedAt  DateTime?     @map("removed_at") @db.Timestamptz(6)
+
+  crew     Crew          @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  position CrewPosition? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+
+  /// Partial unique enforced in migration SQL:
+  /// CREATE UNIQUE INDEX crew_members_active_unique
+  ///   ON crew_members (crew_id, user_id) WHERE removed_at IS NULL;
+  /// Allows historical removed rows to coexist with a new active row —
+  /// preserves the audit trail when a member is re-added.
+  @@index([userId, removedAt], map: "crew_members_by_user_idx")
+  @@index([crewId, removedAt], map: "crew_members_by_crew_idx")
+  @@map("crew_members")
+}
+
+model CrewApplication {
+  id          String                @id @default(cuid())
+  crewId      String                @map("crew_id")
+  positionId  String                @map("position_id")
+  applicantId String                @map("applicant_id")
+  /// Cover letter / "why I'm a good fit". 1-1000 chars enforced at controller.
+  message     String?               @db.Text
+
+  /// ─── Applicant self-report ───────────────────────────
+  /// Optional external portfolio URL (LinkedIn / Behance / personal
+  /// site). Even when NULL, owner sees the applicant's internal
+  /// profile + published works via deeplinks derived from applicantId.
+  portfolioUrl        String?   @map("portfolio_url") @db.Text
+  /// CNY 分. Owner can compare against position's salaryMin/Max range
+  /// to spot mismatches at a glance.
+  expectedSalaryCents BigInt?   @map("expected_salary_cents")
+  /// Earliest date the applicant can start.
+  availableStartDate  DateTime? @map("available_start_date") @db.Date
+  /// Years of relevant experience. CHECK >= 0.
+  yearsExperience     Int?      @map("years_experience")
+
+  status      CrewApplicationStatus @default(pending)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedAt  DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+  reviewerId  String?               @map("reviewer_id")
+
+  crew     Crew         @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  position CrewPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  /// Owner inbox query — pending apps for this crew.
+  @@index([crewId, status, createdAt(sort: Desc)], map: "crew_applications_inbox_idx")
+  /// "My applications" view.
+  @@index([applicantId, status], map: "crew_applications_by_user_idx")
+  /// Partial unique enforced in migration SQL:
+  /// CREATE UNIQUE INDEX crew_applications_one_pending_per_user
+  ///   ON crew_applications (position_id, applicant_id) WHERE status = 'pending';
+  /// Prevents double-pending (button-spam race).
+  @@map("crew_applications")
+}
+
+// ─── Episode sub-domain (crew internal production task units) ──
+// See docs in apps/web/app/(site)/crews/_hooks/episodes-spec.md.
+
+model Episode {
+  id          String        @id @default(cuid())
+  crewId      String        @map("crew_id")
+  /// 1-based, unique within crew. CHECK number > 0 in migration SQL.
+  number      Int
+  title       String?       @db.VarChar(128)
+  description String?       @db.Text
+  status      EpisodeStatus @default(not_started)
+  /// YYYY-MM-DD; nullable.
+  deadline    DateTime?     @db.Date
+  approvedAt  DateTime?     @map("approved_at") @db.Timestamptz(6)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  crew        Crew                @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  assignments EpisodeAssignment[]
+  activities  EpisodeActivity[]
+
+  @@unique([crewId, number], name: "uniq_crew_episode_number", map: "episodes_crew_number_unique")
+  @@index([crewId, status], map: "episodes_crew_status_idx")
+  @@map("episodes")
+}
+
+model EpisodeAssignment {
+  id               String           @id @default(cuid())
+  crewId           String           @map("crew_id")
+  episodeId        String           @map("episode_id")
+  userId           String           @map("user_id")
+  /// Snapshot of the position role assigned to this slot. Optional —
+  /// admins can assign outside a position. Denormalized so renaming the
+  /// position later doesn't break activity timelines.
+  positionId       String?          @map("position_id")
+  roleName         String?          @map("role_name") @db.VarChar(64)
+  status           AssignmentStatus @default(in_progress)
+  submissionUrl    String?          @map("submission_url") @db.Text
+  submissionNote   String?          @map("submission_note") @db.Text
+  submittedAt      DateTime?        @map("submitted_at") @db.Timestamptz(6)
+  rejectReason     String?          @map("reject_reason") @db.Text
+  rejectSuggestion String?          @map("reject_suggestion") @db.Text
+  rejectedAt       DateTime?        @map("rejected_at") @db.Timestamptz(6)
+  /// CNY 分 (smallest integer unit). NULL = not set yet. CHECK >= 0.
+  revenueAmount    BigInt?          @map("revenue_amount")
+  revenueCurrency  String?          @default("CNY") @map("revenue_currency") @db.VarChar(8)
+  revenueSetAt     DateTime?        @map("revenue_set_at") @db.Timestamptz(6)
+  revenueSetById   String?          @map("revenue_set_by_id")
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  /// Same user can't be assigned to the same episode twice.
+  @@unique([episodeId, userId], name: "uniq_episode_user", map: "episode_assignments_unique")
+  @@index([crewId, userId], map: "episode_assignments_user_idx")
+  @@index([episodeId], map: "episode_assignments_by_episode_idx")
+  /// Finance analytics — "all revenue set in [period]".
+  @@index([revenueSetAt(sort: Desc)], map: "episode_assignments_revenue_idx")
+  @@map("episode_assignments")
+}
+
+model EpisodeActivity {
+  id          String   @id @default(cuid())
+  crewId      String   @map("crew_id")
+  episodeId   String   @map("episode_id")
+  /// EpisodeActivityType per shared/crew.ts — stored String for fwd-compat.
+  type        String   @db.VarChar(32)
+  actorUserId String   @map("actor_user_id")
+  /// Nickname snapshot at write time — preserves audit across renames.
+  actorName   String   @map("actor_name") @db.VarChar(64)
+  payload     Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId, createdAt(sort: Desc)], map: "episode_activities_timeline_idx")
+  @@map("episode_activities")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notification domain (src/notification/)
+// ─────────────────────────────────────────────────────────────
+//
+// Server-owned in-app message inbox. Two-table design mirrors
+// AiJob/AiEventOutbox split:
+//
+//   Notification        — authoritative row, what UI shows
+//   NotificationOutbox  — durable Redis-publish queue (retry + DLQ)
+//
+// Producers write BOTH rows in the same tx. The dispatcher polls
+// outbox, publishes to Redis pub/sub, marks dispatched. WS gateway
+// consumes Redis and pushes to connected clients. The DB row is the
+// source of truth; missed pushes recover on reconnect-and-refetch.
+//
+// Idempotency: every send carries an `idempotencyKey` derived from the
+// triggering business event (e.g. "crew.application.approved:<appId>").
+// A unique constraint on (userId, idempotencyKey) means the same event
+// fired twice (retry, double-click, etc) creates exactly one row.
+
+model Notification {
+  id             String    @id @default(cuid())
+  userId         String    @map("user_id")
+  type           String
+  title          String
+  body           String    @db.Text
+  meta           Json      @default("{}")
+  /// Deterministic key the producer derives from the source event
+  /// (e.g. "crew.application.approved:<applicationId>"). Together with
+  /// userId it's the dedup boundary — same event → at most one row.
+  idempotencyKey String    @map("idempotency_key")
+  readAt         DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  outbox NotificationOutbox[]
+
+  @@unique([userId, idempotencyKey], name: "uniq_user_idempotency", map: "notifications_idempotency_unique")
+  /// Unread badge query.
+  @@index([userId, readAt], map: "notifications_unread_idx")
+  /// Inbox feed.
+  @@index([userId, createdAt(sort: Desc)], map: "notifications_feed_idx")
+  @@map("notifications")
+}
+
+model NotificationOutbox {
+  id             String    @id @default(cuid())
+  notificationId String    @map("notification_id")
+  userId         String    @map("user_id")
+  /// JSON-serialized NotificationDTO payload. Snapshot at enqueue time
+  /// so deliveries don't depend on the Notification row staying intact.
+  payload        Json
+  dispatchedAt   DateTime? @map("dispatched_at") @db.Timestamptz(6)
+  attempt        Int       @default(0)
+  /// When to retry next. NULL = ready immediately.
+  nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamptz(6)
+  lastError      String?   @map("last_error") @db.Text
+  /// Pessimistic lock for multi-pod dispatcher safety.
+  /// `lockedBy` = pod hostname / pid; `lockedAt` = timestamp.
+  /// Stale locks (lockedAt > LOCK_TTL ago) are reclaimable.
+  lockedAt       DateTime? @map("locked_at") @db.Timestamptz(6)
+  lockedBy       String?   @map("locked_by")
+  /// DLQ tombstone. Set when retries exhausted; dispatcher skips. Ops
+  /// can inspect / requeue from here.
+  deadAt         DateTime? @map("dead_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  /// Pending-events scan: dispatched_at NULL AND dead_at NULL AND
+  /// (nextAttemptAt NULL OR nextAttemptAt <= now()) AND lock free.
+  @@index([dispatchedAt, deadAt, nextAttemptAt], map: "notification_outbox_pending_idx")
+  /// Per-notification timeline (debug / ops).
+  @@index([notificationId, createdAt(sort: Desc)], map: "notification_outbox_per_notif_idx")
+  /// Find stuck locks (for reclamation).
+  @@index([lockedAt], map: "notification_outbox_locked_idx")
+  /// DLQ inspection.
+  @@index([deadAt], map: "notification_outbox_dead_idx")
+  @@map("notification_outbox")
+}
+
+// ─────────────────────────────────────────────────────────────
 // AI Generation domain (src/ai-generation/)
 // ─────────────────────────────────────────────────────────────
-
+//
 // Enums get enforced at the DB level — typos can't write garbage
 // statuses. Adding a value still requires a migration (one ALTER TYPE),
 // which is the right amount of friction for a state machine.
@@ -93,7 +497,7 @@ enum AiOutboxEventType {
 //   `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL` (raw SQL) so a
 //   re-submission after soft delete is not blocked by the tombstone.
 model AiJob {
-  id                    String          @id @default(uuid())
+  id                    String          @id @default(cuid())
   userId                String          @map("user_id")
   /// Tier snapshot at submission time — for audit and (future) tier-
   /// differentiated pricing. Runtime authz uses sa-token's live value.
@@ -170,12 +574,9 @@ model AiJob {
   @@map("ai_jobs")
 }
 
-// AiJobOutput — one row per generated artifact (OSS-backed). ID is a
-// random UUID; idempotent recovery on retry is provided by the
-// `(jobId, outputIndex)` unique constraint plus the worker's DELETE +
-// INSERT transaction in `replaceOutputs` (see repository.ts).
+// AiJobOutput — one row per generated artifact (OSS-backed).
 model AiJobOutput {
-  id              String    @id @default(uuid())
+  id              String    @id @default(cuid())
   jobId           String    @map("job_id")
   type            AiJobType
   url             String
@@ -218,7 +619,7 @@ model AiJobOutput {
 // Stores the full request / response / headers / cost so any past
 // generation can be replayed or audited.
 model AiJobAttempt {
-  id                      String          @id @default(uuid())
+  id                      String          @id @default(cuid())
   jobId                   String          @map("job_id")
   attemptNumber           Int             @map("attempt_number")
   status                  AiAttemptStatus
@@ -261,7 +662,7 @@ model AiJobAttempt {
 // recognize (already cleaned, wrong tenant, race against creation);
 // store them anyway so we can investigate later.
 model AiProviderEvent {
-  id              String              @id @default(uuid())
+  id              String              @id @default(cuid())
   jobId           String?             @map("job_id")
   provider        String
   /// Provider's own ID for this event (fal: request_id; others may vary).
@@ -287,7 +688,7 @@ model AiProviderEvent {
 // the DLQ via `deadAt`. Pod-level `lockedAt` / `lockedBy` let multiple
 // dispatcher instances coexist without double-publishing.
 model AiEventOutbox {
-  id            String            @id @default(uuid())
+  id            String            @id @default(cuid())
   jobId         String            @map("job_id")
   userId        String            @map("user_id")
   eventType     AiOutboxEventType @map("event_type")

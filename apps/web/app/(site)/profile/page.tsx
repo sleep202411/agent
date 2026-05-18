@@ -28,7 +28,7 @@ import {
   useMyPersonalWorks,
   useUpdatePersonalWork,
 } from "@/src/hooks/use-my-projects";
-import { useMyCrews, type QueryCrewListItem } from "@/app/(site)/crews/_hooks/use-crew";
+import { useMyCrews, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { updateProject, type PersonalWork, type Project } from "@/src/services/project";
 import { ApiRequestError } from "@/src/lib/api";
 import { PublishWorkDialog } from "./publish-work-dialog";
@@ -586,82 +586,82 @@ function PersonalWorksTab() {
 
 // ─── My Crews Tab ─────────────────────────────────────
 //
-// Two stacked sub-blocks under one section:
-//   1. Top    — crews from `/project/crew/mycrew` (the real phase-1 crew
-//               endpoint). Owner badge is rendered when the row's
-//               adminUserId matches the logged-in user.
-//   2. Bottom — legacy "joined IPs" via `useMyJoinedProjects` — predates
-//               the crew module; kept visible so historical participation
-//               records don't disappear. Will retire once the data is
-//               migrated under the crew model.
+// Two sections, both sourced from one call to `GET /aurora/crews/my`:
+//   1. Founded — crews the viewer created (owner badge + pending-app
+//                count if any are waiting for review).
+//   2. Joined  — crews the viewer was added to (via application or
+//                manual add). Role label rendered from the member row.
+//
+// Empty states render per-section so a user with only one half (e.g.
+// new account that joined a crew but never founded one) gets a clean
+// "no founded crews yet" hint instead of an awkward whole-tab empty.
 
 function MyCrewsTab() {
   const t = useTranslations("profile");
-  const { data: userInfo } = useUserInfo();
-  const { data: myCrews, isLoading: loadingCrews } = useMyCrews();
-  const { data: joinedProjects, isLoading: loadingJoined } = useMyJoinedProjects();
+  const { data: myCrews, isLoading } = useMyCrews();
 
-  const currentUserId = userInfo?.id != null ? Number(userInfo.id) : undefined;
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const founded = myCrews?.founded ?? [];
+  const joined = myCrews?.joined ?? [];
+
+  if (founded.length === 0 && joined.length === 0) {
+    return <p className="text-sm text-muted-foreground/70">{t("noData")}</p>;
+  }
 
   return (
     <div className="space-y-8">
-      {/* Block 1: new crew rows */}
-      {loadingCrews ? (
-        <div className="flex h-32 items-center justify-center">
-          <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      ) : !myCrews?.length ? (
-        <p className="text-sm text-muted-foreground/70">{t("noData")}</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-          {myCrews.map((crew) => (
-            <MyCrewCard
-              key={crew.id}
-              crew={crew}
-              isOwner={
-                currentUserId != null &&
-                crew.adminUserId != null &&
-                crew.adminUserId === currentUserId
-              }
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Block 2: legacy joined IPs */}
-      <div>
+      <section>
         <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
-          {t("joinedCrews")}
+          {t("crewsFounded")} ({founded.length})
         </h3>
-        {loadingJoined ? (
-          <div className="flex h-32 items-center justify-center">
-            <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : !joinedProjects?.length ? (
+        {founded.length === 0 ? (
           <p className="text-sm text-muted-foreground/70">{t("noData")}</p>
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {joinedProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+            {founded.map((crew) => (
+              <MyCrewCard key={crew.id} crew={crew} isOwner />
             ))}
           </div>
         )}
-      </div>
+      </section>
+
+      <section>
+        <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+          {t("joinedCrews")} ({joined.length})
+        </h3>
+        {joined.length === 0 ? (
+          <p className="text-sm text-muted-foreground/70">{t("noData")}</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+            {joined.map((crew) => (
+              <MyCrewCard key={crew.id} crew={crew} isOwner={false} />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
 // ─── My Crew Card ─────────────────────────────────────
 
-function MyCrewCard({ crew, isOwner }: { crew: QueryCrewListItem; isOwner: boolean }) {
+function MyCrewCard({ crew, isOwner }: { crew: CrewDTO; isOwner: boolean }) {
   const t = useTranslations("profile");
   const router = useRouter();
   const locale = useLocale() as Locale;
-  const bannerUrl = crew.banner
-    ? crew.banner.startsWith("http")
-      ? crew.banner
-      : `${env.BANNER_BASE_URL}/${crew.banner.replace(/^\/+/, "")}`
+  const bannerUrl = crew.coverImage
+    ? crew.coverImage.startsWith("http")
+      ? crew.coverImage
+      : `${env.BANNER_BASE_URL}/${crew.coverImage.replace(/^\/+/, "")}`
     : "";
+  const pendingCount = crew.pendingApplicationCount ?? 0;
 
   return (
     <div
@@ -673,8 +673,14 @@ function MyCrewCard({ crew, isOwner }: { crew: QueryCrewListItem; isOwner: boole
           {t("crewOwner")}
         </div>
       )}
+      {isOwner && pendingCount > 0 && (
+        <div className="absolute right-2 top-2 z-10 inline-flex items-center gap-1 rounded-full bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white">
+          {pendingCount} pending
+        </div>
+      )}
       <div className="aspect-[4/3] overflow-hidden bg-muted">
         {bannerUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={bannerUrl} alt={crew.name} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-2xl font-bold text-muted-foreground/30">
@@ -684,19 +690,21 @@ function MyCrewCard({ crew, isOwner }: { crew: QueryCrewListItem; isOwner: boole
       </div>
       <div className="space-y-2 p-3">
         <div className="truncate text-sm font-medium">{crew.name}</div>
-        {crew.description && (
-          <div className="line-clamp-2 text-xs text-muted-foreground">{crew.description}</div>
-        )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
-          }}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground transition-colors hover:border-primary/50 hover:text-primary"
-        >
-          {t("openWorkspace")}
-        </button>
+        <div className="text-[11px] text-muted-foreground">
+          {crew.memberCount ?? 0} members · {crew.openPositionCount ?? 0} open
+        </div>
+        {isOwner ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
+            }}
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            {t("openWorkspace")}
+          </button>
+        ) : null}
       </div>
     </div>
   );

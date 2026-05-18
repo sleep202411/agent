@@ -1,24 +1,31 @@
 "use client";
 
 /**
- * Add-member dialog. Phase-1 spec entry — opens from the crew workspace
- * "Members" tab "+ Add Member" button. Visually mirrors
- * `<CreateIPDialog>` per DESIGN.md § "Create dialog conventions".
+ * Add-member dialog — userId → live lookup → add.
  *
- * Fields:
- *   - 手机号 / 邮箱 (contact, required) — single text input; backend
- *     auto-detects which one the user typed
- *   - 角色 (role, required) — Select populated from `useProjectRoles`
- *     (the same `/project/role/list` taxonomy the crew listing uses)
- *   - 备注 (remark, optional)
+ * UX flow:
+ *   1. User types/pastes a userId
+ *   2. Debounce 400ms → GET /aurora/users/lookup?userId=… (BFF → Java)
+ *   3. Server returns profile PLUS membership context (isCrewMember,
+ *      isCrewFounder) so the dialog renders a live preview card in
+ *      one roundtrip
+ *   4. Submit enabled only when found + not member + not founder
+ *   5. Submit → POST /aurora/crews/:crewId/members { userId }
+ *      (existing endpoint; server re-checks)
  *
- * Endpoint contract is best-guess (see `useAddCrewMember` TODO).
- * When backend lands, only the hook needs updating; this dialog
- * keeps the same { contact, role, remark } shape.
+ * Email / phone modes are coming when Java ships a by-contact lookup —
+ * for now userId is the only resolvable input.
  */
 
-import { useEffect, useState } from "react";
-import { IconLoader2 } from "@tabler/icons-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  IconAlertCircle,
+  IconCheck,
+  IconCrown,
+  IconInfoCircle,
+  IconLoader2,
+  IconUserCheck,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
@@ -30,7 +37,6 @@ import {
   DialogHero,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Select,
@@ -39,13 +45,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ApiRequestError } from "@/src/lib/api";
-import { useAddCrewMember } from "@/app/(site)/crews/_hooks/use-crew";
-import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
+import { cn } from "@/lib/utils";
+import { env } from "@/src/env";
+import { CrewApiError, useAddCrewMember } from "@/app/(site)/crews/_hooks/use-crew";
+import { useTranslatedPresetPositions } from "@/app/(site)/crews/_hooks/use-position-label";
+import { useDebouncedValue, useUserLookup } from "@/app/(site)/crews/_hooks/use-users";
 
-// Hero image — matches `<CreateCrewDialog>` so the two crew dialogs
-// feel like one product. Replace per-feature when product gives a
-// member-specific illustration.
 const ADD_MEMBER_HERO_URL = encodeURI(
   "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 20_51_09.png"
 );
@@ -60,44 +65,45 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
 
-  const [contact, setContact] = useState("");
-  const [roleId, setRoleId] = useState<string>("");
-  const [remark, setRemark] = useState("");
+  const [userIdInput, setUserIdInput] = useState("");
+  const [roleType, setRoleType] = useState<string>("");
+  const presetPositions = useTranslatedPresetPositions();
 
-  const { data: roles = [] } = useProjectRoles();
+  const debouncedUserId = useDebouncedValue(userIdInput, 400);
+  const lookup = useUserLookup({ userId: debouncedUserId, checkCrewId: crewId });
+
   const { mutateAsync: addMember, isPending: submitting } = useAddCrewMember(crewId);
 
-  // Reset on close per DESIGN.md § "State reset on close".
   useEffect(() => {
     if (open) return;
-    setContact("");
-    setRoleId("");
-    setRemark("");
+    setUserIdInput("");
+    setRoleType("");
   }, [open]);
 
-  const canSubmit = !submitting && contact.trim().length > 0 && roleId.length > 0;
+  // Submit gate: must have a found-and-addable user + a role.
+  const canSubmit = useMemo(() => {
+    if (submitting) return false;
+    if (roleType.length === 0) return false;
+    if (lookup.kind !== "found") return false;
+    if (lookup.user.isCrewMember || lookup.user.isCrewFounder) return false;
+    return true;
+  }, [lookup, roleType, submitting]);
 
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || lookup.kind !== "found") return;
     try {
-      await addMember({
-        crewId,
-        contact: contact.trim(),
-        role: Number(roleId),
-        remark: remark.trim() || undefined,
-      });
+      await addMember({ userId: lookup.user.userId, roleType });
       toast.success(t("addMemberSuccess"));
       onOpenChange(false);
     } catch (err) {
-      // Surface the raw backend response per DESIGN.md § "Error toasts".
-      if (err instanceof ApiRequestError) {
-        toast.error(`HTTP ${err.status}`, {
-          description: err.responseBody?.slice(0, 1000) || err.message,
-          duration: 10000,
-        });
+      if (err instanceof CrewApiError) {
+        const detail =
+          typeof err.body === "object" && err.body && "message" in err.body
+            ? String((err.body as { message: unknown }).message)
+            : err.message;
+        toast.error(`HTTP ${err.status}`, { description: detail, duration: 10000 });
       } else {
-        const msg = err instanceof Error ? err.message : "";
-        toast.error(msg || t("addMemberFailed"), { duration: 10000 });
+        toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
       }
     }
   };
@@ -117,42 +123,31 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
             <Field>
               <FieldLabel required>{t("addMemberContactLabel")}</FieldLabel>
               <Input
-                value={contact}
-                onChange={(e) => setContact(e.target.value)}
+                value={userIdInput}
+                onChange={(e) => setUserIdInput(e.target.value)}
                 placeholder={t("addMemberContactPlaceholder")}
-                maxLength={120}
+                maxLength={32}
                 disabled={submitting}
                 autoFocus
+                inputMode="numeric"
               />
+              <LookupPreview state={lookup} contact={debouncedUserId} t={t} />
             </Field>
 
             <Field>
               <FieldLabel required>{t("addMemberRoleLabel")}</FieldLabel>
-              <Select value={roleId} onValueChange={setRoleId} disabled={submitting}>
+              <Select value={roleType} onValueChange={setRoleType} disabled={submitting}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={t("addMemberRolePlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {roles.map((role) => (
-                    <SelectItem key={role.id} value={String(role.id)}>
-                      {role.name}
+                  {presetPositions.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-
-            <Field>
-              <FieldLabel>{t("addMemberRemarkLabel")}</FieldLabel>
-              <Textarea
-                className="max-h-32 overflow-y-auto"
-                value={remark}
-                onChange={(e) => setRemark(e.target.value)}
-                placeholder={t("addMemberRemarkPlaceholder")}
-                maxLength={200}
-                rows={2}
-                disabled={submitting}
-              />
             </Field>
           </FieldGroup>
         </DialogBody>
@@ -174,5 +169,143 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Live preview card ─────────────────────────────────────
+
+function LookupPreview({
+  state,
+  contact,
+  t,
+}: {
+  state: ReturnType<typeof useUserLookup>;
+  contact: string;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const trimmed = contact.trim();
+  if (state.kind === "idle") {
+    // Stay quiet while the user is clearly still typing — only flag
+    // format problems once they have enough characters that something
+    // SHOULD have matched.
+    if (trimmed.length < 3) {
+      return (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{t("addMemberContactHint")}</p>
+      );
+    }
+    return (
+      <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-amber-400">
+        <IconAlertCircle className="size-3" />
+        {t("addMemberContactInvalid")}
+      </p>
+    );
+  }
+
+  if (state.kind === "loading") {
+    return (
+      <PreviewBox tone="muted">
+        <IconLoader2 className="size-3.5 animate-spin" />
+        <span>{t("addMemberLookingUp")}</span>
+      </PreviewBox>
+    );
+  }
+
+  if (state.kind === "notFound") {
+    return (
+      <PreviewBox tone="error">
+        <IconAlertCircle className="size-3.5" />
+        <div className="flex flex-col">
+          <span>{t("addMemberNotFound")}</span>
+          <span className="text-[10px] text-muted-foreground">{t("addMemberNotFoundHint")}</span>
+        </div>
+      </PreviewBox>
+    );
+  }
+
+  if (state.kind === "error") {
+    return (
+      <PreviewBox tone="error">
+        <IconAlertCircle className="size-3.5" />
+        <div className="flex flex-col">
+          <span>{t("addMemberLookupError")}</span>
+          <span className="text-[10px] text-muted-foreground">
+            {state.message} {state.status ? `· HTTP ${state.status}` : ""}
+          </span>
+        </div>
+      </PreviewBox>
+    );
+  }
+
+  // Found — render person card with member-state badge.
+  const { user } = state;
+  const avatarUrl = user.avatar
+    ? user.avatar.startsWith("http")
+      ? user.avatar
+      : `${env.USER_BASE_URL || env.OSS_BASE_URL}/${user.avatar.replace(/^\/+/, "")}`
+    : "";
+  const initial = (user.nickname || `U${user.userId}`).charAt(0).toUpperCase();
+
+  let badge: { tone: "info" | "warn" | "ok"; text: string; icon: typeof IconCheck } | null = null;
+  if (user.isCrewFounder) {
+    badge = { tone: "warn", text: t("addMemberUserIsFounder"), icon: IconCrown };
+  } else if (user.isCrewMember) {
+    badge = { tone: "warn", text: t("addMemberUserIsMember"), icon: IconUserCheck };
+  } else {
+    badge = { tone: "ok", text: t("addMemberUserCanAdd"), icon: IconCheck };
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-3 rounded-lg bg-secondary/40 p-2.5">
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatarUrl} alt="" className="size-9 rounded-full object-cover" />
+      ) : (
+        <div className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-foreground">
+          {user.nickname || `User ${user.userId}`}
+        </div>
+        <div
+          className={cn(
+            "mt-0.5 inline-flex items-center gap-1 text-[11px]",
+            badge.tone === "ok" && "text-green-400",
+            badge.tone === "warn" && "text-amber-400",
+            badge.tone === "info" && "text-muted-foreground"
+          )}
+        >
+          <badge.icon className="size-3" />
+          {badge.text}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewBox({
+  tone,
+  children,
+}: {
+  tone: "muted" | "error" | "info";
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "mt-2 flex items-start gap-2 rounded-lg p-2.5 text-xs",
+        tone === "muted" && "bg-secondary/40 text-muted-foreground",
+        tone === "error" && "bg-rose-400/10 text-rose-400",
+        tone === "info" && "bg-primary/10 text-primary"
+      )}
+    >
+      {children}
+      {/* Silence unused IconInfoCircle (kept on the surface so the
+          "tone='info'" branch is meaningful for future copy). */}
+      <span className="hidden">
+        <IconInfoCircle className="size-0" />
+      </span>
+    </div>
   );
 }

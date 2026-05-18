@@ -37,11 +37,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { ApiRequestError } from "@/src/lib/api";
 import { uploadBanner } from "@/src/services/user";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
-import { useCreateCrew, useUpdateCrew } from "@/app/(site)/crews/_hooks/use-crew";
+import { CrewApiError, useCreateCrew, useUpdateCrew } from "@/app/(site)/crews/_hooks/use-crew";
 
 // Hero image — same static CDN we use for `<CreateIPDialog>`. Replace
 // when product gives a crew-specific illustration.
@@ -55,10 +54,11 @@ const CREATE_CREW_HERO_URL = encodeURI(
  * `createCrew`. Absent → original create flow, unchanged.
  */
 export interface CrewFormInitial {
-  id: number | string;
+  id: string;
   name: string;
   description?: string;
-  banner?: string;
+  /** OSS path of the cover image. */
+  coverImage?: string;
 }
 
 interface CreateCrewDialogProps {
@@ -103,7 +103,7 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
     if (initial) {
       setName(initial.name ?? "");
       setDescription(initial.description ?? "");
-      setBannerLink(initial.banner ?? "");
+      setBannerLink(initial.coverImage ?? "");
     }
   }, [open, initial]);
 
@@ -132,9 +132,14 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
   // so a hidden 401 / 422 isn't masked behind a generic toast (platform
   // error convention — see DESIGN.md § "Error toasts").
   const reportError = (err: unknown, fallbackKey: "createFailed" | "updateFailed") => {
-    if (err instanceof ApiRequestError) {
-      const detail = err.responseBody?.slice(0, 800) || err.message;
-      toast.error(`HTTP ${err.status}`, { description: detail, duration: 10000 });
+    if (err instanceof CrewApiError) {
+      const body =
+        typeof err.body === "object" && err.body && "message" in err.body
+          ? String((err.body as { message: unknown }).message)
+          : typeof err.body === "string"
+            ? err.body.slice(0, 800)
+            : err.message;
+      toast.error(`HTTP ${err.status}`, { description: body, duration: 10000 });
     } else {
       const msg = err instanceof Error ? err.message : "";
       toast.error(msg || t(fallbackKey));
@@ -150,7 +155,7 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
         {
           id: String(initial.id),
           name: name.trim(),
-          banner: bannerLink,
+          coverImage: bannerLink,
           description: description.trim(),
         },
         {
@@ -167,15 +172,15 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
     create.mutate(
       {
         name: name.trim(),
-        banner: bannerLink,
+        coverImage: bannerLink,
         description: description.trim(),
       },
       {
-        onSuccess: ({ id }) => {
-          posthog.capture("crew_created", { crew_id: id });
+        onSuccess: (crew) => {
+          posthog.capture("crew_created", { crew_id: crew.id });
           onOpenChange(false);
           toast.success(t("createSuccess"));
-          router.push(localizePath(`/crews/${id}/workspace`, locale));
+          router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
         },
         onError: (err) => {
           posthog.captureException(err);
