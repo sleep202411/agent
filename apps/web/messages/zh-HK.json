@@ -2610,6 +2610,7 @@
     "sidebarLabel": "工作室導覽",
     "sidebarHome": "首頁",
     "sidebarProjects": "專案列表",
+    "sidebarImageLab": "AI 生圖",
     "sidebarFoundry": "Foundry",
     "noProjects": "還沒有專案",
     "noProjectsHint": "建立你的第一個專案開始創作吧",
@@ -3671,7 +3672,7 @@
       "subtitle": "加速器、出版社、電視台與製作公司，與 FizzDragon 一同把 AI 輔助創作帶給全球觀眾。"
     }
   },
-  "foundry": {
+  "aiGen": {
     "eyebrow": "Foundry Studio",
     "title": "生圖與生影片",
     "subtitle": "面向會員開放的 Foundry 生成工具，支援 schema 驅動參數、隊列可視化、任務歷史和結果詳情查看。",
@@ -3691,8 +3692,8 @@
     "estimateQueue": "排隊約 {time}",
     "queueCapacity": "並發 {count}",
     "generate": "生成",
-    "promptPlaceholder": "描述你想生成的圖片或影片...",
-    "referenceUrlPlaceholder": "每行貼上一個參考圖 URL",
+    "promptPlaceholder": "描述主體、風格、構圖和畫面氛圍...",
+    "referenceUrlPlaceholder": "每行貼上一張參考圖連結",
     "queueTitle": "生成隊列",
     "activeJobs": "{count} 個進行中的任務",
     "recentJobs": "最近任務",
@@ -3737,6 +3738,302 @@
       "retryFailed": "重試任務失敗",
       "loadJobDetail": "載入任務詳情失敗",
       "modelDisabled": "該模型暫未啟用"
+    },
+    "schemaVersion": "Schema",
+    "requestId": "請求 ID",
+    "backToStudio": "返回",
+    "modelLabel": "模型",
+    "imageLab": {
+      "tab": {
+        "history": "歷史",
+        "community": "社區",
+        "tutorial": "教學",
+        "placeholder": "即將上線"
+      },
+      "welcome": {
+        "title": "歡迎來到 Fizz 圖像實驗室",
+        "subtitle": "在下方描述畫面，每次生成都會歸檔到歷史中"
+      },
+      "empty": {
+        "title": "歷史為空",
+        "subtitle": "試試以下示例，看看 {model} 的表現"
+      },
+      "example": {
+        "one": "一隻小龍吉祥物在溫馨圖書館中讀書，柔和金色光線，工作室插畫風",
+        "two": "俯視一張貼滿彩色便利貼的桌面，柔和粉彩，等距視角",
+        "three": "黃昏懸崖上孤獨的燈塔，戲劇性雲層，電影感攝影"
+      },
+      "compose": {
+        "placeholder": "描述你想生成的畫面",
+        "create": "生成",
+        "queued": "排隊中",
+        "queuedShort": "排隊中",
+        "generating": "生成中",
+        "busy": "上一張仍在生成，請稍候",
+        "addImage": "添加圖片",
+        "addReferences": "添加參考圖",
+        "outputs": "數量"
+      },
+      "cell": {
+        "queued": "排隊中",
+        "retry": "重試",
+        "download": "下載"
+      },
+      "stage": {
+        "running": "生成中",
+        "uploading": "上傳中",
+        "fetching": "拉取中"
+      },
+      "queue": {
+        "ready": "就緒",
+        "configuring": "該區域啟用後即可生成",
+        "position": "排第 {n} 位"
+      },
+      "error": {
+        "submitFailed": "生成任務提交失敗",
+        "timeout": "生成超時，換小一點的尺寸或稍後再試",
+        "empty": "生成完成但沒有產出",
+        "failed": "生成失敗"
+      },
+      "eyebrow": "AI 生圖",
+      "title": "文生圖",
+      "subtitle": "先把畫面說清楚；需要更精確時，再補充參考圖和細節參數。",
+      "source": {
+        "label": "來源",
+        "live": "在線模型",
+        "preview": "本地預覽",
+        "previewNote": "已切換到本地預覽。"
+      },
+      "metric": {
+        "estimate": "預估",
+        "outputs": "輸出"
+      },
+      "brief": {
+        "title": "創作設定",
+        "subtitle": "寫清楚主體、風格、構圖和想捕捉的瞬間。"
+      },
+      "cost": {
+        "helper": "積分為預估值，最終以生成後的實際用量為準。",
+        "final": "最終計費",
+        "providerUsage": "服務用量"
+      },
+      "preview": {
+        "title": "結果畫布",
+        "ready": "可檢查",
+        "waiting": "結果會顯示在這裏",
+        "copyPrompt": "複製描述",
+        "download": "下載",
+        "emptyPrompt": "還沒有畫面描述",
+        "ossReady": "可保存圖片",
+        "idleTitle": "先描述畫面，再開始生成",
+        "idleDesc": "預設參數適合快速出第一版；需要精修時再展開更多設定。",
+        "generatingTitle": "生成中",
+        "generatingDesc": "請保持頁面打開，圖片完成後會顯示在這裏。",
+        "queuedTitle": "已排隊",
+        "queuedDesc": "圖片正在準備中。",
+        "needsAttention": "需要處理",
+        "previewRun": "正在準備預覽",
+        "submitting": "正在提交生成"
+      },
+      "references": {
+        "title": "參考圖",
+        "helper": "可選。只有當參考圖能說明風格或構圖時再添加。",
+        "limit": "最多 {count} 張。"
+      },
+      "sizePreset": {
+        "auto": "自動",
+        "square": "1:1",
+        "landscape": "橫圖",
+        "portrait": "豎圖",
+        "wide": "寬屏",
+        "vertical": "9:16 直屏",
+        "squareHd": "1:1 高清",
+        "uhd": "4K"
+      },
+      "options": {
+        "auto": "自動",
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "opaque": "不透明",
+        "png": "PNG",
+        "jpeg": "JPEG",
+        "webp": "WebP"
+      },
+      "modelFit": {
+        "title": "模型適配",
+        "prompt": "長提示詞和視覺方向",
+        "references": "可選的參考圖編輯",
+        "opaque": "不透明背景輸出"
+      },
+      "capabilities": {
+        "title": "能力",
+        "softLimit": "相關選項會根據目前設定自動出現。"
+      },
+      "runState": {
+        "title": "運行狀態"
+      },
+      "availability": {
+        "label": "區域"
+      },
+      "docs": {
+        "title": "文檔"
+      },
+      "softWhen": {
+        "outputCompression": "切換到 JPEG 或 WebP 後可設定。",
+        "partialImages": "開啟串流預覽後可設定。",
+        "currentChoice": "目前選擇暫時用不到。",
+        "default": "需要時會自動出現。"
+      }
+    },
+    "schema": {
+      "preflight": {
+        "estimatedCredits": "預估積分"
+      },
+      "group": {
+        "prompt": {
+          "title": "畫面描述"
+        },
+        "generation": {
+          "title": "生成"
+        },
+        "references": {
+          "title": "參考素材"
+        },
+        "output": {
+          "title": "輸出"
+        },
+        "advanced": {
+          "title": "進階"
+        },
+        "media": {
+          "title": "媒體"
+        },
+        "metadata": {
+          "title": "元資料"
+        }
+      },
+      "field": {
+        "prompt": {
+          "title": "描述內容",
+          "label": "描述內容"
+        },
+        "size": {
+          "title": "尺寸",
+          "label": "尺寸"
+        },
+        "quality": {
+          "title": "質素",
+          "label": "質素"
+        },
+        "outputs": {
+          "title": "輸出數量",
+          "label": "輸出數量"
+        },
+        "referenceImages": {
+          "title": "參考圖",
+          "label": "參考圖"
+        },
+        "seed": {
+          "title": "隨機種子",
+          "label": "隨機種子"
+        },
+        "duration": {
+          "title": "時長",
+          "label": "時長"
+        },
+        "variants": {
+          "title": "變體",
+          "label": "變體"
+        },
+        "background": {
+          "title": "背景",
+          "label": "背景"
+        },
+        "outputFormat": {
+          "title": "輸出格式",
+          "label": "輸出格式"
+        },
+        "outputCompression": {
+          "title": "壓縮",
+          "label": "壓縮",
+          "description": "JPEG 或 WebP 輸出的壓縮級別。"
+        },
+        "moderation": {
+          "title": "內容審核",
+          "label": "內容審核"
+        },
+        "stream": {
+          "title": "串流返回局部圖",
+          "label": "串流返回局部圖"
+        },
+        "partialImages": {
+          "title": "局部圖數量",
+          "label": "局部圖數量",
+          "description": "串流生成時請求返回的局部圖數量。"
+        }
+      },
+      "media": {
+        "url": {
+          "title": "URL"
+        },
+        "mimeType": {
+          "title": "MIME 類型"
+        },
+        "name": {
+          "title": "檔案名稱"
+        },
+        "bytes": {
+          "title": "位元組數"
+        }
+      },
+      "output": {
+        "images": {
+          "title": "圖片",
+          "label": "圖片"
+        },
+        "videos": {
+          "title": "影片",
+          "label": "影片"
+        },
+        "storagePath": {
+          "title": "儲存路徑"
+        },
+        "width": {
+          "title": "寬度"
+        },
+        "height": {
+          "title": "高度"
+        },
+        "duration": {
+          "title": "時長"
+        },
+        "mimeType": {
+          "title": "MIME 類型"
+        },
+        "bytes": {
+          "title": "位元組數"
+        },
+        "providerMetadata": {
+          "title": "服務元資料",
+          "label": "服務元資料"
+        }
+      }
+    },
+    "gptImage2": {
+      "prompt": {
+        "description": "描述你希望生成或編輯的畫面。"
+      },
+      "size": {
+        "description": "使用 auto 或 WIDTHxHEIGHT。寬高必須是 16 的倍數；總像素範圍為 655360-8294400；寬高比最高 3:1。",
+        "hint": "先選常用比例；自訂 WIDTHxHEIGHT 可透過 schema/API 使用。"
+      },
+      "referenceImages": {
+        "description": "用於說明風格、構圖或局部細節的參考圖片。最多 16 張。"
+      },
+      "background": {
+        "description": "目前支援自動或不透明背景。"
+      }
     }
   }
 }

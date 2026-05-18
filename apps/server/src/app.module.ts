@@ -1,11 +1,26 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { AuthModule, AuthGuard } from './auth';
+import { DbModule } from './infra/db/db.module';
+import { HealthModule } from './infra/health/health.module';
+import { RealtimeModule } from './infra/realtime/realtime.module';
+import { RedisModule } from './infra/redis/redis.module';
 import { SparkModule } from './spark/spark.module';
 
 @Module({
-  imports: [AuthModule, AssistantModule, SparkModule],
+  imports: [
+    // Infra modules first — global, others can inject PrismaService / REDIS.
+    DbModule,
+    RedisModule,
+    AuthModule,
+    AssistantModule,
+    SparkModule,
+    AiGenerationModule,
+    RealtimeModule,
+    HealthModule,
+  ],
   providers: [
     {
       provide: APP_GUARD,

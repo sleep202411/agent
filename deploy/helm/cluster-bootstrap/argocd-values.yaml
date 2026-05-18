@@ -1,0 +1,115 @@
+# ArgoCD Helm values — fizzdragon-com AKS
+#
+# Pinned chart: argo/argo-cd 9.5.14 (app v3.4.2)
+# Install:
+#   helm upgrade --install argocd argo/argo-cd \
+#     -n argocd --create-namespace \
+#     --version 9.5.14 \
+#     -f deploy/helm/cluster-bootstrap/argocd-values.yaml
+#
+# Access (until ingress hardening lands in Phase 5):
+#   kubectl port-forward svc/argocd-server -n argocd 8080:443
+#   Initial admin password:
+#     kubectl -n argocd get secret argocd-initial-admin-secret \
+#       -o jsonpath='{.data.password}' | base64 -d
+#
+# Security posture: NO public ingress yet. ArgoCD has full cluster
+# admin and access to all Helm releases — exposing publicly without
+# proper SSO/MFA + IP allowlist is a high-blast-radius risk. Add
+# ingress + cert + SSO in Phase 5 after baseline GitOps is proven.
+
+# Single replica for all components (cost-conscious; can scale up
+# when we add a second system node).
+global:
+  domain: argocd.fizzdragon-internal  # placeholder; not exposed
+  # No publicly trusted cert yet — ArgoCD self-signs for internal traffic.
+
+# --- argocd-server ---
+server:
+  replicas: 1
+  # Run server in HTTPS mode (default). Port-forward terminates TLS at the client.
+  service:
+    type: ClusterIP  # NOT publicly exposed
+  # No ingress — port-forward only until Phase 5 hardening.
+  ingress:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# --- argocd-application-controller (the reconciler) ---
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# --- argocd-repo-server (clones git repos, renders manifests) ---
+repoServer:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# --- argocd-applicationset-controller (templated app generation) ---
+applicationSet:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# --- argocd-notifications-controller ---
+notifications:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
+
+# --- argocd-dex-server (SSO) — disabled, no SSO yet ---
+dex:
+  enabled: false
+
+# --- redis (ArgoCD's internal cache) ---
+redis:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Prevent UI surface from being trivially accessible if someone misconfigures
+# port-forward / network. Disable anonymous access entirely.
+configs:
+  cm:
+    create: true
+    # Force login screen; no anonymous read.
+    users.anonymous.enabled: "false"
+    # Allow Helm charts as a source type (we'll be deploying Helm releases).
+    kustomize.buildOptions: ""
+    # Log audit events at info level.
+    application.instanceLabelKey: argocd.argoproj.io/instance
+  params:
+    server.insecure: false  # serve HTTPS (self-signed for now)

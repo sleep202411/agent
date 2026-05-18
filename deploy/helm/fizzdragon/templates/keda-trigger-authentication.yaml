@@ -1,0 +1,26 @@
+{{- if .Values.agentWorker.keda.enabled -}}
+{{/*
+KEDA TriggerAuthentication — gives the KEDA operator the Redis address +
+password to poll BullMQ queue depth. Both values come from the projected
+`fizzdragon-secrets` K8s Secret, which in turn pulls from Key Vault via
+SecretProviderClass. No credentials in the manifest itself.
+
+One auth resource, reused by all Redis-based ScaledObjects (currently
+just agent-worker, but new triggers can `authenticationRef` this too).
+*/}}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ .Release.Name }}-redis-auth
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" (merge (dict "component" "keda-auth") .) | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: address
+      name: {{ .Values.secrets.projectedName }}
+      key: REDIS_ADDRESS
+    - parameter: password
+      name: {{ .Values.secrets.projectedName }}
+      key: REDIS_PASSWORD
+{{- end }}

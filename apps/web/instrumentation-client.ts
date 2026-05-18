@@ -25,5 +25,9 @@ posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
   defaults: "2026-01-30",
   person_profiles: "identified_only",
   capture_exceptions: true,
-  debug: process.env.NODE_ENV === "development",
+  // PostHog `debug: true` floods the dev console (every $autocapture /
+  // $snapshot / $heatmap / $web_vitals printed in real time). Off by
+  // default; flip with `?ph_debug=1` URL or `localStorage.debug=true`
+  // when you genuinely need to inspect a PostHog event.
+  debug: false,
 });

@@ -1,0 +1,56 @@
+# ArgoCD Application — fizzdragon-com (.com side, AKS).
+#
+# Bootstrap (one-time): kubectl apply -f deploy/argocd/applications/fizzdragon-com.yaml
+# After that, ArgoCD watches deploy/helm/fizzdragon/ on the main branch
+# and syncs any change (including CI bot's image-tag bumps from build-com-aks.yml).
+#
+# Branch choice: main is the prod-deploy branch in this project's GitLab
+# Flow with environment branches. develop integrates daily work and
+# auto-deploys to staging (build-staging.yml); main is what reaches prod
+# users (this Application + build-com-aks.yml). Mirrors build-prod.yml's
+# prod-cn guard for the ECS side.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fizzdragon-com
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: fizzdragon-platform
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Fizzdragon-Pte-Ltd-2/fizzdragon-platform.git
+    targetRevision: main
+    path: deploy/helm/fizzdragon
+    helm:
+      releaseName: fizzdragon
+      # Override values at deploy time without editing the file.
+      # Image tags live in values.yaml and are bumped by CI; nothing else
+      # needs overriding for prod-com today.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fizzdragon-com
+  syncPolicy:
+    automated:
+      prune: true      # remove resources no longer in git
+      selfHeal: true   # revert drift from manual kubectl edits
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+  # Ignore the agent-worker replica count once KEDA is in charge —
+  # otherwise ArgoCD would constantly revert KEDA's scaling decisions.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: fizzdragon-agent-worker
+      jsonPointers:
+        - /spec/replicas

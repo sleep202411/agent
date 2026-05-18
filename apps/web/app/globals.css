@@ -197,6 +197,15 @@
   }
 }
 
+@keyframes gallery-shimmer {
+  0% {
+    background-position: 200% 50%;
+  }
+  100% {
+    background-position: -200% 50%;
+  }
+}
+
 /*
  * Partner-logo marquee — used by `app/(site)/_components/partners-marquee.tsx`.
  * The track holds two copies of the logo list back-to-back; translating

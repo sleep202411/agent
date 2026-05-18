@@ -1,0 +1,51 @@
+# KEDA (Kubernetes Event-Driven Autoscaler) Helm values — fizzdragon-com AKS
+#
+# Pinned chart: kedacore/keda 2.19.0
+# Install:
+#   helm upgrade --install keda kedacore/keda \
+#     -n keda --create-namespace \
+#     --version 2.19.0 \
+#     -f deploy/helm/cluster-bootstrap/keda-values.yaml
+#
+# KEDA watches external metric sources (Redis queue length, in our case) and
+# scales Deployments via custom HPA. Pod scale 0->N then triggers cluster
+# autoscaler to scale nodes 0->N.
+#
+# The ScaledObject for agent-worker lives with the application Helm chart
+# (Phase 2), not here. KEDA control plane runs cluster-wide in this namespace.
+
+# Run all KEDA components on the system pool (worker pool would defeat the
+# purpose — KEDA controller must be always-on to detect when to scale up).
+operator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1000m
+      memory: 1000Mi
+
+metricsServer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1000m
+      memory: 1000Mi
+
+webhooks:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 50Mi
+    limits:
+      cpu: 500m
+      memory: 500Mi
+
+# Prometheus metrics exposed for future scrape.
+prometheus:
+  metricServer:
+    enabled: true
+  operator:
+    enabled: true

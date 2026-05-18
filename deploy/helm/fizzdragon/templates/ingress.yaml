@@ -1,0 +1,46 @@
+{{- if .Values.ingress.enabled -}}
+{{- range .Values.ingress.entries }}
+{{- $entry := . -}}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $.Release.Name }}-{{ $entry.name }}-ingress
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" (merge (dict "component" (printf "ingress-%s" $entry.name)) $) | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    {{- if $entry.rewriteTarget }}
+    nginx.ingress.kubernetes.io/rewrite-target: {{ $entry.rewriteTarget | quote }}
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    {{- end }}
+    {{- if $entry.certManager }}
+    cert-manager.io/cluster-issuer: {{ $entry.certManager | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ $.Values.ingress.className }}
+  tls:
+    - hosts:
+        - {{ $entry.host | quote }}
+      secretName: {{ $entry.secretName }}
+  rules:
+    - host: {{ $entry.host | quote }}
+      http:
+        paths:
+          {{- if $entry.rewriteTarget }}
+          - path: /(.*)
+            pathType: ImplementationSpecific
+          {{- else }}
+          - path: /
+            pathType: Prefix
+          {{- end }}
+            backend:
+              service:
+                name: {{ $.Release.Name }}-web
+                port:
+                  number: {{ $.Values.web.containerPort }}
+{{- end }}
+{{- end }}

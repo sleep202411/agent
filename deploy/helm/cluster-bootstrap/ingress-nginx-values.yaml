@@ -1,0 +1,52 @@
+# ingress-nginx Helm values — fizzdragon-com AKS
+#
+# Pinned chart: ingress-nginx/ingress-nginx 4.15.1 (app v1.15.1)
+# Install:
+#   helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+#     -n ingress-nginx --create-namespace \
+#     --version 4.15.1 \
+#     -f deploy/helm/cluster-bootstrap/ingress-nginx-values.yaml
+#
+# Will be adopted by ArgoCD in Phase 3.
+
+controller:
+  # Single replica — we have a 1-node system pool. Increase when we add a 2nd system node.
+  replicaCount: 1
+
+  # Standard LB by default on AKS; preserve client source IP.
+  service:
+    externalTrafficPolicy: Local
+    # AKS auto-provisions a public Standard LB with a public IP.
+    # No annotations needed for the basic case.
+
+  # Conservative resources — controller is lightweight.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Pin to system pool. Worker pool has a taint that repels pods without toleration.
+  # We leave nodeSelector unset because the system pool's nodes have no special label,
+  # and the worker pool taint already keeps pods away from worker nodes.
+
+  # Expose Prometheus metrics endpoint for future Container Insights / Prometheus scrape.
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false  # flip to true once Prometheus Operator is installed
+
+  # Disable snippet annotations — they're a security footgun and we don't need them.
+  allowSnippetAnnotations: false
+
+  # Use the IngressClass mechanism (modern). Pods reference this class name.
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: true  # become the default IngressClass for the cluster
+
+# Default backend serves 404. We don't need a custom one — disable to save resources.
+defaultBackend:
+  enabled: false

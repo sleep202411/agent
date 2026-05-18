@@ -450,6 +450,43 @@ Two systems, used together:
 
 No shadow at this layer. Hierarchy is read from lightness step-up.
 
+### Cards without borders (default)
+
+Solid surfaces (cards, panels, workbench tools, list rows) **do not get
+a border by default**. They earn their separation from the canvas
+through the lightness step in the surface system above — `bg-card`
+(surface-1) is ~4 units lighter than `bg-background` (canvas) on dark,
+and that delta is the visual cue the eye reads as "this is a distinct
+block".
+
+Why we avoid `border` on cards:
+
+- **Borders accumulate visual noise.** Three nested cards each with a
+  hairline ring stack three 1px lines on the user's eye. The dark-on-
+  dark surface system was designed to avoid exactly this.
+- **Borders fight the lightness step.** If `bg-card` already lifts the
+  surface visually, adding a `border-border` ring on top is redundant
+  — and the ring is brighter than the step itself, so the eye latches
+  onto the ring and ignores the surface intent.
+- **Borders blur the marketing-vs-glass distinction.** Borders are the
+  signature of the glass-cocktail system (see below). Reserving them
+  for glass lets glass elements stay visually distinct from solid
+  cards.
+
+Exceptions where a hairline IS allowed:
+
+- Inside a card, to mark a **structural divider** (header → body,
+  body → footer). Use `border-border/60` and only on one axis (top or
+  bottom).
+- On **inputs** (textarea, input, dropdown trigger) — the input ring
+  is a separate affordance and may carry a 1px ring at rest.
+- On **glass surfaces** — they require `glass-border` (8% white) as
+  part of the glass cocktail; that's not a "card border".
+
+If two adjacent panels need a clearer divider than the lightness step
+alone provides (e.g., the form / preview split in the workbench), put
+**whitespace** between them (`gap-3` / `gap-4`), not borders.
+
 ### Liquid glass (floating UI)
 
 | Level            | Treatment                                                                          | Use                                      |
@@ -757,6 +794,128 @@ The plaza pages all use the same hero contract. Three variants:
 **TODO:** consolidate the three variants into a single
 `<HeroBand variant="marketing" | "plaza" | "detail">` component. Today
 each page hand-rolls its hero — that's the work-in-progress.
+
+### AI tool workbench (canonical)
+
+The shape every dedicated AI generation surface should adopt
+(`/art-studio/image`, future `/art-studio/video`, `/art-studio/edit`,
+batch consoles, etc.). Inspired by fal.ai / AiPose / Replicate
+playgrounds — adapted to FizzDragon's red-on-black brand: **steal
+their structure and rhythm, keep our colour system intact**.
+
+**Anatomy** (three persistent columns, no page-level hero):
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  Studio top nav (existing, fixed, 56px)                            │
+├──────────┬─────────────────────────────┬───────────────────────────┤
+│          │  [model name + 1-line desc] │                           │
+│          │  ─────────────────────────  │                           │
+│ Studio   │                             │                           │
+│ side     │  Schema-driven form         │   Preview canvas          │
+│ rail     │  (groups, scrollable)       │   (idle/generating/       │
+│          │                             │    error/done states)     │
+│ (existing│                             │                           │
+│ pill or  │  ─────────────────────────  │                           │
+│ rail)    │  [Generate +N credits]      │                           │
+│          │  (red, sticky bottom)       │                           │
+└──────────┴─────────────────────────────┴───────────────────────────┘
+   80px        420px (clamp)                 1fr (rest of viewport)
+```
+
+**Hard rules:**
+
+- **No page-level hero.** No eyebrow + title + subtitle stacked above
+  the workbench. Title goes _inside_ the form panel, small.
+- **Form panel = 420px clamp.** Not responsive to viewport width.
+  Predictable form density beats fluid stretching.
+- **Preview = `flex-1`.** Grows with viewport. On `<xl` we collapse
+  to vertical stack (form on top, preview below) only if the screen is
+  truly narrow.
+- **Generate is the only red surface in the workbench.** Brand-primary
+  (`#E52227`) is the visual signal that this is the action. Everything
+  else is monochrome glass / hairline.
+- **Both panels are inset rounded surfaces.** The page bg is the
+  canvas; form + preview are tangible `bg-card` cards floating in it
+  with `gap-3` between them and `p-3` from the page edge. Edge-to-edge
+  panels with only a hairline divider read as a single sidebar; the
+  rounded inset reads as "two tools on a workbench" which is the
+  correct mental model.
+- **No borders on cards.** Cards earn their separation from the canvas
+  via the lightness step (`bg-card` vs `bg-background`) — not via a
+  ring or stroke. See "Cards without borders" below for why this
+  matters globally.
+
+**Form panel structure** (top to bottom):
+
+1. **Compact header** (`px-4 md:px-5 py-3`, hairline bottom):
+   - `size-7` rounded-md icon tile (red-tinted, `bg-primary/10`)
+   - Model name (`text-sm font-semibold`)
+   - One-line description (`text-[11px] text-muted-foreground truncate`)
+2. **Scrollable body** (`overflow-y-auto px-4 md:px-5 py-4`):
+   - Sections from the schema's `x-ui.groups`
+   - Group title: `text-base font-bold text-foreground` —
+     **bold normal-case label**, NOT uppercase micro-text. Uppercase
+     reads too thin in 420px form panels and breaks for CJK locales
+     (Chinese / Japanese / Korean have no case). The bold weight + base
+     size matches the workbench rhythm and works in every script.
+   - Optional group description: `text-[11px] text-muted-foreground`
+     on the next line.
+   - Field stack inside group: `space-y-3`
+3. **Pinned footer** (`shrink-0 border-t border-border bg-background/80
+px-4 md:px-5 py-3 backdrop-blur`):
+   - Single primary CTA, full-width, red:
+     `bg-primary text-primary-foreground rounded-full h-11`
+   - Cost chip on the right inside the button:
+     `ml-1 rounded-md bg-white/15 px-2 py-0.5 text-xs font-semibold`
+   - Only the chip carries `+N` — no separate "credits" label below.
+
+**Preview canvas** (`flex-1 overflow-hidden p-4 md:p-6`):
+
+- **Idle**: centred icon (`IconPhoto`, `size-12 opacity-50`) + 2-line
+  copy ("Generate your first image" + one short hint).
+- **Generating**: centred spinner + short reassurance copy. No partial
+  images yet (streaming is P2).
+- **Error**: centred warning icon (destructive) + message + Retry
+  button. Never blocks the form.
+- **Done**: image fills available space (`max-h-full max-w-full
+object-contain`). If `n > 1`, a thumbnail strip below at `size-16`
+  with `rounded-lg border-2` (active item gets `border-primary`).
+
+**Form controls** (override the looser DESIGN.md form-field defaults
+for this workbench only — denser):
+
+| Field type                                           | Control                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------- |
+| `prompt` (textarea)                                  | `min-h-36 rounded-lg bg-background/70` — primary        |
+| Enum ≤ 4 options                                     | Segmented (`rounded-full p-1 bg-white/[0.04]`)          |
+| Enum > 4 options OR mixed values (`1024×1024 · 1:1`) | Dropdown (`SelectControl`)                              |
+| Integer counter                                      | Stepper (`±` buttons + tabular value)                   |
+| Number range                                         | Slider with right-aligned value chip                    |
+| Boolean                                              | Switch                                                  |
+| File / image input                                   | Drag-drop zone (dashed `border-white/15`, `rounded-xl`) |
+
+**Don'ts:**
+
+- ❌ Don't card-wrap each group (no `border + bg` on group containers).
+  Section dividers are uppercase micro-labels + whitespace. Cards add
+  visual noise the workbench can't afford.
+- ❌ Don't put validation errors as toast — show inline under the
+  control. The user is _in_ the form, popups break flow.
+- ❌ Don't show a "credits balance" widget inside the workbench. The
+  global studio nav already has one; duplicating splits attention.
+- ❌ Don't gradient the Generate button. Solid `bg-primary` only —
+  gradient CTAs are reserved for the "one-click 成片" / project-level
+  shortcut on the project header (DESIGN.md §"Hero band"), not for
+  workspace tools.
+- ❌ Don't render a page-level eyebrow + title above the workbench.
+  This is a _tool_, not a marketing landing.
+
+**Reference implementation:** `app/(studio)/art-studio/image/page.tsx`
+
+- `_components/foundry-form.tsx` + `_components/foundry-preview.tsx`
+  (May 2026). Future image-to-video / image-edit pages should follow the
+  same shell — only the schema and the preview output type change.
 
 ---
 
