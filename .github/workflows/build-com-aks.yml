@@ -114,9 +114,17 @@ jobs:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          # Skip the implicit `az account set` after auth. The UAMI's
+          # subscription-scoped Reader role is sometimes invisible to ARM
+          # right after token issuance (Azure AD ↔ ARM eventual consistency
+          # window) — that flake surfaces as "No subscriptions found"
+          # even though the role assignment is in place. With this flag
+          # azure/login@v2 succeeds on the token alone and each az command
+          # below carries an explicit --subscription, removing the race.
+          allow-no-subscriptions: true
 
       - name: ACR login
-        run: az acr login --name ${{ env.ACR_NAME }}
+        run: az acr login --name ${{ env.ACR_NAME }} --subscription ${{ env.AZURE_SUBSCRIPTION_ID }}
 
       - name: Load apps/web/.env.production.com into job env
         if: matrix.needs_build_args
@@ -229,6 +237,7 @@ jobs:
           client-id: ${{ env.AZURE_CLIENT_ID }}
           tenant-id: ${{ env.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+          allow-no-subscriptions: true
 
       - name: Prune old SHA tags per repo
         run: |
@@ -239,6 +248,7 @@ jobs:
             mapfile -t to_delete < <(
               az acr repository show-tags \
                 --name "$ACR_NAME" \
+                --subscription "$AZURE_SUBSCRIPTION_ID" \
                 --repository "$repo" \
                 --orderby time_desc \
                 --output tsv \
@@ -253,6 +263,7 @@ jobs:
                 echo "  - $tag"
                 az acr repository delete \
                   --name "$ACR_NAME" \
+                  --subscription "$AZURE_SUBSCRIPTION_ID" \
                   --image "$repo:$tag" \
                   --yes >/dev/null
               done
