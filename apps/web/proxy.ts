@@ -117,26 +117,13 @@ export function proxy(request: NextRequest) {
 
   // No prefix → 307 redirect to /<picked-locale><pathname>. Cookie /
   // Accept-Language can change between requests, so the redirect must
-  // not be cached as permanent.
+  // not be cached as permanent. URL stays clean on studio host — the
+  // /art-studio prefix is applied internally below via rewrite, not
+  // surfaced in the address bar.
   if (matchedLocale === null) {
     const target = pickRedirectLocale(request);
     const url = request.nextUrl.clone();
-    // Studio subdomain at root: collapse the locale-redirect and the
-    // studio-home redirect into a single hop.
-    url.pathname =
-      studioHost && pathname === "/"
-        ? `/${target}/art-studio`
-        : `/${target}${pathname === "/" ? "" : pathname}`;
-    return NextResponse.redirect(url, 307);
-  }
-
-  // Locale prefix present, root path, studio host → bounce to
-  // /<locale>/art-studio so the studio surface is what the user sees
-  // when they land on the dedicated subdomain. Deep links continue to
-  // resolve normally; only `/` is intercepted.
-  if (studioHost && rewrittenPathname === "/") {
-    const url = request.nextUrl.clone();
-    url.pathname = `/${matchedLocale}/art-studio`;
+    url.pathname = `/${target}${pathname === "/" ? "" : pathname}`;
     return NextResponse.redirect(url, 307);
   }
 
@@ -153,11 +140,23 @@ export function proxy(request: NextRequest) {
 
   // Prefix present → rewrite to the unprefixed path internally and
   // attach x-locale header for server components.
+  //
+  // On studio host the WHOLE subdomain IS art-studio, so transparently
+  // prepend `/art-studio` to the internal path. The URL bar stays clean
+  // (e.g. studio.fizzdragon.com/zh-CN/projects), Next.js routes to
+  // app/(studio)/art-studio/projects/page.tsx. Paths the art-studio
+  // tree doesn't define (e.g. /faq, /ips) 404 by design — those belong
+  // to the marketing domain.
+  let internalPathname = rewrittenPathname;
+  if (studioHost) {
+    internalPathname = `/art-studio${rewrittenPathname === "/" ? "" : rewrittenPathname}`;
+  }
+
   const headers = new Headers(request.headers);
   headers.set("x-locale", matchedLocale);
 
   const url = request.nextUrl.clone();
-  url.pathname = rewrittenPathname;
+  url.pathname = internalPathname;
   url.search = search;
   return NextResponse.rewrite(url, { request: { headers } });
 }
