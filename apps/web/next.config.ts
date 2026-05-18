@@ -31,6 +31,20 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyTimeout: 31 * 60 * 1000,
   },
+  // /projects/<id>/* moved into the studio route group as
+  // /art-studio/projects/<id>/* — see proxy.ts and the route tree under
+  // app/(studio)/art-studio/projects/. Old bookmarks and external links
+  // permanently redirect (308). On the studio subdomain, proxy.ts
+  // intercepts before this redirect runs, so the URL bar stays clean.
+  async redirects() {
+    return [
+      {
+        source: "/projects/:id/:rest*",
+        destination: "/art-studio/projects/:id/:rest*",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return {
       beforeFiles: [
