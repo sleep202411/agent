@@ -29,22 +29,38 @@ image:
 ingress:
   enabled: true
   className: nginx
-  # Production host — same as the legacy ECS-hosted domain.
-  # Currently fizzstudio.fizzdragon.com DNS points at 136 ECS; flip to
-  # this AKS LB IP (20.198.160.91) when ready to cut over.
-  # `aks.fizzdragon.com` is an optional canary — add it here if you also
-  # want a permanent AKS-only debug hostname (cert covers both via SAN).
-  hosts:
-    - fizzstudio.fizzdragon.com
-    # - aks.fizzdragon.com
-  tls:
-    enabled: true
-    # cert-manager ClusterIssuer. Prod issues browser-trusted certs.
-    # Note: cert won't issue until DNS for `hosts` resolves to this LB IP
-    # (HTTP-01 challenge needs externally reachable hostname). Until then
-    # cert-manager retries; no harm, no rate-limit pressure at our volume.
-    clusterIssuer: letsencrypt-prod
-    secretName: fizzdragon-tls
+  # One Ingress resource is rendered per entry below — each can have its
+  # own TLS Secret, its own optional path rewrite, and its own optional
+  # cert-manager ClusterIssuer.
+  #
+  # TLS Secret strategy (locked-in 2026-05-18):
+  #   We use user-uploaded DigiCert certs stored as plain K8s TLS Secrets
+  #   (created out-of-band via `kubectl create secret tls`, not in this
+  #   chart so private keys never enter git). When a Secret already exists
+  #   AND certManager is empty, ingress-nginx serves it as-is.
+  #
+  #   When DigiCert nears expiry (~2026-10), either upload renewed
+  #   DigiCert and replace the same Secret, OR set certManager:
+  #   letsencrypt-prod on the entry to flip to LE auto-renewal. cert-manager
+  #   is already installed and ready (cluster-bootstrap), just dormant.
+  entries:
+    - name: main
+      # Production host. DNS currently points at 136 ECS; flip to this
+      # AKS LB IP (20.198.160.91) when ready to cut over.
+      host: fizzstudio.fizzdragon.com
+      secretName: fizzdragon-tls
+      certManager: ""    # empty = use pre-uploaded Secret, no cert-manager involvement
+      rewriteTarget: ""  # no path rewrite, serve full Next.js app
+    - name: studio
+      # New dedicated subdomain for art-studio. Testing-phase: serves the
+      # full web app (same as main host) so we can browser-verify the AKS
+      # stack via real DNS + real cert without touching fizzstudio's DNS.
+      # Production-phase: add rewriteTarget: "/art-studio/$1" once Next.js
+      # i18n routing is adjusted.
+      host: studio.fizzdragon.com
+      secretName: fizzdragon-studio-tls
+      certManager: ""
+      rewriteTarget: ""
 
 # ---------------------------------------------------------------------------
 # Shared environment (non-secret config) injected into every app pod
