@@ -36,7 +36,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
 import { cn } from "@/lib/utils";
 import { CreateWorldDialog } from "./create-world-dialog";
-import { ProjectEditorDialog } from "@/app/projects/_components/project-editor-dialog";
+import { ProjectEditorDialog } from "@/app/(studio)/art-studio/projects/_components/project-editor-dialog";
 import type { ProjectOptionItem } from "@/src/types/workspace";
 
 const OSS_BASE = env.OSS_BASE_URL;
