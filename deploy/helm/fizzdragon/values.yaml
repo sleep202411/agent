@@ -14,6 +14,7 @@ azure:
     # UAMI client ID — must match the SA annotation in cluster-bootstrap.
     clientId: a4bef907-12cf-4f90-bf1a-951be21e6371
     serviceAccountName: fizzdragon-com-app
+
 # ---------------------------------------------------------------------------
 # Image registry (ACR)
 # CI bumps `tag` per service via `helm upgrade --set <svc>.image.tag=<sha>`.
@@ -21,6 +22,7 @@ azure:
 image:
   registry: acrfizzdragoncom.azurecr.io
   pullPolicy: IfNotPresent
+
 # ---------------------------------------------------------------------------
 # Ingress — only `web` is internet-facing. server/agent stay ClusterIP.
 # ---------------------------------------------------------------------------
@@ -47,8 +49,8 @@ ingress:
       # AKS LB IP (20.198.160.91) when ready to cut over.
       host: fizzstudio.fizzdragon.com
       secretName: fizzdragon-tls
-      certManager: "" # empty = use pre-uploaded Secret, no cert-manager involvement
-      rewriteTarget: "" # no path rewrite, serve full Next.js app
+      certManager: ""    # empty = use pre-uploaded Secret, no cert-manager involvement
+      rewriteTarget: ""  # no path rewrite, serve full Next.js app
     - name: studio
       # New dedicated subdomain for art-studio. Testing-phase: serves the
       # full web app (same as main host) so we can browser-verify the AKS
@@ -59,6 +61,7 @@ ingress:
       secretName: fizzdragon-studio-tls
       certManager: ""
       rewriteTarget: ""
+
 # ---------------------------------------------------------------------------
 # Shared environment (non-secret config) injected into every app pod
 # that needs it. Secrets live in Key Vault, see secretProviderClass below.
@@ -78,6 +81,7 @@ sharedEnv:
   STORYOS_PERSONA_PROVIDER: deepseek
   STORYOS_PERSONA_MODEL: deepseek-v4-flash
   LOG_LEVEL: info
+
 # ---------------------------------------------------------------------------
 # Secret Provider Class — KV → projected K8s Secret `fizzdragon-secrets`.
 # Pods pull values via `envFrom: secretRef: fizzdragon-secrets`.
@@ -114,6 +118,7 @@ secrets:
       env: REDIS_ADDRESS
     - kv: redis-password
       env: REDIS_PASSWORD
+
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
 # ---------------------------------------------------------------------------
@@ -122,13 +127,13 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 9e21646eff7f3e52a0c8b24422839f2d45b7912c
+    tag: latest
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1000m, memory: 1Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -136,6 +141,7 @@ web:
       operator: Equal
       value: worker
       effect: NoSchedule
+
 # ---------------------------------------------------------------------------
 # server — NestJS API. Internal (ClusterIP).
 # ---------------------------------------------------------------------------
@@ -144,7 +150,7 @@ server:
   replicaCount: 1
   image:
     repository: fizzdragon-server
-    tag: 9e21646eff7f3e52a0c8b24422839f2d45b7912c
+    tag: latest
   containerPort: 3001
   env:
     PORT: "3001"
@@ -154,8 +160,8 @@ server:
     DISABLE_CONTENT_MODERATION: "false"
     AUTH_DISABLED: "false"
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1000m, memory: 1Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -163,6 +169,7 @@ server:
       operator: Equal
       value: worker
       effect: NoSchedule
+
 # ---------------------------------------------------------------------------
 # agent — Mastra API. Internal. Shares libsql with agent-worker via PVC.
 # ---------------------------------------------------------------------------
@@ -171,7 +178,7 @@ agent:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: 9e21646eff7f3e52a0c8b24422839f2d45b7912c
+    tag: latest
   containerPort: 4111
   env:
     PORT: "4111"
@@ -179,8 +186,8 @@ agent:
     MASTRA_DB_URL: "file:/app/data/mastra.db"
     # REDIS_URL from KV via projected `fizzdragon-secrets` (envFrom).
   resources:
-    requests: {cpu: 250m, memory: 1Gi}
-    limits: {cpu: 2000m, memory: 3Gi}
+    requests: { cpu: 250m, memory: 1Gi }
+    limits:   { cpu: 2000m, memory: 3Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -188,6 +195,7 @@ agent:
       operator: Equal
       value: worker
       effect: NoSchedule
+
 # ---------------------------------------------------------------------------
 # agent-worker — BullMQ consumer. Same image, different command.
 # Scales 0→N via KEDA (see agent-worker-scaledobject.yaml).
@@ -201,7 +209,7 @@ agentWorker:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: 9e21646eff7f3e52a0c8b24422839f2d45b7912c
+    tag: latest
   command: ["npx", "tsx", "src/worker.ts"]
   env:
     MASTRA_DB_URL: "file:/app/data/mastra.db"
@@ -216,8 +224,8 @@ agentWorker:
   # ~50MB per in-flight workflow, working set ~750MB + base 500MB ≈ 1.5Gi.
   # 3Gi limit leaves headroom for bulk phases (storyboard 30 shots batched).
   resources:
-    requests: {cpu: 500m, memory: 1Gi}
-    limits: {cpu: 1500m, memory: 3Gi}
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 1500m, memory: 3Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -226,16 +234,17 @@ agentWorker:
       value: worker
       effect: NoSchedule
   keda:
-    enabled: true # On from day 1 — full production form.
-    minReplicas: 1 # Keep at least one worker pod warm (queue is always-on).
-    maxReplicas: 6 # 6 × WORKER_CONCURRENCY 15 = 90 ≈ ECS baseline.
-    cooldownPeriod: 600 # 10 min before scaling down, matches docker-compose memory behaviour.
+    enabled: true   # On from day 1 — full production form.
+    minReplicas: 1  # Keep at least one worker pod warm (queue is always-on).
+    maxReplicas: 6  # 6 × WORKER_CONCURRENCY 15 = 90 ≈ ECS baseline.
+    cooldownPeriod: 600  # 10 min before scaling down, matches docker-compose memory behaviour.
     pollingInterval: 15
     # BullMQ queue list watched by the redis scaler.
     # Names mirror QUEUE_NAME / IMAGE_QUEUE_NAME in apps/agent/src/mastra/workflows/engine/.
     queues:
       - bull:storyos-workflows:wait
       - bull:asset-images:wait
+
 # ---------------------------------------------------------------------------
 # Redis — MANAGED via Azure Cache for Redis Basic C0 (`redis-fizzdragon-com`).
 # No in-cluster StatefulSet. Apps get rediss:// URL from KV `redis-conn-string`
@@ -250,5 +259,5 @@ agentWorker:
 # Mastra libsql PVC — Azure Files RWX, shared between agent + agent-worker.
 # ---------------------------------------------------------------------------
 agentData:
-  storageClass: azurefile-csi # Azure Files Standard LRS (cheapest tier)
+  storageClass: azurefile-csi  # Azure Files Standard LRS (cheapest tier)
   size: 10Gi
