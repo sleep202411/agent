@@ -162,7 +162,15 @@ export function toAssignmentDTO(a: EpisodeAssignment): EpisodeAssignmentDTO {
       a.revenueAmount !== null && a.revenueSetAt
         ? {
             amount: Number(a.revenueAmount),
-            currency: 'CNY' as const,
+            // DB column is VARCHAR(8) constrained to ALL_CURRENCIES;
+            // legacy rows default to "CNY". The cast is safe because
+            // the CHECK constraint upstream guarantees the value.
+            currency: (a.revenueCurrency ??
+              'CNY') as EpisodeAssignmentDTO['revenue'] extends infer R
+              ? R extends { currency: infer C }
+                ? C
+                : never
+              : never,
             setAt: isoReq(a.revenueSetAt),
             setByUserId: a.revenueSetById ?? '',
           }

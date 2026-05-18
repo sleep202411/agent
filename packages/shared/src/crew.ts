@@ -209,7 +209,7 @@ export interface EpisodeAssignmentDTO {
   status: AssignmentStatus;
   submission: { url: string | null; note: string | null; submittedAt: string } | null;
   reviewNote: { reason: string; suggestion: string | null; rejectedAt: string } | null;
-  revenue: { amount: number; currency: "CNY"; setAt: string; setByUserId: string } | null;
+  revenue: { amount: number; currency: CurrencyCode; setAt: string; setByUserId: string } | null;
   updatedAt: string;
 }
 

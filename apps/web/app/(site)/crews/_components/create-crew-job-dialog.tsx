@@ -40,10 +40,9 @@ import {
 import { SwitchControl } from "@/components/ui/schema-field/switch-control";
 import { TagInput } from "@/components/ui/tag-input";
 import { cn } from "@/lib/utils";
-import { CURRENT_CELL } from "@/src/lib/region/cell";
+import { allowedCurrenciesForCell, defaultCurrencyForCell } from "@/src/lib/region/cell";
 import { useTranslatedPresetPositions } from "@/app/(site)/crews/_hooks/use-position-label";
 import {
-  ALL_CURRENCIES,
   CURRENCY_SYMBOLS,
   CrewApiError,
   useCreatePosition,
@@ -94,15 +93,6 @@ const SALARY_PERIOD_OPTIONS: { value: SalaryPeriod; key: string }[] = [
   { value: "episode", key: "salaryPeriodEpisode" },
   { value: "project", key: "salaryPeriodProject" },
 ];
-
-function allowedCurrenciesForCell(): readonly CurrencyCode[] {
-  if (CURRENT_CELL === "cn") return ["CNY"];
-  return ALL_CURRENCIES;
-}
-
-function defaultCurrencyForCell(): CurrencyCode {
-  return CURRENT_CELL === "cn" ? "CNY" : "USD";
-}
 
 export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPositionDialogProps) {
   const t = useTranslations("workspace");

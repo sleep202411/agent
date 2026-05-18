@@ -1,15 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconCheck, IconEdit, IconLoader2, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { allowedCurrenciesForCell, defaultCurrencyForCell } from "@/src/lib/region/cell";
+import {
   useSetAssignmentRevenue,
   type EpisodeAssignment,
 } from "@/app/(site)/crews/_hooks/use-episodes";
+import { type CurrencyCode } from "@/app/(site)/crews/_hooks/use-crew";
+import { CURRENCY_SYMBOLS, ZERO_DECIMAL_CURRENCIES } from "@repo/shared/crew";
 
 interface RevenueCellProps {
   crewId: string;
@@ -20,33 +30,62 @@ interface RevenueCellProps {
 }
 
 /**
- * Inline-editable revenue display.
+ * Inline-editable revenue display with cell-aware currency picker.
  *
  * - Non-finance viewers see "—" or the formatted amount.
- * - Finance sees a pencil; click → numeric input with Save / Cancel.
- * - Empty submit blocked at the canSubmit guard; backend rejection
- *   surfaces through toast.
+ * - Finance sees a pencil; click → numeric input + currency picker
+ *   (hidden on cells with a single allowed currency like CN).
+ * - JPY etc render whole numbers (zero-decimal); others render two
+ *   decimal places. Server stores the smallest currency unit always.
  */
 export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueCellProps) {
   const t = useTranslations("workspace");
+
+  const allowedCurrencies = useMemo(() => allowedCurrenciesForCell(), []);
+  const showCurrencyPicker = allowedCurrencies.length > 1;
+
+  // Existing revenue dictates the editing currency; otherwise pick the
+  // cell default. Storage is always the smallest unit; UI converts.
+  const initialCurrency: CurrencyCode = assignment.revenue?.currency ?? defaultCurrencyForCell();
+  const [currency, setCurrency] = useState<CurrencyCode>(initialCurrency);
+
+  const isZeroDecimal = (c: CurrencyCode) => ZERO_DECIMAL_CURRENCIES.has(c);
+  const toDisplay = (smallestUnit: number, c: CurrencyCode) =>
+    isZeroDecimal(c) ? smallestUnit : smallestUnit / 100;
+  const toStorage = (displayValue: number, c: CurrencyCode) =>
+    isZeroDecimal(c) ? Math.round(displayValue) : Math.round(displayValue * 100);
+
   const [editing, setEditing] = useState(false);
-  // Draft is in yuan (user-facing); we convert to 分 on submit. The
-  // server returns 分 so we divide by 100 for the initial display.
   const [draft, setDraft] = useState<string>(
-    assignment.revenue ? (assignment.revenue.amount / 100).toString() : ""
+    assignment.revenue
+      ? toDisplay(assignment.revenue.amount, assignment.revenue.currency).toString()
+      : ""
   );
   const setRevenue = useSetAssignmentRevenue(crewId, episodeId);
 
-  // Reset draft when assignment changes externally.
+  // Reset draft + currency when assignment changes externally.
   useEffect(() => {
-    setDraft(assignment.revenue ? (assignment.revenue.amount / 100).toString() : "");
+    const nextCurrency = assignment.revenue?.currency ?? defaultCurrencyForCell();
+    setCurrency(nextCurrency);
+    setDraft(
+      assignment.revenue
+        ? toDisplay(assignment.revenue.amount, assignment.revenue.currency).toString()
+        : ""
+    );
+    // toDisplay is pure of state — safe to skip from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignment.revenue]);
 
   const parsed = Number.parseFloat(draft);
   const canSubmit = !setRevenue.isPending && Number.isFinite(parsed) && parsed >= 0;
 
   const cancel = () => {
-    setDraft(assignment.revenue ? String(assignment.revenue.amount) : "");
+    setDraft(
+      assignment.revenue
+        ? toDisplay(assignment.revenue.amount, assignment.revenue.currency).toString()
+        : ""
+    );
+    setCurrency(initialCurrency);
     setEditing(false);
   };
 
@@ -55,9 +94,8 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
     setRevenue.mutate(
       {
         assignmentId: assignment.id,
-        // Convert yuan → 分 for the server.
-        amount: Math.round(parsed * 100),
-        currency: "CNY",
+        amount: toStorage(parsed, currency),
+        currency,
       },
       {
         onSuccess: () => {
@@ -73,12 +111,26 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
 
   if (editing) {
     return (
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        {showCurrencyPicker ? (
+          <Select value={currency} onValueChange={(v) => setCurrency(v as CurrencyCode)}>
+            <SelectTrigger className="h-7 w-[78px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {allowedCurrencies.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {CURRENCY_SYMBOLS[c]} {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         <Input
           autoFocus
           type="number"
           inputMode="decimal"
-          step="0.01"
+          step={isZeroDecimal(currency) ? "1" : "0.01"}
           min="0"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -115,10 +167,8 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
     );
   }
 
-  // Server stores `amount` as CNY 分 (smallest integer unit). Display as
-  // yuan with two decimals.
   const display = assignment.revenue
-    ? `${assignment.revenue.currency} ${formatAmount(assignment.revenue.amount / 100)}`
+    ? formatRevenue(assignment.revenue.amount, assignment.revenue.currency)
     : t("revenueNotSet");
 
   return (
@@ -146,10 +196,23 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
   );
 }
 
-function formatAmount(n: number): string {
-  // Lean on Intl when present; fall back to toFixed for SSR-safe values.
-  if (typeof Intl !== "undefined" && Intl.NumberFormat) {
-    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(n);
-  }
-  return n.toFixed(2);
+/**
+ * Format a smallest-unit amount + currency to a human string,
+ * respecting zero-decimal currencies (JPY) and using the locale's
+ * thousands separator. Examples:
+ *   (100000, "CNY") → "¥1,000.00"
+ *   (10000, "JPY")  → "¥10,000"
+ */
+function formatRevenue(smallestUnit: number, currency: CurrencyCode): string {
+  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency);
+  const display = isZeroDecimal ? smallestUnit : smallestUnit / 100;
+  const symbol = CURRENCY_SYMBOLS[currency] ?? "";
+  const formatted =
+    typeof Intl !== "undefined" && Intl.NumberFormat
+      ? new Intl.NumberFormat(undefined, {
+          minimumFractionDigits: isZeroDecimal ? 0 : 2,
+          maximumFractionDigits: isZeroDecimal ? 0 : 2,
+        }).format(display)
+      : display.toFixed(isZeroDecimal ? 0 : 2);
+  return `${symbol}${formatted}`;
 }

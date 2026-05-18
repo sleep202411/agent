@@ -39,8 +39,15 @@ export const RejectAssignmentSchema = z.object({
 });
 export type RejectAssignmentInput = z.infer<typeof RejectAssignmentSchema>;
 
+/**
+ * Revenue payload — `amount` is the SMALLEST currency unit (cents,
+ * 分, 円). Currency is validated server-side against the cell
+ * whitelist via `assertAllowedCurrency()` in the service layer.
+ * Optional so existing callers that omit it default to the cell's
+ * default currency.
+ */
 export const RevenueSchema = z.object({
   amount: z.number().int().min(0),
-  currency: z.literal('CNY').optional(),
+  currency: z.string().trim().length(3).optional(),
 });
 export type RevenueInput = z.infer<typeof RevenueSchema>;

@@ -13,7 +13,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
-import type { EpisodeActivityDTO, EpisodeAssignmentDTO, EpisodeDTO } from "./types";
+import type { CurrencyCode, EpisodeActivityDTO, EpisodeAssignmentDTO, EpisodeDTO } from "./types";
 
 export type {
   EpisodeDTO as Episode,
@@ -188,14 +188,18 @@ export function useSetAssignmentRevenue(crewId: string, episodeId: string) {
     mutationFn: ({
       assignmentId,
       amount,
+      currency,
     }: {
       assignmentId: string;
+      /** Smallest currency unit (cents / 分 / JPY yen). */
       amount: number;
-      currency?: "CNY";
+      /** ISO-4217 code; server validates against cell whitelist. Omit
+       *  to let the server default to the cell default. */
+      currency?: CurrencyCode;
     }) =>
       crewApi.post<EpisodeAssignmentDTO>(
         `/assignments/${encodeURIComponent(assignmentId)}/revenue`,
-        { body: { amount, currency: "CNY" } }
+        { body: currency ? { amount, currency } : { amount } }
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });

@@ -19,7 +19,13 @@ import {
 import { PrismaService } from '../../infra/db/db.module';
 import { NotificationService } from '../../notification';
 import { CrewRoleService } from '../crew-role.service';
+import {
+  assertAllowedCurrency,
+  defaultCurrency,
+  type CurrencyCode,
+} from '../currency';
 import { toActivityDTO, toAssignmentDTO } from '../mappers';
+import { CURRENCY_SYMBOLS, ZERO_DECIMAL_CURRENCIES } from '@repo/shared/crew';
 import { writeActivity } from './activity-writer';
 import type {
   AddAssignmentInput,
@@ -380,13 +386,27 @@ export class AssignmentsService {
     await this.roles.require(a.crewId, actorId, ['finance']);
     if (a.episode.status === 'approved') throw new EpisodeFrozenException();
 
+    // Cell-aware currency policy: cn → CNY only, com → 9-currency
+    // whitelist. Default to the cell default when not specified so
+    // simple "set yuan amount" callers don't have to plumb currency.
+    const currency = input.currency ?? defaultCurrency();
+    assertAllowedCurrency(currency, 'currency');
+
+    // Notification body needs a human-readable amount with the right
+    // unit (JPY has no fractional part).
+    const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency as CurrencyCode);
+    const displayAmount = isZeroDecimal
+      ? input.amount.toString()
+      : (input.amount / 100).toFixed(2);
+    const displaySymbol = CURRENCY_SYMBOLS[currency as CurrencyCode] ?? '';
+
     const setAt = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
       const u = await tx.episodeAssignment.update({
         where: { id: assignmentId },
         data: {
           revenueAmount: BigInt(input.amount),
-          revenueCurrency: 'CNY',
+          revenueCurrency: currency,
           revenueSetAt: setAt,
           revenueSetById: actorId,
         },
@@ -400,7 +420,7 @@ export class AssignmentsService {
         payload: {
           targetUserId: a.userId,
           amount: input.amount,
-          currency: 'CNY',
+          currency,
         },
       });
       await this.notifications.send(
@@ -408,17 +428,19 @@ export class AssignmentsService {
           userId: a.userId,
           type: 'crew.episode.revenue_set',
           title: `Revenue set for episode ${a.episode.number}`,
-          body: `Your share: ¥${(input.amount / 100).toFixed(2)}`,
+          body: `Your share: ${displaySymbol}${displayAmount}`,
           meta: {
             deeplink: `/crews/${a.crewId}/workspace`,
             crewId: a.crewId,
             episodeId: a.episodeId,
             assignmentId,
             amount: input.amount,
+            currency,
           },
-          // Include amount + setAt so finance can revise the number
-          // and the user gets a fresh notification each time.
-          idempotencyKey: `crew.episode.revenue_set:${assignmentId}:${input.amount}:${setAt.toISOString()}`,
+          // Include amount + currency + setAt so finance can revise
+          // the number / switch currency and the user gets a fresh
+          // notification each time.
+          idempotencyKey: `crew.episode.revenue_set:${assignmentId}:${currency}:${input.amount}:${setAt.toISOString()}`,
         },
         tx,
       );

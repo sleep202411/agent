@@ -30,3 +30,23 @@ export const CURRENT_CELL: Cell = (() => {
   if (raw === "com" || raw === "cn") return raw;
   return "global";
 })();
+
+// ─── Currency policy ─────────────────────────────────────
+//
+// Mirrors `apps/server/src/crews/currency.ts` — the server is the
+// last word, but exposing the same policy here lets dialogs hide
+// disabled options pre-emptively (e.g. CN cell shows CNY only, no
+// "currency picker" rendered at all).
+
+import { ALL_CURRENCIES, type CurrencyCode } from "@repo/shared/crew";
+
+/** Whitelist of currencies allowed in the current cell. */
+export function allowedCurrenciesForCell(): readonly CurrencyCode[] {
+  if (CURRENT_CELL === "cn") return ["CNY"];
+  return ALL_CURRENCIES;
+}
+
+/** Default currency to pre-fill new forms with. */
+export function defaultCurrencyForCell(): CurrencyCode {
+  return CURRENT_CELL === "cn" ? "CNY" : "USD";
+}
