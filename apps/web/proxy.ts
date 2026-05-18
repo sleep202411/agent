@@ -141,15 +141,18 @@ export function proxy(request: NextRequest) {
   // Prefix present → rewrite to the unprefixed path internally and
   // attach x-locale header for server components.
   //
-  // On studio host the WHOLE subdomain IS art-studio, so transparently
-  // prepend `/art-studio` to the internal path. The URL bar stays clean
-  // (e.g. studio.fizzdragon.com/zh-CN/projects), Next.js routes to
-  // app/(studio)/art-studio/projects/page.tsx. Paths the art-studio
-  // tree doesn't define (e.g. /faq, /ips) 404 by design — those belong
-  // to the marketing domain.
+  // Studio-host home rewrite: ONLY the root path (e.g. /zh-CN/) on
+  // studio.fizzdragon.com internally serves the art-studio home. URL
+  // bar stays clean (/zh-CN/), Next.js routes to
+  // app/(studio)/art-studio/page.tsx. Deep paths like /projects/<id>,
+  // /ips/<id> are top-level routes — they keep their own URLs and
+  // routing across all hosts. art-studio's own sub-pages (settings,
+  // tasks, image, ...) still need the /art-studio/ prefix in the URL;
+  // making those clean too would require rewriting links inside the
+  // art-studio code as well.
   let internalPathname = rewrittenPathname;
-  if (studioHost) {
-    internalPathname = `/art-studio${rewrittenPathname === "/" ? "" : rewrittenPathname}`;
+  if (studioHost && rewrittenPathname === "/") {
+    internalPathname = "/art-studio";
   }
 
   const headers = new Headers(request.headers);
