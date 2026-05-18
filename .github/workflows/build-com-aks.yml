@@ -208,3 +208,54 @@ jobs:
 
           [skip ci]"
           git push origin HEAD:${{ github.ref_name }}
+
+  # ---------------------------------------------------------------------
+  # Prune old ACR image tags. Keep the most recent KEEP_LAST SHA tags per
+  # repo plus :latest. This caps ACR storage growth at ~12-15 GB total
+  # (~$0.50/mo on Basic tier's 10 GB free quota) and preserves rollback
+  # capacity (last KEEP_LAST builds reachable via the build-com-aks workflow's
+  # `ref` input).
+  # ---------------------------------------------------------------------
+  prune-acr:
+    needs: [build, bump-chart]
+    runs-on: ubuntu-latest
+    environment: aks-prod
+    env:
+      KEEP_LAST: "10"
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Prune old SHA tags per repo
+        run: |
+          set -e
+          for repo in fizzdragon-web fizzdragon-server fizzdragon-agent; do
+            echo "::group::Pruning $repo"
+            # Tags sorted newest-first, skip the first KEEP_LAST, skip :latest.
+            mapfile -t to_delete < <(
+              az acr repository show-tags \
+                --name "$ACR_NAME" \
+                --repository "$repo" \
+                --orderby time_desc \
+                --output tsv \
+              | tail -n +$((KEEP_LAST + 1)) \
+              | grep -v '^latest$' || true
+            )
+            if [ ${#to_delete[@]} -eq 0 ]; then
+              echo "Nothing to prune in $repo (≤ $KEEP_LAST SHA tags)."
+            else
+              echo "Deleting ${#to_delete[@]} old tags from $repo:"
+              for tag in "${to_delete[@]}"; do
+                echo "  - $tag"
+                az acr repository delete \
+                  --name "$ACR_NAME" \
+                  --image "$repo:$tag" \
+                  --yes >/dev/null
+              done
+            fi
+            echo "::endgroup::"
+          done
