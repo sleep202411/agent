@@ -1,0 +1,247 @@
+# ============================================================================
+# Default values — production-com.
+# Staging / future envs override via -f values.<env>.yaml.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Cluster-level identifiers (must match cluster-bootstrap)
+# ---------------------------------------------------------------------------
+azure:
+  tenantId: 04aa24ae-21ea-447d-b33e-a9b6bfeda97a
+  keyVault:
+    name: kv-fizzdragon-com
+  workloadIdentity:
+    # UAMI client ID — must match the SA annotation in cluster-bootstrap.
+    clientId: a4bef907-12cf-4f90-bf1a-951be21e6371
+    serviceAccountName: fizzdragon-com-app
+
+# ---------------------------------------------------------------------------
+# Image registry (ACR)
+# CI bumps `tag` per service via `helm upgrade --set <svc>.image.tag=<sha>`.
+# ---------------------------------------------------------------------------
+image:
+  registry: acrfizzdragoncom.azurecr.io
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------
+# Ingress — only `web` is internet-facing. server/agent stay ClusterIP.
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  # Production host — same as the legacy ECS-hosted domain.
+  # Currently fizzstudio.fizzdragon.com DNS points at 136 ECS; flip to
+  # this AKS LB IP (20.198.160.91) when ready to cut over.
+  # `aks.fizzdragon.com` is an optional canary — add it here if you also
+  # want a permanent AKS-only debug hostname (cert covers both via SAN).
+  hosts:
+    - fizzstudio.fizzdragon.com
+    # - aks.fizzdragon.com
+  tls:
+    enabled: true
+    # cert-manager ClusterIssuer. Prod issues browser-trusted certs.
+    # Note: cert won't issue until DNS for `hosts` resolves to this LB IP
+    # (HTTP-01 challenge needs externally reachable hostname). Until then
+    # cert-manager retries; no harm, no rate-limit pressure at our volume.
+    clusterIssuer: letsencrypt-prod
+    secretName: fizzdragon-tls
+
+# ---------------------------------------------------------------------------
+# Shared environment (non-secret config) injected into every app pod
+# that needs it. Secrets live in Key Vault, see secretProviderClass below.
+# ---------------------------------------------------------------------------
+sharedEnv:
+  JAVA_STUDIO_URL: https://fizzdragon.com/studio
+  JAVA_CONTENT_URL: https://fizzdragon.com/content
+  ALIBABA_BASE_URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+  AZURE_OPENAI_BASE_URL: https://fizzdragon-ai-foundry.openai.azure.com/openai/v1
+  AZURE_FOUNDRY_PROJECT_ENDPOINT: https://fizzdragon-ai-foundry.services.ai.azure.com/api/projects/fizzdragon-tools
+  AZURE_OPENAI_API_VERSION: "2024-12-01-preview"
+  AZURE_BLOB_CONTAINER: foundry-outputs
+  FOUNDRY_MODEL_ALLOWLIST: gpt-image-2
+  FOUNDRY_EXECUTION_ENABLED: "true"
+  STORYOS_ROUTER_PROVIDER: anthropic
+  STORYOS_ROUTER_MODEL: claude-sonnet-4-5
+  STORYOS_PERSONA_PROVIDER: deepseek
+  STORYOS_PERSONA_MODEL: deepseek-v4-flash
+  LOG_LEVEL: info
+
+# ---------------------------------------------------------------------------
+# Secret Provider Class — KV → projected K8s Secret `fizzdragon-secrets`.
+# Pods pull values via `envFrom: secretRef: fizzdragon-secrets`.
+# Every entry maps a KV secret name → the env var name the app expects.
+# ---------------------------------------------------------------------------
+secrets:
+  # K8s Secret name (after projection). Bumped only on schema changes.
+  projectedName: fizzdragon-secrets
+  # KV secret name → env var name inside the pod.
+  mapping:
+    - kv: alibaba-api-key
+      env: ALIBABA_API_KEY
+    - kv: deepseek-api-key
+      env: DEEPSEEK_API_KEY
+    - kv: anthropic-api-key
+      env: ANTHROPIC_API_KEY
+    - kv: azure-openai-api-key
+      env: AZURE_OPENAI_API_KEY
+    - kv: image-cover-key
+      env: REPLICATE_API_TOKEN
+    - kv: realtime-conn-string
+      env: AZURE_WEB_PUBSUB_CONNECTION_STRING
+    - kv: blob-conn-string
+      env: AZURE_BLOB_CONNECTION_STRING
+    - kv: db-conn-string
+      env: DATABASE_URL
+    # Managed Azure Cache for Redis (Basic C0). Replaces in-cluster Redis.
+    # `redis-conn-string` is the rediss:// URL apps consume as REDIS_URL.
+    # `redis-address` + `redis-password` are split form for KEDA's Redis
+    # scaler (it wants host:port + password as separate fields, not a URL).
+    - kv: redis-conn-string
+      env: REDIS_URL
+    - kv: redis-address
+      env: REDIS_ADDRESS
+    - kv: redis-password
+      env: REDIS_PASSWORD
+
+# ---------------------------------------------------------------------------
+# web — Next.js front-of-stack. Public via Ingress.
+# ---------------------------------------------------------------------------
+web:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: fizzdragon-web
+    tag: latest
+  containerPort: 3000
+  env:
+    SERVER_URL: http://fizzdragon-server:3001
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1000m, memory: 1Gi }
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# server — NestJS API. Internal (ClusterIP).
+# ---------------------------------------------------------------------------
+server:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: fizzdragon-server
+    tag: latest
+  containerPort: 3001
+  env:
+    PORT: "3001"
+    AI_PROVIDER: alibaba
+    # REDIS_URL comes from KV via projected `fizzdragon-secrets` (envFrom).
+    MASTRA_URL: http://fizzdragon-agent:4111
+    DISABLE_CONTENT_MODERATION: "false"
+    AUTH_DISABLED: "false"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 1000m, memory: 1Gi }
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# agent — Mastra API. Internal. Shares libsql with agent-worker via PVC.
+# ---------------------------------------------------------------------------
+agent:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: fizzdragon-agent
+    tag: latest
+  containerPort: 4111
+  env:
+    PORT: "4111"
+    MASTRA_HOST: "0.0.0.0"
+    MASTRA_DB_URL: "file:/app/data/mastra.db"
+    # REDIS_URL from KV via projected `fizzdragon-secrets` (envFrom).
+  resources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits:   { cpu: 2000m, memory: 3Gi }
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+
+# ---------------------------------------------------------------------------
+# agent-worker — BullMQ consumer. Same image, different command.
+# Scales 0→N via KEDA (see agent-worker-scaledobject.yaml).
+# Shares /app/data PVC with agent for libsql snapshot/resume state.
+# ---------------------------------------------------------------------------
+agentWorker:
+  enabled: true
+  # When keda.enabled=false this is the fixed replica count; when true,
+  # KEDA's ScaledObject owns it (chart omits .spec.replicas in that case).
+  # Start at 1 so the worker pool isn't empty before KEDA wakes up.
+  replicaCount: 1
+  image:
+    repository: fizzdragon-agent
+    tag: latest
+  command: ["npx", "tsx", "src/worker.ts"]
+  env:
+    MASTRA_DB_URL: "file:/app/data/mastra.db"
+    # REDIS_URL from KV via projected `fizzdragon-secrets` (envFrom).
+    # Lower per-pod concurrency than the ECS-era 90 because B2as_v2 nodes
+    # are 2c8g (vs ECS 8c16g single-host). KEDA scales pod count to make
+    # up total throughput: 6 pods × 15 = 90 ≈ ECS baseline.
+    WORKER_CONCURRENCY: "15"
+    IMAGE_WORKER_CONCURRENCY: "2"
+    STORYBOARD_GENERATE_CONCURRENCY: "6"
+  # Pod fits cleanly on B2as_v2 (8GB node). At WORKER_CONCURRENCY=15 with
+  # ~50MB per in-flight workflow, working set ~750MB + base 500MB ≈ 1.5Gi.
+  # 3Gi limit leaves headroom for bulk phases (storyboard 30 shots batched).
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: 1500m, memory: 3Gi }
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+  keda:
+    enabled: true   # On from day 1 — full production form.
+    minReplicas: 1  # Keep at least one worker pod warm (queue is always-on).
+    maxReplicas: 6  # 6 × WORKER_CONCURRENCY 15 = 90 ≈ ECS baseline.
+    cooldownPeriod: 600  # 10 min before scaling down, matches docker-compose memory behaviour.
+    pollingInterval: 15
+    # BullMQ queue list watched by the redis scaler.
+    # Names mirror QUEUE_NAME / IMAGE_QUEUE_NAME in apps/agent/src/mastra/workflows/engine/.
+    queues:
+      - bull:storyos-workflows:wait
+      - bull:asset-images:wait
+
+# ---------------------------------------------------------------------------
+# Redis — MANAGED via Azure Cache for Redis Basic C0 (`redis-fizzdragon-com`).
+# No in-cluster StatefulSet. Apps get rediss:// URL from KV `redis-conn-string`
+# projected as REDIS_URL. KEDA gets host:port + password via TriggerAuthentication
+# (templates/redis-trigger-auth.yaml) reading from the same projected Secret.
+#
+# Upgrade path: bump SKU in Azure (Basic C0 → Standard C0 for HA, ~$32/mo).
+# No chart change needed; KV connection string transparently rotates.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Mastra libsql PVC — Azure Files RWX, shared between agent + agent-worker.
+# ---------------------------------------------------------------------------
+agentData:
+  storageClass: azurefile-csi  # Azure Files Standard LRS (cheapest tier)
+  size: 10Gi

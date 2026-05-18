@@ -1,0 +1,208 @@
+name: Build & Push (prod-com → AKS)
+
+# Production .com builds for the AKS path.
+#
+# Flow:
+#   workflow_dispatch  →  build web/server/agent  →  push to ACR with :<sha> + :latest
+#                      →  bump deploy/helm/fizzdragon/values.yaml image tags to <sha>
+#                      →  bot commits back to the same branch ([skip ci])
+#                      →  ArgoCD detects values change and syncs the cluster
+#
+# Manual trigger only — matches build-prod.yml's tempo. Solo dev fires it
+# when ready to ship.
+#
+# Rollback: re-run this workflow against an earlier SHA, OR edit
+# values.yaml manually to a known-good tag and commit. ArgoCD reconciles
+# either way.
+#
+# .cn path is untouched — fire build-prod.yml with target=prod-cn for ECS.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or SHA to build (defaults to current ref)"
+        required: false
+        type: string
+
+concurrency:
+  # Single in-flight build per ref to avoid stomping values.yaml commits.
+  group: build-com-aks-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  # OIDC for Azure federation
+  id-token: write
+  # Bot commits values.yaml back to the branch
+  contents: write
+
+env:
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ACR_NAME: acrfizzdragoncom
+  ACR_LOGIN_SERVER: acrfizzdragoncom.azurecr.io
+  CHART_VALUES: deploy/helm/fizzdragon/values.yaml
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+      ref: ${{ steps.resolve.outputs.ref }}
+    steps:
+      - name: Guard — only develop or main may ship to AKS
+        if: github.ref_name != 'develop' && github.ref_name != 'main'
+        run: |
+          echo "::error::Only develop or main may ship to AKS. Current ref: ${{ github.ref_name }}"
+          exit 1
+      - name: Resolve build ref + SHA
+        id: resolve
+        run: |
+          REF="${{ inputs.ref || github.ref_name }}"
+          # If an input was provided, resolve it to a SHA via git ls-remote.
+          if [ -n "${{ inputs.ref }}" ]; then
+            SHA=$(git ls-remote https://github.com/${{ github.repository }} "$REF" | awk '{print $1}' | head -1)
+            if [ -z "$SHA" ]; then SHA="$REF"; fi  # input was already a SHA
+          else
+            SHA="${{ github.sha }}"
+          fi
+          SHORT=${SHA:0:7}
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Building ref=$REF sha=$SHA short=$SHORT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    # Gate behind the aks-prod environment so:
+    #   - the AZURE_* variables are scoped here only (not leaked to other workflows)
+    #   - federated credential `fic-gh-env-aks-prod` matches the OIDC subject
+    #   - any "required reviewers" / "wait timer" / "deployment branches" rules
+    #     configured on the environment in GH UI gate this job
+    environment: aks-prod
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: web
+            dockerfile: apps/web/Dockerfile
+            image: fizzdragon-web
+            needs_build_args: true
+          - service: server
+            dockerfile: apps/server/Dockerfile
+            image: fizzdragon-server
+            needs_build_args: false
+          - service: agent
+            dockerfile: apps/agent/Dockerfile
+            image: fizzdragon-agent
+            needs_build_args: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Azure login (OIDC federation, no static creds)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Load apps/web/.env.production.com into job env
+        if: matrix.needs_build_args
+        # Same pattern as build-prod.yml — single source of truth file
+        # already maintained for local dev / docs.
+        run: |
+          grep -E '^[A-Z_]+=' apps/web/.env.production.com >> "$GITHUB_ENV"
+
+      - name: Build + push (with build-args for web)
+        if: matrix.needs_build_args
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ needs.prepare.outputs.sha }}
+            ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.image }}:latest
+          build-args: |
+            NEXT_PUBLIC_OSS_BASE_URL=${{ env.NEXT_PUBLIC_OSS_BASE_URL }}
+            NEXT_PUBLIC_BANNER_BASE_URL=${{ env.NEXT_PUBLIC_BANNER_BASE_URL }}
+            NEXT_PUBLIC_USER_BASE_URL=${{ env.NEXT_PUBLIC_USER_BASE_URL }}
+            NEXT_PUBLIC_SITE_REGION=${{ env.NEXT_PUBLIC_SITE_REGION }}
+            NEXT_PUBLIC_PARENT_ORIGIN=${{ env.NEXT_PUBLIC_PARENT_ORIGIN }}
+            NEXT_PUBLIC_WS_HOST=${{ env.NEXT_PUBLIC_WS_HOST }}
+            NEXT_PUBLIC_API_CONTENT_PREFIX=${{ env.NEXT_PUBLIC_API_CONTENT_PREFIX }}
+            NEXT_PUBLIC_API_STUDIO_PREFIX=${{ env.NEXT_PUBLIC_API_STUDIO_PREFIX }}
+            NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=${{ env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN }}
+            NEXT_PUBLIC_POSTHOG_HOST=${{ env.NEXT_PUBLIC_POSTHOG_HOST }}
+            SERVER_URL=http://fizzdragon-server:3001
+            JAVA_STUDIO_URL=${{ env.JAVA_STUDIO_URL }}
+            JAVA_CONTENT_URL=${{ env.JAVA_CONTENT_URL }}
+          cache-from: type=gha,scope=aks-${{ matrix.service }}
+          cache-to: type=gha,scope=aks-${{ matrix.service }},mode=max
+
+      - name: Build + push (server/agent — no build-args)
+        if: matrix.needs_build_args == false
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.image }}:${{ needs.prepare.outputs.sha }}
+            ${{ env.ACR_LOGIN_SERVER }}/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=aks-${{ matrix.service }}
+          cache-to: type=gha,scope=aks-${{ matrix.service }},mode=max
+
+  bump-chart:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need write access via the workflow's GITHUB_TOKEN.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.ref_name }}
+
+      - name: Bump image tags in values.yaml
+        env:
+          SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          # yq is preinstalled on ubuntu-latest (mikefarah build).
+          yq -i ".web.image.tag = strenv(SHA)" "$CHART_VALUES"
+          yq -i ".server.image.tag = strenv(SHA)" "$CHART_VALUES"
+          yq -i ".agent.image.tag = strenv(SHA)" "$CHART_VALUES"
+          yq -i ".agentWorker.image.tag = strenv(SHA)" "$CHART_VALUES"
+          echo "--- diff ---"
+          git diff "$CHART_VALUES" || true
+
+      - name: Commit + push tag bump
+        env:
+          SHA: ${{ needs.prepare.outputs.sha }}
+          SHORT: ${{ needs.prepare.outputs.short_sha }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet "$CHART_VALUES"; then
+            echo "No tag change (already at $SHORT) — skipping commit."
+            exit 0
+          fi
+          git add "$CHART_VALUES"
+          git commit -m "ci(deploy): bump fizzdragon-com images to ${SHORT}
+
+          web/server/agent/agent-worker → ${SHA}
+          ArgoCD will pick this up on next reconcile.
+
+          [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}

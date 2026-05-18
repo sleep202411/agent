@@ -1,0 +1,41 @@
+# Workload Identity binding for fizzdragon-com workloads.
+#
+# This ServiceAccount is the K8s identity that pods assume to access Azure
+# Key Vault (and any other Azure resources granted to the UAMI). The bond
+# between K8s and Azure AD is the federated credential we created on the
+# UAMI `id-fizzdragon-com-kv-reader` (resource group `rg-fizzdragon-com-prod`),
+# which trusts:
+#   issuer  = AKS OIDC issuer URL
+#   subject = system:serviceaccount:fizzdragon-com:fizzdragon-com-app
+#
+# Apply:
+#   kubectl apply -f deploy/helm/cluster-bootstrap/workload-identity-sa.yaml
+#
+# Pods using this identity MUST:
+#   spec.serviceAccountName: fizzdragon-com-app
+#   metadata.labels.azure.workload.identity/use: "true"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fizzdragon-com
+  labels:
+    purpose: app-workloads
+    stack: com
+    env: prod
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fizzdragon-com-app
+  namespace: fizzdragon-com
+  annotations:
+    # Tells azwi (Azure Workload Identity mutating admission webhook) which
+    # Azure AD client ID this SA federates with.
+    azure.workload.identity/client-id: a4bef907-12cf-4f90-bf1a-951be21e6371
+    # Token expiration in seconds (default 3600 = 1 hour, max 86400).
+    azure.workload.identity/service-account-token-expiration: "3600"
+  labels:
+    azure.workload.identity/use: "true"

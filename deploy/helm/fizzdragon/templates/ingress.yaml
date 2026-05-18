@@ -1,0 +1,41 @@
+{{- if .Values.ingress.enabled -}}
+{{- $component := "ingress" -}}
+{{- $ctx := merge (dict "component" $component) . -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+  {{- if .Values.ingress.tls.enabled }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.tls.clusterIssuer }}
+    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        {{- range .Values.ingress.hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-web
+                port:
+                  number: {{ $.Values.web.containerPort }}
+    {{- end }}
+{{- end }}

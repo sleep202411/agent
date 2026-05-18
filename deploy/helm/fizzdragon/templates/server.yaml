@@ -1,0 +1,83 @@
+{{- if .Values.server.enabled -}}
+{{- $component := "server" -}}
+{{- $ctx := merge (dict "component" $component) . -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.server.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      containers:
+        - name: {{ $component }}
+          image: "{{ .Values.image.registry }}/{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.containerPort }}
+          env:
+            {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
+            {{- include "fizzdragon.componentEnv" .Values.server | nindent 12 }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.projectedName }}
+          volumeMounts:
+            - name: kv-secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+          readinessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: kv-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-kv
+      {{- with .Values.server.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.server.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.server.containerPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "fizzdragon.componentSelector" $ctx | nindent 4 }}
+{{- end }}

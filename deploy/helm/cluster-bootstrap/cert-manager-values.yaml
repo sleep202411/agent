@@ -1,0 +1,70 @@
+# cert-manager Helm values — fizzdragon-com AKS
+#
+# Pinned chart: jetstack/cert-manager v1.20.2
+# Install:
+#   helm upgrade --install cert-manager jetstack/cert-manager \
+#     -n cert-manager --create-namespace \
+#     --version v1.20.2 \
+#     -f deploy/helm/cluster-bootstrap/cert-manager-values.yaml
+#
+# Post-install: kubectl apply -f deploy/helm/cluster-bootstrap/cluster-issuers.yaml
+# Will be adopted by ArgoCD in Phase 3.
+
+# CRDs are managed by the Helm chart (modern best practice for cert-manager 1.15+).
+# When ArgoCD takes over, we'll switch to separate CRD application + helm install --skip-crds.
+crds:
+  enabled: true
+  keep: true  # don't delete CRDs on helm uninstall — safer
+
+# Single replica (1-node system pool). Increase when system pool grows.
+replicaCount: 1
+webhook:
+  replicaCount: 1
+cainjector:
+  replicaCount: 1
+
+# Conservative resource requests — cert-manager is lightweight.
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+webhook:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+cainjector:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
+
+# Prometheus metrics endpoint exposed (for future scrape).
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: false  # flip on once Prometheus Operator is installed
+
+# Security: drop all capabilities, run as non-root (chart defaults already do this).
+# Keep explicit so audits pass.
+securityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true

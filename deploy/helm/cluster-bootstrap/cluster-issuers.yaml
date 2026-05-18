@@ -1,0 +1,44 @@
+# Let's Encrypt ClusterIssuer resources for cert-manager.
+#
+# Apply after cert-manager is installed and its webhook is ready:
+#   kubectl apply -f deploy/helm/cluster-bootstrap/cluster-issuers.yaml
+#
+# Workflow: an Ingress with the annotation
+#   cert-manager.io/cluster-issuer: letsencrypt-prod
+# will trigger cert-manager to request a Let's Encrypt cert via HTTP-01
+# challenge through ingress-nginx.
+#
+# Email below receives Let's Encrypt expiry/policy notifications. Change to
+# a role-based ops@fizzdragon.com alias once it exists; safe to update by
+# editing this file + re-applying (cert-manager re-registers the ACME account).
+
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: kisshxc@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: kisshxc@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

@@ -1,0 +1,96 @@
+{{- if .Values.agentWorker.enabled -}}
+{{- $component := "agent-worker" -}}
+{{- $ctx := merge (dict "component" $component) . -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  {{- if not .Values.agentWorker.keda.enabled }}
+  # When KEDA is enabled it owns the replica count; omitting `replicas`
+  # here lets the ScaledObject scale freely without helm clobbering it
+  # on every upgrade.
+  replicas: {{ .Values.agentWorker.replicaCount }}
+  {{- end }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+        {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      containers:
+        - name: {{ $component }}
+          image: "{{ .Values.image.registry }}/{{ .Values.agentWorker.image.repository }}:{{ .Values.agentWorker.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: {{ toJson .Values.agentWorker.command }}
+          env:
+            {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
+            {{- include "fizzdragon.componentEnv" .Values.agentWorker | nindent 12 }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.projectedName }}
+          volumeMounts:
+            - name: kv-secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+            - name: agent-data
+              mountPath: /app/data
+          resources:
+            {{- toYaml .Values.agentWorker.resources | nindent 12 }}
+      volumes:
+        - name: kv-secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Release.Name }}-kv
+        - name: agent-data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-agent-data
+      {{- with .Values.agentWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agentWorker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.agentWorker.keda.enabled }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "fizzdragon.componentName" $ctx }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "fizzdragon.componentName" $ctx }}
+  minReplicaCount: {{ .Values.agentWorker.keda.minReplicas }}
+  maxReplicaCount: {{ .Values.agentWorker.keda.maxReplicas }}
+  cooldownPeriod: {{ .Values.agentWorker.keda.cooldownPeriod }}
+  pollingInterval: {{ .Values.agentWorker.keda.pollingInterval }}
+  triggers:
+    {{- range .Values.agentWorker.keda.queues }}
+    - type: redis
+      metadata:
+        listName: {{ . }}
+        listLength: "5"
+        # Managed Azure Cache for Redis is TLS-only on port 6380.
+        enableTLS: "true"
+      authenticationRef:
+        name: {{ $.Release.Name }}-redis-auth
+    {{- end }}
+{{- end }}
+{{- end }}
