@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
     "mastra": "^1.6.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
@@ -32,18 +33,18 @@
     "@ai-sdk/azure": "^3.0.54",
     "@ai-sdk/deepseek": "^2.0.0",
     "@ai-sdk/openai-compatible": "^2.0.41",
-    "@libsql/client": "^0.15.15",
     "@mastra/ai-sdk": "^1.4.0",
     "@mastra/core": "^1.25.0",
     "@mastra/duckdb": "^1.1.2",
     "@mastra/evals": "^1.2.1",
-    "@mastra/libsql": "^1.8.1",
     "@mastra/loggers": "^1.1.1",
     "@mastra/memory": "^1.15.1",
     "@mastra/observability": "^1.9.1",
+    "@mastra/pg": "^1.9.3",
     "@repo/shared": "*",
     "ai": "^6.0.154",
     "bullmq": "^5.74.1",
-    "ioredis": "^5.10.1"
+    "ioredis": "^5.10.1",
+    "pg": "^8.21.0"
   }
 }
