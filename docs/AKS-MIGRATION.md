@@ -37,7 +37,7 @@
 | 1     | KEDA control plane install (v2.19.0); agent-worker ScaledObject deferred to Phase 2                                                                                  | ✅            |
 | 1     | ACR attached to AKS (`--attach-acr acrfizzdragoncom`) — kubelet can pull images without imagePullSecrets                                                             | ✅            |
 | 2     | Helm umbrella chart `deploy/helm/fizzdragon/` (web/server/agent/agent-worker/redis + SecretProviderClass + Azure Files PVC + KEDA template)                          | ✅            |
-| 3     | UAMI `id-fizzdragon-com-gh-actions` + AcrPush role + 3 federated credentials (develop/main/environment:aks-prod)                                                     | ✅            |
+| 3     | UAMI `id-fizzdragon-com-gh-actions` + AcrPush role + federated credential `fic-gh-env-aks-prod` (subject `environment:aks-prod`)                                     | ✅            |
 | 3     | `.github/workflows/build-com-aks.yml` — OIDC login → ACR push → values.yaml tag bump → bot commit                                                                    | ✅            |
 | 3     | `deploy/argocd/applications/fizzdragon-com.yaml` — Application manifest pointing at chart                                                                            | ✅            |
 | 3     | Add GH repo variables (AZURE_CLIENT_ID / TENANT_ID / SUBSCRIPTION_ID) — needs human in GH UI                                                                         | ⏳ pending    |
@@ -284,6 +284,15 @@ docker push acrfizzdragoncom.azurecr.io/web:dev
 
 ## CI/CD (Phase 3 — implemented 2026-05-18)
 
+### Branching model — GitLab Flow with environment branches
+
+| Branch    | Role                     | Triggers                                                                        | Target                                        |
+| --------- | ------------------------ | ------------------------------------------------------------------------------- | --------------------------------------------- |
+| `develop` | Integration / daily work | `push` → `build-staging.yml` auto-triggers                                      | Staging ECS (existing). _No staging AKS yet._ |
+| `main`    | Production release       | `workflow_dispatch` → `build-prod.yml` (target=prod-cn) and `build-com-aks.yml` | Prod ECS (CN) + Prod AKS (COM)                |
+
+Promotion: `develop` → `main` via merge after staging verification. Both prod targets (CN ECS, COM AKS) deploy from the **same `main` commit** — release consistency across the two clouds.
+
 ### What stays the same
 
 - `.cn` side: `build-prod.yml` workflow with target=prod-cn is untouched. Builds + pushes to GHCR, ECS Watchtower pulls. Zero impact from AKS work.
@@ -292,16 +301,16 @@ docker push acrfizzdragoncom.azurecr.io/web:dev
 
 ### What's new (`.com` AKS path)
 
-| File                                             | Purpose                                                                                                                                                                         |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/build-com-aks.yml`            | Manual (`workflow_dispatch`) — builds web/server/agent, pushes to ACR with `:<sha>` + `:latest`, then bot-commits `values.yaml` tag bump. ArgoCD picks it up.                   |
-| `deploy/argocd/applications/fizzdragon-com.yaml` | ArgoCD `Application` pointing at `deploy/helm/fizzdragon` on `develop`. Auto-sync + self-heal + CreateNamespace. Ignores `agent-worker.spec.replicas` so KEDA can scale freely. |
+| File                                             | Purpose                                                                                                                                                                          |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/build-com-aks.yml`            | `workflow_dispatch` from **main only** (guard rejects other refs). Builds web/server/agent, pushes to ACR `:<sha>` + `:latest`, then bot-commits `values.yaml` tag bump to main. |
+| `deploy/argocd/applications/fizzdragon-com.yaml` | ArgoCD `Application` pointing at `deploy/helm/fizzdragon` on **`main`**. Auto-sync + self-heal + CreateNamespace. Ignores `agent-worker.spec.replicas` so KEDA can scale freely. |
 
-Auth: Azure OIDC federation via UAMI `id-fizzdragon-com-gh-actions` — no static credentials in GH. Federated subjects:
+Auth: Azure OIDC federation via UAMI `id-fizzdragon-com-gh-actions` — no static credentials in GH. Single federated subject:
 
-- `repo:Fizzdragon-Pte-Ltd-2/fizzdragon-platform:ref:refs/heads/develop`
-- `repo:Fizzdragon-Pte-Ltd-2/fizzdragon-platform:ref:refs/heads/main`
-- `repo:Fizzdragon-Pte-Ltd-2/fizzdragon-platform:environment:aks-prod` (escape hatch via env-gated dispatch)
+- `repo:Fizzdragon-Pte-Ltd-2/fizzdragon-platform:environment:aks-prod`
+
+The workflow's build job declares `environment: aks-prod`, which is what surfaces the env-scoped variables (`AZURE_*`) and matches this federated credential. Branch-ref credentials are intentionally absent — the environment is the only gate.
 
 UAMI role: `AcrPush` on `acrfizzdragoncom`. That's it — no AKS admin, no KV access; the workflow only pushes images.
 
@@ -309,7 +318,7 @@ UAMI role: `AcrPush` on `acrfizzdragoncom`. That's it — no AKS admin, no KV ac
 
 1. **Create GitHub Environment `aks-prod`** (Settings → Environments → New environment → name `aks-prod` → Configure environment):
    - Optional but recommended: tick **Required reviewers** = yourself. Every workflow run will pause for explicit Approve before pushing to ACR.
-   - Optional: **Deployment branches** = "Selected branches" → allow `develop` + `main` only.
+   - **Deployment branches** = "Selected branches" → allow `main` only. Matches the workflow's branch guard.
 2. **Add environment variables** (on the same `aks-prod` environment page, Environment variables section — NOT Repository variables, NOT Secrets):
    ```
    AZURE_CLIENT_ID        = c5629489-473e-4ea6-8ebb-a04ba7ead8a6
@@ -321,22 +330,23 @@ UAMI role: `AcrPush` on `acrfizzdragoncom`. That's it — no AKS admin, no KV ac
    ```bash
    kubectl apply -f deploy/argocd/applications/fizzdragon-com.yaml
    ```
-4. **Fire the build workflow** from GitHub Actions UI (or `gh workflow run build-com-aks.yml --ref develop`). If required reviewers is on, click Approve when prompted.
-5. ArgoCD detects the values.yaml bump and creates everything in `fizzdragon-com` namespace.
+4. **Merge `develop` → `main`** when ready to release (after staging verification on develop).
+5. **Fire the build workflow** from GitHub Actions UI on **main** (or `gh workflow run build-com-aks.yml --ref main`). If required reviewers is on, click Approve when prompted.
+6. ArgoCD detects the values.yaml bump on main and reconciles the cluster.
 
 ### Why git-commit-bump over ArgoCD Image Updater
 
 - Git history shows what was deployed when, who triggered it, what changed
 - Rollback = `git revert <deploy commit>` (clean and obvious)
 - No extra component to install/maintain
-- Trade-off: 1 commit per deploy on `develop` — noisy but auditable. `[skip ci]` keeps the loop tight.
+- Trade-off: 1 commit per deploy on `main` — noisy but auditable. `[skip ci]` keeps the loop tight.
 
 ### Rollback recipes
 
 | Scenario                      | Action                                                                                                                                                                               |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Bad image just deployed       | Re-fire `build-com-aks.yml` with `inputs.ref` set to the previous good SHA. CI rebuilds + bumps values back.                                                                         |
-| Bad values change (non-image) | `git revert <commit>` on develop. ArgoCD reconciles in <1 min.                                                                                                                       |
+| Bad image just deployed       | Re-fire `build-com-aks.yml` with `inputs.ref` set to the previous good SHA on main. CI rebuilds + bumps values back.                                                                 |
+| Bad values change (non-image) | `git revert <commit>` on main. ArgoCD reconciles in <1 min.                                                                                                                          |
 | ArgoCD is misbehaving         | `kubectl -n argocd patch application fizzdragon-com --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}'` to pause auto-sync; then debug. Re-enable with the opposite patch. |
 
 ---

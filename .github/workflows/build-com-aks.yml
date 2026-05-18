@@ -1,27 +1,28 @@
 name: Build & Push (prod-com → AKS)
 
-# Production .com builds for the AKS path.
+# Production .com builds for the AKS path. Matches the project's GitLab
+# Flow with environment branches: develop auto-deploys to staging
+# (build-staging.yml), main manually deploys to prod via this workflow
+# (mirroring build-prod.yml's prod-cn flow for ECS).
 #
 # Flow:
-#   workflow_dispatch  →  build web/server/agent  →  push to ACR with :<sha> + :latest
-#                      →  bump deploy/helm/fizzdragon/values.yaml image tags to <sha>
-#                      →  bot commits back to the same branch ([skip ci])
-#                      →  ArgoCD detects values change and syncs the cluster
+#   workflow_dispatch on main  →  build web/server/agent
+#                              →  push to ACR with :<sha> + :latest
+#                              →  bump deploy/helm/fizzdragon/values.yaml image tags
+#                              →  bot commits back to main ([skip ci])
+#                              →  ArgoCD detects values change and syncs the cluster
 #
-# Manual trigger only — matches build-prod.yml's tempo. Solo dev fires it
-# when ready to ship.
+# Rollback: re-run this workflow with `inputs.ref` set to an earlier SHA
+# reachable from main, OR `git revert` the values.yaml bump on main.
+# ArgoCD reconciles either way.
 #
-# Rollback: re-run this workflow against an earlier SHA, OR edit
-# values.yaml manually to a known-good tag and commit. ArgoCD reconciles
-# either way.
-#
-# .cn path is untouched — fire build-prod.yml with target=prod-cn for ECS.
+# .cn ECS path is untouched — fire build-prod.yml with target=prod-cn.
 
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Branch or SHA to build (defaults to current ref)"
+        description: "SHA reachable from main to build (defaults to main tip). Use for rollback to a known-good commit."
         required: false
         type: string
 
@@ -52,10 +53,11 @@ jobs:
       short_sha: ${{ steps.resolve.outputs.short_sha }}
       ref: ${{ steps.resolve.outputs.ref }}
     steps:
-      - name: Guard — only develop or main may ship to AKS
-        if: github.ref_name != 'develop' && github.ref_name != 'main'
+      - name: Guard — only main may ship to AKS prod
+        if: github.ref_name != 'main'
         run: |
-          echo "::error::Only develop or main may ship to AKS. Current ref: ${{ github.ref_name }}"
+          echo "::error::Only main may ship to AKS prod. Current ref: ${{ github.ref_name }}"
+          echo "::error::Merge develop → main first, then re-trigger from main."
           exit 1
       - name: Resolve build ref + SHA
         id: resolve

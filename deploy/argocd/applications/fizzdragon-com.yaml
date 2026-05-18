@@ -1,11 +1,14 @@
 # ArgoCD Application — fizzdragon-com (.com side, AKS).
 #
 # Bootstrap (one-time): kubectl apply -f deploy/argocd/applications/fizzdragon-com.yaml
-# After that, ArgoCD watches deploy/helm/fizzdragon/ on the develop branch
+# After that, ArgoCD watches deploy/helm/fizzdragon/ on the main branch
 # and syncs any change (including CI bot's image-tag bumps from build-com-aks.yml).
 #
-# Branch choice: develop is the working branch per solo-dev convention.
-# Move to main once a release-branch cadence becomes useful.
+# Branch choice: main is the prod-deploy branch in this project's GitLab
+# Flow with environment branches. develop integrates daily work and
+# auto-deploys to staging (build-staging.yml); main is what reaches prod
+# users (this Application + build-com-aks.yml). Mirrors build-prod.yml's
+# prod-cn guard for the ECS side.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -19,7 +22,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/Fizzdragon-Pte-Ltd-2/fizzdragon-platform.git
-    targetRevision: develop
+    targetRevision: main
     path: deploy/helm/fizzdragon
     helm:
       releaseName: fizzdragon
