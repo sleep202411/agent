@@ -1,15 +1,18 @@
 /**
  * UsersService — composition for the user-lookup BFF.
  *
- * Combines:
- *   - Java profile lookup by userId
- *   - Optional crew-membership enrichment (when `checkCrewId` passed)
+ * Only by-contact lookups are supported today (Java has no profile-
+ * by-userId endpoint). `lookupByContact` forwards the viewer's
+ * cookie so Java's sa-token interceptor accepts the request, then
+ * enriches the result with crew-membership context when
+ * `checkCrewId` is supplied.
  *
  * Caching:
- *   - Profile: Redis 5 min TTL by userId. Cheap to be slightly stale
- *     (display name / avatar).
- *   - Membership check: NOT cached — owner just added/removed someone,
- *     the dialog needs the truth.
+ *   - Positive lookups: Redis 5 min TTL keyed on sha256(normalized
+ *     account). Cheap to be slightly stale for nickname / avatar.
+ *   - Negative lookups NOT cached — caching "no such email" would
+ *     let an attacker enumerate via fast Redis-hit timing.
+ *   - Membership check: NOT cached — owner adds/removes shift truth.
  */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
@@ -21,14 +24,10 @@ import { JavaUserLookupService } from '../integrations/java/user-lookup.service'
 
 const LOOKUP_CACHE_TTL_SEC = 5 * 60;
 
-export interface LookupRequest {
-  userId: string;
-  /** If supplied, response includes isCrewMember + isCrewFounder. */
-  checkCrewId?: string;
-}
-
 export interface LookupByContactRequest {
   account: string;
+  /** Viewer's raw cookie — forwarded to Java for sa-token auth. */
+  cookie: string;
   /** If supplied, response includes isCrewMember + isCrewFounder. */
   checkCrewId?: string;
 }
@@ -43,31 +42,6 @@ export class UsersService {
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
-  async lookup(req: LookupRequest): Promise<LookupUserDTO | null> {
-    const cacheKey = `user-lookup:byId:${req.userId}`;
-
-    let raw = await this.tryReadCache(cacheKey);
-    if (!raw) {
-      raw = await this.javaLookup.findByUserId(req.userId);
-      if (!raw) return null;
-      await this.writeCache(cacheKey, raw);
-    }
-
-    return this.enrichWithCrewContext(raw, req.checkCrewId);
-  }
-
-  /**
-   * Resolve email/phone → user. Account is normalized (trim +
-   * lowercase if email) before being hashed for the cache key, so
-   * "Foo@Bar.com" and " foo@bar.com" hit the same row. The contact
-   * itself is NEVER stored in plaintext in Redis — only its hash —
-   * so a `KEYS user-lookup:byAcct:*` peek can't enumerate the email
-   * list.
-   *
-   * On hit we ALSO populate the by-id cache (same userId-keyed
-   * value the by-userId path consumes) so a subsequent admin tool
-   * resolving the same user by id skips Java entirely.
-   */
   async lookupByContact(
     req: LookupByContactRequest,
   ): Promise<LookupUserDTO | null> {
@@ -78,48 +52,12 @@ export class UsersService {
 
     let raw = await this.tryReadCache(cacheKey);
     if (!raw) {
-      raw = await this.javaLookup.findByContact(normalized);
+      raw = await this.javaLookup.findByContact(normalized, req.cookie);
       if (!raw) return null;
       await this.writeCache(cacheKey, raw);
-      // Cross-populate the by-id cache so subsequent userId
-      // lookups for this same user are free.
-      await this.writeCache(`user-lookup:byId:${raw.userId}`, raw);
     }
 
     return this.enrichWithCrewContext(raw, req.checkCrewId);
-  }
-
-  /**
-   * Batch lookup — resolve N userIds in one round-trip.
-   *
-   * Caller's perspective is "give me a map" so each call costs one
-   * rate-limit unit regardless of fan-out. Per-userId Java + Redis
-   * caching is reused (cache hits short-circuit, misses fan out in
-   * parallel via Promise.allSettled). A failed lookup for one userId
-   * doesn't poison the rest — that userId returns `null` and the
-   * client decides what to render.
-   *
-   * Hard cap on size keeps a misuse / runaway loader from spinning
-   * up hundreds of Java calls per request.
-   */
-  async lookupBatch(
-    userIds: string[],
-    checkCrewId?: string,
-  ): Promise<Record<string, LookupUserDTO | null>> {
-    const unique = Array.from(new Set(userIds)).filter(
-      (id) => id && id.length > 0,
-    );
-    const out: Record<string, LookupUserDTO | null> = {};
-    if (unique.length === 0) return out;
-
-    const settled = await Promise.allSettled(
-      unique.map((userId) => this.lookup({ userId, checkCrewId })),
-    );
-    for (let i = 0; i < unique.length; i++) {
-      const r = settled[i];
-      out[unique[i]] = r.status === 'fulfilled' ? r.value : null;
-    }
-    return out;
   }
 
   private async enrichWithCrewContext(

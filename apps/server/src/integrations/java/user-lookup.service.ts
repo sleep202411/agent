@@ -1,19 +1,23 @@
 /**
- * Java user-lookup adapter.
+ * Java user-lookup adapter — by-contact (email / phone) ONLY.
  *
- * Two resolution paths to the same `RawLookupResult` shape:
- *   - findByUserId(userId)        → GET  /user/resumer/list/:userId
- *   - findByContact(email|phone)  → POST /user/query/user?account=…&pwd=…
+ *   findByContact(account, cookie) → POST /user/query/user
+ *     ?account=…&pwd=…
+ *     header  Cookie: <viewer's cookie> (Java sa-token reads satoken here)
  *
- * Caching: handled by the caller (UsersService) with a Redis layer.
+ * No by-userId path: Java's `/user/resumer/list/:id` returns resume
+ * entries, NOT user profile — there's no public profile-by-id
+ * endpoint today. Member-list name resolution falls back to
+ * `User <id>` until that lands; see `useUserDisplays` stub on the
+ * web side.
  *
  * Failure modes:
  *   - Found     → RawLookupResult
  *   - Not found → null
- *   - Java down → ServiceUnavailableException (mapped to 502)
+ *   - Java down / unauth → ServiceUnavailableException (mapped to 502)
  *
- * Security: the shared `pwd` secret for the by-contact endpoint is
- * stripped from any log line via `safeUrl` below.
+ * Security: the shared `pwd` and the viewer's cookie are scrubbed
+ * from any log line via `safeUrl` below — never log either.
  */
 import {
   Injectable,
@@ -27,27 +31,18 @@ import {
 } from './java-config';
 
 /**
- * Java endpoint path template. Centralized so a backend rename is one
- * line — do not inline this elsewhere. `:userId` is substituted at
- * call time after URL-encoding.
+ * Java endpoint that resolves an email OR phone to a user profile.
+ * Guarded by the shared `pwd` query param AND a logged-in satoken
+ * (sa-token interceptor); we forward both. POST with no body —
+ * params on the URL, per Java's contract.
  *
- * Expected wire contract:
- *   GET {JAVA_CONTENT_URL}/user/resumer/list/:userId
+ *   POST {JAVA_CONTENT_URL}/user/query/user?account=…&pwd=…
  *   response: {
  *     code: 200,
- *     data: { userId: number|string, nickName?: string, avatar?: string, ... } | null
+ *     msg: "Success",
+ *     info: { id: number, nickName?: string, avatar?: string, … }
  *   }
- *   (data === null / 404 → user does not exist)
- */
-const JAVA_USER_BY_ID_PATH = '/user/resumer/list/:userId';
-
-/**
- * Java endpoint that resolves an email OR phone to a full user.
- * Guarded by a shared-secret `pwd` query param — see env.
- * POST with query-string params; no body.
- *
- *   POST {JAVA_CONTENT_URL}/user/query/user?account=...&pwd=...
- *   response: { code, data: { userId, nickName, avatar, ... } | null }
+ *   (code !== 200 → unauth / not-found / upstream issue)
  */
 const JAVA_USER_BY_ACCOUNT_PATH = '/user/query/user';
 
@@ -60,8 +55,9 @@ export interface RawLookupResult {
 interface JavaEnvelope {
   code?: number;
   msg?: string;
-  data?: {
-    userId?: number | string;
+  /** Java uses `info` (not `data`) on this endpoint. */
+  info?: {
+    id?: number | string;
     nickName?: string;
     avatar?: string;
   } | null;
@@ -72,25 +68,16 @@ export class JavaUserLookupService {
   private readonly logger = new Logger(JavaUserLookupService.name);
 
   /**
-   * Resolve a userId to user profile via Java. Returns null when Java
-   * says the user doesn't exist; throws ServiceUnavailable on network
-   * / Java errors.
+   * Resolve a phone OR email to a profile via Java. Returns null on
+   * not-found, throws on upstream failure. `cookie` is the viewer's
+   * raw cookie string (carries satoken); pass "" only when you're
+   * sure the dev `AUTH_DISABLED` path doesn't matter — Java will
+   * reject with 302 "Not logged in!".
    */
-  async findByUserId(userId: string): Promise<RawLookupResult | null> {
-    if (!userId) {
-      throw new Error('JavaUserLookupService: userId required');
-    }
-    const path = JAVA_USER_BY_ID_PATH.replace(
-      ':userId',
-      encodeURIComponent(userId),
-    );
-    return this.callAndParse(`${JAVA_CONTENT_URL}${path}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-  }
-
-  async findByContact(account: string): Promise<RawLookupResult | null> {
+  async findByContact(
+    account: string,
+    cookie: string,
+  ): Promise<RawLookupResult | null> {
     if (!account) {
       throw new Error('JavaUserLookupService: account required');
     }
@@ -99,31 +86,24 @@ export class JavaUserLookupService {
       pwd: JAVA_USER_QUERY_PWD,
     });
     const url = `${JAVA_CONTENT_URL}${JAVA_USER_BY_ACCOUNT_PATH}?${params.toString()}`;
-    // Java's contract: POST with no body, params on the URL.
-    return this.callAndParse(url, {
-      method: 'POST',
-      headers: { Accept: 'application/json' },
-    });
-  }
-
-  /**
-   * Shared transport + envelope handling. All logged URLs are
-   * sanitised so the `pwd` shared secret never lands in stdout.
-   */
-  private async callAndParse(
-    url: string,
-    init: RequestInit,
-  ): Promise<RawLookupResult | null> {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
       JAVA_REQUEST_TIMEOUT_MS,
     );
+    // Log-safe URL: strip pwd value.
     const safeUrl = url.replace(/([?&])pwd=[^&]+/i, '$1pwd=***');
 
     let envelope: JavaEnvelope;
     try {
-      const res = await fetch(url, { ...init, signal: controller.signal });
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        signal: controller.signal,
+      });
       if (res.status === 404) return null;
       if (!res.ok) {
         this.logger.warn(`Java ${safeUrl} returned HTTP ${res.status}`);
@@ -145,7 +125,19 @@ export class JavaUserLookupService {
       clearTimeout(timeout);
     }
 
-    if (envelope.code === 404 || envelope.data == null) return null;
+    // Java's soft-fail codes:
+    //   code: 302 → "Not logged in!" (sa-token rejected)
+    //   code: 404 → not found
+    //   anything non-200 → bubble up as upstream issue
+    if (envelope.code === 302) {
+      this.logger.warn(`Java ${safeUrl} rejected: ${envelope.msg ?? 'unauth'}`);
+      throw new ServiceUnavailableException({
+        message: 'User lookup not authorised',
+        upstream: 'java',
+        upstreamCode: 302,
+      });
+    }
+    if (envelope.code === 404 || envelope.info == null) return null;
     if (envelope.code !== undefined && envelope.code !== 200) {
       this.logger.warn(
         `Java ${safeUrl} envelope code=${envelope.code} msg=${envelope.msg}`,
@@ -157,11 +149,11 @@ export class JavaUserLookupService {
       });
     }
 
-    const raw = envelope.data;
-    if (raw?.userId == null) return null;
+    const raw = envelope.info;
+    if (raw?.id == null) return null;
 
     return {
-      userId: String(raw.userId),
+      userId: String(raw.id),
       nickname: raw.nickName ?? '',
       avatar: raw.avatar ?? null,
     };
