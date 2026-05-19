@@ -10,11 +10,12 @@ export const kycKeys = {
  * Backend probe: whether the current user still needs real-name verification.
  * 5-minute stale time — the status rarely changes during a session.
  */
-export function useKycAuthStatus() {
+export function useKycAuthStatus(options: { enabled?: boolean } = {}) {
   return useQuery<KycAuthStatus>({
     queryKey: kycKeys.authStatus,
     queryFn: getNeedAuth,
     staleTime: 5 * 60 * 1000,
+    enabled: options.enabled ?? true,
   });
 }
 

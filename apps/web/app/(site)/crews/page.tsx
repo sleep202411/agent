@@ -13,18 +13,28 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { IconBriefcase, IconEye, IconMovie, IconPlus, IconUsers } from "@tabler/icons-react";
+import {
+  IconBriefcase,
+  IconEye,
+  IconLoader2,
+  IconMovie,
+  IconPlus,
+  IconUsers,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { KycGateDialog } from "@/app/_components/kyc-gate-dialog";
 import { useCrewList, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { PositionsTab } from "@/app/(site)/crews/_components/positions-tab";
 import { PlazaHero } from "@/components/layout/plaza-hero";
+import { useKycAuthStatus } from "@/src/hooks/use-kyc";
 
 type ViewMode = "crews" | "positions";
 
@@ -35,6 +45,7 @@ export default function CrewsPage() {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isCnRegion = env.SITE_REGION === "cn";
 
   const view: ViewMode = searchParams.get("view") === "positions" ? "positions" : "crews";
   const setView = (next: ViewMode) => {
@@ -46,10 +57,40 @@ export default function CrewsPage() {
   };
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [kycGateOpen, setKycGateOpen] = useState(false);
+  const [checkingKyc, setCheckingKyc] = useState(false);
 
   const { data, isLoading, isError, isFetchingNextPage, hasNextPage, fetchNextPage } =
     useCrewList(24);
+  const { data: kycStatus, refetch: refetchKycStatus } = useKycAuthStatus({
+    enabled: isCnRegion,
+  });
   const items = useMemo<CrewDTO[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
+
+  const requestCreateCrew = async () => {
+    if (!isCnRegion) {
+      setCreateOpen(true);
+      return;
+    }
+
+    setCheckingKyc(true);
+    try {
+      const status = kycStatus ?? (await refetchKycStatus()).data;
+      if (status?.needAuth === true) {
+        setKycGateOpen(true);
+        return;
+      }
+      if (!status) {
+        toast.error(tCrew("kycCheckFailed"));
+        return;
+      }
+      setCreateOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : tCrew("kycCheckFailed"));
+    } finally {
+      setCheckingKyc(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -66,16 +107,26 @@ export default function CrewsPage() {
           <Button
             type="button"
             size="lg"
-            onClick={() => setCreateOpen(true)}
+            onClick={() => void requestCreateCrew()}
+            disabled={checkingKyc}
             className="h-11 gap-2 px-5 text-sm"
           >
-            <IconPlus className="size-4" />
+            {checkingKyc ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconPlus className="size-4" />
+            )}
             {tCrew("createStudio")}
           </Button>
         }
       />
 
       <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <KycGateDialog
+        open={kycGateOpen}
+        onOpenChange={setKycGateOpen}
+        description={tCrew("createKycRequiredDesc")}
+      />
 
       <div className="mx-auto max-w-[1800px] px-6 pb-24 pt-8">
         {/* Tabs — crews vs positions. URL state via `?view=positions`

@@ -5,7 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CrewApiError, crewApi } from "./api";
 import { crewKeys } from "./shared";
-import type { CreateCrewInput, CrewDTO, UpdateCrewInput } from "./types";
+import type { CreateCrewInput, CrewDTO, UpdateCrewInput, UpdateCrewListingInput } from "./types";
 
 async function fetchCrewDetail(id: string): Promise<CrewDTO | null> {
   try {
@@ -45,6 +45,19 @@ export function useUpdateCrew() {
     onSuccess: (data, vars) => {
       // Server returns the updated row — replace the cache directly so
       // the workspace hero reflects the change before any refetch.
+      qc.setQueryData(crewKeys.detail(vars.id), data);
+      qc.invalidateQueries({ queryKey: ["crew", "list"] });
+      qc.invalidateQueries({ queryKey: crewKeys.mine });
+    },
+  });
+}
+
+export function useUpdateCrewListing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateCrewListingInput) =>
+      crewApi.patch<CrewDTO>(`/crews/${encodeURIComponent(id)}/listing`, { body }),
+    onSuccess: (data, vars) => {
       qc.setQueryData(crewKeys.detail(vars.id), data);
       qc.invalidateQueries({ queryKey: ["crew", "list"] });
       qc.invalidateQueries({ queryKey: crewKeys.mine });

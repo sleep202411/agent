@@ -45,6 +45,11 @@ enum CrewPositionStatus {
   full
 }
 
+enum CrewListingStatus {
+  unlisted
+  listed
+}
+
 enum WorkMode {
   remote
   hybrid
@@ -93,42 +98,47 @@ enum AssignmentStatus {
 }
 
 model Crew {
-  id            String    @id
-  name          String    @db.VarChar(128)
-  description   String    @db.Text
+  id            String            @id
+  name          String            @db.VarChar(128)
+  description   String            @db.Text
   /// Square logo (UI crops to circle). The durable brand asset —
   /// shows up in plaza cards, member chips, notifications, nav.
   /// Visitor-page hero visual comes from `showcaseWorks[0]`; the
   /// logo enlarges into a gradient empty-state when no showcase is
   /// set yet (no separate `cover` asset — by design).
-  logo          String    @map("logo") @db.VarChar(512)
+  logo          String            @map("logo") @db.VarChar(512)
   /// Optional one-line hook shown under crew name in hero. ≤140
   /// chars. Owner-curated.
-  tagline       String?   @db.VarChar(140)
+  tagline       String?           @db.VarChar(140)
   /// Predefined genre tags from CREW_GENRES in @repo/shared/crew.
   /// E.g. ["animation", "shortform", "documentary"]. Max 5.
-  genres        String[]  @default([])
+  genres        String[]          @default([])
   /// Predefined style tags from CREW_STYLES in @repo/shared/crew.
   /// E.g. ["2d", "3d", "live_action", "ai_assisted"]. Max 5.
-  styles        String[]  @default([])
+  styles        String[]          @default([])
   /// External social channels. Shape:
   ///   [{ platform: "bilibili"|"weibo"|..., url: "https://..." }]
   /// Validated server-side against SOCIAL_PLATFORMS. Max 10 entries.
-  socialLinks   Json?     @map("social_links") @db.JsonB
+  socialLinks   Json?             @map("social_links") @db.JsonB
   /// Curated work showcase. Shape:
   ///   [{ thumbnailUrl, title, externalUrl?, viewCount? }]
   /// First entry is featured as the visitor-page hero background.
   /// Max 10 entries.
-  showcaseWorks Json?     @map("showcase_works") @db.JsonB
+  showcaseWorks Json?             @map("showcase_works") @db.JsonB
   /// Java userId (numeric string). FK not enforced — see header.
-  founderId     String    @map("founder_id")
+  founderId     String            @map("founder_id")
+  /// User-controlled discovery state. New crews start unlisted; only
+  /// listed crews appear in the public Crew Hall.
+  listingStatus CrewListingStatus @default(unlisted) @map("listing_status")
+  /// First/most recent time the owner made the crew visible in the hall.
+  listedAt      DateTime?         @map("listed_at") @db.Timestamptz(6)
   /// Optimistic concurrency control. Bumped on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// crewsService.update(id, patch, expectedVersion).
-  version       Int       @default(0)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version       Int               @default(0)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime?         @map("deleted_at") @db.Timestamptz(6)
 
   positions    CrewPosition[]
   members      CrewMember[]
@@ -136,8 +146,9 @@ model Crew {
   episodes     Episode[]
 
   @@index([founderId, deletedAt], map: "crews_founder_idx")
-  /// Public listing: WHERE deleted_at IS NULL ORDER BY created_at DESC.
-  @@index([deletedAt, createdAt(sort: Desc)], map: "crews_feed_idx")
+  /// Public listing: WHERE listing_status='listed' AND deleted_at IS NULL
+  /// ORDER BY listed_at DESC / created_at DESC.
+  @@index([listingStatus, deletedAt, listedAt(sort: Desc), createdAt(sort: Desc)], map: "crews_feed_idx")
   @@map("crews")
 }
 

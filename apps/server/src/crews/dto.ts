@@ -64,6 +64,13 @@ export const UpdateCrewSchema = CreateCrewSchema.partial().extend({
 });
 export type UpdateCrewInput = z.infer<typeof UpdateCrewSchema>;
 
+export const UpdateCrewListingSchema = z.object({
+  listingStatus: z.enum(['unlisted', 'listed']),
+  /// Optimistic concurrency token from the row read prior to action.
+  expectedVersion: z.number().int().min(0).optional(),
+});
+export type UpdateCrewListingInput = z.infer<typeof UpdateCrewListingSchema>;
+
 // ─── Position CRUD ──────────────────────────────────────────
 
 /// Salary block validated as a unit so we can express "max >= min"

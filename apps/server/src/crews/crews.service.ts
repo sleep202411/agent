@@ -19,7 +19,11 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
-import type { CreateCrewInput, UpdateCrewInput } from './dto';
+import type {
+  CreateCrewInput,
+  UpdateCrewInput,
+  UpdateCrewListingInput,
+} from './dto';
 import { newCrewDomainId, newCrewId } from './id';
 import { toCrewDTO } from './mappers';
 
@@ -76,8 +80,8 @@ export class CrewsService {
   async list(opts: { limit?: number; cursor?: string } = {}) {
     const limit = clampPageSize(opts.limit);
     const rows = await this.prisma.crew.findMany({
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' },
+      where: { deletedAt: null, listingStatus: 'listed' },
+      orderBy: [{ listedAt: 'desc' }, { createdAt: 'desc' }],
       take: limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     });
@@ -101,6 +105,13 @@ export class CrewsService {
       where: { id, deletedAt: null },
     });
     if (!crew) throw new NotFoundException('Crew not found');
+    if (crew.listingStatus !== 'listed') {
+      const canView =
+        viewerId !== null &&
+        (crew.founderId === viewerId ||
+          (await this.isActiveCrewMember(id, viewerId)));
+      if (!canView) throw new NotFoundException('Crew not found');
+    }
 
     const counts = await this.countsFor([id]);
     const isOwner = viewerId !== null && crew.founderId === viewerId;
@@ -190,6 +201,46 @@ export class CrewsService {
     return toCrewDTO(updated);
   }
 
+  async updateListing(
+    id: string,
+    ownerId: string,
+    input: UpdateCrewListingInput,
+  ) {
+    await this.assertOwner(id, ownerId);
+
+    const data: Prisma.CrewUpdateInput = {
+      listingStatus: input.listingStatus,
+      listedAt: input.listingStatus === 'listed' ? new Date() : null,
+      version: { increment: 1 },
+    };
+
+    if (input.expectedVersion !== undefined) {
+      const r = await this.prisma.crew.updateMany({
+        where: { id, version: input.expectedVersion, deletedAt: null },
+        data,
+      });
+      if (r.count === 0) {
+        const current = await this.prisma.crew.findUnique({
+          where: { id },
+          select: { version: true, deletedAt: true },
+        });
+        if (!current || current.deletedAt)
+          throw new NotFoundException('Crew not found');
+        throw new ConflictException({
+          message: 'Crew was modified by someone else; refresh and retry',
+          expectedVersion: input.expectedVersion,
+          actualVersion: current.version,
+        });
+      }
+    } else {
+      await this.prisma.crew.update({ where: { id }, data });
+    }
+
+    const updated = await this.prisma.crew.findUnique({ where: { id } });
+    if (!updated) throw new NotFoundException('Crew not found');
+    return toCrewDTO(updated);
+  }
+
   async softDelete(id: string, ownerId: string): Promise<void> {
     await this.assertOwner(id, ownerId);
     await this.prisma.crew.update({
@@ -243,6 +294,17 @@ export class CrewsService {
         message: 'Only the crew owner can do this',
       });
     }
+  }
+
+  private async isActiveCrewMember(
+    crewId: string,
+    viewerId: string,
+  ): Promise<boolean> {
+    const membership = await this.prisma.crewMember.findFirst({
+      where: { crewId, userId: viewerId, removedAt: null },
+      select: { id: true },
+    });
+    return membership !== null;
   }
 
   /** Aggregate members + open positions for a batch of crew ids. */

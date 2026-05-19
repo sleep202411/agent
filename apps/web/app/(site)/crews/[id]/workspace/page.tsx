@@ -24,6 +24,9 @@ import {
   IconBriefcase,
   IconChevronRight,
   IconEdit,
+  IconEye,
+  IconEyeOff,
+  IconLoader2,
   IconMovie,
   IconUsers,
 } from "@tabler/icons-react";
@@ -36,6 +39,7 @@ import {
   useCrewDetail,
   useCrewMembers,
   useCrewPositions,
+  useUpdateCrewListing,
   type CrewPositionDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
@@ -48,6 +52,16 @@ import { PositionCard } from "@/app/(site)/crews/[id]/workspace/_components/posi
 import { PositionDetailSheet } from "@/app/(site)/crews/[id]/workspace/_components/positions/position-detail-sheet";
 import { PositionsGrid } from "@/app/(site)/crews/[id]/workspace/_components/positions/positions-grid";
 import { EpisodesTab } from "@/app/(site)/crews/[id]/workspace/_components/episodes/episodes-tab";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },
@@ -68,6 +82,7 @@ export default function CrewWorkspacePage() {
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [publishJobOpen, setPublishJobOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [listingIntent, setListingIntent] = useState<"listed" | "unlisted" | null>(null);
   // Member-remove confirmation state moved into MembersGrid — the only
   // surface that triggers a remove.
   // Position expand / freeze state is owned by PositionsGrid +
@@ -76,6 +91,7 @@ export default function CrewWorkspacePage() {
   const { data: crewDetail, isLoading: detailLoading } = useCrewDetail(id);
   const { data: members = [], isLoading: membersLoading } = useCrewMembers(id);
   const { data: positions = [] } = useCrewPositions(id);
+  const updateListing = useUpdateCrewListing();
   // Role gating goes through useUserCrewRole so DevIdentitySwitcher
   // works in dev (without it the workspace gates on the real Java
   // satoken user id, which doesn't match the server-side AUTH_DISABLED
@@ -90,6 +106,7 @@ export default function CrewWorkspacePage() {
     [positions]
   );
   const openCount = useMemo(() => positions.filter((p) => p.status === "open").length, [positions]);
+  const isListed = crewDetail?.listingStatus === "listed";
 
   if (detailLoading || !crewDetail) {
     return (
@@ -147,6 +164,42 @@ export default function CrewWorkspacePage() {
             </div>
             {isOwner ? (
               <div className="flex shrink-0 items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold",
+                    isListed
+                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                      : "border-border bg-secondary text-muted-foreground"
+                  )}
+                >
+                  {isListed ? (
+                    <IconEye className="size-3.5" />
+                  ) : (
+                    <IconEyeOff className="size-3.5" />
+                  )}
+                  {isListed ? t("crewListedStatus") : t("crewUnlistedStatus")}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setListingIntent(isListed ? "unlisted" : "listed")}
+                  disabled={updateListing.isPending}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                    isListed
+                      ? "border-border bg-secondary text-foreground hover:bg-secondary/70"
+                      : "border-primary/30 bg-primary text-primary-foreground hover:bg-primary/90",
+                    updateListing.isPending && "cursor-wait opacity-70"
+                  )}
+                >
+                  {updateListing.isPending ? (
+                    <IconLoader2 className="size-3.5 animate-spin" />
+                  ) : isListed ? (
+                    <IconEyeOff className="size-3.5" />
+                  ) : (
+                    <IconEye className="size-3.5" />
+                  )}
+                  {isListed ? t("hideCrewFromHall") : t("showCrewInHall")}
+                </button>
                 <button
                   type="button"
                   onClick={() => setEditOpen(true)}
@@ -256,6 +309,51 @@ export default function CrewWorkspacePage() {
 
       {/* Freeze-position confirmation moved into PositionDetailSheet
           (the only place that surfaces the freeze action now). */}
+
+      <AlertDialog
+        open={listingIntent !== null}
+        onOpenChange={(open) => {
+          if (!open && !updateListing.isPending) setListingIntent(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {listingIntent === "listed" ? t("showCrewConfirmTitle") : t("hideCrewConfirmTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {listingIntent === "listed" ? t("showCrewConfirmDesc") : t("hideCrewConfirmDesc")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateListing.isPending}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={updateListing.isPending || listingIntent === null}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!listingIntent) return;
+                updateListing.mutate(
+                  { id, listingStatus: listingIntent },
+                  {
+                    onSuccess: () => {
+                      toast.success(
+                        listingIntent === "listed" ? t("showCrewSuccess") : t("hideCrewSuccess")
+                      );
+                      setListingIntent(null);
+                    },
+                    onError: (err) => {
+                      toast.error(err instanceof Error ? err.message : t("visibilityUpdateFailed"));
+                    },
+                  }
+                );
+              }}
+            >
+              {updateListing.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {listingIntent === "listed" ? t("showCrewConfirmAction") : t("hideCrewConfirmAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

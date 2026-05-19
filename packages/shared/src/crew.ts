@@ -51,6 +51,7 @@ export function isValidRoleType(value: string): boolean {
 // ─── DTOs (wire shapes) ──────────────────────────────────────
 
 export type CrewPositionStatus = "open" | "frozen" | "full";
+export type CrewListingStatus = "unlisted" | "listed";
 export type CrewMemberVia = "founder" | "application" | "manual";
 export type CrewApplicationStatus = "pending" | "approved" | "rejected";
 export type EpisodeStatus = "not_started" | "in_production" | "approved";
@@ -184,6 +185,10 @@ export interface CrewDTO {
   /** Featured works carousel. First entry powers the hero. */
   showcaseWorks: ShowcaseWork[];
   founderId: string;
+  /** User-controlled Crew Hall visibility. */
+  listingStatus: CrewListingStatus;
+  /** Last time the owner made the crew visible in Crew Hall. */
+  listedAt: string | null;
   createdAt: string;
   updatedAt: string;
   /** Aggregated counts populated by list / detail endpoints. */

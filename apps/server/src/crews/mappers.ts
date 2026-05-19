@@ -55,6 +55,8 @@ export function toCrewDTO(c: Crew, extras: CrewExtras = {}): CrewDTO {
     socialLinks: (c.socialLinks as CrewDTO['socialLinks'] | null) ?? [],
     showcaseWorks: (c.showcaseWorks as CrewDTO['showcaseWorks'] | null) ?? [],
     founderId: c.founderId,
+    listingStatus: c.listingStatus as CrewDTO['listingStatus'],
+    listedAt: iso(c.listedAt),
     createdAt: isoReq(c.createdAt),
     updatedAt: isoReq(c.updatedAt),
     ...(extras.memberCount !== undefined

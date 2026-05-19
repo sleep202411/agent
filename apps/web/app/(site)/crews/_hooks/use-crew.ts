@@ -13,6 +13,7 @@ export { CrewApiError, crewApi } from "./api";
 
 export type {
   CrewDTO,
+  CrewListingStatus,
   CrewPositionDTO,
   CrewPositionStatus,
   CrewMemberDTO,
@@ -34,6 +35,7 @@ export type {
   CurrencyCode,
   CreateCrewInput,
   UpdateCrewInput,
+  UpdateCrewListingInput,
   CreatePositionInput,
   UpdatePositionInput,
   ApplyInput,
@@ -54,7 +56,13 @@ export {
 } from "./types";
 
 export { useCrewList, useMyCrews } from "./use-crew-list";
-export { useCrewDetail, useCreateCrew, useDeleteCrew, useUpdateCrew } from "./use-crew-detail";
+export {
+  useCrewDetail,
+  useCreateCrew,
+  useDeleteCrew,
+  useUpdateCrew,
+  useUpdateCrewListing,
+} from "./use-crew-detail";
 
 export {
   useCrewPositions,

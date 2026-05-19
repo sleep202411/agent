@@ -19,7 +19,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import type { Locale } from "@/src/i18n/config";
+import { localizePath } from "@/src/i18n/locale-url";
 
 interface KycGateDialogProps {
   open: boolean;
@@ -32,6 +34,7 @@ export function KycGateDialog({ open, onOpenChange, description }: KycGateDialog
   const t = useTranslations("kyc");
   const tc = useTranslations("common");
   const router = useRouter();
+  const locale = useLocale() as Locale;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -45,7 +48,7 @@ export function KycGateDialog({ open, onOpenChange, description }: KycGateDialog
           <AlertDialogAction
             onClick={() => {
               onOpenChange(false);
-              router.push("/kyc");
+              router.push(localizePath("/kyc", locale));
             }}
           >
             {t("goVerify")}

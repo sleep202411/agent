@@ -11,6 +11,7 @@
 
 export type {
   CrewDTO,
+  CrewListingStatus,
   CrewPositionDTO,
   CrewPositionStatus,
   CrewMemberDTO,
@@ -56,6 +57,7 @@ export {
 // ─── Input shapes (controllers' Zod-validated body types) ─────
 
 import type {
+  CrewListingStatus,
   CrewGenre,
   CrewStyle,
   CurrencyCode,
@@ -77,6 +79,12 @@ export interface CreateCrewInput {
 
 export interface UpdateCrewInput extends Partial<CreateCrewInput> {
   id: string;
+}
+
+export interface UpdateCrewListingInput {
+  id: string;
+  listingStatus: CrewListingStatus;
+  expectedVersion?: number;
 }
 
 export interface SalaryInput {

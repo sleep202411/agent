@@ -179,6 +179,91 @@ export class AuthService {
   }
 
   /**
+   * CN compliance gate: Java owns real-name verification state.
+   *
+   * Returns:
+   *   - true  → user still needs KYC
+   *   - false → user is cleared for KYC-gated actions
+   *   - null  → status could not be verified
+   */
+  async needsRealNameVerification(cookie: string): Promise<boolean | null> {
+    if (!cookie) return null;
+
+    const baseUrl = process.env.JAVA_CONTENT_URL?.replace(/\/$/, '');
+    if (!baseUrl) {
+      this.logger.error('JAVA_CONTENT_URL not configured');
+      return null;
+    }
+
+    const satokenMatch = cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+    const satokenCookie = satokenMatch ? `satoken=${satokenMatch[1]}` : cookie;
+    const tokenHint = satokenMatch?.[1].slice(0, 8) ?? '(none)';
+    const url = `${baseUrl}/user/needAuth`;
+
+    const body = await new Promise<Record<string, unknown> | null>(
+      (resolve) => {
+        const https = require('https');
+        const http = require('http');
+        const mod = url.startsWith('https') ? https : http;
+        const req = mod.get(
+          url,
+          { headers: { Cookie: satokenCookie } },
+          (res: { statusCode: number; on: Function }) => {
+            let data = '';
+            res.on('data', (chunk: string) => (data += chunk));
+            res.on('end', () => {
+              if (res.statusCode !== 200) {
+                this.logger.warn(
+                  `KYC status check failed: HTTP ${res.statusCode} token=${tokenHint} body=${data.slice(0, 200)}`,
+                );
+                resolve(null);
+                return;
+              }
+              try {
+                resolve(JSON.parse(data) as Record<string, unknown>);
+              } catch {
+                this.logger.warn(
+                  `KYC status check returned invalid JSON token=${tokenHint}`,
+                );
+                resolve(null);
+              }
+            });
+          },
+        );
+        req.setTimeout(5000, () => {
+          req.destroy(new Error('KYC status request timed out'));
+        });
+        req.on('error', (err: Error) => {
+          this.logger.error(`KYC status request error: ${err.message}`);
+          resolve(null);
+        });
+      },
+    );
+
+    if (!body) return null;
+
+    const isSuccess =
+      body.success === true || body.code === 200 || body.code === 'SUCCESS';
+    const payload =
+      typeof body.data === 'object' && body.data !== null
+        ? (body.data as Record<string, unknown>)
+        : typeof body.info === 'object' && body.info !== null
+          ? (body.info as Record<string, unknown>)
+          : body;
+    if (!isSuccess && !('needAuth' in payload)) {
+      this.logger.warn(
+        `KYC status check rejected: ${String(body.msg ?? body.message ?? 'unknown')} token=${tokenHint}`,
+      );
+      return null;
+    }
+
+    const needAuth = payload.needAuth;
+    if (typeof needAuth === 'boolean') return needAuth;
+    if (typeof needAuth === 'string') return needAuth === 'true';
+    return null;
+  }
+
+  /**
    * Evict expired entries. Called periodically or on demand.
    */
   pruneCache() {

@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { IconEdit, IconLoader2, IconPlus, IconExternalLink, IconTrash } from "@tabler/icons-react";
+import {
+  IconEdit,
+  IconExternalLink,
+  IconEye,
+  IconEyeOff,
+  IconLoader2,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
@@ -665,11 +673,14 @@ function MyCrewCard({ crew, isOwner }: { crew: CrewDTO; isOwner: boolean }) {
       : `${env.BANNER_BASE_URL}/${heroSource.replace(/^\/+/, "")}`
     : "";
   const pendingCount = crew.pendingApplicationCount ?? 0;
+  const isListed = crew.listingStatus === "listed";
+  const detailUrl = localizePath(`/crews/${crew.id}`, locale);
+  const workspaceUrl = localizePath(`/crews/${crew.id}/workspace`, locale);
 
   return (
     <div
       className="group relative cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/30"
-      onClick={() => router.push(localizePath(`/crews/${crew.id}`, locale))}
+      onClick={() => router.push(isOwner && !isListed ? workspaceUrl : detailUrl)}
     >
       {isOwner && (
         <div className="absolute left-2 top-2 z-10 rounded-full bg-primary/85 px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
@@ -693,15 +704,29 @@ function MyCrewCard({ crew, isOwner }: { crew: CrewDTO; isOwner: boolean }) {
       </div>
       <div className="space-y-2 p-3">
         <div className="truncate text-sm font-medium">{crew.name}</div>
-        <div className="text-[11px] text-muted-foreground">
-          {crew.memberCount ?? 0} members · {crew.openPositionCount ?? 0} open
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span>
+            {crew.memberCount ?? 0} members · {crew.openPositionCount ?? 0} open
+          </span>
+          {isOwner ? (
+            <span
+              className={
+                isListed
+                  ? "inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-400"
+                  : "inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-muted-foreground"
+              }
+            >
+              {isListed ? <IconEye className="size-3" /> : <IconEyeOff className="size-3" />}
+              {isListed ? t("crewListed") : t("crewUnlisted")}
+            </span>
+          ) : null}
         </div>
         {isOwner ? (
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
+              router.push(workspaceUrl);
             }}
             className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground transition-colors hover:border-primary/50 hover:text-primary"
           >
