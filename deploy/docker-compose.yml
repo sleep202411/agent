@@ -51,11 +51,16 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       REDIS_URL: redis://redis:6379
       # Crew module persistence — see `postgres` service below.
-      # Password sourced from .env (POSTGRES_PASSWORD). On managed-DB
-      # deploys (Azure / Aliyun RDS) override DATABASE_URL directly
-      # in the host .env and the `postgres` service can be commented
-      # out of this file.
-      DATABASE_URL: ${DATABASE_URL:-postgresql://fizzdragon:${POSTGRES_PASSWORD}@postgres:5432/fizzdragon?schema=public}
+      # Password sourced from .env (POSTGRES_PASSWORD). Keep this as
+      # simple, non-nested interpolation: podman-compose 1.0.6 misparses
+      # nested defaults like `${DATABASE_URL:-...${POSTGRES_PASSWORD}...}`
+      # and can leave a stray `}` in `schema=public}`.
+      #
+      # Managed DB migration path: set POSTGRES_HOST/POSTGRES_PORT/
+      # POSTGRES_USER/POSTGRES_DB/POSTGRES_URL_PARAMS in the host env,
+      # then remove `- postgres` from depends_on and disable the
+      # postgres service in a maintenance release.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fizzdragon}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-fizzdragon}?schema=${POSTGRES_SCHEMA:-public}${POSTGRES_URL_PARAMS:-}
       # Supervisor chat + workflow endpoints live in the agent container.
       MASTRA_URL: http://agent:4111
       DISABLE_CONTENT_MODERATION: ${DISABLE_CONTENT_MODERATION:-false}
@@ -196,8 +201,8 @@ services:
       com.centurylinklabs.watchtower.enable: "true"
     mem_limit: 1g
     environment:
-      POSTGRES_DB: fizzdragon
-      POSTGRES_USER: fizzdragon
+      POSTGRES_DB: ${POSTGRES_DB:-fizzdragon}
+      POSTGRES_USER: ${POSTGRES_USER:-fizzdragon}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pg_data:/var/lib/postgresql/data
