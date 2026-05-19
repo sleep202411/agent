@@ -10,13 +10,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { CreatePositionInput, CrewPositionDTO, UpdatePositionInput } from "./types";
+import { getDemoPositions, isDemoCrewId } from "@/app/(site)/crews/_data/demo-crews";
 
 export function useCrewPositions(crewId: string | undefined) {
   return useQuery({
     queryKey: crewKeys.positions(crewId ?? ""),
     enabled: !!crewId,
-    queryFn: () =>
-      crewApi.get<CrewPositionDTO[]>(`/crews/${encodeURIComponent(crewId!)}/positions`),
+    queryFn: () => {
+      if (isDemoCrewId(crewId)) {
+        return Promise.resolve(getDemoPositions(crewId!));
+      }
+      return crewApi.get<CrewPositionDTO[]>(`/crews/${encodeURIComponent(crewId!)}/positions`);
+    },
   });
 }
 

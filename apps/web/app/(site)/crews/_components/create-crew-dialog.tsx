@@ -9,13 +9,14 @@
  * Fields (matching `POST /project/crew/create`):
  *   - 名称 / name         — required
  *   - 描述 / description  — required
- *   - 封面图 / banner     — required, image upload
+ *   - logo               — required, square image upload (cropped to
+ *                          circle in every consuming surface)
  *
- * Cover-video upload was removed pending a proper presigned-URL
- * endpoint for crew videos — the previous shortcut piped video bytes
- * through `/project/uploadBanner`, which works only because backend
- * skips file-type validation. Add the field back once the endpoint
- * lands; backend still accepts a `video` path on the wire.
+ * The older `cover` / `coverVideo` fields were dropped in the
+ * `crew_logo_and_showcase` migration — hero visuals on the detail
+ * page now come from `showcaseWorks[0]` (or an enlarged-logo
+ * gradient fallback). Tagline / genres / styles / socialLinks /
+ * showcaseWorks are edited in the workspace 基本信息 tab (Phase B).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -57,8 +58,8 @@ export interface CrewFormInitial {
   id: string;
   name: string;
   description?: string;
-  /** OSS path of the cover image. */
-  coverImage?: string;
+  /** OSS path of the crew logo (square). */
+  logo?: string;
 }
 
 interface CreateCrewDialogProps {
@@ -77,12 +78,12 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  // Backend persists a relative OSS key in `banner`; we keep both the
+  // Backend persists a relative OSS key in `logo`; we keep both the
   // raw key (sent on submit) and rely on env.BANNER_BASE_URL to render
-  // the preview locally.
-  const [bannerLink, setBannerLink] = useState("");
-  const [uploadingBanner, setUploadingBanner] = useState(false);
-  const bannerInputRef = useRef<HTMLInputElement>(null);
+  // the local preview.
+  const [logoPath, setLogoPath] = useState("");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const create = useCreateCrew();
   const update = useUpdateCrew();
@@ -96,35 +97,35 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
     if (!open) {
       setName("");
       setDescription("");
-      setBannerLink("");
-      setUploadingBanner(false);
+      setLogoPath("");
+      setUploadingLogo(false);
       return;
     }
     if (initial) {
       setName(initial.name ?? "");
       setDescription(initial.description ?? "");
-      setBannerLink(initial.coverImage ?? "");
+      setLogoPath(initial.logo ?? "");
     }
   }, [open, initial]);
 
-  // ─── Banner upload (image) ─────────────────────────
-  const handleBannerFile = async (file: File) => {
+  // ─── Logo upload (image) ──────────────────────────
+  const handleLogoFile = async (file: File) => {
     if (!file.type.startsWith("image/")) {
-      toast.error(t("createBannerImageOnly"));
+      toast.error(t("createLogoImageOnly"));
       return;
     }
-    setUploadingBanner(true);
+    setUploadingLogo(true);
     try {
       const path = await uploadBanner(file);
       if (typeof path !== "string" || path.length === 0) {
         throw new Error("upload returned empty path");
       }
-      setBannerLink(path);
+      setLogoPath(path);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
-      toast.error(msg || t("createBannerUploadFailed"));
+      toast.error(msg || t("createLogoUploadFailed"));
     } finally {
-      setUploadingBanner(false);
+      setUploadingLogo(false);
     }
   };
 
@@ -148,14 +149,14 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
 
   // ─── Submit ─────────────────────────────────────────
   const handleSubmit = () => {
-    if (!name.trim() || !description.trim() || !bannerLink || creating) return;
+    if (!name.trim() || !description.trim() || !logoPath || creating) return;
 
     if (isEdit && initial) {
       update.mutate(
         {
           id: String(initial.id),
           name: name.trim(),
-          coverImage: bannerLink,
+          logo: logoPath,
           description: description.trim(),
         },
         {
@@ -172,7 +173,7 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
     create.mutate(
       {
         name: name.trim(),
-        coverImage: bannerLink,
+        logo: logoPath,
         description: description.trim(),
       },
       {
@@ -202,6 +203,51 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
 
         <DialogBody>
           <FieldGroup>
+            {/* Logo first, centered, no label — it IS the identity
+                anchor of the form. Avatar-style picker matches the
+                pattern users have seen on profile setup screens. */}
+            <div className="flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={() => logoInputRef.current?.click()}
+                disabled={uploadingLogo}
+                className={cn(
+                  "relative flex size-28 items-center justify-center overflow-hidden rounded-full border border-dashed border-border bg-muted/30 transition-colors hover:border-primary/50",
+                  uploadingLogo && "cursor-wait opacity-60"
+                )}
+                aria-label={t("createLogoLabel")}
+              >
+                {logoPath ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={
+                      logoPath.startsWith("http") ? logoPath : `${env.BANNER_BASE_URL}/${logoPath}`
+                    }
+                    alt=""
+                    className="size-full object-cover"
+                  />
+                ) : uploadingLogo ? (
+                  <IconLoader2 className="size-7 animate-spin text-muted-foreground" />
+                ) : (
+                  <IconPhoto className="size-7 text-muted-foreground" />
+                )}
+              </button>
+              <p className="max-w-xs text-center text-[11px] text-muted-foreground">
+                {t("createLogoHelp")}
+              </p>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void handleLogoFile(file);
+                }}
+              />
+            </div>
+
             <Field>
               <FieldLabel required>{t("createNameLabel")}</FieldLabel>
               <Input
@@ -226,52 +272,6 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
                 rows={3}
               />
             </Field>
-
-            <Field>
-              <FieldLabel required>{t("createBannerLabel")}</FieldLabel>
-              <button
-                type="button"
-                onClick={() => bannerInputRef.current?.click()}
-                disabled={uploadingBanner}
-                className={cn(
-                  "relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-md border border-dashed border-border bg-muted/30 transition-colors hover:border-primary/50",
-                  uploadingBanner && "cursor-wait opacity-60"
-                )}
-              >
-                {bannerLink ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={
-                      bannerLink.startsWith("http")
-                        ? bannerLink
-                        : `${env.BANNER_BASE_URL}/${bannerLink}`
-                    }
-                    alt=""
-                    className="size-full object-cover"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-1.5 text-xs text-muted-foreground">
-                    {uploadingBanner ? (
-                      <IconLoader2 className="size-5 animate-spin" />
-                    ) : (
-                      <IconPhoto className="size-5" />
-                    )}
-                    <span>{t("createBannerPickHint")}</span>
-                  </div>
-                )}
-              </button>
-              <input
-                ref={bannerInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = "";
-                  if (file) void handleBannerFile(file);
-                }}
-              />
-            </Field>
           </FieldGroup>
         </DialogBody>
 
@@ -288,9 +288,7 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
           <Button
             type="button"
             onClick={handleSubmit}
-            disabled={
-              !name.trim() || !description.trim() || !bannerLink || uploadingBanner || creating
-            }
+            disabled={!name.trim() || !description.trim() || !logoPath || uploadingLogo || creating}
           >
             {creating ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {isEdit

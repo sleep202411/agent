@@ -35,8 +35,18 @@ export class CrewsService {
         data: {
           name: input.name,
           description: input.description,
-          coverImage: input.coverImage,
-          coverVideo: input.coverVideo ?? null,
+          logo: input.logo,
+          tagline: input.tagline ?? null,
+          genres: input.genres,
+          styles: input.styles,
+          // Empty arrays come through as SQL NULL — Prisma's JsonB
+          // column requires Prisma.DbNull for the null literal.
+          ...(input.socialLinks.length > 0
+            ? { socialLinks: input.socialLinks }
+            : { socialLinks: Prisma.DbNull }),
+          ...(input.showcaseWorks.length > 0
+            ? { showcaseWorks: input.showcaseWorks }
+            : { showcaseWorks: Prisma.DbNull }),
           founderId,
         },
       });
@@ -76,6 +86,7 @@ export class CrewsService {
         toCrewDTO(c, {
           memberCount: counts.members.get(c.id) ?? 0,
           openPositionCount: counts.openPositions.get(c.id) ?? 0,
+          openPositionPreview: counts.openPositionPreview.get(c.id) ?? [],
         }),
       ),
       nextCursor: hasMore ? slice[slice.length - 1].id : null,
@@ -100,6 +111,7 @@ export class CrewsService {
     return toCrewDTO(crew, {
       memberCount: counts.members.get(id) ?? 0,
       openPositionCount: counts.openPositions.get(id) ?? 0,
+      openPositionPreview: counts.openPositionPreview.get(id) ?? [],
       pendingApplicationCount,
     });
   }
@@ -126,11 +138,23 @@ export class CrewsService {
       ...(input.description !== undefined
         ? { description: input.description }
         : {}),
-      ...(input.coverImage !== undefined
-        ? { coverImage: input.coverImage }
+      ...(input.logo !== undefined ? { logo: input.logo } : {}),
+      ...(input.tagline !== undefined ? { tagline: input.tagline } : {}),
+      ...(input.genres !== undefined ? { genres: input.genres } : {}),
+      ...(input.styles !== undefined ? { styles: input.styles } : {}),
+      ...(input.socialLinks !== undefined
+        ? {
+            socialLinks:
+              input.socialLinks.length > 0 ? input.socialLinks : Prisma.DbNull,
+          }
         : {}),
-      ...(input.coverVideo !== undefined
-        ? { coverVideo: input.coverVideo }
+      ...(input.showcaseWorks !== undefined
+        ? {
+            showcaseWorks:
+              input.showcaseWorks.length > 0
+                ? input.showcaseWorks
+                : Prisma.DbNull,
+          }
         : {}),
       version: { increment: 1 },
     };
@@ -194,6 +218,7 @@ export class CrewsService {
       const dto = toCrewDTO(m.crew, {
         memberCount: counts.members.get(m.crew.id) ?? 0,
         openPositionCount: counts.openPositions.get(m.crew.id) ?? 0,
+        openPositionPreview: counts.openPositionPreview.get(m.crew.id) ?? [],
         ...(m.via === 'founder'
           ? { pendingApplicationCount: pendingByCrew.get(m.crew.id) ?? 0 }
           : {}),
@@ -223,9 +248,10 @@ export class CrewsService {
       return {
         members: new Map<string, number>(),
         openPositions: new Map<string, number>(),
+        openPositionPreview: new Map<string, string[]>(),
       };
     }
-    const [memberRows, positionRows] = await Promise.all([
+    const [memberRows, positionRows, recentOpenRows] = await Promise.all([
       this.prisma.crewMember.groupBy({
         by: ['crewId'],
         where: { crewId: { in: ids }, removedAt: null },
@@ -236,12 +262,29 @@ export class CrewsService {
         where: { crewId: { in: ids }, status: 'open', deletedAt: null },
         _count: { _all: true },
       }),
+      // Preview names for the plaza card — newest 3 open positions
+      // per crew, ordered by createdAt desc. Cheap to fetch
+      // alongside the counts: server-paginates to ≤3 × N rows.
+      this.prisma.crewPosition.findMany({
+        where: { crewId: { in: ids }, status: 'open', deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { crewId: true, positionType: true, createdAt: true },
+      }),
     ]);
     const members = new Map<string, number>();
     for (const r of memberRows) members.set(r.crewId, r._count._all);
     const openPositions = new Map<string, number>();
     for (const r of positionRows) openPositions.set(r.crewId, r._count._all);
-    return { members, openPositions };
+    const openPositionPreview = new Map<string, string[]>();
+    for (const r of recentOpenRows) {
+      const cur = openPositionPreview.get(r.crewId);
+      if (cur && cur.length >= 3) continue;
+      openPositionPreview.set(
+        r.crewId,
+        cur ? [...cur, r.positionType] : [r.positionType],
+      );
+    }
+    return { members, openPositions, openPositionPreview };
   }
 }
 

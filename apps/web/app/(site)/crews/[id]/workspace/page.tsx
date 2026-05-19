@@ -117,35 +117,27 @@ export default function CrewWorkspacePage() {
     );
   }
 
-  const heroBanner = resolveAsset(crewDetail.coverImage, env.BANNER_BASE_URL);
-  const heroVideo = resolveAsset(crewDetail.coverVideo, env.OSS_BASE_URL);
+  // Hero visual derives from the featured showcase work (first entry).
+  // No showcase yet → no hero band; the page below carries the crew
+  // name + logo in its own header so the workspace still reads.
+  const featuredWork = crewDetail.showcaseWorks?.[0] ?? null;
+  const heroVisual = featuredWork
+    ? resolveAsset(featuredWork.thumbnailUrl, env.BANNER_BASE_URL)
+    : "";
   const heroDescription = (crewDetail.description ?? "").trim();
 
   return (
     <div className="min-h-screen bg-background">
       <DevIdentitySwitcher />
 
-      {heroBanner ? (
+      {heroVisual ? (
         <div className="relative h-48 w-full overflow-hidden bg-black sm:h-64">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={heroBanner} alt="" className="absolute inset-0 size-full object-cover" />
-          {heroVideo ? (
-            <video
-              src={heroVideo}
-              poster={heroBanner}
-              autoPlay
-              loop
-              muted
-              playsInline
-              preload="metadata"
-              className="absolute inset-0 size-full object-cover"
-              aria-hidden
-            />
-          ) : null}
+          <img src={heroVisual} alt="" className="absolute inset-0 size-full object-cover" />
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
           {heroDescription ? (
             <div className="absolute inset-x-0 bottom-3 px-6">
-              <div className="mx-auto max-w-screen-xl">
+              <div className="mx-auto max-w-[1800px]">
                 <p className="line-clamp-2 max-w-2xl text-sm text-white/90">{heroDescription}</p>
               </div>
             </div>
@@ -154,7 +146,7 @@ export default function CrewWorkspacePage() {
       ) : null}
 
       <div className="border-b border-border bg-card/50">
-        <div className="mx-auto max-w-screen-xl px-6 py-5">
+        <div className="mx-auto max-w-[1800px] px-6 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="mb-1.5 flex flex-wrap items-center gap-2">
@@ -167,7 +159,7 @@ export default function CrewWorkspacePage() {
                 </Link>
                 <h1 className="truncate text-xl font-black text-foreground">{crewDetail.name}</h1>
               </div>
-              {!heroBanner && heroDescription ? (
+              {!heroVisual && heroDescription ? (
                 <p className="max-w-3xl text-xs text-muted-foreground">{heroDescription}</p>
               ) : null}
             </div>
@@ -192,7 +184,7 @@ export default function CrewWorkspacePage() {
         </div>
       </div>
 
-      <div className="mx-auto flex max-w-screen-xl gap-5 px-6 py-6">
+      <div className="mx-auto flex max-w-[1800px] gap-5 px-6 py-6">
         <div className="w-36 shrink-0">
           <nav className="sticky top-6 space-y-0.5">
             {TABS.map((tab) => {
@@ -272,7 +264,7 @@ export default function CrewWorkspacePage() {
           id: crewDetail.id,
           name: crewDetail.name,
           description: crewDetail.description,
-          coverImage: crewDetail.coverImage,
+          logo: crewDetail.logo,
         }}
       />
 

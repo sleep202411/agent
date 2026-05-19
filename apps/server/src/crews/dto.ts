@@ -6,9 +6,12 @@
 import { z } from 'zod';
 import {
   ALL_CURRENCIES,
+  CREW_GENRES,
+  CREW_STYLES,
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
   SALARY_PERIODS,
+  SOCIAL_PLATFORMS,
   WORK_MODES,
   isPresetPosition,
 } from '@repo/shared/crew';
@@ -19,11 +22,37 @@ const presetPosition = z.string().refine(isPresetPosition, {
 
 // ─── Crew CRUD ──────────────────────────────────────────────
 
+const SocialLinkSchema = z.object({
+  platform: z.enum(SOCIAL_PLATFORMS),
+  url: z.string().trim().url().max(512),
+});
+
+const ShowcaseWorkSchema = z.object({
+  thumbnailUrl: z.string().trim().url().max(512),
+  title: z.string().trim().min(1).max(200),
+  externalUrl: z.string().trim().url().max(512).nullable().optional(),
+  viewCount: z.number().int().min(0).nullable().optional(),
+  releaseDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'releaseDate must be YYYY-MM-DD')
+    .nullable()
+    .optional(),
+});
+
 export const CreateCrewSchema = z.object({
   name: z.string().trim().min(1).max(128),
   description: z.string().trim().min(1).max(2000),
-  coverImage: z.string().min(1),
-  coverVideo: z.string().min(1).nullable().optional(),
+  /** Square logo URL (≤512 chars). Cropped to circle in UI. */
+  logo: z.string().trim().min(1).max(512),
+  /** One-line hook under crew name. ≤140 chars. */
+  tagline: z.string().trim().max(140).nullable().optional(),
+  /** Crew taxonomy — max 5 each. */
+  genres: z.array(z.enum(CREW_GENRES)).max(5).default([]),
+  styles: z.array(z.enum(CREW_STYLES)).max(5).default([]),
+  /** External channel links — max 10. */
+  socialLinks: z.array(SocialLinkSchema).max(10).default([]),
+  /** Featured works — max 10. First powers hero bg. */
+  showcaseWorks: z.array(ShowcaseWorkSchema).max(10).default([]),
 });
 export type CreateCrewInput = z.infer<typeof CreateCrewSchema>;
 

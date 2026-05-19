@@ -108,18 +108,90 @@ export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
  *  JPY is the main one in our whitelist. CNY/USD/EUR are 100x scaled. */
 export const ZERO_DECIMAL_CURRENCIES = new Set<CurrencyCode>(["JPY"]);
 
+// ─── Crew taxonomy ─────────────────────────────────────
+
+/** Top-level format of what the crew makes. Max 5 per crew. */
+export const CREW_GENRES = [
+  "animation",
+  "live_action",
+  "documentary",
+  "shortform",
+  "mv",
+  "commercial",
+  "experimental",
+  "vlog",
+] as const;
+export type CrewGenre = (typeof CREW_GENRES)[number];
+
+/** Production technique — orthogonal to genre. Max 5 per crew. */
+export const CREW_STYLES = [
+  "2d",
+  "3d",
+  "mixed_media",
+  "live_action",
+  "stop_motion",
+  "ai_assisted",
+  "documentary",
+] as const;
+export type CrewStyle = (typeof CREW_STYLES)[number];
+
+/** External channel platforms surfaced as social links. */
+export const SOCIAL_PLATFORMS = [
+  "bilibili",
+  "weibo",
+  "douyin",
+  "xiaohongshu",
+  "youtube",
+  "tiktok",
+  "instagram",
+  "website",
+] as const;
+export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
+
+export interface SocialLink {
+  platform: SocialPlatform;
+  url: string;
+}
+
+/** One curated work shown on the crew detail page. First entry is
+ *  featured as the visitor-page hero background. */
+export interface ShowcaseWork {
+  /** Required — used as thumbnail in cards and as hero bg fallback. */
+  thumbnailUrl: string;
+  title: string;
+  /** Outbound link (Bilibili / YouTube / 内站 video page). Optional. */
+  externalUrl?: string | null;
+  /** Display only — not validated against anything. */
+  viewCount?: number | null;
+  /** Optional release date (YYYY-MM-DD). Sort hint. */
+  releaseDate?: string | null;
+}
+
 export interface CrewDTO {
   id: string;
   name: string;
   description: string;
-  coverImage: string;
-  coverVideo: string | null;
+  /** Square logo. Required. UI crops to circle. */
+  logo: string;
+  /** One-line hook under crew name in hero. ≤140 chars. */
+  tagline: string | null;
+  /** From CREW_GENRES. */
+  genres: CrewGenre[];
+  /** From CREW_STYLES. */
+  styles: CrewStyle[];
+  /** External channels. */
+  socialLinks: SocialLink[];
+  /** Featured works carousel. First entry powers the hero. */
+  showcaseWorks: ShowcaseWork[];
   founderId: string;
   createdAt: string;
   updatedAt: string;
   /** Aggregated counts populated by list / detail endpoints. */
   memberCount?: number;
   openPositionCount?: number;
+  /** Top-3 newest open positionType strings — for plaza card
+   *  "招募: 配音演员 · 音效师 +1" preview chip. */
+  openPositionPreview?: string[];
   pendingApplicationCount?: number;
 }
 

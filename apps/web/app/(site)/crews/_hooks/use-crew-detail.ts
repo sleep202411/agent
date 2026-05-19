@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CrewApiError, crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { CreateCrewInput, CrewDTO, UpdateCrewInput } from "./types";
+import { getDemoCrew, isDemoCrewId } from "@/app/(site)/crews/_data/demo-crews";
 
 async function fetchCrewDetail(id: string): Promise<CrewDTO | null> {
   try {
@@ -21,7 +22,13 @@ async function fetchCrewDetail(id: string): Promise<CrewDTO | null> {
 export function useCrewDetail(id: string) {
   return useQuery({
     queryKey: crewKeys.detail(id),
-    queryFn: () => fetchCrewDetail(id),
+    queryFn: () => {
+      // Demo crew ids never hit the backend — see _data/demo-crews.
+      if (isDemoCrewId(id)) {
+        return Promise.resolve(getDemoCrew(id));
+      }
+      return fetchCrewDetail(id);
+    },
     enabled: !!id,
   });
 }

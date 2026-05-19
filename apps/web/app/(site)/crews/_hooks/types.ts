@@ -29,6 +29,11 @@ export type {
   ExperienceLevel,
   SalaryPeriod,
   CurrencyCode,
+  CrewGenre,
+  CrewStyle,
+  SocialPlatform,
+  SocialLink,
+  ShowcaseWork,
 } from "@repo/shared/crew";
 
 export {
@@ -43,15 +48,24 @@ export {
   ALL_CURRENCIES,
   CURRENCY_SYMBOLS,
   ZERO_DECIMAL_CURRENCIES,
+  CREW_GENRES,
+  CREW_STYLES,
+  SOCIAL_PLATFORMS,
 } from "@repo/shared/crew";
 
 // ─── Input shapes (controllers' Zod-validated body types) ─────
 
+import type { CrewGenre, CrewStyle, SocialLink, ShowcaseWork } from "@repo/shared/crew";
+
 export interface CreateCrewInput {
   name: string;
   description: string;
-  coverImage: string;
-  coverVideo?: string | null;
+  logo: string;
+  tagline?: string | null;
+  genres?: CrewGenre[];
+  styles?: CrewStyle[];
+  socialLinks?: SocialLink[];
+  showcaseWorks?: ShowcaseWork[];
 }
 
 export interface UpdateCrewInput extends Partial<CreateCrewInput> {

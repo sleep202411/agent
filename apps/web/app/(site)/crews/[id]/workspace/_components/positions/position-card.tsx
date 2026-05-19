@@ -32,6 +32,17 @@ interface PositionCardProps {
   applicantCount: number;
   pendingApplicantCount: number;
   onClick: () => void;
+  /** Visitor / public mode: hide owner-only signals (applicant counts,
+   *  pending-review badge). Owner / admin context leaves this off so
+   *  triage badges show. */
+  hideOwnerStats?: boolean;
+  /** Optional explicit CTA strip at the bottom of the card. Visitor
+   *  surfaces use this to show "Apply now" / "Full" / "Already a
+   *  member" affordances since the card-as-button is otherwise
+   *  ambiguous about WHAT clicking does. Owner surfaces leave it
+   *  undefined (the implicit "click to manage" affordance is fine
+   *  inside the workspace). */
+  cta?: { label: string; tone?: "primary" | "muted" };
 }
 
 export function PositionCard({
@@ -39,6 +50,8 @@ export function PositionCard({
   applicantCount,
   pendingApplicantCount,
   onClick,
+  hideOwnerStats,
+  cta,
 }: PositionCardProps) {
   const t = useTranslations("workspace");
   const translatePosition = useTranslatePositionValue();
@@ -120,7 +133,7 @@ export function PositionCard({
             <IconUsers className="size-3" />
             {filled}/{total} {t("filled")}
           </span>
-          {pendingApplicantCount > 0 ? (
+          {!hideOwnerStats && pendingApplicantCount > 0 ? (
             <span className="font-semibold text-amber-400">
               {t("pendingApplicantsBadge", { count: pendingApplicantCount })}
             </span>
@@ -143,7 +156,9 @@ export function PositionCard({
           from body. */}
       <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-2 text-[11px] text-muted-foreground">
         <span>
-          {t("applicantCountFooter", { count: applicantCount })} · {timeAgo(position.createdAt, t)}
+          {hideOwnerStats
+            ? timeAgo(position.createdAt, t)
+            : `${t("applicantCountFooter", { count: applicantCount })} · ${timeAgo(position.createdAt, t)}`}
         </span>
         {daysLeft != null ? (
           <span
@@ -162,6 +177,22 @@ export function PositionCard({
           </span>
         ) : null}
       </div>
+
+      {/* Optional visitor CTA strip — explicit affordance for "what
+          does clicking do here". Owner contexts leave this off; the
+          card's primary click already routes to the manage sheet. */}
+      {cta ? (
+        <div
+          className={cn(
+            "-mx-4 -mb-4 mt-1 rounded-b-xl px-4 py-2.5 text-center text-xs font-semibold",
+            cta.tone === "primary"
+              ? "bg-primary/10 text-primary group-hover:bg-primary/20"
+              : "bg-secondary/40 text-muted-foreground"
+          )}
+        >
+          {cta.tone === "primary" ? `${cta.label} →` : cta.label}
+        </div>
+      ) : null}
     </button>
   );
 }

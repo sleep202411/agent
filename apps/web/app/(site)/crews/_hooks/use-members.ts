@@ -11,12 +11,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { AddMemberInput, CrewMemberDTO } from "./types";
+import { getDemoMembers, isDemoCrewId } from "@/app/(site)/crews/_data/demo-crews";
 
 export function useCrewMembers(crewId: string | undefined) {
   return useQuery({
     queryKey: crewKeys.members(crewId ?? ""),
     enabled: !!crewId,
-    queryFn: () => crewApi.get<CrewMemberDTO[]>(`/crews/${encodeURIComponent(crewId!)}/members`),
+    queryFn: () => {
+      if (isDemoCrewId(crewId)) {
+        return Promise.resolve(getDemoMembers(crewId!));
+      }
+      return crewApi.get<CrewMemberDTO[]>(`/crews/${encodeURIComponent(crewId!)}/members`);
+    },
   });
 }
 

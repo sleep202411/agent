@@ -34,6 +34,9 @@ const isoReq = (d: Date) => d.toISOString();
 interface CrewExtras {
   memberCount?: number;
   openPositionCount?: number;
+  /** Top-N (≤3) newest open positionType strings — for plaza card
+   *  preview ("招募: 配音演员 · 音效师 +1"). */
+  openPositionPreview?: string[];
   pendingApplicationCount?: number;
 }
 
@@ -42,8 +45,15 @@ export function toCrewDTO(c: Crew, extras: CrewExtras = {}): CrewDTO {
     id: c.id,
     name: c.name,
     description: c.description,
-    coverImage: c.coverImage,
-    coverVideo: c.coverVideo ?? null,
+    logo: c.logo,
+    tagline: c.tagline ?? null,
+    genres: (c.genres ?? []) as CrewDTO['genres'],
+    styles: (c.styles ?? []) as CrewDTO['styles'],
+    // Both JSONB fields are typed `Prisma.JsonValue` at the Prisma
+    // layer; service-level Zod input + DB CHECK constraints upstream
+    // guarantee shape, so the cast is safe.
+    socialLinks: (c.socialLinks as CrewDTO['socialLinks'] | null) ?? [],
+    showcaseWorks: (c.showcaseWorks as CrewDTO['showcaseWorks'] | null) ?? [],
     founderId: c.founderId,
     createdAt: isoReq(c.createdAt),
     updatedAt: isoReq(c.updatedAt),
@@ -52,6 +62,9 @@ export function toCrewDTO(c: Crew, extras: CrewExtras = {}): CrewDTO {
       : {}),
     ...(extras.openPositionCount !== undefined
       ? { openPositionCount: extras.openPositionCount }
+      : {}),
+    ...(extras.openPositionPreview !== undefined
+      ? { openPositionPreview: extras.openPositionPreview }
       : {}),
     ...(extras.pendingApplicationCount !== undefined
       ? { pendingApplicationCount: extras.pendingApplicationCount }

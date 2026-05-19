@@ -656,10 +656,13 @@ function MyCrewCard({ crew, isOwner }: { crew: CrewDTO; isOwner: boolean }) {
   const t = useTranslations("profile");
   const router = useRouter();
   const locale = useLocale() as Locale;
-  const bannerUrl = crew.coverImage
-    ? crew.coverImage.startsWith("http")
-      ? crew.coverImage
-      : `${env.BANNER_BASE_URL}/${crew.coverImage.replace(/^\/+/, "")}`
+  // Prefer the first showcase work's thumbnail (a real production
+  // still beats a square logo as a hero), fall back to the logo.
+  const heroSource = crew.showcaseWorks?.[0]?.thumbnailUrl ?? crew.logo;
+  const bannerUrl = heroSource
+    ? heroSource.startsWith("http")
+      ? heroSource
+      : `${env.BANNER_BASE_URL}/${heroSource.replace(/^\/+/, "")}`
     : "";
   const pendingCount = crew.pendingApplicationCount ?? 0;
 
