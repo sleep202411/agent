@@ -43,9 +43,11 @@ ENV MASTRA_HOST=0.0.0.0
 # in-flight workflow snapshots survive container restarts.
 ENV MASTRA_DB_URL=file:/app/data/mastra.db
 
-# Re-install deps (keeps mastra CLI + tsx available at runtime)
+# Re-install deps (keeps mastra CLI + tsx available at runtime). NODE_ENV is
+# already production here, so explicitly include dev deps; otherwise npm omits
+# `mastra` and `tsx`, and `npx` tries to download them at container start.
 COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --include=dev
 
 # API server consumes .mastra/output; worker imports from src/ and resolves
 # `@repo/shared` to its built dist/. Ship all three.

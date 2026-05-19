@@ -47,3 +47,11 @@ export function localizedProjectWorkspaceHref(
 ): string {
   return localizePath(projectWorkspaceRoute(projectId, options), getCurrentLocale());
 }
+
+export function isProjectWorkspaceChromePath(pathname: string): boolean {
+  const cleanPath = pathname.split("?")[0]?.replace(/\/+$/, "") || "/";
+  if (!cleanPath.startsWith("/art-studio/projects/")) return false;
+
+  const rest = cleanPath.slice("/art-studio/projects/".length);
+  return rest.split("/").filter(Boolean).length > 0;
+}

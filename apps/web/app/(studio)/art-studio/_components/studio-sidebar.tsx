@@ -19,6 +19,7 @@ import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
 import { useFeature } from "@/src/lib/region/provider";
 import type { FeatureName } from "@/src/lib/region/features";
+import { isProjectWorkspaceChromePath } from "@/src/lib/studio-routes";
 
 interface SidebarItem {
   href: string;
@@ -61,6 +62,8 @@ export function StudioSidebar() {
   // Strip the locale prefix so route comparison is locale-agnostic.
   // `/zh-CN/art-studio/projects` → `/art-studio/projects`.
   const appPath = stripLocalePrefix(pathname);
+
+  if (isProjectWorkspaceChromePath(appPath)) return null;
 
   return (
     <aside
