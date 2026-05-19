@@ -47,8 +47,11 @@ type TrackedSocket = WebSocket & {
   __zombieCheck?: NodeJS.Timeout;
 };
 
+// Path is the in-process listener; upstream nginx / AKS ingress both
+// strip the `/aurora/` prefix before forwarding (matches REST controller
+// paths, which also live at /users, /crews, etc. without prefix).
 @WebSocketGateway({
-  path: '/aurora/entity-events/subscribe',
+  path: '/entity-events/subscribe',
 })
 export class EntityEventsGateway
   implements

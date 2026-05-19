@@ -48,7 +48,8 @@ type TrackedSocket = WebSocket & {
   __zombieCheck?: NodeJS.Timeout;
 };
 
-@WebSocketGateway({ path: '/aurora/notifications/subscribe' })
+// See EntityEventsGateway: upstreams strip `/aurora/` before forwarding.
+@WebSocketGateway({ path: '/notifications/subscribe' })
 export class NotificationGateway
   implements
     OnGatewayInit,
