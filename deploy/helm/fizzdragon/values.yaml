@@ -104,6 +104,8 @@ secrets:
       env: AZURE_BLOB_CONNECTION_STRING
     - kv: db-conn-string
       env: DATABASE_URL
+    - kv: java-user-query-pwd
+      env: JAVA_USER_QUERY_PWD
     # Managed Azure Cache for Redis (Basic C0). Replaces in-cluster Redis.
     # `redis-conn-string` is the rediss:// URL apps consume as REDIS_URL.
     # `redis-address` + `redis-password` are split form for KEDA's Redis
@@ -142,6 +144,7 @@ web:
 server:
   enabled: true
   replicaCount: 1
+  migrateOnStart: true
   image:
     repository: fizzdragon-server
     tag: 3841ad0de07b54214e1f962a11b077eee77a334f

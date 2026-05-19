@@ -1,12 +1,11 @@
 import type { NextConfig } from "next";
 
-const SERVER_URL = process.env.SERVER_URL;
 const JAVA_STUDIO_URL = process.env.JAVA_STUDIO_URL;
 const JAVA_CONTENT_URL = process.env.JAVA_CONTENT_URL;
 
-if (!SERVER_URL || !JAVA_STUDIO_URL || !JAVA_CONTENT_URL) {
+if (!JAVA_STUDIO_URL || !JAVA_CONTENT_URL) {
   throw new Error(
-    "Missing required env vars: SERVER_URL, JAVA_STUDIO_URL, JAVA_CONTENT_URL. " +
+    "Missing required env vars: JAVA_STUDIO_URL, JAVA_CONTENT_URL. " +
       "Create a .env file or set them in your environment."
   );
 }
@@ -61,8 +60,9 @@ const nextConfig: NextConfig = {
         { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
       ],
       afterFiles: [
-        // NestJS server (strip /aurora prefix)
-        { source: "/aurora/:path*", destination: `${SERVER_URL}/:path*` },
+        // NestJS `/aurora/*` is handled by app/aurora/[...path]/route.ts
+        // so SERVER_URL is read at container runtime, not baked into the
+        // standalone build image by next.config rewrites.
         // Java Studio service
         { source: "/api/:path*", destination: `${JAVA_STUDIO_URL}/api/:path*` },
         { source: "/anon/:path*", destination: `${JAVA_STUDIO_URL}/anon/:path*` },

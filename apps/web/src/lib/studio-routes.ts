@@ -2,6 +2,15 @@ import { getCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/lo
 
 type QueryValue = string | number | null | undefined;
 
+interface StudioRouteOptions {
+  /**
+   * On studio.fizzdragon.com the visible URL is intentionally clean:
+   * /zh-CN/projects/:id internally routes to /art-studio/projects/:id.
+   * Chrome decisions still need to use the routed art-studio pathname.
+   */
+  isStudioHost?: boolean;
+}
+
 interface ProjectRouteOptions {
   suffix?: string;
   worldId?: QueryValue;
@@ -48,18 +57,28 @@ export function localizedProjectWorkspaceHref(
   return localizePath(projectWorkspaceRoute(projectId, options), getCurrentLocale());
 }
 
-export function isProjectWorkspaceChromePath(pathname: string): boolean {
-  const cleanPath = normalizeStudioPath(pathname);
+export function isProjectWorkspaceChromePath(
+  pathname: string,
+  options: StudioRouteOptions = {}
+): boolean {
+  const cleanPath = normalizeStudioPath(pathname, options);
   if (!cleanPath.startsWith("/art-studio/projects/")) return false;
 
   const rest = cleanPath.slice("/art-studio/projects/".length);
   return rest.split("/").filter(Boolean).length > 0;
 }
 
-export function isArtStudioPath(pathname: string): boolean {
-  return normalizeStudioPath(pathname).startsWith("/art-studio");
+export function isArtStudioPath(pathname: string, options: StudioRouteOptions = {}): boolean {
+  return normalizeStudioPath(pathname, options).startsWith("/art-studio");
 }
 
-function normalizeStudioPath(pathname: string): string {
-  return stripLocalePrefix(pathname.split("?")[0]?.replace(/\/+$/, "") || "/");
+export function normalizeStudioPath(
+  pathname: string,
+  { isStudioHost = false }: StudioRouteOptions = {}
+): string {
+  const cleanPath = stripLocalePrefix(pathname.split("?")[0]?.replace(/\/+$/, "") || "/");
+  if (isStudioHost && !cleanPath.startsWith("/art-studio")) {
+    return `/art-studio${cleanPath === "/" ? "" : cleanPath}`;
+  }
+  return cleanPath;
 }

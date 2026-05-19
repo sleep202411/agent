@@ -173,6 +173,7 @@ export function proxy(request: NextRequest) {
 
   const headers = new Headers(request.headers);
   headers.set("x-locale", matchedLocale);
+  if (studioHost) headers.set("x-studio-host", "1");
 
   // Country detection at the edge. Cloudflare / Azure Front Door / Vercel
   // each set their own header; we normalize all of them onto x-country so

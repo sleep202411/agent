@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { StudioShell } from "@/app/(studio)/_components/studio-shell";
 
 /**
@@ -9,6 +10,8 @@ import { StudioShell } from "@/app/(studio)/_components/studio-shell";
  * standalone Next.js app on its own domain later — see
  * `memory/project_fizzstudio_subdomain.md`.
  */
-export default function StudioLayout({ children }: { children: React.ReactNode }) {
-  return <StudioShell>{children}</StudioShell>;
+export default async function StudioLayout({ children }: { children: React.ReactNode }) {
+  const hdrs = await headers();
+  const isStudioHost = hdrs.get("x-studio-host") === "1";
+  return <StudioShell isStudioHost={isStudioHost}>{children}</StudioShell>;
 }

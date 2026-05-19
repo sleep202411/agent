@@ -14,12 +14,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IconHome, IconLayoutGrid, IconSparkles } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
-import { localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
+import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
 import { useFeature } from "@/src/lib/region/provider";
 import type { FeatureName } from "@/src/lib/region/features";
-import { isProjectWorkspaceChromePath } from "@/src/lib/studio-routes";
+import { isProjectWorkspaceChromePath, normalizeStudioPath } from "@/src/lib/studio-routes";
 
 interface SidebarItem {
   href: string;
@@ -47,7 +47,11 @@ const ITEMS: SidebarItem[] = [
   },
 ];
 
-export function StudioSidebar() {
+interface StudioSidebarProps {
+  isStudioHost?: boolean;
+}
+
+export function StudioSidebar({ isStudioHost = false }: StudioSidebarProps) {
   const pathname = usePathname() ?? "/";
   const locale = useLocale() as Locale;
   const t = useTranslations("workspace");
@@ -59,9 +63,10 @@ export function StudioSidebar() {
     (it) => !it.feature || (it.feature === "imageGeneration" && hasImageGeneration)
   );
 
-  // Strip the locale prefix so route comparison is locale-agnostic.
-  // `/zh-CN/art-studio/projects` → `/art-studio/projects`.
-  const appPath = stripLocalePrefix(pathname);
+  // Normalize both regular URLs and studio-host clean URLs:
+  // `/zh-CN/art-studio/projects` → `/art-studio/projects`
+  // `studio.fizzdragon.com/zh-CN/projects` → `/art-studio/projects`
+  const appPath = normalizeStudioPath(pathname, { isStudioHost });
 
   if (isProjectWorkspaceChromePath(appPath)) return null;
 

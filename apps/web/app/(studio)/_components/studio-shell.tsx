@@ -14,14 +14,22 @@ import { isArtStudioPath, isProjectWorkspaceChromePath } from "@/src/lib/studio-
  * broader Studio nav/rail. Keeping that decision here avoids CSS
  * hiding and prevents the parent layout from reserving nav height.
  */
-export function StudioShell({ children }: { children: React.ReactNode }) {
+interface StudioShellProps {
+  children: React.ReactNode;
+  isStudioHost?: boolean;
+}
+
+export function StudioShell({ children, isStudioHost = false }: StudioShellProps) {
   const pathname = usePathname() ?? "/";
-  const isWorkspace = isProjectWorkspaceChromePath(pathname);
+  const routeOptions = { isStudioHost };
+  const isWorkspace = isProjectWorkspaceChromePath(pathname, routeOptions);
 
   return (
     <AuthGate>
       {isWorkspace ? null : <StudioNav />}
-      {isWorkspace || !isArtStudioPath(pathname) ? null : <StudioSidebar />}
+      {isWorkspace || !isArtStudioPath(pathname, routeOptions) ? null : (
+        <StudioSidebar isStudioHost={isStudioHost} />
+      )}
       <main className={isWorkspace ? "min-h-screen" : "min-h-[calc(100vh-3.5rem)]"}>
         {children}
       </main>

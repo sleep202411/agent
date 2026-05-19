@@ -21,6 +21,25 @@ spec:
         {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- if .Values.server.migrateOnStart }}
+      initContainers:
+        - name: db-migrate
+          image: "{{ .Values.image.registry }}/{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["npm", "run", "db:deploy"]
+          env:
+            {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
+            {{- include "fizzdragon.componentEnv" .Values.server | nindent 12 }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.projectedName }}
+          volumeMounts:
+            - name: kv-secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+          resources:
+            {{- toYaml .Values.server.resources | nindent 12 }}
+      {{- end }}
       containers:
         - name: {{ $component }}
           image: "{{ .Values.image.registry }}/{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
@@ -41,13 +60,21 @@ spec:
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
           readinessProbe:
-            tcpSocket: { port: http }
+            httpGet:
+              path: /ready
+              port: http
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           livenessProbe:
-            tcpSocket: { port: http }
+            httpGet:
+              path: /healthz
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
         - name: kv-secrets
           csi:
