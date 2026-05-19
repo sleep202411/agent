@@ -431,15 +431,12 @@ function RevenueChip({
   t: ReturnType<typeof useTranslations>;
 }) {
   const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency);
-  const display = isZeroDecimal ? amount : amount / 100;
+  const display = isZeroDecimal ? amount : Math.round(amount / 100);
   const symbol = CURRENCY_SYMBOLS[currency] ?? "";
   const formatted =
     typeof Intl !== "undefined" && Intl.NumberFormat
-      ? new Intl.NumberFormat(undefined, {
-          minimumFractionDigits: isZeroDecimal ? 0 : 2,
-          maximumFractionDigits: isZeroDecimal ? 0 : 2,
-        }).format(display)
-      : display.toFixed(isZeroDecimal ? 0 : 2);
+      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(display)
+      : String(display);
   return (
     <div className="flex items-baseline gap-2 rounded-lg bg-amber-400/10 px-3 py-2">
       <span className="text-xs font-semibold text-amber-400">{currency}</span>

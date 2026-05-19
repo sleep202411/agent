@@ -37,6 +37,8 @@ import { UsersService } from './users.service';
 // (alphanumeric + dash/underscore, ≤32 chars) so we don't have to
 // re-validate when the format evolves.
 const USER_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+?\d[\d\s-]{5,32}$/;
 
 const LookupBatchSchema = z.object({
   userIds: z.array(z.string().trim().regex(USER_ID_RE)).max(100),
@@ -51,20 +53,50 @@ export class UsersController {
     private readonly rateLimit: RateLimitService,
   ) {}
 
+  /**
+   * Lookup endpoint with three input modes (mutually exclusive):
+   *   ?userId=...   → resolve by internal Java userId
+   *   ?account=...  → resolve by email OR phone (Java's "account")
+   *   ?email=...    → alias of `account` for client clarity
+   *   ?phone=...    → alias of `account` for client clarity
+   *
+   * Email / phone share the same Java endpoint (account is the
+   * Java field name), so we collapse all three into one resolution
+   * path server-side. Exactly one of the four must be supplied.
+   */
   @Get('lookup')
   async lookup(
     @CurrentUser() viewer: AuthUser,
     @Query('userId') userId?: string,
+    @Query('account') account?: string,
+    @Query('email') email?: string,
+    @Query('phone') phone?: string,
     @Query('checkCrewId') checkCrewId?: string,
   ) {
-    const trimmed = userId?.trim() || undefined;
-    if (!trimmed) {
-      throw new BadRequestException({ message: 'userId is required' });
+    const userIdT = userId?.trim() || undefined;
+    const accountT = (account ?? email ?? phone)?.trim() || undefined;
+    const supplied = [userIdT, accountT].filter(Boolean).length;
+    if (supplied === 0) {
+      throw new BadRequestException({
+        message: 'Provide userId, account, email, or phone',
+      });
     }
-    if (!USER_ID_RE.test(trimmed)) {
+    if (supplied > 1) {
+      throw new BadRequestException({
+        message: 'Provide only one of userId / account / email / phone',
+      });
+    }
+
+    if (userIdT && !USER_ID_RE.test(userIdT)) {
       throw new BadRequestException({
         message: 'Invalid userId format',
         field: 'userId',
+      });
+    }
+    if (accountT && !EMAIL_RE.test(accountT) && !PHONE_RE.test(accountT)) {
+      throw new BadRequestException({
+        message: 'Invalid email / phone format',
+        field: account != null ? 'account' : email != null ? 'email' : 'phone',
       });
     }
 
@@ -75,9 +107,12 @@ export class UsersController {
       windowSec: 60,
     });
 
-    const result = await this.svc.lookup({ userId: trimmed, checkCrewId });
+    const result = userIdT
+      ? await this.svc.lookup({ userId: userIdT, checkCrewId })
+      : await this.svc.lookupByContact({ account: accountT!, checkCrewId });
+
     if (!result) {
-      throw new NotFoundException({ message: 'No user matches that ID' });
+      throw new NotFoundException({ message: 'No user matches that input' });
     }
     return result;
   }

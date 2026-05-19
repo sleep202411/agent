@@ -13,7 +13,7 @@
  *   3. Tests can stub the helpers without touching env.
  */
 
-const required = (name: string, fallback?: string): string => {
+const requiredUrl = (name: string, fallback?: string): string => {
   const v = process.env[name] ?? fallback;
   if (!v) {
     throw new Error(`Missing required env var: ${name}`);
@@ -21,8 +21,16 @@ const required = (name: string, fallback?: string): string => {
   return v.replace(/\/+$/, ''); // strip trailing slash for consistent joins
 };
 
+const requiredSecret = (name: string): string => {
+  const v = process.env[name];
+  if (!v) {
+    throw new Error(`Missing required env var: ${name}`);
+  }
+  return v;
+};
+
 /** Java content service — /user, /project, /vedio, /personal. */
-export const JAVA_CONTENT_URL = required(
+export const JAVA_CONTENT_URL = requiredUrl(
   'JAVA_CONTENT_URL',
   process.env.NODE_ENV === 'development'
     ? 'http://120.26.152.164:8091'
@@ -30,7 +38,7 @@ export const JAVA_CONTENT_URL = required(
 );
 
 /** Java studio service — /api, /anon. */
-export const JAVA_STUDIO_URL = required(
+export const JAVA_STUDIO_URL = requiredUrl(
   'JAVA_STUDIO_URL',
   process.env.NODE_ENV === 'development'
     ? 'http://120.26.152.164:8090'
@@ -41,3 +49,10 @@ export const JAVA_STUDIO_URL = required(
  *  internal-VPC round-trips so cold caches / GC pauses don't false-fail
  *  the request, but short enough to keep the page responsive. */
 export const JAVA_REQUEST_TIMEOUT_MS = 5_000;
+
+/**
+ * Shared-secret guard on `/user/query/user`. Required at boot. Rotate
+ * by updating env on every cell after the Java team rotates the secret.
+ * NOT a URL — `requiredSecret` skips the trailing-slash normalization.
+ */
+export const JAVA_USER_QUERY_PWD = requiredSecret('JAVA_USER_QUERY_PWD');

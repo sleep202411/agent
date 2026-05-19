@@ -1,9 +1,9 @@
 /**
  * Java user-lookup adapter.
  *
- * Today Java only exposes by-userId. When the backend ships
- * `/user/query/by-contact` we'll add `findByContact` here and the
- * controller can fan out — for now the BFF is strictly userId in.
+ * Two resolution paths to the same `RawLookupResult` shape:
+ *   - findByUserId(userId)        → GET  /user/resumer/list/:userId
+ *   - findByContact(email|phone)  → POST /user/query/user?account=…&pwd=…
  *
  * Caching: handled by the caller (UsersService) with a Redis layer.
  *
@@ -11,13 +11,20 @@
  *   - Found     → RawLookupResult
  *   - Not found → null
  *   - Java down → ServiceUnavailableException (mapped to 502)
+ *
+ * Security: the shared `pwd` secret for the by-contact endpoint is
+ * stripped from any log line via `safeUrl` below.
  */
 import {
   Injectable,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { JAVA_CONTENT_URL, JAVA_REQUEST_TIMEOUT_MS } from './java-config';
+import {
+  JAVA_CONTENT_URL,
+  JAVA_REQUEST_TIMEOUT_MS,
+  JAVA_USER_QUERY_PWD,
+} from './java-config';
 
 /**
  * Java endpoint path template. Centralized so a backend rename is one
@@ -33,6 +40,16 @@ import { JAVA_CONTENT_URL, JAVA_REQUEST_TIMEOUT_MS } from './java-config';
  *   (data === null / 404 → user does not exist)
  */
 const JAVA_USER_BY_ID_PATH = '/user/resumer/list/:userId';
+
+/**
+ * Java endpoint that resolves an email OR phone to a full user.
+ * Guarded by a shared-secret `pwd` query param — see env.
+ * POST with query-string params; no body.
+ *
+ *   POST {JAVA_CONTENT_URL}/user/query/user?account=...&pwd=...
+ *   response: { code, data: { userId, nickName, avatar, ... } | null }
+ */
+const JAVA_USER_BY_ACCOUNT_PATH = '/user/query/user';
 
 export interface RawLookupResult {
   userId: string;
@@ -63,28 +80,53 @@ export class JavaUserLookupService {
     if (!userId) {
       throw new Error('JavaUserLookupService: userId required');
     }
-
     const path = JAVA_USER_BY_ID_PATH.replace(
       ':userId',
       encodeURIComponent(userId),
     );
-    const url = `${JAVA_CONTENT_URL}${path}`;
+    return this.callAndParse(`${JAVA_CONTENT_URL}${path}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+  }
+
+  async findByContact(account: string): Promise<RawLookupResult | null> {
+    if (!account) {
+      throw new Error('JavaUserLookupService: account required');
+    }
+    const params = new URLSearchParams({
+      account: account.trim(),
+      pwd: JAVA_USER_QUERY_PWD,
+    });
+    const url = `${JAVA_CONTENT_URL}${JAVA_USER_BY_ACCOUNT_PATH}?${params.toString()}`;
+    // Java's contract: POST with no body, params on the URL.
+    return this.callAndParse(url, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    });
+  }
+
+  /**
+   * Shared transport + envelope handling. All logged URLs are
+   * sanitised so the `pwd` shared secret never lands in stdout.
+   */
+  private async callAndParse(
+    url: string,
+    init: RequestInit,
+  ): Promise<RawLookupResult | null> {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
       JAVA_REQUEST_TIMEOUT_MS,
     );
+    const safeUrl = url.replace(/([?&])pwd=[^&]+/i, '$1pwd=***');
 
     let envelope: JavaEnvelope;
     try {
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        signal: controller.signal,
-      });
+      const res = await fetch(url, { ...init, signal: controller.signal });
       if (res.status === 404) return null;
       if (!res.ok) {
-        this.logger.warn(`Java ${url} returned HTTP ${res.status}`);
+        this.logger.warn(`Java ${safeUrl} returned HTTP ${res.status}`);
         throw new ServiceUnavailableException({
           message: 'User lookup service unavailable',
           upstream: 'java',
@@ -94,7 +136,7 @@ export class JavaUserLookupService {
     } catch (err) {
       if (err instanceof ServiceUnavailableException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Java lookup failed: ${msg}`);
+      this.logger.error(`Java lookup failed: ${msg} (${safeUrl})`);
       throw new ServiceUnavailableException({
         message: 'User lookup service unavailable',
         upstream: 'java',
@@ -103,13 +145,10 @@ export class JavaUserLookupService {
       clearTimeout(timeout);
     }
 
-    // Soft-fail codes: treat 404-ish as "not found".
-    if (envelope.code === 404 || envelope.data == null) {
-      return null;
-    }
+    if (envelope.code === 404 || envelope.data == null) return null;
     if (envelope.code !== undefined && envelope.code !== 200) {
       this.logger.warn(
-        `Java ${url} returned envelope code=${envelope.code} msg=${envelope.msg}`,
+        `Java ${safeUrl} envelope code=${envelope.code} msg=${envelope.msg}`,
       );
       throw new ServiceUnavailableException({
         message: 'User lookup service error',

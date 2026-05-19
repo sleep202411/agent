@@ -1,11 +1,13 @@
-# 剧组剧集管理接口规范
+# 剧组剧集制作接口规范
 
-**实施状态（2026-05-18）**：本规范定义的全部 11 个接口已在 Nest
-后端（`apps/server/src/crews/episodes/`）实现，URL 由 `/project/crew/episode/*`
-迁移至 `/aurora/crews/:crewId/episodes/*` 与 `/aurora/episodes/:id/*` 与
-`/aurora/assignments/:id/*`。HTTP 协议从 `HTTP 200 + body.code` 改为真
-HTTP 状态码（200/201/204/400/403/404/409/422/423）。前端切真接口完成，
-`episode-mock.ts` 已删除。本文档保留作为接口契约与状态机的权威说明。
+**实施状态（2026-05-19）**：本规范定义的 11 个接口已在
+`apps/server/src/crews/episodes/` 全部落地；URL 走
+`/aurora/crews/:crewId/episodes/*` + `/aurora/episodes/:id/*` +
+`/aurora/assignments/:id/*`；HTTP 协议用真状态码
+（200/201/204/400/403/404/409/422/423）。Web 端 100% 走真接口，
+`episode-mock.ts` 早已删除。多币种 revenue、整数输入、成员名 batch
+lookup、warn-approve、制作看板（成员×集次热力图）等 production-grade
+功能 2026-05-19 落地完成。本文档保留作为接口契约与状态机的**权威说明**。
 
 关联：与 `pricing-spec.md` / `community-credits-spec.md` 并存。剧组
 内部的"生产管理"层，跟用户付费消费层（pricing）和钱包层
@@ -15,14 +17,10 @@ HTTP 状态码（200/201/204/400/403/404/409/422/423）。前端切真接口完�
 
 ## 目标与范围
 
-crew workspace 的 Episodes tab —— 让 admin 在剧组内开剧集任务、派
-成员、审稿、签收益；成员提交自己负责的部分；财务（finance）填收益
-金额。前端 UI 已完整实现（mock-driven，见 `episode-mock.ts` /
-`use-episodes.ts`），本规范定义后端落地需要提供的接口契约。
-
-**前端切真接口的触发条件**：本规范定义的 11 个接口在 staging 环境
-全部按规返 200 + workspace 切换开关从 `disabled: true` 改成 `false`
-（page.tsx 内 TABS 数组）。
+crew workspace 的「剧集制作」tab —— 让 admin 在剧组内开剧集任务、
+派成员、审稿、签收益；成员提交自己负责的部分；财务（finance）填收益
+金额。本规范定义前后端必须遵守的契约；实现细节见
+`apps/server/src/crews/episodes/` 与 `use-episodes.ts`。
 
 ---
 
@@ -572,10 +570,10 @@ CREATE TABLE crew_episode_activity (
 ALTER TABLE crew_member ADD COLUMN is_finance TINYINT(1) NOT NULL DEFAULT 0;
 ```
 
-现有 `GET /project/crew/list` / member list 接口需要把这个字段透传给
-前端（在 `CrewMember` 上加 `isFinance: boolean`）。前端的
-`use-user-crew-role.ts` 会替换 `MOCK_FINANCE_USER_IDS` 的硬编码逻辑
-为 `member.isFinance` 读取。
+**已落地**：Prisma `crew_members.is_finance` 字段（schema.prisma:203）
+
+- `CrewMemberDTO.isFinance` + 列表端点透传。`use-user-crew-role.ts`
+  直接读取 `member.isFinance`，无任何 mock 硬编码。
 
 ---
 
@@ -652,13 +650,9 @@ ALTER TABLE crew_member ADD COLUMN is_finance TINYINT(1) NOT NULL DEFAULT 0;
 
 ---
 
-## 签字确认
+## 实施回溯（2026-05-19）
 
-- [ ] 后端 reviewer：\_\_\_\_\_\_\_\_（姓名 + 日期）
-- [ ] 财务 / 风控 reviewer：\_\_\_\_\_\_\_\_（仅 revenue 涉及金额）
-- [ ] 预计交付 ETA：\_\_\_\_\_\_\_\_
-- [ ] 实施分支：\_\_\_\_\_\_\_\_
-
-前端只在 staging 环境**11 个接口按规范全 200** + `crew_member.isFinance`
-字段透传到位 之后才会把 `workspace/page.tsx` 的 `disabled: true` 翻
-开，从 mock 切到真接口。
+- ✅ 后端 11 接口全部实施，PG 直存，零 Java 依赖
+- ✅ `crew_member.isFinance` 字段落地（Prisma），无 mock 硬编码
+- ✅ 前端 `workspace/page.tsx` 中 `episodes` tab 启用，走真接口
+- ✅ 多币种 revenue + 整数输入 + 制作看板 + warn-approve 已上线

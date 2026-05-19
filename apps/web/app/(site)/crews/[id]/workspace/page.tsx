@@ -96,9 +96,9 @@ export default function CrewWorkspacePage() {
   const { data: positions = [] } = useCrewPositions(id);
   // Role gating goes through useUserCrewRole so DevIdentitySwitcher
   // works in dev (without it the workspace gates on the real Java
-  // satoken user id, which doesn't match the server-side mock 'dev'
-  // user that creates rows under AUTH_DISABLED). Production users
-  // still resolve from `useUserInfo` inside the hook.
+  // satoken user id, which doesn't match the server-side AUTH_DISABLED
+  // fallback user 'dev' that owns rows created locally). Production
+  // users still resolve from `useUserInfo` inside the hook.
   const viewer = useUserCrewRole(id);
   const isOwner = viewer.isAdmin;
 

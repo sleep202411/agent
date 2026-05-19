@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
+import { isPresetPosition } from "@repo/shared/crew";
 import {
   useTranslatePositionValue,
   useTranslatedPresetPositions,
@@ -72,6 +73,27 @@ export function AssignMemberDialog({
     setUserId("");
     setRoleValue("");
   }, [open]);
+
+  /**
+   * When the user picks a member, default the role to that member's
+   * crew roleType — that's almost always what they want (people get
+   * assigned in their day-job role). Founder's role ("owner") is not
+   * a real production role, so skip the default in that case.
+   *
+   * This RUNS on every userId change, including when the user picks
+   * a different member after already choosing a role. That's
+   * intentional: the role implies "what is this person doing this
+   * episode" and the most useful default tracks the chosen person.
+   * The user can always override afterward.
+   */
+  useEffect(() => {
+    if (!userId) return;
+    const m = crewMembers.find((x) => x.userId === userId);
+    if (!m) return;
+    if (m.via === "founder") return;
+    if (!isPresetPosition(m.roleType)) return;
+    setRoleValue(m.roleType);
+  }, [userId, crewMembers]);
 
   const assignedUserIds = useMemo(
     () => new Set(existingAssignments.map((a) => a.userId)),

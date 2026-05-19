@@ -49,11 +49,15 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
   const initialCurrency: CurrencyCode = assignment.revenue?.currency ?? defaultCurrencyForCell();
   const [currency, setCurrency] = useState<CurrencyCode>(initialCurrency);
 
+  // Integer-only policy: finance enters whole yuan/dollar/yen — no
+  // fractional units. Storage is still the smallest currency unit
+  // (×100 for non-zero-decimal currencies) for forward-compat with
+  // any future fractional pricing.
   const isZeroDecimal = (c: CurrencyCode) => ZERO_DECIMAL_CURRENCIES.has(c);
   const toDisplay = (smallestUnit: number, c: CurrencyCode) =>
-    isZeroDecimal(c) ? smallestUnit : smallestUnit / 100;
+    isZeroDecimal(c) ? smallestUnit : Math.round(smallestUnit / 100);
   const toStorage = (displayValue: number, c: CurrencyCode) =>
-    isZeroDecimal(c) ? Math.round(displayValue) : Math.round(displayValue * 100);
+    isZeroDecimal(c) ? Math.round(displayValue) : Math.round(displayValue) * 100;
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>(
@@ -76,7 +80,8 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignment.revenue]);
 
-  const parsed = Number.parseFloat(draft);
+  // Strict integer parse — rejects "12.5" / "12.0" / non-numeric.
+  const parsed = /^\d+$/.test(draft.trim()) ? Number.parseInt(draft, 10) : NaN;
   const canSubmit = !setRevenue.isPending && Number.isFinite(parsed) && parsed >= 0;
 
   const cancel = () => {
@@ -129,11 +134,13 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
         <Input
           autoFocus
           type="number"
-          inputMode="decimal"
-          step={isZeroDecimal(currency) ? "1" : "0.01"}
+          inputMode="numeric"
+          step="1"
           min="0"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          // Strip anything that isn't a digit so paste / IME input
+          // can't slip past the strict integer regex above.
+          onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
           onKeyDown={(e) => {
             if (e.key === "Enter") save();
             else if (e.key === "Escape") cancel();
@@ -197,22 +204,19 @@ export function RevenueCell({ crewId, episodeId, assignment, canEdit }: RevenueC
 }
 
 /**
- * Format a smallest-unit amount + currency to a human string,
- * respecting zero-decimal currencies (JPY) and using the locale's
- * thousands separator. Examples:
- *   (100000, "CNY") → "¥1,000.00"
+ * Format a smallest-unit amount + currency as an integer human
+ * string. Integer-only policy applies in both directions, so the
+ * display drops trailing `.00`. Examples:
+ *   (100000, "CNY") → "¥1,000"
  *   (10000, "JPY")  → "¥10,000"
  */
 function formatRevenue(smallestUnit: number, currency: CurrencyCode): string {
   const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency);
-  const display = isZeroDecimal ? smallestUnit : smallestUnit / 100;
+  const display = isZeroDecimal ? smallestUnit : Math.round(smallestUnit / 100);
   const symbol = CURRENCY_SYMBOLS[currency] ?? "";
   const formatted =
     typeof Intl !== "undefined" && Intl.NumberFormat
-      ? new Intl.NumberFormat(undefined, {
-          minimumFractionDigits: isZeroDecimal ? 0 : 2,
-          maximumFractionDigits: isZeroDecimal ? 0 : 2,
-        }).format(display)
-      : display.toFixed(isZeroDecimal ? 0 : 2);
+      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(display)
+      : String(display);
   return `${symbol}${formatted}`;
 }

@@ -1,20 +1,18 @@
 "use client";
 
 /**
- * Add-member dialog — userId → live lookup → add.
+ * Add-member dialog — email/phone/userId → live lookup → add.
  *
  * UX flow:
- *   1. User types/pastes a userId
- *   2. Debounce 400ms → GET /aurora/users/lookup?userId=… (BFF → Java)
+ *   1. User types/pastes an email, phone, or internal userId
+ *   2. Debounce 400ms → GET /aurora/users/lookup?{email|phone|userId}=…
+ *      (the hook detects which mode and picks the right query param)
  *   3. Server returns profile PLUS membership context (isCrewMember,
  *      isCrewFounder) so the dialog renders a live preview card in
  *      one roundtrip
  *   4. Submit enabled only when found + not member + not founder
  *   5. Submit → POST /aurora/crews/:crewId/members { userId }
  *      (existing endpoint; server re-checks)
- *
- * Email / phone modes are coming when Java ships a by-contact lookup —
- * for now userId is the only resolvable input.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -65,18 +63,18 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
 
-  const [userIdInput, setUserIdInput] = useState("");
+  const [queryInput, setQueryInput] = useState("");
   const [roleType, setRoleType] = useState<string>("");
   const presetPositions = useTranslatedPresetPositions();
 
-  const debouncedUserId = useDebouncedValue(userIdInput, 400);
-  const lookup = useUserLookup({ userId: debouncedUserId, checkCrewId: crewId });
+  const debouncedQuery = useDebouncedValue(queryInput, 400);
+  const lookup = useUserLookup({ query: debouncedQuery, checkCrewId: crewId });
 
   const { mutateAsync: addMember, isPending: submitting } = useAddCrewMember(crewId);
 
   useEffect(() => {
     if (open) return;
-    setUserIdInput("");
+    setQueryInput("");
     setRoleType("");
   }, [open]);
 
@@ -123,15 +121,14 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
             <Field>
               <FieldLabel required>{t("addMemberContactLabel")}</FieldLabel>
               <Input
-                value={userIdInput}
-                onChange={(e) => setUserIdInput(e.target.value)}
+                value={queryInput}
+                onChange={(e) => setQueryInput(e.target.value)}
                 placeholder={t("addMemberContactPlaceholder")}
-                maxLength={32}
+                maxLength={120}
                 disabled={submitting}
                 autoFocus
-                inputMode="numeric"
               />
-              <LookupPreview state={lookup} contact={debouncedUserId} t={t} />
+              <LookupPreview state={lookup} contact={debouncedQuery} t={t} />
             </Field>
 
             <Field>

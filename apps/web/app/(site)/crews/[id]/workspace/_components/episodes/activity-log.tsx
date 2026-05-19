@@ -154,18 +154,15 @@ function renderActivity(a: EpisodeActivity, t: ReturnType<typeof useTranslations
   return (map as Record<string, (() => string) | undefined>)[a.type]?.() ?? "";
 }
 
-/** Render a smallest-unit amount as a localized currency string. */
+/** Render a smallest-unit amount as a localized integer currency string. */
 function formatMoney(smallestUnit: number, currency: CurrencyCode): string {
   const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency);
-  const display = isZeroDecimal ? smallestUnit : smallestUnit / 100;
+  const display = isZeroDecimal ? smallestUnit : Math.round(smallestUnit / 100);
   const symbol = CURRENCY_SYMBOLS[currency] ?? "";
   const formatted =
     typeof Intl !== "undefined" && Intl.NumberFormat
-      ? new Intl.NumberFormat(undefined, {
-          minimumFractionDigits: isZeroDecimal ? 0 : 2,
-          maximumFractionDigits: isZeroDecimal ? 0 : 2,
-        }).format(display)
-      : display.toFixed(isZeroDecimal ? 0 : 2);
+      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(display)
+      : String(display);
   return `${symbol}${formatted}`;
 }
 

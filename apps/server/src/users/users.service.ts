@@ -13,6 +13,7 @@
  */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
+import { createHash } from 'crypto';
 import type { LookupUserDTO } from '@repo/shared/users';
 import { PrismaService } from '../infra/db/db.module';
 import { REDIS } from '../infra/redis/redis.module';
@@ -22,6 +23,12 @@ const LOOKUP_CACHE_TTL_SEC = 5 * 60;
 
 export interface LookupRequest {
   userId: string;
+  /** If supplied, response includes isCrewMember + isCrewFounder. */
+  checkCrewId?: string;
+}
+
+export interface LookupByContactRequest {
+  account: string;
   /** If supplied, response includes isCrewMember + isCrewFounder. */
   checkCrewId?: string;
 }
@@ -44,6 +51,39 @@ export class UsersService {
       raw = await this.javaLookup.findByUserId(req.userId);
       if (!raw) return null;
       await this.writeCache(cacheKey, raw);
+    }
+
+    return this.enrichWithCrewContext(raw, req.checkCrewId);
+  }
+
+  /**
+   * Resolve email/phone → user. Account is normalized (trim +
+   * lowercase if email) before being hashed for the cache key, so
+   * "Foo@Bar.com" and " foo@bar.com" hit the same row. The contact
+   * itself is NEVER stored in plaintext in Redis — only its hash —
+   * so a `KEYS user-lookup:byAcct:*` peek can't enumerate the email
+   * list.
+   *
+   * On hit we ALSO populate the by-id cache (same userId-keyed
+   * value the by-userId path consumes) so a subsequent admin tool
+   * resolving the same user by id skips Java entirely.
+   */
+  async lookupByContact(
+    req: LookupByContactRequest,
+  ): Promise<LookupUserDTO | null> {
+    const normalized = req.account.includes('@')
+      ? req.account.trim().toLowerCase()
+      : req.account.trim();
+    const cacheKey = `user-lookup:byAcct:${hashAccount(normalized)}`;
+
+    let raw = await this.tryReadCache(cacheKey);
+    if (!raw) {
+      raw = await this.javaLookup.findByContact(normalized);
+      if (!raw) return null;
+      await this.writeCache(cacheKey, raw);
+      // Cross-populate the by-id cache so subsequent userId
+      // lookups for this same user are free.
+      await this.writeCache(`user-lookup:byId:${raw.userId}`, raw);
     }
 
     return this.enrichWithCrewContext(raw, req.checkCrewId);
@@ -142,4 +182,9 @@ export class UsersService {
       this.logger.warn(`lookup cache write failed: ${msg}`);
     }
   }
+}
+
+/** Opaque hash of an email/phone for Redis keying — see lookupByContact. */
+function hashAccount(account: string): string {
+  return createHash('sha256').update(account).digest('hex').slice(0, 16);
 }

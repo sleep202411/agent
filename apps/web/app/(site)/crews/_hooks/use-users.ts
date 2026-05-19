@@ -23,7 +23,9 @@ import type { LookupUserDTO } from "@repo/shared/users";
 import { CrewApiError, crewApi } from "./api";
 
 interface LookupArgs {
-  userId: string;
+  /** Free-form input — email, phone, or numeric userId. The hook
+   *  auto-detects which path to take. */
+  query: string;
   checkCrewId?: string;
 }
 
@@ -34,18 +36,50 @@ export type LookupState =
   | { kind: "notFound" }
   | { kind: "error"; message: string; status: number | null };
 
-// Mirrors the server-side regex (alphanumeric + dash/underscore, ≤32).
+// Server-side regexes mirrored here so we never fire a request that
+// we know will 400 — saves rate-limit budget on partial input.
 const USER_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+?\d[\d\s-]{5,32}$/;
 
-export function useUserLookup({ userId, checkCrewId }: LookupArgs): LookupState {
-  const trimmed = userId.trim();
-  const enabled = trimmed.length > 0 && USER_ID_RE.test(trimmed);
+type Detected =
+  | { kind: "email"; value: string }
+  | { kind: "phone"; value: string }
+  | { kind: "userId"; value: string }
+  | null;
+
+/** Detect which lookup mode the input belongs to. */
+function detect(raw: string): Detected {
+  const v = raw.trim();
+  if (!v) return null;
+  if (EMAIL_RE.test(v)) return { kind: "email", value: v.toLowerCase() };
+  // Phone (looser superset of userId) is checked BEFORE userId — a
+  // pure-numeric 11-digit input is more naturally a phone than an
+  // internal userId, even though both regexes match.
+  if (/^\+?\d{6,}$/.test(v.replace(/[\s-]/g, ""))) {
+    if (PHONE_RE.test(v)) return { kind: "phone", value: v };
+  }
+  if (USER_ID_RE.test(v)) return { kind: "userId", value: v };
+  return null;
+}
+
+export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
+  const detected = detect(query);
+  const enabled = detected !== null;
 
   const q = useQuery({
-    queryKey: ["users", "lookup", "byId", trimmed, checkCrewId ?? "_"] as const,
+    queryKey: [
+      "users",
+      "lookup",
+      detected?.kind ?? "none",
+      detected?.value ?? "",
+      checkCrewId ?? "_",
+    ] as const,
     enabled,
     queryFn: async () => {
-      const params = new URLSearchParams({ userId: trimmed });
+      if (!detected) throw new Error("Unreachable: query disabled");
+      const params = new URLSearchParams();
+      params.set(detected.kind === "userId" ? "userId" : "account", detected.value);
       if (checkCrewId) params.set("checkCrewId", checkCrewId);
       return crewApi.get<LookupUserDTO>(`/users/lookup?${params.toString()}`);
     },
