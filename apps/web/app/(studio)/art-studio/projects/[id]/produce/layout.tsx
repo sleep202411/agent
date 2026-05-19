@@ -22,6 +22,7 @@ import {
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { ProduceStepper } from "./_components/produce-stepper";
 import { PRODUCE_STEPS } from "./_data/steps";
 import { useProduceCommittedResult, useProduceSeed } from "./_hooks/use-produce-seed";
@@ -54,7 +55,7 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
             variant="ghost"
             color="muted"
             size="icon-sm"
-            onClick={() => router.push(`/projects/${projectId}`)}
+            onClick={() => router.push(localizedProjectWorkspaceHref(projectId))}
             aria-label="Back"
           >
             <IconArrowLeft className="size-4" />
@@ -74,7 +75,7 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
             variant="outline"
             color="muted"
             size="sm"
-            onClick={() => router.push(`/projects/${projectId}`)}
+            onClick={() => router.push(localizedProjectWorkspaceHref(projectId))}
           >
             <IconLayoutDashboard /> 进入项目空间
           </Button>
@@ -102,7 +103,11 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
         <div className="flex items-center gap-2">
           {prevStep ? (
             <Button asChild variant="outline" color="muted" size="lg">
-              <Link href={`/projects/${projectId}/produce/${prevStep.key}`}>
+              <Link
+                href={localizedProjectWorkspaceHref(projectId, {
+                  suffix: `/produce/${prevStep.key}`,
+                })}
+              >
                 <IconArrowLeft /> 上一步
               </Link>
             </Button>
@@ -138,7 +143,11 @@ export default function ProduceLayout({ children }: { children: React.ReactNode 
               </Button>
             ) : (
               <Button asChild variant="solid" color="primary" size="lg">
-                <Link href={`/projects/${projectId}/produce/${nextStep.key}`}>
+                <Link
+                  href={localizedProjectWorkspaceHref(projectId, {
+                    suffix: `/produce/${nextStep.key}`,
+                  })}
+                >
                   {t("wizardNextStep")} <IconArrowRight />
                 </Link>
               </Button>

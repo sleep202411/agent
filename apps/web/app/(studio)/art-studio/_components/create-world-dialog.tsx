@@ -37,7 +37,7 @@ import {
   type UploadedWorkspaceFile,
 } from "@/src/lib/uploads/workspace-upload";
 import { useTranslations } from "@/src/i18n/i18n";
-import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { worldKeys } from "@/src/hooks/use-worlds";
 import { useSparkAnalyze } from "@/app/(site)/ips/_hooks/use-spark";
 
@@ -246,7 +246,7 @@ export function CreateWorldDialog({
       onOpenChange(false);
 
       if (result?.projectId && result?.worldId) {
-        // Always land in the studio chat (`/projects/[id]`), regardless
+        // Always land in the studio chat, regardless
         // of whether the user attached source material. The 一键成片
         // pipeline (`/produce`) is intentionally **not reachable from
         // this entry point right now** — even with a file uploaded, we
@@ -255,10 +255,9 @@ export function CreateWorldDialog({
         // there. Re-enable the `/produce` branch once that pipeline is
         // ready for end-users again.
         router.push(
-          localizePath(
-            `/projects/${result.projectId}?worldId=${result.worldId}`,
-            getCurrentLocale()
-          )
+          localizedProjectWorkspaceHref(result.projectId, {
+            worldId: result.worldId,
+          })
         );
         onCreated?.(result);
       }

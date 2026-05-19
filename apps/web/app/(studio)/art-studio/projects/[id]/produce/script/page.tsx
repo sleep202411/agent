@@ -21,6 +21,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useTranslations } from "@/src/i18n/i18n";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { useAppSelector } from "@/src/store";
 import { selectCurrentInstance } from "@/src/store/slices/projectSlice";
 import { useProducePipeline } from "../_hooks/use-produce-pipeline";
@@ -102,7 +103,7 @@ export default function ProduceScriptPage() {
       try {
         await pipeline.commit();
         await projectScripts.refresh();
-        router.push(`/projects/${projectId}/produce/asset`);
+        router.push(localizedProjectWorkspaceHref(projectId, { suffix: "/produce/asset" }));
       } catch (err) {
         console.error("[script/page] commit failed:", err);
       }

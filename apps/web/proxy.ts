@@ -127,6 +127,20 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url, 307);
   }
 
+  // Backward compatibility for links/bookmarks created before project
+  // workspaces moved under /art-studio. next.config redirects only see
+  // the original locale-prefixed URL, so handle the localized shape here
+  // before the internal rewrite strips the locale.
+  if (
+    !studioHost &&
+    (rewrittenPathname.startsWith("/projects/") || rewrittenPathname === "/projects")
+  ) {
+    const url = request.nextUrl.clone();
+    const targetPathname = rewrittenPathname === "/projects" ? "" : rewrittenPathname;
+    url.pathname = `/${matchedLocale}/art-studio${targetPathname}`;
+    return NextResponse.redirect(url, 307);
+  }
+
   // Auth gate: protected paths without a session cookie 307 to /login
   // with the original (locale-prefixed) path stashed in `?redirect=`.
   // Public paths fall through unchanged.

@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { projectWorkspaceRoute } from "@/src/lib/studio-routes";
 
 /**
  * Produce index — bare URL has no real content of its own; we send
@@ -11,5 +13,7 @@ import { redirect } from "next/navigation";
  */
 export default async function ProduceIndex({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  redirect(`/projects/${id}/produce/script`);
+  const hdrs = await headers();
+  const locale = hdrs.get("x-locale") ?? "en-US";
+  redirect(`/${locale}${projectWorkspaceRoute(id, { suffix: "/produce/script" })}`);
 }

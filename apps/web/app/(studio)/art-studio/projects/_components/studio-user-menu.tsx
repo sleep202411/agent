@@ -71,9 +71,13 @@ export function StudioUserMenu({
     // Preserve the project's search params + hash (worldId / episodeId
     // / etc) — usePathname() drops them, so pull from window directly.
     const stripped = stripLocalePrefix(pathname);
+    const canonicalPath =
+      stripped === "/projects"
+        ? "/art-studio"
+        : stripped.replace(/^\/projects(?=\/)/, "/art-studio/projects");
     const search = typeof window !== "undefined" ? window.location.search : "";
     const hash = typeof window !== "undefined" ? window.location.hash : "";
-    router.replace(`${localizePath(stripped, next)}${search}${hash}`);
+    router.replace(`${localizePath(canonicalPath, next)}${search}${hash}`);
   };
 
   const displayName = user?.nickname || "User";

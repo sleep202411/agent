@@ -19,6 +19,7 @@ import { useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { IconArrowLeft, IconFileX, IconLoader2 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import {
   Empty,
   EmptyDescription,
@@ -113,7 +114,9 @@ export default function ProduceEpisodeVideoEditorPage() {
         <Button
           variant="ghost"
           color="muted"
-          onClick={() => router.push(`/projects/${projectId}/produce/video`)}
+          onClick={() =>
+            router.push(localizedProjectWorkspaceHref(projectId, { suffix: "/produce/video" }))
+          }
         >
           <IconArrowLeft /> 返回
         </Button>

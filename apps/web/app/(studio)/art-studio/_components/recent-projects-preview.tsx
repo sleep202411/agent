@@ -6,6 +6,7 @@ import { IconArrowRight, IconPlus } from "@tabler/icons-react";
 import { env } from "@/src/env";
 import { useTranslations } from "@/src/i18n/i18n";
 import { localizePath, getCurrentLocale } from "@/src/i18n/locale-url";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { useMyProducts, type MyProduct } from "../_hooks/use-my-products";
 import { CreateWorldDialog } from "./create-world-dialog";
 
@@ -78,7 +79,9 @@ function ProductCard({ product }: { product: MyProduct }) {
   const description = product.description?.trim() || tw("noDescription");
   return (
     <Link
-      href={localizePath(`/projects/${product.id}?worldId=${product.worldId}`, getCurrentLocale())}
+      href={localizedProjectWorkspaceHref(product.id, {
+        worldId: product.worldId,
+      })}
       className="group flex flex-col overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-border"
     >
       <div className="relative aspect-video w-full bg-muted">

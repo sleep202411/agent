@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 
 function encodeSearchParams(searchParams: Record<string, string | string[] | undefined>) {
   const params = new URLSearchParams();
@@ -21,7 +22,11 @@ export default async function LegacyProduceVideoEditorRedirect({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const [{ id, episodeId }, resolvedSearchParams] = await Promise.all([params, searchParams]);
+  const hdrs = await headers();
+  const locale = hdrs.get("x-locale") ?? "en-US";
   redirect(
-    `/projects/${id}/episodes/${episodeId}/video${encodeSearchParams(resolvedSearchParams)}`
+    `/${locale}/art-studio/projects/${id}/episodes/${episodeId}/video${encodeSearchParams(
+      resolvedSearchParams
+    )}`
   );
 }

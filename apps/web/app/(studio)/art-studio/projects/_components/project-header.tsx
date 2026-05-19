@@ -25,6 +25,7 @@ import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { StudioUserMenu } from "@/app/(studio)/art-studio/projects/_components/studio-user-menu";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { useAppSelector, useAppDispatch } from "@/src/store";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { setActiveTab, selectCurrentInstance, togglePanel } from "@/src/store/slices/projectSlice";
 import {
   setCredits,
@@ -232,7 +233,9 @@ export function ProjectHeader({ projectName, isLoading }: ProjectHeaderProps) {
           {project?.id ? (
             <Button asChild size="sm">
               <Link
-                href={`/projects/${project.id}/produce`}
+                href={localizedProjectWorkspaceHref(project.id, {
+                  suffix: "/produce",
+                })}
                 className="bg-gradient-to-r from-fuchsia-500 to-purple-500 text-white hover:from-fuchsia-400 hover:to-purple-400"
               >
                 <IconSparkles className="size-3.5" />

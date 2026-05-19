@@ -12,6 +12,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -146,7 +147,7 @@ export default function ProduceAssetPage() {
       try {
         await step2.commit();
         await reloadAssets();
-        router.push(`/projects/${projectId}/produce/episodes`);
+        router.push(localizedProjectWorkspaceHref(projectId, { suffix: "/produce/episodes" }));
       } catch (err) {
         console.error("[asset/page] commit failed:", err);
       }

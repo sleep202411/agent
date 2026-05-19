@@ -24,6 +24,7 @@ import { IconAlertCircle, IconCheck, IconLoader2 } from "@tabler/icons-react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
+import { projectWorkspaceRoute } from "@/src/lib/studio-routes";
 import { backendApi, ApiRequestError } from "@/src/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -117,14 +118,20 @@ export default function InvitePage() {
         }
       }
       // Destination mirrors legacy `/project/workspace?projectId=X&worldId=Y`
-      // which renders the storyboard editor — that's `/projects/[id]` in
-      // Next.js (not `/crews/[id]/workspace`, which is the team dashboard).
-      // `projects/[id]/page.tsx` reads worldId from the query string to
-      // bootstrap Redux, so we must preserve it.
-      const suffix = finalWorldId ? `?worldId=${encodeURIComponent(finalWorldId)}` : "";
-      router.push(`/projects/${encodeURIComponent(pid)}${suffix}`);
+      // which renders the storyboard editor in the studio workspace
+      // (not `/crews/[id]/workspace`, which is the team dashboard).
+      // The workspace reads worldId from the query string to bootstrap
+      // Redux, so we must preserve it.
+      router.push(
+        localizePath(
+          projectWorkspaceRoute(pid, {
+            worldId: finalWorldId,
+          }),
+          locale
+        )
+      );
     },
-    [router, stopPolling]
+    [locale, router, stopPolling]
   );
 
   // Detail fetch succeeds → user is an approved member.

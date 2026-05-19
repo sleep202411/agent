@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { IconCheck } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { cn } from "@/lib/utils";
 import { PRODUCE_STEPS } from "../_data/steps";
 
@@ -31,7 +32,9 @@ export function ProduceStepper({ currentIndex, projectId }: ProduceStepperProps)
         return (
           <div key={step.key} className="flex items-center gap-3">
             <Link
-              href={`/projects/${projectId}/produce/${step.key}`}
+              href={localizedProjectWorkspaceHref(projectId, {
+                suffix: `/produce/${step.key}`,
+              })}
               className="flex items-center gap-2"
             >
               <span

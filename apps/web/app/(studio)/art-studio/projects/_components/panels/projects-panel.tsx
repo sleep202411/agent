@@ -19,6 +19,7 @@ import { env } from "@/src/env";
 import type { ProjectOptionItem } from "@/src/types/workspace";
 import { useAppSelector, useAppDispatch } from "@/src/store";
 import { touchProjectList, selectCurrentInstance } from "@/src/store/slices/projectSlice";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 
 const OSS_BASE = env.OSS_BASE_URL;
 
@@ -71,7 +72,11 @@ export function ProjectsPanel({ onClose }: { onClose: () => void }) {
   const navigateToProject = (project: ProjectOptionItem) => {
     if (!project.id) return;
     const nextWorldId = String(project.worldId ?? worldId ?? "");
-    router.push(`/projects/${project.id}${nextWorldId ? `?worldId=${nextWorldId}` : ""}`);
+    router.push(
+      localizedProjectWorkspaceHref(project.id, {
+        worldId: nextWorldId,
+      })
+    );
     onClose();
   };
 

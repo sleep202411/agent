@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { IconArrowLeft, IconLayoutDashboard } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 
 interface EpisodeHeaderProps {
   projectId: string;
@@ -36,7 +37,7 @@ export function EpisodeHeader({
         variant="outline"
         color="muted"
         size="sm"
-        onClick={() => router.push(`/projects/${projectId}`)}
+        onClick={() => router.push(localizedProjectWorkspaceHref(projectId))}
       >
         <IconLayoutDashboard /> 进入项目空间
       </Button>

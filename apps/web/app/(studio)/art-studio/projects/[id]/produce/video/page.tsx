@@ -19,6 +19,7 @@ import {
   loadProjectWorldId,
   type ProduceJavaEpisode,
 } from "@/src/lib/produce/java-produce-data";
+import { localizedProjectWorkspaceHref } from "@/src/lib/studio-routes";
 import { useProduceCommittedResult } from "../_hooks/use-produce-seed";
 
 export default function ProduceVideoPage() {
@@ -136,11 +137,14 @@ function EpisodeRow({
   worldId: string;
   episode: ProduceJavaEpisode;
 }) {
-  const href = `/projects/${projectId}/episodes/${episode.id}/video?${new URLSearchParams({
-    ...(worldId ? { worldId } : {}),
-    title: episode.title,
-    no: String(episode.no),
-  }).toString()}`;
+  const href = localizedProjectWorkspaceHref(projectId, {
+    suffix: `/episodes/${episode.id}/video`,
+    query: {
+      worldId,
+      title: episode.title,
+      no: episode.no,
+    },
+  });
   const shotCount = episode.shotCount;
 
   return (
