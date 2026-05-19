@@ -487,6 +487,22 @@ If two adjacent panels need a clearer divider than the lightness step
 alone provides (e.g., the form / preview split in the workbench), put
 **whitespace** between them (`gap-3` / `gap-4`), not borders.
 
+**Canonical examples** (look here when adding a new borderless surface):
+
+- `apps/web/app/(site)/crews/[id]/workspace/_components/positions/position-card.tsx`
+  — borderless card with `bg-card` + hover lift via shadow only.
+- `apps/web/app/(site)/crews/[id]/workspace/_components/positions/positions-grid.tsx`
+  — borderless pill-style segmented control (`bg-secondary/40` lifts it,
+  no ring needed).
+- `apps/web/app/(site)/crews/[id]/workspace/_components/positions/position-detail-sheet.tsx`
+  — applicant rows use `bg-secondary/40` only; no `border` on the row
+  itself. The single `border-b border-border/60` between sections is the
+  allowed "structural divider inside a card" exception.
+
+If you find yourself reaching for `border` on a card-shaped surface,
+double-check: usually the right answer is a stronger `bg-*` step or
+more whitespace.
+
 ### Liquid glass (floating UI)
 
 | Level            | Treatment                                                                          | Use                                      |

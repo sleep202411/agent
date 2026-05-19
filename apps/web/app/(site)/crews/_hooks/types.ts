@@ -1,83 +1,116 @@
 /**
- * Public-facing types for the crews feature data layer. Re-exported
- * through `_hooks/use-crew` so route / component code only ever imports
- * from there.
+ * Re-export shared crew DTOs as the feature's public type surface.
+ *
+ * Everything user-facing in this feature should import from here (or
+ * from the `use-crew` barrel that re-exports from here) — not from
+ * `@repo/shared` directly. Keeping one import surface means a future
+ * type migration (e.g. server splits CrewDTO into multiple wire
+ * shapes) is a single-file change instead of grepping every import
+ * site.
  */
 
-// ─── Applicants ────────────────────────────────────────
+export type {
+  CrewDTO,
+  CrewPositionDTO,
+  CrewPositionStatus,
+  CrewMemberDTO,
+  CrewMemberVia,
+  CrewApplicationDTO,
+  CrewApplicationStatus,
+  EpisodeDTO,
+  EpisodeStatus,
+  EpisodeAssignmentDTO,
+  AssignmentStatus,
+  EpisodeActivityDTO,
+  EpisodeActivityType,
+  PresetPositionValue,
+  WorkMode,
+  EmploymentType,
+  ExperienceLevel,
+  SalaryPeriod,
+  CurrencyCode,
+  CrewGenre,
+  CrewStyle,
+  SocialPlatform,
+  SocialLink,
+  ShowcaseWork,
+} from "@repo/shared/crew";
 
-export type ApplicationStatus = "pending" | "approved" | "rejected";
+export {
+  PRESET_POSITIONS,
+  OWNER_ROLE,
+  isPresetPosition,
+  isValidRoleType,
+  WORK_MODES,
+  EMPLOYMENT_TYPES,
+  EXPERIENCE_LEVELS,
+  SALARY_PERIODS,
+  ALL_CURRENCIES,
+  CURRENCY_SYMBOLS,
+  ZERO_DECIMAL_CURRENCIES,
+  CREW_GENRES,
+  CREW_STYLES,
+  SOCIAL_PLATFORMS,
+} from "@repo/shared/crew";
 
-export interface JobApplicant {
-  id: number;
-  userId: number;
-  userName: string;
-  userAvatar: string;
-  jobId: number;
-  roleName: string;
-  level: string;
-  status: ApplicationStatus;
-  message: string;
-  portfolioUrl: string;
-  appliedAt: string;
-}
+// ─── Input shapes (controllers' Zod-validated body types) ─────
 
-// ─── Crew + job mutations ──────────────────────────────
+import type { CrewGenre, CrewStyle, SocialLink, ShowcaseWork } from "@repo/shared/crew";
 
-/**
- * Wire-shape for `POST /project/crew/create` (backend `createCrew`
- * controller). Three user-supplied fields (the "crew basic info" step
- * of the phase-1 spec):
- *
- *   name        — required; crew display name
- *   banner      — required; OSS storage path of the cover image
- *   description — required; freeform description
- *
- * Backend also accepts `video` (OSS path) and `ipId`; neither is
- * surfaced in this type. The video upload UI is removed pending a
- * proper presigned-URL endpoint for crews (the existing `uploadBanner`
- * fallback was semantically wrong); `ipId` is excluded by product
- * decision (2026-05-08) — crews are not bound to an IP in the UI.
- */
 export interface CreateCrewInput {
   name: string;
-  banner: string;
   description: string;
+  logo: string;
+  tagline?: string | null;
+  genres?: CrewGenre[];
+  styles?: CrewStyle[];
+  socialLinks?: SocialLink[];
+  showcaseWorks?: ShowcaseWork[];
 }
 
 export interface UpdateCrewInput extends Partial<CreateCrewInput> {
   id: string;
 }
 
-/**
- * Wire-shape for `POST /project/crew/job/create` (createCrewJob).
- *
- * Backend takes the fields below as **query params** today
- * (consistency-flagged TODO; same migration we're asking for as the
- * earlier add-member call). The mapping is:
- *
- *   crewId         (frontend) → projectId (wire)  — phase-1 backend
- *                                                   reuses the project
- *                                                   schema for crews
- *   roleId         (frontend) → roleId    (wire)  — id from
- *                                                   /project/role/list
- *   jobName        (frontend) → jobName   (wire)  — display label;
- *                                                   defaults to the
- *                                                   selected role's name
- *   jobDescription (frontend) → jobDescription    — recruiter copy
- *   jobNumber      (frontend) → jobNumber         — headcount
- */
-export interface CreateJobInput {
-  /** Crew id (created via /project/crew/create). Sent as `projectId` on
-   *  the wire because backend reuses the project entity for crews. */
-  crewId: string;
-  /** Role id from `/project/role/list`. Required. */
-  roleId: number;
-  /** Display label for the job. Phase-1 frontend uses the role's name
-   *  by default; explicit override comes later if backend wants it. */
-  jobName: string;
-  /** Recruiter-authored description of the role. Required. */
-  jobDescription: string;
-  /** Headcount to recruit. Required, ≥ 1. */
-  jobNumber: number;
+export interface SalaryInput {
+  period?: "month" | "episode" | "project" | null;
+  /** ISO 4217. Required when amounts are set. */
+  currency?: import("@repo/shared/crew").CurrencyCode | null;
+  /** Display unit (yuan / dollar / yen). Server converts to smallest unit. */
+  min?: number | null;
+  max?: number | null;
+  negotiable?: boolean;
+}
+
+export interface CreatePositionInput {
+  positionType: string;
+  description: string;
+  targetCount: number;
+  workMode?: "remote" | "hybrid" | "onsite";
+  location?: string | null;
+  employmentType?: "full_time" | "part_time" | "contract" | "freelance" | "project_based";
+  experienceLevel?: "any" | "junior" | "mid" | "senior" | "lead";
+  requiredSkills?: string[];
+  salary?: SalaryInput;
+  /** YYYY-MM-DD. */
+  closeDate?: string | null;
+}
+
+export interface UpdatePositionInput extends Partial<CreatePositionInput> {
+  status?: "open" | "frozen";
+}
+
+export interface ApplyInput {
+  message?: string | null;
+  portfolioUrl?: string | null;
+  /** Yuan. */
+  expectedSalary?: number | null;
+  /** YYYY-MM-DD. */
+  availableStartDate?: string | null;
+  yearsExperience?: number | null;
+}
+
+export interface AddMemberInput {
+  account: string;
+  roleType: string;
 }

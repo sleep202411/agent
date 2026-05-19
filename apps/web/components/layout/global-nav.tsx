@@ -5,10 +5,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { SiteUserMenu } from "@/components/layout/site-user-menu";
 import { CommunityCreditsChip } from "@/components/layout/community-credits-chip";
+import { BellButton } from "@/components/notifications/bell-button";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLogout } from "@/src/hooks/use-logout";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
+import { getStudioHref } from "@/src/lib/region/cell";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { useTheme } from "next-themes";
 import {
@@ -109,8 +111,19 @@ export function GlobalNav() {
   // primary action on the page, distinct from the text-link directory
   // items above. `requiresAuth: true` keeps logged-out clicks routed
   // through /login?redirect= like the others.
+  //
+  // Two URLs on purpose:
+  //  - `href` is the local apex path — used for isActive (matches
+  //    the URL pathname) and as the post-login redirect target
+  //    (so the freshly-set session cookie isn't lost to a
+  //    subdomain hop).
+  //  - `linkHref` is what the <a> actually navigates to — usually
+  //    the apex path, but a dedicated subdomain when configured
+  //    via NEXT_PUBLIC_STUDIO_HOST. See `getStudioHref` in
+  //    src/lib/region/cell.ts for the cookie caveat.
   const studioItem = {
     href: "/art-studio",
+    linkHref: getStudioHref(locale),
     label: t("studio"),
     Icon: IconWand,
     requiresAuth: true,
@@ -253,7 +266,7 @@ export function GlobalNav() {
               soft red glow (the "ember" radiating into the page chrome).
            */}
           <Link
-            href={localizePath(studioItem.href, locale as Locale)}
+            href={studioItem.linkHref}
             onClick={(e) => onNavClick(e, studioItem)}
             target="_blank"
             rel="noopener noreferrer"
@@ -304,6 +317,11 @@ export function GlobalNav() {
 
           {user ? (
             <>
+              {/* Notifications bell — badge + dropdown to recent items.
+                  Sits to the left of credits / avatar; opening drawer
+                  is independent of the user menu so they can coexist
+                  without z-index conflict. */}
+              <BellButton />
               {/* Community credits — entry point only for now. Popover
                   surfaces balance + actions; the wallet itself is
                   coming soon. Sits to the left of the avatar so it
@@ -343,7 +361,7 @@ export function GlobalNav() {
             {/* Studio CTA — hero entry, same red-forward liquid-glass treatment
                 as the desktop right cluster, sized up for thumb reach. */}
             <Link
-              href={localizePath(studioItem.href, locale as Locale)}
+              href={studioItem.linkHref}
               onClick={(e) => {
                 onNavClick(e, studioItem);
                 setMobileOpen(false);

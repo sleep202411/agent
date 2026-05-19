@@ -1,5 +1,13 @@
 "use client";
 
+/**
+ * Per-episode "assign a crew member" picker. The user picks an active
+ * crew member from the roster and a role label from the preset list;
+ * the assignment is submitted with that label as `roleName` (no
+ * `positionId` — episode assignments are not tied to recruitment
+ * positions, even when the crew member joined through one).
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -22,14 +30,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
-import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
+import { isPresetPosition } from "@repo/shared/crew";
+import {
+  useTranslatePositionValue,
+  useTranslatedPresetPositions,
+} from "@/app/(site)/crews/_hooks/use-position-label";
 import { useAssignMember, type EpisodeAssignment } from "@/app/(site)/crews/_hooks/use-episodes";
 
 interface AssignMemberDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   crewId: string;
-  episodeId: number;
+  episodeId: string;
   episodeNumber: number;
   /** Existing assignments so already-assigned crew members are hidden
    *  from the picker (each user can only have one slot per episode). */
@@ -46,22 +58,43 @@ export function AssignMemberDialog({
 }: AssignMemberDialogProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
+  const translatePosition = useTranslatePositionValue();
+  const presetPositions = useTranslatedPresetPositions();
 
   const [userId, setUserId] = useState<string>("");
-  const [roleId, setRoleId] = useState<string>("");
+  const [roleValue, setRoleValue] = useState<string>("");
 
   const { data: crewMembers = [] } = useCrewMembers(crewId);
-  const { data: projectRoles = [] } = useProjectRoles();
   const assign = useAssignMember(crewId, episodeId);
   const submitting = assign.isPending;
 
   useEffect(() => {
     if (open) return;
     setUserId("");
-    setRoleId("");
+    setRoleValue("");
   }, [open]);
 
-  // Hide members already assigned to this episode.
+  /**
+   * When the user picks a member, default the role to that member's
+   * crew roleType — that's almost always what they want (people get
+   * assigned in their day-job role). Founder's role ("owner") is not
+   * a real production role, so skip the default in that case.
+   *
+   * This RUNS on every userId change, including when the user picks
+   * a different member after already choosing a role. That's
+   * intentional: the role implies "what is this person doing this
+   * episode" and the most useful default tracks the chosen person.
+   * The user can always override afterward.
+   */
+  useEffect(() => {
+    if (!userId) return;
+    const m = crewMembers.find((x) => x.userId === userId);
+    if (!m) return;
+    if (m.via === "founder") return;
+    if (!isPresetPosition(m.roleType)) return;
+    setRoleValue(m.roleType);
+  }, [userId, crewMembers]);
+
   const assignedUserIds = useMemo(
     () => new Set(existingAssignments.map((a) => a.userId)),
     [existingAssignments]
@@ -71,29 +104,19 @@ export function AssignMemberDialog({
     [crewMembers, assignedUserIds]
   );
 
-  const selectedRole = useMemo(
-    () => projectRoles.find((r) => String(r.id) === roleId),
-    [projectRoles, roleId]
-  );
-
-  const canSubmit = !submitting && userId.length > 0 && roleId.length > 0;
+  const canSubmit = !submitting && userId.length > 0 && roleValue.length > 0;
 
   const handleSubmit = () => {
-    if (!canSubmit || !selectedRole) return;
+    if (!canSubmit) return;
+    const roleName = translatePosition(roleValue);
     assign.mutate(
-      {
-        userId: Number(userId),
-        roleId: selectedRole.id,
-        roleName: selectedRole.name,
-      },
+      { userId, roleName },
       {
         onSuccess: () => {
           toast.success(t("assignMemberSuccess"));
           onOpenChange(false);
         },
-        onError: (err) => {
-          toast.error(err instanceof Error ? err.message : t("assignMemberFailed"));
-        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : t("assignMemberFailed")),
       }
     );
   };
@@ -119,8 +142,8 @@ export function AssignMemberDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {availableMembers.map((m) => (
-                      <SelectItem key={m.userId} value={String(m.userId)}>
-                        {m.nick?.trim() || `User ${m.userId}`}
+                      <SelectItem key={m.userId} value={m.userId}>
+                        User {m.userId}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -129,14 +152,14 @@ export function AssignMemberDialog({
             </Field>
             <Field>
               <FieldLabel required>{t("assignmentRole")}</FieldLabel>
-              <Select value={roleId} onValueChange={setRoleId}>
+              <Select value={roleValue} onValueChange={setRoleValue}>
                 <SelectTrigger>
                   <SelectValue placeholder={t("assignmentRolePlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {projectRoles.map((r) => (
-                    <SelectItem key={r.id} value={String(r.id)}>
-                      {r.name}
+                  {presetPositions.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -15,6 +15,7 @@ import {
 import { openAssetsRealtime } from "./_data/assets-realtime";
 import { ComposeBar } from "./_components/compose-bar";
 import { GalleryGrid, type GalleryItem } from "./_components/gallery-grid";
+import { useFeature } from "@/src/lib/region/provider";
 
 type ModelSource = "loading" | "live" | "preview";
 
@@ -438,6 +439,17 @@ export default function AiImageLabPage() {
     [items, modelSource, replaceItem]
   );
 
+  // ─── Region gate ──────────────────────────────────────────────
+  // Image generation is bound to Azure Foundry (eastus2) — see
+  // features.ts. On cn the route still mounts (sidebar entry is
+  // hidden, but direct navigation / shared links land here); render
+  // an unavailable card instead of letting the lab fail at submit
+  // time.
+  const imageGenAvailable = useFeature("imageGeneration");
+  if (!imageGenAvailable) {
+    return <UnavailableInRegion t={t} />;
+  }
+
   // ─── Render ───────────────────────────────────────────────────
   return (
     <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
@@ -488,6 +500,27 @@ export default function AiImageLabPage() {
             t={t}
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function UnavailableInRegion({ t }: { t: (key: string, fallback?: string) => string }) {
+  return (
+    <div className="flex h-[calc(100dvh-56px)] items-center justify-center bg-black px-6 text-foreground lg:pl-20">
+      <div className="flex max-w-md flex-col items-center gap-4 text-center">
+        <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
+          <IconSparkles className="size-6" />
+        </span>
+        <h2 className="text-lg font-semibold">
+          {t("imageLab.unavailable.title", "Image lab isn't available in your region")}
+        </h2>
+        <p className="text-sm text-zinc-500">
+          {t(
+            "imageLab.unavailable.body",
+            "Image generation runs on infrastructure that isn't deployed for this site yet. Stay tuned — coming soon."
+          )}
+        </p>
       </div>
     </div>
   );

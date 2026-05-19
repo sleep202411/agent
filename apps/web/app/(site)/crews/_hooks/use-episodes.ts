@@ -1,95 +1,78 @@
 /**
- * Crew episode-management hooks.
+ * Crew episode + assignment hooks — backed by the real Nest endpoints
+ * at `/aurora/crews/:crewId/episodes` + `/aurora/episodes/:episodeId/*`
+ * + `/aurora/assignments/:id/*`.
  *
- * All endpoints are still mock-backed (see `episode-mock.ts`). The
- * hook shapes mirror what the backend wire contract will look like
- * once it ships — to switch to real HTTP, replace each fetcher /
- * mutator body with `api.post(...)` / `api.get(...)` and keep the
- * query keys + signatures intact. UI code below this layer never
- * needs to change.
+ * Wire shapes come from `@repo/shared/crew` — `EpisodeDTO`,
+ * `EpisodeAssignmentDTO`, `EpisodeActivityDTO`. IDs are strings (BigInt
+ * stringified by the server). The hook signatures still take `crewId`
+ * even where the URL doesn't need it, so the query keys can scope
+ * invalidations per-crew without extra lookup.
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { crewApi } from "./api";
 import { crewKeys } from "./shared";
-import {
-  approveAssignment as mockApproveAssignment,
-  approveEpisode as mockApproveEpisode,
-  assignMember as mockAssignMember,
-  createEpisode as mockCreateEpisode,
-  listActivity,
-  listAssignments,
-  listEpisodes,
-  rejectAssignment as mockRejectAssignment,
-  setAssignmentRevenue as mockSetRevenue,
-  submitAssignment as mockSubmitAssignment,
-  unassignMember as mockUnassignMember,
-  type Episode,
-  type EpisodeActivity,
-  type EpisodeAssignment,
-} from "./episode-mock";
-import { useUserInfo } from "@/src/hooks/use-user";
+import type { CurrencyCode, EpisodeActivityDTO, EpisodeAssignmentDTO, EpisodeDTO } from "./types";
 
 export type {
-  Episode,
-  EpisodeActivity,
-  EpisodeAssignment,
+  EpisodeDTO as Episode,
+  EpisodeAssignmentDTO as EpisodeAssignment,
+  EpisodeActivityDTO as EpisodeActivity,
   EpisodeStatus,
   AssignmentStatus,
   EpisodeActivityType,
-  AssignmentRevenue,
-  AssignmentSubmission,
-  AssignmentReviewNote,
-} from "./episode-mock";
+} from "./types";
 
-// ─── Actor binding ─────────────────────────────────────
-//
-// Mutations log activity entries naming the actor. Pulling from
-// `useUserInfo()` keeps the mock realistic and means swapping to real
-// backend later doesn't change any call sites — backend will derive
-// the actor from the auth token instead.
-
-function useActor() {
-  const { data: user } = useUserInfo();
-  return {
-    actorUserId: user?.id != null ? Number(user.id) : 0,
-    actorName: user?.nickName || user?.userName || `User ${user?.id ?? "?"}`,
-  };
+interface ActivityPage {
+  items: EpisodeActivityDTO[];
+  page: number;
+  pageSize: number;
+  total: number;
 }
 
-// ─── Reads ─────────────────────────────────────────────
+// ─── Reads ──────────────────────────────────────────────────
 
 export function useCrewEpisodes(crewId: string) {
-  return useQuery<Episode[]>({
+  return useQuery({
     queryKey: crewKeys.episodes(crewId),
-    queryFn: async () => listEpisodes(crewId),
     enabled: !!crewId,
+    queryFn: () => crewApi.get<EpisodeDTO[]>(`/crews/${encodeURIComponent(crewId)}/episodes`),
   });
 }
 
-export function useEpisodeAssignments(crewId: string, episodeId: number | undefined) {
-  return useQuery<EpisodeAssignment[]>({
-    queryKey: crewKeys.episodeAssignments(crewId, episodeId ?? 0),
-    queryFn: async () => (episodeId != null ? listAssignments(crewId, episodeId) : []),
-    enabled: !!crewId && episodeId != null,
+export function useEpisodeAssignments(crewId: string, episodeId: string | undefined) {
+  return useQuery({
+    queryKey: crewKeys.episodeAssignments(crewId, episodeId ?? ""),
+    enabled: !!crewId && !!episodeId,
+    queryFn: () =>
+      crewApi.get<EpisodeAssignmentDTO[]>(
+        `/episodes/${encodeURIComponent(episodeId!)}/assignments`
+      ),
   });
 }
 
-export function useEpisodeActivity(crewId: string, episodeId: number | undefined) {
-  return useQuery<EpisodeActivity[]>({
-    queryKey: crewKeys.episodeActivity(crewId, episodeId ?? 0),
-    queryFn: async () => (episodeId != null ? listActivity(crewId, episodeId) : []),
-    enabled: !!crewId && episodeId != null,
+export function useEpisodeActivity(crewId: string, episodeId: string | undefined) {
+  return useQuery({
+    queryKey: crewKeys.episodeActivity(crewId, episodeId ?? ""),
+    enabled: !!crewId && !!episodeId,
+    queryFn: () =>
+      crewApi.get<ActivityPage>(`/episodes/${encodeURIComponent(episodeId!)}/activities`, {
+        query: { page: 1, pageSize: 50 },
+      }),
+    select: (page) => page.items,
   });
 }
 
-// ─── Episode mutations ─────────────────────────────────
+// ─── Episode mutations ──────────────────────────────────────
 
 export function useCreateEpisode(crewId: string) {
   const qc = useQueryClient();
-  const actor = useActor();
   return useMutation({
-    mutationFn: async (input: { title?: string; description?: string; deadline?: string }) =>
-      mockCreateEpisode({ crewId, ...input }, actor),
+    mutationFn: (input: { title?: string; description?: string; deadline?: string }) =>
+      crewApi.post<EpisodeDTO>(`/crews/${encodeURIComponent(crewId)}/episodes`, {
+        body: input,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
     },
@@ -98,9 +81,9 @@ export function useCreateEpisode(crewId: string) {
 
 export function useApproveEpisode(crewId: string) {
   const qc = useQueryClient();
-  const actor = useActor();
   return useMutation({
-    mutationFn: async (episodeId: number) => mockApproveEpisode(crewId, episodeId, actor),
+    mutationFn: (episodeId: string) =>
+      crewApi.post<EpisodeDTO>(`/episodes/${encodeURIComponent(episodeId)}/approve`),
     onSuccess: (_data, episodeId) => {
       qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
@@ -108,14 +91,15 @@ export function useApproveEpisode(crewId: string) {
   });
 }
 
-// ─── Assignment mutations ──────────────────────────────
+// ─── Assignment mutations ───────────────────────────────────
 
-export function useAssignMember(crewId: string, episodeId: number) {
+export function useAssignMember(crewId: string, episodeId: string) {
   const qc = useQueryClient();
-  const actor = useActor();
   return useMutation({
-    mutationFn: async (input: { userId: number; roleId?: number; roleName?: string }) =>
-      mockAssignMember({ crewId, episodeId, ...input }, actor),
+    mutationFn: (input: { userId: string; positionId?: string | null; roleName?: string | null }) =>
+      crewApi.post<EpisodeAssignmentDTO>(`/episodes/${encodeURIComponent(episodeId)}/assignments`, {
+        body: input,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
@@ -124,55 +108,12 @@ export function useAssignMember(crewId: string, episodeId: number) {
   });
 }
 
-export function useUnassignMember(crewId: string, episodeId: number) {
+export function useUnassignMember(crewId: string, episodeId: string) {
   const qc = useQueryClient();
-  const actor = useActor();
   return useMutation({
-    mutationFn: async (assignmentId: number) => {
-      mockUnassignMember(crewId, assignmentId, actor);
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
-      qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
-    },
-  });
-}
-
-export function useSubmitAssignment(crewId: string, episodeId: number) {
-  const qc = useQueryClient();
-  const actor = useActor();
-  return useMutation({
-    mutationFn: async (input: { assignmentId: number; note?: string; url?: string }) =>
-      mockSubmitAssignment(crewId, input.assignmentId, { note: input.note, url: input.url }, actor),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
-      qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
-    },
-  });
-}
-
-export function useApproveAssignment(crewId: string, episodeId: number) {
-  const qc = useQueryClient();
-  const actor = useActor();
-  return useMutation({
-    mutationFn: async (assignmentId: number) => mockApproveAssignment(crewId, assignmentId, actor),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
-      qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
-    },
-  });
-}
-
-export function useRejectAssignment(crewId: string, episodeId: number) {
-  const qc = useQueryClient();
-  const actor = useActor();
-  return useMutation({
-    mutationFn: async (input: { assignmentId: number; reason: string; suggestion?: string }) =>
-      mockRejectAssignment(
-        crewId,
-        input.assignmentId,
-        { reason: input.reason, suggestion: input.suggestion },
-        actor
+    mutationFn: (assignmentId: string) =>
+      crewApi.delete<{ removedId: string; episodeStatus: string }>(
+        `/assignments/${encodeURIComponent(assignmentId)}`
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
@@ -181,16 +122,84 @@ export function useRejectAssignment(crewId: string, episodeId: number) {
   });
 }
 
-export function useSetAssignmentRevenue(crewId: string, episodeId: number) {
+export function useSubmitAssignment(crewId: string, episodeId: string) {
   const qc = useQueryClient();
-  const actor = useActor();
   return useMutation({
-    mutationFn: async (input: { assignmentId: number; amount: number; currency?: string }) =>
-      mockSetRevenue(
-        crewId,
-        input.assignmentId,
-        { amount: input.amount, currency: input.currency },
-        actor
+    mutationFn: ({
+      assignmentId,
+      url,
+      note,
+    }: {
+      assignmentId: string;
+      url?: string | null;
+      note?: string | null;
+    }) =>
+      crewApi.post<EpisodeAssignmentDTO>(
+        `/assignments/${encodeURIComponent(assignmentId)}/submit`,
+        { body: { url, note } }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
+      qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
+    },
+  });
+}
+
+export function useApproveAssignment(crewId: string, episodeId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (assignmentId: string) =>
+      crewApi.post<EpisodeAssignmentDTO>(
+        `/assignments/${encodeURIComponent(assignmentId)}/approve`
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
+      qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
+    },
+  });
+}
+
+export function useRejectAssignment(crewId: string, episodeId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      assignmentId,
+      reason,
+      suggestion,
+    }: {
+      assignmentId: string;
+      reason: string;
+      suggestion?: string | null;
+    }) =>
+      crewApi.post<EpisodeAssignmentDTO>(
+        `/assignments/${encodeURIComponent(assignmentId)}/reject`,
+        { body: { reason, suggestion } }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });
+      qc.invalidateQueries({ queryKey: crewKeys.episodeActivity(crewId, episodeId) });
+    },
+  });
+}
+
+export function useSetAssignmentRevenue(crewId: string, episodeId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      assignmentId,
+      amount,
+      currency,
+    }: {
+      assignmentId: string;
+      /** Smallest currency unit (cents / 分 / JPY yen). */
+      amount: number;
+      /** ISO-4217 code; server validates against cell whitelist. Omit
+       *  to let the server default to the cell default. */
+      currency?: CurrencyCode;
+    }) =>
+      crewApi.post<EpisodeAssignmentDTO>(
+        `/assignments/${encodeURIComponent(assignmentId)}/revenue`,
+        { body: currency ? { amount, currency } : { amount } }
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.episodeAssignments(crewId, episodeId) });

@@ -34,15 +34,28 @@ services:
     mem_limit: 1g
     ports:
       - "${SERVER_PORT:-3001}:3001"
+    # Run schema migrations inside the server image before Nest binds HTTP.
+    # `prisma migrate deploy` is idempotent; if Postgres is still warming up,
+    # the command fails and restart:always retries instead of serving with a
+    # half-migrated schema.
+    command: ["sh", "-c", "npm run db:deploy && node dist/main.js"]
     environment:
       PORT: 3001
+      NEXT_PUBLIC_SITE_REGION: ${SITE_REGION:-global}
       JAVA_STUDIO_URL: ${JAVA_STUDIO_URL}
       JAVA_CONTENT_URL: ${JAVA_CONTENT_URL}
+      JAVA_USER_QUERY_PWD: ${JAVA_USER_QUERY_PWD}
       ALIBABA_API_KEY: ${ALIBABA_API_KEY}
       ALIBABA_BASE_URL: ${ALIBABA_BASE_URL}
       AI_PROVIDER: ${AI_PROVIDER:-alibaba}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       REDIS_URL: redis://redis:6379
+      # Crew module persistence — see `postgres` service below.
+      # Password sourced from .env (POSTGRES_PASSWORD). On managed-DB
+      # deploys (Azure / Aliyun RDS) override DATABASE_URL directly
+      # in the host .env and the `postgres` service can be commented
+      # out of this file.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://fizzdragon:${POSTGRES_PASSWORD}@postgres:5432/fizzdragon?schema=public}
       # Supervisor chat + workflow endpoints live in the agent container.
       MASTRA_URL: http://agent:4111
       DISABLE_CONTENT_MODERATION: ${DISABLE_CONTENT_MODERATION:-false}
@@ -50,6 +63,7 @@ services:
     depends_on:
       - redis
       - agent
+      - postgres
     networks:
       - app
 
@@ -147,6 +161,54 @@ services:
     networks:
       - app
 
+  # ─── Postgres (crew module persistence) ────────────────
+  # In-docker PG for the **.cn ECS** deploy. The .com side runs on
+  # AKS with Azure Database for PostgreSQL Flexible Server (managed)
+  # — this entire compose file isn't used there. This service is
+  # justified for .cn while we hold off provisioning Aliyun RDS for
+  # PG.
+  #
+  # Data lives in the named volume `pg_data`, which survives
+  # container recreation BUT NOT host disk failure / ECS termination.
+  # Belt-and-suspenders: enable a daily `pg_dump` to OSS before this
+  # carries real production traffic.
+  #
+  # ⚠ NEVER run `docker compose down -v` on this stack — the `-v`
+  #   flag deletes named volumes. Use `down` (no flag) to stop, or
+  #   `restart` to bounce.
+  #
+  # Migration to managed DB (Aliyun RDS for PG) when ready:
+  #   1. Replace DATABASE_URL in the `server` service env with the
+  #      RDS connection string (sslmode=require).
+  #   2. Remove `- postgres` from `server.depends_on`.
+  #   3. Comment out this `postgres` service block. Keep `pg_data`
+  #      volume declaration for one release in case rollback needed.
+  postgres:
+    # Docker Hub is blocked from the CN ECS; on that host set
+    # POSTGRES_IMAGE to a GHCR mirror (ghcr.io/fizzdragon-pte-ltd-2/postgres:16-alpine)
+    # — same workaround used for `redis` above. See DEPLOY.md for the
+    # buildx-push recipe to re-mirror when bumping the PG version.
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-pg
+    restart: always
+    labels:
+      io.containers.autoupdate: registry
+      com.centurylinklabs.watchtower.enable: "true"
+    mem_limit: 1g
+    environment:
+      POSTGRES_DB: fizzdragon
+      POSTGRES_USER: fizzdragon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fizzdragon"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - app
+
   redis:
     # Redis Stack = Redis + RediSearch (vector) + RedisJSON + RedisBloom.
     # Wire-compatible with vanilla Redis; only difference: command is `redis-stack-server`
@@ -176,8 +238,21 @@ services:
       - app
 
 volumes:
+  # redis_data + agent_data: NOT explicitly named — they fall through to
+  # podman-compose's default `<projectName>_<volumeKey>`, which on 1.0.6
+  # is the working-dir basename ("platform"). Result: staging and prod-cn
+  # on the same ECS have been silently sharing `platform_redis_data` and
+  # `platform_agent_data`. That's a latent bug worth fixing eventually,
+  # but namespacing here would discard in-flight BullMQ jobs and libsql
+  # workflow snapshots on next force-recreate — defer until a planned
+  # maintenance window with the worker queue drained.
   redis_data:
   agent_data:
+  # pg_data IS namespaced. Two PG containers can't safely share a data
+  # dir (different passwords → init mismatch → crash loop), so this
+  # collision would be fatal where the others are merely messy.
+  pg_data:
+    name: ${COMPOSE_PROJECT_NAME:-fizzdragon}_pg_data
 
 networks:
   app:

@@ -15,15 +15,16 @@ import {
   type EpisodeAssignment,
 } from "@/app/(site)/crews/_hooks/use-episodes";
 import { useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
+import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { AssignmentStatusBadge } from "./episode-status-badge";
 import { RevenueCell } from "./revenue-cell";
 import { RejectModal } from "./reject-modal";
 import { AssignMemberDialog } from "./assign-member-dialog";
-import type { CrewRole, UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
+import type { UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
 
 interface AssignmentTableProps {
   crewId: string;
-  episodeId: number;
+  episodeId: string;
   episodeNumber: number;
   viewer: UserCrewRole;
 }
@@ -50,9 +51,15 @@ export function AssignmentTable({
   const [assignOpen, setAssignOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<EpisodeAssignment | null>(null);
 
-  const memberNameById = new Map(
-    crewMembers.map((m) => [m.userId, m.nick?.trim() || `User ${m.userId}`])
-  );
+  // Resolve real nicknames via the BFF for every assignee we render
+  // (deduped at the hook level). Falls back to "User <id>" for any
+  // missing lookup.
+  const assigneeIds = assignments.map((a) => a.userId);
+  const displays = useUserDisplays(assigneeIds);
+  const nameOf = (userId: string) => displayNameOf(userId, displays);
+  // crewMembers is kept for the future "filter eligible members" pass;
+  // currently we render assignments directly.
+  void crewMembers;
 
   return (
     <div className="rounded-xl bg-secondary/30 p-4">
@@ -83,7 +90,7 @@ export function AssignmentTable({
               crewId={crewId}
               episodeId={episodeId}
               assignment={a}
-              displayName={memberNameById.get(a.userId) || `User ${a.userId}`}
+              displayName={nameOf(a.userId)}
               viewer={viewer}
               onAskReject={() => setRejectTarget(a)}
             />
@@ -104,11 +111,7 @@ export function AssignmentTable({
         crewId={crewId}
         episodeId={episodeId}
         target={rejectTarget}
-        displayName={
-          rejectTarget
-            ? memberNameById.get(rejectTarget.userId) || `User ${rejectTarget.userId}`
-            : ""
-        }
+        displayName={rejectTarget ? nameOf(rejectTarget.userId) : ""}
         onClose={() => setRejectTarget(null)}
       />
     </div>
@@ -119,7 +122,7 @@ export function AssignmentTable({
 
 interface AssignmentRowProps {
   crewId: string;
-  episodeId: number;
+  episodeId: string;
   assignment: EpisodeAssignment;
   displayName: string;
   viewer: UserCrewRole;
@@ -265,7 +268,7 @@ function AssignmentRow({
 
 interface RejectAssignmentModalProps {
   crewId: string;
-  episodeId: number;
+  episodeId: string;
   target: EpisodeAssignment | null;
   displayName: string;
   onClose: () => void;

@@ -1,326 +1,208 @@
 "use client";
 
 /**
- * Crew detail — primary layout. Renders when the new
- * `/project/crew/detail/:id` endpoint returns a record. Composition
- * follows fizzdragon-prd's `app/studio/[id]/page.tsx` reference.
+ * Crew detail — public showcase layout (LinkedIn / Greenhouse-style).
  *
- * Real-data sources:
- *   - useCrewDetail   — hero (banner / video / name / description)
- *   - useCrewMembers  — team sidebar
- *   - useCrewJobs     — open positions list
- *   - useProjectRoles — role-name lookup
+ * Visitor's question is "should I join / apply to this crew?" — so
+ * the page leads with a hero, then a 2-col body: main column with
+ * About + Open Positions, right sidebar pinned with the team
+ * roster. Team-as-trust-anchor stays visible while the visitor
+ * scans positions. Collapses to single column on mobile.
  *
- * Sections from the PRD that don't yet have a backend (Roadmap, Latest
- * Activity, deadline, budget range) are intentionally omitted rather
- * than mocked.
+ * Component reuse:
+ *   - PositionCard is shared with /workspace/_components/positions
+ *     (uses hideOwnerStats so applicant counts / triage badges
+ *     don't leak to the public)
+ *   - Sidebar's TeamRow renders avatar + name + role inline (more
+ *     compact than the workspace's MemberCard, which is grid-sized);
+ *     names come from the same useUserDisplays batch lookup
  *
- * Orchestrator: `app/(site)/crews/[id]/page.tsx` mounts this when the
- * new endpoint has data, and falls back to `crew-detail-legacy.tsx`
- * otherwise.
+ * Permissions:
+ *   - Outsider (incl. anonymous): can apply to open positions; no
+ *     workspace access
+ *   - Member / finance / admin: see "Open Workspace" CTA in hero;
+ *     no Apply (they're already in)
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import {
   IconArrowLeft,
+  IconBriefcase,
   IconCalendar,
-  IconClock,
-  IconLoader2,
-  IconMovie,
-  IconUserPlus,
+  IconCoin,
+  IconCrown,
+  IconLayoutDashboard,
+  IconSparkles,
   IconUsers,
 } from "@tabler/icons-react";
 import { env } from "@/src/env";
-import { useTranslations } from "@/src/i18n/i18n";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import {
-  useCrewDetail,
   useCrewMembers,
-  usePublicCrewJobs,
+  useCrewPositions,
+  type CrewDTO,
+  type CrewMemberDTO,
+  type CrewPositionDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
-import { useApplyToJob } from "@/app/(site)/crews/_hooks/use-applications";
-import { useProjectRoles } from "@/app/(site)/crews/_hooks/use-projects";
-import { useUserInfo } from "@/src/hooks/use-user";
-import { ApiRequestError } from "@/src/lib/api";
+import { useUserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
+import { ApplyPositionDialog } from "@/app/(site)/crews/_components/apply-position-dialog";
+import { PositionCard } from "@/app/(site)/crews/[id]/workspace/_components/positions/position-card";
+import type { LookupUserDTO } from "@repo/shared/users";
 
-export function CrewDetailNew() {
-  const params = useParams<{ id: string }>();
-  const id = params.id;
+export function CrewDetail({ crew }: { crew: CrewDTO }) {
   const t = useTranslations("workspace");
   const tCrew = useTranslations("crew");
+  const locale = useLocale() as Locale;
+  const id = crew.id;
 
-  const { data: crewDetail, isLoading: detailLoading } = useCrewDetail(id);
-  const { data: crewMembers = [] } = useCrewMembers(id);
-  // Public view — owner workspace uses `useCrewJobs` for the full list
-  // (including closed / drafted). Visitors landing here only need the
-  // public subset, served by `/project/crew/job/find/public/jobs`.
-  const { data: crewJobs = [] } = usePublicCrewJobs(id);
-  const { data: projectRoles = [] } = useProjectRoles();
-  const { data: userInfo } = useUserInfo();
-  const applyMutation = useApplyToJob();
+  const { data: positions = [] } = useCrewPositions(id);
+  const { data: members = [] } = useCrewMembers(id);
 
-  // Real ownership check — Workspace entry only shows for the user
-  // whose id matches the crew's adminUserId. Null-safe so the button
-  // stays hidden until both queries resolve.
-  const currentUserId = userInfo?.id != null ? Number(userInfo.id) : undefined;
-  const isOwner =
-    currentUserId != null &&
-    crewDetail?.adminUserId != null &&
-    crewDetail.adminUserId === currentUserId;
-  const roleNameById = useMemo(
-    () => new Map(projectRoles.map((r) => [r.id, r.name])),
-    [projectRoles]
+  // Single source of truth for viewer role — matches the workspace
+  // tab so the dev-identity switcher works the same way here.
+  const viewer = useUserCrewRole(id);
+  const isInsider = viewer.isAdmin || viewer.isFinance || viewer.isMember;
+
+  // Frozen positions are hidden from the public; insiders see them
+  // via the workspace, not here.
+  const visiblePositions = useMemo(
+    () => positions.filter((p) => p.status !== "frozen"),
+    [positions]
   );
 
-  // Derived stats — same source as recruitment tab in workspace.
   const slotsTotal = useMemo(
-    () => crewJobs.reduce((s, j) => s + Number(j.jobNumber ?? 0), 0),
-    [crewJobs]
+    () => visiblePositions.reduce((s, p) => s + p.targetCount, 0),
+    [visiblePositions]
   );
   const slotsFilled = useMemo(
-    () => crewJobs.reduce((s, j) => s + Number(j.filledNumber ?? 0), 0),
-    [crewJobs]
+    () => visiblePositions.reduce((s, p) => s + p.recruitedCount, 0),
+    [visiblePositions]
   );
+  const openPositionsCount = visiblePositions.filter(
+    (p) => p.status !== "full" && p.recruitedCount < p.targetCount
+  ).length;
 
-  // "Hiring: ..." chips on the Project Overview card. Excludes closed
-  // jobs (status === 9) and roles that are already fully staffed —
-  // only show roles a visitor could still join.
-  const hiringRoles = useMemo(
-    () =>
-      crewJobs
-        .filter((job) => Number(job.status ?? 0) !== 9)
-        .filter((job) => Number(job.filledNumber ?? 0) < Number(job.jobNumber ?? 0))
-        .map((job) => ({
-          jobId: job.id,
-          label:
-            job.jobName ||
-            job.roleName ||
-            (job.roleId != null ? roleNameById.get(job.roleId) : undefined) ||
-            `#${job.roleId}`,
-        })),
-    [crewJobs, roleNameById]
-  );
+  // One batched lookup for every name on the page — see useUserDisplays.
+  const memberIds = useMemo(() => members.map((m) => m.userId), [members]);
+  const displays = useUserDisplays(memberIds);
 
-  if (detailLoading || !crewDetail) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <IconLoader2 className="size-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  // Founder spotlight + the rest in join order.
+  const sortedMembers = useMemo(() => {
+    const founder = members.find((m) => m.via === "founder") ?? null;
+    const rest = members
+      .filter((m) => m.via !== "founder")
+      .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt));
+    return { founder, rest };
+  }, [members]);
 
-  const heroBanner = resolveAsset(crewDetail.banner, env.BANNER_BASE_URL);
-  const heroVideo = resolveAsset(crewDetail.video, env.OSS_BASE_URL);
+  // Apply dialog state lifted to parent so each position card just
+  // calls a setter — keeps card focused on rendering.
+  const [applyTarget, setApplyTarget] = useState<CrewPositionDTO | null>(null);
+
+  // Hero background: featured showcase work first, otherwise null so
+  // the Hero falls back to the "logo + gradient" empty-state. No
+  // separate `cover` asset — that decision is captured in DESIGN.md.
+  const featuredWork = crew.showcaseWorks?.[0] ?? null;
+  const heroVisual = featuredWork
+    ? resolveAsset(featuredWork.thumbnailUrl, env.OSS_BASE_URL)
+    : null;
+  const workspaceHref = localizePath(`/crews/${id}/workspace`, locale);
+  const plazaHref = localizePath("/crews", locale);
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Hero with cover image — banner + optional autoplay video. */}
-      <div className="relative h-56 overflow-hidden md:h-72">
-        {heroBanner ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={heroBanner} alt={crewDetail.name} className="size-full object-cover" />
-        ) : (
-          <div className="size-full bg-secondary" />
-        )}
-        {heroVideo ? (
-          <video
-            src={heroVideo}
-            poster={heroBanner || undefined}
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="metadata"
-            className="absolute inset-0 size-full object-cover"
-            aria-hidden
+      {/* ─── Hero ───────────────────────────────────── */}
+      <Hero
+        crew={crew}
+        plazaHref={plazaHref}
+        workspaceHref={workspaceHref}
+        showWorkspaceCta={isInsider}
+        heroVisual={heroVisual}
+        tCrew={tCrew}
+      />
+
+      {/* ─── Stats strip ───────────────────────────── */}
+      <div className="bg-card/50">
+        <div className="mx-auto flex max-w-[1800px] flex-wrap items-center justify-between gap-6 px-6 py-4">
+          <StatItem
+            icon={IconUsers}
+            label={t("wsMembers")}
+            value={`${crew.memberCount ?? members.length}`}
           />
-        ) : null}
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 mx-auto max-w-screen-2xl px-6 pb-6">
-          <Link
-            href="/crews"
-            className="mb-3 inline-flex items-center gap-1 text-sm text-white/70 transition-colors hover:text-white"
-          >
-            <IconArrowLeft className="size-4" />
-            {tCrew("plaza")}
-          </Link>
-          <div className="flex items-end justify-between gap-4">
-            <div className="min-w-0">
-              <h1 className="mb-1 text-3xl font-bold text-white">{crewDetail.name}</h1>
-              {crewDetail.description ? (
-                <p className="line-clamp-2 max-w-2xl text-sm text-white/70">
-                  {crewDetail.description}
+          <StatItem
+            icon={IconBriefcase}
+            label={tCrew("openPositions")}
+            value={`${openPositionsCount}`}
+          />
+          <StatItem
+            icon={IconLayoutDashboard}
+            label={t("wsSlots")}
+            value={`${slotsFilled}/${slotsTotal}`}
+          />
+          <StatItem
+            icon={IconCalendar}
+            label={tCrew("foundedOn")}
+            value={formatShortDate(crew.createdAt, locale)}
+          />
+        </div>
+      </div>
+
+      {/* ─── Main: 2-col with sticky team sidebar ───────
+       *  Layout convention borrowed from LinkedIn / Greenhouse
+       *  career pages — main content scrolls, team stays visible
+       *  as the trust anchor while the visitor reads about
+       *  positions. Stacks to single column under lg. */}
+      <div className="mx-auto max-w-[1800px] px-6 py-10">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_320px]">
+          {/* ─── Main column ─── */}
+          <div className="min-w-0 space-y-10">
+            {/* About */}
+            {crew.description ? (
+              <section>
+                <SectionHeader
+                  icon={IconSparkles}
+                  eyebrow={tCrew("aboutThisCrew")}
+                  title={crew.name}
+                />
+                <p className="whitespace-pre-line text-base leading-relaxed text-foreground/85">
+                  {crew.description}
                 </p>
-              ) : null}
-            </div>
-            {/* Workspace entry — owner-only. Settings dropped: editing
-                crew metadata lives inside the workspace header now. */}
-            {isOwner ? (
-              <div className="flex shrink-0 items-center gap-2">
-                <Link
-                  href={`/crews/${id}/workspace`}
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm text-white transition-colors hover:bg-white/10"
-                >
-                  <IconMovie className="size-4" />
-                  {tCrew("workspace")}
-                </Link>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {/* Stats bar — backend currently surfaces members + slots; phase
-          / deadline / budget are PRD design slots that need backend
-          fields before they can light up. Hidden for now. */}
-      <div className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-screen-2xl items-center gap-8 px-6 py-4">
-          <div className="flex items-center gap-2">
-            <IconUsers className="size-4 text-primary" />
-            <div>
-              <div className="text-xs text-muted-foreground">{t("wsMembers")}</div>
-              <div className="text-sm font-semibold text-foreground">
-                {crewMembers.length} {t("people")}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <IconCalendar className="size-4 text-primary" />
-            <div>
-              <div className="text-xs text-muted-foreground">{t("wsSlots")}</div>
-              <div className="text-sm font-semibold text-foreground">
-                {slotsFilled}/{slotsTotal}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main content + sidebar */}
-      <div className="mx-auto max-w-screen-2xl px-6 py-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Main content */}
-          <div className="space-y-6 lg:col-span-2">
-            {/* Project Overview */}
-            {crewDetail.description || hiringRoles.length > 0 ? (
-              <section className="rounded-xl border border-border bg-card p-5">
-                <h2 className="mb-3 text-sm font-semibold text-foreground">
-                  {tCrew("projectOverview")}
-                </h2>
-                {crewDetail.description ? (
-                  <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
-                    {crewDetail.description}
-                  </p>
-                ) : null}
-                {hiringRoles.length > 0 ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {hiringRoles.map((role) => (
-                      <span
-                        key={role.jobId}
-                        className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300"
-                      >
-                        {tCrew("hiring")}: {role.label}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
               </section>
             ) : null}
 
-            {/* Open Positions */}
-            <section className="rounded-xl border border-border bg-card p-5">
-              <h2 className="mb-4 text-sm font-semibold text-foreground">
-                {tCrew("openPositions")}
-              </h2>
-              {crewJobs.length === 0 ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">
-                  {t("noJobsYet")}
-                </div>
+            {/* Open positions */}
+            <section>
+              <SectionHeader
+                icon={IconBriefcase}
+                eyebrow={tCrew("joinUs")}
+                title={tCrew("positionsSectionTitle", { count: openPositionsCount })}
+              />
+              {visiblePositions.length === 0 ? (
+                <EmptyHint>{t("noJobsYet")}</EmptyHint>
               ) : (
-                <div className="space-y-4">
-                  {crewJobs.map((job) => {
-                    const filled = Number(job.filledNumber ?? 0);
-                    const total = Number(job.jobNumber ?? 0);
-                    const full = total > 0 && filled >= total;
-                    const roleLabel =
-                      job.jobName ||
-                      job.roleName ||
-                      (job.roleId != null ? roleNameById.get(job.roleId) : undefined) ||
-                      `#${job.roleId}`;
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {visiblePositions.map((p) => {
+                    const cta = ctaForVisitor(p, isInsider, tCrew);
                     return (
-                      <div
-                        key={job.id}
-                        className="rounded-lg border border-border bg-secondary/30 p-4"
-                      >
-                        <div className="mb-2 flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-semibold text-foreground">
-                              {roleLabel} × {total}
-                            </h3>
-                            <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                              <span>
-                                {filled}/{total} {t("filled")}
-                              </span>
-                              <span
-                                className={cn(
-                                  "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                                  full
-                                    ? "border-green-400/30 bg-green-400/10 text-green-400"
-                                    : "border-amber-400/30 bg-amber-400/10 text-amber-400"
-                                )}
-                              >
-                                <IconClock className="size-3" />
-                                {full ? t("statusFull") : t("statusRecruiting")}
-                              </span>
-                            </div>
-                          </div>
-                          {!full ? (
-                            <button
-                              type="button"
-                              disabled={
-                                applyMutation.isPending &&
-                                applyMutation.variables?.jobId === Number(job.id)
-                              }
-                              onClick={() =>
-                                applyMutation.mutate(
-                                  { jobId: Number(job.id) },
-                                  {
-                                    onSuccess: () => {
-                                      toast.success(tCrew("applySuccess"));
-                                    },
-                                    onError: (err) => {
-                                      if (err instanceof ApiRequestError) {
-                                        const detail =
-                                          err.responseBody?.slice(0, 800) || err.message;
-                                        toast.error(`HTTP ${err.status}`, {
-                                          description: detail,
-                                          duration: 10000,
-                                        });
-                                      } else {
-                                        toast.error(
-                                          err instanceof Error ? err.message : tCrew("applyFailed")
-                                        );
-                                      }
-                                    },
-                                  }
-                                )
-                              }
-                              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <IconUserPlus className="size-3.5" />
-                              {tCrew("applyNow")}
-                            </button>
-                          ) : null}
-                        </div>
-                        {job.jobDescription ? (
-                          <p className="text-xs leading-relaxed text-muted-foreground">
-                            {job.jobDescription}
-                          </p>
-                        ) : null}
-                      </div>
+                      <PositionCard
+                        key={p.id}
+                        position={p}
+                        applicantCount={0}
+                        pendingApplicantCount={0}
+                        hideOwnerStats
+                        cta={cta}
+                        onClick={() => {
+                          // Only the "primary" CTA (open + outsider)
+                          // routes to Apply; everything else is an
+                          // informational no-op.
+                          if (cta.tone === "primary") setApplyTarget(p);
+                        }}
+                      />
                     );
                   })}
                 </div>
@@ -328,66 +210,319 @@ export function CrewDetailNew() {
             </section>
           </div>
 
-          {/* Sidebar */}
-          <aside className="space-y-4">
-            {/* Team Members */}
-            <section className="rounded-xl border border-border bg-card p-4">
-              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                <IconUsers className="size-4 text-primary" />
-                {t("memberManagement")}
-              </h3>
-              {crewMembers.length === 0 ? (
-                <div className="py-4 text-center text-xs text-muted-foreground">
-                  {t("noMembersYet")}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {crewMembers.map((m) => {
-                    const displayName = m.nick?.trim() || `User ${m.userId}`;
-                    const initial = (displayName[0] ?? "?").toUpperCase();
-                    const avatarUrl = m.avatar
-                      ? `${env.USER_BASE_URL || env.OSS_BASE_URL}/${m.avatar.replace(/^\/+/, "")}`
-                      : "";
-                    const roleLabel =
-                      (m.roleId != null && roleNameById.get(m.roleId)) || t("memberRoleUnknown");
-                    return (
-                      <div key={m.userId} className="flex items-center gap-3">
-                        {avatarUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={avatarUrl}
-                            alt=""
-                            className="size-9 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex size-9 items-center justify-center rounded-full bg-secondary text-xs font-medium text-foreground">
-                            {initial}
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-xs font-medium text-foreground">
-                            {displayName}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground">{roleLabel}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+          {/* ─── Right sidebar: sticky team ─── */}
+          <aside className="lg:sticky lg:top-6 lg:self-start">
+            <TeamSidebar
+              founder={sortedMembers.founder}
+              rest={sortedMembers.rest}
+              memberCount={crew.memberCount ?? members.length}
+              displays={displays}
+              locale={locale}
+              t={t}
+              tCrew={tCrew}
+            />
           </aside>
+        </div>
+      </div>
+
+      <ApplyPositionDialog
+        open={applyTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setApplyTarget(null);
+        }}
+        crewId={id}
+        positionId={applyTarget?.id ?? ""}
+        positionLabel={applyTarget ? applyTarget.positionType : ""}
+        crewName={crew.name}
+      />
+    </div>
+  );
+}
+
+// ─── Position CTA resolver ──────────────────────────
+
+/**
+ * Derive the bottom CTA on a position card given viewer + position
+ * state. Only the "primary" tone is actionable (opens the Apply
+ * dialog); the others are visual labels for why apply is disabled.
+ */
+function ctaForVisitor(
+  position: CrewPositionDTO,
+  isInsider: boolean,
+  tCrew: ReturnType<typeof useTranslations>
+): { label: string; tone: "primary" | "muted" } {
+  if (isInsider) return { label: tCrew("ctaAlreadyMember"), tone: "muted" };
+  if (position.status === "frozen") return { label: tCrew("ctaPaused"), tone: "muted" };
+  const isFull = position.status === "full" || position.recruitedCount >= position.targetCount;
+  if (isFull) return { label: tCrew("ctaFull"), tone: "muted" };
+  return { label: tCrew("ctaApply"), tone: "primary" };
+}
+
+// ─── Team sidebar (sticky right column) ─────────────
+
+function TeamSidebar({
+  founder,
+  rest,
+  memberCount,
+  displays,
+  locale,
+  t,
+  tCrew,
+}: {
+  founder: CrewMemberDTO | null;
+  rest: CrewMemberDTO[];
+  memberCount: number;
+  displays: Map<string, LookupUserDTO>;
+  locale: Locale;
+  t: ReturnType<typeof useTranslations>;
+  tCrew: ReturnType<typeof useTranslations>;
+}) {
+  // Show up to 8 members in the sticky panel (founder + 7); deeper
+  // teams collapse into a "+N more" footer to keep the sidebar
+  // height bounded. Future: a "View full team" link that scrolls to
+  // a dedicated main-column section if/when team count grows large.
+  const visibleRest = rest.slice(0, 7);
+  const hiddenCount = Math.max(0, memberCount - 1 - visibleRest.length);
+
+  return (
+    <div className="rounded-xl bg-card p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <IconUsers className="size-4 text-primary" />
+        <h3 className="text-sm font-bold text-foreground">
+          {tCrew("theTeam")} · {memberCount}
+        </h3>
+      </div>
+
+      {memberCount === 0 ? (
+        <p className="py-2 text-center text-xs text-muted-foreground">{t("noMembersYet")}</p>
+      ) : (
+        <div className="space-y-1">
+          {founder ? (
+            <TeamRow member={founder} displays={displays} locale={locale} t={t} founder />
+          ) : null}
+          {visibleRest.map((m) => (
+            <TeamRow key={m.id} member={m} displays={displays} locale={locale} t={t} />
+          ))}
+          {hiddenCount > 0 ? (
+            <div className="pt-2 text-center text-[11px] text-muted-foreground">
+              {tCrew("teamHiddenCount", { count: hiddenCount })}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamRow({
+  member,
+  displays,
+  locale,
+  t,
+  founder = false,
+}: {
+  member: CrewMemberDTO;
+  displays: Map<string, LookupUserDTO>;
+  locale: Locale;
+  t: ReturnType<typeof useTranslations>;
+  founder?: boolean;
+}) {
+  const translatePosition = useTranslatePositionValue();
+  const lookup = displays.get(member.userId);
+  const displayName = lookup?.nickname?.trim() || `User ${member.userId}`;
+  const initial = displayName.charAt(0).toUpperCase();
+  const role = founder ? t("memberRoleOwner") : translatePosition(member.roleType);
+  const avatarUrl = resolveAvatar(lookup?.avatar ?? null);
+  const profileHref = localizePath(`/creators/${member.userId}`, locale);
+
+  return (
+    <Link
+      href={profileHref}
+      className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-secondary/40"
+    >
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={avatarUrl}
+          alt={displayName}
+          className="size-9 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <div
+          className={
+            founder
+              ? "flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary"
+              : "flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-medium text-foreground"
+          }
+        >
+          {initial}
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1">
+          <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
+          {founder ? (
+            <IconCrown className="size-3 shrink-0 text-primary" aria-label="Founder" />
+          ) : null}
+          {member.isFinance ? (
+            <IconCoin className="size-3 shrink-0 text-amber-400" aria-label="Finance" />
+          ) : null}
+        </div>
+        <div className="truncate text-[11px] text-muted-foreground">{role}</div>
+      </div>
+    </Link>
+  );
+}
+
+function resolveAvatar(path: string | null): string {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  const base = (env.USER_BASE_URL || env.OSS_BASE_URL || "").replace(/\/+$/, "");
+  if (!base) return "";
+  return `${base}/${path.replace(/^\/+/, "")}`;
+}
+
+// ─── Hero ───────────────────────────────────────────
+
+function Hero({
+  crew,
+  plazaHref,
+  workspaceHref,
+  showWorkspaceCta,
+  heroVisual,
+  tCrew,
+}: {
+  crew: CrewDTO;
+  plazaHref: string;
+  workspaceHref: string;
+  showWorkspaceCta: boolean;
+  /** Featured showcase work's thumbnail, or null → falls back to the
+   *  logo + branded gradient empty-state below. */
+  heroVisual: string | null;
+  tCrew: ReturnType<typeof useTranslations>;
+}) {
+  const logoUrl = resolveAsset(crew.logo, env.OSS_BASE_URL);
+
+  return (
+    <div className="relative h-64 overflow-hidden md:h-80">
+      {heroVisual ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={heroVisual} alt={crew.name} className="size-full object-cover" />
+      ) : (
+        // No-showcase fallback: branded gradient with a centered
+        // enlarged logo. Better than a flat secondary fill — the
+        // page still has visual weight while owners are still
+        // setting up their showcase.
+        <div className="flex size-full items-center justify-center bg-gradient-to-br from-primary/20 via-secondary to-background">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoUrl}
+            alt={crew.name}
+            className="size-36 rounded-full object-cover opacity-30 ring-2 ring-white/10 md:size-44"
+          />
+        </div>
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
+      <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[1800px] px-6 pb-6">
+        <Link
+          href={plazaHref}
+          className="mb-3 inline-flex items-center gap-1 text-sm text-white/80 transition-colors hover:text-white"
+        >
+          <IconArrowLeft className="size-4" />
+          {tCrew("plaza")}
+        </Link>
+        <div className="flex items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="mb-1 text-3xl font-black text-white sm:text-4xl">{crew.name}</h1>
+            {crew.description ? (
+              <p className="line-clamp-2 max-w-2xl text-sm text-white/75">{crew.description}</p>
+            ) : null}
+          </div>
+          {showWorkspaceCta ? (
+            <Link
+              href={workspaceHref}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-lg transition-colors hover:bg-primary/90"
+            >
+              <IconLayoutDashboard className="size-4" />
+              {tCrew("workspace")}
+            </Link>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-/** Concat OSS key with its base URL, guarding the leading-slash case
- *  so `/foo/bar.jpg` doesn't produce a `//` join. Empty / missing
- *  inputs return "" so callers can branch cleanly. */
+// ─── Small atoms ────────────────────────────────────
+
+function StatItem({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof IconUsers;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
+        <Icon className="size-4" />
+      </div>
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+        <div className="text-sm font-bold tabular-nums text-foreground">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({
+  icon: Icon,
+  eyebrow,
+  title,
+}: {
+  icon: typeof IconUsers;
+  eyebrow: string;
+  title: string;
+}) {
+  return (
+    <div className="mb-5 flex items-center gap-3">
+      <div className="flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
+        <Icon className="size-4" />
+      </div>
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-widest text-primary">
+          {eyebrow}
+        </div>
+        <h2 className="text-xl font-bold text-foreground">{title}</h2>
+      </div>
+    </div>
+  );
+}
+
+function EmptyHint({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl bg-card/50 py-12 text-center text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+// ─── Asset URL helpers ──────────────────────────────
+
+/** Path-or-URL → absolute URL. Pass `http(s)://...` straight through;
+ *  treat anything else as an OSS key under `base`. */
 function resolveAsset(path: string | null | undefined, base: string): string {
   if (!path) return "";
   if (path.startsWith("http")) return path;
   return `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
+function formatShortDate(iso: string, locale: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(locale, { year: "numeric", month: "short" });
+  } catch {
+    return iso.slice(0, 10);
+  }
 }

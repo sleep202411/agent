@@ -156,9 +156,7 @@ function DialogDescription({
 }
 
 function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div data-slot="dialog-body" className={cn("space-y-4 px-4 py-2", className)} {...props} />
-  );
+  return <div data-slot="dialog-body" className={cn("space-y-4 p-4", className)} {...props} />;
 }
 
 // DialogHero — image banner that stretches across the top of a dialog with

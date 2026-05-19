@@ -1,49 +1,73 @@
 /**
  * Crews feature data layer — single import surface for routes / components.
  *
- * The actual implementations live in the sibling domain files
- * (`use-crew-list.ts`, `use-crew-detail.ts`, `use-jobs.ts`,
- * `use-applications.ts`, `use-members.ts`); this file is a barrel
- * re-export so consumers can keep importing from `_hooks/use-crew`
- * regardless of how the data layer is split internally.
+ * All consumers import from here. Internal hook files own the actual
+ * fetcher + cache-key wiring; this barrel keeps consumers stable when
+ * the layout under `_hooks/` evolves.
  */
 
 "use client";
 
 export { crewKeys } from "./shared";
+export { CrewApiError, crewApi } from "./api";
 
 export type {
-  ApplicationStatus,
+  CrewDTO,
+  CrewPositionDTO,
+  CrewPositionStatus,
+  CrewMemberDTO,
+  CrewMemberVia,
+  CrewApplicationDTO,
+  CrewApplicationStatus,
+  EpisodeDTO,
+  EpisodeStatus,
+  EpisodeAssignmentDTO,
+  AssignmentStatus,
+  EpisodeActivityDTO,
+  EpisodeActivityType,
+  PresetPositionValue,
+  WorkMode,
+  EmploymentType,
+  ExperienceLevel,
+  SalaryPeriod,
+  SalaryInput,
+  CurrencyCode,
   CreateCrewInput,
-  CreateJobInput,
-  JobApplicant,
   UpdateCrewInput,
+  CreatePositionInput,
+  UpdatePositionInput,
+  ApplyInput,
+  AddMemberInput,
+} from "./types";
+export {
+  PRESET_POSITIONS,
+  OWNER_ROLE,
+  isPresetPosition,
+  isValidRoleType,
+  WORK_MODES,
+  EMPLOYMENT_TYPES,
+  EXPERIENCE_LEVELS,
+  SALARY_PERIODS,
+  ALL_CURRENCIES,
+  CURRENCY_SYMBOLS,
+  ZERO_DECIMAL_CURRENCIES,
 } from "./types";
 
-export { useMyCrews, useQueryCrewList } from "./use-crew-list";
-export type { QueryCrewListItem } from "./use-crew-list";
+export { useCrewList, useMyCrews } from "./use-crew-list";
+export { useCrewDetail, useCreateCrew, useDeleteCrew, useUpdateCrew } from "./use-crew-detail";
 
 export {
-  useCreateCrew,
-  useCrewDetail,
-  useUpdateCrew,
-  useUpdateCrewStatus,
-} from "./use-crew-detail";
-
-export { useCloseJob, useCreateJob, useCrewJobs, usePublicCrewJobs } from "./use-jobs";
-export type { CrewJob } from "./use-jobs";
+  useCrewPositions,
+  useCreatePosition,
+  useDeletePosition,
+  useUpdatePosition,
+} from "./use-positions";
 
 export {
-  useAgreeApplicant,
-  useApplyToJob,
-  useJobApplicants,
-  useRejectApplicant,
+  useApplyToPosition,
+  useApproveApplication,
+  useCrewApplications,
+  useRejectApplication,
 } from "./use-applications";
 
-export {
-  useAddCrewMember,
-  useCrewMembers,
-  useRemoveMember,
-  type AddCrewMemberInput,
-  type CrewMemberWire,
-} from "./use-members";
+export { useAddCrewMember, useCrewMembers, useRemoveMember, useUpdateMember } from "./use-members";

@@ -1,63 +1,55 @@
 "use client";
 
 /**
- * Crew listing — preserves the platform's hero (CTA + stats) and overlays
- * the legacy fizzdragon-web filtering / pagination contract on a compact
- * 4-up poster grid. Data layer in `_hooks/use-projects.ts`.
+ * Crew Hall (`/crews`) — public landing for the crew module.
+ *
+ * Single feed from `GET /aurora/crews` with cursor-paginated infinite
+ * scroll. Each card carries server-computed `memberCount` +
+ * `openPositionCount` so render is one round-trip per page.
+ *
+ * Create flow: top-right CTA opens CreateCrewDialog, which on success
+ * navigates to the new crew's workspace.
  */
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { IconMovie, IconPlus, IconUsers } from "@tabler/icons-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { IconBriefcase, IconEye, IconMovie, IconPlus, IconUsers } from "@tabler/icons-react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useQueryCrewList, type QueryCrewListItem } from "@/app/(site)/crews/_hooks/use-crew";
-import {
-  useProjectRoles,
-  useProjectsByJob,
-  type ProjectListItem,
-  type ProjectRole,
-} from "@/app/(site)/crews/_hooks/use-projects";
+import { useCrewList, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
+import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
+import { PositionsTab } from "@/app/(site)/crews/_components/positions-tab";
 import { PlazaHero } from "@/components/layout/plaza-hero";
 
-const ALL_ROLE_ID = -1;
+type ViewMode = "crews" | "positions";
 
 export default function CrewsPage() {
   const tCrew = useTranslations("crew");
   const t = useTranslations("crew.list");
+  const tc = useTranslations("common");
   const locale = useLocale() as Locale;
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const [activeRoleId, setActiveRoleId] = useState<number>(ALL_ROLE_ID);
+  const view: ViewMode = searchParams.get("view") === "positions" ? "positions" : "crews";
+  const setView = (next: ViewMode) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "crews") params.delete("view");
+    else params.set("view", next);
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  };
+
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data: roles = [] } = useProjectRoles();
-  const roleById = useMemo(() => {
-    const map = new Map<number, ProjectRole>();
-    for (const r of roles) map.set(r.id, r);
-    return map;
-  }, [roles]);
-
-  const filterRoleId = activeRoleId === ALL_ROLE_ID ? undefined : activeRoleId;
-  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } =
-    useProjectsByJob(filterRoleId);
-  const items = useMemo(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
-
-  // Second data source — `POST /project/crew/list` (queryCrewList).
-  // Renders the full crews grid, sibling to the legacy "projects with
-  // open jobs" feed below.
-  const crewListQuery = useQueryCrewList({
-    pageNum: 1,
-    pageSize: 20,
-    status: 0,
-  });
-  const crewListLoading = crewListQuery.isLoading;
-  const crewListItems = crewListQuery.data?.list ?? [];
-  const crewListPage = crewListQuery.data ?? null;
+  const { data, isLoading, isError, isFetchingNextPage, hasNextPage, fetchNextPage } =
+    useCrewList(24);
+  const items = useMemo<CrewDTO[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -85,154 +77,78 @@ export default function CrewsPage() {
 
       <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
 
-      {/* ── Browse ──────────────────────────────────────────────────── */}
-      <div className="mx-auto max-w-7xl px-6 pb-24 pt-8">
-        {/* Primary feed — full crews list from `POST /project/crew/list`.
-            Hidden entirely when the loaded list is empty so the page
-            doesn't lead with a barren "No projects yet" placeholder
-            above the (potentially populated) recruitment grid below. */}
-        {(crewListLoading || crewListItems.length > 0) && (
-          <section className="mb-12">
-            <div className="mb-6 flex items-baseline justify-between gap-4">
-              <h2 className="text-xl font-bold text-foreground">{tCrew("allCrewsTitle")}</h2>
-              {crewListPage ? (
-                <span className="text-xs text-muted-foreground">
-                  {tCrew("allCrewsCount", { count: crewListPage.totalCount })}
-                </span>
-              ) : null}
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {crewListLoading ? (
+      <div className="mx-auto max-w-[1800px] px-6 pb-24 pt-8">
+        {/* Tabs — crews vs positions. URL state via `?view=positions`
+            so refreshes / shared links keep the same surface. */}
+        <div className="mb-6 flex items-center gap-2 border-b border-border">
+          <PlazaTab
+            label={tCrew("allCrewsTitle")}
+            icon={IconUsers}
+            active={view === "crews"}
+            onClick={() => setView("crews")}
+          />
+          <PlazaTab
+            label={tCrew("allPositionsTab")}
+            icon={IconBriefcase}
+            active={view === "positions"}
+            onClick={() => setView("positions")}
+          />
+        </div>
+
+        {view === "crews" ? (
+          <section>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {isLoading ? (
                 <CardSkeleton count={10} />
+              ) : isError ? (
+                <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                  {tc("loadFailed")}
+                </div>
+              ) : items.length === 0 ? (
+                <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                  {t("noData")}
+                </div>
               ) : (
-                crewListItems.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
+                items.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
               )}
             </div>
-          </section>
-        )}
 
-        {/* Secondary feed — legacy "projects with open jobs" filtered
-            by role pill. Stays as a recruitment-focused view alongside
-            the full crews grid above. */}
-        <section>
-          {/* Role pills */}
-          {roles.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <RolePill
-                label={t("filterAll")}
-                active={activeRoleId === ALL_ROLE_ID}
-                onClick={() => setActiveRoleId(ALL_ROLE_ID)}
-              />
-              {roles.map((role) => (
-                <RolePill
-                  key={role.id}
-                  label={role.name}
-                  active={activeRoleId === role.id}
-                  onClick={() =>
-                    // Click an already-active pill clears it (legacy parity).
-                    setActiveRoleId((prev) => (prev === role.id ? ALL_ROLE_ID : role.id))
-                  }
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Project grid */}
-          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {isLoading ? (
-              <CardSkeleton count={10} />
-            ) : items.length === 0 ? (
-              <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
-                {t("noData")}
+            {items.length > 0 && hasNextPage && (
+              <div className="mt-10 flex justify-center">
+                <button
+                  type="button"
+                  disabled={isFetchingNextPage}
+                  onClick={() => fetchNextPage()}
+                  className={cn(
+                    "inline-flex h-11 items-center rounded-xl border border-border px-6 text-sm font-semibold transition-colors",
+                    isFetchingNextPage
+                      ? "cursor-wait text-muted-foreground"
+                      : "bg-secondary text-foreground hover:bg-secondary/80"
+                  )}
+                >
+                  {isFetchingNextPage ? t("loading") : t("loadMore")}
+                </button>
               </div>
-            ) : (
-              items.map((p) => (
-                <ProjectCard
-                  key={p.project.id}
-                  item={p}
-                  roleById={roleById}
-                  fallbackOwner={t("notAvailable")}
-                  openRolesLabel={tCrew("openPositions")}
-                  locale={locale}
-                />
-              ))
             )}
-          </div>
-
-          {/* Load more */}
-          {items.length > 0 && (
-            <div className="mt-10 flex justify-center">
-              <button
-                type="button"
-                disabled={!hasNextPage || isFetchingNextPage}
-                onClick={() => fetchNextPage()}
-                className={cn(
-                  "inline-flex h-11 items-center rounded-xl border border-border px-6 text-sm font-semibold transition-colors",
-                  hasNextPage && !isFetchingNextPage
-                    ? "bg-secondary text-foreground hover:bg-secondary/80"
-                    : "cursor-not-allowed text-muted-foreground"
-                )}
-              >
-                {isFetchingNextPage ? t("loading") : hasNextPage ? t("loadMore") : t("noMore")}
-              </button>
-            </div>
-          )}
-        </section>
+          </section>
+        ) : (
+          <PositionsTab />
+        )}
       </div>
     </div>
   );
 }
 
-// Used by the All-Crews feed that's gated behind `?preview=1`.
-function CrewCard({ item, locale }: { item: QueryCrewListItem; locale: Locale }) {
-  const router = useRouter();
-  // Backend sometimes returns the literal placeholder "string" or an
-  // empty value for legacy seed rows — skip those so the card just
-  // shows the default cover instead of a 404.
-  const isUsableBanner =
-    item.banner &&
-    item.banner !== "string" &&
-    !item.banner.startsWith("http://") &&
-    item.banner.length > 0;
-  const banner = isUsableBanner
-    ? `${env.BANNER_BASE_URL}/${(item.banner as string).replace(/^\/+/, "")}`
-    : env.DEFAULT_COVER_URL;
-  // Both new (queryCrewList) and legacy (projectsByJob) cards route to
-  // the same `/crews/[id]` route now — the page orchestrator picks the
-  // right layout via data fallback (`useCrewDetail` → `useProjectDetail`).
-  const detailHref = localizePath(`/crews/${item.id}`, locale);
+// ─── Tab pill ────────────────────────────────────────
 
-  return (
-    <button
-      type="button"
-      onClick={() => router.push(detailHref)}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-left transition-colors hover:border-primary/40"
-    >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-secondary">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={banner}
-          alt={item.name}
-          className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-          loading="lazy"
-        />
-      </div>
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <h3 className="line-clamp-2 text-sm font-semibold text-foreground">{item.name}</h3>
-        {item.description ? (
-          <p className="line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
-        ) : null}
-      </div>
-    </button>
-  );
-}
-
-function RolePill({
+function PlazaTab({
   label,
+  icon: Icon,
   active,
   onClick,
 }: {
   label: string;
+  icon: typeof IconUsers;
   active: boolean;
   onClick: () => void;
 }) {
@@ -241,90 +157,200 @@ function RolePill({
       type="button"
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-lg px-3 py-1.5 text-sm transition-colors",
-        active
-          ? "border border-primary/40 bg-primary/10 text-primary"
-          : "bg-white/5 text-muted-foreground hover:bg-white/10"
+        "relative inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold transition-colors",
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       )}
     >
+      <Icon className="size-4" />
       {label}
+      {active ? (
+        <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />
+      ) : null}
     </button>
   );
 }
 
-function ProjectCard({
-  item,
-  roleById,
-  fallbackOwner,
-  openRolesLabel,
-  locale,
-}: {
-  item: ProjectListItem;
-  roleById: Map<number, ProjectRole>;
-  fallbackOwner: string;
-  openRolesLabel: string;
-  locale: Locale;
-}) {
+function CrewCard({ item, locale }: { item: CrewDTO; locale: Locale }) {
   const router = useRouter();
-  const banner = item.project.bannerLink
-    ? `${env.BANNER_BASE_URL}/${item.project.bannerLink}`
-    : env.DEFAULT_COVER_URL;
-  // Backend can return `owner: null` for crews whose owner row was
-  // soft-deleted or never linked. Guard both reads so the card still
-  // renders with the fallback nickname instead of crashing the list.
-  const avatar = item.owner?.avatar ? `${env.USER_BASE_URL}/${item.owner.avatar}` : "";
-  const detailHref = localizePath(`/crews/${item.project.id}`, locale);
+  const detailHref = localizePath(`/crews/${item.id}`, locale);
+  return (
+    <button
+      type="button"
+      onClick={() => router.push(detailHref)}
+      className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg"
+    >
+      <CrewCardInner item={item} />
+    </button>
+  );
+}
 
-  const jobCount = (item.jobs ?? []).filter((j) => roleById.has(j.roleId)).length;
-  const tags = (item.tags ?? []).slice(0, 2);
+/**
+ * 新片场-style plaza card.
+ *
+ *   ┌──────────────────────────────┐
+ *   │ ◯ Studio name [tier badge]    │  ← logo + name + open badge
+ *   │   tagline · 5人 · 6mo · 北京    │  ← stats line
+ *   │ 🎬 新片场认证后期制作            │  ← cert (omitted MVP)
+ *   │ Description...                │
+ *   │ ─────────────────────────    │
+ *   │ [thumb][title · 12.4w 看过]    │  ← featured work 1
+ *   │ [thumb][title · 8.7k 看过]     │  ← featured work 2
+ *   └──────────────────────────────┘
+ *
+ * Logo is the identity anchor (top-left). Showcase works render as
+ * compact horizontal strips below — same affordance as 新片场 but
+ * tuned for our 6-col density (1 work shown when card is narrow,
+ * 2 when wider).
+ */
+function CrewCardInner({ item }: { item: CrewDTO }) {
+  const tCrew = useTranslations("crew");
+  const translatePosition = useTranslatePositionValue();
+  const logoUrl = resolveAssetUrl(item.logo);
+  const openCount = item.openPositionCount ?? 0;
+  const memberCount = item.memberCount ?? 0;
+  const tagLabels = [...(item.genres ?? []), ...(item.styles ?? [])].slice(0, 2);
+  const isNew = daysSince(item.createdAt) <= 14;
+  const works = (item.showcaseWorks ?? []).slice(0, 2);
+  const positionPreview = (item.openPositionPreview ?? []).slice(0, 3);
+  const positionOverflow = Math.max(0, openCount - positionPreview.length);
 
   return (
-    <article
-      onClick={() => router.push(detailHref)}
-      className="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-border bg-card/40 transition-colors hover:border-border/80 hover:bg-card/60"
-    >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
+    <div className="flex flex-1 flex-col p-3">
+      {/* ─── Header: logo + identity ─── */}
+      <div className="flex items-start gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={banner}
-          alt={item.project.name}
-          className="size-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+          src={logoUrl}
+          alt={item.name}
+          className="size-12 shrink-0 rounded-full object-cover"
           loading="lazy"
         />
-        {jobCount > 0 && (
-          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-sm">
-            <IconUsers className="size-3" />
-            {jobCount} {openRolesLabel}
-          </span>
-        )}
-      </div>
-
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <h3 className="line-clamp-1 text-sm font-semibold text-foreground">{item.project.name}</h3>
-
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {avatar ? (
-            <img src={avatar} alt="" className="size-4 rounded-full object-cover" />
-          ) : (
-            <div className="size-4 rounded-full bg-muted" />
-          )}
-          <span className="truncate">{item.owner?.nickName || fallbackOwner}</span>
-        </div>
-
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {tags.map((tag, i) => (
-              <span
-                key={`${tag}-${i}`}
-                className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
-              >
-                {tag}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <h3 className="truncate text-sm font-bold text-foreground">{item.name}</h3>
+            {openCount > 0 ? (
+              <span className="shrink-0 rounded-md bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
+                {openCount} {tCrew("hiringBadge")}
               </span>
-            ))}
+            ) : null}
+            {isNew && openCount === 0 ? (
+              <span className="shrink-0 rounded-md bg-emerald-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
+                {tCrew("newBadge")}
+              </span>
+            ) : null}
           </div>
-        )}
+          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+            {memberCount} {tCrew("peopleShort")} ·{" "}
+            {tCrew("foundedRelative", { time: foundedRelative(item.createdAt) })}
+          </div>
+        </div>
       </div>
-    </article>
+
+      {/* Tagline / description */}
+      {item.tagline ? (
+        <p className="mt-2 line-clamp-1 text-xs text-primary/90">{item.tagline}</p>
+      ) : item.description ? (
+        <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
+      ) : null}
+
+      {/* Taxonomy pills */}
+      {tagLabels.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {tagLabels.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-md bg-secondary/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            >
+              {tCrew(`taxonomy.${tag}` as Parameters<typeof tCrew>[0])}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Positions preview — "招募: 配音演员 · 音效师 +1". Empty
+          when crew has no open positions (don't show "0 招募中"
+          noise). */}
+      {positionPreview.length > 0 ? (
+        <div className="mt-2 flex items-center gap-1.5 text-[11px]">
+          <IconBriefcase className="size-3 shrink-0 text-amber-400" />
+          <span className="line-clamp-1 text-amber-400">
+            {tCrew("hiringPreviewPrefix")}{" "}
+            {positionPreview.map((p) => translatePosition(p)).join(" · ")}
+            {positionOverflow > 0 ? (
+              <span className="text-muted-foreground"> +{positionOverflow}</span>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
+
+      {/* ─── Featured works (compact strip — 新片场 style) ─── */}
+      {works.length > 0 ? (
+        <div className="mt-3 space-y-1.5 border-t border-border/40 pt-3">
+          {works.map((w) => (
+            <div key={w.thumbnailUrl} className="flex items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={w.thumbnailUrl}
+                alt={w.title}
+                className="aspect-video h-10 shrink-0 rounded object-cover"
+                loading="lazy"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="line-clamp-1 text-[11px] font-medium text-foreground">
+                  {w.title}
+                </div>
+                {typeof w.viewCount === "number" ? (
+                  <div className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <IconEye className="size-2.5" />
+                    {formatCount(w.viewCount)}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
+}
+
+// ─── Helpers ─────────────────────────────────────────
+
+/** OSS path → absolute URL helper. `http(s)://...` passes through;
+ *  otherwise treated as a key under OSS_BASE_URL. Empty input
+ *  returns "" — Crew.logo is NOT NULL at the schema level so this
+ *  branch should never fire in practice (broken-image icon = data bug,
+ *  not a fallback to design around). */
+function resolveAssetUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  return `${env.OSS_BASE_URL.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+}
+
+function daysSince(iso: string): number {
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return Infinity;
+  return Math.floor((Date.now() - ts) / 86_400_000);
+}
+
+/** 12300 → "12.3k" / 1840000 → "184w" (中文万). */
+function formatCount(n: number): string {
+  if (n >= 10_000) {
+    const w = n / 10_000;
+    return `${w >= 10 ? w.toFixed(0) : w.toFixed(1)}w`;
+  }
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/** Relative-time string for crew founding ("3 天前" / "Mar 2026"). */
+function foundedRelative(iso: string): string {
+  const d = daysSince(iso);
+  if (!Number.isFinite(d)) return "";
+  if (d < 1) return "today";
+  if (d < 30) return `${d}d`;
+  if (d < 365) return `${Math.floor(d / 30)}mo`;
+  return `${Math.floor(d / 365)}y`;
 }
 
 function CardSkeleton({ count }: { count: number }) {
@@ -332,7 +358,7 @@ function CardSkeleton({ count }: { count: number }) {
     <>
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="overflow-hidden rounded-2xl border border-border bg-card/40">
-          <div className="aspect-[4/3] w-full animate-pulse bg-muted" />
+          <div className="aspect-video w-full animate-pulse bg-muted" />
           <div className="space-y-2 p-3">
             <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
             <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />

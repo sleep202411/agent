@@ -24,7 +24,10 @@ const DEV_USER: AuthUser = {
  * - Attaches AuthUser to `request.user` and raw cookie to `request.rawCookie`
  * - Rejects with 401 if token is invalid
  *
- * Endpoints decorated with @Public() skip authentication.
+ * Endpoints decorated with @Public() allow anonymous traffic, but still
+ * attach `request.user` when a valid cookie is present. Public crew
+ * endpoints use that optional user to decide whether to expose owner-only
+ * state such as frozen positions.
  * Set AUTH_DISABLED=true to skip auth in local dev (user info API unreachable).
  */
 @Injectable()
@@ -35,15 +38,14 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const cookie = request.headers?.cookie as string | undefined;
+
     // Check if endpoint is marked as @Public()
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (isPublic) return true;
-
-    const request = context.switchToHttp().getRequest();
-    const cookie = request.headers?.cookie as string | undefined;
 
     // Dev mode: skip auth, attach mock user (only allowed in non-production)
     if (process.env.AUTH_DISABLED === 'true') {
@@ -53,11 +55,13 @@ export class AuthGuard implements CanActivate {
     }
 
     if (!cookie) {
+      if (isPublic) return true;
       throw new UnauthorizedException('No session cookie');
     }
 
     const user = await this.authService.validateToken(cookie);
     if (!user) {
+      if (isPublic) return true;
       throw new UnauthorizedException('Invalid or expired session');
     }
 

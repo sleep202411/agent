@@ -9,3 +9,6 @@ export * from "./asset-events.js";
 export * from "./agent-state.js";
 export * from "./forced-persona.js";
 export * from "./foundry-schema.js";
+export * from "./notifications.js";
+export * from "./crew.js";
+export * from "./users.js";

@@ -247,6 +247,11 @@ podman-compose --env-file .env.production.cn pull
 podman-compose --env-file .env.production.cn up -d
 ```
 
+Production CN 的 `server` 容器启动命令会先执行
+`npm run db:deploy`，再启动 Nest。Prisma migration 是幂等的；如果
+Postgres 还在启动，容器会失败并由 `restart: always` 自动重试，避免新
+server 先用未迁移 schema 对外服务。
+
 ### 常见问题
 
 **端口被占用**：

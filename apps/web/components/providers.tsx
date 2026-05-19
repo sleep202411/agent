@@ -12,6 +12,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { setupInterceptors } from "@/src/lib/api";
 import { StoreProvider } from "@/src/store/provider";
 import { useEntityEventsSession } from "@/src/lib/entity-events/use-entity-events-session";
+import { NotificationProvider } from "@/src/lib/notifications";
 import { AuthInterceptor } from "@/components/layout/auth-interceptor";
 import { ApexRedirect } from "@/components/apex-redirect";
 
@@ -72,7 +73,9 @@ export function Providers({
           <TooltipProvider>
             <ApexRedirect />
             <AuthInterceptor />
-            <EntityEventsSession>{children}</EntityEventsSession>
+            <EntityEventsSession>
+              <NotificationProvider>{children}</NotificationProvider>
+            </EntityEventsSession>
             <Toaster position="top-center" />
           </TooltipProvider>
         </HydrationBoundary>

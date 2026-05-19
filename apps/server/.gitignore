@@ -41,6 +41,12 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+# Per-environment prod / staging configs contain secrets (DB password,
+# API keys). They live on the deployment host only. .env.example is
+# the public template kept in git.
+.env.production.com
+.env.production.cn
+.env.staging
 
 # temp directory
 .temp

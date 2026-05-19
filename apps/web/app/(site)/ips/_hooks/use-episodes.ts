@@ -219,15 +219,20 @@ export function useDeleteEpisode() {
 }
 
 interface ReorderEpisodeInput {
-  /** id of the episode being moved. */
+  /** id of the episode being moved. Sent to backend as `videoId`. */
   currentVideoId: string;
   /** id of the episode it should land before. Omit to move to the end. */
   beforeVideoId?: string;
-  /** Used only for cache invalidation; not part of the backend payload. */
+  /** IP project id — REQUIRED by the backend (also used locally for
+   *  React Query cache invalidation in the mutation `onSuccess`). */
   projectId: string;
 }
 
 async function reorderEpisode(input: ReorderEpisodeInput): Promise<void> {
+  // Wire contract per Swagger `POST /vedio/sort/project/episode`:
+  //   { beforeVideoId, projectId, videoId }
+  // (Earlier code sent `currentVideoId` and omitted `projectId` —
+  // wrong field name + missing required field. Now corrected.)
   const res = await fetch("/vedio/sort/project/episode", {
     method: "POST",
     credentials: "include",
@@ -237,8 +242,9 @@ async function reorderEpisode(input: ReorderEpisodeInput): Promise<void> {
       Authorization: bearerHeader(),
     },
     body: JSON.stringify({
-      currentVideoId: input.currentVideoId,
-      beforeVideoId: input.beforeVideoId,
+      videoId: input.currentVideoId,
+      beforeVideoId: input.beforeVideoId ?? 0,
+      projectId: input.projectId,
     }),
   });
   if (!res.ok) throw new Error(`Reorder episode failed: HTTP ${res.status}`);

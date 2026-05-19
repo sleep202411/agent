@@ -1,10 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import { IconCheck, IconLoader2, IconUsers } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   useApproveEpisode,
   type Episode,
@@ -25,6 +36,12 @@ interface EpisodeBriefProps {
  * the PRD layout, plus the two admin actions (configure members,
  * approve episode). The "submit to client" PRD button is dropped per
  * the internal-only product framing.
+ *
+ * Approve gating note: per the spec ("no gate, just warn"), an admin
+ * CAN approve an episode that still has pending/in-progress/rejected
+ * assignments — we surface a confirm dialog rather than disabling the
+ * button. This avoids the "we're done, just close it out" friction
+ * when a member ghosts or a stretch slot was never filled.
  */
 export function EpisodeBrief({
   crewId,
@@ -35,6 +52,7 @@ export function EpisodeBrief({
 }: EpisodeBriefProps) {
   const t = useTranslations("workspace");
   const approveEp = useApproveEpisode(crewId);
+  const [warnOpen, setWarnOpen] = useState(false);
 
   const total = assignments.length;
   const approved = assignments.filter((a) => a.status === "approved").length;
@@ -42,14 +60,24 @@ export function EpisodeBrief({
     (a) => a.status === "in_progress" || a.status === "submitted" || a.status === "rejected"
   ).length;
 
-  const canApproveEp =
-    viewer.isAdmin && episode.status !== "approved" && total > 0 && approved === total;
+  const isAlreadyApproved = episode.status === "approved";
+  // Admin can approve any episode with at least one assignment — gating
+  // on "all assignments approved" is now soft (confirm modal).
+  const canApproveEp = viewer.isAdmin && !isAlreadyApproved && total > 0;
 
-  const handleApproveEp = () => {
+  const doApprove = () => {
     approveEp.mutate(episode.id, {
       onSuccess: () => toast.success(t("episodeApproved", { number: episode.number })),
       onError: (err) => toast.error(err instanceof Error ? err.message : t("episodeApproveFailed")),
     });
+  };
+
+  const handleApproveClick = () => {
+    if (pending > 0) {
+      setWarnOpen(true);
+      return;
+    }
+    doApprove();
   };
 
   return (
@@ -68,7 +96,7 @@ export function EpisodeBrief({
               color="success"
               size="xs"
               disabled={!canApproveEp || approveEp.isPending}
-              onClick={handleApproveEp}
+              onClick={handleApproveClick}
             >
               {approveEp.isPending ? (
                 <IconLoader2 className="size-3 animate-spin" />
@@ -93,6 +121,32 @@ export function EpisodeBrief({
         <Stat label={t("briefDeadline")} value={episode.deadline || "—"} />
         <Stat label={t("briefLastUpdated")} value={formatRelative(episode.updatedAt, t)} />
       </div>
+
+      <AlertDialog open={warnOpen} onOpenChange={setWarnOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("approveEpisodeWarnTitle", { number: episode.number })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("approveEpisodeWarnBody", { pending, total })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={approveEp.isPending}>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={approveEp.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                doApprove();
+                setWarnOpen(false);
+              }}
+            >
+              {t("approveAnyway")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -136,7 +190,9 @@ function Stat({
   );
 }
 
-function formatRelative(ts: number, t: ReturnType<typeof useTranslations>): string {
+function formatRelative(iso: string, t: ReturnType<typeof useTranslations>): string {
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return iso;
   const diff = Date.now() - ts;
   const min = 60_000;
   const hr = 60 * min;
