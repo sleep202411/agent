@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: fc6f599cb005a9ccb3106ead0963449d77c84e24
+    tag: ed5c323c1b3fbcf746fd60ce56c67c38539cd423
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -147,7 +147,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: fc6f599cb005a9ccb3106ead0963449d77c84e24
+    tag: ed5c323c1b3fbcf746fd60ce56c67c38539cd423
   containerPort: 3001
   env:
     PORT: "3001"
@@ -174,7 +174,7 @@ agent:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: fc6f599cb005a9ccb3106ead0963449d77c84e24
+    tag: ed5c323c1b3fbcf746fd60ce56c67c38539cd423
   containerPort: 4111
   env:
     PORT: "4111"
@@ -206,7 +206,7 @@ agentWorker:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: fc6f599cb005a9ccb3106ead0963449d77c84e24
+    tag: ed5c323c1b3fbcf746fd60ce56c67c38539cd423
   command: ["npx", "tsx", "src/worker.ts"]
   env:
     # DATABASE_URL + REDIS_URL come from KV via projected `fizzdragon-secrets`
