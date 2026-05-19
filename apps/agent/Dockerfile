@@ -39,9 +39,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4111
 ENV MASTRA_HOST=0.0.0.0
-# libsql state lives in a mounted volume so API + worker can share it and
-# in-flight workflow snapshots survive container restarts.
-ENV MASTRA_DB_URL=file:/app/data/mastra.db
+# Agent storage is Postgres-backed (`DATABASE_URL`, schema `mastra`).
+# CN compose sets PGSSLMODE=disable for in-docker PG; managed PG deploys
+# keep the default TLS mode from apps/agent/src/mastra/lib/postgres-config.ts.
 
 # Re-install deps (keeps mastra CLI + tsx available at runtime). NODE_ENV is
 # already production here, so explicitly include dev deps; otherwise npm omits
@@ -54,8 +54,6 @@ RUN npm ci --ignore-scripts --include=dev
 COPY --from=builder /app/apps/agent/.mastra ./apps/agent/.mastra
 COPY --from=builder /app/apps/agent/src ./apps/agent/src
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-
-RUN mkdir -p /app/data
 
 WORKDIR /app/apps/agent
 

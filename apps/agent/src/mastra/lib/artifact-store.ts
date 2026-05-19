@@ -35,6 +35,7 @@
  */
 
 import { Pool } from "pg";
+import { postgresSslConfig, requireDatabaseUrl } from "./postgres-config";
 
 // ─── Errors ────────────────────────────────────────────────────────────
 
@@ -133,13 +134,10 @@ function getPool(): Pool {
   // Same connection string the rest of the agent (and server) uses,
   // injected via K8s envFrom from KV. Intentionally lazy so unit tests
   // can override DATABASE_URL before the first call.
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("artifact-store: DATABASE_URL is not set — required for Postgres connection");
-  }
+  const url = requireDatabaseUrl();
   _pool = new Pool({
     connectionString: url,
-    ssl: { rejectUnauthorized: false }, // Azure PG enforces SSL
+    ssl: postgresSslConfig(),
     max: 5,
     idleTimeoutMillis: 30_000,
   });

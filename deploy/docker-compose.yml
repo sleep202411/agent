@@ -8,8 +8,8 @@ services:
     # digest for the tag this container was launched with, then pulls
     # and recreates the container. CI never SSHs into a server.
     labels:
-      io.containers.autoupdate: registry              # podman auto-update
-      com.centurylinklabs.watchtower.enable: "true"   # docker watchtower
+      io.containers.autoupdate: registry # podman auto-update
+      com.centurylinklabs.watchtower.enable: "true" # docker watchtower
     # Per-service memory caps so no single container can starve the others
     # when the host hits pressure. Sized for an 8c16g ECS + WORKER_CONCURRENCY=90:
     # web 1g, server 1g, agent 3g, agent-worker 10g, redis 1g → ~16g total,
@@ -88,7 +88,11 @@ services:
     environment:
       PORT: 4111
       MASTRA_HOST: 0.0.0.0
-      MASTRA_DB_URL: file:/app/data/mastra.db
+      # Mastra + workflow artifacts live in Postgres schema `mastra`.
+      # Keep this URL free of Prisma's `schema=public` query param; the
+      # agent selects its schema via PostgresStore({ schemaName: "mastra" }).
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fizzdragon}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-fizzdragon}?sslmode=${PGSSLMODE:-disable}
+      PGSSLMODE: ${PGSSLMODE:-disable}
       REDIS_URL: redis://redis:6379
       JAVA_STUDIO_URL: ${JAVA_STUDIO_URL}
       JAVA_CONTENT_URL: ${JAVA_CONTENT_URL}
@@ -112,16 +116,25 @@ services:
       # Optional — only needed for generate_project_cover tool.
       REPLICATE_API_TOKEN: ${REPLICATE_API_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    volumes:
-      - agent_data:/app/data
     depends_on:
       - redis
+      - postgres
     networks:
       - app
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "fetch(''http://127.0.0.1:4111/admin/healthz'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   # BullMQ consumer — runs the same Mastra workflows as the API but in a
-  # separate process so an API crash doesn't kill in-flight runs. Shares the
-  # libsql volume with `agent` for snapshot / resume state.
+  # separate process so an API crash doesn't kill in-flight runs. Shares
+  # Postgres schema `mastra` with `agent` for workflow/artifact state.
   agent-worker:
     image: ${AGENT_IMAGE:-fizzdragon-agent}
     container_name: ${COMPOSE_PROJECT_NAME:-fizzdragon}-agent-worker
@@ -136,7 +149,8 @@ services:
     mem_limit: 10g
     command: ["npx", "tsx", "src/worker.ts"]
     environment:
-      MASTRA_DB_URL: file:/app/data/mastra.db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fizzdragon}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-fizzdragon}?sslmode=${PGSSLMODE:-disable}
+      PGSSLMODE: ${PGSSLMODE:-disable}
       REDIS_URL: redis://redis:6379
       JAVA_STUDIO_URL: ${JAVA_STUDIO_URL}
       JAVA_CONTENT_URL: ${JAVA_CONTENT_URL}
@@ -159,10 +173,9 @@ services:
       IMAGE_WORKER_CONCURRENCY: ${IMAGE_WORKER_CONCURRENCY:-1}
       STORYBOARD_GENERATE_CONCURRENCY: ${STORYBOARD_GENERATE_CONCURRENCY:-4}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    volumes:
-      - agent_data:/app/data
     depends_on:
       - redis
+      - postgres
     networks:
       - app
 
@@ -243,16 +256,10 @@ services:
       - app
 
 volumes:
-  # redis_data + agent_data: NOT explicitly named — they fall through to
-  # podman-compose's default `<projectName>_<volumeKey>`, which on 1.0.6
-  # is the working-dir basename ("platform"). Result: staging and prod-cn
-  # on the same ECS have been silently sharing `platform_redis_data` and
-  # `platform_agent_data`. That's a latent bug worth fixing eventually,
-  # but namespacing here would discard in-flight BullMQ jobs and libsql
-  # workflow snapshots on next force-recreate — defer until a planned
-  # maintenance window with the worker queue drained.
+  # redis_data is intentionally left unnamed for now: naming it would
+  # move existing BullMQ state on the ECS host. Plan a maintenance drain
+  # before changing it.
   redis_data:
-  agent_data:
   # pg_data IS namespaced. Two PG containers can't safely share a data
   # dir (different passwords → init mismatch → crash loop), so this
   # collision would be fatal where the others are merely messy.

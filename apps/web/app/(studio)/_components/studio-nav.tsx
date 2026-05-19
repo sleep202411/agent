@@ -13,7 +13,6 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   IconBolt,
   IconCheck,
@@ -26,7 +25,7 @@ import {
 } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
-import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
+import { setCurrentLocale, localizePath } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import {
   DropdownMenu,
@@ -42,15 +41,12 @@ import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { useCredits } from "@/src/hooks/use-user";
 import { UserMenu } from "@/components/layout/user-menu";
 import { CreateWorldDialog } from "@/app/(studio)/art-studio/_components/create-world-dialog";
-import { isProjectWorkspaceChromePath } from "@/src/lib/studio-routes";
 import { cn } from "@/lib/utils";
 
 export function StudioNav() {
   const t = useTranslations("nav");
   const tProject = useTranslations("project");
   const locale = useLocale();
-  const pathname = usePathname() ?? "/";
-  const appPath = stripLocalePrefix(pathname);
   const { theme, setTheme } = useTheme();
   // Avoid hydration mismatch: theme is undefined on the server, only
   // safe to read after mount. Same pattern as GlobalNav.
@@ -96,8 +92,6 @@ export function StudioNav() {
       window.location.reload();
     }
   };
-
-  if (isProjectWorkspaceChromePath(appPath)) return null;
 
   return (
     <header

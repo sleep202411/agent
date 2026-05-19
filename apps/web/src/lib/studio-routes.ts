@@ -1,4 +1,4 @@
-import { getCurrentLocale, localizePath } from "@/src/i18n/locale-url";
+import { getCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 
 type QueryValue = string | number | null | undefined;
 
@@ -49,9 +49,17 @@ export function localizedProjectWorkspaceHref(
 }
 
 export function isProjectWorkspaceChromePath(pathname: string): boolean {
-  const cleanPath = pathname.split("?")[0]?.replace(/\/+$/, "") || "/";
+  const cleanPath = normalizeStudioPath(pathname);
   if (!cleanPath.startsWith("/art-studio/projects/")) return false;
 
   const rest = cleanPath.slice("/art-studio/projects/".length);
   return rest.split("/").filter(Boolean).length > 0;
+}
+
+export function isArtStudioPath(pathname: string): boolean {
+  return normalizeStudioPath(pathname).startsWith("/art-studio");
+}
+
+function normalizeStudioPath(pathname: string): string {
+  return stripLocalePrefix(pathname.split("?")[0]?.replace(/\/+$/, "") || "/");
 }

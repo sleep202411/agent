@@ -22,6 +22,7 @@ import { adminRoutes } from "./routes/admin";
 import { videoPromptRoutes } from "./routes/video-prompt";
 import { produceRoutes } from "./routes/produce";
 import { logStartupSelfCheck } from "./lib/startup-self-check";
+import { postgresSslConfig, requireDatabaseUrl } from "./lib/postgres-config";
 import { produceScriptPipelineWorkflow } from "./workflows/produce-script-pipeline";
 import { produceStep1EpisodesWorkflow } from "./workflows/produce-step1-episodes";
 import { produceStep2AssetsWorkflow } from "./workflows/produce-step2-assets";
@@ -140,9 +141,9 @@ export const mastra = new Mastra({
   // SMB file-locking semantics across pods).
   storage: new PostgresStore({
     id: "storyos-storage",
-    connectionString: process.env.DATABASE_URL,
+    connectionString: requireDatabaseUrl(),
     schemaName: "mastra",
-    ssl: { rejectUnauthorized: false },
+    ssl: postgresSslConfig(),
   }),
   logger: new PinoLogger({
     name: "storyos-agent",

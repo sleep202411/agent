@@ -1,21 +1,14 @@
-import { AuthGate } from "@/components/layout/auth-gate";
-import { StudioNav } from "@/app/(studio)/_components/studio-nav";
+import { StudioShell } from "@/app/(studio)/_components/studio-shell";
 
 /**
- * Studio route group — isolated from `(site)`. Its own top nav
- * (`StudioNav`) and no SiteFooter. Children render edge-to-edge
- * underneath the studio-private floating sidebar (mounted by
- * `app/(studio)/art-studio/layout.tsx`).
+ * Studio route group — isolated from `(site)`. The client shell owns
+ * all studio-level chrome so workspace routes can opt out at the
+ * layout level instead of hiding header/sidebar with CSS.
  *
  * Kept intentionally minimal so this slice can be extracted into a
  * standalone Next.js app on its own domain later — see
  * `memory/project_fizzstudio_subdomain.md`.
  */
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <AuthGate>
-      <StudioNav />
-      <main className="min-h-[calc(100vh-3.5rem)]">{children}</main>
-    </AuthGate>
-  );
+  return <StudioShell>{children}</StudioShell>;
 }
