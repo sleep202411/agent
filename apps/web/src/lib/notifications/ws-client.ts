@@ -16,7 +16,6 @@
  */
 
 import type { NotificationDTO } from "@repo/shared/notifications";
-import { env } from "@/src/env";
 
 export type NotificationFrame =
   | { event: "notification"; data: NotificationDTO }
@@ -47,7 +46,7 @@ function buildUrl(): string {
   const isDev =
     window.location.hostname === "localhost" &&
     (window.location.port === "3000" || window.location.port === "5173");
-  const host = isDev ? "localhost:3001" : env.WS_HOST || window.location.host;
+  const host = isDev ? "localhost:3001" : window.location.host;
   const params = new URLSearchParams();
   const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
   if (tokenMatch) params.set("satoken", tokenMatch[1]);

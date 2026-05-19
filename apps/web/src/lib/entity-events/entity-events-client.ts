@@ -13,7 +13,6 @@
  *   { event: "terminate",      data: { reason, code } }
  */
 import type { EntityEvent } from "@repo/shared/entity-events";
-import { env } from "@/src/env";
 
 export type EntityEventsFrame =
   | { event: "entity_changed"; data: EntityEvent }
@@ -44,12 +43,11 @@ function buildUrl(): string {
   const isDev =
     window.location.hostname === "localhost" &&
     (window.location.port === "3000" || window.location.port === "5173");
-  // `WS_HOST` lets prod-com bypass a CDN-fronted main domain by pointing the
-  // WS straight at the platform host (e.g. `fizzstudio.fizzdragon.com`). When
-  // we cross origins like that, the auth cookie won't auto-attach, so we
-  // pull `satoken` out of `document.cookie` and append it as a query param;
-  // the gateway falls back to query if the cookie header is empty.
-  const host = isDev ? "localhost:3001" : env.WS_HOST || window.location.host;
+  // Same-host WS always — apex nginx + AKS ingress both proxy the Upgrade
+  // header through. satoken is mirrored into the query string as defence
+  // in depth: the gateway prefers query and falls back to the cookie
+  // header, so handshakes survive odd cookie-jar edge cases.
+  const host = isDev ? "localhost:3001" : window.location.host;
   const params = new URLSearchParams();
   const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
   if (tokenMatch) params.set("satoken", tokenMatch[1]);
