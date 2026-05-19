@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { type Episode, type EpisodeStatus } from "@/app/(site)/crews/_hooks/use-episodes";
 import type { UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
 import { EpisodeAccordionItem } from "./episode-accordion-item";
+import { EpisodesDashboard } from "./episodes-dashboard";
 
 type FilterKey = "all" | EpisodeStatus;
 
@@ -75,8 +76,37 @@ export function EpisodesBoard({
       return next;
     });
 
+  const expandAndScrollTo = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    if (typeof window !== "undefined") {
+      // Wait one frame so the just-expanded body is in layout before
+      // scrolling; smooth-scroll into view, aligned to the top so
+      // the assignment table is visible immediately.
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`episode-row-${id}`);
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  };
+
+  // Dashboard is admin/finance only — members and outsiders don't
+  // need the production-wide overview.
+  const showDashboard = (viewer.isAdmin || viewer.isFinance) && episodes.length > 0;
+
   return (
     <div className="space-y-4">
+      {showDashboard ? (
+        <EpisodesDashboard
+          crewId={crewId}
+          episodes={episodes}
+          onJumpToEpisode={expandAndScrollTo}
+        />
+      ) : null}
+
       {/* Header: filter chips + add CTA */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <FilterTabs filter={filter} onChange={setFilter} counts={counts} t={t} />
@@ -110,15 +140,16 @@ export function EpisodesBoard({
       ) : (
         <div className="space-y-3">
           {filtered.map((ep) => (
-            <EpisodeAccordionItem
-              key={ep.id}
-              crewId={crewId}
-              episode={ep}
-              isCurrent={ep.id === currentId}
-              expanded={expandedIds.has(ep.id)}
-              onToggle={() => toggleExpanded(ep.id)}
-              viewer={viewer}
-            />
+            <div key={ep.id} id={`episode-row-${ep.id}`}>
+              <EpisodeAccordionItem
+                crewId={crewId}
+                episode={ep}
+                isCurrent={ep.id === currentId}
+                expanded={expandedIds.has(ep.id)}
+                onToggle={() => toggleExpanded(ep.id)}
+                viewer={viewer}
+              />
+            </div>
           ))}
         </div>
       )}
