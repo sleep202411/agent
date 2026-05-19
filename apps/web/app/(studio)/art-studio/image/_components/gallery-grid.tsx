@@ -1,20 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { gsap } from "gsap";
-import { Flip } from "gsap/Flip";
-import { useGSAP } from "@gsap/react";
+/**
+ * Image lab masonry — CSS columns, no JS layout math.
+ *
+ * Breakpoints lock column count regardless of how many items are
+ * present (so a single image is a card, not a full-width canvas).
+ * Each cell uses `aspect-ratio` from its `ratio` field; the browser
+ * sizes the box, the cell content fills via `absolute inset-0`.
+ *
+ * The old version used GSAP + Flip + ResizeObserver + per-frame
+ * shortest-column placement. Pure CSS columns get the same visual
+ * result with one tenth of the surface area — see commit history
+ * for the motivation if you're tempted to add JS back.
+ */
+
 import {
   IconAlertTriangle,
   IconCircleDashed,
   IconDownload,
   IconRefresh,
 } from "@tabler/icons-react";
-
-// `useGSAP` handles plugin registration timing safely and is Strict-
-// Mode safe (auto-reverts on cleanup). We still register Flip once
-// at module load — `registerPlugin` is idempotent.
-gsap.registerPlugin(useGSAP, Flip);
 
 export type GalleryItem =
   | {
@@ -53,178 +58,15 @@ export type GalleryGridProps = {
   t: (key: string, fallback?: string) => string;
 };
 
-// JS masonry — pure CSS `grid-template-rows: masonry` is Safari-only
-// as of 2026Q2 (Chrome ships a different proposal); the value is
-// silently ignored on Chrome and the grid collapses into rectangular
-// rows. We compute layout ourselves: choose column count from
-// container width, walk items in submission order, drop each into
-// the currently shortest column. Heights come from each item's
-// known aspect ratio so no DOM measurement is needed.
-const CELL_TARGET_WIDTH = 240;
-const CELL_GAP_PX = 6;
-const CONTAINER_MAX_WIDTH = 1800;
-const CONTAINER_PADDING_X = 80;
-
-interface PositionedItem {
-  item: GalleryItem;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-function parseRatio(ratio: string): number {
-  if (!ratio || ratio === "auto") return 1;
-  const [w, h] = ratio.split(":").map(Number);
-  if (!w || !h) return 1;
-  return w / h;
-}
-
-function useMeasuredWidth(): [React.RefObject<HTMLDivElement | null>, number] {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? 0;
-      setWidth(Math.round(w));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return [ref, width];
-}
-
 export function GalleryGrid({ items, onRetry, onOpen, t }: GalleryGridProps) {
-  const [containerRef, containerWidth] = useMeasuredWidth();
-  // Scope ref for useGSAP — all selector strings ("[data-flip-id]")
-  // resolve relative to this element; cleanup runs scoped too, so
-  // we never touch animations from sibling components.
-  const scope = useRef<HTMLDivElement | null>(null);
-  // Track previous item ID set to know whether positions are about
-  // to change (insert / remove / re-order / resize → new layout).
-  const prevItemKeyRef = useRef<string>("");
-  // Cache the Flip state captured *before* a positions change. We
-  // grab it during render (synchronously) so the DOM still reflects
-  // old positions; the next useGSAP run consumes it.
-  const pendingFlipStateRef = useRef<ReturnType<typeof Flip.getState> | null>(null);
-
-  const { positioned, totalHeight } = useMemo(() => {
-    if (!containerWidth || items.length === 0) {
-      return { positioned: [] as PositionedItem[], totalHeight: 0 };
-    }
-    const maxByWidth = Math.max(
-      1,
-      Math.floor((containerWidth + CELL_GAP_PX) / (CELL_TARGET_WIDTH + CELL_GAP_PX))
-    );
-    const cols = Math.max(1, Math.min(items.length, maxByWidth));
-    const colWidth = (containerWidth - (cols - 1) * CELL_GAP_PX) / cols;
-    const colHeights = new Array<number>(cols).fill(0);
-    const placed: PositionedItem[] = items.map((item) => {
-      const ratio = parseRatio(item.ratio);
-      const h = colWidth / ratio;
-      let shortest = 0;
-      for (let i = 1; i < cols; i++) {
-        if (colHeights[i] < colHeights[shortest]) shortest = i;
-      }
-      const left = shortest * (colWidth + CELL_GAP_PX);
-      const top = colHeights[shortest];
-      colHeights[shortest] = top + h + CELL_GAP_PX;
-      return { item, left, top, width: colWidth, height: h };
-    });
-    return {
-      positioned: placed,
-      totalHeight: Math.max(0, ...colHeights) - CELL_GAP_PX,
-    };
-  }, [items, containerWidth]);
-
-  const itemKey = positioned.map((p) => p.item.id).join("|");
-  // Capture old bounding rects *now*, before React commits the new
-  // positions. We're inside render but only reading DOM (no writes /
-  // no state updates) — this is the standard Flip pattern. The
-  // captured state is consumed in the useGSAP block below.
-  if (scope.current && prevItemKeyRef.current !== "" && prevItemKeyRef.current !== itemKey) {
-    const cells = scope.current.querySelectorAll<HTMLElement>("[data-flip-id]");
-    if (cells.length > 0) {
-      pendingFlipStateRef.current = Flip.getState(cells);
-    }
-  }
-
-  useGSAP(
-    () => {
-      const cells = gsap.utils.toArray<HTMLElement>("[data-flip-id]");
-      if (cells.length === 0) return;
-
-      const isFirstPaint = prevItemKeyRef.current === "";
-      prevItemKeyRef.current = itemKey;
-
-      if (isFirstPaint) {
-        // Initial mount: staggered fade-up entry.
-        gsap.from(cells, {
-          opacity: 0,
-          y: 18,
-          scale: 0.96,
-          duration: 0.45,
-          ease: "power2.out",
-          stagger: 0.04,
-        });
-        return;
-      }
-
-      // Layout change: tween every cell from old bbox to new bbox.
-      const state = pendingFlipStateRef.current;
-      pendingFlipStateRef.current = null;
-      if (!state) return;
-      Flip.from(state, {
-        duration: 0.5,
-        ease: "power2.out",
-        absolute: false,
-        scale: false,
-        onEnter: (els) =>
-          gsap.from(els, {
-            opacity: 0,
-            scale: 0.92,
-            duration: 0.35,
-            ease: "power2.out",
-          }),
-        onLeave: (els) =>
-          gsap.to(els, {
-            opacity: 0,
-            scale: 0.92,
-            duration: 0.25,
-            ease: "power2.in",
-          }),
-      });
-    },
-    // Re-run when the item set or layout changes. `useGSAP` reverts
-    // any previously-created tweens on cleanup, so re-runs don't
-    // stack ghost animations.
-    { scope, dependencies: [itemKey, containerWidth] }
-  );
-
   return (
-    <div
-      className="mx-auto w-full"
-      style={{
-        maxWidth: `${CONTAINER_MAX_WIDTH}px`,
-        paddingInline: `${CONTAINER_PADDING_X}px`,
-      }}
-    >
-      <div
-        ref={(el) => {
-          containerRef.current = el;
-          scope.current = el;
-        }}
-        className="relative w-full"
-        style={{ height: `${totalHeight}px` }}
-      >
-        {positioned.map(({ item, left, top, width, height }) => (
+    <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-10">
+      <div className="gap-1.5 columns-2 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6">
+        {items.map((item) => (
           <div
             key={item.id}
-            data-flip-id={item.id}
-            className="absolute"
-            style={{ left, top, width, height }}
+            className="mb-1.5 break-inside-avoid overflow-hidden rounded-xl"
+            style={{ aspectRatio: cssAspectRatio(item.ratio) }}
           >
             <GalleryCell item={item} onRetry={onRetry} onOpen={onOpen} t={t} />
           </div>
@@ -232,6 +74,14 @@ export function GalleryGrid({ items, onRetry, onOpen, t }: GalleryGridProps) {
       </div>
     </div>
   );
+}
+
+/** "16:9" → "16 / 9"; "auto" / empty / malformed → "1 / 1". */
+function cssAspectRatio(ratio: string): string {
+  if (!ratio || ratio === "auto") return "1 / 1";
+  const [w, h] = ratio.split(":").map(Number);
+  if (!w || !h) return "1 / 1";
+  return `${w} / ${h}`;
 }
 
 function GalleryCell({

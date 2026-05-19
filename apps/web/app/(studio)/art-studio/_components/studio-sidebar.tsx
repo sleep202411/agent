@@ -17,18 +17,32 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
+import { useFeature } from "@/src/lib/region/provider";
+import type { FeatureName } from "@/src/lib/region/features";
 
-const ITEMS = [
-  { href: "/art-studio", labelKey: "sidebarHome" as const, Icon: IconHome },
+interface SidebarItem {
+  href: string;
+  labelKey: "sidebarHome" | "sidebarProjects" | "sidebarImageLab";
+  Icon: typeof IconHome;
+  /** Feature flag gating this item. Undefined → always visible. */
+  feature?: FeatureName;
+}
+
+const ITEMS: SidebarItem[] = [
+  { href: "/art-studio", labelKey: "sidebarHome", Icon: IconHome },
   {
     href: "/art-studio/projects",
-    labelKey: "sidebarProjects" as const,
+    labelKey: "sidebarProjects",
     Icon: IconLayoutGrid,
   },
   {
     href: "/art-studio/image",
-    labelKey: "sidebarImageLab" as const,
+    labelKey: "sidebarImageLab",
     Icon: IconSparkles,
+    // Azure Foundry only available on com/global cells (see
+    // features.ts). On cn the entry is hidden and the route itself
+    // renders an unavailable state if visited directly.
+    feature: "imageGeneration",
   },
 ];
 
@@ -36,6 +50,13 @@ export function StudioSidebar() {
   const pathname = usePathname() ?? "/";
   const locale = useLocale() as Locale;
   const t = useTranslations("workspace");
+  // Image lab is gated on `imageGeneration` (Azure Foundry only on
+  // com/global). Read here so the conditional flows through React
+  // hook order consistently — items array is rebuilt per render.
+  const hasImageGeneration = useFeature("imageGeneration");
+  const visibleItems = ITEMS.filter(
+    (it) => !it.feature || (it.feature === "imageGeneration" && hasImageGeneration)
+  );
 
   // Strip the locale prefix so route comparison is locale-agnostic.
   // `/zh-CN/art-studio/projects` → `/art-studio/projects`.
@@ -57,7 +78,7 @@ export function StudioSidebar() {
           "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_8px_28px_-12px_rgba(0,0,0,0.5)]"
         )}
       >
-        {ITEMS.map(({ href, labelKey, Icon }) => {
+        {visibleItems.map(({ href, labelKey, Icon }) => {
           // Exact match for /art-studio (home) so it doesn't stay
           // active when the user drills into a sub-route. Other items
           // use startsWith so deep links keep the parent highlighted.
