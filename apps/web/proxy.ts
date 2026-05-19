@@ -210,6 +210,12 @@ export const config = {
     // are set per environment. Excluding all four means the locale
     // proxy never wraps Java API calls regardless of which env the
     // bundle was built for.
-    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|content|studio|test1|test2|__legacy|.*\\..*).*)",
+    //
+    // `ingest` is the PostHog reverse-proxy path (see next.config.ts
+    // rewrites `beforeFiles`). Without this exclusion the locale prefix
+    // gets prepended to the SDK's POST `/ingest/s/?...`, turning it
+    // into `/zh-CN/ingest/s/?...` which doesn't match any rewrite →
+    // 404 → analytics silently drops events.
+    "/((?!_next|api|aurora|user|project|anon|vedio|newsapi|content|studio|test1|test2|ingest|__legacy|.*\\..*).*)",
   ],
 };
