@@ -74,9 +74,9 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   app.enableCors({ origin: true, credentials: true });
-  // Enable native `ws` adapter for @WebSocketGateway (platform-ws). The
-  // gateway at apps/server/src/assistant/workflow-events.gateway.ts uses
-  // plain ws frames, not socket.io.
+  // Native `ws` adapter for @WebSocketGateway (platform-ws) — entity-
+  // events / chat-events / notifications gateways use plain ws frames,
+  // not socket.io.
   app.useWebSocketAdapter(new WsAdapter(app));
 
   // Long-lived endpoints — produce-mode `/produce/script-draft/sync`

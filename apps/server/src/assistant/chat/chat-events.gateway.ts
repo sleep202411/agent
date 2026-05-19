@@ -80,8 +80,9 @@ type StoreEvent =
  * `conversationId` (preferred) or `projectId` (legacy-compat) as the key —
  * we only have 1 conversation per project today so they're interchangeable.
  */
+// See EntityEventsGateway: upstreams strip `/aurora/` before forwarding.
 @WebSocketGateway({
-  path: '/aurora/chat/subscribe-conversation',
+  path: '/chat/subscribe-conversation',
 })
 export class ChatEventsGateway
   implements
