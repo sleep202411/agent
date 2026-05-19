@@ -49,7 +49,7 @@ const STATUS_CHIP: Record<CrewApplicationStatus, { labelKey: string; className: 
 
 export function JobApplicantsList({ crewId, positionId, canManage }: JobApplicantsListProps) {
   const t = useTranslations("workspace");
-  const { data: all = [], isLoading, isError } = useCrewApplications(crewId);
+  const { data: all = [], isLoading, isError } = useCrewApplications(crewId, canManage);
   const approve = useApproveApplication(crewId);
   const reject = useRejectApplication(crewId);
 
@@ -57,6 +57,8 @@ export function JobApplicantsList({ crewId, positionId, canManage }: JobApplican
     () => all.filter((a) => a.positionId === positionId),
     [all, positionId]
   );
+
+  if (!canManage) return null;
 
   if (isLoading) {
     return (

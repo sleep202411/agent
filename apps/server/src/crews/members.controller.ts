@@ -15,7 +15,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { CurrentUser } from '../auth';
+import { CurrentUser, ViewerCookie } from '../auth';
 import type { AuthUser } from '../auth';
 import {
   AddMemberSchema,
@@ -41,9 +41,15 @@ export class MembersController {
   add(
     @Param('crewId') crewIdRaw: string,
     @CurrentUser() user: AuthUser,
+    @ViewerCookie() cookie: string,
     @Body(new ZodValidationPipe(AddMemberSchema)) body: AddMemberInput,
   ) {
-    return this.svc.add(parseIdParam(crewIdRaw, 'crewId'), user.userId, body);
+    return this.svc.add(
+      parseIdParam(crewIdRaw, 'crewId'),
+      user.userId,
+      cookie,
+      body,
+    );
   }
 
   @Patch(':memberId')

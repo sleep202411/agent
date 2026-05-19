@@ -45,17 +45,12 @@ export class NotificationService {
     args: SendArgs,
     db: TxClient = this.prisma,
   ): Promise<NotificationDTO> {
-    // 1. Idempotent upsert by (userId, idempotencyKey).
-    //    `update: {}` is a no-op so the existing row's createdAt /
-    //    readAt are preserved on retry.
-    const row = await db.notification.upsert({
-      where: {
-        uniq_user_idempotency: {
-          userId: args.userId,
-          idempotencyKey: args.idempotencyKey,
-        },
-      },
-      create: {
+    // 1. Insert once by (userId, idempotencyKey). `createMany` gives a
+    //    deterministic `count` so we know whether this request owns the
+    //    outbox enqueue. A duplicate retry fetches and returns the row
+    //    without publishing a second realtime event.
+    const created = await db.notification.createMany({
+      data: {
         userId: args.userId,
         type: args.type,
         title: args.title,
@@ -63,16 +58,20 @@ export class NotificationService {
         meta: (args.meta ?? {}) as Prisma.InputJsonValue,
         idempotencyKey: args.idempotencyKey,
       },
-      update: {},
+      skipDuplicates: true,
+    });
+    const row = await db.notification.findUniqueOrThrow({
+      where: {
+        uniq_user_idempotency: {
+          userId: args.userId,
+          idempotencyKey: args.idempotencyKey,
+        },
+      },
     });
     const dto = toDTO(row);
 
     // 2. Enqueue outbox row only when the notification is brand-new.
-    //    On a retry the upsert returns the original row (readAt may be
-    //    set already, etc.). We don't create a second outbox row —
-    //    avoids double-push for the same dedup boundary.
-    const isFreshInsert = sameInstant(row.createdAt, new Date(), 5_000);
-    if (isFreshInsert) {
+    if (created.count > 0) {
       await db.notificationOutbox.create({
         data: {
           notificationId: row.id,
@@ -143,13 +142,4 @@ function toDTO(row: {
     readAt: row.readAt ? row.readAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
   };
-}
-
-/** Two Dates within `windowMs` of each other? Cheap heuristic for
- *  "was this row just inserted in this request" without an explicit
- *  boolean from the upsert. Within a tx the freshly-inserted row's
- *  createdAt is `now()`; on a retry that returns the original, it
- *  will be at least seconds older. */
-function sameInstant(a: Date, b: Date, windowMs: number): boolean {
-  return Math.abs(a.getTime() - b.getTime()) <= windowMs;
 }

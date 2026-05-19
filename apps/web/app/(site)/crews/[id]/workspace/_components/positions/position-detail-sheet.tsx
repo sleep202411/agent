@@ -62,16 +62,22 @@ import { employmentTypeKey, experienceKey, formatSalaryString, workModeKey } fro
 interface PositionDetailSheetProps {
   crewId: string;
   position: CrewPositionDTO | null;
+  canManage?: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function PositionDetailSheet({ crewId, position, onOpenChange }: PositionDetailSheetProps) {
+export function PositionDetailSheet({
+  crewId,
+  position,
+  canManage = false,
+  onOpenChange,
+}: PositionDetailSheetProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const translatePosition = useTranslatePositionValue();
   const updatePosition = useUpdatePosition(crewId);
   const deletePosition = useDeletePosition(crewId);
-  const { data: allApplications = [] } = useCrewApplications(crewId);
+  const { data: allApplications = [] } = useCrewApplications(crewId, canManage);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmFreeze, setConfirmFreeze] = useState(false);
@@ -203,86 +209,90 @@ export function PositionDetailSheet({ crewId, position, onOpenChange }: Position
             </Section>
 
             {/* ─── Applicants triage ─── */}
-            <Section
-              title={t("applicantsTriageTitle", { count: applications.length })}
-              defaultExpanded
-            >
-              <ApplicantSection
-                crewId={crewId}
-                titleKey="applicantSectionPending"
-                applicants={pending}
-                kind="pending"
-                t={t}
-              />
-              <ApplicantSection
-                crewId={crewId}
-                titleKey="applicantSectionApproved"
-                applicants={approved}
-                kind="approved"
-                t={t}
-              />
-              <ApplicantSection
-                crewId={crewId}
-                titleKey="applicantSectionRejected"
-                applicants={rejected}
-                kind="rejected"
-                t={t}
-              />
-              {applications.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
-                  {t("noApplicantsYet")}
-                </p>
-              ) : null}
-            </Section>
+            {canManage ? (
+              <Section
+                title={t("applicantsTriageTitle", { count: applications.length })}
+                defaultExpanded
+              >
+                <ApplicantSection
+                  crewId={crewId}
+                  titleKey="applicantSectionPending"
+                  applicants={pending}
+                  kind="pending"
+                  t={t}
+                />
+                <ApplicantSection
+                  crewId={crewId}
+                  titleKey="applicantSectionApproved"
+                  applicants={approved}
+                  kind="approved"
+                  t={t}
+                />
+                <ApplicantSection
+                  crewId={crewId}
+                  titleKey="applicantSectionRejected"
+                  applicants={rejected}
+                  kind="rejected"
+                  t={t}
+                />
+                {applications.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
+                    {t("noApplicantsYet")}
+                  </p>
+                ) : null}
+              </Section>
+            ) : null}
           </SheetBody>
 
-          <SheetFooter className="border-t border-border bg-background/50 p-4">
-            <div className="flex w-full items-center justify-between">
-              <Button
-                type="button"
-                variant="ghost"
-                color="destructive"
-                size="sm"
-                onClick={() => setConfirmDelete(true)}
-                disabled={deletePosition.isPending}
-              >
-                <IconTrash className="size-3.5" />
-                {tc("delete")}
-              </Button>
-              <div className="flex items-center gap-2">
-                {isFrozen ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    onClick={() => handleFreezeToggle()}
-                    disabled={updatePosition.isPending}
-                  >
-                    <IconLockOpen className="size-3.5" />
-                    {t("unfreezeJob")}
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    onClick={() => setConfirmFreeze(true)}
-                    disabled={updatePosition.isPending}
-                  >
-                    <IconLock className="size-3.5" />
-                    {t("closeJob")}
-                  </Button>
-                )}
+          {canManage ? (
+            <SheetFooter className="border-t border-border bg-background/50 p-4">
+              <div className="flex w-full items-center justify-between">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  color="destructive"
+                  size="sm"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={deletePosition.isPending}
+                >
+                  <IconTrash className="size-3.5" />
+                  {tc("delete")}
+                </Button>
+                <div className="flex items-center gap-2">
+                  {isFrozen ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      color="muted"
+                      size="sm"
+                      onClick={() => handleFreezeToggle()}
+                      disabled={updatePosition.isPending}
+                    >
+                      <IconLockOpen className="size-3.5" />
+                      {t("unfreezeJob")}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      color="muted"
+                      size="sm"
+                      onClick={() => setConfirmFreeze(true)}
+                      disabled={updatePosition.isPending}
+                    >
+                      <IconLock className="size-3.5" />
+                      {t("closeJob")}
+                    </Button>
+                  )}
+                </div>
               </div>
-            </div>
-          </SheetFooter>
+            </SheetFooter>
+          ) : null}
         </SheetContent>
       </Sheet>
 
       {/* Confirm freeze */}
-      <AlertDialog open={confirmFreeze} onOpenChange={setConfirmFreeze}>
+      <AlertDialog open={canManage && confirmFreeze} onOpenChange={setConfirmFreeze}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("closeJob")}</AlertDialogTitle>
@@ -309,7 +319,7 @@ export function PositionDetailSheet({ crewId, position, onOpenChange }: Position
       </AlertDialog>
 
       {/* Confirm delete */}
-      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialog open={canManage && confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("positionDeleteTitle")}</AlertDialogTitle>

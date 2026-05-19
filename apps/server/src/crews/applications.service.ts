@@ -22,6 +22,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { CrewApplication } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import type { ApplyInput } from './dto';
@@ -186,61 +187,92 @@ export class ApplicationsService {
     }
 
     const reviewedAt = new Date();
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const updatedApp = await tx.crewApplication.update({
-        where: { id: applicationId },
-        data: { status: next, reviewedAt, reviewerId },
-      });
+    let updated: CrewApplication;
+    try {
+      updated = await this.prisma.$transaction(async (tx) => {
+        const appTransition = await tx.crewApplication.updateMany({
+          where: { id: applicationId, status: 'pending' },
+          data: { status: next, reviewedAt, reviewerId },
+        });
+        if (appTransition.count === 0) {
+          throw new ConflictException({
+            message: 'Application was already reviewed',
+          });
+        }
 
-      if (next === 'approved') {
-        const newCount = app.position.recruitedCount + 1;
-        const flipFull = newCount >= app.position.targetCount;
-        await tx.crewPosition.update({
-          where: { id: app.position.id },
-          data: {
-            recruitedCount: newCount,
-            ...(flipFull ? { status: 'full' as const } : {}),
-          },
+        const updatedApp = await tx.crewApplication.findUniqueOrThrow({
+          where: { id: applicationId },
         });
 
-        // Plain insert — partial unique on (crewId, userId) WHERE
-        // removed_at IS NULL means a previously removed member becomes
-        // a new active row, preserving the history.
-        await tx.crewMember.create({
-          data: {
-            crewId: app.crewId,
+        if (next === 'approved') {
+          const bumped = await tx.$queryRaw<Array<{ id: string }>>`
+            UPDATE "crew_positions"
+            SET
+              "recruited_count" = "recruited_count" + 1,
+              "status" = CASE
+                WHEN "recruited_count" + 1 >= "target_count" THEN 'full'
+                ELSE "status"
+              END
+            WHERE
+              "id" = ${app.position.id}
+              AND "crew_id" = ${app.crewId}
+              AND "deleted_at" IS NULL
+              AND "status" <> 'frozen'
+              AND "recruited_count" < "target_count"
+            RETURNING "id"
+          `;
+          if (bumped.length === 0) {
+            throw new ConflictException({
+              message: 'Position is no longer accepting approvals',
+            });
+          }
+
+          // Plain insert — partial unique on (crewId, userId) WHERE
+          // removed_at IS NULL means a previously removed member becomes
+          // a new active row, preserving the history.
+          await tx.crewMember.create({
+            data: {
+              crewId: app.crewId,
+              userId: app.applicantId,
+              roleType: app.position.positionType,
+              positionId: app.position.id,
+              via: 'application',
+            },
+          });
+        }
+
+        const isApprove = next === 'approved';
+        await this.notifications.send(
+          {
             userId: app.applicantId,
-            roleType: app.position.positionType,
-            positionId: app.position.id,
-            via: 'application',
+            type: isApprove
+              ? 'crew.application.approved'
+              : 'crew.application.rejected',
+            title: isApprove ? 'Application approved' : 'Application rejected',
+            body: isApprove
+              ? `You're now a ${app.position.positionType} in "${app.crew.name}".`
+              : `Your application to "${app.crew.name}" was not accepted.`,
+            meta: {
+              deeplink: `/crews/${app.crewId}`,
+              crewId: app.crewId,
+              positionId: app.position.id,
+              applicationId,
+            },
+            idempotencyKey: `crew.application.${next}:${applicationId}`,
           },
+          tx,
+        );
+
+        return updatedApp;
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        throw new ConflictException({
+          message: 'Applicant is already a member of this crew',
         });
       }
-
-      const isApprove = next === 'approved';
-      await this.notifications.send(
-        {
-          userId: app.applicantId,
-          type: isApprove
-            ? 'crew.application.approved'
-            : 'crew.application.rejected',
-          title: isApprove ? 'Application approved' : 'Application rejected',
-          body: isApprove
-            ? `You're now a ${app.position.positionType} in "${app.crew.name}".`
-            : `Your application to "${app.crew.name}" was not accepted.`,
-          meta: {
-            deeplink: `/crews/${app.crewId}`,
-            crewId: app.crewId,
-            positionId: app.position.id,
-            applicationId,
-          },
-          idempotencyKey: `crew.application.${next}:${applicationId}`,
-        },
-        tx,
-      );
-
-      return updatedApp;
-    });
+      throw err;
+    }
     return toApplicationDTO(updated);
   }
 

@@ -19,6 +19,8 @@ import {
 const presetPosition = z.string().refine(isPresetPosition, {
   message: 'positionType must be one of PRESET_POSITIONS',
 });
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+?\d[\d\s-]{5,32}$/;
 
 // ─── Crew CRUD ──────────────────────────────────────────────
 
@@ -152,7 +154,14 @@ export type ApplyInput = z.infer<typeof ApplySchema>;
 // ─── Manual member ──────────────────────────────────────────
 
 export const AddMemberSchema = z.object({
-  userId: z.string().min(1),
+  account: z
+    .string()
+    .trim()
+    .min(3)
+    .max(120)
+    .refine((v) => EMAIL_RE.test(v) || PHONE_RE.test(v), {
+      message: 'account must be a valid email or phone',
+    }),
   roleType: presetPosition,
 });
 export type AddMemberInput = z.infer<typeof AddMemberSchema>;

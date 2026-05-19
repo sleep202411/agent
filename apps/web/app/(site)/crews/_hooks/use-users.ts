@@ -94,19 +94,14 @@ export { useDebouncedValue } from "./use-debounced-value";
 //
 // Java doesn't expose a profile-by-userId endpoint today; the
 // `/user/resumer/list/:id` route returns resume entries, not
-// profile. Until that ships, this hook returns an empty map and
-// consumers fall back to "User <id>" via `displayNameOf` below.
+// profile. Until that ships, consumers fall back to "User <id>" via
+// `displayNameOf` below.
 //
 // When the by-id endpoint lands, replace the body of this hook
 // with the previous `POST /users/lookup-batch` implementation —
 // no consumer changes needed.
 
-export function useUserDisplays(userIds: readonly string[]): Map<string, LookupUserDTO> {
-  // Read-only stable empty map — keeps consumers happy without
-  // firing any network calls.
-  // userIds is referenced to keep the hook signature future-proof
-  // (silenced for now).
-  void userIds;
+export function useUserDisplays(_userIds: readonly string[]): Map<string, LookupUserDTO> {
   return useMemo(() => new Map<string, LookupUserDTO>(), []);
 }
 

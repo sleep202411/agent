@@ -31,7 +31,7 @@ export function PositionsGrid({ crewId, positions, isOwner, onPublish }: Positio
   const t = useTranslations("workspace");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { data: allApplications = [] } = useCrewApplications(crewId);
+  const { data: allApplications = [] } = useCrewApplications(crewId, isOwner);
 
   // Count applicants per position once for both the cards and filter tabs.
   const stats = useMemo(() => {
@@ -102,6 +102,7 @@ export function PositionsGrid({ crewId, positions, isOwner, onPublish }: Positio
       <PositionDetailSheet
         crewId={crewId}
         position={selected}
+        canManage={isOwner}
         onOpenChange={(open) => {
           if (!open) setSelectedId(null);
         }}

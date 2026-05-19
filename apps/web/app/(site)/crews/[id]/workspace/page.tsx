@@ -22,14 +22,9 @@ import {
   IconArrowLeft,
   IconBook,
   IconBriefcase,
-  IconChevronDown,
   IconChevronRight,
   IconEdit,
-  IconLoader2,
-  IconLock,
-  IconLockOpen,
   IconMovie,
-  IconTrash,
   IconUsers,
 } from "@tabler/icons-react";
 import { env } from "@/src/env";
@@ -37,13 +32,10 @@ import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
-  CrewApiError,
   useCrewApplications,
   useCrewDetail,
   useCrewMembers,
   useCrewPositions,
-  useRemoveMember,
-  type CrewMemberDTO,
   type CrewPositionDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
@@ -56,16 +48,6 @@ import { PositionCard } from "@/app/(site)/crews/[id]/workspace/_components/posi
 import { PositionDetailSheet } from "@/app/(site)/crews/[id]/workspace/_components/positions/position-detail-sheet";
 import { PositionsGrid } from "@/app/(site)/crews/[id]/workspace/_components/positions/positions-grid";
 import { EpisodesTab } from "@/app/(site)/crews/[id]/workspace/_components/episodes/episodes-tab";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 const TABS = [
   { id: "overview", labelKey: "tabOverview", icon: IconBook },
@@ -227,6 +209,7 @@ export default function CrewWorkspacePage() {
               openJobsCount={openCount}
               slotsFilled={slotsFilled}
               slotsTotal={slotsTotal}
+              isOwner={isOwner}
               t={t}
               onJumpRoles={() => setActiveTab("roles")}
             />
@@ -302,6 +285,7 @@ interface OverviewTabProps {
   openJobsCount: number;
   slotsFilled: number;
   slotsTotal: number;
+  isOwner: boolean;
   t: ReturnType<typeof useTranslations>;
   onJumpRoles: () => void;
 }
@@ -317,13 +301,14 @@ function OverviewTab({
   openJobsCount,
   slotsFilled,
   slotsTotal,
+  isOwner,
   t,
   onJumpRoles,
 }: OverviewTabProps) {
   // Same card components the Roles tab uses → visual + interactive
   // consistency. Overview shows only OPEN positions (preview semantics)
   // capped at OVERVIEW_POSITIONS_PREVIEW; "view all" jumps to Roles tab.
-  const { data: allApplications = [] } = useCrewApplications(crewId);
+  const { data: allApplications = [] } = useCrewApplications(crewId, isOwner);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const openPositions = useMemo(
@@ -415,6 +400,7 @@ function OverviewTab({
       <PositionDetailSheet
         crewId={crewId}
         position={selected}
+        canManage={isOwner}
         onOpenChange={(open) => {
           if (!open) setSelectedId(null);
         }}

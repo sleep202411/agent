@@ -3,9 +3,9 @@
  *
  * - List is open to any active member (outsiders can read the public
  *   crew detail but not the member roster).
- * - Add: owner-only, must give a userId + roleType (preset position
- *   vocab). Direct INSERT — partial-unique on (crewId, userId) WHERE
- *   removed_at IS NULL permits multiple historical rows.
+ * - Add: owner-only, resolves email/phone server-side before insert.
+ *   Direct INSERT — partial-unique on (crewId, userId) WHERE removed_at
+ *   IS NULL permits multiple historical rows.
  * - Remove: owner-only. Owner can't remove themselves (would orphan
  *   the crew — delete the crew instead).
  * - Finance toggle: owner-only; flips the `isFinance` flag.
@@ -22,6 +22,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
+import { UsersService } from '../users/users.service';
 import type { AddMemberInput, UpdateMemberInput } from './dto';
 import { toMemberDTO } from './mappers';
 
@@ -30,6 +31,7 @@ export class MembersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
+    private readonly users: UsersService,
   ) {}
 
   async list(crewId: string, viewerId: string) {
@@ -41,18 +43,40 @@ export class MembersService {
     return rows.map(toMemberDTO);
   }
 
-  async add(crewId: string, ownerId: string, input: AddMemberInput) {
+  async add(
+    crewId: string,
+    ownerId: string,
+    cookie: string,
+    input: AddMemberInput,
+  ) {
     const crew = await this.requireCrew(crewId);
     if (crew.founderId !== ownerId) {
       throw new ForbiddenException({
         message: 'Only the crew owner can add members',
       });
     }
-    if (input.userId === ownerId) {
+    const target = await this.users.lookupByContact({
+      account: input.account,
+      cookie,
+      checkCrewId: crewId,
+    });
+    if (!target) {
+      throw new NotFoundException({
+        message: 'No user matches that input',
+        field: 'account',
+      });
+    }
+
+    if (target.userId === ownerId || target.isCrewFounder) {
       throw new BadRequestException({ message: 'Owner is already a member' });
     }
+    if (target.isCrewMember) {
+      throw new BadRequestException({
+        message: 'User is already a member of this crew',
+      });
+    }
     const existing = await this.prisma.crewMember.findFirst({
-      where: { crewId, userId: input.userId, removedAt: null },
+      where: { crewId, userId: target.userId, removedAt: null },
       select: { id: true },
     });
     if (existing) {
@@ -66,14 +90,14 @@ export class MembersService {
         const m = await tx.crewMember.create({
           data: {
             crewId,
-            userId: input.userId,
+            userId: target.userId,
             roleType: input.roleType,
             via: 'manual',
           },
         });
         await this.notifications.send(
           {
-            userId: input.userId,
+            userId: target.userId,
             type: 'crew.member.added',
             title: `You were added to "${crew.name}"`,
             body: `You're now a ${input.roleType} in this crew.`,

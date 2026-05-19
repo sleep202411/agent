@@ -38,12 +38,68 @@ function toSmallestUnit(displayAmount: number, currency: CurrencyCode): bigint {
 export class PositionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(crewId: string) {
+  async list(crewId: string, viewerId: string | null = null) {
+    const crew = await this.prisma.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { founderId: true },
+    });
+    if (!crew) throw new NotFoundException('Crew not found');
+
+    const canManage = viewerId === crew.founderId;
     const rows = await this.prisma.crewPosition.findMany({
-      where: { crewId, deletedAt: null },
+      where: {
+        crewId,
+        deletedAt: null,
+        ...(canManage ? {} : { status: { not: 'frozen' as const } }),
+      },
       orderBy: { createdAt: 'desc' },
     });
     return rows.map(toPositionDTO);
+  }
+
+  async listPublic(opts: { limit?: number; cursor?: string }) {
+    const limit = clampLimit(opts.limit);
+    const today = new Date(new Date().toISOString().slice(0, 10));
+    const rows = await this.prisma.crewPosition.findMany({
+      where: {
+        deletedAt: null,
+        status: 'open',
+        OR: [{ closeDate: null }, { closeDate: { gte: today } }],
+        crew: { deletedAt: null },
+      },
+      include: {
+        crew: {
+          select: {
+            id: true,
+            name: true,
+            logo: true,
+            tagline: true,
+            genres: true,
+            styles: true,
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+    });
+
+    const page = rows.slice(0, limit);
+    return {
+      items: page.map((row) => ({
+        position: toPositionDTO(row),
+        crew: {
+          id: row.crew.id,
+          name: row.crew.name,
+          logo: row.crew.logo,
+          tagline: row.crew.tagline,
+          genres: row.crew.genres,
+          styles: row.crew.styles,
+        },
+      })),
+      nextCursor:
+        rows.length > limit ? (page[page.length - 1]?.id ?? null) : null,
+    };
   }
 
   async create(crewId: string, ownerId: string, input: CreatePositionInput) {
@@ -210,4 +266,9 @@ export class PositionsService {
     if (!pos) throw new NotFoundException('Position not found');
     return pos;
   }
+}
+
+function clampLimit(raw: number | undefined): number {
+  if (raw == null || !Number.isFinite(raw)) return 48;
+  return Math.min(60, Math.max(1, Math.trunc(raw)));
 }

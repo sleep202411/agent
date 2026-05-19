@@ -1,21 +1,21 @@
 "use client";
 
 /**
- * Add-member dialog — email/phone/userId → live lookup → add.
+ * Add-member dialog — email/phone → live lookup → add.
  *
  * UX flow:
- *   1. User types/pastes an email, phone, or internal userId
- *   2. Debounce 400ms → GET /aurora/users/lookup?{email|phone|userId}=…
+ *   1. User types/pastes an email or phone
+ *   2. Debounce 400ms → GET /aurora/users/lookup?{email|phone}=…
  *      (the hook detects which mode and picks the right query param)
  *   3. Server returns profile PLUS membership context (isCrewMember,
  *      isCrewFounder) so the dialog renders a live preview card in
  *      one roundtrip
  *   4. Submit enabled only when found + not member + not founder
- *   5. Submit → POST /aurora/crews/:crewId/members { userId }
- *      (existing endpoint; server re-checks)
+ *   5. Submit → POST /aurora/crews/:crewId/members { account, roleType }
+ *      and the server resolves the contact again before inserting.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   IconAlertCircle,
   IconCheck,
@@ -72,11 +72,13 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
 
   const { mutateAsync: addMember, isPending: submitting } = useAddCrewMember(crewId);
 
-  useEffect(() => {
-    if (open) return;
-    setQueryInput("");
-    setRoleType("");
-  }, [open]);
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      setQueryInput("");
+      setRoleType("");
+    }
+    onOpenChange(next);
+  };
 
   // Submit gate: must have a found-and-addable user + a role.
   const canSubmit = useMemo(() => {
@@ -90,9 +92,9 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
   const handleSubmit = async () => {
     if (!canSubmit || lookup.kind !== "found") return;
     try {
-      await addMember({ userId: lookup.user.userId, roleType });
+      await addMember({ account: debouncedQuery.trim(), roleType });
       toast.success(t("addMemberSuccess"));
-      onOpenChange(false);
+      handleOpenChange(false);
     } catch (err) {
       if (err instanceof CrewApiError) {
         const detail =
@@ -107,7 +109,7 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="overflow-hidden p-0 sm:max-w-lg">
         <DialogHero
           src={ADD_MEMBER_HERO_URL}
@@ -154,7 +156,7 @@ export function AddCrewMemberDialog({ open, onOpenChange, crewId }: AddCrewMembe
             type="button"
             variant="outline"
             color="muted"
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleOpenChange(false)}
             disabled={submitting}
           >
             {tc("cancel")}

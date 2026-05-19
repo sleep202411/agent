@@ -10,39 +10,53 @@
  * 3-col owner board and gets unmanageably tall at 6 columns. This
  * file owns a discovery-tuned compact variant.
  *
- * Data source today: aggregated demo positions only (real positions
- * arrive once we ship `GET /aurora/positions`).
+ * Data source: real aggregated positions from `GET /aurora/positions`.
  */
 
-import { useMemo } from "react";
 import Link from "next/link";
 import { IconBriefcase, IconCoin, IconMapPin, IconStar } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
-import type { CrewPositionDTO, CurrencyCode } from "@/app/(site)/crews/_hooks/use-crew";
+import type { CrewDTO, CrewPositionDTO, CurrencyCode } from "@/app/(site)/crews/_hooks/use-crew";
 import { CURRENCY_SYMBOLS, ZERO_DECIMAL_CURRENCIES } from "@repo/shared/crew";
-import {
-  getAllDemoPositionsWithCrew,
-  type PositionWithCrew,
-} from "@/app/(site)/crews/_data/demo-crews";
+import { crewApi } from "@/app/(site)/crews/_hooks/api";
+
+interface PositionWithCrew {
+  position: CrewPositionDTO;
+  crew: Pick<CrewDTO, "id" | "name" | "logo" | "tagline" | "genres" | "styles">;
+}
+
+interface PublicPositionsResult {
+  items: PositionWithCrew[];
+  nextCursor: string | null;
+}
 
 export function PositionsTab() {
   const t = useTranslations("crew");
+  const tc = useTranslations("common");
   const locale = useLocale() as Locale;
 
-  const items = useMemo<PositionWithCrew[]>(() => getAllDemoPositionsWithCrew(), []);
+  const { data, isError } = useQuery({
+    queryKey: ["crew", "positions", "public", "first"] as const,
+    queryFn: () => crewApi.get<PublicPositionsResult>("/positions", { query: { limit: 48 } }),
+    staleTime: 60_000,
+  });
+  const items = data?.items ?? [];
 
-  if (items.length === 0) {
+  if (isError || items.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border py-20 text-center">
         <div className="flex size-12 items-center justify-center rounded-full bg-secondary text-muted-foreground">
           <IconBriefcase className="size-5" />
         </div>
-        <p className="text-sm text-muted-foreground">{t("noOpenPositions")}</p>
+        <p className="text-sm text-muted-foreground">
+          {isError ? tc("loadFailed") : t("noOpenPositions")}
+        </p>
       </div>
     );
   }

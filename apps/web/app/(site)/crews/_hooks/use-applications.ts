@@ -12,10 +12,10 @@ import { crewKeys } from "./shared";
 import type { ApplyInput, CrewApplicationDTO } from "./types";
 
 /** Owner-facing inbox — pending first, then recent decisions. */
-export function useCrewApplications(crewId: string | undefined) {
+export function useCrewApplications(crewId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: crewKeys.applications(crewId ?? ""),
-    enabled: !!crewId,
+    enabled: !!crewId && enabled,
     queryFn: () =>
       crewApi.get<CrewApplicationDTO[]>(`/crews/${encodeURIComponent(crewId!)}/applications`),
   });

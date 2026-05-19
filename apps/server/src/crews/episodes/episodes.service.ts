@@ -8,6 +8,7 @@
  */
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -43,35 +44,49 @@ export class EpisodesService {
   ) {
     await this.roles.require(crewId, actorId, ['admin']);
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const last = await tx.episode.findFirst({
-        where: { crewId },
-        orderBy: { number: 'desc' },
-        select: { number: true },
-      });
-      const number = (last?.number ?? 0) + 1;
-      const episode = await tx.episode.create({
-        data: {
-          crewId,
-          number,
-          title: input.title ?? null,
-          description: input.description ?? null,
-          deadline: input.deadline
-            ? new Date(`${input.deadline}T00:00:00Z`)
-            : null,
-        },
-      });
-      await writeActivity(tx, {
-        crewId,
-        episodeId: episode.id,
-        type: 'episode_created',
-        actorUserId: actorId,
-        actorName,
-        payload: { number },
-      });
-      return episode;
-    });
-    return toEpisodeDTO(created);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const created = await this.prisma.$transaction(async (tx) => {
+          const last = await tx.episode.findFirst({
+            where: { crewId },
+            orderBy: { number: 'desc' },
+            select: { number: true },
+          });
+          const number = (last?.number ?? 0) + 1;
+          const episode = await tx.episode.create({
+            data: {
+              crewId,
+              number,
+              title: input.title ?? null,
+              description: input.description ?? null,
+              deadline: input.deadline
+                ? new Date(`${input.deadline}T00:00:00Z`)
+                : null,
+            },
+          });
+          await writeActivity(tx, {
+            crewId,
+            episodeId: episode.id,
+            type: 'episode_created',
+            actorUserId: actorId,
+            actorName,
+            payload: { number },
+          });
+          return episode;
+        });
+        return toEpisodeDTO(created);
+      } catch (err) {
+        if (isUniqueViolation(err) && attempt === 0) continue;
+        if (isUniqueViolation(err)) {
+          throw new ConflictException({
+            message: 'Episode number conflict; retry',
+          });
+        }
+        throw err;
+      }
+    }
+
+    throw new ConflictException({ message: 'Episode number conflict; retry' });
   }
 
   async approve(episodeId: string, actorId: string, actorName: string) {
@@ -133,4 +148,10 @@ export class EpisodesService {
     });
     return toEpisodeDTO(updated);
   }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: string };
+  return e.code === 'P2002';
 }

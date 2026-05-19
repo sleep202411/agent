@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import { useCrewList, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
-import { DEMO_CREWS, isDemoCrew, type DemoCrewDTO } from "@/app/(site)/crews/_data/demo-crews";
 import { PositionsTab } from "@/app/(site)/crews/_components/positions-tab";
 import { PlazaHero } from "@/components/layout/plaza-hero";
 
@@ -32,6 +31,7 @@ type ViewMode = "crews" | "positions";
 export default function CrewsPage() {
   const tCrew = useTranslations("crew");
   const t = useTranslations("crew.list");
+  const tc = useTranslations("common");
   const locale = useLocale() as Locale;
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -47,15 +47,9 @@ export default function CrewsPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = useCrewList(24);
-  // Real crews first, demo fillers after — only padded onto the final
-  // page (i.e. after exhausting the cursor) so we don't visually mix
-  // demos with a page-2 load that hasn't fetched yet.
-  const items = useMemo<(CrewDTO | DemoCrewDTO)[]>(() => {
-    const real = (data?.pages ?? []).flatMap((p) => p.items);
-    if (hasNextPage) return real;
-    return [...real, ...DEMO_CREWS];
-  }, [data, hasNextPage]);
+  const { data, isLoading, isError, isFetchingNextPage, hasNextPage, fetchNextPage } =
+    useCrewList(24);
+  const items = useMemo<CrewDTO[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -106,18 +100,16 @@ export default function CrewsPage() {
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
               {isLoading ? (
                 <CardSkeleton count={10} />
+              ) : isError ? (
+                <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                  {tc("loadFailed")}
+                </div>
               ) : items.length === 0 ? (
                 <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
                   {t("noData")}
                 </div>
               ) : (
-                items.map((c) =>
-                  isDemoCrew(c) ? (
-                    <DemoCrewCard key={c.id} item={c} locale={locale} />
-                  ) : (
-                    <CrewCard key={c.id} item={c} locale={locale} />
-                  )
-                )
+                items.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
               )}
             </div>
 
@@ -359,27 +351,6 @@ function foundedRelative(iso: string): string {
   if (d < 30) return `${d}d`;
   if (d < 365) return `${Math.floor(d / 30)}mo`;
   return `${Math.floor(d / 365)}y`;
-}
-
-/**
- * Demo card — same visual + interaction as CrewCard. Demo ids are
- * intercepted at the `useCrewDetail` / `useCrewPositions` /
- * `useCrewMembers` hooks (see `_data/demo-crews.ts`), so clicking a
- * demo card lands on a fully-populated detail page just like a real
- * crew. No "demo" badge — the tiles look like part of the catalog.
- */
-function DemoCrewCard({ item, locale }: { item: DemoCrewDTO; locale: Locale }) {
-  const router = useRouter();
-  const detailHref = localizePath(`/crews/${item.id}`, locale);
-  return (
-    <button
-      type="button"
-      onClick={() => router.push(detailHref)}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg"
-    >
-      <CrewCardInner item={item} />
-    </button>
-  );
 }
 
 function CardSkeleton({ count }: { count: number }) {

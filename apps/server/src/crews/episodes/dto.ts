@@ -22,7 +22,11 @@ export type CreateEpisodeInput = z.infer<typeof CreateEpisodeSchema>;
 
 export const AddAssignmentSchema = z.object({
   userId: z.string().min(1),
-  positionId: z.string().regex(/^\d+$/).nullable().optional(),
+  positionId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    .nullable()
+    .optional(),
   roleName: z.string().trim().max(64).nullable().optional(),
 });
 export type AddAssignmentInput = z.infer<typeof AddAssignmentSchema>;

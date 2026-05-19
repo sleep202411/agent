@@ -111,6 +111,6 @@ export interface ApplyInput {
 }
 
 export interface AddMemberInput {
-  userId: string;
+  account: string;
   roleType: string;
 }

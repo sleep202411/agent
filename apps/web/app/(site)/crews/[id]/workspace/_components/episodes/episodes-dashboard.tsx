@@ -60,9 +60,7 @@ export function EpisodesDashboard({ crewId, episodes, onJumpToEpisode }: Episode
     queries: episodes.map((ep) => ({
       queryKey: crewKeys.episodeAssignments(crewId, ep.id),
       queryFn: () =>
-        crewApi.get<EpisodeAssignment[]>(
-          `/crews/${encodeURIComponent(crewId)}/episodes/${encodeURIComponent(ep.id)}/assignments`
-        ),
+        crewApi.get<EpisodeAssignment[]>(`/episodes/${encodeURIComponent(ep.id)}/assignments`),
       enabled: !!ep.id,
       staleTime: 30_000,
     })),
