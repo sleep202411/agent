@@ -5,7 +5,7 @@ import { IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCrewEpisodes } from "@/app/(site)/crews/_hooks/use-episodes";
 import { useUserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
-import { EpisodesGrid } from "./episodes-grid";
+import { EpisodesBoard } from "./episodes-board";
 import { AddEpisodeDialog } from "./add-episode-dialog";
 
 interface EpisodesTabProps {
@@ -13,10 +13,9 @@ interface EpisodesTabProps {
 }
 
 /**
- * Crew workspace Episodes tab — card-grid surface with a side-sheet
- * detail drawer. First non-approved episode is highlighted as
- * "current" so the admin's eye lands there. Outsiders see a hint and
- * nothing else.
+ * Crew workspace Episodes tab — accordion production-board with
+ * per-episode expansion. First non-approved episode is "current",
+ * highlighted and pre-expanded. Outsiders are gated at the entry.
  */
 export function EpisodesTab({ crewId }: EpisodesTabProps) {
   const t = useTranslations("workspace");
@@ -50,11 +49,10 @@ export function EpisodesTab({ crewId }: EpisodesTabProps) {
 
   return (
     <>
-      <EpisodesGrid
+      <EpisodesBoard
         crewId={crewId}
         episodes={episodes}
         currentId={currentId}
-        isAdmin={viewer.isAdmin}
         viewer={viewer}
         onAddEpisode={() => setAddOpen(true)}
       />

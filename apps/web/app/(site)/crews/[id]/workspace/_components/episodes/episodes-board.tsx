@@ -1,46 +1,60 @@
 "use client";
 
 /**
- * Episodes tab content — card grid + filter chips + detail sheet.
+ * Episodes tab content — accordion-style production board.
  *
- * Filter chips at top with counts per status. Cards in a responsive
- * 1/2/3 column grid. Clicking a card opens EpisodeDetailSheet on the
- * right with full info (brief, assignments table, activity log).
+ * Episodes are inherently sequential (EP01 → EP02 → …), so an
+ * accordion preserves that linear flow better than a card grid.
+ * Filter chips at the top let admins narrow to a single status when
+ * the board grows beyond what fits in one screen.
+ *
+ * Multiple items can be expanded simultaneously (admins frequently
+ * coordinate across two adjacent episodes). The "current" episode —
+ * first non-approved — is expanded by default the first time the
+ * board renders.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconMovie, IconPlus } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { type Episode, type EpisodeStatus } from "@/app/(site)/crews/_hooks/use-episodes";
 import type { UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
-import { EpisodeCard } from "./episode-card";
-import { EpisodeDetailSheet } from "./episode-detail-sheet";
+import { EpisodeAccordionItem } from "./episode-accordion-item";
 
 type FilterKey = "all" | EpisodeStatus;
 
-interface EpisodesGridProps {
+interface EpisodesBoardProps {
   crewId: string;
   episodes: Episode[];
-  /** First non-approved episode id — gets the "current" highlight. */
+  /** First non-approved episode id — gets the "current" highlight and
+   *  starts expanded the first time the board renders. */
   currentId: string | null;
-  isAdmin: boolean;
   viewer: UserCrewRole;
   onAddEpisode: () => void;
 }
 
-export function EpisodesGrid({
+export function EpisodesBoard({
   crewId,
   episodes,
   currentId,
-  isAdmin,
   viewer,
   onAddEpisode,
-}: EpisodesGridProps) {
+}: EpisodesBoardProps) {
   const t = useTranslations("workspace");
   const [filter, setFilter] = useState<FilterKey>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Set of expanded episode ids. Auto-expand the current episode on
+  // first render, but never auto-expand on subsequent renders so the
+  // user's manual expand/collapse choices stick across data refetches.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [didInit, setDidInit] = useState(false);
+  useEffect(() => {
+    if (didInit || episodes.length === 0) return;
+    if (currentId) setExpandedIds(new Set([currentId]));
+    setDidInit(true);
+  }, [currentId, didInit, episodes.length]);
 
   const counts = useMemo(() => {
     const c = { all: episodes.length, not_started: 0, in_production: 0, approved: 0 };
@@ -53,44 +67,61 @@ export function EpisodesGrid({
     return episodes.filter((e) => e.status === filter);
   }, [episodes, filter]);
 
-  const selected = episodes.find((e) => e.id === selectedId) ?? null;
+  const toggleExpanded = (id: string) =>
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
     <div className="space-y-4">
       {/* Header: filter chips + add CTA */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <FilterTabs filter={filter} onChange={setFilter} counts={counts} t={t} />
-        {isAdmin ? (
-          <Button variant="soft" color="primary" size="sm" onClick={onAddEpisode}>
-            <IconPlus className="size-3.5" /> {t("addEpisode")}
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {episodes.length > 1 ? (
+            <Button
+              variant="ghost"
+              color="muted"
+              size="sm"
+              onClick={() =>
+                setExpandedIds(
+                  expandedIds.size === filtered.length
+                    ? new Set()
+                    : new Set(filtered.map((e) => e.id))
+                )
+              }
+            >
+              {expandedIds.size === filtered.length ? t("collapseAll") : t("expandAll")}
+            </Button>
+          ) : null}
+          {viewer.isAdmin ? (
+            <Button variant="soft" color="primary" size="sm" onClick={onAddEpisode}>
+              <IconPlus className="size-3.5" /> {t("addEpisode")}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState filter={filter} onAddEpisode={onAddEpisode} isAdmin={isAdmin} t={t} />
+        <EmptyState filter={filter} onAddEpisode={onAddEpisode} isAdmin={viewer.isAdmin} t={t} />
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="space-y-3">
           {filtered.map((ep) => (
-            <EpisodeCard
+            <EpisodeAccordionItem
               key={ep.id}
               crewId={crewId}
               episode={ep}
               isCurrent={ep.id === currentId}
-              onClick={() => setSelectedId(ep.id)}
+              expanded={expandedIds.has(ep.id)}
+              onToggle={() => toggleExpanded(ep.id)}
+              viewer={viewer}
             />
           ))}
         </div>
       )}
-
-      <EpisodeDetailSheet
-        crewId={crewId}
-        episode={selected}
-        viewer={viewer}
-        onOpenChange={(open) => {
-          if (!open) setSelectedId(null);
-        }}
-      />
     </div>
   );
 }
