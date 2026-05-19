@@ -13,6 +13,13 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "32m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Fail fast on stale upstreams. Default proxy-connect-timeout is 5s,
+    # so during a rollout (when the EndpointSlice update races with
+    # ingress-nginx's internal upstream cache) every request blocks 5s
+    # on the dead pod IP before retrying the live one. Cluster-internal
+    # connects complete in <100ms; 2s is generous but still bounds the
+    # user-visible blip to a fraction of the old behaviour.
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "2"
     {{- if $entry.rewriteTarget }}
     nginx.ingress.kubernetes.io/rewrite-target: {{ $entry.rewriteTarget | quote }}
     nginx.ingress.kubernetes.io/use-regex: "true"
@@ -54,6 +61,8 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "32m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # See main ingress block above for rationale.
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "2"
     nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/use-regex: "true"
     {{- if $entry.certManager }}
