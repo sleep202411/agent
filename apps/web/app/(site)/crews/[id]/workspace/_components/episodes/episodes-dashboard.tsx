@@ -5,14 +5,16 @@
  *
  * Renders three at-a-glance panels for admins and finance:
  *
- *   1. **Episode heatmap** — each episode as a colored cell (status-
- *      tinted, with approval-progress overlay). Lets the admin spot
- *      bottlenecks across the whole production at a glance.
+ *   1. **Member × Episode heatmap** — the production board.
+ *      Each row is a crew member, each column is an episode, each
+ *      cell is the member's assignment status on that episode.
+ *      Approved/Submitted/In Progress/Rejected/Unassigned all
+ *      have distinct tints so admins can spot "X is blocking EP05"
+ *      in one glance. Clicking any cell expands the corresponding
+ *      episode in the accordion below.
  *   2. **Pending approvals** — count + jump-to badge for episodes
  *      with submissions awaiting review.
- *   3. **Revenue tally** — cumulative revenue grouped by currency
- *      (finance gets the most utility, but admins see it too so they
- *      know the production's running totals).
+ *   3. **Revenue tally** — cumulative revenue grouped by currency.
  *
  * Implementation note: aggregation is pure client-side. We call
  * `useQueries` over the existing per-episode assignments endpoint —
@@ -25,12 +27,19 @@
 
 import { useMemo } from "react";
 import { useQueries, type UseQueryResult } from "@tanstack/react-query";
-import { IconChartBar, IconCoin, IconHourglass, IconLayoutGrid } from "@tabler/icons-react";
+import { IconCoin, IconCrown, IconHourglass, IconLayoutGrid } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import { crewKeys } from "@/app/(site)/crews/_hooks/shared";
-import { type Episode, type EpisodeAssignment } from "@/app/(site)/crews/_hooks/use-episodes";
+import { useCrewMembers, type CrewMemberDTO } from "@/app/(site)/crews/_hooks/use-crew";
+import {
+  type AssignmentStatus,
+  type Episode,
+  type EpisodeAssignment,
+} from "@/app/(site)/crews/_hooks/use-episodes";
+import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { CURRENCY_SYMBOLS, ZERO_DECIMAL_CURRENCIES, type CurrencyCode } from "@repo/shared/crew";
 
 interface EpisodesDashboardProps {
@@ -38,6 +47,8 @@ interface EpisodesDashboardProps {
   episodes: Episode[];
   onJumpToEpisode: (episodeId: string) => void;
 }
+
+type AssignmentQuery = UseQueryResult<EpisodeAssignment[], Error>;
 
 export function EpisodesDashboard({ crewId, episodes, onJumpToEpisode }: EpisodesDashboardProps) {
   const t = useTranslations("workspace");
@@ -55,13 +66,12 @@ export function EpisodesDashboard({ crewId, episodes, onJumpToEpisode }: Episode
       enabled: !!ep.id,
       staleTime: 30_000,
     })),
-  });
+  }) as AssignmentQuery[];
 
   const aggregate = useMemo(() => {
     let totalAssignments = 0;
     let totalApproved = 0;
     let totalPending = 0;
-    let totalInProgress = 0;
     const pendingByEpisode: { episodeId: string; episodeNumber: number; count: number }[] = [];
     const revenueByCurrency = new Map<CurrencyCode, number>();
 
@@ -75,9 +85,6 @@ export function EpisodesDashboard({ crewId, episodes, onJumpToEpisode }: Episode
         if (a.status === "submitted") {
           totalPending += 1;
           epPending += 1;
-        }
-        if (a.status === "in_progress" || a.status === "rejected") {
-          totalInProgress += 1;
         }
         if (a.revenue) {
           const cur = a.revenue.currency;
@@ -93,7 +100,6 @@ export function EpisodesDashboard({ crewId, episodes, onJumpToEpisode }: Episode
       totalAssignments,
       totalApproved,
       totalPending,
-      totalInProgress,
       pendingByEpisode,
       revenueByCurrency: Array.from(revenueByCurrency.entries()).sort((a, b) => b[1] - a[1]),
     };
@@ -103,7 +109,7 @@ export function EpisodesDashboard({ crewId, episodes, onJumpToEpisode }: Episode
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-      {/* Episode heatmap (spans 2 cols on wide screens) */}
+      {/* Member × Episode heatmap (spans 2 cols on wide screens) */}
       <div className="rounded-xl bg-card p-4 lg:col-span-2">
         <DashboardHeader
           icon={IconLayoutGrid}
@@ -113,9 +119,10 @@ export function EpisodesDashboard({ crewId, episodes, onJumpToEpisode }: Episode
             total: aggregate.totalAssignments,
           })}
         />
-        <Heatmap
+        <HeatmapMatrix
+          crewId={crewId}
           episodes={episodes}
-          queries={queries as AssignmentQuery[]}
+          queries={queries}
           onJumpToEpisode={onJumpToEpisode}
           t={t}
         />
@@ -183,57 +190,233 @@ export function EpisodesDashboard({ crewId, episodes, onJumpToEpisode }: Episode
   );
 }
 
-// ─── Heatmap ───────────────────────────────────────────
+// ─── Heatmap matrix ───────────────────────────────────
 
-type AssignmentQuery = UseQueryResult<EpisodeAssignment[], Error>;
-
-function Heatmap({
+/**
+ * Real production heatmap — rows are crew members (founder first,
+ * then by joinedAt asc), cols are episodes by number, cells encode
+ * assignment status. Empty cells = "unassigned" so the grid is
+ * fully populated and the eye can sweep horizontally to find a
+ * blocked row, or vertically to find a blocked episode.
+ */
+function HeatmapMatrix({
+  crewId,
   episodes,
   queries,
   onJumpToEpisode,
   t,
 }: {
+  crewId: string;
   episodes: Episode[];
   queries: AssignmentQuery[];
   onJumpToEpisode: (episodeId: string) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const { data: members = [] } = useCrewMembers(crewId);
+  const memberIds = useMemo(() => members.map((m) => m.userId), [members]);
+  const displays = useUserDisplays(memberIds);
+  const translatePosition = useTranslatePositionValue();
+
+  // Sort members: founder first, then by joinedAt ascending.
+  const orderedMembers = useMemo(() => {
+    const founder = members.find((m) => m.via === "founder") ?? null;
+    const rest = members
+      .filter((m) => m.via !== "founder")
+      .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt));
+    return founder ? [founder, ...rest] : rest;
+  }, [members]);
+
+  // (userId, episodeId) → assignment lookup.
+  const assignmentMap = useMemo(() => {
+    const m = new Map<string, AssignmentStatus>();
+    for (let i = 0; i < episodes.length; i++) {
+      const epId = episodes[i].id;
+      const assignments = queries[i]?.data ?? [];
+      for (const a of assignments) m.set(`${a.userId}:${epId}`, a.status);
+    }
+    return m;
+  }, [episodes, queries]);
+
+  if (orderedMembers.length === 0) {
+    return (
+      <div className="rounded-lg bg-secondary/40 px-3 py-4 text-center text-xs text-muted-foreground">
+        {t("heatmapNoMembers")}
+      </div>
+    );
+  }
+
+  // CSS grid — sticky leading column for member names so wide
+  // productions (20+ episodes) scroll horizontally without losing
+  // the row label.
+  const cols = `minmax(140px, 180px) repeat(${episodes.length}, minmax(36px, 1fr))`;
+
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {episodes.map((ep, i) => {
-        const assignments = queries[i]?.data ?? [];
-        const total = assignments.length;
-        const approved = assignments.filter((a) => a.status === "approved").length;
-        const pct = total > 0 ? approved / total : 0;
-        const tint = cellTint(ep.status, pct);
-        const tooltip = `${t("episodeLabel", { number: ep.number })} · ${total > 0 ? `${approved}/${total}` : t("rowNoAssignments")}`;
-        return (
-          <button
-            key={ep.id}
-            type="button"
-            onClick={() => onJumpToEpisode(ep.id)}
-            title={tooltip}
-            className={cn(
-              "group relative flex size-8 items-center justify-center rounded-md text-[10px] font-bold tabular-nums transition-all hover:scale-110",
-              tint
-            )}
-          >
-            {ep.number.toString().padStart(2, "0")}
-          </button>
-        );
-      })}
+    <div className="space-y-3">
+      {/* Legend */}
+      <Legend t={t} />
+
+      {/* Matrix */}
+      <div className="overflow-x-auto">
+        <div
+          role="table"
+          aria-label={t("dashboardHeatmapTitle")}
+          className="grid w-full gap-1 text-xs"
+          style={{ gridTemplateColumns: cols }}
+        >
+          {/* Header row: empty corner + episode numbers */}
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {t("memberAssignmentsLabel")}
+          </div>
+          {episodes.map((ep) => (
+            <button
+              key={ep.id}
+              type="button"
+              onClick={() => onJumpToEpisode(ep.id)}
+              className="flex h-7 items-center justify-center rounded-md bg-secondary/50 px-1 text-[10px] font-semibold tabular-nums text-foreground transition-colors hover:bg-secondary"
+              title={ep.title || t("episodeLabel", { number: ep.number })}
+            >
+              {ep.number.toString().padStart(2, "0")}
+            </button>
+          ))}
+
+          {/* Data rows — one per member */}
+          {orderedMembers.map((member) => (
+            <MatrixRow
+              key={member.id}
+              member={member}
+              episodes={episodes}
+              assignmentMap={assignmentMap}
+              displayName={displayNameOf(member.userId, displays)}
+              rolePretty={
+                member.via === "founder" ? t("memberRoleOwner") : translatePosition(member.roleType)
+              }
+              onJumpToEpisode={onJumpToEpisode}
+              t={t}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
-function cellTint(status: Episode["status"], pct: number): string {
-  if (status === "approved") return "bg-green-400/30 text-green-300";
-  if (status === "in_production") {
-    if (pct >= 1) return "bg-blue-400/30 text-blue-300";
-    if (pct >= 0.5) return "bg-amber-400/30 text-amber-300";
-    return "bg-amber-400/15 text-amber-400";
-  }
-  return "bg-secondary text-muted-foreground";
+function MatrixRow({
+  member,
+  episodes,
+  assignmentMap,
+  displayName,
+  rolePretty,
+  onJumpToEpisode,
+  t,
+}: {
+  member: CrewMemberDTO;
+  episodes: Episode[];
+  assignmentMap: Map<string, AssignmentStatus>;
+  displayName: string;
+  rolePretty: string;
+  onJumpToEpisode: (episodeId: string) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const isFounder = member.via === "founder";
+  return (
+    <>
+      {/* Row label cell — member name + role */}
+      <div className="flex min-w-0 items-center gap-2 pr-2">
+        {isFounder ? <IconCrown className="size-3 shrink-0 text-primary" /> : null}
+        <div className="min-w-0">
+          <div className="truncate text-xs font-medium text-foreground">{displayName}</div>
+          <div className="truncate text-[10px] text-muted-foreground">{rolePretty}</div>
+        </div>
+      </div>
+      {/* Cells for each episode */}
+      {episodes.map((ep) => {
+        const status = assignmentMap.get(`${member.userId}:${ep.id}`) ?? null;
+        return (
+          <HeatCell
+            key={ep.id}
+            status={status}
+            label={t("episodeLabel", { number: ep.number })}
+            displayName={displayName}
+            t={t}
+            onClick={() => onJumpToEpisode(ep.id)}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+function HeatCell({
+  status,
+  label,
+  displayName,
+  t,
+  onClick,
+}: {
+  status: AssignmentStatus | null;
+  label: string;
+  displayName: string;
+  t: ReturnType<typeof useTranslations>;
+  onClick: () => void;
+}) {
+  const visual = CELL_VISUAL[status ?? "unassigned"];
+  const statusLabel =
+    status == null
+      ? t("heatmapStatusUnassigned")
+      : t(`assignmentStatus${capitalize(status)}` as Parameters<typeof t>[0]);
+  const tooltip = `${displayName} · ${label} · ${statusLabel}`;
+  return (
+    <button
+      type="button"
+      title={tooltip}
+      aria-label={tooltip}
+      onClick={onClick}
+      className={cn(
+        "h-7 rounded-md text-[10px] font-bold transition-all hover:scale-110 hover:shadow-sm",
+        visual
+      )}
+    >
+      {status === "rejected" ? "✗" : status === "submitted" ? "▲" : null}
+    </button>
+  );
+}
+
+// `assignmentStatus*` keys are PascalCase suffixes on the existing
+// status translations; this tiny helper avoids hand-mapping each
+// status string twice.
+function capitalize(s: string): string {
+  return s
+    .split("_")
+    .map((p) => p[0].toUpperCase() + p.slice(1))
+    .join("");
+}
+
+const CELL_VISUAL: Record<AssignmentStatus | "unassigned", string> = {
+  approved: "bg-green-400/60 text-green-950 hover:bg-green-400/80",
+  submitted: "bg-blue-400/55 text-blue-950 hover:bg-blue-400/75",
+  in_progress: "bg-amber-400/45 text-amber-950 hover:bg-amber-400/65",
+  rejected: "bg-rose-400/60 text-rose-950 hover:bg-rose-400/80",
+  unassigned: "bg-secondary/40 text-muted-foreground hover:bg-secondary/70",
+};
+
+function Legend({ t }: { t: ReturnType<typeof useTranslations> }) {
+  const items: { key: AssignmentStatus | "unassigned"; labelKey: string }[] = [
+    { key: "approved", labelKey: "assignmentStatusApproved" },
+    { key: "submitted", labelKey: "assignmentStatusSubmitted" },
+    { key: "in_progress", labelKey: "assignmentStatusInProgress" },
+    { key: "rejected", labelKey: "assignmentStatusRejected" },
+    { key: "unassigned", labelKey: "heatmapStatusUnassigned" },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+      {items.map((it) => (
+        <span key={it.key} className="inline-flex items-center gap-1.5">
+          <span className={cn("size-2.5 rounded-sm", CELL_VISUAL[it.key])} />
+          {t(it.labelKey)}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 // ─── Revenue chip ──────────────────────────────────────
@@ -276,7 +459,7 @@ function DashboardHeader({
   title,
   subtitle,
 }: {
-  icon: typeof IconChartBar;
+  icon: typeof IconLayoutGrid;
   title: string;
   subtitle: string;
 }) {
