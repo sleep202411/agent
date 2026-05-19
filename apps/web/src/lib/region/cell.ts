@@ -50,3 +50,36 @@ export function allowedCurrenciesForCell(): readonly CurrencyCode[] {
 export function defaultCurrencyForCell(): CurrencyCode {
   return CURRENT_CELL === "cn" ? "CNY" : "USD";
 }
+
+// ─── FizzStudio entry routing ──────────────────────────
+//
+// Some cells run a dedicated subdomain for the studio (proxy at
+// that host rewrites `/` → `/art-studio`, so the URL stays clean).
+// Other cells don't yet — the apex path is the canonical entry.
+// Both behaviors are driven by the `NEXT_PUBLIC_STUDIO_HOST` env so
+// there's no per-cell branching here.
+
+import { env } from "@/src/env";
+
+/**
+ * Where the "进入 FizzStudio" nav button should point for a given
+ * locale.
+ *
+ *   STUDIO_HOST set    → `https://${STUDIO_HOST}/{locale}`
+ *                        (subdomain's root rewrites to /art-studio)
+ *   STUDIO_HOST empty  → `/{locale}/art-studio`
+ *                        (apex path — works on every cell)
+ *
+ * Returns an absolute URL in the subdomain case and a relative path
+ * otherwise — the consumer just feeds it to `href` and the browser
+ * does the right thing.
+ *
+ * See `STUDIO_HOST` in `src/env.ts` for the cookie caveat before
+ * enabling the subdomain route in production.
+ */
+export function getStudioHref(locale: string): string {
+  if (env.STUDIO_HOST) {
+    return `https://${env.STUDIO_HOST}/${locale}`;
+  }
+  return `/${locale}/art-studio`;
+}
