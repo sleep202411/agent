@@ -56,6 +56,15 @@ COPY --from=builder /app/apps/server/dist ./apps/server/dist
 COPY --from=builder /app/apps/server/prisma ./apps/server/prisma
 COPY --from=builder /app/apps/server/prisma.config.ts ./apps/server/prisma.config.ts
 
+# Prisma CLI may refresh engine files during `migrate deploy`. The
+# container runs as the unprivileged `nestjs` user, so keep Prisma-owned
+# runtime assets writable by that user instead of failing at startup.
+RUN chown -R nestjs:nodejs \
+    /app/node_modules/@prisma \
+    /app/node_modules/.prisma \
+    /app/apps/server/prisma \
+    /app/apps/server/prisma.config.ts
+
 USER nestjs
 
 WORKDIR /app/apps/server
