@@ -29,6 +29,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
 import { WebPubSubService } from '../infra/realtime/web-pubsub.service';
 import { toAiJobEvent } from './job-event';
@@ -72,6 +73,7 @@ export class AiGenerationOutboxService
     const event = toAiJobEvent(job);
     const row = await this.prisma.aiEventOutbox.create({
       data: {
+        id: newShortId(),
         jobId: job.id,
         userId: job.userId,
         eventType: 'job_update',
@@ -105,13 +107,7 @@ export class AiGenerationOutboxService
       const now = new Date();
       const lockCutoff = new Date(now.getTime() - LOCK_TTL_MS);
 
-      // Claim a batch of pending rows under our lock. updateMany +
-      // returning isn't a Prisma primitive, so we do it in two steps:
-      // (1) update rows we'd like → set lockedAt/lockedBy
-      // (2) fetch the rows we just locked
-      // The race is benign: another pod may pick OTHER rows between
-      // (1) and (2), but never the ones we marked.
-      const claimRes = await this.prisma.aiEventOutbox.updateMany({
+      const candidates = await this.prisma.aiEventOutbox.findMany({
         where: {
           dispatchedAt: null,
           deadAt: null,
@@ -125,18 +121,38 @@ export class AiGenerationOutboxService
             },
           ],
         },
-        data: { lockedAt: now, lockedBy: POD_ID },
+        orderBy: { createdAt: 'asc' },
+        take: DISPATCH_BATCH,
+        select: { id: true },
       });
 
-      if (claimRes.count === 0) {
+      if (candidates.length === 0) {
         await this.gc();
         return;
       }
 
+      const candidateIds = candidates.map((row) => row.id);
+      await this.prisma.aiEventOutbox.updateMany({
+        where: {
+          id: { in: candidateIds },
+          dispatchedAt: null,
+          deadAt: null,
+          OR: [
+            { lockedAt: null },
+            { lockedAt: { lt: lockCutoff } }, // stale lock — reclaim
+          ],
+        },
+        data: { lockedAt: now, lockedBy: POD_ID },
+      });
+
       const rows = await this.prisma.aiEventOutbox.findMany({
-        where: { lockedBy: POD_ID, dispatchedAt: null, deadAt: null },
+        where: {
+          id: { in: candidateIds },
+          lockedBy: POD_ID,
+          dispatchedAt: null,
+          deadAt: null,
+        },
         orderBy: { createdAt: 'asc' },
-        take: DISPATCH_BATCH,
       });
 
       for (const row of rows) {

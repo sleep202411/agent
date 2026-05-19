@@ -89,6 +89,18 @@ const SalarySchema = z
     path: ['currency'],
   });
 
+const ExpectedCompensationSchema = z
+  .object({
+    /// Display unit (yuan / dollar / yen). Server converts to smallest unit.
+    amount: z.number().min(0).max(100_000_000).nullable().optional(),
+    currency: z.enum(ALL_CURRENCIES).nullable().optional(),
+    period: z.enum(SALARY_PERIODS).nullable().optional(),
+  })
+  .refine((v) => v.amount == null || v.currency != null, {
+    message: 'expectedCompensation.currency required when amount is set',
+    path: ['currency'],
+  });
+
 const PositionBaseSchema = z.object({
   positionType: presetPosition,
   description: z.string().trim().min(1).max(1000),
@@ -134,7 +146,9 @@ export const ApplySchema = z.object({
     .max(512)
     .nullable()
     .optional(),
-  /// Yuan from the UI — converted to 分 server-side.
+  expectedCompensation: ExpectedCompensationSchema.nullable().optional(),
+  /// Legacy CN-only field. Kept temporarily so old clients/cached bundles
+  /// keep working; new clients should send expectedCompensation.
   expectedSalary: z
     .number()
     .int()

@@ -2618,6 +2618,7 @@
     "salaryPeriodMonth": "月薪",
     "salaryPeriodEpisode": "集酬",
     "salaryPeriodProject": "项目费",
+    "salaryCurrency": "币种",
     "salaryCurrencyCNY": "元",
     "createJobSubmit": "发布",
     "createJobSubmitting": "发布中...",

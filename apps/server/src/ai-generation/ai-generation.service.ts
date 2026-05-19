@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
+import { newShortId } from '../common/id';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationEtaService } from './eta.service';
 import { AiGenerationRepository } from './repository';
@@ -161,10 +162,10 @@ export class AiGenerationService {
     await this.assertUserQueueLimit(user.userId, model);
 
     const now = new Date().toISOString();
-    // Generated app-side (matches schema `@default(uuid())`) so we
-    // know the id before insert — needed to enqueue BullMQ + emit
-    // the optimistic queued push before save() resolves.
-    const id = randomUUID();
+    // Generated app-side so we know the id before insert — needed to
+    // enqueue BullMQ + emit the optimistic queued push before save()
+    // resolves. Keep it short because this id appears in URLs/logs.
+    const id = newShortId();
     const queueName = model.queue.queueName;
     const queuePosition = (await this.store.waitingInQueue(queueName)).length;
     const estimate = this.eta.estimateForNewJob(

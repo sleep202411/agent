@@ -55,7 +55,14 @@ export {
 
 // ─── Input shapes (controllers' Zod-validated body types) ─────
 
-import type { CrewGenre, CrewStyle, SocialLink, ShowcaseWork } from "@repo/shared/crew";
+import type {
+  CrewGenre,
+  CrewStyle,
+  CurrencyCode,
+  SalaryPeriod,
+  SocialLink,
+  ShowcaseWork,
+} from "@repo/shared/crew";
 
 export interface CreateCrewInput {
   name: string;
@@ -103,7 +110,13 @@ export interface UpdatePositionInput extends Partial<CreatePositionInput> {
 export interface ApplyInput {
   message?: string | null;
   portfolioUrl?: string | null;
-  /** Yuan. */
+  /** New shape: display amount + ISO currency; server stores smallest unit. */
+  expectedCompensation?: {
+    amount?: number | null;
+    currency?: CurrencyCode | null;
+    period?: SalaryPeriod | null;
+  } | null;
+  /** Legacy CN-only yuan field. Kept for compatibility; prefer expectedCompensation. */
   expectedSalary?: number | null;
   /** YYYY-MM-DD. */
   availableStartDate?: string | null;

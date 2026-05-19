@@ -245,8 +245,12 @@ export interface CrewApplicationDTO {
   message: string | null;
   /** Optional external link (LinkedIn / Behance / personal site). */
   portfolioUrl: string | null;
-  /** Applicant's expected salary in CNY 分. */
-  expectedSalaryCents: number | null;
+  /** Applicant's expected compensation in smallest currency unit. */
+  expectedCompensation: {
+    amount: number;
+    currency: CurrencyCode;
+    period: SalaryPeriod | null;
+  } | null;
   /** Earliest start date (YYYY-MM-DD). */
   availableStartDate: string | null;
   yearsExperience: number | null;

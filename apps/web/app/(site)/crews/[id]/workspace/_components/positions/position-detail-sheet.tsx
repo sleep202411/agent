@@ -47,7 +47,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  CURRENCY_SYMBOLS,
   CrewApiError,
+  ZERO_DECIMAL_CURRENCIES,
   useApproveApplication,
   useCrewApplications,
   useDeletePosition,
@@ -55,6 +57,7 @@ import {
   useUpdatePosition,
   type CrewApplicationDTO,
   type CrewPositionDTO,
+  type CurrencyCode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { employmentTypeKey, experienceKey, formatSalaryString, workModeKey } from "./position-meta";
@@ -484,9 +487,6 @@ function ApplicantRow({
     (approve.isPending && approve.variables === applicant.id) ||
     (reject.isPending && reject.variables === applicant.id);
 
-  const formatCents = (cents: number) =>
-    cents >= 100_000 ? `${Math.round(cents / 1000) / 100}K` : `${cents / 100}`;
-
   // Borderless per DESIGN.md — bg-secondary lifts the row enough.
   return (
     <div className="rounded-lg bg-secondary/40 p-2.5">
@@ -500,9 +500,13 @@ function ApplicantRow({
             {applicant.yearsExperience != null ? (
               <Tag>{t("applicantYears", { count: applicant.yearsExperience })}</Tag>
             ) : null}
-            {applicant.expectedSalaryCents != null ? (
+            {applicant.expectedCompensation ? (
               <Tag highlight>
-                {t("applicantExpected")} ¥{formatCents(applicant.expectedSalaryCents)}
+                {t("applicantExpected")}{" "}
+                {formatMoney(
+                  applicant.expectedCompensation.amount,
+                  applicant.expectedCompensation.currency
+                )}
               </Tag>
             ) : null}
           </div>
@@ -588,6 +592,15 @@ function Tag({ children, highlight }: { children: React.ReactNode; highlight?: b
       {children}
     </span>
   );
+}
+
+function formatMoney(amount: number, currency: CurrencyCode): string {
+  const display = ZERO_DECIMAL_CURRENCIES.has(currency) ? amount : amount / 100;
+  const compact =
+    display >= 1000
+      ? `${(display / 1000).toFixed(display % 1000 === 0 ? 0 : 1)}K`
+      : String(display);
+  return `${CURRENCY_SYMBOLS[currency]}${compact}`;
 }
 
 function surfaceErr(err: unknown, fallback: string) {

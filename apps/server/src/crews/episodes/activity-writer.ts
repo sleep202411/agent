@@ -8,6 +8,7 @@
  */
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type { EpisodeActivityType } from '@repo/shared/crew';
+import { newCrewDomainId } from '../id';
 
 type TxClient = Prisma.TransactionClient | PrismaClient;
 
@@ -26,6 +27,7 @@ export async function writeActivity(
 ): Promise<void> {
   await db.episodeActivity.create({
     data: {
+      id: newCrewDomainId(),
       crewId: args.crewId,
       episodeId: args.episodeId,
       type: args.type,

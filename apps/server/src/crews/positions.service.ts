@@ -18,21 +18,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ZERO_DECIMAL_CURRENCIES, type CurrencyCode } from '@repo/shared/crew';
 import { PrismaService } from '../infra/db/db.module';
-import { assertAllowedCurrency } from './currency';
+import {
+  assertAllowedCurrency,
+  toSmallestUnit,
+  type CurrencyCode,
+} from './currency';
 import type { CreatePositionInput, UpdatePositionInput } from './dto';
+import { newCrewDomainId } from './id';
 import { toPositionDTO } from './mappers';
-
-/** Display unit → smallest currency unit (CNY 分 / USD cents / JPY yen).
- *  JPY (and other zero-decimal currencies) store the integer as-is;
- *  everything else multiplies by 100. */
-function toSmallestUnit(displayAmount: number, currency: CurrencyCode): bigint {
-  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency);
-  return BigInt(
-    Math.round(isZeroDecimal ? displayAmount : displayAmount * 100),
-  );
-}
 
 @Injectable()
 export class PositionsService {
@@ -108,6 +102,7 @@ export class PositionsService {
     const ccy = (input.salary?.currency ?? null) as CurrencyCode | null;
     const row = await this.prisma.crewPosition.create({
       data: {
+        id: newCrewDomainId(),
         crewId,
         positionType: input.positionType,
         description: input.description,

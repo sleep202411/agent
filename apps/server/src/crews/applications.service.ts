@@ -25,7 +25,14 @@ import {
 import type { CrewApplication } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
+import {
+  assertAllowedCurrency,
+  defaultCurrency,
+  toSmallestUnit,
+  type CurrencyCode,
+} from './currency';
 import type { ApplyInput } from './dto';
+import { newCrewDomainId } from './id';
 import { toApplicationDTO } from './mappers';
 
 @Injectable()
@@ -85,20 +92,24 @@ export class ApplicationsService {
       });
     }
 
+    const expected = normalizeExpectedCompensation(input);
+    assertAllowedCurrency(expected?.currency, 'expectedCompensation.currency');
+
     try {
       const created = await this.prisma.$transaction(async (tx) => {
         const app = await tx.crewApplication.create({
           data: {
+            id: newCrewDomainId(),
             crewId,
             positionId,
             applicantId,
             message: input.message ?? null,
             portfolioUrl: input.portfolioUrl ?? null,
-            // Yuan → 分.
-            expectedSalaryCents:
-              input.expectedSalary != null
-                ? BigInt(input.expectedSalary * 100)
-                : null,
+            expectedCompensationAmount: expected
+              ? toSmallestUnit(expected.amount, expected.currency)
+              : null,
+            expectedCompensationCurrency: expected?.currency ?? null,
+            expectedCompensationPeriod: expected?.period ?? null,
             availableStartDate: input.availableStartDate
               ? new Date(`${input.availableStartDate}T00:00:00Z`)
               : null,
@@ -232,6 +243,7 @@ export class ApplicationsService {
           // a new active row, preserving the history.
           await tx.crewMember.create({
             data: {
+              id: newCrewDomainId(),
               crewId: app.crewId,
               userId: app.applicantId,
               roleType: app.position.positionType,
@@ -288,6 +300,31 @@ export class ApplicationsService {
       });
     }
   }
+}
+
+function normalizeExpectedCompensation(input: ApplyInput): {
+  amount: number;
+  currency: CurrencyCode;
+  period: 'month' | 'episode' | 'project' | null;
+} | null {
+  const next = input.expectedCompensation;
+  if (next?.amount != null) {
+    return {
+      amount: next.amount,
+      currency: (next.currency ?? defaultCurrency()) as CurrencyCode,
+      period: next.period ?? null,
+    };
+  }
+
+  if (input.expectedSalary != null) {
+    return {
+      amount: input.expectedSalary,
+      currency: 'CNY',
+      period: null,
+    };
+  }
+
+  return null;
 }
 
 function isUniqueViolation(err: unknown): boolean {

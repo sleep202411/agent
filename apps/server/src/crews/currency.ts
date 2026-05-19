@@ -14,6 +14,7 @@
  */
 
 import { BadRequestException } from '@nestjs/common';
+import { ZERO_DECIMAL_CURRENCIES } from '@repo/shared/crew';
 import { CURRENT_CELL } from '../common/region';
 
 export const ALL_CURRENCIES = [
@@ -71,4 +72,15 @@ export function assertAllowedCurrency(
       allowed,
     });
   }
+}
+
+/** Display unit → smallest currency unit (CNY fen / USD cents / JPY yen). */
+export function toSmallestUnit(
+  displayAmount: number,
+  currency: CurrencyCode,
+): bigint {
+  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(currency);
+  return BigInt(
+    Math.round(isZeroDecimal ? displayAmount : displayAmount * 100),
+  );
 }

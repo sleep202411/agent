@@ -16,12 +16,15 @@ import { useMemo } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
+  CURRENCY_SYMBOLS,
   CrewApiError,
+  ZERO_DECIMAL_CURRENCIES,
   useApproveApplication,
   useCrewApplications,
   useRejectApplication,
   type CrewApplicationDTO,
   type CrewApplicationStatus,
+  type CurrencyCode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { toast } from "sonner";
 
@@ -108,9 +111,10 @@ export function JobApplicantsList({ crewId, positionId, canManage }: JobApplican
                 {a.yearsExperience != null ? (
                   <Chip>{t("applicantYears", { count: a.yearsExperience })}</Chip>
                 ) : null}
-                {a.expectedSalaryCents != null ? (
+                {a.expectedCompensation ? (
                   <Chip className="text-amber-400">
-                    {t("applicantExpected")} ¥{formatYuan(a.expectedSalaryCents)}
+                    {t("applicantExpected")}{" "}
+                    {formatMoney(a.expectedCompensation.amount, a.expectedCompensation.currency)}
                   </Chip>
                 ) : null}
                 <span
@@ -186,10 +190,13 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString();
 }
 
-function formatYuan(cents: number): string {
-  const yuan = cents / 100;
-  if (yuan >= 1000) return `${(yuan / 1000).toFixed(yuan % 1000 === 0 ? 0 : 1)}K`;
-  return String(yuan);
+function formatMoney(amount: number, currency: CurrencyCode): string {
+  const display = ZERO_DECIMAL_CURRENCIES.has(currency) ? amount : amount / 100;
+  const compact =
+    display >= 1000
+      ? `${(display / 1000).toFixed(display % 1000 === 0 ? 0 : 1)}K`
+      : String(display);
+  return `${CURRENCY_SYMBOLS[currency]}${compact}`;
 }
 
 function Chip({ children, className }: { children: React.ReactNode; className?: string }) {

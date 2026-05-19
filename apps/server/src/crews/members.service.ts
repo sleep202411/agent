@@ -24,6 +24,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import { UsersService } from '../users/users.service';
 import type { AddMemberInput, UpdateMemberInput } from './dto';
+import { newCrewDomainId } from './id';
 import { toMemberDTO } from './mappers';
 
 @Injectable()
@@ -89,6 +90,7 @@ export class MembersService {
       const member = await this.prisma.$transaction(async (tx) => {
         const m = await tx.crewMember.create({
           data: {
+            id: newCrewDomainId(),
             crewId,
             userId: target.userId,
             roleType: input.roleType,

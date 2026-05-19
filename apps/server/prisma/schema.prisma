@@ -4,10 +4,10 @@
 // `npm run db:migrate`. Models live alongside the module that owns
 // them in src/<module>/.
 //
-// ID convention: every model uses `String @id @default(cuid())` —
-// CUID v1 (25 char, alphanumeric, time-ordered prefix for B-tree
-// locality, non-enumerable). Lined up across the whole schema so
-// devs / logs / URLs never have to guess the shape of an id.
+// ID convention: every model uses a short URL-safe random `String @id`.
+// IDs are generated in app code via src/common/id.ts instead of database
+// defaults, so URLs, logs, notifications, and internal event rows all
+// share one compact shape.
 
 generator client {
   provider = "prisma-client-js"
@@ -93,42 +93,42 @@ enum AssignmentStatus {
 }
 
 model Crew {
-  id          String    @id @default(cuid())
-  name        String    @db.VarChar(128)
-  description String    @db.Text
+  id            String    @id
+  name          String    @db.VarChar(128)
+  description   String    @db.Text
   /// Square logo (UI crops to circle). The durable brand asset —
   /// shows up in plaza cards, member chips, notifications, nav.
   /// Visitor-page hero visual comes from `showcaseWorks[0]`; the
   /// logo enlarges into a gradient empty-state when no showcase is
   /// set yet (no separate `cover` asset — by design).
-  logo        String    @map("logo") @db.VarChar(512)
+  logo          String    @map("logo") @db.VarChar(512)
   /// Optional one-line hook shown under crew name in hero. ≤140
   /// chars. Owner-curated.
-  tagline     String?   @db.VarChar(140)
+  tagline       String?   @db.VarChar(140)
   /// Predefined genre tags from CREW_GENRES in @repo/shared/crew.
   /// E.g. ["animation", "shortform", "documentary"]. Max 5.
-  genres      String[]  @default([])
+  genres        String[]  @default([])
   /// Predefined style tags from CREW_STYLES in @repo/shared/crew.
   /// E.g. ["2d", "3d", "live_action", "ai_assisted"]. Max 5.
-  styles      String[]  @default([])
+  styles        String[]  @default([])
   /// External social channels. Shape:
   ///   [{ platform: "bilibili"|"weibo"|..., url: "https://..." }]
   /// Validated server-side against SOCIAL_PLATFORMS. Max 10 entries.
-  socialLinks Json?     @map("social_links") @db.JsonB
+  socialLinks   Json?     @map("social_links") @db.JsonB
   /// Curated work showcase. Shape:
   ///   [{ thumbnailUrl, title, externalUrl?, viewCount? }]
   /// First entry is featured as the visitor-page hero background.
   /// Max 10 entries.
-  showcaseWorks Json?   @map("showcase_works") @db.JsonB
+  showcaseWorks Json?     @map("showcase_works") @db.JsonB
   /// Java userId (numeric string). FK not enforced — see header.
-  founderId   String    @map("founder_id")
+  founderId     String    @map("founder_id")
   /// Optimistic concurrency control. Bumped on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// crewsService.update(id, patch, expectedVersion).
-  version     Int       @default(0)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  version       Int       @default(0)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   positions    CrewPosition[]
   members      CrewMember[]
@@ -142,7 +142,7 @@ model Crew {
 }
 
 model CrewPosition {
-  id             String             @id @default(cuid())
+  id             String             @id
   crewId         String             @map("crew_id")
   /// Preset position key — validated against PRESET_POSITIONS in
   /// packages/shared/src/crew.ts. Stored as String so adding presets
@@ -158,18 +158,18 @@ model CrewPosition {
   status         CrewPositionStatus @default(open)
 
   /// ─── Employment ────────────────────────────────────────
-  workMode         WorkMode        @default(remote) @map("work_mode")
+  workMode        WorkMode        @default(remote) @map("work_mode")
   /// City / region — required at the controller layer when
   /// workMode != 'remote'. Free-form so we don't need a city dict.
-  location         String?         @db.VarChar(128)
-  employmentType   EmploymentType  @default(project_based) @map("employment_type")
-  experienceLevel  ExperienceLevel @default(any) @map("experience_level")
+  location        String?         @db.VarChar(128)
+  employmentType  EmploymentType  @default(project_based) @map("employment_type")
+  experienceLevel ExperienceLevel @default(any) @map("experience_level")
 
   /// ─── Skills ────────────────────────────────────────────
   /// Free-form tags (e.g. ["Final Draft", "分镜思维"]). PG TEXT[].
   /// Single list ("preferred" was dropped as separate field — the
   /// distinction was always fuzzy in practice and UX favored simplicity.
-  requiredSkills   String[]        @default([]) @map("required_skills")
+  requiredSkills String[] @default([]) @map("required_skills")
 
   /// ─── Compensation ──────────────────────────────────────
   /// Salary "shape" the recruiter is offering. NULL = not set.
@@ -177,30 +177,33 @@ model CrewPosition {
   /// 'project' = single project fee (lump sum on completion).
   /// When `salaryNegotiable = true`, min/max are ignored and the UI
   /// shows "面议" (negotiable on application).
-  salaryPeriod     String?  @map("salary_period") @db.VarChar(16)
+  salaryPeriod     String? @map("salary_period") @db.VarChar(16)
   /// ISO 4217 currency code. cn cell allows only CNY; com cell allows
   /// the whitelist defined in `apps/server/src/crews/currency.ts`.
   /// CHECK enforced at DB level (see migration SQL).
-  salaryCurrency   String?  @map("salary_currency") @db.VarChar(3)
+  salaryCurrency   String? @map("salary_currency") @db.VarChar(3)
   /// Smallest currency unit (CNY 分 / USD cents / JPY yen). Stored
   /// integer so we never lose precision. UI converts for display.
   /// CHECK salary_min_amount >= 0 in migration SQL.
-  salaryMinAmount  BigInt?  @map("salary_min_amount")
+  salaryMinAmount  BigInt? @map("salary_min_amount")
   /// CHECK salary_max_amount >= salary_min_amount when both set.
-  salaryMaxAmount  BigInt?  @map("salary_max_amount")
-  salaryNegotiable Boolean  @default(false) @map("salary_negotiable")
+  salaryMaxAmount  BigInt? @map("salary_max_amount")
+  salaryNegotiable Boolean @default(false) @map("salary_negotiable")
 
   /// ─── Lifecycle ─────────────────────────────────────────
   /// Auto-archive at this date (cron flips status → frozen). Nullable.
-  closeDate        DateTime? @map("close_date") @db.Date
+  closeDate DateTime? @map("close_date") @db.Date
 
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   crew         Crew              @relation(fields: [crewId], references: [id], onDelete: Cascade)
   applications CrewApplication[]
   members      CrewMember[]
 
+  /// Composite FK target for CrewApplication.position: guarantees the
+  /// application row's crew_id matches the position's crew_id.
+  @@unique([id, crewId], name: "uniq_position_id_crew", map: "crew_positions_id_crew_unique")
   @@index([crewId, status, deletedAt], map: "crew_positions_listing_idx")
   /// Public discovery filter: positions by work mode (Remote-only browse).
   @@index([workMode, status, deletedAt], map: "crew_positions_work_mode_idx")
@@ -210,7 +213,7 @@ model CrewPosition {
 }
 
 model CrewMember {
-  id         String        @id @default(cuid())
+  id         String        @id
   crewId     String        @map("crew_id")
   userId     String        @map("user_id")
   /// Preset position key OR literal "owner" for the founder.
@@ -238,33 +241,35 @@ model CrewMember {
 }
 
 model CrewApplication {
-  id          String                @id @default(cuid())
-  crewId      String                @map("crew_id")
-  positionId  String                @map("position_id")
-  applicantId String                @map("applicant_id")
+  id          String  @id
+  crewId      String  @map("crew_id")
+  positionId  String  @map("position_id")
+  applicantId String  @map("applicant_id")
   /// Cover letter / "why I'm a good fit". 1-1000 chars enforced at controller.
-  message     String?               @db.Text
+  message     String? @db.Text
 
   /// ─── Applicant self-report ───────────────────────────
   /// Optional external portfolio URL (LinkedIn / Behance / personal
   /// site). Even when NULL, owner sees the applicant's internal
   /// profile + published works via deeplinks derived from applicantId.
-  portfolioUrl        String?   @map("portfolio_url") @db.Text
-  /// CNY 分. Owner can compare against position's salaryMin/Max range
-  /// to spot mismatches at a glance.
-  expectedSalaryCents BigInt?   @map("expected_salary_cents")
+  portfolioUrl                 String?   @map("portfolio_url") @db.Text
+  /// Applicant expected compensation, stored in the same smallest-unit
+  /// convention as CrewPosition.salary* (CNY fen / USD cents / JPY yen).
+  expectedCompensationAmount   BigInt?   @map("expected_compensation_amount")
+  expectedCompensationCurrency String?   @map("expected_compensation_currency") @db.VarChar(3)
+  expectedCompensationPeriod   String?   @map("expected_compensation_period") @db.VarChar(16)
   /// Earliest date the applicant can start.
-  availableStartDate  DateTime? @map("available_start_date") @db.Date
+  availableStartDate           DateTime? @map("available_start_date") @db.Date
   /// Years of relevant experience. CHECK >= 0.
-  yearsExperience     Int?      @map("years_experience")
+  yearsExperience              Int?      @map("years_experience")
 
-  status      CrewApplicationStatus @default(pending)
-  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  reviewedAt  DateTime?             @map("reviewed_at") @db.Timestamptz(6)
-  reviewerId  String?               @map("reviewer_id")
+  status     CrewApplicationStatus @default(pending)
+  createdAt  DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedAt DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+  reviewerId String?               @map("reviewer_id")
 
   crew     Crew         @relation(fields: [crewId], references: [id], onDelete: Cascade)
-  position CrewPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  position CrewPosition @relation(fields: [positionId, crewId], references: [id, crewId], onDelete: Cascade)
 
   /// Owner inbox query — pending apps for this crew.
   @@index([crewId, status, createdAt(sort: Desc)], map: "crew_applications_inbox_idx")
@@ -281,7 +286,7 @@ model CrewApplication {
 // See docs in apps/web/app/(site)/crews/_hooks/episodes-spec.md.
 
 model Episode {
-  id          String        @id @default(cuid())
+  id          String        @id
   crewId      String        @map("crew_id")
   /// 1-based, unique within crew. CHECK number > 0 in migration SQL.
   number      Int
@@ -299,12 +304,15 @@ model Episode {
   activities  EpisodeActivity[]
 
   @@unique([crewId, number], name: "uniq_crew_episode_number", map: "episodes_crew_number_unique")
+  /// Composite FK target for assignments/activities: their crew_id must
+  /// match the episode's crew_id, not just any episode id.
+  @@unique([id, crewId], name: "uniq_episode_id_crew", map: "episodes_id_crew_unique")
   @@index([crewId, status], map: "episodes_crew_status_idx")
   @@map("episodes")
 }
 
 model EpisodeAssignment {
-  id               String           @id @default(cuid())
+  id               String           @id
   crewId           String           @map("crew_id")
   episodeId        String           @map("episode_id")
   userId           String           @map("user_id")
@@ -327,7 +335,7 @@ model EpisodeAssignment {
   revenueSetById   String?          @map("revenue_set_by_id")
   updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId, crewId], references: [id, crewId], onDelete: Cascade)
 
   /// Same user can't be assigned to the same episode twice.
   @@unique([episodeId, userId], name: "uniq_episode_user", map: "episode_assignments_unique")
@@ -339,7 +347,7 @@ model EpisodeAssignment {
 }
 
 model EpisodeActivity {
-  id          String   @id @default(cuid())
+  id          String   @id
   crewId      String   @map("crew_id")
   episodeId   String   @map("episode_id")
   /// EpisodeActivityType per shared/crew.ts — stored String for fwd-compat.
@@ -350,7 +358,7 @@ model EpisodeActivity {
   payload     Json
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  episode Episode @relation(fields: [episodeId, crewId], references: [id, crewId], onDelete: Cascade)
 
   @@index([episodeId, createdAt(sort: Desc)], map: "episode_activities_timeline_idx")
   @@map("episode_activities")
@@ -377,7 +385,7 @@ model EpisodeActivity {
 // fired twice (retry, double-click, etc) creates exactly one row.
 
 model Notification {
-  id             String    @id @default(cuid())
+  id             String    @id
   userId         String    @map("user_id")
   type           String
   title          String
@@ -401,7 +409,7 @@ model Notification {
 }
 
 model NotificationOutbox {
-  id             String    @id @default(cuid())
+  id             String    @id
   notificationId String    @map("notification_id")
   userId         String    @map("user_id")
   /// JSON-serialized NotificationDTO payload. Snapshot at enqueue time
@@ -501,10 +509,8 @@ enum AiOutboxEventType {
 //     when caller supplies `expectedVersion`; pure overwrite otherwise.
 //   - `requestId` for cross-system trace correlation
 //   - All timestamps Timestamptz(6) for sub-ms precision
-//   - Indexes are FULL today; future migration can switch to PARTIAL
-//     `WHERE deleted_at IS NULL` once table grows (Prisma 7 lacks
-//     native partial-index DSL; do via raw migration). See also the
-//     TODO note on `idempotencyKey` below.
+//   - Prisma schema carries normal lookup indexes; migration SQL owns
+//     partial uniques that Prisma DSL cannot express.
 //
 // TODO(billing): `cost` is a *display* field. A real money ledger
 //   needs an immutable `ai_cost_ledger` table with idempotency_key,
@@ -513,78 +519,77 @@ enum AiOutboxEventType {
 // TODO(product-context): add projectId / workspaceId / siteRegion
 //   ('global' | 'cn') / sourceSurface ('art-studio' | 'crew' | …)
 //   once the crew + project modules ship and the ID space settles.
-// TODO(soft-delete-partial-unique): swap @@unique below for a partial
-//   `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL` (raw SQL) so a
-//   re-submission after soft delete is not blocked by the tombstone.
 model AiJob {
-  id                    String          @id @default(cuid())
-  userId                String          @map("user_id")
+  id                    String      @id
+  userId                String      @map("user_id")
   /// Tier snapshot at submission time — for audit and (future) tier-
   /// differentiated pricing. Runtime authz uses sa-token's live value.
-  userLevel             String?         @map("user_level")
+  userLevel             String?     @map("user_level")
   type                  AiJobType
   /// Adapter identifier — 'microsoft-foundry' | 'fal-ai' | …. Stays a
   /// free-form String so new providers don't need migrations.
   provider              String
-  modelId               String          @map("model_id")
+  modelId               String      @map("model_id")
   deployment            String
-  schemaVersion         String          @map("schema_version")
+  schemaVersion         String      @map("schema_version")
   status                AiJobStatus
   stage                 AiJobStage
-  queueName             String          @map("queue_name")
+  queueName             String      @map("queue_name")
   prompt                String
-  idempotencyKey        String          @map("idempotency_key")
+  idempotencyKey        String      @map("idempotency_key")
   /// External trace id (X-Request-Id header), nullable until UI sends one.
-  requestId             String?         @map("request_id")
+  requestId             String?     @map("request_id")
   input                 Json
-  normalizedInput       Json            @map("normalized_input")
+  normalizedInput       Json        @map("normalized_input")
   error                 Json?
   logs                  Json
   metrics               Json
-  queuePosition         Int?            @map("queue_position")
+  queuePosition         Int?        @map("queue_position")
   progress              Float?
-  estimatedWaitSeconds  Int?            @map("estimated_wait_seconds")
-  estimatedRunSeconds   Int?            @map("estimated_run_seconds")
-  estimatedTotalSeconds Int?            @map("estimated_total_seconds")
-  etaConfidence         String?         @map("eta_confidence")
-  attempt               Int             @default(1)
-  retryOfJobId          String?         @map("retry_of_job_id")
+  estimatedWaitSeconds  Int?        @map("estimated_wait_seconds")
+  estimatedRunSeconds   Int?        @map("estimated_run_seconds")
+  estimatedTotalSeconds Int?        @map("estimated_total_seconds")
+  etaConfidence         String?     @map("eta_confidence")
+  attempt               Int         @default(1)
+  retryOfJobId          String?     @map("retry_of_job_id")
   /// Provider-side job id for async providers (fal.ai request_id,
   /// Replicate prediction id, Azure video job id). NULL for sync
   /// providers like Azure Foundry images. Indexed with `provider` for
   /// fast webhook reverse-lookup.
-  providerJobId         String?         @map("provider_job_id")
+  providerJobId         String?     @map("provider_job_id")
   /// Aggregated cost across all attempts. See TODO(billing) above.
   cost                  Json?
   /// W3C distributed trace context (traceparent / tracestate) so logs
   /// from worker / DB / provider correlate in observability stack.
   trace                 Json?
   /// Client telemetry — abuse detection, UA-specific bug triage.
-  clientIp              String?         @map("client_ip")
-  userAgent             String?         @map("user_agent")
+  clientIp              String?     @map("client_ip")
+  userAgent             String?     @map("user_agent")
   /// Optimistic concurrency control. Increment on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// repository.update(id, patch, expectedVersion).
-  version               Int             @default(0)
-  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  queuedAt              DateTime?       @map("queued_at") @db.Timestamptz(6)
-  startedAt             DateTime?       @map("started_at") @db.Timestamptz(6)
-  providerSubmittedAt   DateTime?       @map("provider_submitted_at") @db.Timestamptz(6)
-  providerStartedAt     DateTime?       @map("provider_started_at") @db.Timestamptz(6)
-  providerCompletedAt   DateTime?       @map("provider_completed_at") @db.Timestamptz(6)
-  outputFetchedAt       DateTime?       @map("output_fetched_at") @db.Timestamptz(6)
-  ossUploadedAt         DateTime?       @map("oss_uploaded_at") @db.Timestamptz(6)
-  completedAt           DateTime?       @map("completed_at") @db.Timestamptz(6)
-  updatedAt             DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version               Int         @default(0)
+  createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  queuedAt              DateTime?   @map("queued_at") @db.Timestamptz(6)
+  startedAt             DateTime?   @map("started_at") @db.Timestamptz(6)
+  providerSubmittedAt   DateTime?   @map("provider_submitted_at") @db.Timestamptz(6)
+  providerStartedAt     DateTime?   @map("provider_started_at") @db.Timestamptz(6)
+  providerCompletedAt   DateTime?   @map("provider_completed_at") @db.Timestamptz(6)
+  outputFetchedAt       DateTime?   @map("output_fetched_at") @db.Timestamptz(6)
+  ossUploadedAt         DateTime?   @map("oss_uploaded_at") @db.Timestamptz(6)
+  completedAt           DateTime?   @map("completed_at") @db.Timestamptz(6)
+  updatedAt             DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   /// Soft delete tombstone. Repository helpers filter `deletedAt: null`;
   /// raw Prisma callers must do the same.
-  deletedAt             DateTime?       @map("deleted_at") @db.Timestamptz(6)
+  deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz(6)
 
   outputs  AiJobOutput[]
   attempts AiJobAttempt[]
   events   AiEventOutbox[]
 
-  @@unique([userId, modelId, idempotencyKey], name: "uniq_user_model_idempotency", map: "ai_jobs_idempotency_unique")
+  /// Active-row idempotency is enforced by a partial unique index in
+  /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
+  @@index([userId, modelId, idempotencyKey], map: "ai_jobs_idempotency_lookup_idx")
   @@index([userId, createdAt(sort: Desc)], map: "ai_jobs_user_created_idx")
   @@index([queueName, status, queuedAt], map: "ai_jobs_queue_claim_idx")
   /// Fast reverse-lookup from a webhook `(provider, providerJobId)`
@@ -596,7 +601,7 @@ model AiJob {
 
 // AiJobOutput — one row per generated artifact (OSS-backed).
 model AiJobOutput {
-  id              String    @id @default(cuid())
+  id              String    @id
   jobId           String    @map("job_id")
   type            AiJobType
   url             String
@@ -639,7 +644,7 @@ model AiJobOutput {
 // Stores the full request / response / headers / cost so any past
 // generation can be replayed or audited.
 model AiJobAttempt {
-  id                      String          @id @default(cuid())
+  id                      String          @id
   jobId                   String          @map("job_id")
   attemptNumber           Int             @map("attempt_number")
   status                  AiAttemptStatus
@@ -676,26 +681,30 @@ model AiJobAttempt {
 // the raw payload + signature verification result gives us:
 //   - audit trail (proof of what the provider told us)
 //   - replay capability (re-process if our handler crashed mid-handling)
-//   - idempotency (drop duplicates via provider_event_id unique)
+//   - idempotency (drop duplicates via event_fingerprint unique)
 //
 // `jobId` is nullable because some events may arrive for jobs we don't
 // recognize (already cleaned, wrong tenant, race against creation);
 // store them anyway so we can investigate later.
 model AiProviderEvent {
-  id              String              @id @default(cuid())
-  jobId           String?             @map("job_id")
-  provider        String
+  id               String              @id
+  jobId            String?             @map("job_id")
+  provider         String
   /// Provider's own ID for this event (fal: request_id; others may vary).
-  providerEventId String?             @map("provider_event_id")
-  eventType       AiProviderEventType @map("event_type")
-  payload         Json
-  headers         Json
-  signatureValid  Boolean             @map("signature_valid")
-  receivedAt      DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
-  processedAt     DateTime?           @map("processed_at") @db.Timestamptz(6)
-  processingError String?             @map("processing_error")
+  providerEventId  String?             @map("provider_event_id")
+  /// Stable dedupe key. Prefer providerEventId when present; otherwise
+  /// use a canonical hash of provider + payload fields chosen by the
+  /// webhook adapter. Non-null so Postgres uniqueness is real.
+  eventFingerprint String              @map("event_fingerprint")
+  eventType        AiProviderEventType @map("event_type")
+  payload          Json
+  headers          Json
+  signatureValid   Boolean             @map("signature_valid")
+  receivedAt       DateTime            @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt      DateTime?           @map("processed_at") @db.Timestamptz(6)
+  processingError  String?             @map("processing_error")
 
-  @@unique([provider, providerEventId], name: "uniq_provider_event_id", map: "ai_provider_events_provider_event_unique")
+  @@unique([provider, eventFingerprint], name: "uniq_provider_event_fingerprint", map: "ai_provider_events_provider_fingerprint_unique")
   @@index([jobId, receivedAt(sort: Desc)], map: "ai_provider_events_job_recent_idx")
   @@index([processedAt], map: "ai_provider_events_pending_idx")
   @@map("ai_provider_events")
@@ -708,7 +717,7 @@ model AiProviderEvent {
 // the DLQ via `deadAt`. Pod-level `lockedAt` / `lockedBy` let multiple
 // dispatcher instances coexist without double-publishing.
 model AiEventOutbox {
-  id            String            @id @default(cuid())
+  id            String            @id
   jobId         String            @map("job_id")
   userId        String            @map("user_id")
   eventType     AiOutboxEventType @map("event_type")

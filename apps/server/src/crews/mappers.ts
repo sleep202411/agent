@@ -120,8 +120,20 @@ export function toApplicationDTO(a: CrewApplication): CrewApplicationDTO {
     applicantId: a.applicantId,
     message: a.message,
     portfolioUrl: a.portfolioUrl,
-    expectedSalaryCents:
-      a.expectedSalaryCents !== null ? Number(a.expectedSalaryCents) : null,
+    expectedCompensation:
+      a.expectedCompensationAmount !== null &&
+      a.expectedCompensationCurrency !== null
+        ? {
+            amount: Number(a.expectedCompensationAmount),
+            currency: a.expectedCompensationCurrency as NonNullable<
+              CrewApplicationDTO['expectedCompensation']
+            >['currency'],
+            period:
+              (a.expectedCompensationPeriod as NonNullable<
+                CrewApplicationDTO['expectedCompensation']
+              >['period']) ?? null,
+          }
+        : null,
     availableStartDate: a.availableStartDate
       ? a.availableStartDate.toISOString().slice(0, 10)
       : null,

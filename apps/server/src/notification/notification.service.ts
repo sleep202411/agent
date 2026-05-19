@@ -21,6 +21,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { NotificationDTO, NotificationMeta } from '@repo/shared';
+import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
 
 type TxClient = Prisma.TransactionClient | PrismaClient;
@@ -51,6 +52,7 @@ export class NotificationService {
     //    without publishing a second realtime event.
     const created = await db.notification.createMany({
       data: {
+        id: newShortId(),
         userId: args.userId,
         type: args.type,
         title: args.title,
@@ -74,6 +76,7 @@ export class NotificationService {
     if (created.count > 0) {
       await db.notificationOutbox.create({
         data: {
+          id: newShortId(),
           notificationId: row.id,
           userId: args.userId,
           payload: dto as unknown as Prisma.InputJsonValue,

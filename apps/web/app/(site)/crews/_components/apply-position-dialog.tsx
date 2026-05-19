@@ -5,7 +5,7 @@
  *
  * Five fields, all optional except message:
  *   - message              cover letter (required)
- *   - expectedSalary       yuan (server converts to 分)
+ *   - expectedCompensation display amount + currency
  *   - availableStartDate   when they can start
  *   - yearsExperience      relevant years
  *   - portfolioUrl         external link (Behance / LinkedIn / personal)
@@ -15,7 +15,7 @@
  * captures the position-specific extras (not duplicating a full CV).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -31,14 +31,31 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { allowedCurrenciesForCell, defaultCurrencyForCell } from "@/src/lib/region/cell";
+import {
+  CURRENCY_SYMBOLS,
   CrewApiError,
   useApplyToPosition,
   type ApplyInput,
+  type CurrencyCode,
+  type SalaryPeriod,
 } from "@/app/(site)/crews/_hooks/use-crew";
 
 const APPLY_HERO_URL = encodeURI(
   "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 20_51_09.png"
 );
+
+const SALARY_PERIOD_OPTIONS: { value: SalaryPeriod; key: string }[] = [
+  { value: "month", key: "salaryPeriodMonth" },
+  { value: "episode", key: "salaryPeriodEpisode" },
+  { value: "project", key: "salaryPeriodProject" },
+];
 
 interface ApplyPositionDialogProps {
   open: boolean;
@@ -64,18 +81,24 @@ export function ApplyPositionDialog({
   const tc = useTranslations("common");
 
   const [message, setMessage] = useState("");
-  const [expectedSalary, setExpectedSalary] = useState<string>("");
+  const [expectedAmount, setExpectedAmount] = useState<string>("");
+  const [expectedCurrency, setExpectedCurrency] = useState<CurrencyCode>(defaultCurrencyForCell());
+  const [expectedPeriod, setExpectedPeriod] = useState<SalaryPeriod | "">("");
   const [availableDate, setAvailableDate] = useState<string>("");
   const [yearsExperience, setYearsExperience] = useState<string>("");
   const [portfolioUrl, setPortfolioUrl] = useState<string>("");
 
   const apply = useApplyToPosition(crewId, positionId);
   const submitting = apply.isPending;
+  const currencyOptions = useMemo(() => allowedCurrenciesForCell(), []);
+  const showCurrencyPicker = currencyOptions.length > 1;
 
   useEffect(() => {
     if (open) return;
     setMessage("");
-    setExpectedSalary("");
+    setExpectedAmount("");
+    setExpectedCurrency(defaultCurrencyForCell());
+    setExpectedPeriod("");
     setAvailableDate("");
     setYearsExperience("");
     setPortfolioUrl("");
@@ -89,7 +112,14 @@ export function ApplyPositionDialog({
     const body: ApplyInput = {
       message: messageTrimmed,
       portfolioUrl: portfolioUrl.trim() || null,
-      expectedSalary: expectedSalary === "" ? null : Number.parseInt(expectedSalary, 10),
+      expectedCompensation:
+        expectedAmount === ""
+          ? null
+          : {
+              amount: Number.parseInt(expectedAmount, 10),
+              currency: expectedCurrency,
+              period: expectedPeriod || null,
+            },
       availableStartDate: availableDate || null,
       yearsExperience: yearsExperience === "" ? null : Number.parseInt(yearsExperience, 10),
     };
@@ -145,15 +175,63 @@ export function ApplyPositionDialog({
                     type="number"
                     inputMode="numeric"
                     min={0}
-                    value={expectedSalary}
-                    onChange={(e) => setExpectedSalary(e.target.value)}
+                    value={expectedAmount}
+                    onChange={(e) => setExpectedAmount(e.target.value)}
                     placeholder="8000"
                     disabled={submitting}
                     className="text-xs tabular-nums"
                   />
-                  <span className="text-xs text-muted-foreground">{t("salaryCurrencyCNY")}</span>
+                  {!showCurrencyPicker ? (
+                    <span className="text-xs text-muted-foreground">
+                      {CURRENCY_SYMBOLS[expectedCurrency]}
+                    </span>
+                  ) : null}
                 </div>
               </Field>
+              <Field>
+                <FieldLabel>{t("createJobSalaryPeriodLabel")}</FieldLabel>
+                <Select
+                  value={expectedPeriod}
+                  onValueChange={(v) => setExpectedPeriod(v as SalaryPeriod)}
+                  disabled={submitting}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={t("createJobSalaryPeriodPlaceholder")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SALARY_PERIOD_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {t(opt.key)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            {showCurrencyPicker ? (
+              <Field>
+                <FieldLabel>{t("salaryCurrency")}</FieldLabel>
+                <Select
+                  value={expectedCurrency}
+                  onValueChange={(v) => setExpectedCurrency(v as CurrencyCode)}
+                  disabled={submitting}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {CURRENCY_SYMBOLS[c]} {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            ) : null}
+
+            <div className="grid grid-cols-2 gap-3">
               <Field>
                 <FieldLabel>{t("applyYearsExperienceLabel")}</FieldLabel>
                 <Input

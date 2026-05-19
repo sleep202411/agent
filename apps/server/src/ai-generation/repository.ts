@@ -19,6 +19,7 @@ import type {
   AiJobOutput as AiJobOutputRow,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { newShortId } from '../common/id';
 import type {
   AiEtaConfidence,
   AiJobStatus,
@@ -82,12 +83,9 @@ export class AiGenerationRepository {
     modelId: string,
     idempotencyKey: string,
   ): Promise<AiJob | null> {
-    // Soft-deleted rows would shadow a re-submission today (the unique
-    // constraint is full, not partial — see TODO in schema.prisma).
-    // We still filter `deletedAt: null` here so callers don't get a
-    // tombstone back; the unique-constraint collision shows up as a
-    // create error if the user tries to resubmit, which surfaces a
-    // clearer signal than silently returning a deleted job.
+    // Active-row idempotency is enforced by a partial unique index
+    // (`deleted_at IS NULL`) in migration SQL. We mirror that predicate
+    // here so soft-deleted tombstones never shadow a re-submission.
     const row = await this.prisma.aiJob.findFirst({
       where: { userId, modelId, idempotencyKey, deletedAt: null },
       include: { outputs: this.outputsInclude(false) },
@@ -396,7 +394,7 @@ export class AiGenerationRepository {
         ? [
             this.prisma.aiJobOutput.createMany({
               data: outputs.map((o, idx) => ({
-                id: o.id,
+                id: o.id || newShortId(),
                 jobId,
                 type: o.type,
                 url: o.url,

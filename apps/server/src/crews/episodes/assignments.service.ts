@@ -24,6 +24,7 @@ import {
   defaultCurrency,
   type CurrencyCode,
 } from '../currency';
+import { newCrewDomainId } from '../id';
 import { toActivityDTO, toAssignmentDTO } from '../mappers';
 import { CURRENCY_SYMBOLS, ZERO_DECIMAL_CURRENCIES } from '@repo/shared/crew';
 import { writeActivity } from './activity-writer';
@@ -134,6 +135,7 @@ export class AssignmentsService {
     const created = await this.prisma.$transaction(async (tx) => {
       const a = await tx.episodeAssignment.create({
         data: {
+          id: newCrewDomainId(),
           crewId: episode.crewId,
           episodeId,
           userId: input.userId,

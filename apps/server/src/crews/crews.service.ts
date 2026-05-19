@@ -20,6 +20,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import type { CreateCrewInput, UpdateCrewInput } from './dto';
+import { newCrewDomainId, newCrewId } from './id';
 import { toCrewDTO } from './mappers';
 
 const DEFAULT_PAGE_SIZE = 24;
@@ -33,6 +34,7 @@ export class CrewsService {
     const crew = await this.prisma.$transaction(async (tx) => {
       const c = await tx.crew.create({
         data: {
+          id: newCrewId(),
           name: input.name,
           description: input.description,
           logo: input.logo,
@@ -55,6 +57,7 @@ export class CrewsService {
       // crew" — no special-casing the founder elsewhere.
       await tx.crewMember.create({
         data: {
+          id: newCrewDomainId(),
           crewId: c.id,
           userId: founderId,
           roleType: 'owner',

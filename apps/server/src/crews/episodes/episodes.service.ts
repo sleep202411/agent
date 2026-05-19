@@ -15,6 +15,7 @@ import {
 import { PrismaService } from '../../infra/db/db.module';
 import { NotificationService } from '../../notification';
 import { CrewRoleService } from '../crew-role.service';
+import { newCrewDomainId } from '../id';
 import { toEpisodeDTO } from '../mappers';
 import type { CreateEpisodeInput } from './dto';
 import { writeActivity } from './activity-writer';
@@ -55,6 +56,7 @@ export class EpisodesService {
           const number = (last?.number ?? 0) + 1;
           const episode = await tx.episode.create({
             data: {
+              id: newCrewDomainId(),
               crewId,
               number,
               title: input.title ?? null,
