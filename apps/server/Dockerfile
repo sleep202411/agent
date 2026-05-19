@@ -51,6 +51,10 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 # Copy compiled output
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
+# Copy Prisma migration assets so production containers can run
+# `prisma migrate deploy` before the Nest process starts.
+COPY --from=builder /app/apps/server/prisma ./apps/server/prisma
+COPY --from=builder /app/apps/server/prisma.config.ts ./apps/server/prisma.config.ts
 
 USER nestjs
 

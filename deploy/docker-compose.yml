@@ -34,8 +34,14 @@ services:
     mem_limit: 1g
     ports:
       - "${SERVER_PORT:-3001}:3001"
+    # Run schema migrations inside the server image before Nest binds HTTP.
+    # `prisma migrate deploy` is idempotent; if Postgres is still warming up,
+    # the command fails and restart:always retries instead of serving with a
+    # half-migrated schema.
+    command: ["sh", "-c", "npm run db:deploy && node dist/main.js"]
     environment:
       PORT: 3001
+      NEXT_PUBLIC_SITE_REGION: ${SITE_REGION:-global}
       JAVA_STUDIO_URL: ${JAVA_STUDIO_URL}
       JAVA_CONTENT_URL: ${JAVA_CONTENT_URL}
       JAVA_USER_QUERY_PWD: ${JAVA_USER_QUERY_PWD}
@@ -49,7 +55,7 @@ services:
       # deploys (Azure / Aliyun RDS) override DATABASE_URL directly
       # in the host .env and the `postgres` service can be commented
       # out of this file.
-      DATABASE_URL: postgresql://fizzdragon:${POSTGRES_PASSWORD}@postgres:5432/fizzdragon?schema=public
+      DATABASE_URL: ${DATABASE_URL:-postgresql://fizzdragon:${POSTGRES_PASSWORD}@postgres:5432/fizzdragon?schema=public}
       # Supervisor chat + workflow endpoints live in the agent container.
       MASTRA_URL: http://agent:4111
       DISABLE_CONTENT_MODERATION: ${DISABLE_CONTENT_MODERATION:-false}

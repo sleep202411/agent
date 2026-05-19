@@ -102,6 +102,11 @@ files and maps each one to the GHCR tag with dots replaced by hyphens (so
 `.env.production.cn` → `:production-cn`). To add a new stack: drop in an
 env file. No script edits needed.
 
+For compose stacks, the `server` container runs `npm run db:deploy` before
+binding HTTP. That keeps the in-docker Postgres schema in step with the
+pulled server image during auto-update; a failed migration keeps the server
+container restarting instead of serving traffic against the wrong schema.
+
 If existing containers were created before the `watchtower.enable` /
 `autoupdate=registry` labels landed in `docker-compose.yml` (those labels
 freeze at creation time and can't be patched on a running container),
