@@ -17,6 +17,7 @@
 
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { LookupUserDTO } from "@repo/shared/users";
 import { CrewApiError, crewApi } from "./api";
@@ -75,3 +76,48 @@ export function useUserLookup({ userId, checkCrewId }: LookupArgs): LookupState 
 }
 
 export { useDebouncedValue } from "./use-debounced-value";
+
+/**
+ * Batch-resolve userIds to display info via the BFF.
+ *
+ * Returns a Map<userId, LookupUserDTO>. Missing / failed userIds are
+ * absent from the map (caller renders a placeholder for those).
+ *
+ * Keyed by the SORTED, DEDUPED userId list, so consumers that pass
+ * the same crew's members in different orders share one network call
+ * and one React Query cache row. 5-min staleTime mirrors the server
+ * cache.
+ */
+export function useUserDisplays(userIds: readonly string[]): Map<string, LookupUserDTO> {
+  const sorted = useMemo(() => {
+    const set = new Set<string>();
+    for (const id of userIds) if (id) set.add(id);
+    return Array.from(set).sort();
+  }, [userIds]);
+
+  const q = useQuery({
+    queryKey: ["users", "lookup-batch", sorted.join(",")] as const,
+    enabled: sorted.length > 0,
+    queryFn: async () =>
+      crewApi.post<Record<string, LookupUserDTO | null>>("/users/lookup-batch", {
+        body: { userIds: sorted },
+      }),
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return useMemo(() => {
+    const map = new Map<string, LookupUserDTO>();
+    if (q.data) {
+      for (const [k, v] of Object.entries(q.data)) {
+        if (v) map.set(k, v);
+      }
+    }
+    return map;
+  }, [q.data]);
+}
+
+/** Convenience: best-effort display name with fallback. */
+export function displayNameOf(userId: string, displays: Map<string, LookupUserDTO>): string {
+  return displays.get(userId)?.nickname?.trim() || `User ${userId}`;
+}

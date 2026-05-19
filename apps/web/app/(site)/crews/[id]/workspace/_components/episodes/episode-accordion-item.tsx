@@ -29,6 +29,8 @@ import {
   type EpisodeAssignment,
 } from "@/app/(site)/crews/_hooks/use-episodes";
 import { useCrewMembers, type CrewMemberDTO } from "@/app/(site)/crews/_hooks/use-crew";
+import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import type { LookupUserDTO } from "@repo/shared/users";
 import type { UserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
 import { EpisodeStatusBadge } from "./episode-status-badge";
 import { EpisodeBrief } from "./episode-brief";
@@ -63,6 +65,12 @@ export function EpisodeAccordionItem({
     for (const m of members) map.set(m.userId, m);
     return map;
   }, [members]);
+
+  // Resolve assignee display names for the avatar-stack tooltips. Same
+  // sorted-key cache as the assignment table inside the expanded body,
+  // so this is effectively free after the first request.
+  const assigneeIds = useMemo(() => assignments.map((a) => a.userId), [assignments]);
+  const displays = useUserDisplays(assigneeIds);
 
   const total = assignments.length;
   const approved = assignments.filter((a) => a.status === "approved").length;
@@ -134,7 +142,12 @@ export function EpisodeAccordionItem({
         <div className="hidden shrink-0 items-center gap-4 md:flex">
           {/* Avatars */}
           {stackEntries.length > 0 ? (
-            <AvatarStack entries={stackEntries} membersById={membersById} overflow={overflow} />
+            <AvatarStack
+              entries={stackEntries}
+              membersById={membersById}
+              displays={displays}
+              overflow={overflow}
+            />
           ) : (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <IconUsers className="size-3.5" />
@@ -249,21 +262,31 @@ export function EpisodeAccordionItem({
 function AvatarStack({
   entries,
   membersById,
+  displays,
   overflow,
 }: {
   entries: EpisodeAssignment[];
   membersById: Map<string, CrewMemberDTO>;
+  displays: Map<string, LookupUserDTO>;
   overflow: number;
 }) {
   return (
     <div className="flex -space-x-1.5">
       {entries.map((a) => {
         const memberRoleType = membersById.get(a.userId)?.roleType;
-        const initial = (a.userId.match(/\d+$/)?.[0] ?? a.userId).slice(-2);
+        const name = displayNameOf(a.userId, displays);
+        const role = a.roleName || memberRoleType || "";
+        const tooltip = role ? `${name} · ${role}` : name;
+        // Prefer the real nickname's first character; fall back to last
+        // two digits of the userId (numeric Java ids).
+        const lookup = displays.get(a.userId);
+        const initial = lookup?.nickname
+          ? lookup.nickname.trim().charAt(0).toUpperCase()
+          : (a.userId.match(/\d+$/)?.[0] ?? a.userId).slice(-2);
         return (
           <div
             key={a.id}
-            title={a.roleName || memberRoleType || `User ${a.userId}`}
+            title={tooltip}
             className="flex size-6 items-center justify-center rounded-full border-2 border-card bg-primary/15 text-[10px] font-semibold tabular-nums text-primary"
           >
             {initial}

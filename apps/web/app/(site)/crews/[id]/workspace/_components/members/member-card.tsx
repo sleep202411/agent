@@ -34,10 +34,16 @@ import {
   type CrewMemberDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
+import { displayNameOf } from "@/app/(site)/crews/_hooks/use-users";
+import type { LookupUserDTO } from "@repo/shared/users";
 
 interface MemberCardProps {
   crewId: string;
   member: CrewMemberDTO;
+  /** Display info batched by the parent grid — see MembersGrid. The
+   *  map may be empty (lookup in flight or failed); fallback is
+   *  "User <id>". */
+  displays: Map<string, LookupUserDTO>;
   isOwner: boolean;
   /** Owner can manage every other member but not themselves. */
   canManage: boolean;
@@ -47,6 +53,7 @@ interface MemberCardProps {
 export function MemberCard({
   crewId,
   member,
+  displays,
   // isOwner kept on the API for future viewer-specific affordances
   // (e.g. "you" badge on the viewer's own row).
   isOwner: _isOwner,
@@ -57,8 +64,9 @@ export function MemberCard({
   const translatePosition = useTranslatePositionValue();
   const updateMember = useUpdateMember(crewId);
   const isFounder = member.via === "founder";
-  const displayName = `User ${member.userId}`;
-  const initial = member.userId.charAt(0).toUpperCase();
+  const lookup = displays.get(member.userId);
+  const displayName = displayNameOf(member.userId, displays);
+  const initial = (lookup?.nickname?.trim() || member.userId).charAt(0).toUpperCase();
   const roleLabel = isFounder ? t("memberRoleOwner") : translatePosition(member.roleType);
   const viaLabel = isFounder
     ? null

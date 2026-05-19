@@ -30,6 +30,7 @@ import {
   useRemoveMember,
   type CrewMemberDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { MemberCard } from "./member-card";
 
 interface MembersGridProps {
@@ -56,6 +57,13 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
       .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt));
     return { founder: founder ?? null, others };
   }, [members]);
+
+  // One batch resolve per grid render — cards receive the map by prop
+  // (cards mounting individually would each fire their own lookup,
+  // defeating the batching). React Query keys by the sorted id list,
+  // so two grids on the same crew share the cache row.
+  const memberIds = useMemo(() => members.map((m) => m.userId), [members]);
+  const displays = useUserDisplays(memberIds);
 
   const handleRemove = () => {
     if (!pendingRemove) return;
@@ -110,6 +118,7 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
               <MemberCard
                 crewId={crewId}
                 member={sorted.founder}
+                displays={displays}
                 isOwner={isOwner}
                 canManage={false}
                 onAskRemove={() => undefined}
@@ -125,6 +134,7 @@ export function MembersGrid({ crewId, members, isOwner, loading, onInvite }: Mem
                   key={m.id}
                   crewId={crewId}
                   member={m}
+                  displays={displays}
                   isOwner={isOwner}
                   canManage={isOwner}
                   onAskRemove={(memberId, name) => setPendingRemove({ memberId, name })}

@@ -19,11 +19,15 @@
  */
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
+  HttpCode,
   NotFoundException,
+  Post,
   Query,
 } from '@nestjs/common';
+import { z } from 'zod';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { RateLimitService } from '../common/throttle/rate-limit.service';
@@ -33,6 +37,12 @@ import { UsersService } from './users.service';
 // (alphanumeric + dash/underscore, ≤32 chars) so we don't have to
 // re-validate when the format evolves.
 const USER_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
+
+const LookupBatchSchema = z.object({
+  userIds: z.array(z.string().trim().regex(USER_ID_RE)).max(100),
+  checkCrewId: z.string().trim().optional(),
+});
+type LookupBatchInput = z.infer<typeof LookupBatchSchema>;
 
 @Controller('users')
 export class UsersController {
@@ -70,5 +80,26 @@ export class UsersController {
       throw new NotFoundException({ message: 'No user matches that ID' });
     }
     return result;
+  }
+
+  /**
+   * Batch lookup. Returns a map keyed by userId; missing / failed
+   * resolutions are `null` so the client can render a placeholder
+   * for that row instead of an exception. Counts as ONE rate-limit
+   * unit regardless of fan-out (the unit cap is twice the per-call
+   * cap to keep dashboards responsive when many distinct rosters
+   * load in quick succession).
+   */
+  @Post('lookup-batch')
+  @HttpCode(200)
+  async lookupBatch(@CurrentUser() viewer: AuthUser, @Body() body: unknown) {
+    const parsed: LookupBatchInput = LookupBatchSchema.parse(body ?? {});
+    await this.rateLimit.guard({
+      bucket: 'user-lookup-batch',
+      actorId: viewer.userId,
+      max: 60,
+      windowSec: 60,
+    });
+    return this.svc.lookupBatch(parsed.userIds, parsed.checkCrewId);
   }
 }

@@ -49,6 +49,39 @@ export class UsersService {
     return this.enrichWithCrewContext(raw, req.checkCrewId);
   }
 
+  /**
+   * Batch lookup — resolve N userIds in one round-trip.
+   *
+   * Caller's perspective is "give me a map" so each call costs one
+   * rate-limit unit regardless of fan-out. Per-userId Java + Redis
+   * caching is reused (cache hits short-circuit, misses fan out in
+   * parallel via Promise.allSettled). A failed lookup for one userId
+   * doesn't poison the rest — that userId returns `null` and the
+   * client decides what to render.
+   *
+   * Hard cap on size keeps a misuse / runaway loader from spinning
+   * up hundreds of Java calls per request.
+   */
+  async lookupBatch(
+    userIds: string[],
+    checkCrewId?: string,
+  ): Promise<Record<string, LookupUserDTO | null>> {
+    const unique = Array.from(new Set(userIds)).filter(
+      (id) => id && id.length > 0,
+    );
+    const out: Record<string, LookupUserDTO | null> = {};
+    if (unique.length === 0) return out;
+
+    const settled = await Promise.allSettled(
+      unique.map((userId) => this.lookup({ userId, checkCrewId })),
+    );
+    for (let i = 0; i < unique.length; i++) {
+      const r = settled[i];
+      out[unique[i]] = r.status === 'fulfilled' ? r.value : null;
+    }
+    return out;
+  }
+
   private async enrichWithCrewContext(
     raw: { userId: string; nickname: string; avatar: string | null },
     checkCrewId?: string,
