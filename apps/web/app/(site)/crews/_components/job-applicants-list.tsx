@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
+import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import {
   CURRENCY_SYMBOLS,
   CrewApiError,
@@ -61,6 +62,11 @@ export function JobApplicantsList({ crewId, positionId, canManage }: JobApplican
     [all, positionId]
   );
 
+  // Batch-resolve nicknames for everyone in the visible list. Empty
+  // list when there are no applicants — useUserDisplays no-ops on that.
+  const applicantIds = useMemo(() => applicants.map((a) => a.applicantId), [applicants]);
+  const displays = useUserDisplays(applicantIds);
+
   if (!canManage) return null;
 
   if (isLoading) {
@@ -100,14 +106,17 @@ export function JobApplicantsList({ crewId, positionId, canManage }: JobApplican
         const busy =
           (approve.isPending && approve.variables === a.id) ||
           (reject.isPending && reject.variables === a.id);
+        const lookup = displays.get(a.applicantId);
+        const displayName = displayNameOf(a.applicantId, displays);
+        const initial = (lookup?.nickname?.trim() || a.applicantId).charAt(0).toUpperCase();
         return (
           <div key={a.id} className="flex items-start gap-3 py-3">
             <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-medium text-foreground">
-              {a.applicantId.charAt(0).toUpperCase()}
+              {initial}
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-foreground">User {a.applicantId}</span>
+                <span className="text-sm font-semibold text-foreground">{displayName}</span>
                 {a.yearsExperience != null ? (
                   <Chip>{t("applicantYears", { count: a.yearsExperience })}</Chip>
                 ) : null}
