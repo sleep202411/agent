@@ -1,13 +1,15 @@
 /**
- * User lookup hooks (by-contact ONLY).
+ * User lookup hooks.
  *
  *   useUserLookup({ query, checkCrewId })
  *     → 'idle' | 'loading' | 'found' | 'notFound' | 'error'
+ *   useUserDisplays(userIds)
+ *     → Map<userId, LookupUserDTO> — batch lookup for crew workspaces.
  *
- * Java only exposes a by-contact (email / phone) lookup today; the
- * server's `/users/lookup` reflects that. The userId-batch path
- * (`useUserDisplays`) is currently a no-op stub — see below — and
- * will reactivate when Java ships a profile-by-userId endpoint.
+ * Both flow through Nest BFF endpoints (`/aurora/users/lookup` and
+ * `/aurora/users/by-ids`); the by-id path is single-flight cached
+ * server-side (Redis 5 min) so re-renders / route changes don't
+ * re-fetch each member.
  */
 
 "use client";
@@ -90,19 +92,46 @@ export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
 
 export { useDebouncedValue } from "./use-debounced-value";
 
-// ─── Batch display name resolution — STUB ─────────────
+// ─── Batch display name resolution ────────────────────
 //
-// Java doesn't expose a profile-by-userId endpoint today; the
-// `/user/resumer/list/:id` route returns resume entries, not
-// profile. Until that ships, consumers fall back to "User <id>" via
-// `displayNameOf` below.
-//
-// When the by-id endpoint lands, replace the body of this hook
-// with the previous `POST /users/lookup-batch` implementation —
-// no consumer changes needed.
+// The BFF caps a single request at 50 ids. Crews are well under that
+// today; chunking is a future concern. The cache key includes the
+// sorted, deduped id list so two screens viewing different subsets
+// of the same crew share work cleanly.
 
-export function useUserDisplays(_userIds: readonly string[]): Map<string, LookupUserDTO> {
-  return useMemo(() => new Map<string, LookupUserDTO>(), []);
+const DISPLAYS_CHUNK_LIMIT = 50;
+
+interface ByIdsResponse {
+  users: LookupUserDTO[];
+}
+
+export function useUserDisplays(userIds: readonly string[]): Map<string, LookupUserDTO> {
+  const sorted = useMemo(() => {
+    const uniq = Array.from(new Set(userIds.filter((id) => !!id)));
+    uniq.sort();
+    return uniq;
+  }, [userIds]);
+
+  const q = useQuery({
+    queryKey: ["users", "displays", sorted] as const,
+    enabled: sorted.length > 0,
+    queryFn: async () => {
+      // Single page is enough for any realistic crew; chunk if/when
+      // a caller actually hands us > 50 ids.
+      const head = sorted.slice(0, DISPLAYS_CHUNK_LIMIT);
+      const params = new URLSearchParams({ ids: head.join(",") });
+      const res = await crewApi.get<ByIdsResponse>(`/users/by-ids?${params.toString()}`);
+      return res.users ?? [];
+    },
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  return useMemo(() => {
+    const map = new Map<string, LookupUserDTO>();
+    for (const u of q.data ?? []) map.set(u.userId, u);
+    return map;
+  }, [q.data]);
 }
 
 /** Convenience: best-effort display name with fallback. */

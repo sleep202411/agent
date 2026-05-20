@@ -1,16 +1,19 @@
 /**
  * UsersService — composition for the user-lookup BFF.
  *
- * Only by-contact lookups are supported today (Java has no profile-
- * by-userId endpoint). `lookupByContact` forwards the viewer's
- * cookie so Java's sa-token interceptor accepts the request, then
- * enriches the result with crew-membership context when
- * `checkCrewId` is supplied.
+ * Two read paths:
+ *   - lookupByContact(account, cookie, checkCrewId?) — by email/phone,
+ *     enriched with crew-membership context.
+ *   - lookupByUserId(id, cookie) / lookupByUserIds(ids, cookie) — direct
+ *     by Java user id. Only returns `{ userId, nickname, avatar }`
+ *     (no contact/study/description even though Java sends them).
+ *     Used by the crew workspace to resolve members → display names.
  *
  * Caching:
- *   - Positive lookups: Redis 5 min TTL keyed on sha256(normalized
- *     account). Cheap to be slightly stale for nickname / avatar.
- *   - Negative lookups NOT cached — caching "no such email" would
+ *   - Positive contact lookups: Redis 5 min TTL keyed on
+ *     sha256(normalized account). Slightly stale nickname/avatar is fine.
+ *   - Positive by-id lookups: Redis 5 min TTL keyed on userId.
+ *   - Negative lookups NOT cached — caching "no such email/id" would
  *     let an attacker enumerate via fast Redis-hit timing.
  *   - Membership check: NOT cached — owner adds/removes shift truth.
  */
@@ -41,6 +44,64 @@ export class UsersService {
     private readonly javaLookup: JavaUserLookupService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
+
+  /**
+   * Look up a single user by their Java user id. Returns the safe
+   * public projection (`isCrewMember`/`isCrewFounder` always null —
+   * by-id lookups don't carry a crew context). Null on not-found.
+   */
+  async lookupByUserId(
+    userId: string,
+    cookie: string,
+  ): Promise<LookupUserDTO | null> {
+    const trimmed = userId.trim();
+    if (!trimmed) return null;
+    const cacheKey = `user-lookup:byId:${trimmed}`;
+
+    let raw = await this.tryReadCache(cacheKey);
+    if (!raw) {
+      raw = await this.javaLookup.findByUserId(trimmed, cookie);
+      if (!raw) return null;
+      await this.writeCache(cacheKey, raw);
+    }
+    return {
+      userId: raw.userId,
+      nickname: raw.nickname,
+      avatar: raw.avatar,
+      isCrewMember: null,
+      isCrewFounder: null,
+    };
+  }
+
+  /**
+   * Batch variant — parallel fan-out, single-id cache reuse. Java has
+   * no native batch endpoint, so each id costs one upstream call (or
+   * zero on cache hit). De-dupes ids before fan-out so a crew with the
+   * same user listed twice doesn't fire two requests. Returns one
+   * entry per FOUND id; missing ids are omitted (no `null` placeholders
+   * in the array — caller can diff against input to know which 404'd).
+   */
+  async lookupByUserIds(
+    userIds: readonly string[],
+    cookie: string,
+  ): Promise<LookupUserDTO[]> {
+    const uniq = Array.from(
+      new Set(userIds.map((id) => id?.trim()).filter((id) => !!id)),
+    );
+    if (uniq.length === 0) return [];
+    const settled = await Promise.allSettled(
+      uniq.map((id) => this.lookupByUserId(id, cookie)),
+    );
+    const out: LookupUserDTO[] = [];
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value) out.push(r.value);
+      // Rejected → individual upstream failure; swallow so a single bad
+      // id doesn't take down the whole batch. The successful ids still
+      // come back, and the missing ones look like "not found" to the
+      // client (good enough for a display-name lookup).
+    }
+    return out;
+  }
 
   async lookupByContact(
     req: LookupByContactRequest,
