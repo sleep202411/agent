@@ -4,7 +4,7 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": ["assistant/prompts/**/*.md"],
+    "assets": ["assistant/prompts/**/*.md", "quota/lua/*.lua"],
     "watchAssets": true
   }
 }
