@@ -8,6 +8,7 @@ import {
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { newShortId } from '../common/id';
+import { TIERS, normalizeTier } from '../quota/tiers.config';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationEtaService } from './eta.service';
 import { AiGenerationRepository } from './repository';
@@ -234,8 +235,12 @@ export class AiGenerationService {
     const job = reservation.job;
     // Hand off to BullMQ. The worker reads the canonical row from DB
     // when it picks the message up, so the payload is just the jobId.
+    // Priority is derived from the user's tier so VIP3 submissions
+    // jump to the front of a contended image queue — see TIERS in
+    // src/quota/tiers.config.ts for the full mapping.
+    const priority = TIERS[normalizeTier(user.userLevel)].priority;
     try {
-      await this.queue.enqueue(queueName, id);
+      await this.queue.enqueue(queueName, id, 0, priority);
     } catch (err) {
       const failed = await this.store.update(id, {
         status: 'failed',
