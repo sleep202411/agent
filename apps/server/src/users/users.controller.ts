@@ -1,28 +1,31 @@
 /**
- * /users/lookup — resolve email / phone to a user profile (by-contact).
+ * /users — public-profile BFF over Java's user endpoints.
  *
- *   GET /aurora/users/lookup?account=…&checkCrewId=…
- *   GET /aurora/users/lookup?email=…
- *   GET /aurora/users/lookup?phone=…
+ * Routes:
+ *   GET /aurora/users/lookup?{account|email|phone}=…&checkCrewId=…
+ *     Resolve a contact (email/phone) to a profile; crew-member /
+ *     founder flags added when checkCrewId is supplied. Used by the
+ *     add-member dialog. Rate-limited 30/min per viewer.
  *
- * Exactly one of account / email / phone must be supplied (the three
- * are aliases — Java's "account" is the canonical field, but the
- * client-side dialog uses email / phone for clarity).
+ *   GET /aurora/users/by-id?id=<id>
+ *     Resolve a single Java user id → safe public projection
+ *     ({ userId, nickname, avatar }). Used for one-off owner /
+ *     applicant displays. Rate-limited 60/min per viewer.
  *
- * Auth: required (forwards viewer's cookie to Java sa-token).
- * Rate limit: 30 per minute per logged-in user.
+ *   GET /aurora/users/by-ids?ids=1,2,3
+ *     Batch resolve up to 50 ids in parallel. Used by the crew
+ *     workspace member list to fill display names in a single round
+ *     trip; the service caches per-id (Redis 5 min) so repeated
+ *     screens cost zero upstream calls. Missing ids are omitted from
+ *     the response — callers diff against input to know who 404'd.
+ *     Rate-limited 30/min per viewer (cost = 1 regardless of |ids|).
  *
- * Returns:
- *   200 LookupUserDTO — found
- *   404 — not found
- *   400 — missing / invalid input
- *   429 — rate limit
- *   502 — upstream Java unavailable / unauthorised
+ * Auth: required on every route (forwards the viewer's satoken cookie
+ * to Java). Returns 502 if Java is unreachable / rejects auth.
  *
- * No by-userId variant: Java doesn't expose a profile-by-id endpoint;
- * `/user/resumer/list/:id` returns resume entries, not profile.
- * Member-list name resolution falls back to "User <id>" until the
- * by-id endpoint lands.
+ * Cross-user disclosure: every response is filtered to
+ * `{ userId, nickname, avatar }` even though Java sends `contact`,
+ * `study`, `description` etc. — see UsersService.
  */
 import {
   BadRequestException,
@@ -84,5 +87,68 @@ export class UsersController {
       throw new NotFoundException({ message: 'No user matches that input' });
     }
     return result;
+  }
+
+  @Get('by-id')
+  async byId(
+    @CurrentUser() viewer: AuthUser,
+    @ViewerCookie() cookie: string,
+    @Query('id') id?: string,
+  ) {
+    const trimmed = (id ?? '').trim();
+    if (!trimmed) {
+      throw new BadRequestException({ message: 'id required' });
+    }
+    if (!/^\d{1,18}$/.test(trimmed)) {
+      throw new BadRequestException({
+        message: 'id must be a positive integer',
+      });
+    }
+    await this.rateLimit.guard({
+      bucket: 'user-by-id',
+      actorId: viewer.userId,
+      max: 60,
+      windowSec: 60,
+    });
+    const result = await this.svc.lookupByUserId(trimmed, cookie);
+    if (!result) {
+      throw new NotFoundException({ message: 'No user with that id' });
+    }
+    return result;
+  }
+
+  @Get('by-ids')
+  async byIds(
+    @CurrentUser() viewer: AuthUser,
+    @ViewerCookie() cookie: string,
+    @Query('ids') ids?: string,
+  ) {
+    const raw = (ids ?? '').trim();
+    if (!raw) {
+      return { users: [] };
+    }
+    const parsed = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => /^\d{1,18}$/.test(s));
+    // Cap fan-out so a single request can't fire 1000 upstream calls.
+    // 50 covers any plausible crew (typical 5-20 members) and keeps
+    // the worst-case latency bounded while Java has no native batch.
+    if (parsed.length > 50) {
+      throw new BadRequestException({
+        message: 'Too many ids (max 50 per request)',
+      });
+    }
+    if (parsed.length === 0) {
+      return { users: [] };
+    }
+    await this.rateLimit.guard({
+      bucket: 'user-by-ids',
+      actorId: viewer.userId,
+      max: 30,
+      windowSec: 60,
+    });
+    const users = await this.svc.lookupByUserIds(parsed, cookie);
+    return { users };
   }
 }
