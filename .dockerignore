@@ -1,12 +1,21 @@
-node_modules
-.next
-dist
+# Docker build context excludes — root-anchored patterns only match the
+# repo root, so dependency / build dirs in subpackages need `**/` to be
+# walked recursively. Without these, a local `npm install` + `npm run dev`
+# bloats the build context to 30+GB (apps/web/.next alone).
+**/node_modules
+**/.next
+**/.turbo
+**/.cache
+**/dist
+**/coverage
 .git
 .github
 .claude
 .agents
-.turbo
 .env*
 *.tar
+*.tar.gz
 *.md
+# package.json is needed for npm install in the build — keep it.
 !package.json
+!**/package.json
