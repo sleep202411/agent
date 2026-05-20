@@ -39,6 +39,23 @@ export interface AiJobListOptions {
   limit?: number;
 }
 
+export type ReserveQueuedJobResult =
+  | { kind: 'existing'; job: AiJob }
+  | { kind: 'queued_limit'; limit: number }
+  | { kind: 'running_limit'; limit: number; type: AiJobType }
+  | { kind: 'created'; job: AiJob; repositioned: AiJob[] };
+
+export interface ReserveQueuedJobOptions {
+  userId: string;
+  modelId: string;
+  idempotencyKey: string;
+  queueName: AiJob['queueName'];
+  type: AiJobType;
+  perUserQueued: number;
+  perUserRunning: number;
+  buildJob: (queuePosition: number) => AiJob;
+}
+
 /**
  * Thrown by `repository.update(id, patch, expectedVersion)` when the
  * row's current `version` no longer matches what the caller saw.
@@ -57,6 +74,7 @@ export class OptimisticLockError extends Error {
 }
 
 type JobWithOutputs = AiJobRow & { outputs: AiJobOutputRow[] };
+type DbClient = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class AiGenerationRepository {
@@ -91,6 +109,64 @@ export class AiGenerationRepository {
       include: { outputs: this.outputsInclude(false) },
     });
     return row ? this.toDomain(row) : null;
+  }
+
+  /**
+   * Atomically reserves a queue slot for one user.
+   *
+   * Submit concurrency cannot rely on "read active jobs, then insert"
+   * outside a transaction: two browser tabs with different idempotency
+   * keys can both observe zero active jobs and overrun per-user limits.
+   * A user-scoped Postgres advisory transaction lock serializes that
+   * critical section while staying pod-safe.
+   */
+  async reserveQueuedJob(
+    options: ReserveQueuedJobOptions,
+  ): Promise<ReserveQueuedJobResult> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`ai-generation:user:${options.userId}`})::bigint)
+      `;
+
+      const existing = await this.findByIdempotencyWith(
+        tx,
+        options.userId,
+        options.modelId,
+        options.idempotencyKey,
+      );
+      if (existing) return { kind: 'existing', job: existing };
+
+      const active = await this.activeForUserWith(tx, options.userId);
+      const activeSameType = active.filter((job) => job.type === options.type);
+      const queuedTotal = active.filter(
+        (job) => job.status === 'in_queue',
+      ).length;
+      const runningSameType = activeSameType.filter(
+        (job) => job.status === 'in_progress',
+      ).length;
+
+      if (queuedTotal >= options.perUserQueued) {
+        return { kind: 'queued_limit', limit: options.perUserQueued };
+      }
+      if (runningSameType >= options.perUserRunning) {
+        return {
+          kind: 'running_limit',
+          limit: options.perUserRunning,
+          type: options.type,
+        };
+      }
+
+      const queuePosition = (
+        await this.waitingInQueueWith(tx, options.queueName)
+      ).length;
+      const job = options.buildJob(queuePosition);
+      await tx.aiJob.create({ data: this.toRow(job) });
+      const repositioned = await this.recomputeQueuePositionsWith(
+        tx,
+        options.queueName,
+      );
+      return { kind: 'created', job, repositioned };
+    });
   }
 
   async save(job: AiJob): Promise<AiJob> {
@@ -174,7 +250,14 @@ export class AiGenerationRepository {
   }
 
   async activeForUser(userId: string): Promise<AiJob[]> {
-    const rows = await this.prisma.aiJob.findMany({
+    return this.activeForUserWith(this.prisma, userId);
+  }
+
+  private async activeForUserWith(
+    client: DbClient,
+    userId: string,
+  ): Promise<AiJob[]> {
+    const rows = await client.aiJob.findMany({
       where: {
         userId,
         deletedAt: null,
@@ -186,7 +269,14 @@ export class AiGenerationRepository {
   }
 
   async waitingInQueue(queueName: AiJob['queueName']): Promise<AiJob[]> {
-    const rows = await this.prisma.aiJob.findMany({
+    return this.waitingInQueueWith(this.prisma, queueName);
+  }
+
+  private async waitingInQueueWith(
+    client: DbClient,
+    queueName: AiJob['queueName'],
+  ): Promise<AiJob[]> {
+    const rows = await client.aiJob.findMany({
       where: { queueName, status: 'in_queue', deletedAt: null },
       orderBy: [{ queuedAt: 'asc' }, { createdAt: 'asc' }],
       include: { outputs: this.outputsInclude(false) },
@@ -203,19 +293,39 @@ export class AiGenerationRepository {
   async recomputeQueuePositions(
     queueName: AiJob['queueName'],
   ): Promise<AiJob[]> {
-    const waiting = await this.waitingInQueue(queueName);
+    return this.recomputeQueuePositionsWith(this.prisma, queueName);
+  }
+
+  private async recomputeQueuePositionsWith(
+    client: DbClient,
+    queueName: AiJob['queueName'],
+  ): Promise<AiJob[]> {
+    const waiting = await this.waitingInQueueWith(client, queueName);
     const changed: AiJob[] = [];
     const now = new Date();
     for (let i = 0; i < waiting.length; i += 1) {
       const job = waiting[i];
       if (job.queuePosition === i) continue;
-      await this.prisma.aiJob.update({
+      await client.aiJob.update({
         where: { id: job.id },
         data: { queuePosition: i, updatedAt: now },
       });
       changed.push({ ...job, queuePosition: i, updatedAt: now.toISOString() });
     }
     return changed;
+  }
+
+  private async findByIdempotencyWith(
+    client: DbClient,
+    userId: string,
+    modelId: string,
+    idempotencyKey: string,
+  ): Promise<AiJob | null> {
+    const row = await client.aiJob.findFirst({
+      where: { userId, modelId, idempotencyKey, deletedAt: null },
+      include: { outputs: this.outputsInclude(false) },
+    });
+    return row ? this.toDomain(row) : null;
   }
 
   // ─── hydration helpers ────────────────────────────────────────

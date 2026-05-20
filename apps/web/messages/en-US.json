@@ -3969,7 +3969,14 @@
         "busy": "Previous task is still running. Please wait.",
         "addImage": "Add image",
         "addReferences": "Add references",
-        "outputs": "Outputs"
+        "outputs": "Outputs",
+        "more": "More",
+        "qualityChip": "Quality",
+        "lockedTier": "Available to {tier}+ members",
+        "lockedMember": "Available to members only",
+        "unlock": "Unlock {tier}",
+        "unlockMember": "Members only",
+        "referencesPlaceholder": "Paste image URLs, one per line"
       },
       "cell": {
         "queued": "Queued",
@@ -3990,7 +3997,16 @@
         "submitFailed": "Failed to submit generation task.",
         "timeout": "Generation took too long. Try again or pick a smaller size.",
         "empty": "Generation completed without output.",
-        "failed": "Generation failed."
+        "failed": "Generation failed.",
+        "membershipRequired": "This model is for members only. Upgrade to unlock.",
+        "membershipExpired": "Your membership has expired. Renew to keep generating.",
+        "retryFailed": "Failed to retry task.",
+        "loadModels": "Failed to load image models.",
+        "noModels": "No image model is available."
+      },
+      "unavailable": {
+        "title": "Image lab isn't available in your region",
+        "body": "Image generation runs on infrastructure that isn't deployed for this site yet. Stay tuned — coming soon."
       },
       "eyebrow": "AI image",
       "title": "Text to Image",

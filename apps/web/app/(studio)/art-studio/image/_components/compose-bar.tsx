@@ -1,8 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { IconChevronDown, IconLock, IconPlus, IconSparkles } from "@tabler/icons-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  IconAdjustments,
+  IconChevronDown,
+  IconLock,
+  IconPlus,
+  IconSparkles,
+} from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import type {
+  FoundryConditionExpression,
+  FoundryFieldUi,
+  FoundryJsonPrimitive,
+  FoundryJsonSchema,
+  FoundryUiOption,
+} from "@repo/shared";
 import type { AiModel } from "../_data/mock-model";
 
 export interface AiOption {
@@ -30,6 +43,8 @@ export type ComposeBarProps = {
   outputs: number;
   outputOptions: number[];
   onOutputsChange: (n: number) => void;
+  formData: Record<string, unknown>;
+  onFieldChange: (name: string, value: unknown) => void;
   /** Current user's tier rank — used to lock high-tier options. */
   userTierRank: number;
   tierRank: (tier: string | null | undefined) => number;
@@ -73,6 +88,8 @@ export function ComposeBar(props: ComposeBarProps) {
     outputs,
     outputOptions,
     onOutputsChange,
+    formData,
+    onFieldChange,
     userTierRank,
     tierRank,
     activeJobCount,
@@ -86,7 +103,7 @@ export function ComposeBar(props: ComposeBarProps) {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [openPopover, setOpenPopover] = useState<
-    null | "model" | "ratio" | "resolution" | "quality" | "outputs"
+    null | "model" | "ratio" | "resolution" | "quality" | "advanced"
   >(null);
 
   useEffect(() => {
@@ -114,6 +131,8 @@ export function ComposeBar(props: ComposeBarProps) {
   const isOptionLocked = (opt: AiOption) => opt.tier != null && tierRank(opt.tier) > userTierRank;
 
   const activeResolution = resolutionTierOptions.find((o) => o.value === resolutionTierValue);
+  const advancedFields = useMemo(() => getAdvancedFields(model, formData), [model, formData]);
+  const hasReferenceField = advancedFields.some((field) => field.name === "reference_images");
 
   return (
     <div
@@ -180,12 +199,14 @@ export function ComposeBar(props: ComposeBarProps) {
           that pop upward. Narrow viewports just let the row overflow
           the bar (rare; mobile path can be revisited separately). */}
       <div className="mt-2 flex flex-nowrap items-center gap-1.5 px-1">
-        {/* Add image (references) — placeholder for v1 */}
+        {/* Add image opens the schema-driven reference controls. */}
         <button
           type="button"
-          disabled
+          onClick={() => setOpenPopover(openPopover === "advanced" ? null : "advanced")}
+          disabled={disabled || !hasReferenceField}
           aria-label={t("imageLab.compose.addImage", "Add image")}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800/70 text-zinc-500 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed"
+          title={t("imageLab.compose.addReferences", "Add references")}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800/70 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-600"
         >
           <IconPlus className="size-4" />
         </button>
@@ -278,7 +299,17 @@ export function ComposeBar(props: ComposeBarProps) {
                 <PopoverItem
                   key={option.value}
                   active={active}
+                  disabled={locked}
+                  title={
+                    locked
+                      ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
+                          "{tier}",
+                          option.tier ?? "VIP"
+                        )
+                      : undefined
+                  }
                   onClick={() => {
+                    if (locked) return;
                     onResolutionTierChange(option.value);
                     setOpenPopover(null);
                   }}
@@ -343,9 +374,409 @@ export function ComposeBar(props: ComposeBarProps) {
             );
           })}
         </div>
+
+        {advancedFields.length > 0 && (
+          <ChipPopover
+            open={openPopover === "advanced"}
+            onOpenChange={(v) => setOpenPopover(v ? "advanced" : null)}
+            label={t("imageLab.compose.more", "More")}
+            leadingIcon={<IconAdjustments className="size-3.5" />}
+            disabled={disabled}
+            align="right"
+            contentClassName="w-[min(420px,calc(100vw-32px))] max-h-[60vh] overflow-y-auto rounded-xl bg-zinc-900 p-2 shadow-2xl ring-1 ring-white/10"
+          >
+            <AdvancedFieldList
+              fields={advancedFields}
+              formData={formData}
+              onFieldChange={onFieldChange}
+              userTierRank={userTierRank}
+              tierRank={tierRank}
+              disabled={disabled}
+              t={t}
+            />
+          </ChipPopover>
+        )}
       </div>
     </div>
   );
+}
+
+// ─── Schema-driven advanced controls ────────────────────────────
+// The server is the source of truth for schema, validation, and tier
+// enforcement. The compose bar renders secondary fields from that same
+// contract so new provider parameters can ship without hand-editing
+// page state for every field.
+type SchemaOption = Pick<FoundryUiOption, "label" | "labelKey" | "tier"> & {
+  value: Exclude<FoundryJsonPrimitive, null>;
+};
+
+type AdvancedField = {
+  name: string;
+  field: FoundryJsonSchema;
+  ui: FoundryFieldUi;
+  enabled: boolean;
+  required: boolean;
+};
+
+const PRIMARY_FIELD_NAMES = new Set(["prompt", "aspect_ratio", "resolution_tier", "quality", "n"]);
+
+function AdvancedFieldList({
+  fields,
+  formData,
+  onFieldChange,
+  userTierRank,
+  tierRank,
+  disabled,
+  t,
+}: {
+  fields: AdvancedField[];
+  formData: Record<string, unknown>;
+  onFieldChange: (name: string, value: unknown) => void;
+  userTierRank: number;
+  tierRank: (tier: string | null | undefined) => number;
+  disabled?: boolean;
+  t: ComposeBarProps["t"];
+}) {
+  return (
+    <div className="space-y-3">
+      {fields.map((item) => (
+        <SchemaFieldControl
+          key={item.name}
+          item={item}
+          value={formData[item.name] ?? item.field.default}
+          onChange={(value) => onFieldChange(item.name, value)}
+          userTierRank={userTierRank}
+          tierRank={tierRank}
+          disabled={disabled || !item.enabled}
+          t={t}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SchemaFieldControl({
+  item,
+  value,
+  onChange,
+  userTierRank,
+  tierRank,
+  disabled,
+  t,
+}: {
+  item: AdvancedField;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  userTierRank: number;
+  tierRank: (tier: string | null | undefined) => number;
+  disabled?: boolean;
+  t: ComposeBarProps["t"];
+}) {
+  const { name, field, ui, required } = item;
+  const label = fieldLabel(name, field, ui, t);
+  const description = fieldDescription(field, ui, t);
+  const control = ui.control;
+  const options = fieldOptions(field, ui);
+  const isMediaArray = field.type === "array" && /upload$/.test(control ?? "");
+
+  return (
+    <div className="rounded-lg bg-zinc-950/45 px-3 py-3 ring-1 ring-white/5">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200">
+            <span className="truncate">{label}</span>
+            {required && <span className="text-primary">*</span>}
+          </div>
+          {description && <p className="mt-1 text-[11px] leading-4 text-zinc-500">{description}</p>}
+        </div>
+        {disabled && ui.disabledReason && (
+          <span className="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] text-zinc-400">
+            {ui.disabledReason}
+          </span>
+        )}
+      </div>
+
+      {options.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {options.map((option) => {
+            const active = valuesEqual(value, option.value);
+            const locked = option.tier != null && tierRank(option.tier) > userTierRank;
+            const label = option.labelKey
+              ? t(option.labelKey, option.label)
+              : t(`options.${String(option.value)}`, option.label);
+            return (
+              <button
+                key={String(option.value)}
+                type="button"
+                onClick={() => {
+                  if (!locked) onChange(option.value);
+                }}
+                disabled={disabled || locked}
+                title={
+                  locked
+                    ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
+                        "{tier}",
+                        option.tier ?? "VIP"
+                      )
+                    : undefined
+                }
+                className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-primary/15 text-primary ring-1 ring-primary/45"
+                    : "bg-zinc-800/70 text-zinc-300 hover:bg-zinc-800"
+                } disabled:cursor-not-allowed disabled:opacity-55`}
+              >
+                <span>{label}</span>
+                {locked && <TierBadge tier={option.tier ?? "VIP"} />}
+              </button>
+            );
+          })}
+        </div>
+      ) : field.type === "boolean" || control === "switch" || control === "checkbox" ? (
+        <button
+          type="button"
+          role="switch"
+          aria-checked={Boolean(value)}
+          onClick={() => onChange(!Boolean(value))}
+          disabled={disabled}
+          className={`inline-flex h-7 w-12 items-center rounded-full p-0.5 transition-colors ${
+            value ? "bg-primary" : "bg-zinc-800"
+          } disabled:cursor-not-allowed disabled:opacity-60`}
+        >
+          <span
+            className={`size-6 rounded-full bg-white transition-transform ${
+              value ? "translate-x-5" : "translate-x-0"
+            }`}
+          />
+        </button>
+      ) : isMediaArray ? (
+        <textarea
+          value={mediaReferencesToText(value)}
+          onChange={(event) => onChange(textToMediaReferences(event.target.value))}
+          disabled={disabled}
+          rows={3}
+          placeholder={t(
+            "imageLab.compose.referencesPlaceholder",
+            "Paste image URLs, one per line"
+          )}
+          className="min-h-20 w-full resize-none rounded-lg bg-zinc-950 px-3 py-2 text-xs leading-5 text-zinc-200 outline-none ring-1 ring-white/10 placeholder:text-zinc-600 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
+        />
+      ) : field.type === "integer" || field.type === "number" ? (
+        <NumberField field={field} value={value} onChange={onChange} disabled={disabled} />
+      ) : (
+        <input
+          type="text"
+          value={typeof value === "string" ? value : ""}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          placeholder={ui.placeholderKey ? t(ui.placeholderKey, ui.placeholder) : ui.placeholder}
+          className="h-9 w-full rounded-lg bg-zinc-950 px-3 text-xs text-zinc-200 outline-none ring-1 ring-white/10 placeholder:text-zinc-600 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
+        />
+      )}
+    </div>
+  );
+}
+
+function NumberField({
+  field,
+  value,
+  onChange,
+  disabled,
+}: {
+  field: FoundryJsonSchema;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  disabled?: boolean;
+}) {
+  const minimum = "minimum" in field ? field.minimum : undefined;
+  const maximum = "maximum" in field ? field.maximum : undefined;
+  const numericValue = typeof value === "number" && Number.isFinite(value) ? value : "";
+  const isSlider =
+    field["x-ui"] &&
+    !("groups" in field["x-ui"]) &&
+    field["x-ui"].control === "slider" &&
+    typeof minimum === "number" &&
+    typeof maximum === "number";
+
+  if (isSlider) {
+    const current =
+      typeof numericValue === "number" ? numericValue : typeof minimum === "number" ? minimum : 0;
+    return (
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min={minimum}
+          max={maximum}
+          value={current}
+          onChange={(event) => onChange(Number(event.target.value))}
+          disabled={disabled}
+          className="h-2 flex-1 accent-primary disabled:cursor-not-allowed disabled:opacity-60"
+        />
+        <span className="w-10 rounded bg-zinc-800 px-2 py-1 text-center text-xs tabular-nums text-zinc-300">
+          {current}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <input
+      type="number"
+      min={minimum}
+      max={maximum}
+      value={numericValue}
+      onChange={(event) => {
+        const next = event.target.value;
+        onChange(next === "" ? undefined : Number(next));
+      }}
+      disabled={disabled}
+      className="h-9 w-full rounded-lg bg-zinc-950 px-3 text-xs tabular-nums text-zinc-200 outline-none ring-1 ring-white/10 focus:ring-primary/50 disabled:cursor-not-allowed disabled:opacity-60"
+    />
+  );
+}
+
+function getAdvancedFields(model: AiModel, formData: Record<string, unknown>): AdvancedField[] {
+  const required = new Set(model.input_schema.required ?? []);
+  return Object.entries(model.input_schema.properties)
+    .filter(([name]) => !PRIMARY_FIELD_NAMES.has(name))
+    .map(([name, field]) => {
+      const ui = fieldUi(field);
+      return {
+        name,
+        field,
+        ui,
+        enabled: !ui.enabledWhen || matchesCondition(ui.enabledWhen, formData),
+        required: required.has(name),
+      };
+    })
+    .filter((item) => item.ui.control !== "hidden" && item.ui.importance !== "hidden")
+    .filter((item) => {
+      const ui = item.ui;
+      if (ui.visibleWhen && !matchesCondition(ui.visibleWhen, formData)) return false;
+      if (ui.showWhen && !matchesCondition(ui.showWhen, formData)) return false;
+      return true;
+    })
+    .sort((a, b) => (a.ui.order ?? 999) - (b.ui.order ?? 999));
+}
+
+function fieldUi(field: FoundryJsonSchema): FoundryFieldUi {
+  const ui = field["x-ui"];
+  return ui && !("groups" in ui) ? ui : {};
+}
+
+function fieldOptions(field: FoundryJsonSchema, ui: FoundryFieldUi): SchemaOption[] {
+  const raw = ui.options ?? field.enum?.map((value) => ({ value, label: String(value) }));
+  if (!raw) return [];
+  return raw
+    .filter((option): option is FoundryUiOption => option != null && option.value !== null)
+    .map((option) => ({
+      value: option.value as SchemaOption["value"],
+      label: option.label ?? String(option.value),
+      labelKey: option.labelKey,
+      tier: option.tier ?? null,
+    }));
+}
+
+function fieldLabel(
+  name: string,
+  field: FoundryJsonSchema,
+  ui: FoundryFieldUi,
+  t: ComposeBarProps["t"]
+): string {
+  const fallback = ui.label ?? field.title ?? name.replaceAll("_", " ");
+  return ui.labelKey
+    ? t(ui.labelKey, fallback)
+    : field.titleKey
+      ? t(field.titleKey, fallback)
+      : fallback;
+}
+
+function fieldDescription(
+  field: FoundryJsonSchema,
+  ui: FoundryFieldUi,
+  t: ComposeBarProps["t"]
+): string | null {
+  const fallback = ui.hint ?? field.description;
+  const key = ui.hintKey ?? field.descriptionKey;
+  return key ? t(key, fallback) : (fallback ?? null);
+}
+
+function matchesCondition(
+  condition: FoundryConditionExpression,
+  formData: Record<string, unknown>
+): boolean {
+  if ("all" in condition && condition.all) {
+    return condition.all.every((item) => matchesCondition(item, formData));
+  }
+  if ("any" in condition && condition.any) {
+    return condition.any.some((item) => matchesCondition(item, formData));
+  }
+  if ("not" in condition && condition.not) {
+    return !matchesCondition(condition.not, formData);
+  }
+  if (!("field" in condition)) return false;
+
+  const current = formData[condition.field];
+  switch (condition.operator) {
+    case "equals":
+      return valuesEqual(current, condition.value);
+    case "notEquals":
+      return !valuesEqual(current, condition.value);
+    case "in":
+      return (condition.values ?? []).some((item) => valuesEqual(current, item));
+    case "notIn":
+      return !(condition.values ?? []).some((item) => valuesEqual(current, item));
+    case "exists":
+      return !isEmptyValue(current);
+    case "empty":
+      return isEmptyValue(current);
+    case "gt":
+      return Number(current) > Number(condition.value);
+    case "gte":
+      return Number(current) >= Number(condition.value);
+    case "lt":
+      return Number(current) < Number(condition.value);
+    case "lte":
+      return Number(current) <= Number(condition.value);
+    default:
+      return false;
+  }
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+  return a === b || String(a) === String(b);
+}
+
+function isEmptyValue(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    value === "" ||
+    (Array.isArray(value) && value.length === 0)
+  );
+}
+
+function mediaReferencesToText(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object" && "url" in item) {
+        const url = (item as { url?: unknown }).url;
+        return typeof url === "string" ? url : "";
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function textToMediaReferences(text: string): Array<{ url: string }> {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((url) => ({ url }));
 }
 
 // ─── Visual ratio icon ────────────────────────────────────────
@@ -415,15 +846,19 @@ function ChipPopover({
   leadingIcon,
   trailing,
   disabled,
+  align = "left",
+  contentClassName,
   children,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   label: string;
-  leadingIcon?: React.ReactNode;
-  trailing?: React.ReactNode;
+  leadingIcon?: ReactNode;
+  trailing?: ReactNode;
   disabled?: boolean;
-  children: React.ReactNode;
+  align?: "left" | "right";
+  contentClassName?: string;
+  children: ReactNode;
 }) {
   return (
     <div className="relative">
@@ -439,7 +874,11 @@ function ChipPopover({
         <IconChevronDown className="size-3 text-zinc-500" />
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 z-40 mb-2 min-w-[200px] overflow-hidden rounded-xl bg-zinc-900 p-1 shadow-2xl ring-1 ring-white/10">
+        <div
+          className={`absolute bottom-full z-40 mb-2 ${
+            align === "right" ? "right-0" : "left-0"
+          } ${contentClassName ?? "min-w-[200px] overflow-hidden rounded-xl bg-zinc-900 p-1 shadow-2xl ring-1 ring-white/10"}`}
+        >
           {children}
         </div>
       )}
@@ -449,20 +888,26 @@ function ChipPopover({
 
 function PopoverItem({
   active,
+  disabled,
+  title,
   onClick,
   children,
 }: {
   active: boolean;
+  disabled?: boolean;
+  title?: string;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-zinc-800 ${
-        active ? "bg-primary/15 text-primary" : "text-zinc-200"
-      }`}
+      disabled={disabled}
+      title={title}
+      className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+        disabled ? "cursor-not-allowed opacity-55" : "hover:bg-zinc-800"
+      } ${active ? "bg-primary/15 text-primary" : "text-zinc-200"}`}
     >
       <span className="min-w-0 flex-1">{children}</span>
       {active && <span className="mt-1.5 size-1.5 rounded-full bg-primary" />}

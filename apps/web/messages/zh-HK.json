@@ -3969,7 +3969,14 @@
         "busy": "上一張仍在生成，請稍候",
         "addImage": "添加圖片",
         "addReferences": "添加參考圖",
-        "outputs": "數量"
+        "outputs": "數量",
+        "more": "更多",
+        "qualityChip": "質量",
+        "lockedTier": "{tier}+ 會員可用",
+        "lockedMember": "會員可用",
+        "unlock": "解鎖 {tier}",
+        "unlockMember": "會員可用",
+        "referencesPlaceholder": "貼上圖片 URL，每行一個"
       },
       "cell": {
         "queued": "排隊中",
@@ -3990,7 +3997,16 @@
         "submitFailed": "生成任務提交失敗",
         "timeout": "生成超時，換小一點的尺寸或稍後再試",
         "empty": "生成完成但沒有產出",
-        "failed": "生成失敗"
+        "failed": "生成失敗",
+        "membershipRequired": "該模型僅會員可用，升級後即可使用。",
+        "membershipExpired": "你的會員已過期，續費後可繼續生成。",
+        "retryFailed": "重試任務失敗",
+        "loadModels": "載入圖像模型失敗",
+        "noModels": "目前沒有可用的圖像模型"
+      },
+      "unavailable": {
+        "title": "該區域暫未開放圖像實驗室",
+        "body": "圖像生成依賴的基礎設施尚未部署到目前站點，開放後即可使用。"
       },
       "eyebrow": "AI 生圖",
       "title": "文生圖",

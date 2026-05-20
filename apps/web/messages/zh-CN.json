@@ -3969,7 +3969,14 @@
         "busy": "上一张还在生成，请等待完成",
         "addImage": "添加图片",
         "addReferences": "添加参考图",
-        "outputs": "数量"
+        "outputs": "数量",
+        "more": "更多",
+        "qualityChip": "质量",
+        "lockedTier": "{tier}+ 会员可用",
+        "lockedMember": "会员可用",
+        "unlock": "解锁 {tier}",
+        "unlockMember": "会员可用",
+        "referencesPlaceholder": "粘贴图片 URL，每行一个"
       },
       "cell": {
         "queued": "排队中",
@@ -3990,7 +3997,16 @@
         "submitFailed": "生成任务提交失败",
         "timeout": "生成超时，换小一点的尺寸或稍后再试",
         "empty": "生成完成但没有产出",
-        "failed": "生成失败"
+        "failed": "生成失败",
+        "membershipRequired": "该模型仅会员可用，升级后即可使用。",
+        "membershipExpired": "你的会员已过期，续费后可继续生成。",
+        "retryFailed": "重试任务失败",
+        "loadModels": "加载图像模型失败",
+        "noModels": "当前没有可用的图像模型"
+      },
+      "unavailable": {
+        "title": "该区域暂未开放图像实验室",
+        "body": "图像生成依赖的基础设施尚未部署到当前站点，开放后即可使用。"
       },
       "eyebrow": "AI 生图",
       "title": "文生图",

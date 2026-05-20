@@ -16,16 +16,19 @@ import { openAssetsRealtime } from "./_data/assets-realtime";
 import { ComposeBar } from "./_components/compose-bar";
 import { GalleryGrid, type GalleryItem } from "./_components/gallery-grid";
 import { useFeature } from "@/src/lib/region/provider";
+import { useCurrentUser } from "@/src/hooks/use-user";
 
-type ModelSource = "loading" | "live" | "preview";
+type ModelSource = "loading" | "live" | "preview" | "unavailable";
 
 const MOCK_RESULT_IMAGE =
   "https://images.unsplash.com/photo-1604079628040-94301bb21b91?auto=format&fit=crop&w=1400&q=86";
 
 const HISTORY_LIMIT = 60;
+const ALLOW_LOCAL_PREVIEW = process.env.NODE_ENV !== "production";
 
 export default function AiImageLabPage() {
   const rawT = useTranslations("aiGen");
+  const { user } = useCurrentUser();
   const t = useCallback(
     (key: string, fallback = key) => {
       const normalized = key.replace(/^aiGen\./, "");
@@ -44,6 +47,8 @@ export default function AiImageLabPage() {
   const [prompt, setPrompt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [items, setItems] = useState<GalleryItem[]>([]);
+  const [modelLoadError, setModelLoadError] = useState<string | null>(null);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -62,15 +67,28 @@ export default function AiImageLabPage() {
           setModel(picked);
           setFormData(deriveDefaults(picked.input_schema.properties));
           setModelSource("live");
+          setModelLoadError(null);
           return;
         }
-        setModelSource("preview");
+        if (ALLOW_LOCAL_PREVIEW) {
+          setModelSource("preview");
+        } else {
+          setModelLoadError(t("imageLab.error.noModels", "No image model is available."));
+          setModelSource("unavailable");
+        }
       } catch (error) {
         if (cancelled) return;
         if (process.env.NODE_ENV !== "production") {
           console.warn("[ai-gen] Falling back to local image schema preview.", error);
         }
-        setModelSource("preview");
+        if (ALLOW_LOCAL_PREVIEW) {
+          setModelSource("preview");
+        } else {
+          setModelLoadError(
+            friendlyError(error, t("imageLab.error.loadModels", "Failed to load image models."))
+          );
+          setModelSource("unavailable");
+        }
       }
     }
 
@@ -91,7 +109,7 @@ export default function AiImageLabPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   // ─── Reconciliation ──────────────────────────────────────────
   // "Push first, poll as safety net" — Web PubSub is the primary
@@ -210,6 +228,7 @@ export default function AiImageLabPage() {
     let hasConnectedBefore = false;
     const client = openAssetsRealtime({
       onConnected: () => {
+        setRealtimeConnected(true);
         // First `connected` is the initial handshake — history was
         // already loaded by the bootstrap effect. Any subsequent
         // connected fires after a network drop / token refresh, and
@@ -218,7 +237,12 @@ export default function AiImageLabPage() {
         hasConnectedBefore = true;
       },
       onEvent: handleAssetEvent,
-      onDisconnected: (reason) => console.log(`[assets-realtime] disconnected: ${reason}`),
+      onDisconnected: (reason) => {
+        setRealtimeConnected(false);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[assets-realtime] disconnected: ${reason}`);
+        }
+      },
     });
     return () => client.close();
   }, [handleAssetEvent, reconcileFromServer]);
@@ -287,11 +311,25 @@ export default function AiImageLabPage() {
     (it) => it.stage && it.stage !== "queued" && it.stage !== "created"
   );
 
+  // Active jobs get a REST reconciliation heartbeat. Web PubSub is still
+  // the fast path, but this makes "push first, poll as safety net" true
+  // even when the realtime connection is down for the whole run.
+  useEffect(() => {
+    if (activeJobCount === 0) return;
+    const intervalMs = realtimeConnected ? 15_000 : 5_000;
+    const timer = window.setInterval(() => {
+      void reconcileFromServer();
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [activeJobCount, realtimeConnected, reconcileFromServer]);
+
+  const userTierRank = useMemo(() => tierRank(user?.userLevel), [user?.userLevel]);
+
   const canSubmit =
     prompt.trim().length > 0 &&
     !isSubmitting &&
     model.enabled &&
-    modelSource !== "loading" &&
+    (modelSource === "live" || modelSource === "preview") &&
     activeJobCount === 0;
 
   // ─── Submit ──────────────────────────────────────────────────
@@ -417,7 +455,7 @@ export default function AiImageLabPage() {
     async (id: string) => {
       const original = items.find((it) => it.id === id);
       if (!original || original.kind !== "error") return;
-      if (modelSource === "preview" || !id.match(/^[0-9a-f-]{20,}$/i)) {
+      if (modelSource === "preview" || id.startsWith("temp:")) {
         // Local error — just resubmit with the same prompt/ratio
         setPrompt(original.prompt);
         return;
@@ -430,13 +468,23 @@ export default function AiImageLabPage() {
           prompt: original.prompt,
           ratio: original.ratio,
           createdAt: Date.now(),
+          stage: response.stage,
+          queuePosition: response.queue_position,
+          progress: response.progress,
+          etaSeconds: response.estimated_total_seconds,
         };
         replaceItem(id, [requeued]);
       } catch (error) {
-        // Leave the error card in place — user can try again.
+        replaceItem(id, [
+          {
+            ...original,
+            message: friendlyError(error, t("imageLab.error.retryFailed", "Failed to retry task.")),
+            createdAt: Date.now(),
+          },
+        ]);
       }
     },
-    [items, modelSource, replaceItem]
+    [items, modelSource, replaceItem, t]
   );
 
   // ─── Region gate ──────────────────────────────────────────────
@@ -448,6 +496,9 @@ export default function AiImageLabPage() {
   const imageGenAvailable = useFeature("imageGeneration");
   if (!imageGenAvailable) {
     return <UnavailableInRegion t={t} />;
+  }
+  if (modelSource === "unavailable") {
+    return <UnavailableInRegion t={t} detail={modelLoadError} />;
   }
 
   // ─── Render ───────────────────────────────────────────────────
@@ -489,7 +540,9 @@ export default function AiImageLabPage() {
             outputs={outputs}
             outputOptions={outputOptions}
             onOutputsChange={(n) => setFormData((prev) => ({ ...prev, n }))}
-            userTierRank={0}
+            formData={formData}
+            onFieldChange={(name, value) => setFormData((prev) => ({ ...prev, [name]: value }))}
+            userTierRank={userTierRank}
             tierRank={tierRank}
             activeJobCount={activeJobCount}
             activeJobRunning={isAnyJobRunning}
@@ -505,7 +558,13 @@ export default function AiImageLabPage() {
   );
 }
 
-function UnavailableInRegion({ t }: { t: (key: string, fallback?: string) => string }) {
+function UnavailableInRegion({
+  t,
+  detail,
+}: {
+  t: (key: string, fallback?: string) => string;
+  detail?: string | null;
+}) {
   return (
     <div className="flex h-[calc(100dvh-56px)] items-center justify-center bg-black px-6 text-foreground lg:pl-20">
       <div className="flex max-w-md flex-col items-center gap-4 text-center">
@@ -521,6 +580,7 @@ function UnavailableInRegion({ t }: { t: (key: string, fallback?: string) => str
             "Image generation runs on infrastructure that isn't deployed for this site yet. Stay tuned — coming soon."
           )}
         </p>
+        {detail && <p className="text-xs text-zinc-600">{detail}</p>}
       </div>
     </div>
   );
@@ -611,7 +671,7 @@ function readOptions(
 
 // Mirror of server-side AI_TIER_RANK. Kept tiny because we only need
 // the relative ordering for showing lock badges; server enforces.
-const TIER_RANK: Record<string, number> = { FREE: 0, VIP1: 1, VIP2: 2, VIP3: 3 };
+const TIER_RANK: Record<string, number> = { FREE: 0, VIP: 1, VIP1: 1, VIP2: 2, VIP3: 3 };
 function tierRank(level: string | null | undefined): number {
   if (!level) return 0;
   return TIER_RANK[level.toUpperCase()] ?? 0;
@@ -662,6 +722,10 @@ function jobToItems(job: AiJobView): GalleryItem[] {
       prompt: promptText,
       ratio,
       createdAt,
+      stage: job.stage,
+      queuePosition: job.queuePosition,
+      progress: job.progress,
+      etaSeconds: job.estimatedTotalSeconds,
     },
   ];
 }

@@ -184,6 +184,7 @@ export interface AiJobError {
     | 'MEMBERSHIP_EXPIRED'
     | 'RATE_LIMITED'
     | 'QUEUE_LIMIT_EXCEEDED'
+    | 'QUEUE_UNAVAILABLE'
     | 'PROVIDER_NOT_CONFIGURED'
     | 'PROVIDER_429'
     | 'PROVIDER_5XX'
