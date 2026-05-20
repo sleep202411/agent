@@ -480,6 +480,18 @@ export function AiVideoGeneratorDialog({
       icon: <IconFileText className="size-4" />,
       title: t("viewDetails"),
       metaContent: previewItem.other,
+      // Match the image-dialog UX: a one-click "Reuse prompt" button
+      // inside the details popover that drops the historical prompt
+      // back into the form. Mentions of character / scene / prop
+      // entities resolve at render time (RichMentionEditor reads from
+      // the persistent entity store), so unlike image-dialog we don't
+      // need a syncMentionRefs step — the entities haven't gone away.
+      applyMetaLabel: t("reusePrompt"),
+      onApplyMeta: () => {
+        const historyPrompt = previewItem.other ?? "";
+        dispatch(updateVideoForm({ key, updates: { prompt: historyPrompt } }));
+        toast.success(t("reusePromptApplied"));
+      },
     },
   ].filter(Boolean) as ToolbarAction[];
   const modelOptions = useMemo(
