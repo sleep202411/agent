@@ -38,6 +38,10 @@
       "types": "./dist/crew.d.ts",
       "default": "./dist/crew.js"
     },
+    "./quota": {
+      "types": "./dist/quota.d.ts",
+      "default": "./dist/quota.js"
+    },
     "./users": {
       "types": "./dist/users.d.ts",
       "default": "./dist/users.js"
