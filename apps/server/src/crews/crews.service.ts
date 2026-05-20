@@ -54,6 +54,14 @@ export class CrewsService {
             ? { showcaseWorks: input.showcaseWorks }
             : { showcaseWorks: Prisma.DbNull }),
           founderId,
+          // Product decision (2026-05-21): new crews are public by
+          // default so they show up in the Crew Hall immediately —
+          // founders can still toggle to `unlisted` later via
+          // updateListing(). DB column default is still `unlisted`
+          // (kept as the safer fallback if a future caller forgets
+          // to pass listingStatus) — set it explicitly here.
+          listingStatus: 'listed',
+          listedAt: new Date(),
         },
       });
       // Founder is the first crew member with role "owner". Keeps
