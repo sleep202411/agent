@@ -3976,12 +3976,16 @@
         "lockedMember": "會員可用",
         "unlock": "解鎖 {tier}",
         "unlockMember": "會員可用",
-        "referencesPlaceholder": "貼上圖片 URL，每行一個"
+        "referencesPlaceholder": "貼上圖片 URL，每行一個",
+        "referenceMaxReached": "最多可添加 {n} 張參考圖",
+        "referenceImageOnly": "參考圖必須是圖片檔案",
+        "referenceUploadFailed": "上傳失敗"
       },
       "cell": {
         "queued": "排隊中",
         "retry": "重試",
-        "download": "下載"
+        "download": "下載",
+        "reusePrompt": "點擊複用此提示詞"
       },
       "stage": {
         "running": "生成中",

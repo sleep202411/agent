@@ -43,15 +43,19 @@ function buildUrl(): string {
     throw new Error("NotificationWsClient only works in the browser");
   }
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const isDev =
-    window.location.hostname === "localhost" &&
-    (window.location.port === "3000" || window.location.port === "5173");
-  const host = isDev ? "localhost:3001" : window.location.host;
+  // In local dev the web (Next) and the backend (Nest) live on
+  // different ports; Next doesn't proxy the WS Upgrade, so we hit the
+  // Nest port directly and use the bare gateway path (no `/aurora`
+  // prefix — that prefix only exists because of nginx / AKS ingress
+  // routing in prod, where the upstream strips it before forwarding).
+  const isLocal = window.location.hostname === "localhost";
+  const host = isLocal ? "localhost:4399" : window.location.host;
+  const basePath = isLocal ? "" : "/aurora";
   const params = new URLSearchParams();
   const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
   if (tokenMatch) params.set("satoken", tokenMatch[1]);
   const qs = params.toString();
-  return `${proto}//${host}/aurora/notifications/subscribe${qs ? `?${qs}` : ""}`;
+  return `${proto}//${host}${basePath}/notifications/subscribe${qs ? `?${qs}` : ""}`;
 }
 
 function parseFrame(raw: string): NotificationFrame | null {

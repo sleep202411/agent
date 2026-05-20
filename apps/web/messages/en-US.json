@@ -3976,12 +3976,16 @@
         "lockedMember": "Available to members only",
         "unlock": "Unlock {tier}",
         "unlockMember": "Members only",
-        "referencesPlaceholder": "Paste image URLs, one per line"
+        "referencesPlaceholder": "Paste image URLs, one per line",
+        "referenceMaxReached": "Maximum {n} reference images reached",
+        "referenceImageOnly": "Reference must be an image file",
+        "referenceUploadFailed": "Upload failed"
       },
       "cell": {
         "queued": "Queued",
         "retry": "Retry",
-        "download": "Download"
+        "download": "Download",
+        "reusePrompt": "Click to reuse prompt"
       },
       "stage": {
         "running": "Running",

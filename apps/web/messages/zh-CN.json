@@ -3976,12 +3976,16 @@
         "lockedMember": "会员可用",
         "unlock": "解锁 {tier}",
         "unlockMember": "会员可用",
-        "referencesPlaceholder": "粘贴图片 URL，每行一个"
+        "referencesPlaceholder": "粘贴图片 URL，每行一个",
+        "referenceMaxReached": "最多可添加 {n} 张参考图",
+        "referenceImageOnly": "参考图必须是图片文件",
+        "referenceUploadFailed": "上传失败"
       },
       "cell": {
         "queued": "排队中",
         "retry": "重试",
-        "download": "下载"
+        "download": "下载",
+        "reusePrompt": "点击复用此提示词"
       },
       "stage": {
         "running": "生成中",

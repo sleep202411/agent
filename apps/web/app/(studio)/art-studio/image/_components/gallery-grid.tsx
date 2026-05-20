@@ -54,11 +54,18 @@ export type GalleryItem =
 export type GalleryGridProps = {
   items: GalleryItem[];
   onRetry?: (id: string) => void;
-  onOpen?: (id: string) => void;
+  /**
+   * Fires when a cell is clicked. The handler receives the cell's
+   * original prompt so the page can refill the compose bar. All three
+   * kinds (queued / done / error) route through this — clicking any
+   * card lets the user pick that prompt back up and iterate on it,
+   * without having to retype.
+   */
+  onReusePrompt?: (prompt: string) => void;
   t: (key: string, fallback?: string) => string;
 };
 
-export function GalleryGrid({ items, onRetry, onOpen, t }: GalleryGridProps) {
+export function GalleryGrid({ items, onRetry, onReusePrompt, t }: GalleryGridProps) {
   return (
     <div className="mx-auto w-full max-w-[1800px] px-4 sm:px-6 lg:px-10">
       <div className="gap-1.5 columns-2 sm:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6">
@@ -68,7 +75,7 @@ export function GalleryGrid({ items, onRetry, onOpen, t }: GalleryGridProps) {
             className="mb-1.5 break-inside-avoid overflow-hidden rounded-xl"
             style={{ aspectRatio: cssAspectRatio(item.ratio) }}
           >
-            <GalleryCell item={item} onRetry={onRetry} onOpen={onOpen} t={t} />
+            <GalleryCell item={item} onRetry={onRetry} onReusePrompt={onReusePrompt} t={t} />
           </div>
         ))}
       </div>
@@ -87,20 +94,33 @@ function cssAspectRatio(ratio: string): string {
 function GalleryCell({
   item,
   onRetry,
-  onOpen,
+  onReusePrompt,
   t,
 }: {
   item: GalleryItem;
   onRetry?: (id: string) => void;
-  onOpen?: (id: string) => void;
+  onReusePrompt?: (prompt: string) => void;
   t: (key: string, fallback?: string) => string;
 }) {
+  // Every cell variant routes click → `onReusePrompt(item.prompt)`.
+  // Nested action affordances (retry button, download link) stop
+  // propagation so they don't accidentally trigger a refill.
+  const handleReuse = () => onReusePrompt?.(item.prompt);
+  const reuseTitle = onReusePrompt
+    ? t("imageLab.cell.reusePrompt", "Click to reuse prompt")
+    : undefined;
+
   if (item.kind === "queued") {
     const stageLabel = labelForStage(item.stage, t);
     const detail = detailForQueued(item, t);
     const progress = clampProgress(item.progress);
     return (
-      <div className="relative block size-full overflow-hidden rounded-xl bg-zinc-900">
+      <button
+        type="button"
+        onClick={handleReuse}
+        title={reuseTitle}
+        className="group relative block size-full overflow-hidden rounded-xl bg-zinc-900 text-left transition-transform hover:scale-[1.01]"
+      >
         {/* Subtle shimmer — lets the card "breathe" while polling. */}
         <div className="absolute inset-0 bg-[linear-gradient(110deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.04)_50%,rgba(255,255,255,0)_100%)] bg-[length:200%_100%] [animation:gallery-shimmer_2.4s_linear_infinite]" />
 
@@ -136,20 +156,28 @@ function GalleryCell({
         <div className="absolute inset-x-3 bottom-3 line-clamp-1 text-[11px] leading-4 text-zinc-500">
           {item.prompt}
         </div>
-      </div>
+      </button>
     );
   }
 
   if (item.kind === "error") {
     return (
-      <div className="group relative block size-full overflow-hidden rounded-xl bg-zinc-900 ring-1 ring-inset ring-destructive/40">
+      <button
+        type="button"
+        onClick={handleReuse}
+        title={reuseTitle}
+        className="group relative block size-full overflow-hidden rounded-xl bg-zinc-900 text-left ring-1 ring-inset ring-destructive/40 transition-transform hover:scale-[1.01]"
+      >
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
           <IconAlertTriangle className="size-5 text-destructive" />
           <p className="line-clamp-3 text-[11px] leading-4 text-zinc-300">{item.message}</p>
           {onRetry && (
             <button
               type="button"
-              onClick={() => onRetry(item.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry(item.id);
+              }}
               className="mt-1 inline-flex items-center gap-1 rounded-full bg-zinc-800 px-3 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-zinc-700"
             >
               <IconRefresh className="size-3" />
@@ -157,14 +185,15 @@ function GalleryCell({
             </button>
           )}
         </div>
-      </div>
+      </button>
     );
   }
 
   return (
     <button
       type="button"
-      onClick={() => onOpen?.(item.id)}
+      onClick={handleReuse}
+      title={reuseTitle}
       className="group relative block size-full overflow-hidden rounded-xl bg-zinc-900 text-left"
     >
       {/* eslint-disable-next-line @next/next/no-img-element -- OSS/Azure URLs vary; thumbnail grid doesn't benefit from optimization */}

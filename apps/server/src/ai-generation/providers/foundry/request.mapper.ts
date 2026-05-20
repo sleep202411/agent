@@ -12,7 +12,22 @@ export interface FoundryMappedProviderRequest {
   apiVersion?: string;
   requestContentType: FoundryProviderBinding['requestContentType'];
   body: Record<string, unknown>;
+  /**
+   * Parameter names whose values are URL strings the adapter must
+   * materialize (fetch) into Blobs before sending a multipart request.
+   * Populated from schema bindings whose transform implies file-input
+   * semantics (`mediaArrayToOpenAIImageInput`, `uriArrayToFiles`).
+   * For JSON endpoints this list is observed but unused.
+   */
+  fileRefFields: string[];
 }
+
+/** Transforms whose output is a list of remote URL strings that need
+ *  to be fetched into file parts when bound to a multipart endpoint. */
+const FILE_REF_TRANSFORMS = new Set<string>([
+  'mediaArrayToOpenAIImageInput',
+  'uriArrayToFiles',
+]);
 
 export function mapFoundryProviderRequest(
   model: FoundryModelDefinition,
@@ -21,6 +36,7 @@ export function mapFoundryProviderRequest(
 ): FoundryMappedProviderRequest {
   const binding = model.provider_binding;
   const body: Record<string, unknown> = {};
+  const fileRefFields: string[] = [];
 
   for (const [fieldName, field] of Object.entries(
     model.input_schema.properties,
@@ -46,7 +62,20 @@ export function mapFoundryProviderRequest(
 
     const value = transformProviderValue(field, raw);
     if (value === undefined) continue;
-    setPath(body, fieldBinding.path ?? fieldBinding.parameter!, value);
+    const targetKey = fieldBinding.path ?? fieldBinding.parameter!;
+    setPath(body, targetKey, value);
+    // Schema-declared transforms whose output is a list of URLs need
+    // a follow-up fetch step in the adapter when the endpoint is
+    // multipart. We only track the top-level key (file refs aren't
+    // bound to nested paths today). This is what makes the URL→Blob
+    // hand-off schema-driven instead of hardcoded per parameter.
+    if (
+      fieldBinding.transform &&
+      FILE_REF_TRANSFORMS.has(fieldBinding.transform) &&
+      !targetKey.includes('.')
+    ) {
+      fileRefFields.push(targetKey);
+    }
   }
 
   if (binding.passthroughUserId && options.userId) body.user = options.userId;
@@ -70,6 +99,7 @@ export function mapFoundryProviderRequest(
     apiVersion: binding.apiVersion,
     requestContentType: binding.requestContentType,
     body,
+    fileRefFields,
   };
 }
 

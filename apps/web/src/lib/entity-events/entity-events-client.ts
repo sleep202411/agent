@@ -40,19 +40,22 @@ function buildUrl(): string {
     throw new Error("EntityEventsClient only works in the browser");
   }
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const isDev =
-    window.location.hostname === "localhost" &&
-    (window.location.port === "3000" || window.location.port === "5173");
-  // Same-host WS always — apex nginx + AKS ingress both proxy the Upgrade
-  // header through. satoken is mirrored into the query string as defence
-  // in depth: the gateway prefers query and falls back to the cookie
-  // header, so handshakes survive odd cookie-jar edge cases.
-  const host = isDev ? "localhost:3001" : window.location.host;
+  // In local dev the web (Next) and the backend (Nest) live on
+  // different ports; Next doesn't proxy the WS Upgrade, so we hit the
+  // Nest port directly and use the bare gateway path (no `/aurora`
+  // prefix — that prefix only exists because of nginx / AKS ingress
+  // routing in prod, where the upstream strips it before forwarding).
+  // satoken is mirrored into the query string as defence in depth:
+  // the gateway prefers query and falls back to the cookie header,
+  // so handshakes survive odd cookie-jar edge cases.
+  const isLocal = window.location.hostname === "localhost";
+  const host = isLocal ? "localhost:4399" : window.location.host;
+  const basePath = isLocal ? "" : "/aurora";
   const params = new URLSearchParams();
   const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
   if (tokenMatch) params.set("satoken", tokenMatch[1]);
   const qs = params.toString();
-  return `${proto}//${host}/aurora/entity-events/subscribe${qs ? `?${qs}` : ""}`;
+  return `${proto}//${host}${basePath}/entity-events/subscribe${qs ? `?${qs}` : ""}`;
 }
 
 function parseFrame(raw: string): EntityEventsFrame | null {

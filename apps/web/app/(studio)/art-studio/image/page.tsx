@@ -48,6 +48,15 @@ export default function AiImageLabPage() {
     deriveDefaults(MOCK_AI_MODEL.input_schema.properties)
   );
   const [prompt, setPrompt] = useState("");
+  // Bumped whenever the prompt is refilled by an external action (a
+  // gallery cell click). ComposeBar watches the token and focuses the
+  // textarea + scrolls into view when it changes, so the user lands
+  // ready to edit instead of having to click into the bar manually.
+  const [promptFocusToken, setPromptFocusToken] = useState(0);
+  const refillPrompt = useCallback((text: string) => {
+    setPrompt(text);
+    setPromptFocusToken((n) => n + 1);
+  }, []);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [modelLoadError, setModelLoadError] = useState<string | null>(null);
@@ -521,9 +530,9 @@ export default function AiImageLabPage() {
           overlays this area with a soft blur. */}
         <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-28 pt-4 md:px-4">
           {items.length > 0 ? (
-            <GalleryGrid items={items} onRetry={handleRetry} t={t} />
+            <GalleryGrid items={items} onRetry={handleRetry} onReusePrompt={refillPrompt} t={t} />
           ) : (
-            <EmptyState t={t} onTry={(text) => setPrompt(text)} modelName={model.name} />
+            <EmptyState t={t} onTry={refillPrompt} modelName={model.name} />
           )}
         </main>
 
@@ -569,6 +578,7 @@ export default function AiImageLabPage() {
               isSubmitting={isSubmitting}
               onSubmit={handleSubmit}
               disabled={modelSource === "loading"}
+              focusToken={promptFocusToken}
               t={t}
             />
           </div>

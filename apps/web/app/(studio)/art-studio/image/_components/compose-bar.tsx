@@ -1,13 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import {
-  IconAdjustments,
-  IconChevronDown,
-  IconLock,
-  IconPlus,
-  IconSparkles,
-} from "@tabler/icons-react";
+import { IconAdjustments, IconChevronDown, IconLock, IconSparkles } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import type {
   FoundryConditionExpression,
@@ -17,6 +11,7 @@ import type {
   FoundryUiOption,
 } from "@repo/shared";
 import type { AiModel } from "../_data/mock-model";
+import { ReferenceImageStack } from "./reference-image-stack";
 
 export interface AiOption {
   value: string;
@@ -66,6 +61,13 @@ export type ComposeBarProps = {
   isSubmitting: boolean;
   onSubmit: () => void;
   disabled?: boolean;
+  /**
+   * Monotonically-increasing token. Each increment focuses the prompt
+   * textarea and scrolls it into view — used by the gallery's
+   * "click cell → reuse prompt" flow so the user lands ready to edit.
+   * Value itself doesn't matter; only its identity change.
+   */
+  focusToken?: number;
   t: (key: string, fallback?: string) => string;
 };
 
@@ -98,12 +100,13 @@ export function ComposeBar(props: ComposeBarProps) {
     isSubmitting,
     onSubmit,
     disabled,
+    focusToken,
     t,
   } = props;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [openPopover, setOpenPopover] = useState<
-    null | "model" | "ratio" | "resolution" | "quality" | "advanced"
+    null | "model" | "ratio" | "resolution" | "customize"
   >(null);
 
   useEffect(() => {
@@ -113,6 +116,27 @@ export function ComposeBar(props: ComposeBarProps) {
     const next = Math.min(el.scrollHeight, 140);
     el.style.height = `${next}px`;
   }, [prompt]);
+
+  // Refill-from-gallery hook. Each token bump means the caller just
+  // dropped a new prompt in; jump focus to the textarea, put the
+  // caret at the end (so a hit of Backspace deletes the last word,
+  // not the last char of the placeholder), and scroll the bar into
+  // view in case the user was deep in the gallery. The token-only
+  // dependency keeps focus from firing on plain prompt edits.
+  useEffect(() => {
+    if (focusToken === undefined) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const end = el.value.length;
+    try {
+      el.setSelectionRange(end, end);
+    } catch {
+      /* some browsers throw on hidden inputs — ignore */
+    }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusToken]);
 
   const modelLocked = model.access?.allowed === false;
   const modelLockedTier = model.access?.requiredTier ?? null;
@@ -132,63 +156,108 @@ export function ComposeBar(props: ComposeBarProps) {
 
   const activeResolution = resolutionTierOptions.find((o) => o.value === resolutionTierValue);
   const advancedFields = useMemo(() => getAdvancedFields(model, formData), [model, formData]);
-  const hasReferenceField = advancedFields.some((field) => field.name === "reference_images");
+  const referenceField = advancedFields.find((f) => f.name === "reference_images");
+  const hasReferenceField = referenceField !== undefined;
+  // Reference cap comes from the model's own schema (`maxItems` on the
+  // reference_images array property). Don't synthesize a default — if a
+  // schema author forgot to declare a cap, the client passes 1 (safe
+  // minimum) rather than 16; otherwise we risk uploading 16 images for
+  // a model that only takes 4 and getting a backend rejection.
+  const referenceMaxImages =
+    referenceField &&
+    referenceField.field.type === "array" &&
+    typeof referenceField.field.maxItems === "number"
+      ? referenceField.field.maxItems
+      : 1;
+  // `reference_images` has its own first-class UI (ReferenceImageStack)
+  // on the chip row; strip it from the Customize panel so we don't render
+  // a duplicate "paste URLs" textarea.
+  const customizeFields = useMemo(
+    () => advancedFields.filter((f) => f.name !== "reference_images"),
+    [advancedFields]
+  );
+  const referenceImages = useMemo(() => {
+    const raw = formData.reference_images;
+    return Array.isArray(raw) ? (raw as string[]).filter((u) => typeof u === "string") : [];
+  }, [formData]);
+  const hasCustomizeContent =
+    qualityOptions.length > 0 || outputOptions.length > 1 || customizeFields.length > 0;
+  const submitButton = (
+    <Button
+      type="button"
+      onClick={onSubmit}
+      disabled={!canSubmit || modelLocked || modelBusy}
+      loading={isSubmitting}
+      size="default"
+      className="h-8 shrink-0 rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90"
+      icon={
+        modelLocked ? (
+          <IconLock className="size-4" />
+        ) : !isSubmitting ? (
+          <IconSparkles className="size-4" />
+        ) : undefined
+      }
+      title={
+        modelBusy
+          ? t("imageLab.compose.busy", "Previous task is still running.")
+          : modelLocked
+            ? modelLockedTier
+              ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
+                  "{tier}",
+                  modelLockedTier
+                )
+              : t("imageLab.compose.lockedMember", "Available to members only")
+            : undefined
+      }
+    >
+      <span>
+        {modelBusy
+          ? busyLabel
+          : modelLocked
+            ? modelLockedTier
+              ? t("imageLab.compose.unlock", "Unlock {tier}").replace("{tier}", modelLockedTier)
+              : t("imageLab.compose.unlockMember", "Members only")
+            : t("imageLab.compose.create", "Create")}
+      </span>
+    </Button>
+  );
 
   return (
     <div
-      className="rounded-2xl bg-zinc-900/80 px-3 py-3 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)] ring-1 ring-white/5 backdrop-blur-xl backdrop-saturate-150"
+      className="relative rounded-2xl bg-zinc-900/80 px-3 py-3 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)] ring-1 ring-white/5 backdrop-blur-xl backdrop-saturate-150"
       onMouseLeave={() => setOpenPopover(null)}
     >
-      {/* Row 1 — Prompt + Create */}
-      <div className="flex items-end gap-2">
+      {/* Row 0 — references (only when the current model declares a
+          `reference_images` field). Inline horizontal row at the top
+          of the bar, same visual language as the storyboard's
+          ReferenceGroup: small rotated thumbnails + an `+` tile at
+          the end. Hidden entirely when the model doesn't support
+          references, so the bar collapses to its prompt-only shape. */}
+      {hasReferenceField ? (
+        <div className="mb-2 px-1">
+          <ReferenceImageStack
+            value={referenceImages}
+            onChange={(next) => onFieldChange("reference_images", next)}
+            maxImages={referenceMaxImages}
+            disabled={disabled}
+            t={t}
+          />
+        </div>
+      ) : null}
+
+      {/* Row 1 — Prompt. Create button moved to the chip row below
+          so the action sits next to the parameters it acts on. */}
+      <div className="flex items-end">
         <textarea
           ref={textareaRef}
           value={prompt}
           onChange={(e) => onPromptChange(e.target.value)}
           onKeyDown={handleKey}
           placeholder={t("imageLab.compose.placeholder", "Describe the image you imagine")}
-          rows={1}
+          rows={3}
           disabled={disabled}
-          className="min-h-[36px] flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-5 text-foreground placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
+          className="min-h-20 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-5 text-foreground placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
         />
-
-        <Button
-          type="button"
-          onClick={onSubmit}
-          disabled={!canSubmit || modelLocked || modelBusy}
-          loading={isSubmitting}
-          size="default"
-          className="h-10 shrink-0 rounded-full bg-primary px-5 text-primary-foreground hover:bg-primary/90"
-          icon={
-            modelLocked ? (
-              <IconLock className="size-4" />
-            ) : !isSubmitting ? (
-              <IconSparkles className="size-4" />
-            ) : undefined
-          }
-          title={
-            modelBusy
-              ? t("imageLab.compose.busy", "Previous task is still running.")
-              : modelLocked
-                ? modelLockedTier
-                  ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
-                      "{tier}",
-                      modelLockedTier
-                    )
-                  : t("imageLab.compose.lockedMember", "Available to members only")
-                : undefined
-          }
-        >
-          <span>
-            {modelBusy
-              ? busyLabel
-              : modelLocked
-                ? modelLockedTier
-                  ? t("imageLab.compose.unlock", "Unlock {tier}").replace("{tier}", modelLockedTier)
-                  : t("imageLab.compose.unlockMember", "Members only")
-                : t("imageLab.compose.create", "Create")}
-          </span>
-        </Button>
       </div>
 
       {/* Row 2 — chips. `flex-nowrap` + `shrink-0` on each chip keeps
@@ -199,17 +268,8 @@ export function ComposeBar(props: ComposeBarProps) {
           that pop upward. Narrow viewports just let the row overflow
           the bar (rare; mobile path can be revisited separately). */}
       <div className="mt-2 flex flex-nowrap items-center gap-1.5 px-1">
-        {/* Add image opens the schema-driven reference controls. */}
-        <button
-          type="button"
-          onClick={() => setOpenPopover(openPopover === "advanced" ? null : "advanced")}
-          disabled={disabled || !hasReferenceField}
-          aria-label={t("imageLab.compose.addImage", "Add image")}
-          title={t("imageLab.compose.addReferences", "Add references")}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800/70 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:text-zinc-600"
-        >
-          <IconPlus className="size-4" />
-        </button>
+        {/* Reference image stack lives above the textarea now (see the
+            absolute-positioned block at the top of this component). */}
 
         {/* Model chip — always clickable so users can read the model's
             name/description even when only one model is registered.
@@ -326,76 +386,102 @@ export function ComposeBar(props: ComposeBarProps) {
           </ChipPopover>
         )}
 
-        {/* Quality chip — low/medium/high (auto hidden) */}
-        {qualityOptions.length > 0 && (
+        {/* Customize — single panel that collapses Quality + Outputs +
+            schema-driven advanced fields under one chip. Keeps the
+            chip row to just model + ratio + resolution + this, with
+            the Create button at the trailing edge. The decision came
+            after the row got 6+ chips wide and started feeling like
+            a control surface instead of a creative compose bar. */}
+        {hasCustomizeContent && (
           <ChipPopover
-            open={openPopover === "quality"}
-            onOpenChange={(v) => setOpenPopover(v ? "quality" : null)}
-            label={`${t("imageLab.compose.qualityChip", "Quality")} · ${
-              qualityOptions.find((o) => o.value === qualityValue)?.label ?? qualityValue
-            }`}
-            disabled={disabled}
-          >
-            {qualityOptions.map((option) => {
-              const active = option.value === qualityValue;
-              return (
-                <PopoverItem
-                  key={option.value}
-                  active={active}
-                  onClick={() => {
-                    onQualityChange(option.value);
-                    setOpenPopover(null);
-                  }}
-                >
-                  <span className="block text-sm font-medium capitalize">{option.label}</span>
-                </PopoverItem>
-              );
-            })}
-          </ChipPopover>
-        )}
-
-        {/* Outputs — flat segmented buttons (like PoseAI) */}
-        <div className="ml-1 inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full bg-zinc-800/60 px-0.5">
-          {outputOptions.map((value) => {
-            const active = value === outputs;
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => onOutputsChange(value)}
-                disabled={disabled}
-                className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-xs font-medium transition-colors ${
-                  active ? "bg-zinc-700 text-foreground" : "text-zinc-400 hover:text-zinc-200"
-                } disabled:cursor-not-allowed disabled:opacity-60`}
-                aria-label={`${value} ${value === 1 ? "image" : "images"}`}
-              >
-                ×{value}
-              </button>
-            );
-          })}
-        </div>
-
-        {advancedFields.length > 0 && (
-          <ChipPopover
-            open={openPopover === "advanced"}
-            onOpenChange={(v) => setOpenPopover(v ? "advanced" : null)}
-            label={t("imageLab.compose.more", "More")}
+            open={openPopover === "customize"}
+            onOpenChange={(v) => setOpenPopover(v ? "customize" : null)}
+            label={t("imageLab.compose.customize", "Customize")}
             leadingIcon={<IconAdjustments className="size-3.5" />}
             disabled={disabled}
             align="right"
-            contentClassName="w-[min(420px,calc(100vw-32px))] max-h-[60vh] overflow-y-auto rounded-xl bg-zinc-900 p-2 shadow-2xl ring-1 ring-white/10"
+            contentClassName="w-[min(440px,calc(100vw-32px))] max-h-[70vh] overflow-y-auto rounded-xl bg-zinc-900 p-3 shadow-2xl ring-1 ring-white/10"
           >
-            <AdvancedFieldList
-              fields={advancedFields}
-              formData={formData}
-              onFieldChange={onFieldChange}
-              userTierRank={userTierRank}
-              tierRank={tierRank}
-              disabled={disabled}
-              t={t}
-            />
+            <div className="space-y-4">
+              {qualityOptions.length > 0 && (
+                <section>
+                  <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                    {t("imageLab.compose.qualityChip", "Quality")}
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {qualityOptions.map((option) => {
+                      const active = option.value === qualityValue;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => onQualityChange(option.value)}
+                          disabled={disabled}
+                          className={`inline-flex h-8 items-center rounded-full px-3 text-xs font-medium transition-colors ${
+                            active
+                              ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                              : "bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800"
+                          } disabled:cursor-not-allowed disabled:opacity-60`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+              {outputOptions.length > 1 && (
+                <section>
+                  <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                    {t("imageLab.compose.outputs", "Outputs")}
+                  </h4>
+                  <div className="inline-flex h-8 items-center gap-0.5 rounded-full bg-zinc-800/60 px-0.5">
+                    {outputOptions.map((value) => {
+                      const active = value === outputs;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => onOutputsChange(value)}
+                          disabled={disabled}
+                          className={`inline-flex h-7 min-w-8 items-center justify-center rounded-full px-2 text-xs font-medium transition-colors ${
+                            active
+                              ? "bg-zinc-700 text-foreground"
+                              : "text-zinc-400 hover:text-zinc-200"
+                          } disabled:cursor-not-allowed disabled:opacity-60`}
+                          aria-label={`${value} ${value === 1 ? "image" : "images"}`}
+                        >
+                          ×{value}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+              {customizeFields.length > 0 && (
+                <section>
+                  <h4 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                    {t("imageLab.compose.advanced", "Advanced")}
+                  </h4>
+                  <AdvancedFieldList
+                    fields={customizeFields}
+                    formData={formData}
+                    onFieldChange={onFieldChange}
+                    userTierRank={userTierRank}
+                    tierRank={tierRank}
+                    disabled={disabled}
+                    t={t}
+                  />
+                </section>
+              )}
+            </div>
           </ChipPopover>
         )}
+
+        {/* Spacer pushes Create to the trailing edge — same row as
+            the chips it acts on. */}
+        <div className="ml-auto" />
+        {submitButton}
       </div>
     </div>
   );
