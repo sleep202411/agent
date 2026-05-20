@@ -762,3 +762,51 @@ model AiEventOutbox {
   @@index([deadAt], map: "ai_event_outbox_dead_idx")
   @@map("ai_event_outbox")
 }
+
+// ─────────────────────────────────────────────────────────────
+// Quota domain (src/quota/)
+// ─────────────────────────────────────────────────────────────
+//
+// Per-user usage ledger. Phase 1 of the quota system is observation-
+// only: every consumable user action (image generate, chat submit,
+// workflow start, ...) writes one row. No enforcement, no Redis
+// counters, no UI — the goal is one week of real data to calibrate
+// tier thresholds before flipping on hard caps.
+//
+// Later phases add Redis-backed counters + idempotent consume/refund
+// + per-tier limits; this table remains the durable audit source of
+// truth (Redis is the hot cache).
+
+enum QuotaDimension {
+  image
+  chat
+  workflow
+  upload
+}
+
+model QuotaUsageLog {
+  id            String         @id
+  userId        String         @map("user_id") @db.VarChar(64)
+  dimension     QuotaDimension
+  /// Signed cost. Positive = consume, negative = refund. Lets one
+  /// query give net usage per user/dimension/window via SUM().
+  cost          Int            @default(1)
+  /// Free-form action label — `submit_message_to_agent`,
+  /// `ai_job_create`, `workflow_start`, `upload_banner`, ...
+  reason        String         @db.VarChar(64)
+  /// Optional client-supplied dedup key. Multiple rows with the same
+  /// key represent a consume followed by its refund — useful when
+  /// reconciling. NULL means no dedup needed (best-effort logging).
+  idempotencyKey String?       @map("idempotency_key") @db.VarChar(128)
+  /// Loose metadata bag — `{jobType:'image', model:'gpt-image-2'}`,
+  /// `{conversationId:'...'}`. Not indexed; for forensics.
+  metadata      Json?
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  /// Per-user/dimension scans — `SELECT SUM(cost) FROM quota_usage_log
+  /// WHERE user_id = ? AND dimension = ? AND created_at >= ?`.
+  @@index([userId, dimension, createdAt(sort: Desc)], map: "quota_usage_log_user_dim_recent_idx")
+  /// Cross-tier analytics over a day window.
+  @@index([dimension, createdAt(sort: Desc)], map: "quota_usage_log_dim_recent_idx")
+  @@map("quota_usage_log")
+}

@@ -3969,12 +3969,23 @@
         "busy": "上一张还在生成，请等待完成",
         "addImage": "添加图片",
         "addReferences": "添加参考图",
-        "outputs": "数量"
+        "outputs": "数量",
+        "more": "更多",
+        "qualityChip": "质量",
+        "lockedTier": "{tier}+ 会员可用",
+        "lockedMember": "会员可用",
+        "unlock": "解锁 {tier}",
+        "unlockMember": "会员可用",
+        "referencesPlaceholder": "粘贴图片 URL，每行一个",
+        "referenceMaxReached": "最多可添加 {n} 张参考图",
+        "referenceImageOnly": "参考图必须是图片文件",
+        "referenceUploadFailed": "上传失败"
       },
       "cell": {
         "queued": "排队中",
         "retry": "重试",
-        "download": "下载"
+        "download": "下载",
+        "reusePrompt": "点击复用此提示词"
       },
       "stage": {
         "running": "生成中",
@@ -3990,7 +4001,16 @@
         "submitFailed": "生成任务提交失败",
         "timeout": "生成超时，换小一点的尺寸或稍后再试",
         "empty": "生成完成但没有产出",
-        "failed": "生成失败"
+        "failed": "生成失败",
+        "membershipRequired": "该模型仅会员可用，升级后即可使用。",
+        "membershipExpired": "你的会员已过期，续费后可继续生成。",
+        "retryFailed": "重试任务失败",
+        "loadModels": "加载图像模型失败",
+        "noModels": "当前没有可用的图像模型"
+      },
+      "unavailable": {
+        "title": "该区域暂未开放图像实验室",
+        "body": "图像生成依赖的基础设施尚未部署到当前站点，开放后即可使用。"
       },
       "eyebrow": "AI 生图",
       "title": "文生图",
@@ -4231,6 +4251,41 @@
       "background": {
         "description": "当前支持自动或不透明背景。"
       }
+    }
+  },
+  "quota": {
+    "dimension": {
+      "image": "图像",
+      "chat": "对话",
+      "workflow": "工作流",
+      "upload": "上传"
+    },
+    "unit": {
+      "image": "张",
+      "chat": "条",
+      "workflow": "次",
+      "upload": "MB"
+    },
+    "badge": {
+      "unlimited": "VIP · 队列优先",
+      "tooltipUsed": "今日 {used}/{limit}{unit} · {resetIn} 后重置"
+    },
+    "blocker": {
+      "fullChip": "已满",
+      "leftChip": "剩 {n}",
+      "blockedTitle": "今日额度已用完 ({used}/{limit}) · {resetIn} 后重置",
+      "leftTitle": "今日剩 {remaining}/{limit}"
+    },
+    "upgradeDialog": {
+      "title": "今日{label}额度已用完",
+      "subtitle": "已用 {used}/{limit}{unit} · {resetIn} 后重置",
+      "nextTier": "升级 {tier}",
+      "nextTierPriority": "升级 {tier} · 队列优先",
+      "nextTierBody": "立即解锁 {limit}{unit}/天",
+      "nextTierBodyUnlimited": "立即解锁无每日上限",
+      "vip3Body": "你已是 VIP3 最高套餐,当前队列繁忙,稍后再试。",
+      "later": "明天再说",
+      "upgradeNow": "立即升级"
     }
   }
 }

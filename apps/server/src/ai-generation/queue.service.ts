@@ -28,6 +28,16 @@ export class AiGenerationQueueService implements OnApplicationShutdown {
     queueName: AiQueueName,
     jobId: string,
     delayMs = 0,
+    /**
+     * BullMQ priority — smaller = served first. Pass the tier-priority
+     * from tiers.config.ts (Free=10, VIP1=5, VIP2=3, VIP3=1) so VIP3
+     * users jump to the front of a contended image queue.
+     *
+     * Defaults to 5 (VIP1-equivalent) when not provided so a missing
+     * tier upstream doesn't accidentally promote a Free user past
+     * paid users.
+     */
+    priority = 5,
   ): Promise<void> {
     const queue = this.queueFor(queueName);
     // BullMQ jobIds must be globally unique within the queue and
@@ -43,6 +53,7 @@ export class AiGenerationQueueService implements OnApplicationShutdown {
       {
         jobId: queueJobId,
         delay: delayMs > 0 ? delayMs : undefined,
+        priority,
       },
     );
   }

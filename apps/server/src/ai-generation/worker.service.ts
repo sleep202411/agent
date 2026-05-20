@@ -26,6 +26,8 @@ import {
 import type { Worker, Job as BullJob } from 'bullmq';
 import { createHash } from 'crypto';
 import { newShortId } from '../common/id';
+import { QuotaService } from '../quota/quota.service';
+import { TIERS, normalizeTier } from '../quota/tiers.config';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { AiGenerationOutboxService } from './outbox.service';
 import type { ProviderAdapter, RawProviderOutput } from './provider-adapter';
@@ -87,6 +89,7 @@ export class AiGenerationWorkerService
     private readonly outbox: AiGenerationOutboxService,
     private readonly storage: OutputStorageService,
     private readonly queueService: AiGenerationQueueService,
+    private readonly quota: QuotaService,
   ) {}
 
   onApplicationBootstrap() {
@@ -381,7 +384,15 @@ export class AiGenerationWorkerService
         ],
       });
       if (requeued) {
-        await this.queueService.enqueue(job.queueName, job.id, delayMs);
+        // Preserve the original tier-priority across retries so a VIP3
+        // user doesn't suddenly drop to default mid-flight.
+        const priority = TIERS[normalizeTier(job.userLevel)].priority;
+        await this.queueService.enqueue(
+          job.queueName,
+          job.id,
+          delayMs,
+          priority,
+        );
         this.emit(requeued);
         this.logger.log(
           `job ${job.id} requeued after ${payload.code} (attempt ${attempt}, delay ${Math.round(delayMs / 1000)}s)`,
@@ -410,6 +421,25 @@ export class AiGenerationWorkerService
       this.logger.warn(
         `job ${job.id} failed: ${payload.code} ${payload.message}`,
       );
+      // Refund the quota that QuotaGuard pre-consumed when this job
+      // was submitted. Idempotent via the original idempotencyKey
+      // (same key the controller passes to QuotaGuard via the
+      // `body:idempotencyKey` decorator option) — repeated terminal
+      // failures (e.g. multiple retry attempts hitting markFailed
+      // before the user sees it) won't double-refund. We thread the
+      // user's tier from the job row so the WS snapshot pushed to
+      // the client carries the user's real daily cap (not a
+      // sentinel that would over-write the badge with ∞).
+      if (job.idempotencyKey) {
+        void this.quota.refundFor({
+          userId: job.userId,
+          tier: normalizeTier(job.userLevel),
+          dimension: 'image',
+          cost: 1,
+          idempotencyKey: job.idempotencyKey,
+          reason: `ai_job_failed_${payload.code}`,
+        });
+      }
     }
   }
 

@@ -14,18 +14,24 @@ import {
 } from "./_data/ai-generation-client";
 import { openAssetsRealtime } from "./_data/assets-realtime";
 import { ComposeBar } from "./_components/compose-bar";
+import { QuotaBadge } from "@/components/quota/quota-badge";
+import { QuotaProvider } from "@/src/lib/quota/quota-provider";
+import { UpgradeDialogHost } from "@/components/quota/upgrade-dialog";
 import { GalleryGrid, type GalleryItem } from "./_components/gallery-grid";
 import { useFeature } from "@/src/lib/region/provider";
+import { useCurrentUser } from "@/src/hooks/use-user";
 
-type ModelSource = "loading" | "live" | "preview";
+type ModelSource = "loading" | "live" | "preview" | "unavailable";
 
 const MOCK_RESULT_IMAGE =
   "https://images.unsplash.com/photo-1604079628040-94301bb21b91?auto=format&fit=crop&w=1400&q=86";
 
 const HISTORY_LIMIT = 60;
+const ALLOW_LOCAL_PREVIEW = process.env.NODE_ENV !== "production";
 
 export default function AiImageLabPage() {
   const rawT = useTranslations("aiGen");
+  const { user } = useCurrentUser();
   const t = useCallback(
     (key: string, fallback = key) => {
       const normalized = key.replace(/^aiGen\./, "");
@@ -42,8 +48,19 @@ export default function AiImageLabPage() {
     deriveDefaults(MOCK_AI_MODEL.input_schema.properties)
   );
   const [prompt, setPrompt] = useState("");
+  // Bumped whenever the prompt is refilled by an external action (a
+  // gallery cell click). ComposeBar watches the token and focuses the
+  // textarea + scrolls into view when it changes, so the user lands
+  // ready to edit instead of having to click into the bar manually.
+  const [promptFocusToken, setPromptFocusToken] = useState(0);
+  const refillPrompt = useCallback((text: string) => {
+    setPrompt(text);
+    setPromptFocusToken((n) => n + 1);
+  }, []);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [items, setItems] = useState<GalleryItem[]>([]);
+  const [modelLoadError, setModelLoadError] = useState<string | null>(null);
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -62,15 +79,28 @@ export default function AiImageLabPage() {
           setModel(picked);
           setFormData(deriveDefaults(picked.input_schema.properties));
           setModelSource("live");
+          setModelLoadError(null);
           return;
         }
-        setModelSource("preview");
+        if (ALLOW_LOCAL_PREVIEW) {
+          setModelSource("preview");
+        } else {
+          setModelLoadError(t("imageLab.error.noModels", "No image model is available."));
+          setModelSource("unavailable");
+        }
       } catch (error) {
         if (cancelled) return;
         if (process.env.NODE_ENV !== "production") {
           console.warn("[ai-gen] Falling back to local image schema preview.", error);
         }
-        setModelSource("preview");
+        if (ALLOW_LOCAL_PREVIEW) {
+          setModelSource("preview");
+        } else {
+          setModelLoadError(
+            friendlyError(error, t("imageLab.error.loadModels", "Failed to load image models."))
+          );
+          setModelSource("unavailable");
+        }
       }
     }
 
@@ -91,7 +121,7 @@ export default function AiImageLabPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   // ─── Reconciliation ──────────────────────────────────────────
   // "Push first, poll as safety net" — Web PubSub is the primary
@@ -210,6 +240,7 @@ export default function AiImageLabPage() {
     let hasConnectedBefore = false;
     const client = openAssetsRealtime({
       onConnected: () => {
+        setRealtimeConnected(true);
         // First `connected` is the initial handshake — history was
         // already loaded by the bootstrap effect. Any subsequent
         // connected fires after a network drop / token refresh, and
@@ -218,7 +249,12 @@ export default function AiImageLabPage() {
         hasConnectedBefore = true;
       },
       onEvent: handleAssetEvent,
-      onDisconnected: (reason) => console.log(`[assets-realtime] disconnected: ${reason}`),
+      onDisconnected: (reason) => {
+        setRealtimeConnected(false);
+        if (process.env.NODE_ENV !== "production") {
+          console.log(`[assets-realtime] disconnected: ${reason}`);
+        }
+      },
     });
     return () => client.close();
   }, [handleAssetEvent, reconcileFromServer]);
@@ -287,11 +323,25 @@ export default function AiImageLabPage() {
     (it) => it.stage && it.stage !== "queued" && it.stage !== "created"
   );
 
+  // Active jobs get a REST reconciliation heartbeat. Web PubSub is still
+  // the fast path, but this makes "push first, poll as safety net" true
+  // even when the realtime connection is down for the whole run.
+  useEffect(() => {
+    if (activeJobCount === 0) return;
+    const intervalMs = realtimeConnected ? 15_000 : 5_000;
+    const timer = window.setInterval(() => {
+      void reconcileFromServer();
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [activeJobCount, realtimeConnected, reconcileFromServer]);
+
+  const userTierRank = useMemo(() => tierRank(user?.userLevel), [user?.userLevel]);
+
   const canSubmit =
     prompt.trim().length > 0 &&
     !isSubmitting &&
     model.enabled &&
-    modelSource !== "loading" &&
+    (modelSource === "live" || modelSource === "preview") &&
     activeJobCount === 0;
 
   // ─── Submit ──────────────────────────────────────────────────
@@ -417,7 +467,7 @@ export default function AiImageLabPage() {
     async (id: string) => {
       const original = items.find((it) => it.id === id);
       if (!original || original.kind !== "error") return;
-      if (modelSource === "preview" || !id.match(/^[0-9a-f-]{20,}$/i)) {
+      if (modelSource === "preview" || id.startsWith("temp:")) {
         // Local error — just resubmit with the same prompt/ratio
         setPrompt(original.prompt);
         return;
@@ -430,13 +480,23 @@ export default function AiImageLabPage() {
           prompt: original.prompt,
           ratio: original.ratio,
           createdAt: Date.now(),
+          stage: response.stage,
+          queuePosition: response.queue_position,
+          progress: response.progress,
+          etaSeconds: response.estimated_total_seconds,
         };
         replaceItem(id, [requeued]);
       } catch (error) {
-        // Leave the error card in place — user can try again.
+        replaceItem(id, [
+          {
+            ...original,
+            message: friendlyError(error, t("imageLab.error.retryFailed", "Failed to retry task.")),
+            createdAt: Date.now(),
+          },
+        ]);
       }
     },
-    [items, modelSource, replaceItem]
+    [items, modelSource, replaceItem, t]
   );
 
   // ─── Region gate ──────────────────────────────────────────────
@@ -449,63 +509,92 @@ export default function AiImageLabPage() {
   if (!imageGenAvailable) {
     return <UnavailableInRegion t={t} />;
   }
+  if (modelSource === "unavailable") {
+    return <UnavailableInRegion t={t} detail={modelLoadError} />;
+  }
 
   // ─── Render ───────────────────────────────────────────────────
   return (
-    <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
-      {/* Canvas — the scrollable content keeps a `pb-28` runway so the
+    // QuotaProvider lives at the page boundary, NOT in the app shell —
+    // chat / workflow / profile pages don't need it and shouldn't
+    // share its WS + GET /aurora/quota chatter. UpgradeDialogHost is
+    // co-located so 429s from submitAiJob (which emit via the upgrade
+    // store) only open the dialog when the user is actually on this
+    // page. Gated on `user` so anonymous visits skip the WS entirely.
+    <QuotaProvider enabled={Boolean(user)}>
+      <UpgradeDialogHost />
+      <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
+        {/* Canvas — the scrollable content keeps a `pb-28` runway so the
           last row can scroll past the fixed compose bar instead of
           being permanently hidden underneath it. The bar itself
           overlays this area with a soft blur. */}
-      <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-28 pt-4 md:px-4">
-        {items.length > 0 ? (
-          <GalleryGrid items={items} onRetry={handleRetry} t={t} />
-        ) : (
-          <EmptyState t={t} onTry={(text) => setPrompt(text)} modelName={model.name} />
-        )}
-      </main>
+        <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-28 pt-4 md:px-4">
+          {items.length > 0 ? (
+            <GalleryGrid items={items} onRetry={handleRetry} onReusePrompt={refillPrompt} t={t} />
+          ) : (
+            <EmptyState t={t} onTry={refillPrompt} modelName={model.name} />
+          )}
+        </main>
 
-      {/* Fixed compose bar */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-3 lg:left-20">
-        <div className="pointer-events-auto w-full max-w-3xl">
-          <ComposeBar
-            prompt={prompt}
-            onPromptChange={setPrompt}
-            model={model}
-            models={availableModels}
-            onModelChange={(next) => {
-              setModel(next);
-              setFormData(deriveDefaults(next.input_schema.properties));
-            }}
-            aspectRatioValue={aspectRatioValue}
-            aspectRatioOptions={aspectRatioOptions}
-            onAspectRatioChange={(v) => setFormData((prev) => ({ ...prev, aspect_ratio: v }))}
-            resolutionTierValue={resolutionTierValue}
-            resolutionTierOptions={resolutionTierOptions}
-            onResolutionTierChange={(v) => setFormData((prev) => ({ ...prev, resolution_tier: v }))}
-            qualityValue={qualityValue}
-            qualityOptions={qualityOptions}
-            onQualityChange={(v) => setFormData((prev) => ({ ...prev, quality: v }))}
-            outputs={outputs}
-            outputOptions={outputOptions}
-            onOutputsChange={(n) => setFormData((prev) => ({ ...prev, n }))}
-            userTierRank={0}
-            tierRank={tierRank}
-            activeJobCount={activeJobCount}
-            activeJobRunning={isAnyJobRunning}
-            canSubmit={canSubmit}
-            isSubmitting={isSubmitting}
-            onSubmit={handleSubmit}
-            disabled={modelSource === "loading"}
-            t={t}
-          />
+        {/* Fixed compose bar */}
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-3 lg:left-20">
+          <div className="pointer-events-auto w-full max-w-3xl">
+            {/* Inline quota chip — shows daily image used/limit so users
+              see the cap BEFORE they submit and hit a 429. VIP3 renders
+              an ∞ badge instead; loading state is a quiet shimmer. */}
+            <div className="mb-1.5 flex justify-end px-1">
+              <QuotaBadge dimension="image" />
+            </div>
+            <ComposeBar
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              model={model}
+              models={availableModels}
+              onModelChange={(next) => {
+                setModel(next);
+                setFormData(deriveDefaults(next.input_schema.properties));
+              }}
+              aspectRatioValue={aspectRatioValue}
+              aspectRatioOptions={aspectRatioOptions}
+              onAspectRatioChange={(v) => setFormData((prev) => ({ ...prev, aspect_ratio: v }))}
+              resolutionTierValue={resolutionTierValue}
+              resolutionTierOptions={resolutionTierOptions}
+              onResolutionTierChange={(v) =>
+                setFormData((prev) => ({ ...prev, resolution_tier: v }))
+              }
+              qualityValue={qualityValue}
+              qualityOptions={qualityOptions}
+              onQualityChange={(v) => setFormData((prev) => ({ ...prev, quality: v }))}
+              outputs={outputs}
+              outputOptions={outputOptions}
+              onOutputsChange={(n) => setFormData((prev) => ({ ...prev, n }))}
+              formData={formData}
+              onFieldChange={(name, value) => setFormData((prev) => ({ ...prev, [name]: value }))}
+              userTierRank={userTierRank}
+              tierRank={tierRank}
+              activeJobCount={activeJobCount}
+              activeJobRunning={isAnyJobRunning}
+              canSubmit={canSubmit}
+              isSubmitting={isSubmitting}
+              onSubmit={handleSubmit}
+              disabled={modelSource === "loading"}
+              focusToken={promptFocusToken}
+              t={t}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </QuotaProvider>
   );
 }
 
-function UnavailableInRegion({ t }: { t: (key: string, fallback?: string) => string }) {
+function UnavailableInRegion({
+  t,
+  detail,
+}: {
+  t: (key: string, fallback?: string) => string;
+  detail?: string | null;
+}) {
   return (
     <div className="flex h-[calc(100dvh-56px)] items-center justify-center bg-black px-6 text-foreground lg:pl-20">
       <div className="flex max-w-md flex-col items-center gap-4 text-center">
@@ -521,6 +610,7 @@ function UnavailableInRegion({ t }: { t: (key: string, fallback?: string) => str
             "Image generation runs on infrastructure that isn't deployed for this site yet. Stay tuned — coming soon."
           )}
         </p>
+        {detail && <p className="text-xs text-zinc-600">{detail}</p>}
       </div>
     </div>
   );
@@ -611,7 +701,7 @@ function readOptions(
 
 // Mirror of server-side AI_TIER_RANK. Kept tiny because we only need
 // the relative ordering for showing lock badges; server enforces.
-const TIER_RANK: Record<string, number> = { FREE: 0, VIP1: 1, VIP2: 2, VIP3: 3 };
+const TIER_RANK: Record<string, number> = { FREE: 0, VIP: 1, VIP1: 1, VIP2: 2, VIP3: 3 };
 function tierRank(level: string | null | undefined): number {
   if (!level) return 0;
   return TIER_RANK[level.toUpperCase()] ?? 0;
@@ -662,6 +752,10 @@ function jobToItems(job: AiJobView): GalleryItem[] {
       prompt: promptText,
       ratio,
       createdAt,
+      stage: job.stage,
+      queuePosition: job.queuePosition,
+      progress: job.progress,
+      etaSeconds: job.estimatedTotalSeconds,
     },
   ];
 }

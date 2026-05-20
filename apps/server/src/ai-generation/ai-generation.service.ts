@@ -8,6 +8,7 @@ import {
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { newShortId } from '../common/id';
+import { TIERS, normalizeTier } from '../quota/tiers.config';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationEtaService } from './eta.service';
 import { AiGenerationRepository } from './repository';
@@ -20,7 +21,6 @@ import type {
   AiJob,
   AiJobListQuery,
   AiJobLog,
-  FoundryModelDefinition,
   AiStatusResponse,
   AiSubmitJobBody,
   AiSubmitResponse,
@@ -152,77 +152,118 @@ export class AiGenerationService {
     const prompt = String(normalizedInput.prompt ?? '').trim();
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
 
-    const existing = await this.store.findByIdempotency(
-      user.userId,
-      model.id,
-      idempotencyKey,
-    );
-    if (existing) return this.toSubmitResponse(existing);
-
-    await this.assertUserQueueLimit(user.userId, model);
-
     const now = new Date().toISOString();
     // Generated app-side so we know the id before insert — needed to
     // enqueue BullMQ + emit the optimistic queued push before save()
     // resolves. Keep it short because this id appears in URLs/logs.
     const id = newShortId();
     const queueName = model.queue.queueName;
-    const queuePosition = (await this.store.waitingInQueue(queueName)).length;
-    const estimate = this.eta.estimateForNewJob(
-      model,
-      normalizedInput,
-      queuePosition,
-    );
-    const logs: AiJobLog[] = [
-      {
-        time: now,
-        stage: 'queued',
-        message: 'Request accepted and waiting for a generation slot.',
-      },
-    ];
-
-    const job: AiJob = {
-      id,
+    const reservation = await this.store.reserveQueuedJob({
       userId: user.userId,
-      userLevel: user.userLevel ?? null,
-      type: model.type,
-      // `provider` is the adapter key (e.g. 'microsoft-foundry');
-      // `model.provider` happens to be the same Foundry string today
-      // but that's a coincidence — the adapter is the source of truth.
-      provider,
       modelId: model.id,
-      deployment: model.deployment,
-      schemaVersion: model.schemaVersion,
-      status: 'in_queue',
-      stage: 'queued',
-      input,
-      normalizedInput,
-      prompt,
       idempotencyKey,
-      outputs: [],
-      logs,
       queueName,
-      queuePosition,
-      progress: null,
-      estimatedWaitSeconds: estimate.estimatedWaitSeconds,
-      estimatedRunSeconds: estimate.estimatedRunSeconds,
-      estimatedTotalSeconds: estimate.estimatedTotalSeconds,
-      etaConfidence: estimate.etaConfidence,
-      attempt: 1,
-      createdAt: now,
-      queuedAt: now,
-      updatedAt: now,
-      metrics: {},
-    };
+      type: model.type,
+      perUserQueued: model.queue.perUserQueued,
+      perUserRunning: model.queue.perUserRunning,
+      buildJob: (queuePosition) => {
+        const estimate = this.eta.estimateForNewJob(
+          model,
+          normalizedInput,
+          queuePosition,
+        );
+        const logs: AiJobLog[] = [
+          {
+            time: now,
+            stage: 'queued',
+            message: 'Request accepted and waiting for a generation slot.',
+          },
+        ];
 
-    await this.store.save(job);
+        return {
+          id,
+          userId: user.userId,
+          userLevel: user.userLevel ?? null,
+          type: model.type,
+          // `provider` is the adapter key (e.g. 'microsoft-foundry');
+          // `model.provider` happens to be the same Foundry string today
+          // but that's a coincidence — the adapter is the source of truth.
+          provider,
+          modelId: model.id,
+          deployment: model.deployment,
+          schemaVersion: model.schemaVersion,
+          status: 'in_queue',
+          stage: 'queued',
+          input,
+          normalizedInput,
+          prompt,
+          idempotencyKey,
+          outputs: [],
+          logs,
+          queueName,
+          queuePosition,
+          progress: null,
+          estimatedWaitSeconds: estimate.estimatedWaitSeconds,
+          estimatedRunSeconds: estimate.estimatedRunSeconds,
+          estimatedTotalSeconds: estimate.estimatedTotalSeconds,
+          etaConfidence: estimate.etaConfidence,
+          attempt: 1,
+          createdAt: now,
+          queuedAt: now,
+          updatedAt: now,
+          metrics: {},
+        };
+      },
+    });
+
+    if (reservation.kind === 'existing') {
+      return this.toSubmitResponse(reservation.job);
+    }
+    if (reservation.kind === 'queued_limit') {
+      throw new ConflictException({
+        code: 'QUEUE_LIMIT_EXCEEDED',
+        msg: `You can queue up to ${reservation.limit} generation task(s).`,
+      });
+    }
+    if (reservation.kind === 'running_limit') {
+      throw new ConflictException({
+        code: 'RATE_LIMITED',
+        msg: `You can run up to ${reservation.limit} ${reservation.type} generation task(s) at once.`,
+      });
+    }
+
+    const job = reservation.job;
     // Hand off to BullMQ. The worker reads the canonical row from DB
     // when it picks the message up, so the payload is just the jobId.
-    await this.queue.enqueue(queueName, id);
-    const repositioned = await this.store.recomputeQueuePositions(queueName);
+    // Priority is derived from the user's tier so VIP3 submissions
+    // jump to the front of a contended image queue — see TIERS in
+    // src/quota/tiers.config.ts for the full mapping.
+    const priority = TIERS[normalizeTier(user.userLevel)].priority;
+    try {
+      await this.queue.enqueue(queueName, id, 0, priority);
+    } catch (err) {
+      const failed = await this.store.update(id, {
+        status: 'failed',
+        stage: 'failed',
+        completedAt: new Date().toISOString(),
+        error: {
+          code: 'QUEUE_UNAVAILABLE',
+          message: err instanceof Error ? err.message : String(err),
+          userMessage:
+            'Generation queue is temporarily unavailable. Please try again in a moment.',
+          retryable: true,
+          createdAt: new Date().toISOString(),
+        },
+      });
+      if (failed) this.emitJobUpdate(failed);
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        msg: 'Generation queue is temporarily unavailable. Please try again in a moment.',
+      });
+    }
     const saved = (await this.store.findById(id)) ?? job;
     this.emitJobUpdate(saved);
-    this.emitRepositioned(repositioned, saved.id);
+    this.emitRepositioned(reservation.repositioned, saved.id);
     return this.toSubmitResponse(saved);
   }
 
@@ -304,34 +345,6 @@ export class AiGenerationService {
       });
     }
     return job;
-  }
-
-  private async assertUserQueueLimit(
-    userId: string,
-    model: FoundryModelDefinition,
-  ): Promise<void> {
-    const active = await this.store.activeForUser(userId);
-    const activeSameType = active.filter((job) => job.type === model.type);
-    const queuedTotal = active.filter(
-      (job) => job.status === 'in_queue',
-    ).length;
-    const runningSameType = activeSameType.filter(
-      (job) => job.status === 'in_progress',
-    ).length;
-
-    if (queuedTotal >= model.queue.perUserQueued) {
-      throw new ConflictException({
-        code: 'QUEUE_LIMIT_EXCEEDED',
-        msg: `You can queue up to ${model.queue.perUserQueued} generation task(s).`,
-      });
-    }
-
-    if (runningSameType >= model.queue.perUserRunning) {
-      throw new ConflictException({
-        code: 'RATE_LIMITED',
-        msg: `You can run up to ${model.queue.perUserRunning} ${model.type} generation task(s) at once.`,
-      });
-    }
   }
 
   private toSubmitResponse(job: AiJob): AiSubmitResponse {

@@ -1,5 +1,17 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth';
+import { RequireQuota } from '../quota/quota.decorator';
+import { QuotaGuard } from '../quota/quota.guard';
+import { QuotaInterceptor } from '../quota/quota.interceptor';
 import { AiGenerationService } from './ai-generation.service';
 import type { AiJobListQuery, AiSubmitJobBody } from './types';
 import type { AuthUser } from '../auth';
@@ -16,12 +28,32 @@ export class AiGenerationController {
     };
   }
 
+  // Quota enforcement is opt-in **per route** here — no global APP_GUARD —
+  // so StoryOS / chat / workflow controllers stay completely untouched.
+  // The guard pre-consumes; the interceptor auto-refunds on a thrown
+  // exception; the image worker additionally refunds on terminal job
+  // failure (out-of-band of the HTTP request).
   @Post('jobs')
+  @UseGuards(QuotaGuard)
+  @UseInterceptors(QuotaInterceptor)
+  @RequireQuota({
+    dimension: 'image',
+    reason: 'ai_job_create',
+    // ai-generation dedupes submits by `body.idempotencyKey` — pull
+    // the same key into the quota consume so a retry of the same
+    // submission (which DB returns the existing job for) doesn't
+    // double-charge the user.
+    idempotencyFrom: 'body:idempotencyKey',
+  })
   async submitJob(
     @CurrentUser() user: AuthUser,
     @Body() body: AiSubmitJobBody,
   ) {
-    return { code: 200, data: await this.service.submitJob(user, body) };
+    // QuotaGuard already pre-consumed (+ audit-logged) before we got
+    // here. Image and video both bucket into the `image` dimension
+    // — see worker for the per-tier split derived from the model id.
+    const data = await this.service.submitJob(user, body);
+    return { code: 200, data };
   }
 
   @Get('jobs')

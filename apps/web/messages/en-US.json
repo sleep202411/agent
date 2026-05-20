@@ -3969,12 +3969,23 @@
         "busy": "Previous task is still running. Please wait.",
         "addImage": "Add image",
         "addReferences": "Add references",
-        "outputs": "Outputs"
+        "outputs": "Outputs",
+        "more": "More",
+        "qualityChip": "Quality",
+        "lockedTier": "Available to {tier}+ members",
+        "lockedMember": "Available to members only",
+        "unlock": "Unlock {tier}",
+        "unlockMember": "Members only",
+        "referencesPlaceholder": "Paste image URLs, one per line",
+        "referenceMaxReached": "Maximum {n} reference images reached",
+        "referenceImageOnly": "Reference must be an image file",
+        "referenceUploadFailed": "Upload failed"
       },
       "cell": {
         "queued": "Queued",
         "retry": "Retry",
-        "download": "Download"
+        "download": "Download",
+        "reusePrompt": "Click to reuse prompt"
       },
       "stage": {
         "running": "Running",
@@ -3990,7 +4001,16 @@
         "submitFailed": "Failed to submit generation task.",
         "timeout": "Generation took too long. Try again or pick a smaller size.",
         "empty": "Generation completed without output.",
-        "failed": "Generation failed."
+        "failed": "Generation failed.",
+        "membershipRequired": "This model is for members only. Upgrade to unlock.",
+        "membershipExpired": "Your membership has expired. Renew to keep generating.",
+        "retryFailed": "Failed to retry task.",
+        "loadModels": "Failed to load image models.",
+        "noModels": "No image model is available."
+      },
+      "unavailable": {
+        "title": "Image lab isn't available in your region",
+        "body": "Image generation runs on infrastructure that isn't deployed for this site yet. Stay tuned — coming soon."
       },
       "eyebrow": "AI image",
       "title": "Text to Image",
@@ -4231,6 +4251,41 @@
       "background": {
         "description": "Currently supports automatic or opaque backgrounds."
       }
+    }
+  },
+  "quota": {
+    "dimension": {
+      "image": "Image",
+      "chat": "Chat",
+      "workflow": "Workflow",
+      "upload": "Upload"
+    },
+    "unit": {
+      "image": "",
+      "chat": "",
+      "workflow": "",
+      "upload": " MB"
+    },
+    "badge": {
+      "unlimited": "VIP · priority queue",
+      "tooltipUsed": "{used}/{limit}{unit} used today · resets in {resetIn}"
+    },
+    "blocker": {
+      "fullChip": "Full",
+      "leftChip": "{n} left",
+      "blockedTitle": "Daily limit reached ({used}/{limit}) · resets in {resetIn}",
+      "leftTitle": "{remaining}/{limit} left today"
+    },
+    "upgradeDialog": {
+      "title": "{label} daily limit reached",
+      "subtitle": "{used}/{limit}{unit} used · resets in {resetIn}",
+      "nextTier": "Upgrade to {tier}",
+      "nextTierPriority": "Upgrade to {tier} · priority queue",
+      "nextTierBody": "Unlocks {limit}{unit}/day",
+      "nextTierBodyUnlimited": "Unlocks unlimited usage (no daily cap)",
+      "vip3Body": "You're already on VIP3 — the queue is busy right now, please try again in a moment.",
+      "later": "Later",
+      "upgradeNow": "Upgrade now"
     }
   }
 }

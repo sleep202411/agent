@@ -121,20 +121,20 @@ function buildUrl(conversationId: string, workspaceId?: string): string {
   if (typeof window === "undefined") {
     throw new Error("ChatEventsClient only works in the browser");
   }
-  // Same-host WS — apex nginx and AKS ingress both proxy the Upgrade
-  // header through, so we don't need to pin a separate WS host. Local
-  // dev hits Nest directly on :3001 because the Next.js dev server
-  // doesn't proxy WS upgrades.
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const isDev =
-    window.location.hostname === "localhost" &&
-    (window.location.port === "3000" || window.location.port === "5173");
-  const host = isDev ? "localhost:3001" : window.location.host;
+  // In local dev the web (Next) and the backend (Nest) live on
+  // different ports; Next doesn't proxy the WS Upgrade, so we hit the
+  // Nest port directly and use the bare gateway path (no `/aurora`
+  // prefix — that prefix only exists because of nginx / AKS ingress
+  // routing in prod, where the upstream strips it before forwarding).
+  const isLocal = window.location.hostname === "localhost";
+  const host = isLocal ? "localhost:4399" : window.location.host;
+  const basePath = isLocal ? "" : "/aurora";
   const params = new URLSearchParams({ conversationId });
   if (workspaceId) params.set("workspaceId", workspaceId);
   const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
   if (tokenMatch) params.set("satoken", tokenMatch[1]);
-  return `${proto}//${host}/aurora/chat/subscribe-conversation?${params.toString()}`;
+  return `${proto}//${host}${basePath}/chat/subscribe-conversation?${params.toString()}`;
 }
 
 function parseFrame(raw: string): ChatEventFrame | null {

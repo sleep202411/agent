@@ -12,6 +12,7 @@ import { HealthModule } from './infra/health/health.module';
 import { RealtimeModule } from './infra/realtime/realtime.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { NotificationModule } from './notification';
+import { QuotaModule } from './quota/quota.module';
 import { SparkModule } from './spark/spark.module';
 import { UsersModule } from './users/users.module';
 
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module';
     AiGenerationModule,
     RealtimeModule,
     NotificationModule,
+    QuotaModule,
     UsersModule,
     CrewsModule,
     EpisodesModule,

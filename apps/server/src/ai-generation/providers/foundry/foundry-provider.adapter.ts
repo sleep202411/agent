@@ -22,6 +22,7 @@ import type {
 import type { AiJobError } from '../../types';
 import { mapFoundryProviderRequest } from './request.mapper';
 import { FoundrySchemaRegistry } from './schema.registry';
+import { safeFetchReference, UnsafeRefError } from './safe-ref-fetcher';
 
 const PROVIDER_TIMEOUT_MS = 240_000;
 
@@ -140,6 +141,19 @@ export class FoundryProviderAdapter implements ProviderAdapter {
         ? 'multipart/form-data'
         : 'application/json';
 
+    // Multipart endpoints (OpenAI images.edits and similar) expect
+    // file parts, but `mapped.body[field]` is a list of URLs (schema
+    // transforms only unwrap `{url}` wrappers — fetching is a network
+    // operation, deliberately kept out of the synchronous mapper).
+    // `mapped.fileRefFields` lists every parameter the schema marked
+    // as a URL→file ref via its transform; we fetch each one here
+    // and replace the URLs with Blobs so buildBody attaches them as
+    // file parts. This keeps the per-model multipart contract in the
+    // schema where it belongs — no parameter names hardcoded here.
+    if (contentType === 'multipart/form-data') {
+      await this.materializeFileRefs(mapped.body, mapped.fileRefFields);
+    }
+
     const url = this.resolveUrl(mapped.endpoint);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
@@ -218,7 +232,7 @@ export class FoundryProviderAdapter implements ProviderAdapter {
     body: FoundryImageResponseBody,
   ): RawProviderOutput[] {
     const items = Array.isArray(body?.data) ? body.data : [];
-    const size = typeof input.size === 'string' ? (input.size as string) : null;
+    const size = typeof input.size === 'string' ? input.size : null;
     const { width, height } = parseSize(size);
     const collected: RawProviderOutput[] = [];
     items.forEach((item, i) => {
@@ -293,11 +307,37 @@ export class FoundryProviderAdapter implements ProviderAdapter {
     if (contentType === 'application/json') {
       return JSON.stringify(payload);
     }
+    // Array-valued multipart fields use the bracketed `key[]`
+    // convention. This matches both:
+    //   • the OpenAI Node SDK's internal multipart encoder
+    //     (`openai/internal/multipart-form.ts` walks arrays with
+    //     `key + "[]"`),
+    //   • Azure OpenAI's parser, empirically — when we sent
+    //     `image[]: "<url>"` against `images.edits` it answered
+    //     "Invalid type for 'image[0]': expected a file" (i.e. the
+    //     bracket form WAS parsed into a 1-element array, the
+    //     complaint was about the value type, not the field name).
+    // If we ever target a provider that wants repeated-key arrays
+    // instead, route through a per-binding encoder flag rather than
+    // flipping this behaviour globally.
     const form = new FormData();
     for (const [key, value] of Object.entries(payload)) {
       if (value === undefined || value === null) continue;
       if (Array.isArray(value)) {
-        for (const item of value) form.append(`${key}[]`, String(item));
+        for (const item of value) {
+          if (item instanceof Blob) {
+            // Filename is required by some multipart parsers to
+            // trigger the "file" code path; attach a synthetic name
+            // derived from the blob's mime type.
+            const ext = mimeToExt(item.type) ?? 'bin';
+            form.append(`${key}[]`, item, `reference.${ext}`);
+          } else {
+            form.append(`${key}[]`, String(item));
+          }
+        }
+      } else if (value instanceof Blob) {
+        const ext = mimeToExt(value.type) ?? 'bin';
+        form.append(key, value, `reference.${ext}`);
       } else if (typeof value === 'object') {
         form.append(key, JSON.stringify(value));
       } else {
@@ -305,6 +345,69 @@ export class FoundryProviderAdapter implements ProviderAdapter {
       }
     }
     return form;
+  }
+
+  /**
+   * Materialize URL → Blob for every parameter the schema flagged as
+   * a file ref. Each entry becomes a `Blob` carrying the response's
+   * content-type, then buildBody attaches it as a multipart file part
+   * with a synthetic filename. Single-URL fields (string) and
+   * multi-URL fields (string[]) are both supported — the schema's
+   * `parameter` shape decides which the provider expects.
+   *
+   * Errors here surface as VALIDATION_ERROR, matching how the
+   * upstream provider would reject a malformed reference: the URL is
+   * user-supplied, so a bad URL is treated as input invalidity rather
+   * than an internal failure (no retry).
+   */
+  private async materializeFileRefs(
+    body: Record<string, unknown>,
+    fields: string[],
+  ): Promise<void> {
+    for (const field of fields) {
+      const value = body[field];
+      if (value === undefined || value === null) continue;
+      if (Array.isArray(value)) {
+        const blobs: Blob[] = [];
+        for (const item of value) {
+          blobs.push(await this.fetchAsBlob(item));
+        }
+        body[field] = blobs;
+      } else {
+        body[field] = await this.fetchAsBlob(value);
+      }
+    }
+  }
+
+  private async fetchAsBlob(ref: unknown): Promise<Blob> {
+    if (ref instanceof Blob) return ref;
+    if (typeof ref !== 'string') {
+      throw this.makeError(
+        'VALIDATION_ERROR',
+        `Unexpected file ref entry: ${typeof ref}`,
+      );
+    }
+    try {
+      const { bytes, mime } = await safeFetchReference(ref);
+      // Buffer.from copies bytes into a Buffer (which is
+      // Uint8Array<ArrayBuffer>) so the Blob constructor's typing is
+      // satisfied — bare Uint8Array<ArrayBufferLike> is rejected
+      // because its buffer might be SharedArrayBuffer.
+      return new Blob([Buffer.from(bytes)], { type: mime });
+    } catch (err) {
+      if (err instanceof UnsafeRefError) {
+        throw this.makeError(
+          'VALIDATION_ERROR',
+          err.reason,
+          err.safeUserMessage,
+        );
+      }
+      throw this.makeError(
+        'VALIDATION_ERROR',
+        err instanceof Error ? err.message : 'reference fetch failed',
+        'A reference asset could not be downloaded. Please try again.',
+      );
+    }
   }
 
   private makeError(
@@ -332,4 +435,14 @@ function parseSize(size: string | null): { width?: number; height?: number } {
   const m = size.match(/^(\d+)x(\d+)$/i);
   if (!m) return {};
   return { width: Number(m[1]), height: Number(m[2]) };
+}
+
+function mimeToExt(mime: string | undefined | null): string | undefined {
+  if (!mime) return undefined;
+  const normalized = mime.toLowerCase();
+  if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg';
+  if (normalized.includes('png')) return 'png';
+  if (normalized.includes('webp')) return 'webp';
+  if (normalized.includes('gif')) return 'gif';
+  return undefined;
 }
