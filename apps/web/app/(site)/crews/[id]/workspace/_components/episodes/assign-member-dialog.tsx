@@ -36,6 +36,7 @@ import {
   useTranslatedPresetPositions,
 } from "@/app/(site)/crews/_hooks/use-position-label";
 import { useAssignMember, type EpisodeAssignment } from "@/app/(site)/crews/_hooks/use-episodes";
+import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 
 interface AssignMemberDialogProps {
   open: boolean;
@@ -104,6 +105,15 @@ export function AssignMemberDialog({
     [crewMembers, assignedUserIds]
   );
 
+  // Batch-resolve nicknames for everyone in the picker. The dropdown
+  // usually has <20 entries (single crew), well under the BFF's
+  // 50-id cap. useUserDisplays no-ops on empty input.
+  const availableMemberIds = useMemo(
+    () => availableMembers.map((m) => m.userId),
+    [availableMembers]
+  );
+  const displays = useUserDisplays(availableMemberIds);
+
   const canSubmit = !submitting && userId.length > 0 && roleValue.length > 0;
 
   const handleSubmit = () => {
@@ -143,7 +153,7 @@ export function AssignMemberDialog({
                   <SelectContent>
                     {availableMembers.map((m) => (
                       <SelectItem key={m.userId} value={m.userId}>
-                        User {m.userId}
+                        {displayNameOf(m.userId, displays)}
                       </SelectItem>
                     ))}
                   </SelectContent>
