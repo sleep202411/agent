@@ -60,6 +60,8 @@ import {
   type CurrencyCode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
+import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import type { LookupUserDTO } from "@repo/shared/users";
 import { employmentTypeKey, experienceKey, formatSalaryString, workModeKey } from "./position-meta";
 
 interface PositionDetailSheetProps {
@@ -92,6 +94,11 @@ export function PositionDetailSheet({
   const pending = applications.filter((a) => a.status === "pending");
   const approved = applications.filter((a) => a.status === "approved");
   const rejected = applications.filter((a) => a.status === "rejected");
+
+  // One batched lookup for every applicant nickname; passed down to
+  // each ApplicantRow so we don't fire N independent fetches.
+  const applicantIds = useMemo(() => applications.map((a) => a.applicantId), [applications]);
+  const displays = useUserDisplays(applicantIds);
 
   if (!position) {
     return <Sheet open={false} onOpenChange={onOpenChange} />;
@@ -221,6 +228,7 @@ export function PositionDetailSheet({
                   crewId={crewId}
                   titleKey="applicantSectionPending"
                   applicants={pending}
+                  displays={displays}
                   kind="pending"
                   t={t}
                 />
@@ -228,6 +236,7 @@ export function PositionDetailSheet({
                   crewId={crewId}
                   titleKey="applicantSectionApproved"
                   applicants={approved}
+                  displays={displays}
                   kind="approved"
                   t={t}
                 />
@@ -235,6 +244,7 @@ export function PositionDetailSheet({
                   crewId={crewId}
                   titleKey="applicantSectionRejected"
                   applicants={rejected}
+                  displays={displays}
                   kind="rejected"
                   t={t}
                 />
@@ -437,12 +447,14 @@ function ApplicantSection({
   crewId,
   titleKey,
   applicants,
+  displays,
   kind,
   t,
 }: {
   crewId: string;
   titleKey: string;
   applicants: CrewApplicationDTO[];
+  displays: Map<string, LookupUserDTO>;
   kind: "pending" | "approved" | "rejected";
   t: ReturnType<typeof useTranslations>;
 }) {
@@ -463,7 +475,14 @@ function ApplicantSection({
       </div>
       <div className="space-y-1.5">
         {applicants.map((a) => (
-          <ApplicantRow key={a.id} crewId={crewId} applicant={a} kind={kind} t={t} />
+          <ApplicantRow
+            key={a.id}
+            crewId={crewId}
+            applicant={a}
+            displays={displays}
+            kind={kind}
+            t={t}
+          />
         ))}
       </div>
     </div>
@@ -473,11 +492,13 @@ function ApplicantSection({
 function ApplicantRow({
   crewId,
   applicant,
+  displays,
   kind,
   t,
 }: {
   crewId: string;
   applicant: CrewApplicationDTO;
+  displays: Map<string, LookupUserDTO>;
   kind: "pending" | "approved" | "rejected";
   t: ReturnType<typeof useTranslations>;
 }) {
@@ -486,17 +507,20 @@ function ApplicantRow({
   const busy =
     (approve.isPending && approve.variables === applicant.id) ||
     (reject.isPending && reject.variables === applicant.id);
+  const lookup = displays.get(applicant.applicantId);
+  const displayName = displayNameOf(applicant.applicantId, displays);
+  const initial = (lookup?.nickname?.trim() || applicant.applicantId).charAt(0).toUpperCase();
 
   // Borderless per DESIGN.md — bg-secondary lifts the row enough.
   return (
     <div className="rounded-lg bg-secondary/40 p-2.5">
       <div className="flex items-start gap-2.5">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-semibold text-foreground">
-          {applicant.applicantId.charAt(0).toUpperCase()}
+          {initial}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="font-semibold text-foreground">User {applicant.applicantId}</span>
+            <span className="font-semibold text-foreground">{displayName}</span>
             {applicant.yearsExperience != null ? (
               <Tag>{t("applicantYears", { count: applicant.yearsExperience })}</Tag>
             ) : null}
