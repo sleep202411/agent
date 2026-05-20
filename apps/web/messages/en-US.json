@@ -4248,5 +4248,40 @@
         "description": "Currently supports automatic or opaque backgrounds."
       }
     }
+  },
+  "quota": {
+    "dimension": {
+      "image": "Image",
+      "chat": "Chat",
+      "workflow": "Workflow",
+      "upload": "Upload"
+    },
+    "unit": {
+      "image": "",
+      "chat": "",
+      "workflow": "",
+      "upload": " MB"
+    },
+    "badge": {
+      "unlimited": "VIP · priority queue",
+      "tooltipUsed": "{used}/{limit}{unit} used today · resets in {resetIn}"
+    },
+    "blocker": {
+      "fullChip": "Full",
+      "leftChip": "{n} left",
+      "blockedTitle": "Daily limit reached ({used}/{limit}) · resets in {resetIn}",
+      "leftTitle": "{remaining}/{limit} left today"
+    },
+    "upgradeDialog": {
+      "title": "{label} daily limit reached",
+      "subtitle": "{used}/{limit}{unit} used · resets in {resetIn}",
+      "nextTier": "Upgrade to {tier}",
+      "nextTierPriority": "Upgrade to {tier} · priority queue",
+      "nextTierBody": "Unlocks {limit}{unit}/day",
+      "nextTierBodyUnlimited": "Unlocks unlimited usage (no daily cap)",
+      "vip3Body": "You're already on VIP3 — the queue is busy right now, please try again in a moment.",
+      "later": "Later",
+      "upgradeNow": "Upgrade now"
+    }
   }
 }

@@ -4248,5 +4248,40 @@
         "description": "当前支持自动或不透明背景。"
       }
     }
+  },
+  "quota": {
+    "dimension": {
+      "image": "图像",
+      "chat": "对话",
+      "workflow": "工作流",
+      "upload": "上传"
+    },
+    "unit": {
+      "image": "张",
+      "chat": "条",
+      "workflow": "次",
+      "upload": "MB"
+    },
+    "badge": {
+      "unlimited": "VIP · 队列优先",
+      "tooltipUsed": "今日 {used}/{limit}{unit} · {resetIn} 后重置"
+    },
+    "blocker": {
+      "fullChip": "已满",
+      "leftChip": "剩 {n}",
+      "blockedTitle": "今日额度已用完 ({used}/{limit}) · {resetIn} 后重置",
+      "leftTitle": "今日剩 {remaining}/{limit}"
+    },
+    "upgradeDialog": {
+      "title": "今日{label}额度已用完",
+      "subtitle": "已用 {used}/{limit}{unit} · {resetIn} 后重置",
+      "nextTier": "升级 {tier}",
+      "nextTierPriority": "升级 {tier} · 队列优先",
+      "nextTierBody": "立即解锁 {limit}{unit}/天",
+      "nextTierBodyUnlimited": "立即解锁无每日上限",
+      "vip3Body": "你已是 VIP3 最高套餐,当前队列繁忙,稍后再试。",
+      "later": "明天再说",
+      "upgradeNow": "立即升级"
+    }
   }
 }
