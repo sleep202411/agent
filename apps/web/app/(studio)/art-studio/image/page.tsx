@@ -14,6 +14,9 @@ import {
 } from "./_data/ai-generation-client";
 import { openAssetsRealtime } from "./_data/assets-realtime";
 import { ComposeBar } from "./_components/compose-bar";
+import { QuotaBadge } from "@/components/quota/quota-badge";
+import { QuotaProvider } from "@/src/lib/quota/quota-provider";
+import { UpgradeDialogHost } from "@/components/quota/upgrade-dialog";
 import { GalleryGrid, type GalleryItem } from "./_components/gallery-grid";
 import { useFeature } from "@/src/lib/region/provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -503,58 +506,75 @@ export default function AiImageLabPage() {
 
   // ─── Render ───────────────────────────────────────────────────
   return (
-    <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
-      {/* Canvas — the scrollable content keeps a `pb-28` runway so the
+    // QuotaProvider lives at the page boundary, NOT in the app shell —
+    // chat / workflow / profile pages don't need it and shouldn't
+    // share its WS + GET /aurora/quota chatter. UpgradeDialogHost is
+    // co-located so 429s from submitAiJob (which emit via the upgrade
+    // store) only open the dialog when the user is actually on this
+    // page. Gated on `user` so anonymous visits skip the WS entirely.
+    <QuotaProvider enabled={Boolean(user)}>
+      <UpgradeDialogHost />
+      <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
+        {/* Canvas — the scrollable content keeps a `pb-28` runway so the
           last row can scroll past the fixed compose bar instead of
           being permanently hidden underneath it. The bar itself
           overlays this area with a soft blur. */}
-      <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-28 pt-4 md:px-4">
-        {items.length > 0 ? (
-          <GalleryGrid items={items} onRetry={handleRetry} t={t} />
-        ) : (
-          <EmptyState t={t} onTry={(text) => setPrompt(text)} modelName={model.name} />
-        )}
-      </main>
+        <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-28 pt-4 md:px-4">
+          {items.length > 0 ? (
+            <GalleryGrid items={items} onRetry={handleRetry} t={t} />
+          ) : (
+            <EmptyState t={t} onTry={(text) => setPrompt(text)} modelName={model.name} />
+          )}
+        </main>
 
-      {/* Fixed compose bar */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-3 lg:left-20">
-        <div className="pointer-events-auto w-full max-w-3xl">
-          <ComposeBar
-            prompt={prompt}
-            onPromptChange={setPrompt}
-            model={model}
-            models={availableModels}
-            onModelChange={(next) => {
-              setModel(next);
-              setFormData(deriveDefaults(next.input_schema.properties));
-            }}
-            aspectRatioValue={aspectRatioValue}
-            aspectRatioOptions={aspectRatioOptions}
-            onAspectRatioChange={(v) => setFormData((prev) => ({ ...prev, aspect_ratio: v }))}
-            resolutionTierValue={resolutionTierValue}
-            resolutionTierOptions={resolutionTierOptions}
-            onResolutionTierChange={(v) => setFormData((prev) => ({ ...prev, resolution_tier: v }))}
-            qualityValue={qualityValue}
-            qualityOptions={qualityOptions}
-            onQualityChange={(v) => setFormData((prev) => ({ ...prev, quality: v }))}
-            outputs={outputs}
-            outputOptions={outputOptions}
-            onOutputsChange={(n) => setFormData((prev) => ({ ...prev, n }))}
-            formData={formData}
-            onFieldChange={(name, value) => setFormData((prev) => ({ ...prev, [name]: value }))}
-            userTierRank={userTierRank}
-            tierRank={tierRank}
-            activeJobCount={activeJobCount}
-            activeJobRunning={isAnyJobRunning}
-            canSubmit={canSubmit}
-            isSubmitting={isSubmitting}
-            onSubmit={handleSubmit}
-            disabled={modelSource === "loading"}
-            t={t}
-          />
+        {/* Fixed compose bar */}
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-3 lg:left-20">
+          <div className="pointer-events-auto w-full max-w-3xl">
+            {/* Inline quota chip — shows daily image used/limit so users
+              see the cap BEFORE they submit and hit a 429. VIP3 renders
+              an ∞ badge instead; loading state is a quiet shimmer. */}
+            <div className="mb-1.5 flex justify-end px-1">
+              <QuotaBadge dimension="image" />
+            </div>
+            <ComposeBar
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              model={model}
+              models={availableModels}
+              onModelChange={(next) => {
+                setModel(next);
+                setFormData(deriveDefaults(next.input_schema.properties));
+              }}
+              aspectRatioValue={aspectRatioValue}
+              aspectRatioOptions={aspectRatioOptions}
+              onAspectRatioChange={(v) => setFormData((prev) => ({ ...prev, aspect_ratio: v }))}
+              resolutionTierValue={resolutionTierValue}
+              resolutionTierOptions={resolutionTierOptions}
+              onResolutionTierChange={(v) =>
+                setFormData((prev) => ({ ...prev, resolution_tier: v }))
+              }
+              qualityValue={qualityValue}
+              qualityOptions={qualityOptions}
+              onQualityChange={(v) => setFormData((prev) => ({ ...prev, quality: v }))}
+              outputs={outputs}
+              outputOptions={outputOptions}
+              onOutputsChange={(n) => setFormData((prev) => ({ ...prev, n }))}
+              formData={formData}
+              onFieldChange={(name, value) => setFormData((prev) => ({ ...prev, [name]: value }))}
+              userTierRank={userTierRank}
+              tierRank={tierRank}
+              activeJobCount={activeJobCount}
+              activeJobRunning={isAnyJobRunning}
+              canSubmit={canSubmit}
+              isSubmitting={isSubmitting}
+              onSubmit={handleSubmit}
+              disabled={modelSource === "loading"}
+              t={t}
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </QuotaProvider>
   );
 }
 

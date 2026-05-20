@@ -1,4 +1,6 @@
 import { api } from "@/src/lib/api";
+import { ApiRequestError } from "@/src/lib/api/api-client";
+import { emitUpgrade, payloadFromServerError } from "@/src/lib/quota/upgrade-dialog-store";
 import type { AiModel } from "./mock-model";
 
 export interface AiModelsResponse {
@@ -67,15 +69,34 @@ export async function submitAiJob(input: {
   values: Record<string, unknown>;
   idempotencyKey: string;
 }): Promise<AiSubmitResponse> {
-  return api.post<AiSubmitResponse>("/aurora/ai/jobs", {
-    timeout: 30_000,
-    data: {
-      modelId: input.modelId,
-      schemaVersion: input.schemaVersion,
-      input: input.values,
-      idempotencyKey: input.idempotencyKey,
-    },
-  });
+  try {
+    return await api.post<AiSubmitResponse>("/aurora/ai/jobs", {
+      timeout: 30_000,
+      data: {
+        modelId: input.modelId,
+        schemaVersion: input.schemaVersion,
+        input: input.values,
+        idempotencyKey: input.idempotencyKey,
+      },
+    });
+  } catch (err) {
+    // 429 from the image quota guard → fire the upgrade dialog with
+    // the structured payload (dimension/used/limit/nextTier). We catch
+    // here, not in the global api-client, so the rest of the app (chat,
+    // workflow, profile, ...) doesn't pop the quota dialog on unrelated
+    // 429s. The original error still propagates so the caller can
+    // surface a toast / inline error state of its own choosing.
+    if (err instanceof ApiRequestError && err.status === 429 && err.responseBody) {
+      try {
+        const parsed = JSON.parse(err.responseBody) as Record<string, unknown>;
+        const payload = payloadFromServerError(parsed);
+        if (payload) emitUpgrade(payload);
+      } catch {
+        /* malformed 429 body — ignore, let the error bubble */
+      }
+    }
+    throw err;
+  }
 }
 
 export async function listAiJobs(params?: {
