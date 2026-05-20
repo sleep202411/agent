@@ -85,9 +85,12 @@ function CompactPositionCard({
   const tCrew = useTranslations("crew");
   const translatePosition = useTranslatePositionValue();
   const crewHref = localizePath(`/crews/${crew.id}`, locale);
+  // Crew logos live in the BANNER bucket (uploaded via /project/uploadBanner),
+  // not the primary OSS bucket — see crews/page.tsx resolveAssetUrl for the
+  // same correction.
   const logoUrl = crew.logo.startsWith("http")
     ? crew.logo
-    : `${env.OSS_BASE_URL.replace(/\/+$/, "")}/${crew.logo.replace(/^\/+/, "")}`;
+    : `${env.BANNER_BASE_URL.replace(/\/+$/, "")}/${crew.logo.replace(/^\/+/, "")}`;
 
   const isFull = position.status === "full" || position.recruitedCount >= position.targetCount;
   const isFrozen = position.status === "frozen";

@@ -35,11 +35,24 @@ export class PositionsService {
   async list(crewId: string, viewerId: string | null = null) {
     const crew = await this.prisma.crew.findFirst({
       where: { id: crewId, deletedAt: null },
-      select: { founderId: true },
+      select: { founderId: true, listingStatus: true },
     });
     if (!crew) throw new NotFoundException('Crew not found');
 
-    const canManage = viewerId === crew.founderId;
+    const isFounder = viewerId !== null && viewerId === crew.founderId;
+    if (crew.listingStatus !== 'listed' && !isFounder) {
+      // Mirror crews.detail visibility — unlisted crews are accessible
+      // only to founder + active members. Deep-linking to
+      // /crews/:id/positions must not leak position lists either.
+      const isMember =
+        viewerId !== null &&
+        (await this.prisma.crewMember.count({
+          where: { crewId, userId: viewerId, removedAt: null },
+        })) > 0;
+      if (!isMember) throw new NotFoundException('Crew not found');
+    }
+
+    const canManage = isFounder;
     const rows = await this.prisma.crewPosition.findMany({
       where: {
         crewId,
@@ -59,7 +72,11 @@ export class PositionsService {
         deletedAt: null,
         status: 'open',
         OR: [{ closeDate: null }, { closeDate: { gte: today } }],
-        crew: { deletedAt: null },
+        // Mirror crews.list visibility: positions on unlisted crews
+        // must not surface in the public plaza, otherwise a clicker
+        // lands on a 404 crew-detail page (crews.detail rejects
+        // non-member viewers for unlisted crews).
+        crew: { deletedAt: null, listingStatus: 'listed' },
       },
       include: {
         crew: {

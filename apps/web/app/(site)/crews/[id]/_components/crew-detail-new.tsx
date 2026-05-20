@@ -108,8 +108,11 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
   // the Hero falls back to the "logo + gradient" empty-state. No
   // separate `cover` asset — that decision is captured in DESIGN.md.
   const featuredWork = crew.showcaseWorks?.[0] ?? null;
+  // Showcase work thumbnails are also uploaded via /project/uploadBanner
+  // → BANNER bucket. workspace/page.tsx uses BANNER_BASE_URL for the
+  // same field; align here.
   const heroVisual = featuredWork
-    ? resolveAsset(featuredWork.thumbnailUrl, env.OSS_BASE_URL)
+    ? resolveAsset(featuredWork.thumbnailUrl, env.BANNER_BASE_URL)
     : null;
   const workspaceHref = localizePath(`/crews/${id}/workspace`, locale);
   const plazaHref = localizePath("/crews", locale);
@@ -401,7 +404,8 @@ function Hero({
   heroVisual: string | null;
   tCrew: ReturnType<typeof useTranslations>;
 }) {
-  const logoUrl = resolveAsset(crew.logo, env.OSS_BASE_URL);
+  // Crew logos live in the BANNER bucket (uploaded via /project/uploadBanner).
+  const logoUrl = resolveAsset(crew.logo, env.BANNER_BASE_URL);
 
   return (
     <div className="relative h-64 overflow-hidden md:h-80">
