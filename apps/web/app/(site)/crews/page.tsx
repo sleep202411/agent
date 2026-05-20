@@ -367,15 +367,17 @@ function CrewCardInner({ item }: { item: CrewDTO }) {
 
 // ─── Helpers ─────────────────────────────────────────
 
-/** OSS path → absolute URL helper. `http(s)://...` passes through;
- *  otherwise treated as a key under OSS_BASE_URL. Empty input
- *  returns "" — Crew.logo is NOT NULL at the schema level so this
- *  branch should never fire in practice (broken-image icon = data bug,
- *  not a fallback to design around). */
+/** Banner-OSS path → absolute URL helper. Crew logos are uploaded via
+ *  `uploadBanner()` (POST /project/uploadBanner), which lands them in
+ *  the dedicated banner bucket (`BANNER_BASE_URL`), NOT the primary
+ *  `OSS_BASE_URL` bucket — using the wrong base returns 404 from OSS.
+ *  `http(s)://...` passes through. Empty input returns "" — Crew.logo
+ *  is NOT NULL at the schema level so this branch should never fire
+ *  in practice. */
 function resolveAssetUrl(path: string | null | undefined): string {
   if (!path) return "";
   if (path.startsWith("http")) return path;
-  return `${env.OSS_BASE_URL.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  return `${env.BANNER_BASE_URL.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
 }
 
 function daysSince(iso: string): number {
