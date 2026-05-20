@@ -30,7 +30,6 @@ import {
 import { AgentStreamService } from './chat/agent-stream.service';
 import { AgentStateService } from './chat/agent-state.service';
 import { EntityEventsService } from './chat/entity-events.service';
-import { QuotaUsageLogService } from '../quota/quota-usage-log.service';
 
 type MastraChatBody = {
   projectId?: string;
@@ -73,7 +72,6 @@ export class MastraProxyController {
     private readonly agentStream: AgentStreamService,
     private readonly agentState: AgentStateService,
     private readonly entityEvents: EntityEventsService,
-    private readonly quotaLog: QuotaUsageLogService,
   ) {}
 
   private get mastraUrl() {
@@ -100,20 +98,6 @@ export class MastraProxyController {
         HttpStatus.BAD_REQUEST,
       );
     }
-
-    // Phase 1 quota observation — log one chat consume per accepted
-    // submission (after basic validation, before downstream Mastra
-    // stream). One message = one supervisor router + 0..N persona
-    // calls; we count the user-visible unit, not internal tool calls.
-    this.quotaLog.log({
-      userId: user.userId,
-      dimension: 'chat',
-      reason: 'submit_message_to_agent',
-      metadata: {
-        projectId: body.projectId,
-        messageCount: body.messages.length,
-      },
-    });
 
     // Extract confirmProjectParams (ProjectParamsForm 儲存並繼續 button).
     const confirmProjectParams =

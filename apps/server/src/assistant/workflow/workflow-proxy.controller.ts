@@ -18,7 +18,6 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../../auth';
-import { QuotaUsageLogService } from '../../quota/quota-usage-log.service';
 
 type JsonBody = Record<string, unknown>;
 
@@ -34,8 +33,6 @@ type ContextHeader = {
 @Controller('workflow')
 export class WorkflowProxyController {
   private readonly logger = new Logger(WorkflowProxyController.name);
-
-  constructor(private readonly quotaLog: QuotaUsageLogService) {}
 
   private get mastraUrl(): string {
     return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
@@ -142,16 +139,6 @@ export class WorkflowProxyController {
       );
     }
     const worldId = body.worldId ? String(body.worldId) : undefined;
-    // Phase 1 quota observation — log one workflow consume per accepted
-    // start request. Heavy workflows (storyboard, parse_script) account
-    // for the bulk of Qwen persona token spend; per-tier limits on this
-    // dimension are what actually bound LLM cost.
-    this.quotaLog.log({
-      userId: user.userId,
-      dimension: 'workflow',
-      reason: 'workflow_start',
-      metadata: { projectId, workflowName, worldId },
-    });
     const context = this.buildContext(user, { projectId, worldId });
     return this.forward('/workflow/start', {
       method: 'POST',
