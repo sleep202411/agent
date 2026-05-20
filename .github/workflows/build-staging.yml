@@ -5,10 +5,12 @@ name: Build & Push (staging)
 # Watchtower (prod COM) — see deploy/AUTO_DEPLOY.md.
 
 on:
-  push:
-    branches:
-      - develop
-  workflow_dispatch: # allow manual builds from any branch when needed
+  # Manual only — auto-build on every `develop` push burned through
+  # the free Actions minutes for negligible value (staging hosts pull
+  # images themselves, so a cached previous build is usually fine for
+  # day-to-day work). Re-enable the `push:` trigger when staging gets
+  # promoted back into the regular CI loop.
+  workflow_dispatch: # GHA UI or `gh workflow run build-staging.yml`
 
 concurrency:
   group: build-staging-${{ github.ref_name }}
