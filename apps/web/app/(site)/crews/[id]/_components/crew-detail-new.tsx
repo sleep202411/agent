@@ -404,27 +404,18 @@ function Hero({
   heroVisual: string | null;
   tCrew: ReturnType<typeof useTranslations>;
 }) {
-  // Crew logos live in the BANNER bucket (uploaded via /project/uploadBanner).
-  const logoUrl = resolveAsset(crew.logo, env.BANNER_BASE_URL);
-
   return (
     <div className="relative h-64 overflow-hidden md:h-80">
       {heroVisual ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={heroVisual} alt={crew.name} className="size-full object-cover" />
       ) : (
-        // No-showcase fallback: branded gradient with a centered
-        // enlarged logo. Better than a flat secondary fill — the
-        // page still has visual weight while owners are still
-        // setting up their showcase.
-        <div className="flex size-full items-center justify-center bg-gradient-to-br from-primary/20 via-secondary to-background">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={logoUrl}
-            alt={crew.name}
-            className="size-36 rounded-full object-cover opacity-30 ring-2 ring-white/10 md:size-44"
-          />
-        </div>
+        // No-showcase fallback: a quiet branded gradient. The previous
+        // version centered an enlarged + dimmed logo here, but it
+        // ended up looking like a half-finished placeholder rather
+        // than intentional design. Clean gradient lets the name +
+        // description (overlaid below) carry the visual weight.
+        <div className="size-full bg-gradient-to-br from-primary/15 via-secondary/40 to-background" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
       <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[1800px] px-6 pb-6">
