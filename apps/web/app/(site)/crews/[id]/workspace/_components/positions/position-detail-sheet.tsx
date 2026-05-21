@@ -18,6 +18,7 @@ import {
   IconLockOpen,
   IconLoader2,
   IconMapPin,
+  IconPercentage,
   IconStar,
   IconTrash,
   IconUsers,
@@ -159,6 +160,16 @@ export function PositionDetailSheet({
               {salaryText ? (
                 <MetaChip icon={IconCoin} highlight>
                   {salaryText}
+                </MetaChip>
+              ) : null}
+              {position.durationMonths != null ? (
+                <MetaChip icon={IconCalendar}>
+                  {t("durationMonthsChip", { count: position.durationMonths })}
+                </MetaChip>
+              ) : null}
+              {position.revenueSharePercent != null ? (
+                <MetaChip icon={IconPercentage} highlight>
+                  {t("revenueShareChip", { percent: position.revenueSharePercent })}
                 </MetaChip>
               ) : null}
             </div>

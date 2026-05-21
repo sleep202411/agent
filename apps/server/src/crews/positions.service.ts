@@ -140,6 +140,14 @@ export class PositionsService {
             ? toSmallestUnit(input.salary.max, ccy)
             : null,
         salaryNegotiable: input.salary?.negotiable ?? false,
+        durationMonths: input.durationMonths ?? null,
+        // Wire is plain %, storage is bp. Math.round guards against
+        // FP rounding from values like 2.5 (which round-trips fine
+        // but defensive-coded for future steps like 0.25 if we relax).
+        revenueShareBp:
+          input.revenueSharePercent != null
+            ? Math.round(input.revenueSharePercent * 100)
+            : null,
         closeDate: input.closeDate
           ? new Date(`${input.closeDate}T00:00:00Z`)
           : null,
@@ -221,6 +229,17 @@ export class PositionsService {
           : {}),
         ...(input.salary?.negotiable !== undefined
           ? { salaryNegotiable: input.salary.negotiable }
+          : {}),
+        ...(input.durationMonths !== undefined
+          ? { durationMonths: input.durationMonths }
+          : {}),
+        ...(input.revenueSharePercent !== undefined
+          ? {
+              revenueShareBp:
+                input.revenueSharePercent != null
+                  ? Math.round(input.revenueSharePercent * 100)
+                  : null,
+            }
           : {}),
         ...(input.closeDate !== undefined
           ? {

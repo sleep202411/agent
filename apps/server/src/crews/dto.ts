@@ -118,6 +118,20 @@ const PositionBaseSchema = z.object({
   experienceLevel: z.enum(EXPERIENCE_LEVELS).default('any'),
   requiredSkills: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
   salary: SalarySchema.optional(),
+  /// Tenure in months (1-60). NULL/undefined = open-ended commitment
+  /// — see CrewPosition.durationMonths comment in schema.prisma.
+  durationMonths: z.number().int().min(1).max(60).nullable().optional(),
+  /// Revenue share percentage offered to this position holder.
+  /// Wire is a plain percentage (e.g. 2.5 for 2.5 %); server stores
+  /// basis points internally. 0.5 minimum keeps the value meaningful
+  /// (smaller shares are noise), 50 max caps a single seat at half.
+  revenueSharePercent: z
+    .number()
+    .min(0.5)
+    .max(50)
+    .multipleOf(0.5)
+    .nullable()
+    .optional(),
   /// YYYY-MM-DD; client supplies ISO date string.
   closeDate: z
     .string()
