@@ -40,6 +40,7 @@ import { useCreatorDetail, type Creator } from "@/app/(site)/creators/_hooks/use
 import { CreatorHero } from "./hero";
 import { CreatorLeftRail } from "./left-rail";
 import { CreatorTabBar, type CreatorTabId } from "./tab-bar";
+import { CreateServiceDialog } from "./dialogs/create-service-dialog";
 import { ServicesTab } from "./tabs/services-tab";
 import { WorksTab } from "./tabs/works-tab";
 import { IpsTab } from "./tabs/ips-tab";
@@ -69,6 +70,11 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
 
   const [activeTab, setActiveTab] = useState<CreatorTabId>(DEFAULT_TAB);
 
+  // Hero "+ 新建服务包" is hoisted here so a save can both close the
+  // dialog AND flip the active tab to Services — the user just
+  // created one, the natural landing is the page that shows it.
+  const [createServiceOpen, setCreateServiceOpen] = useState(false);
+
   if (isLoading) {
     return (
       <div className="flex h-[calc(100dvh-56px)] items-center justify-center">
@@ -90,7 +96,11 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
 
   return (
     <div className="min-h-[calc(100dvh-56px)] bg-background text-foreground">
-      <CreatorHero creator={creator} isOwner={isOwner} />
+      <CreatorHero
+        creator={creator}
+        isOwner={isOwner}
+        onCreateService={isOwner ? () => setCreateServiceOpen(true) : undefined}
+      />
       <div className="mx-auto grid max-w-[1680px] gap-6 px-4 pb-16 md:px-8 lg:grid-cols-[300px_1fr]">
         <CreatorLeftRail creator={creator} isOwner={isOwner} />
         <main className="min-w-0">
@@ -100,6 +110,17 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
           </div>
         </main>
       </div>
+
+      {isOwner ? (
+        <CreateServiceDialog
+          open={createServiceOpen}
+          onOpenChange={setCreateServiceOpen}
+          onSaved={() => {
+            setCreateServiceOpen(false);
+            setActiveTab("services");
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -25,9 +25,9 @@ import {
   UpdatePositionSchema,
   type UpdatePositionInput,
 } from './dto';
-import { parseIdParam } from './params';
+import { parseIdParam } from '../common/params';
 import { PositionsService } from './positions.service';
-import { ZodValidationPipe } from './zod.pipe';
+import { ZodValidationPipe } from '../common/zod.pipe';
 
 @Controller('crews/:crewId/positions')
 export class PositionsController {

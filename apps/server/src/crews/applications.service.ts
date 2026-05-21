@@ -30,7 +30,7 @@ import {
   defaultCurrency,
   toSmallestUnit,
   type CurrencyCode,
-} from './currency';
+} from '../common/currency';
 import type { ApplyInput } from './dto';
 import { newCrewDomainId } from './id';
 import { toApplicationDTO } from './mappers';

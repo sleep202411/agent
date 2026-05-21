@@ -32,9 +32,16 @@ import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
 interface CreatorHeroProps {
   creator: Creator;
   isOwner: boolean;
+  /**
+   * Owner clicked the hero "+ 新建服务包" CTA. The parent owns the
+   * dialog so the hero doesn't have to import the services data
+   * layer; it also lets the parent flip the active tab to Services
+   * on save so the user lands on the page that just changed.
+   */
+  onCreateService?: () => void;
 }
 
-export function CreatorHero({ creator, isOwner }: CreatorHeroProps) {
+export function CreatorHero({ creator, isOwner, onCreateService }: CreatorHeroProps) {
   const t = useTranslations("creatorCenter");
   const name = (creator.name || "").trim() || "—";
   const bio = (creator.bio || "").trim();
@@ -92,22 +99,23 @@ export function CreatorHero({ creator, isOwner }: CreatorHeroProps) {
 
         {/* CTA cluster */}
         <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 md:justify-end">
-          {isOwner ? <OwnerCtas t={t} /> : <VisitorCtas t={t} />}
+          {isOwner ? <OwnerCtas t={t} onCreateService={onCreateService} /> : <VisitorCtas t={t} />}
         </div>
       </div>
     </section>
   );
 }
 
-function OwnerCtas({ t }: { t: (k: string) => string }) {
+function OwnerCtas({
+  t,
+  onCreateService,
+}: {
+  t: (k: string) => string;
+  onCreateService?: () => void;
+}) {
   return (
     <>
-      <Button
-        type="button"
-        variant="solid"
-        color="primary"
-        onClick={() => toast.info(t("ctaPhase1aHint"))}
-      >
+      <Button type="button" variant="solid" color="primary" onClick={() => onCreateService?.()}>
         <IconPlus className="size-4" />
         {t("cta.createService")}
       </Button>

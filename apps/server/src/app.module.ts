@@ -6,6 +6,7 @@ import { AuthModule, AuthGuard } from './auth';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
 import { CrewsModule } from './crews/crews.module';
+import { CreatorServicesModule } from './creator-services/creator-services.module';
 import { EpisodesModule } from './crews/episodes/episodes.module';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
@@ -35,6 +36,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     CrewsModule,
     EpisodesModule,
+    CreatorServicesModule,
     HealthModule,
   ],
   providers: [

@@ -826,3 +826,121 @@ model QuotaUsageLog {
   @@index([dimension, createdAt(sort: Desc)], map: "quota_usage_log_dim_recent_idx")
   @@map("quota_usage_log")
 }
+
+// ──────────────────────────────────────────────────────────────────
+//  Creator services — marketplace layer over the talent pool.
+//
+//  CreatorService = one offering ("character design", "short-film
+//  edit"). Each service carries 1-3 ServicePackages (basic /
+//  standard / premium tiers).
+//
+//  Status state machine: draft → listed ⇄ paused → archived. Only
+//  `listed` is publicly browseable. `listed` requires ≥ 1 package.
+//
+//  Money: prices stored in smallest currency unit (cents / 分 / yen),
+//  same convention as CrewPosition.salary_min_amount.
+// ──────────────────────────────────────────────────────────────────
+
+enum CreatorServiceStatus {
+  draft
+  listed
+  paused
+  archived
+
+  @@map("creator_service_status")
+}
+
+enum ServiceTier {
+  basic
+  standard
+  premium
+
+  @@map("service_tier")
+}
+
+model CreatorService {
+  id        String @id
+  creatorId String @map("creator_id")
+
+  /// Buyer-facing headline ("Final cut · 30s vertical"). ≤ 120 chars.
+  title String @db.VarChar(120)
+  /// One-paragraph pitch (≤ 1000 chars). Plain text, newline-allowed.
+  summary String @db.Text
+  /// OSS-relative cover path. UI prefixes with BANNER_BASE_URL.
+  coverPath String @default("") @map("cover_path") @db.VarChar(512)
+
+  /// Service taxonomy. Free-form on the wire so we can rev categories
+  /// without a migration; validated against SERVICE_CATEGORIES in
+  /// `packages/shared/src/creator-service.ts` at the controller layer.
+  category String @db.VarChar(64)
+
+  /// Free-form skill / style tags. PG TEXT[], ≤ 10 entries enforced
+  /// at the service layer.
+  tags String[] @default([])
+
+  status      CreatorServiceStatus @default(draft)
+  /// First-time-listed timestamp — used as the "newest first" sort
+  /// key in the marketplace plaza. Stays NULL while draft; set on the
+  /// first publish; never cleared (pause/archive keep history).
+  publishedAt DateTime?            @map("published_at") @db.Timestamptz(6)
+
+  /// Optimistic concurrency token. Bumped on every owner-write so
+  /// the edit dialog can detect "someone else (or another tab) saved
+  /// after I loaded".
+  version Int @default(0)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Soft delete — set on archive so referenced orders (Phase 1b)
+  /// still resolve.
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  packages ServicePackage[]
+
+  /// Owner-side query: "list my services in created-order".
+  @@index([creatorId, deletedAt, createdAt(sort: Desc)], map: "creator_services_by_creator_idx")
+  /// Plaza feed: "newest listed first" — only hits when status='listed'.
+  @@index([status, publishedAt(sort: Desc)], map: "creator_services_feed_idx")
+  /// Category browse: same feed predicate scoped to category.
+  @@index([category, status, publishedAt(sort: Desc)], map: "creator_services_category_feed_idx")
+  @@map("creator_services")
+}
+
+model ServicePackage {
+  id        String      @id
+  serviceId String      @map("service_id")
+  tier      ServiceTier
+
+  /// Tier label ("30-second cut · 1080p"). ≤ 80 chars.
+  title String @db.VarChar(80)
+  /// What's included (long-form, newline-allowed). ≤ 2000 chars.
+  description String @db.Text
+
+  /// ISO 4217. Same per-cell whitelist as CrewPosition.
+  /// CHECK enforced via cell-aware service layer + DB CHECK.
+  currency String @db.VarChar(3)
+  /// Smallest currency unit (USD cents / CNY 分 / JPY yen).
+  /// CHECK price_amount >= 0 in migration SQL.
+  priceAmount BigInt @map("price_amount")
+
+  /// Calendar-day turnaround. 1-365.
+  deliveryDays Int @map("delivery_days")
+  /// Included revision count. -1 = unlimited. CHECK in migration SQL.
+  revisions Int @default(0)
+
+  /// Free-form bullet list shown under the tier card. PG TEXT[];
+  /// ≤ 12 items enforced at service layer.
+  scope String[] @default([])
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  service CreatorService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  /// One tier per service — a service can publish basic / standard /
+  /// premium independently, but never two of the same tier.
+  @@unique([serviceId, tier], map: "service_packages_service_tier_unique")
+  /// Per-service tier scan (load packages when rendering a service).
+  @@index([serviceId], map: "service_packages_by_service_idx")
+  @@map("service_packages")
+}

@@ -1,21 +1,24 @@
 /**
- * Multi-currency policy per cell.
+ * Multi-currency policy per cell — shared across crew positions,
+ * creator-service packages, and any other money-handling feature.
  *
  * DB layer accepts any ISO 4217 code from the global whitelist (see
- * the CHECK constraint on `salary_currency` / `revenue_currency`).
- * This module narrows further at the service layer:
+ * the CHECK constraints on `salary_currency` / `revenue_currency` /
+ * `service_packages.currency`). This module narrows further at the
+ * service layer:
  *
  *   cn cell  → CNY only (PIPL + business policy)
  *   com cell → 9-currency whitelist (USD default, +EUR/GBP/JPY/...)
  *
- * Add a currency: extend the whitelist below AND the DB CHECK.
- * The DB is the last line of defense; this module is for fast
- * fail-on-validate with helpful error messages.
+ * Add a currency: extend the whitelist below AND every DB CHECK that
+ * references currency codes. The DB is the last line of defense;
+ * this module is for fast fail-on-validate with helpful error
+ * messages.
  */
 
 import { BadRequestException } from '@nestjs/common';
 import { ZERO_DECIMAL_CURRENCIES } from '@repo/shared/crew';
-import { CURRENT_CELL } from '../common/region';
+import { CURRENT_CELL } from './region';
 
 export const ALL_CURRENCIES = [
   'CNY',

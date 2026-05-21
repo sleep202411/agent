@@ -23,7 +23,7 @@ import {
   assertAllowedCurrency,
   defaultCurrency,
   type CurrencyCode,
-} from '../currency';
+} from '../../common/currency';
 import { newCrewDomainId } from '../id';
 import { toActivityDTO, toAssignmentDTO } from '../mappers';
 import { CURRENCY_SYMBOLS, ZERO_DECIMAL_CURRENCIES } from '@repo/shared/crew';

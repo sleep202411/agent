@@ -38,6 +38,10 @@
       "types": "./dist/crew.d.ts",
       "default": "./dist/crew.js"
     },
+    "./creator-service": {
+      "types": "./dist/creator-service.d.ts",
+      "default": "./dist/creator-service.js"
+    },
     "./quota": {
       "types": "./dist/quota.d.ts",
       "default": "./dist/quota.js"

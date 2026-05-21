@@ -17,8 +17,8 @@ import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ApplicationsService } from './applications.service';
 import { ApplySchema, type ApplyInput } from './dto';
-import { parseIdParam } from './params';
-import { ZodValidationPipe } from './zod.pipe';
+import { parseIdParam } from '../common/params';
+import { ZodValidationPipe } from '../common/zod.pipe';
 
 @Controller()
 export class ApplicationsController {

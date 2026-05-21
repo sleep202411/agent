@@ -22,8 +22,8 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../../auth';
 import type { AuthUser } from '../../auth';
-import { parseIdParam } from '../params';
-import { ZodValidationPipe } from '../zod.pipe';
+import { parseIdParam } from '../../common/params';
+import { ZodValidationPipe } from '../../common/zod.pipe';
 import { AssignmentsService } from './assignments.service';
 import {
   AddAssignmentSchema,
