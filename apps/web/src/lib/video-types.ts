@@ -228,6 +228,11 @@ export function toHistoryItem(record: AssetRecord): VideoResultItem {
     id: String(record.id ?? storagePath),
     url: ossUrl(storagePath || String(record.url ?? "")),
     storagePath,
+    // Server stores the original prompt on `record.other` (legacy field
+    // name from the Java backend). Without forwarding it here, the
+    // video-dialog preview toolbar's "view details / reuse prompt"
+    // button stays hidden because it short-circuits on `previewItem?.other`.
+    other: record.other,
     fromHistory: true,
   };
 }
