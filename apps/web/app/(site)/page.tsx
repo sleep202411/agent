@@ -293,18 +293,17 @@ export default function HomePage() {
               transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
               className="mt-10 flex flex-wrap items-center justify-center gap-3"
             >
+              {/* Final CTA mirrors hero: primary "故事开启" → /ips,
+                  secondary "加入创作" → /crews. /art-studio dropped
+                  from the marketing surface entirely. */}
               <Button size="lg" asChild>
-                <Link
-                  href={localizePath("/art-studio", locale)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <Link href={localizePath("/ips", locale)}>
                   {t("finalCta.primaryCta")}
                   <IconArrowRight className="size-4" />
                 </Link>
               </Button>
               <Button size="lg" variant="outline" color="muted" asChild>
-                <Link href={localizePath("/ips", locale)}>
+                <Link href={localizePath("/crews", locale)}>
                   <IconBook2 className="size-4" />
                   {t("finalCta.secondaryCta")}
                 </Link>
