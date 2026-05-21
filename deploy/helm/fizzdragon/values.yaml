@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: d1c1ddd3d70fb36443a074a0443f5a1d5223abba
+    tag: 7317a4da3f93fa80861896efc0e62e7ee8a7354a
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -147,7 +147,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: d1c1ddd3d70fb36443a074a0443f5a1d5223abba
+    tag: 7317a4da3f93fa80861896efc0e62e7ee8a7354a
   containerPort: 3001
   env:
     PORT: "3001"
