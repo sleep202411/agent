@@ -45,12 +45,17 @@ import { useTranslatedPresetPositions } from "@/app/(site)/crews/_hooks/use-posi
 import {
   CURRENCY_SYMBOLS,
   CrewApiError,
+  ZERO_DECIMAL_CURRENCIES,
   useCreatePosition,
+  useCrewApplications,
+  useUpdatePosition,
   type CreatePositionInput,
+  type CrewPositionDTO,
   type CurrencyCode,
   type EmploymentType,
   type ExperienceLevel,
   type SalaryPeriod,
+  type UpdatePositionInput,
   type WorkMode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 
@@ -62,6 +67,13 @@ interface PublishPositionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   crewId: string;
+  /**
+   * When supplied, the dialog switches to **edit mode**: form prefills
+   * from the existing position, title says "edit", submit invokes
+   * `useUpdatePosition` instead of `useCreatePosition`. Undefined
+   * means create mode (original behaviour).
+   */
+  editingPosition?: CrewPositionDTO;
 }
 
 type StepId = 1 | 2 | 3;
@@ -94,12 +106,18 @@ const SALARY_PERIOD_OPTIONS: { value: SalaryPeriod; key: string }[] = [
   { value: "project", key: "salaryPeriodProject" },
 ];
 
-export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPositionDialogProps) {
+export function CreateCrewJobDialog({
+  open,
+  onOpenChange,
+  crewId,
+  editingPosition,
+}: PublishPositionDialogProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const presetPositions = useTranslatedPresetPositions();
   const currencyOptions = useMemo(() => allowedCurrenciesForCell(), []);
   const showCurrencyPicker = currencyOptions.length > 1;
+  const isEdit = editingPosition !== undefined;
 
   const [step, setStep] = useState<StepId>(1);
 
@@ -128,8 +146,24 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
   const [closeDate, setCloseDate] = useState<string>("");
 
   const create = useCreatePosition(crewId);
-  const submitting = create.isPending;
+  const update = useUpdatePosition(crewId);
+  const submitting = create.isPending || update.isPending;
 
+  // Pending-application banner: only relevant in edit mode, only when
+  // the owner is about to change material terms. Fetched once per
+  // dialog open via the standard hook (cache shared with the rest of
+  // the workspace, no extra round trip in practice).
+  const { data: allApplications = [] } = useCrewApplications(crewId, isEdit);
+  const pendingApplicantCount = useMemo(() => {
+    if (!editingPosition) return 0;
+    return allApplications.filter(
+      (a) => a.positionId === editingPosition.id && a.status === "pending"
+    ).length;
+  }, [allApplications, editingPosition]);
+
+  // Reset form whenever the dialog is closed OR the editingPosition
+  // identity changes (covers "open dialog from position A → close
+  // without saving → re-open from position B" so state doesn't leak).
   useEffect(() => {
     if (open) return;
     setStep(1);
@@ -150,6 +184,44 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
     setRevenueSharePercent("");
     setCloseDate("");
   }, [open]);
+
+  // Prefill from `editingPosition` when entering edit mode. Runs on
+  // dialog open + when the underlying position identity changes
+  // (rare, but harmless re-fill). Salary amounts are stored as
+  // smallest-currency-unit on the wire; divide by 100 for display
+  // unless the currency is zero-decimal (JPY etc) where the integer
+  // IS the displayed value.
+  useEffect(() => {
+    if (!open || !editingPosition) return;
+    const p = editingPosition;
+    setPositionType(p.positionType);
+    setDescription(p.description);
+    setCount(String(p.targetCount));
+    setRequiredSkills(p.requiredSkills);
+    setWorkMode(p.workMode);
+    setLocation(p.location ?? "");
+    setEmploymentType(p.employmentType);
+    setExperienceLevel(p.experienceLevel);
+    setSalaryPeriod((p.salary.period ?? "month") as SalaryPeriod);
+    const ccy = (p.salary.currency ?? defaultCurrencyForCell()) as CurrencyCode;
+    setSalaryCurrency(ccy);
+    const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(ccy);
+    setSalaryMin(
+      p.salary.minAmount != null
+        ? String(isZeroDecimal ? p.salary.minAmount : p.salary.minAmount / 100)
+        : ""
+    );
+    setSalaryMax(
+      p.salary.maxAmount != null
+        ? String(isZeroDecimal ? p.salary.maxAmount : p.salary.maxAmount / 100)
+        : ""
+    );
+    setSalaryNegotiable(p.salary.negotiable);
+    setDurationMonths(p.durationMonths != null ? String(p.durationMonths) : "");
+    setRevenueSharePercent(p.revenueSharePercent != null ? String(p.revenueSharePercent) : "");
+    setCloseDate(p.closeDate ?? "");
+    setStep(1);
+  }, [open, editingPosition]);
 
   // ─── Per-step validation ──────────
   const parsedCount = Number.parseInt(count, 10);
@@ -191,47 +263,67 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
   const stepReachable = (target: StepId): boolean => target <= step;
 
   // ─── Submit ────────────────────────
+  // Body builder is shared — both create and update accept the same
+  // shape; update's zod schema is a `Partial<>` of the create schema.
+  const buildBody = (): CreatePositionInput => ({
+    positionType,
+    description: description.trim(),
+    targetCount: parsedCount,
+    workMode,
+    location: needsLocation ? location.trim() : null,
+    employmentType,
+    experienceLevel,
+    requiredSkills,
+    salary: salaryNegotiable
+      ? { negotiable: true, period: null, currency: null, min: null, max: null }
+      : {
+          period: salaryPeriod,
+          currency: parsedMin != null || parsedMax != null ? salaryCurrency : null,
+          min: parsedMin,
+          max: parsedMax,
+          negotiable: false,
+        },
+    durationMonths: parsedDuration,
+    revenueSharePercent: parsedShare,
+    closeDate: closeDate || null,
+  });
+
+  const surfaceError = (err: unknown, fallbackKey: string) => {
+    if (err instanceof CrewApiError) {
+      const detail =
+        typeof err.body === "object" && err.body && "message" in err.body
+          ? String((err.body as { message: unknown }).message)
+          : err.message;
+      toast.error(`HTTP ${err.status}`, { description: detail, duration: 10000 });
+    } else {
+      toast.error(err instanceof Error ? err.message : t(fallbackKey));
+    }
+  };
+
   const handleSubmit = () => {
     if (!step3Valid || submitting) return;
-    const body: CreatePositionInput = {
-      positionType,
-      description: description.trim(),
-      targetCount: parsedCount,
-      workMode,
-      location: needsLocation ? location.trim() : null,
-      employmentType,
-      experienceLevel,
-      requiredSkills,
-      salary: salaryNegotiable
-        ? { negotiable: true, period: null, currency: null, min: null, max: null }
-        : {
-            period: salaryPeriod,
-            currency: parsedMin != null || parsedMax != null ? salaryCurrency : null,
-            min: parsedMin,
-            max: parsedMax,
-            negotiable: false,
-          },
-      durationMonths: parsedDuration,
-      revenueSharePercent: parsedShare,
-      closeDate: closeDate || null,
-    };
-    create.mutate(body, {
-      onSuccess: () => {
-        toast.success(t("createJobSuccess"));
-        onOpenChange(false);
-      },
-      onError: (err) => {
-        if (err instanceof CrewApiError) {
-          const detail =
-            typeof err.body === "object" && err.body && "message" in err.body
-              ? String((err.body as { message: unknown }).message)
-              : err.message;
-          toast.error(`HTTP ${err.status}`, { description: detail, duration: 10000 });
-        } else {
-          toast.error(err instanceof Error ? err.message : t("createJobFailed"));
-        }
-      },
-    });
+    const body = buildBody();
+    if (isEdit && editingPosition) {
+      const patch: UpdatePositionInput & { positionId: string } = {
+        ...body,
+        positionId: editingPosition.id,
+      };
+      update.mutate(patch, {
+        onSuccess: () => {
+          toast.success(t("editJobSuccess"));
+          onOpenChange(false);
+        },
+        onError: (err) => surfaceError(err, "editJobFailed"),
+      });
+    } else {
+      create.mutate(body, {
+        onSuccess: () => {
+          toast.success(t("createJobSuccess"));
+          onOpenChange(false);
+        },
+        onError: (err) => surfaceError(err, "createJobFailed"),
+      });
+    }
   };
 
   return (
@@ -239,12 +331,23 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
       <DialogContent className="overflow-hidden p-0 sm:max-w-xl">
         <DialogHero
           src={CREATE_JOB_HERO_URL}
-          eyebrow={t("createJobDialogEyebrow")}
-          title={t("createJobDialogTitle")}
+          eyebrow={isEdit ? t("editJobDialogEyebrow") : t("createJobDialogEyebrow")}
+          title={isEdit ? t("editJobDialogTitle") : t("createJobDialogTitle")}
           description={t(`createJobStep${step}Title`)}
         />
 
         <DialogBody className="max-h-[60vh] overflow-y-auto">
+          {/* Pending-applicant warning. Only render in edit mode, and
+              only when at least one applicant is in flight. Material
+              term changes (salary / duration / share) carry the
+              clearest fairness risk; rather than gate edits per-field
+              we surface a single banner the owner has to read past. */}
+          {isEdit && pendingApplicantCount > 0 ? (
+            <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {t("editJobHasApplicantsWarn", { count: pendingApplicantCount })}
+            </div>
+          ) : null}
+
           <Stepper
             step={step}
             onJump={(s) => stepReachable(s) && setStep(s)}
@@ -562,7 +665,13 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
           ) : (
             <Button type="button" onClick={handleSubmit} disabled={!step3Valid || submitting}>
               {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-              {submitting ? t("createJobSubmitting") : t("createJobSubmit")}
+              {submitting
+                ? isEdit
+                  ? t("editJobSubmitting")
+                  : t("createJobSubmitting")
+                : isEdit
+                  ? t("editJobSubmit")
+                  : t("createJobSubmit")}
             </Button>
           )}
         </DialogFooter>

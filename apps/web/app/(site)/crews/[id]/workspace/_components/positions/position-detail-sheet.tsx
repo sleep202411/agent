@@ -16,6 +16,7 @@ import {
   IconCoin,
   IconLock,
   IconLockOpen,
+  IconPencil,
   IconLoader2,
   IconMapPin,
   IconPercentage,
@@ -61,6 +62,7 @@ import {
   type CurrencyCode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
+import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import type { LookupUserDTO } from "@repo/shared/users";
 import { employmentTypeKey, experienceKey, formatSalaryString, workModeKey } from "./position-meta";
@@ -87,6 +89,7 @@ export function PositionDetailSheet({
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmFreeze, setConfirmFreeze] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const applications = useMemo<CrewApplicationDTO[]>(
     () => (position ? allApplications.filter((a) => a.positionId === position.id) : []),
@@ -283,6 +286,17 @@ export function PositionDetailSheet({
                   {tc("delete")}
                 </Button>
                 <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    color="muted"
+                    size="sm"
+                    onClick={() => setEditOpen(true)}
+                    disabled={updatePosition.isPending}
+                  >
+                    <IconPencil className="size-3.5" />
+                    {t("editJobAction")}
+                  </Button>
                   {isFrozen ? (
                     <Button
                       type="button"
@@ -314,6 +328,20 @@ export function PositionDetailSheet({
           ) : null}
         </SheetContent>
       </Sheet>
+
+      {/* Edit dialog — reuses CreateCrewJobDialog in edit mode
+          (prefilled from `position`, submit hits useUpdatePosition,
+          banner appears if applicants are pending). Conditional render
+          rather than always-mounted so closing the sheet drops the
+          dialog's local state too. */}
+      {canManage && editOpen ? (
+        <CreateCrewJobDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          crewId={crewId}
+          editingPosition={position}
+        />
+      ) : null}
 
       {/* Confirm freeze */}
       <AlertDialog open={canManage && confirmFreeze} onOpenChange={setConfirmFreeze}>
