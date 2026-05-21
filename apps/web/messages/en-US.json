@@ -710,11 +710,16 @@
     "pricingBetaTag": "Beta",
     "pricingBetaBannerTitle": "Pricing is in preview",
     "pricingBetaBannerBody": "You can explore the UI and use the viewer-preview link, but changes don't persist yet — saving is coming soon.",
+    "pricingRuleSaveBannerBody": "Price rules save one target at a time. Save the bundle rule separately, then save each episode row after changing its price or free status.",
     "pricingSave": "Save pricing",
     "pricingSaveComingSoon": "Save pricing (coming soon)",
     "pricingSaveComingSoonToast": "Saving is coming soon — stay tuned.",
     "pricingSaveSuccess": "Pricing saved",
     "pricingSaveFailed": "Failed to save pricing",
+    "pricingSaved": "Saved",
+    "pricingSaveBundle": "Save bundle",
+    "pricingSaveEpisode": "Save episode",
+    "pricingUnsaved": "Unsaved",
     "pricingPreviewAsViewer": "Preview as viewer",
     "pricingPreviewTitle": "Paywall preview",
     "pricingPreviewEmpty": "Add episodes first to set pricing.",
@@ -745,9 +750,10 @@
     "pricingBundleSummary": "One purchase unlocks all {paid} paid episode(s).",
     "pricingBundleCoversFuture": "Buyers also get free access to any episodes you add later.",
     "pricingBundleUseSuggestion": "Use suggested {n}",
-    "pricingOverridesTitle": "Per-episode overrides",
-    "pricingOverridesEmpty": "Every paid episode uses the default price.",
+    "pricingOverridesTitle": "Episode prices",
+    "pricingOverridesEmpty": "All episode prices are saved.",
     "pricingOverridesSummary": "{n} episode(s) have a custom price.",
+    "pricingUnsavedEpisodeSummary": "{n} episode(s) have unsaved price changes.",
     "pricingOverridesNoEpisodes": "No episodes yet.",
     "pricingOverridesUntitled": "Untitled episode",
     "pricingOverridesReset": "Reset to default price",
@@ -1106,6 +1112,92 @@
     "contactDesc": "Reach out to {name} via the channel they've shared below.",
     "contactCopy": "Copy",
     "contactCopied": "Copied"
+  },
+  "creatorCenter": {
+    "notFoundTitle": "Creator not found",
+    "notFoundDesc": "This profile may have been removed or the link is invalid.",
+    "ctaPhase1aHint": "Service packages are launching soon — we'll let you know when they're ready.",
+    "ctaPhase1bHint": "This feature is shipping in the next phase.",
+    "ctaEditComingSoon": "Profile editing is available from the settings page — deep link coming soon.",
+    "ctaFollowComingSoon": "Following creators is coming soon.",
+    "ctaWorksEdit": "Manage your works from the legacy publish flow for now.",
+    "cta": {
+      "createService": "New service package",
+      "inbox": "Inbox",
+      "earnings": "Earnings",
+      "editProfile": "Edit profile",
+      "startRequest": "Start a request",
+      "message": "Message",
+      "follow": "Follow"
+    },
+    "stats": {
+      "completedOrders": "Completed orders",
+      "rating": "Rating",
+      "responseTime": "Avg response",
+      "repeatBuyers": "Repeat buyers"
+    },
+    "info": {
+      "heading": "About this creator",
+      "userId": "Creator ID",
+      "kyc": "Verification",
+      "kycVerified": "Verified",
+      "kycPending": "Not verified",
+      "joined": "Joined",
+      "contact": "Contact"
+    },
+    "tabs": {
+      "services": "Service packages",
+      "works": "Works",
+      "ips": "IPs",
+      "crews": "Crews",
+      "about": "About"
+    },
+    "services": {
+      "emptyOwnerTitle": "Publish your first service package",
+      "emptyOwnerBody": "Package what you do best — a defined deliverable, a price, a turnaround. Buyers find you, you ship, you get paid.",
+      "emptyVisitorTitle": "No service packages yet",
+      "emptyVisitorBody": "This creator hasn't published any service packages. Message them directly to discuss collaboration.",
+      "previewHeading": "What you can offer",
+      "previewVideoTitle": "Video productions",
+      "previewVideoBody": "Short films, ads, episodes. Set scope, define deliverables, lock the timeline.",
+      "previewArtTitle": "Art & illustration",
+      "previewArtBody": "Character design, key art, storyboards. Per-shot or per-package pricing.",
+      "previewQuickTitle": "Quick deliveries",
+      "previewQuickBody": "One-off cuts, edits, retouches — same-day or next-day turnaround."
+    },
+    "works": {
+      "emptyOwnerTitle": "Showcase your work",
+      "emptyOwnerBody": "Publish finished videos here so buyers can see what you ship.",
+      "emptyVisitorTitle": "No works published yet",
+      "emptyVisitorBody": "This creator hasn't shared any works on their profile.",
+      "publishCta": "Publish work"
+    },
+    "ips": {
+      "emptyOwnerTitle": "Start an IP",
+      "emptyOwnerBody": "IPs are the canonical projects you own — characters, scenes, episodes all live under one.",
+      "emptyVisitorTitle": "No IPs yet",
+      "emptyVisitorBody": "This creator hasn't created any public IPs.",
+      "createCta": "Create IP"
+    },
+    "crews": {
+      "emptyOwnerTitle": "Join a crew",
+      "emptyOwnerBody": "Crews are the team-based production rooms. Join one to collaborate on someone else's IP, or recruit for yours.",
+      "emptyVisitorTitle": "Not in any crews",
+      "emptyVisitorBody": "This creator isn't currently a member of any public crew.",
+      "discoverCta": "Discover crews"
+    },
+    "about": {
+      "bioHeading": "Biography",
+      "bioEmptyOwner": "Tell visitors who you are and what you ship. Two sentences is enough.",
+      "bioEmptyVisitor": "This creator hasn't written a biography yet.",
+      "educationHeading": "Education",
+      "educationEmptyOwner": "Add your schools to help buyers understand your background.",
+      "educationEmptyVisitor": "No education information shared.",
+      "experienceHeading": "Work experience",
+      "experienceEmptyOwner": "List recent roles or notable projects to build credibility.",
+      "experienceEmptyVisitor": "No work experience shared.",
+      "contactHeading": "Contact"
+    }
   },
   "sidebar": {
     "home": "Home",

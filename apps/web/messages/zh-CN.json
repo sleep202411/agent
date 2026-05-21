@@ -710,11 +710,16 @@
     "pricingBetaTag": "Beta",
     "pricingBetaBannerTitle": "定价功能预览中",
     "pricingBetaBannerBody": "你可以预览界面、使用观众视角链接，但所做的修改暂时不会保存——保存功能即将上线。",
+    "pricingRuleSaveBannerBody": "价格规则按单个对象保存。整 IP 套餐价单独保存；每一集修改价格或免费状态后，都需要在该集行内单独保存。",
     "pricingSave": "保存定价",
     "pricingSaveComingSoon": "保存定价（即将上线）",
     "pricingSaveComingSoonToast": "保存功能即将上线，敬请期待。",
     "pricingSaveSuccess": "定价已保存",
     "pricingSaveFailed": "保存定价失败",
+    "pricingSaved": "已保存",
+    "pricingSaveBundle": "保存套餐价",
+    "pricingSaveEpisode": "保存本集",
+    "pricingUnsaved": "未保存",
     "pricingPreviewAsViewer": "以观众视角预览",
     "pricingPreviewTitle": "付费墙预览",
     "pricingPreviewEmpty": "先在「剧集」里添加内容再来定价。",
@@ -745,9 +750,10 @@
     "pricingBundleSummary": "一次解锁全部 {paid} 集付费内容。",
     "pricingBundleCoversFuture": "购买后还可免费观看你后续新增的剧集。",
     "pricingBundleUseSuggestion": "采用建议价 {n}",
-    "pricingOverridesTitle": "单集自定义价",
-    "pricingOverridesEmpty": "所有付费集都使用默认价。",
+    "pricingOverridesTitle": "单集价格",
+    "pricingOverridesEmpty": "所有剧集价格均已保存。",
     "pricingOverridesSummary": "{n} 集使用自定义价。",
+    "pricingUnsavedEpisodeSummary": "{n} 集有未保存的价格改动。",
     "pricingOverridesNoEpisodes": "还没有剧集。",
     "pricingOverridesUntitled": "未命名剧集",
     "pricingOverridesReset": "恢复默认价",
@@ -1106,6 +1112,92 @@
     "contactDesc": "通过 {name} 公开的联系方式与其取得联系。",
     "contactCopy": "复制",
     "contactCopied": "已复制"
+  },
+  "creatorCenter": {
+    "notFoundTitle": "未找到该创作者",
+    "notFoundDesc": "档案可能已被移除，或链接已失效。",
+    "ctaPhase1aHint": "服务包功能即将上线，敬请期待。",
+    "ctaPhase1bHint": "该功能将在下一阶段上线。",
+    "ctaEditComingSoon": "请前往「设置 - 资料」编辑，专属入口即将上线。",
+    "ctaFollowComingSoon": "关注创作者功能即将上线。",
+    "ctaWorksEdit": "目前请前往旧版「发布作品」入口管理。",
+    "cta": {
+      "createService": "新建服务包",
+      "inbox": "收件箱",
+      "earnings": "收益",
+      "editProfile": "编辑资料",
+      "startRequest": "立即下单",
+      "message": "私信",
+      "follow": "关注"
+    },
+    "stats": {
+      "completedOrders": "已完成订单",
+      "rating": "好评",
+      "responseTime": "平均响应",
+      "repeatBuyers": "回头率"
+    },
+    "info": {
+      "heading": "档案信息",
+      "userId": "创作者 ID",
+      "kyc": "实名认证",
+      "kycVerified": "已认证",
+      "kycPending": "未认证",
+      "joined": "加入时间",
+      "contact": "联系方式"
+    },
+    "tabs": {
+      "services": "服务包",
+      "works": "作品",
+      "ips": "IP",
+      "crews": "剧组",
+      "about": "关于"
+    },
+    "services": {
+      "emptyOwnerTitle": "发布你的第一个服务包",
+      "emptyOwnerBody": "把你最擅长的事情打包成清晰的交付：明确产出、明码标价、稳定工期。客户主动找你，你按约交付，按单收款。",
+      "emptyVisitorTitle": "暂无服务包",
+      "emptyVisitorBody": "该创作者还没有发布服务包。可以先通过私信沟通合作意向。",
+      "previewHeading": "你可以提供这些服务",
+      "previewVideoTitle": "视频制作",
+      "previewVideoBody": "短片、广告、剧集。明确范围、约定交付、锁定工期。",
+      "previewArtTitle": "美术与插画",
+      "previewArtBody": "角色设计、关键画面、分镜稿。按张定价或按包定价。",
+      "previewQuickTitle": "快速交付",
+      "previewQuickBody": "单次剪辑、修图、精修——当日或次日交付。"
+    },
+    "works": {
+      "emptyOwnerTitle": "展示你的作品",
+      "emptyOwnerBody": "把已完成的视频发布在这里，让客户直观看到你的产出能力。",
+      "emptyVisitorTitle": "暂无作品",
+      "emptyVisitorBody": "该创作者还没有公开发布作品。",
+      "publishCta": "发布作品"
+    },
+    "ips": {
+      "emptyOwnerTitle": "创建你的 IP",
+      "emptyOwnerBody": "IP 是你拥有的核心项目，角色、场景、剧集都归属于其下。",
+      "emptyVisitorTitle": "暂无公开 IP",
+      "emptyVisitorBody": "该创作者还没有公开任何 IP。",
+      "createCta": "新建 IP"
+    },
+    "crews": {
+      "emptyOwnerTitle": "加入或筹组剧组",
+      "emptyOwnerBody": "剧组是协同创作的团队空间。可以加入他人的 IP 协作，或为自己的 IP 招募成员。",
+      "emptyVisitorTitle": "暂未加入任何剧组",
+      "emptyVisitorBody": "该创作者目前不属于任何公开剧组。",
+      "discoverCta": "去看剧组"
+    },
+    "about": {
+      "bioHeading": "简介",
+      "bioEmptyOwner": "用一两句话告诉别人你是谁、做什么。",
+      "bioEmptyVisitor": "该创作者还没有填写简介。",
+      "educationHeading": "教育经历",
+      "educationEmptyOwner": "补充教育背景，让客户更了解你。",
+      "educationEmptyVisitor": "暂无教育经历。",
+      "experienceHeading": "工作经历",
+      "experienceEmptyOwner": "列出近期项目或代表作，强化专业信任感。",
+      "experienceEmptyVisitor": "暂无工作经历。",
+      "contactHeading": "联系方式"
+    }
   },
   "sidebar": {
     "home": "首页",

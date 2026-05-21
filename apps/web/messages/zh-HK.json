@@ -710,11 +710,16 @@
     "pricingBetaTag": "Beta",
     "pricingBetaBannerTitle": "定價功能預覽中",
     "pricingBetaBannerBody": "你可以預覽介面、使用觀眾視角連結，但目前所做的修改暫不會儲存——儲存功能即將上線。",
+    "pricingRuleSaveBannerBody": "價格規則按單個對象儲存。整 IP 套餐價單獨儲存；每一集修改價格或免費狀態後，都需要在該集行內單獨儲存。",
     "pricingSave": "儲存定價",
     "pricingSaveComingSoon": "儲存定價（即將上線）",
     "pricingSaveComingSoonToast": "儲存功能即將上線，敬請期待。",
     "pricingSaveSuccess": "定價已儲存",
     "pricingSaveFailed": "儲存定價失敗",
+    "pricingSaved": "已儲存",
+    "pricingSaveBundle": "儲存套餐價",
+    "pricingSaveEpisode": "儲存本集",
+    "pricingUnsaved": "未儲存",
     "pricingPreviewAsViewer": "以觀眾視角預覽",
     "pricingPreviewTitle": "付費牆預覽",
     "pricingPreviewEmpty": "先在「劇集」加入內容再來定價。",
@@ -745,9 +750,10 @@
     "pricingBundleSummary": "一次解鎖全部 {paid} 集付費內容。",
     "pricingBundleCoversFuture": "購買後還可免費觀看你之後新增的劇集。",
     "pricingBundleUseSuggestion": "採用建議價 {n}",
-    "pricingOverridesTitle": "單集自訂價",
-    "pricingOverridesEmpty": "所有付費集都使用預設價。",
+    "pricingOverridesTitle": "單集價格",
+    "pricingOverridesEmpty": "所有劇集價格均已儲存。",
     "pricingOverridesSummary": "{n} 集使用自訂價。",
+    "pricingUnsavedEpisodeSummary": "{n} 集有未儲存的價格改動。",
     "pricingOverridesNoEpisodes": "尚無劇集。",
     "pricingOverridesUntitled": "未命名劇集",
     "pricingOverridesReset": "回復預設價",
@@ -1106,6 +1112,92 @@
     "contactDesc": "透過 {name} 公開的聯絡方式與其取得聯絡。",
     "contactCopy": "複製",
     "contactCopied": "已複製"
+  },
+  "creatorCenter": {
+    "notFoundTitle": "未找到該創作者",
+    "notFoundDesc": "檔案可能已被移除，或連結已失效。",
+    "ctaPhase1aHint": "服務包功能即將上線，敬請期待。",
+    "ctaPhase1bHint": "該功能將於下一階段上線。",
+    "ctaEditComingSoon": "請前往「設定 - 資料」編輯，專屬入口即將上線。",
+    "ctaFollowComingSoon": "追蹤創作者功能即將上線。",
+    "ctaWorksEdit": "目前請前往舊版「發布作品」入口管理。",
+    "cta": {
+      "createService": "新增服務包",
+      "inbox": "收件匣",
+      "earnings": "收益",
+      "editProfile": "編輯資料",
+      "startRequest": "立即下單",
+      "message": "私訊",
+      "follow": "追蹤"
+    },
+    "stats": {
+      "completedOrders": "已完成訂單",
+      "rating": "好評",
+      "responseTime": "平均回應",
+      "repeatBuyers": "回購率"
+    },
+    "info": {
+      "heading": "檔案資訊",
+      "userId": "創作者 ID",
+      "kyc": "實名認證",
+      "kycVerified": "已認證",
+      "kycPending": "未認證",
+      "joined": "加入時間",
+      "contact": "聯絡方式"
+    },
+    "tabs": {
+      "services": "服務包",
+      "works": "作品",
+      "ips": "IP",
+      "crews": "劇組",
+      "about": "關於"
+    },
+    "services": {
+      "emptyOwnerTitle": "發布你的第一個服務包",
+      "emptyOwnerBody": "把你最擅長的事情打包成清晰的交付：明確產出、明確報價、穩定工期。客戶主動找你，你按約交付，按單收款。",
+      "emptyVisitorTitle": "暫無服務包",
+      "emptyVisitorBody": "該創作者尚未發布服務包，可先透過私訊溝通合作意向。",
+      "previewHeading": "你可以提供以下服務",
+      "previewVideoTitle": "影片製作",
+      "previewVideoBody": "短片、廣告、劇集。明確範圍、約定交付、鎖定工期。",
+      "previewArtTitle": "美術與插畫",
+      "previewArtBody": "角色設計、主視覺、分鏡稿。按張定價或按包定價。",
+      "previewQuickTitle": "快速交付",
+      "previewQuickBody": "單次剪輯、修圖、精修——當日或次日交付。"
+    },
+    "works": {
+      "emptyOwnerTitle": "展示你的作品",
+      "emptyOwnerBody": "把已完成的影片發布在此，讓客戶直觀看見你的產出能力。",
+      "emptyVisitorTitle": "暫無作品",
+      "emptyVisitorBody": "該創作者尚未公開發布作品。",
+      "publishCta": "發布作品"
+    },
+    "ips": {
+      "emptyOwnerTitle": "建立你的 IP",
+      "emptyOwnerBody": "IP 是你擁有的核心專案，角色、場景、劇集都歸屬於其下。",
+      "emptyVisitorTitle": "暫無公開 IP",
+      "emptyVisitorBody": "該創作者尚未公開任何 IP。",
+      "createCta": "新增 IP"
+    },
+    "crews": {
+      "emptyOwnerTitle": "加入或籌組劇組",
+      "emptyOwnerBody": "劇組是協同創作的團隊空間。可以加入他人的 IP 協作，或為自己的 IP 招募成員。",
+      "emptyVisitorTitle": "尚未加入任何劇組",
+      "emptyVisitorBody": "該創作者目前不屬於任何公開劇組。",
+      "discoverCta": "去看劇組"
+    },
+    "about": {
+      "bioHeading": "簡介",
+      "bioEmptyOwner": "用一兩句話告訴大家你是誰、做什麼。",
+      "bioEmptyVisitor": "該創作者尚未填寫簡介。",
+      "educationHeading": "教育經歷",
+      "educationEmptyOwner": "補充教育背景，讓客戶更了解你。",
+      "educationEmptyVisitor": "暫無教育經歷。",
+      "experienceHeading": "工作經歷",
+      "experienceEmptyOwner": "列出近期專案或代表作，強化專業信任感。",
+      "experienceEmptyVisitor": "暫無工作經歷。",
+      "contactHeading": "聯絡方式"
+    }
   },
   "sidebar": {
     "home": "首頁",
