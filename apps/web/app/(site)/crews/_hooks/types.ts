@@ -107,6 +107,10 @@ export interface CreatePositionInput {
   experienceLevel?: "any" | "junior" | "mid" | "senior" | "lead";
   requiredSkills?: string[];
   salary?: SalaryInput;
+  /** Months of commitment (1-60). null = long-term / open-ended. */
+  durationMonths?: number | null;
+  /** Revenue share % (0.5-50, step 0.5). null = no share. */
+  revenueSharePercent?: number | null;
   /** YYYY-MM-DD. */
   closeDate?: string | null;
 }

@@ -115,12 +115,16 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
   const [employmentType, setEmploymentType] = useState<EmploymentType>("project_based");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("any");
 
-  // ─── Step 3: Salary + Lifecycle ────
+  // ─── Step 3: Salary + Tenure + Lifecycle ────
   const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>("month");
   const [salaryCurrency, setSalaryCurrency] = useState<CurrencyCode>(defaultCurrencyForCell());
   const [salaryMin, setSalaryMin] = useState<string>("");
   const [salaryMax, setSalaryMax] = useState<string>("");
   const [salaryNegotiable, setSalaryNegotiable] = useState<boolean>(false);
+  // Empty string means "long-term / open-ended" — the wire field
+  // becomes NULL. Same convention for revenue share.
+  const [durationMonths, setDurationMonths] = useState<string>("");
+  const [revenueSharePercent, setRevenueSharePercent] = useState<string>("");
   const [closeDate, setCloseDate] = useState<string>("");
 
   const create = useCreatePosition(crewId);
@@ -142,6 +146,8 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
     setSalaryMin("");
     setSalaryMax("");
     setSalaryNegotiable(false);
+    setDurationMonths("");
+    setRevenueSharePercent("");
     setCloseDate("");
   }, [open]);
 
@@ -149,10 +155,23 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
   const parsedCount = Number.parseInt(count, 10);
   const parsedMin = salaryMin === "" ? null : Number.parseFloat(salaryMin);
   const parsedMax = salaryMax === "" ? null : Number.parseFloat(salaryMax);
+  const parsedDuration = durationMonths === "" ? null : Number.parseInt(durationMonths, 10);
+  const parsedShare = revenueSharePercent === "" ? null : Number.parseFloat(revenueSharePercent);
   const needsLocation = workMode !== "remote";
   const locationOk = !needsLocation || location.trim().length > 0;
   const salaryRangeOk =
     salaryNegotiable || parsedMin == null || parsedMax == null || parsedMax >= parsedMin;
+  // Treat blank input as "leave unset"; only validate when the user
+  // actually typed something. Server enforces the hard caps in zod.
+  const durationOk =
+    parsedDuration == null ||
+    (Number.isFinite(parsedDuration) && parsedDuration >= 1 && parsedDuration <= 60);
+  const shareOk =
+    parsedShare == null ||
+    (Number.isFinite(parsedShare) &&
+      parsedShare >= 0.5 &&
+      parsedShare <= 50 &&
+      Math.round(parsedShare * 2) === parsedShare * 2);
 
   const step1Valid =
     positionType.length > 0 &&
@@ -161,7 +180,7 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
     parsedCount >= 1 &&
     parsedCount <= 99;
   const step2Valid = locationOk;
-  const step3Valid = salaryRangeOk;
+  const step3Valid = salaryRangeOk && durationOk && shareOk;
 
   const canAdvance =
     (step === 1 && step1Valid) || (step === 2 && step2Valid) || (step === 3 && step3Valid);
@@ -192,6 +211,8 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
             max: parsedMax,
             negotiable: false,
           },
+      durationMonths: parsedDuration,
+      revenueSharePercent: parsedShare,
       closeDate: closeDate || null,
     };
     create.mutate(body, {
@@ -462,6 +483,48 @@ export function CreateCrewJobDialog({ open, onOpenChange, crewId }: PublishPosit
                     disabled={submitting}
                   />
                 </div>
+              </Field>
+
+              <Field>
+                <FieldLabel>{t("createJobDurationLabel")}</FieldLabel>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={durationMonths}
+                  onChange={(e) => setDurationMonths(e.target.value)}
+                  placeholder={t("createJobDurationPlaceholder")}
+                  disabled={submitting}
+                  className="tabular-nums"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">{t("createJobDurationHint")}</p>
+                {!durationOk ? (
+                  <p className="mt-1 text-xs text-rose-400">{t("createJobDurationError")}</p>
+                ) : null}
+              </Field>
+
+              <Field>
+                <FieldLabel>{t("createJobRevenueShareLabel")}</FieldLabel>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0.5}
+                  max={50}
+                  step={0.5}
+                  value={revenueSharePercent}
+                  onChange={(e) => setRevenueSharePercent(e.target.value)}
+                  placeholder={t("createJobRevenueSharePlaceholder")}
+                  disabled={submitting}
+                  className="tabular-nums"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("createJobRevenueShareHint")}
+                </p>
+                {!shareOk ? (
+                  <p className="mt-1 text-xs text-rose-400">{t("createJobRevenueShareError")}</p>
+                ) : null}
               </Field>
 
               <Field>

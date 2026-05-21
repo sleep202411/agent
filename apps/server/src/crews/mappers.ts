@@ -96,6 +96,11 @@ export function toPositionDTO(p: CrewPosition): CrewPositionDTO {
       maxAmount: p.salaryMaxAmount !== null ? Number(p.salaryMaxAmount) : null,
       negotiable: p.salaryNegotiable,
     },
+    durationMonths: p.durationMonths,
+    // Storage is basis points (1bp = 0.01%); wire is plain percentage,
+    // so divide by 100 to get a number like 2.5 from a stored 250.
+    revenueSharePercent:
+      p.revenueShareBp !== null ? p.revenueShareBp / 100 : null,
     closeDate: p.closeDate ? p.closeDate.toISOString().slice(0, 10) : null,
     createdAt: isoReq(p.createdAt),
   };

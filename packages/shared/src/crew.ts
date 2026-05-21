@@ -226,6 +226,14 @@ export interface CrewPositionDTO {
     maxAmount: number | null;
     negotiable: boolean;
   };
+  /** Expected commitment length in months (1-60). NULL = open-ended
+   *  / long-term — UI typically renders "长期" / "Long term". */
+  durationMonths: number | null;
+  /** Revenue-share percentage offered to this position holder.
+   *  Wire value is a plain percentage (e.g. 2.5 for 2.5 %); the
+   *  server stores basis points internally. Range 0.5 – 50, in
+   *  0.5 steps. NULL = no share offered. */
+  revenueSharePercent: number | null;
   /** Optional auto-archive date (YYYY-MM-DD). */
   closeDate: string | null;
   createdAt: string;

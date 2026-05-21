@@ -201,6 +201,22 @@ model CrewPosition {
   salaryMaxAmount  BigInt? @map("salary_max_amount")
   salaryNegotiable Boolean @default(false) @map("salary_negotiable")
 
+  /// ─── Tenure ────────────────────────────────────────────
+  /// Expected length of the commitment in months. NULL = "long
+  /// term / open-ended" (default for founding / core members).
+  /// CHECK 1 <= duration_months <= 60 in migration SQL.
+  durationMonths Int? @map("duration_months")
+
+  /// Revenue share offered to the holder of this position, expressed
+  /// in basis points (1 bp = 0.01 %). 250 = 2.50 %; 1500 = 15 %.
+  /// Storing an integer keeps arithmetic exact across servers and
+  /// avoids the Prisma.Decimal wrapper churn. UI multiplies/divides
+  /// by 100 for display.
+  /// NULL = no revenue share offered (pure salary or unpaid).
+  /// CHECK 0 < revenue_share_bp <= 5000 in migration SQL — caps a
+  /// single position at 50 %; multi-position sums aren't enforced.
+  revenueShareBp Int? @map("revenue_share_bp")
+
   /// ─── Lifecycle ─────────────────────────────────────────
   /// Auto-archive at this date (cron flips status → frozen). Nullable.
   closeDate DateTime? @map("close_date") @db.Date
