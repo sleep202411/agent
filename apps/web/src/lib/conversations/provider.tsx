@@ -8,7 +8,7 @@
  * user is hydrated) but ABOVE any consumer of `useInbox` /
  * `useMessages`. The provider:
  *
- *   1. Opens a single WS to `/aurora/conversations/subscribe` when
+ *   1. Opens a single WS to `/aurora/ws/conversations` when
  *      logged in; closes on logout.
  *   2. Patches the per-conversation timeline cache on every
  *      `message.created` frame so live views update without a
