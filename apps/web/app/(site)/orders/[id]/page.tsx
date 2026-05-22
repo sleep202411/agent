@@ -1,0 +1,583 @@
+"use client";
+
+/**
+ * /orders/[id] — order detail + embedded conversation.
+ *
+ * Layout (desktop): two columns.
+ *   Left  — order summary (status, parties, package snapshot,
+ *           questionnaire, bindings) + action buttons keyed off
+ *           role × current state.
+ *   Right — the order's conversation (re-uses ConversationView).
+ *
+ * Mobile: tabs (summary | chat).
+ *
+ * Action buttons gate themselves via `canTransition` from
+ * @repo/shared/order so client + server agree on what's allowed.
+ */
+import { useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import {
+  IconArrowLeft,
+  IconCheck,
+  IconLoader2,
+  IconPlayerPlay,
+  IconRotate,
+  IconX,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
+import { canTransition, type OrderDTO, type OrderStatus } from "@repo/shared/order";
+import { ZERO_DECIMAL_CURRENCIES } from "@repo/shared/crew";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import { UserAvatar } from "@/components/user-avatar";
+import {
+  useAcceptDelivery,
+  useAcceptOrder,
+  useCancelOrder,
+  useDeclineOrder,
+  useDeliverOrder,
+  useOrder,
+  useRequestRevision,
+} from "@/app/(site)/creators/_hooks/use-orders";
+import { ConversationView } from "@/app/(site)/messages/_components/conversation-view";
+
+type Pane = "summary" | "chat";
+
+export default function OrderDetailPage() {
+  const t = useTranslations("orders");
+  const locale = useLocale() as Locale;
+  const params = useParams<{ id: string }>();
+  const id = params?.id ?? "";
+  const { user } = useCurrentUser();
+  const { data: order, isLoading } = useOrder(id);
+  const [pane, setPane] = useState<Pane>("summary");
+
+  if (isLoading || !order) {
+    return (
+      <div className="flex h-[calc(100dvh-64px)] items-center justify-center">
+        <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+  const role = order.buyerId === user.id ? "buyer" : "creator";
+
+  return (
+    <div className="grid h-[calc(100dvh-64px)] grid-cols-1 bg-background text-foreground lg:grid-cols-[minmax(360px,520px)_1fr]">
+      {/* Mobile-only tab switcher */}
+      <div className="flex shrink-0 items-center justify-center gap-1 border-b border-border px-3 py-2 lg:hidden">
+        <Link
+          href={localizePath("/messages", locale)}
+          className="mr-auto rounded-md p-1 text-muted-foreground hover:bg-secondary"
+          aria-label={t("backToInbox")}
+        >
+          <IconArrowLeft className="size-4" />
+        </Link>
+        {(["summary", "chat"] as Pane[]).map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPane(p)}
+            className={cn(
+              "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+              pane === p ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+            )}
+          >
+            {t(`pane.${p}`)}
+          </button>
+        ))}
+      </div>
+
+      {/* Left: summary */}
+      <div
+        className={cn(
+          "min-h-0 border-r border-border lg:block",
+          pane === "summary" ? "block" : "hidden"
+        )}
+      >
+        <OrderSummary order={order} role={role} />
+      </div>
+
+      {/* Right: chat */}
+      <div className={cn("min-w-0 lg:block", pane === "chat" ? "block" : "hidden")}>
+        <ConversationView conversationId={order.conversationId} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Summary pane ───────────────────────────────────────────
+
+function OrderSummary({ order, role }: { order: OrderDTO; role: "buyer" | "creator" }) {
+  const t = useTranslations("orders");
+  const counterpartyId = role === "buyer" ? order.creatorId : order.buyerId;
+  const displays = useUserDisplays([counterpartyId]);
+  const counterparty = displays.get(counterpartyId);
+
+  const snap = order.packageSnapshot;
+  const priceLabel = formatPrice(snap.price, snap.currency);
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="space-y-3 border-b border-border px-5 py-4">
+        <div className="flex items-center justify-between">
+          <StatusBadge status={order.status} />
+          <span className="text-[10px] text-muted-foreground">#{order.id}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <UserAvatar
+            src={counterparty?.avatar}
+            name={counterparty?.nickname ?? ""}
+            seed={counterpartyId}
+            className="size-9"
+          />
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              {t(role === "buyer" ? "creatorLabel" : "buyerLabel")}
+            </div>
+            <div className="line-clamp-1 text-sm font-medium text-foreground">
+              {counterparty?.nickname ?? `User ${counterpartyId}`}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        {/* Package snapshot */}
+        <section className="space-y-2">
+          <SectionTitle>{t("packageSection")}</SectionTitle>
+          <div className="rounded-xl bg-card p-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t(`tier.${snap.tier}`)}
+              </span>
+              <span className="text-xl font-bold tabular-nums text-foreground">{priceLabel}</span>
+            </div>
+            {snap.title ? (
+              <h3 className="mt-1 text-sm font-semibold text-foreground">{snap.title}</h3>
+            ) : null}
+            {snap.description ? (
+              <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                {snap.description}
+              </p>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              <span>{t("nDays", { days: String(snap.deliveryDays) })}</span>
+              <span>
+                {snap.revisions === -1
+                  ? t("revisionsUnlimited")
+                  : t("revisionsCount", { count: String(snap.revisions) })}
+              </span>
+            </div>
+            {snap.scope.length > 0 ? (
+              <ul className="mt-3 space-y-1 text-xs text-foreground">
+                {snap.scope.map((b, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <span className="mt-1.5 size-1 shrink-0 rounded-full bg-primary/70" />
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </section>
+
+        {/* Questionnaire */}
+        {order.questionnaire.length > 0 ? (
+          <section className="space-y-2">
+            <SectionTitle>{t("questionnaireSection")}</SectionTitle>
+            <div className="space-y-2">
+              {order.questionnaire.map((q, i) => (
+                <div key={i} className="rounded-lg bg-card/60 px-3 py-2.5">
+                  <div className="text-[11px] text-muted-foreground">
+                    {q.prompt}
+                    {q.required ? <span className="ml-1 text-destructive">*</span> : null}
+                  </div>
+                  <div className="mt-0.5 whitespace-pre-wrap text-sm text-foreground">
+                    {q.answer || t("noAnswer")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {/* FD bindings */}
+        {hasBindings(order) ? (
+          <section className="space-y-2">
+            <SectionTitle>{t("bindingsSection")}</SectionTitle>
+            <BindingsList order={order} />
+          </section>
+        ) : null}
+
+        {/* Timeline */}
+        <section className="space-y-2">
+          <SectionTitle>{t("timelineSection")}</SectionTitle>
+          <TimelineList order={order} />
+        </section>
+
+        {order.cancelInfo ? (
+          <section className="space-y-2">
+            <SectionTitle>{t("cancelSection")}</SectionTitle>
+            <div className="rounded-lg bg-card/60 px-3 py-2.5 text-xs">
+              <p className="text-foreground">
+                {t("cancelledBy", {
+                  by: t(`role.${order.cancelInfo.by}`),
+                })}
+              </p>
+              <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                {order.cancelInfo.reason}
+              </p>
+            </div>
+          </section>
+        ) : null}
+      </div>
+
+      <ActionFooter order={order} role={role} />
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </h2>
+  );
+}
+
+function hasBindings(order: OrderDTO): boolean {
+  return Object.values(order.bindings).some((v) => !!v);
+}
+
+function BindingsList({ order }: { order: OrderDTO }) {
+  const t = useTranslations("orders");
+  const entries: { key: keyof OrderDTO["bindings"]; label: string }[] = [
+    { key: "ipId", label: t("binding.ip") },
+    { key: "episodeId", label: t("binding.episode") },
+    { key: "crewId", label: t("binding.crew") },
+    { key: "crewPositionId", label: t("binding.crewPosition") },
+  ];
+  return (
+    <div className="space-y-1.5 text-xs">
+      {entries
+        .filter((e) => !!order.bindings[e.key])
+        .map((e) => (
+          <div
+            key={e.key}
+            className="flex items-center justify-between gap-2 rounded-md bg-card/60 px-3 py-2"
+          >
+            <span className="text-muted-foreground">{e.label}</span>
+            <span className="font-mono text-foreground">{String(order.bindings[e.key])}</span>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function TimelineList({ order }: { order: OrderDTO }) {
+  const t = useTranslations("orders");
+  const items: { at: string; label: string }[] = [];
+  items.push({ at: order.createdAt, label: t("timeline.created") });
+  if (order.acceptedAt) items.push({ at: order.acceptedAt, label: t("timeline.accepted") });
+  if (order.deliveredAt) items.push({ at: order.deliveredAt, label: t("timeline.delivered") });
+  if (order.completedAt) items.push({ at: order.completedAt, label: t("timeline.completed") });
+  if (order.cancelledAt) items.push({ at: order.cancelledAt, label: t("timeline.cancelled") });
+  return (
+    <ol className="space-y-1.5 text-xs">
+      {items.map((it, i) => (
+        <li
+          key={i}
+          className="flex items-baseline justify-between gap-3 rounded-md bg-card/60 px-3 py-2"
+        >
+          <span className="text-foreground">{it.label}</span>
+          <span className="text-muted-foreground">{formatDate(it.at)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function StatusBadge({ status }: { status: OrderStatus }) {
+  const t = useTranslations("orders");
+  const tone =
+    status === "in_progress"
+      ? "bg-primary/15 text-primary"
+      : status === "delivered"
+        ? "bg-amber-500/20 text-amber-300"
+        : status === "completed"
+          ? "bg-emerald-500/20 text-emerald-300"
+          : status === "cancelled"
+            ? "bg-zinc-500/20 text-zinc-300"
+            : status === "revision_requested"
+              ? "bg-orange-500/20 text-orange-300"
+              : "bg-zinc-500/15 text-zinc-300"; // pending_creator
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+        tone
+      )}
+    >
+      {t(`status.${status}`)}
+    </span>
+  );
+}
+
+// ─── Action footer ──────────────────────────────────────────
+
+function ActionFooter({ order, role }: { order: OrderDTO; role: "buyer" | "creator" }) {
+  const t = useTranslations("orders");
+
+  // Mutations — id passed at call time so the same hook instance
+  // serves every action.
+  const accept = useAcceptOrder();
+  const decline = useDeclineOrder();
+  const deliver = useDeliverOrder();
+  const acceptDelivery = useAcceptDelivery();
+  const requestRevision = useRequestRevision();
+  const cancel = useCancelOrder();
+
+  const busy =
+    accept.isPending ||
+    decline.isPending ||
+    deliver.isPending ||
+    acceptDelivery.isPending ||
+    requestRevision.isPending ||
+    cancel.isPending;
+
+  // Confirmation/reason dialogs (cancel + decline + revision need text).
+  const [reasonDialog, setReasonDialog] = useState<
+    null | { kind: "decline" } | { kind: "cancel" } | { kind: "request_revision" }
+  >(null);
+  const [reasonText, setReasonText] = useState("");
+
+  const openReason = (kind: "decline" | "cancel" | "request_revision") => {
+    setReasonText("");
+    setReasonDialog({ kind });
+  };
+  const submitReason = async () => {
+    if (!reasonDialog) return;
+    const reason = reasonText.trim();
+    if (!reason) {
+      toast.error(t("reasonRequired"));
+      return;
+    }
+    try {
+      if (reasonDialog.kind === "decline") {
+        await decline.mutateAsync({ id: order.id, reason });
+        toast.success(t("action.declinedToast"));
+      } else if (reasonDialog.kind === "cancel") {
+        await cancel.mutateAsync({ id: order.id, reason });
+        toast.success(t("action.cancelledToast"));
+      } else {
+        await requestRevision.mutateAsync({ id: order.id, reason });
+        toast.success(t("action.revisionRequestedToast"));
+      }
+      setReasonDialog(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("action.failed"));
+    }
+  };
+
+  const run = async (fn: () => Promise<unknown>, successKey: string) => {
+    try {
+      await fn();
+      toast.success(t(successKey));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("action.failed"));
+    }
+  };
+
+  const buttons: React.ReactNode[] = [];
+
+  // Creator: pending_creator → accept | decline
+  if (role === "creator" && canTransition(order.status, "accept")) {
+    buttons.push(
+      <Button
+        key="accept"
+        type="button"
+        onClick={() => run(() => accept.mutateAsync({ id: order.id }), "action.acceptedToast")}
+        disabled={busy}
+      >
+        <IconCheck className="size-4" />
+        {t("action.accept")}
+      </Button>
+    );
+  }
+  if (role === "creator" && canTransition(order.status, "decline")) {
+    buttons.push(
+      <Button
+        key="decline"
+        type="button"
+        variant="ghost"
+        color="muted"
+        onClick={() => openReason("decline")}
+        disabled={busy}
+      >
+        <IconX className="size-4" />
+        {t("action.decline")}
+      </Button>
+    );
+  }
+  // Creator: in_progress | revision_requested → deliver
+  if (role === "creator" && canTransition(order.status, "deliver")) {
+    buttons.push(
+      <Button
+        key="deliver"
+        type="button"
+        onClick={() => run(() => deliver.mutateAsync({ id: order.id }), "action.deliveredToast")}
+        disabled={busy}
+      >
+        <IconPlayerPlay className="size-4" />
+        {t("action.deliver")}
+      </Button>
+    );
+  }
+  // Buyer: delivered → accept_delivery | request_revision
+  if (role === "buyer" && canTransition(order.status, "accept_delivery")) {
+    buttons.push(
+      <Button
+        key="accept-delivery"
+        type="button"
+        onClick={() =>
+          run(() => acceptDelivery.mutateAsync({ id: order.id }), "action.completedToast")
+        }
+        disabled={busy}
+      >
+        <IconCheck className="size-4" />
+        {t("action.acceptDelivery")}
+      </Button>
+    );
+  }
+  if (role === "buyer" && canTransition(order.status, "request_revision")) {
+    buttons.push(
+      <Button
+        key="request-revision"
+        type="button"
+        variant="outline"
+        color="muted"
+        onClick={() => openReason("request_revision")}
+        disabled={busy}
+      >
+        <IconRotate className="size-4" />
+        {t("action.requestRevision")}
+      </Button>
+    );
+  }
+  // Cancel — both sides, when non-terminal.
+  if (canTransition(order.status, "cancel")) {
+    buttons.push(
+      <Button
+        key="cancel"
+        type="button"
+        variant="ghost"
+        color="muted"
+        onClick={() => openReason("cancel")}
+        disabled={busy}
+      >
+        {t("action.cancel")}
+      </Button>
+    );
+  }
+
+  if (buttons.length === 0 && !reasonDialog) return null;
+
+  return (
+    <>
+      {buttons.length > 0 ? (
+        <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-background/95 px-5 py-3">
+          {buttons}
+        </footer>
+      ) : null}
+
+      <AlertDialog
+        open={!!reasonDialog}
+        onOpenChange={(o) => {
+          if (!o) setReasonDialog(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {reasonDialog ? t(`reason.${reasonDialog.kind}.title`) : ""}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {reasonDialog ? t(`reason.${reasonDialog.kind}.body`) : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            autoFocus
+            value={reasonText}
+            onChange={(e) => setReasonText(e.target.value.slice(0, 2000))}
+            placeholder={t("reasonPlaceholder")}
+            rows={4}
+            className="my-2 max-h-40 overflow-y-auto"
+            maxLength={2000}
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>{t("reasonCancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              color={
+                reasonDialog?.kind === "decline" || reasonDialog?.kind === "cancel"
+                  ? "destructive"
+                  : "primary"
+              }
+              disabled={busy || reasonText.trim().length === 0}
+              onClick={(e) => {
+                e.preventDefault();
+                void submitReason();
+              }}
+            >
+              {busy ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {reasonDialog ? t(`reason.${reasonDialog.kind}.confirm`) : ""}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+// ─── Pure helpers ──────────────────────────────────────────
+
+function formatPrice(amount: number, currency: string): string {
+  const isZero = ZERO_DECIMAL_CURRENCIES.has(
+    currency as Parameters<typeof ZERO_DECIMAL_CURRENCIES.has>[0]
+  );
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: isZero ? 0 : 2,
+  }).format(amount);
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

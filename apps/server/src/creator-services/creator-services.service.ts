@@ -37,13 +37,14 @@ import {
 } from '@nestjs/common';
 import type { CreatorService, Prisma } from '@prisma/client';
 import { ZERO_DECIMAL_CURRENCIES } from '@repo/shared/crew';
-import { assertAllowedCurrency, type CurrencyCode } from '../common/currency';
+import { assertAllowedCurrency } from '../common/currency';
 import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
 import type {
   CreateServiceInput,
   ListServicesQuery,
   PackageInput,
+  QuestionInput,
   UpdateServiceInput,
 } from './dto';
 import { toServiceCardDTO, toServiceDTO } from './mappers';
@@ -139,7 +140,7 @@ export class CreatorServicesService {
   async detail(id: string, viewerId: string | null = null) {
     const row = await this.prisma.creatorService.findUnique({
       where: { id },
-      include: { packages: true },
+      include: { packages: true, requirementQuestions: true },
     });
     if (!row) throw new NotFoundException('Service not found');
     const isOwner = !!viewerId && viewerId === row.creatorId;
@@ -148,7 +149,7 @@ export class CreatorServicesService {
         throw new NotFoundException('Service not found');
       }
     }
-    return toServiceDTO(row, row.packages);
+    return toServiceDTO(row, row.packages, row.requirementQuestions);
   }
 
   // ─── Write ───────────────────────────────────────────────
@@ -174,13 +175,26 @@ export class CreatorServicesService {
           data: input.packages.map((p) => packageToRow(serviceId, p)),
         });
       }
+      if (input.requirementQuestions.length > 0) {
+        // Create-path: no existing question ids belong to this
+        // service yet (we just minted serviceId), so client-supplied
+        // ids are always re-minted server-side. This blocks
+        // id-spoofing across services on first save.
+        await tx.serviceRequirementQuestion.createMany({
+          data: materializeQuestions(
+            serviceId,
+            input.requirementQuestions,
+            new Set(),
+          ),
+        });
+      }
       const reloaded = await tx.creatorService.findUniqueOrThrow({
         where: { id: serviceId },
-        include: { packages: true },
+        include: { packages: true, requirementQuestions: true },
       });
       return reloaded;
     });
-    return toServiceDTO(row, row.packages);
+    return toServiceDTO(row, row.packages, row.requirementQuestions);
   }
 
   async update(id: string, actorId: string, input: UpdateServiceInput) {
@@ -218,12 +232,44 @@ export class CreatorServicesService {
         }
       }
 
+      if (input.requirementQuestions !== undefined) {
+        // Replace-all on questionnaire. Order snapshots into
+        // ServiceOrder.questionnaire are unaffected — those are
+        // frozen at submit time on the order row, so an edit here
+        // never rewrites order history.
+        //
+        // Lock the question id namespace to "ids that currently
+        // belong to THIS service": preserve client-supplied ids that
+        // match (preserves answer references), mint fresh for any
+        // unknown id (blocks id-spoofing from other services).
+        const existingIds = new Set(
+          (
+            await tx.serviceRequirementQuestion.findMany({
+              where: { serviceId: id },
+              select: { id: true },
+            })
+          ).map((r) => r.id),
+        );
+        await tx.serviceRequirementQuestion.deleteMany({
+          where: { serviceId: id },
+        });
+        if (input.requirementQuestions.length > 0) {
+          await tx.serviceRequirementQuestion.createMany({
+            data: materializeQuestions(
+              id,
+              input.requirementQuestions,
+              existingIds,
+            ),
+          });
+        }
+      }
+
       return tx.creatorService.findUniqueOrThrow({
         where: { id },
-        include: { packages: true },
+        include: { packages: true, requirementQuestions: true },
       });
     });
-    return toServiceDTO(row, row.packages);
+    return toServiceDTO(row, row.packages, row.requirementQuestions);
   }
 
   // ─── Transitions ─────────────────────────────────────────
@@ -341,7 +387,7 @@ export class CreatorServicesService {
  * currency × smallest-unit conversion uses a single source of truth.
  */
 function packageToRow(serviceId: string, p: PackageInput) {
-  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(p.currency as CurrencyCode);
+  const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(p.currency);
   const priceAmount = BigInt(
     Math.round(isZeroDecimal ? p.price : p.price * 100),
   );
@@ -357,4 +403,48 @@ function packageToRow(serviceId: string, p: PackageInput) {
     revisions: p.revisions,
     scope: p.scope,
   };
+}
+
+/**
+ * Convert wire QuestionInputs → DB rows for a single replace-all
+ * write, while:
+ *
+ *   1. Rejecting duplicate ids inside the batch (BadRequest).
+ *   2. Honoring client-supplied ids only when they're in
+ *      `validExistingIds` (= the question ids that currently belong
+ *      to this service). Unknown / cross-service ids are re-minted
+ *      server-side. This blocks id-spoofing without breaking the
+ *      "preserve id through edit" guarantee, which is what lets
+ *      previously-answered questions keep stable references.
+ */
+function materializeQuestions(
+  serviceId: string,
+  inputs: QuestionInput[],
+  validExistingIds: Set<string>,
+) {
+  const seen = new Set<string>();
+  return inputs.map((q) => {
+    let id: string;
+    if (q.id && validExistingIds.has(q.id)) {
+      id = q.id;
+    } else {
+      id = newShortId();
+    }
+    if (seen.has(id)) {
+      throw new BadRequestException({
+        message: 'requirementQuestions has duplicate id entries',
+        field: 'requirementQuestions',
+        id,
+      });
+    }
+    seen.add(id);
+    return {
+      id,
+      serviceId,
+      prompt: q.prompt,
+      helpText: q.helpText.length > 0 ? q.helpText : null,
+      required: q.required,
+      displayOrder: q.displayOrder,
+    };
+  });
 }

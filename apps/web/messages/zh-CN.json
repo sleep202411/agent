@@ -1227,6 +1227,7 @@
     "wizard": {
       "overview": "基础信息",
       "pricing": "档位定价",
+      "questions": "需求表",
       "preview": "预览发布"
     },
     "wizardNext": "下一步",
@@ -1254,9 +1255,35 @@
       "standard": "1 个成片 + 1 个其他版本\n含调色\n2 次修改",
       "premium": "完整剪辑 + 原始文件\n商用授权\n无限修改\n加急交付"
     },
-    "previewHint": "这是客户大致会看到的样子。封面、下单、私信将在下一阶段上线。",
+    "previewHint": "这是客户进入服务页大致会看到的样子。封面图上传将在下一阶段上线。",
     "previewTitleFallback": "未命名服务",
     "previewSummaryFallback": "尚未填写简介。",
+    "questionsHint": "买家下单前需要回答的问题。只问不答就没法开始做的东西。",
+    "questionsEmpty": "暂无问题。买家下单时看不到问卷。",
+    "questionAddFirst": "添加第一个问题",
+    "questionAdd": "添加问题",
+    "questionLabel": "问题 {index}",
+    "questionMoveUp": "上移",
+    "questionMoveDown": "下移",
+    "questionRemove": "删除",
+    "questionPromptLabel": "问题",
+    "questionPromptPlaceholder": "例如：这个项目用于什么场景？",
+    "questionHelpLabel": "辅助说明（可选）",
+    "questionHelpPlaceholder": "在问题下方展示的简短说明。",
+    "questionRequired": "必答 — 买家必须回答",
+    "questionPreviewPlaceholder": "（未填写问题）",
+    "startRequestTitle": "立即下单",
+    "startRequestSubtitle": "选择档位、回答创作者的问题、提交。创作者接下来会接单或拒单。",
+    "startRequestPickTier": "选择档位",
+    "startRequestQuestionsHeading": "创作者的问题",
+    "startRequestAnswerPlaceholder": "你的回答……",
+    "startRequestNoQuestions": "该创作者没有设置下单前问题。",
+    "startRequestNoteLabel": "备注（可选）",
+    "startRequestNotePlaceholder": "还有什么要让创作者知道的？",
+    "startRequestSubmit": "提交需求",
+    "startRequestSubmittedToast": "需求已提交，等待创作者接单。",
+    "startRequestMissingRequired": "还有 {count} 道必答题未填写。",
+    "startRequestFailed": "提交失败。",
     "tierEnabled": "已开启",
     "tierTurnOn": "开启",
     "tierTurnOff": "关闭",
@@ -4549,6 +4576,199 @@
       "vip3Body": "你已是 VIP3 最高套餐,当前队列繁忙,稍后再试。",
       "later": "明天再说",
       "upgradeNow": "立即升级"
+    }
+  },
+  "messages": {
+    "inboxTitle": "消息",
+    "indexPickAConversation": "从左侧选择一条会话开始阅读。",
+    "inboxEmpty": "暂无会话。咨询和订单消息会出现在这里。",
+    "loadMore": "加载更多",
+    "loadEarlier": "加载更早消息",
+    "noMessagesYet": "这条会话还没有消息。",
+    "backToInbox": "返回收件箱",
+    "openConversation": "查看会话",
+    "openOrder": "查看订单",
+    "send": "发送",
+    "sendFailed": "发送失败，请重试。",
+    "sentToast": "已发送。",
+    "composerPlaceholder": "输入消息…",
+    "contactCreatorTitle": "联系创作者",
+    "contactCreatorSubtitle": "发一条简短消息。回复会出现在这里和你的收件箱。",
+    "aboutService": "关于",
+    "startingAt": "起价 {price}",
+    "firstMessageLabel": "你的消息",
+    "firstMessagePlaceholder": "你想定制什么？说明背景、截止时间、参考……",
+    "stayOpenAfterSend": "发送后保持窗口打开",
+    "toastNewProposal": "收到新报价",
+    "toastNewSystemMessage": "订单状态有更新",
+    "toastOpen": "查看",
+    "tabs": {
+      "all": "全部",
+      "service": "咨询",
+      "order": "订单"
+    },
+    "contextType": {
+      "service": "咨询",
+      "order": "订单"
+    },
+    "preview": {
+      "proposal": "[发来一份报价]",
+      "image": "[图片]",
+      "file": "[文件]",
+      "empty": "（暂无消息）",
+      "system": {
+        "conversation.created": "会话已建立。",
+        "conversation.context_changed_to_order": "已从这条会话创建订单。",
+        "proposal.declined": "报价已拒绝。",
+        "order.submitted": "订单已提交，等待创作者。",
+        "order.accepted": "订单已接受。",
+        "order.declined": "订单已被拒绝。",
+        "order.delivered": "已标记交付。",
+        "order.revision_requested": "已请求修改。",
+        "order.completed": "订单已完成。",
+        "order.cancelled": "订单已取消。",
+        "fallback": "状态有更新"
+      }
+    },
+    "system": {
+      "conversation.created": "会话已建立。",
+      "conversation.context_changed_to_order": "这条会话已转为订单。",
+      "proposal.declined": "买家已拒绝该报价。",
+      "order.submitted": "订单已提交——等待创作者回应。",
+      "order.accepted": "订单已接受，进入交付阶段。",
+      "order.declined": "订单已被创作者拒绝。",
+      "order.delivered": "创作者已标记交付。",
+      "order.revision_requested": "买家已请求修改。",
+      "order.completed": "订单已完成。",
+      "order.cancelled": "订单已取消。",
+      "fallback": "{kind}"
+    },
+    "proposalLabel": "报价",
+    "proposalTierLabel": "档位",
+    "proposalTier": {
+      "basic": "基础",
+      "standard": "标准",
+      "premium": "高级"
+    },
+    "proposalPrice": "价格",
+    "proposalDelivery": "交付",
+    "proposalRevisions": "修改",
+    "proposalScope": "包含内容",
+    "proposalAccept": "接受",
+    "proposalDecline": "拒绝",
+    "proposalDeclineConfirm": "确认拒绝这份报价？创作者会看到你的拒绝。",
+    "proposalDeclineTitle": "确认拒绝该报价？",
+    "proposalDeclineBody": "创作者会在会话里看到你的拒绝。如果只是想谈不同的价格 / scope，直接回一条消息就行——拒绝不会终止后续沟通。",
+    "proposalDeclineCancel": "保留",
+    "proposalDeclineConfirmAction": "拒绝",
+    "conversationNotFound": "未找到该会话",
+    "proposalAcceptedToast": "已接受报价，订单已创建。",
+    "proposalDeclinedToast": "已拒绝报价。",
+    "proposalAcceptFailed": "接受报价失败。",
+    "proposalDeclineFailed": "拒绝报价失败。",
+    "proposalStatus": {
+      "open": "待回应",
+      "accepted": "已接受",
+      "declined": "已拒绝",
+      "cancelled": "已取消"
+    },
+    "nDays": "{days} 天",
+    "revisionsUnlimited": "无限次修改",
+    "revisionsCount": "{count} 次修改",
+    "openSendProposal": "发送报价",
+    "sendProposalTitle": "发送报价",
+    "sendProposalSubtitle": "锁定档位、价格、工期和包含内容。买家一键接受即生成订单。",
+    "proposalSend": "发送报价",
+    "proposalSentToast": "报价已发送。",
+    "proposalSendFailed": "发送报价失败。",
+    "proposalPriceInvalid": "请填写有效价格。",
+    "proposalScopePlaceholder": "一行一条，列出包含内容。",
+    "proposalScopeHint": "会展示在报价卡片上，写具体一点。",
+    "proposalNoteLabel": "备注（可选）",
+    "proposalNotePlaceholder": "想在买家接受前说点什么？"
+  },
+  "orders": {
+    "backToInbox": "返回收件箱",
+    "pane": {
+      "summary": "概览",
+      "chat": "沟通"
+    },
+    "buyerLabel": "买家",
+    "creatorLabel": "创作者",
+    "role": {
+      "buyer": "买家",
+      "creator": "创作者"
+    },
+    "packageSection": "套餐",
+    "questionnaireSection": "需求表",
+    "bindingsSection": "关联",
+    "timelineSection": "时间线",
+    "cancelSection": "取消原因",
+    "noAnswer": "（未填写）",
+    "binding": {
+      "ip": "IP",
+      "episode": "剧集",
+      "crew": "剧组",
+      "crewPosition": "剧组岗位"
+    },
+    "timeline": {
+      "created": "订单创建",
+      "accepted": "已接受",
+      "delivered": "已交付",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "status": {
+      "pending_creator": "等待创作者",
+      "in_progress": "进行中",
+      "delivered": "已交付",
+      "revision_requested": "待修改",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "tier": {
+      "basic": "基础",
+      "standard": "标准",
+      "premium": "高级"
+    },
+    "nDays": "{days} 天交付",
+    "revisionsUnlimited": "包含无限次修改",
+    "revisionsCount": "包含 {count} 次修改",
+    "cancelledBy": "由 {by} 取消",
+    "reasonRequired": "请填写原因。",
+    "reasonPlaceholder": "告诉对方原因……",
+    "reasonCancel": "取消",
+    "reason": {
+      "decline": {
+        "title": "确认拒绝该订单？",
+        "body": "告诉买家拒绝的原因。此操作不可撤销——买家需要重新发起请求。",
+        "confirm": "拒绝"
+      },
+      "cancel": {
+        "title": "确认取消该订单？",
+        "body": "取消会停止工作并通知对方。会话历史会保留。",
+        "confirm": "取消订单"
+      },
+      "request_revision": {
+        "title": "请求修改？",
+        "body": "告诉创作者要修改的内容。订单会回到进行中状态。",
+        "confirm": "发送请求"
+      }
+    },
+    "action": {
+      "accept": "接受订单",
+      "decline": "拒绝",
+      "deliver": "标记交付",
+      "acceptDelivery": "确认收货",
+      "requestRevision": "请求修改",
+      "cancel": "取消订单",
+      "acceptedToast": "已接受订单。",
+      "declinedToast": "已拒绝订单。",
+      "deliveredToast": "已标记交付。",
+      "revisionRequestedToast": "已发送修改请求。",
+      "completedToast": "订单已完成。",
+      "cancelledToast": "订单已取消。",
+      "failed": "操作失败。"
     }
   }
 }

@@ -1227,6 +1227,7 @@
     "wizard": {
       "overview": "Overview",
       "pricing": "Pricing",
+      "questions": "Questions",
       "preview": "Preview"
     },
     "wizardNext": "Next",
@@ -1254,9 +1255,35 @@
       "standard": "1 final cut + 1 alt format\nColor grading included\n2 rounds of revisions",
       "premium": "Full edit + raw files\nCommercial usage rights\nUnlimited revisions\nExpedited delivery"
     },
-    "previewHint": "This is roughly what buyers will see. Cover image, ordering, and messaging launch in a later phase.",
+    "previewHint": "This is roughly what buyers see when they land on your service. A cover image upload is coming in a later phase.",
     "previewTitleFallback": "Untitled service",
     "previewSummaryFallback": "No pitch written yet.",
+    "questionsHint": "Pre-order questions you want every buyer to answer. Keep it short — only ask what you can't start without.",
+    "questionsEmpty": "No questions yet. The buyer will see no questionnaire on order.",
+    "questionAddFirst": "Add the first question",
+    "questionAdd": "Add question",
+    "questionLabel": "Question {index}",
+    "questionMoveUp": "Move up",
+    "questionMoveDown": "Move down",
+    "questionRemove": "Remove",
+    "questionPromptLabel": "Prompt",
+    "questionPromptPlaceholder": "e.g. What's the project for?",
+    "questionHelpLabel": "Helper text (optional)",
+    "questionHelpPlaceholder": "Short hint shown under the prompt.",
+    "questionRequired": "Required — buyer must answer",
+    "questionPreviewPlaceholder": "(empty question)",
+    "startRequestTitle": "Start a request",
+    "startRequestSubtitle": "Pick a tier, answer the creator's questions, and submit. The creator accepts or declines next.",
+    "startRequestPickTier": "Pick a tier",
+    "startRequestQuestionsHeading": "Creator's questions",
+    "startRequestAnswerPlaceholder": "Your answer…",
+    "startRequestNoQuestions": "This creator hasn't set any pre-order questions.",
+    "startRequestNoteLabel": "Add a note (optional)",
+    "startRequestNotePlaceholder": "Anything else the creator should know?",
+    "startRequestSubmit": "Submit request",
+    "startRequestSubmittedToast": "Request submitted — awaiting creator response.",
+    "startRequestMissingRequired": "{count} required question(s) need answers.",
+    "startRequestFailed": "Failed to submit request.",
     "tierEnabled": "ENABLED",
     "tierTurnOn": "Turn on",
     "tierTurnOff": "Turn off",
@@ -4549,6 +4576,199 @@
       "vip3Body": "You're already on VIP3 — the queue is busy right now, please try again in a moment.",
       "later": "Later",
       "upgradeNow": "Upgrade now"
+    }
+  },
+  "messages": {
+    "inboxTitle": "Messages",
+    "indexPickAConversation": "Pick a conversation from the left to start reading.",
+    "inboxEmpty": "No conversations yet. Inquiries and orders will show up here.",
+    "loadMore": "Load more",
+    "loadEarlier": "Load earlier",
+    "noMessagesYet": "No messages in this conversation yet.",
+    "backToInbox": "Back to inbox",
+    "openConversation": "Open conversation",
+    "openOrder": "Open order",
+    "send": "Send",
+    "sendFailed": "Failed to send. Try again.",
+    "sentToast": "Message sent.",
+    "composerPlaceholder": "Write a message…",
+    "contactCreatorTitle": "Message creator",
+    "contactCreatorSubtitle": "Send a quick note. Replies come back here and in your inbox.",
+    "aboutService": "About",
+    "startingAt": "Starting at {price}",
+    "firstMessageLabel": "Your message",
+    "firstMessagePlaceholder": "What are you looking to commission? Share context, deadlines, references…",
+    "stayOpenAfterSend": "Keep this dialog open after sending",
+    "toastNewProposal": "New proposal received",
+    "toastNewSystemMessage": "Order status updated",
+    "toastOpen": "Open",
+    "tabs": {
+      "all": "All",
+      "service": "Inquiries",
+      "order": "Orders"
+    },
+    "contextType": {
+      "service": "Inquiry",
+      "order": "Order"
+    },
+    "preview": {
+      "proposal": "[Sent a proposal]",
+      "image": "[Image]",
+      "file": "[File]",
+      "empty": "(no messages yet)",
+      "system": {
+        "conversation.created": "Conversation started.",
+        "conversation.context_changed_to_order": "Order created from this conversation.",
+        "proposal.declined": "Proposal declined.",
+        "order.submitted": "Order submitted, awaiting creator.",
+        "order.accepted": "Order accepted.",
+        "order.declined": "Order declined.",
+        "order.delivered": "Marked delivered.",
+        "order.revision_requested": "Revision requested.",
+        "order.completed": "Order completed.",
+        "order.cancelled": "Order cancelled.",
+        "fallback": "Status updated"
+      }
+    },
+    "system": {
+      "conversation.created": "Conversation started.",
+      "conversation.context_changed_to_order": "This conversation became an order.",
+      "proposal.declined": "Buyer declined the proposal.",
+      "order.submitted": "Order submitted — awaiting creator response.",
+      "order.accepted": "Order accepted. Work is in progress.",
+      "order.declined": "Order was declined by the creator.",
+      "order.delivered": "Creator marked the order as delivered.",
+      "order.revision_requested": "Buyer requested a revision.",
+      "order.completed": "Order completed.",
+      "order.cancelled": "Order was cancelled.",
+      "fallback": "{kind}"
+    },
+    "proposalLabel": "Proposal",
+    "proposalTierLabel": "Tier",
+    "proposalTier": {
+      "basic": "Basic",
+      "standard": "Standard",
+      "premium": "Premium"
+    },
+    "proposalPrice": "Price",
+    "proposalDelivery": "Delivery",
+    "proposalRevisions": "Revisions",
+    "proposalScope": "Scope",
+    "proposalAccept": "Accept",
+    "proposalDecline": "Decline",
+    "proposalDeclineConfirm": "Decline this proposal? The creator will see your decline.",
+    "proposalDeclineTitle": "Decline this proposal?",
+    "proposalDeclineBody": "The creator will see your decline in the conversation. You can ask for a different price or scope by replying with a text message — it doesn't lock you out of further negotiation.",
+    "proposalDeclineCancel": "Keep open",
+    "proposalDeclineConfirmAction": "Decline",
+    "conversationNotFound": "Conversation not found",
+    "proposalAcceptedToast": "Proposal accepted. Order created.",
+    "proposalDeclinedToast": "Proposal declined.",
+    "proposalAcceptFailed": "Failed to accept proposal.",
+    "proposalDeclineFailed": "Failed to decline proposal.",
+    "proposalStatus": {
+      "open": "Open",
+      "accepted": "Accepted",
+      "declined": "Declined",
+      "cancelled": "Cancelled"
+    },
+    "nDays": "{days} day(s)",
+    "revisionsUnlimited": "Unlimited revisions",
+    "revisionsCount": "{count} revisions",
+    "openSendProposal": "Send proposal",
+    "sendProposalTitle": "Send a proposal",
+    "sendProposalSubtitle": "Lock the tier, price, delivery and scope. Buyer can accept with one click.",
+    "proposalSend": "Send proposal",
+    "proposalSentToast": "Proposal sent.",
+    "proposalSendFailed": "Failed to send proposal.",
+    "proposalPriceInvalid": "Enter a valid price.",
+    "proposalScopePlaceholder": "One bullet per line. What's included.",
+    "proposalScopeHint": "Visible on the proposal card. Keep it concrete.",
+    "proposalNoteLabel": "Note (optional)",
+    "proposalNotePlaceholder": "Anything the buyer should read before they accept?"
+  },
+  "orders": {
+    "backToInbox": "Back to inbox",
+    "pane": {
+      "summary": "Summary",
+      "chat": "Chat"
+    },
+    "buyerLabel": "Buyer",
+    "creatorLabel": "Creator",
+    "role": {
+      "buyer": "buyer",
+      "creator": "creator"
+    },
+    "packageSection": "Package",
+    "questionnaireSection": "Requirements",
+    "bindingsSection": "Linked to",
+    "timelineSection": "Timeline",
+    "cancelSection": "Cancellation",
+    "noAnswer": "(no answer)",
+    "binding": {
+      "ip": "IP",
+      "episode": "Episode",
+      "crew": "Crew",
+      "crewPosition": "Crew position"
+    },
+    "timeline": {
+      "created": "Order created",
+      "accepted": "Accepted",
+      "delivered": "Delivered",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "status": {
+      "pending_creator": "Awaiting creator",
+      "in_progress": "In progress",
+      "delivered": "Delivered",
+      "revision_requested": "Revision",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "tier": {
+      "basic": "Basic",
+      "standard": "Standard",
+      "premium": "Premium"
+    },
+    "nDays": "{days} day(s) delivery",
+    "revisionsUnlimited": "Unlimited revisions",
+    "revisionsCount": "{count} revisions included",
+    "cancelledBy": "Cancelled by {by}",
+    "reasonRequired": "Please provide a reason.",
+    "reasonPlaceholder": "Tell the other side why…",
+    "reasonCancel": "Cancel",
+    "reason": {
+      "decline": {
+        "title": "Decline this order?",
+        "body": "Let the buyer know why you're declining. This is final — they'll need to start a new request.",
+        "confirm": "Decline"
+      },
+      "cancel": {
+        "title": "Cancel this order?",
+        "body": "Cancelling stops work and notifies the other side. Past messages remain in the conversation.",
+        "confirm": "Cancel order"
+      },
+      "request_revision": {
+        "title": "Request a revision?",
+        "body": "Tell the creator what to change. The order goes back into work.",
+        "confirm": "Send request"
+      }
+    },
+    "action": {
+      "accept": "Accept order",
+      "decline": "Decline",
+      "deliver": "Mark delivered",
+      "acceptDelivery": "Accept delivery",
+      "requestRevision": "Request revision",
+      "cancel": "Cancel order",
+      "acceptedToast": "Order accepted.",
+      "declinedToast": "Order declined.",
+      "deliveredToast": "Marked delivered.",
+      "revisionRequestedToast": "Revision request sent.",
+      "completedToast": "Order completed.",
+      "cancelledToast": "Order cancelled.",
+      "failed": "Action failed."
     }
   }
 }

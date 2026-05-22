@@ -82,8 +82,11 @@ function TierColumn({ pkg }: { pkg: ServicePackageDTO }) {
   return (
     <article
       className={cn(
-        "flex flex-col gap-3 rounded-xl bg-card p-4",
-        pkg.tier === "premium" && "ring-1 ring-primary/30"
+        // h-full so all 3 columns stretch to the tallest row,
+        // keeping the comparison aligned even when one tier has
+        // dense scope bullets and another has none.
+        "flex h-full flex-col gap-3 rounded-xl border border-border bg-card p-4",
+        pkg.tier === "premium" && "border-primary/40 ring-1 ring-primary/30"
       )}
     >
       <header className="space-y-1">
@@ -136,8 +139,12 @@ function TierColumn({ pkg }: { pkg: ServicePackageDTO }) {
 
 function TierEmpty({ tier }: { tier: ServiceTier }) {
   const t = useTranslations("creatorService");
+  // Match TierColumn's visual weight (same border + h-full stretch)
+  // so the empty stub doesn't read as a stranded label next to a
+  // filled card. Lighter background + muted copy signals "not
+  // offered" without breaking the row alignment.
   return (
-    <div className="flex flex-col items-center justify-center gap-1 rounded-xl bg-card/30 p-4 text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-card/40 p-4 text-center">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         {t(`tier.${tier}`)}
       </span>

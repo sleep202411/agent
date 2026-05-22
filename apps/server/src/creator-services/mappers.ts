@@ -6,13 +6,18 @@
  * (yuan / dollar / yen). UI then renders directly without re-doing
  * the divide-by-100-except-JPY dance.
  */
-import type { CreatorService, ServicePackage } from '@prisma/client';
+import type {
+  CreatorService,
+  ServicePackage,
+  ServiceRequirementQuestion,
+} from '@prisma/client';
 import {
   compareTiers,
   startingPackage,
   type CreatorServiceCardDTO,
   type CreatorServiceDTO,
   type ServicePackageDTO,
+  type ServiceRequirementQuestionDTO,
 } from '@repo/shared/creator-service';
 import { ZERO_DECIMAL_CURRENCIES, type CurrencyCode } from '@repo/shared/crew';
 
@@ -39,11 +44,27 @@ export function toPackageDTO(row: ServicePackage): ServicePackageDTO {
   };
 }
 
+export function toQuestionDTO(
+  row: ServiceRequirementQuestion,
+): ServiceRequirementQuestionDTO {
+  return {
+    id: row.id,
+    prompt: row.prompt,
+    helpText: row.helpText ?? '',
+    required: row.required,
+    displayOrder: row.displayOrder,
+  };
+}
+
 export function toServiceDTO(
   service: CreatorService,
   packages: ServicePackage[],
+  questions: ServiceRequirementQuestion[] = [],
 ): CreatorServiceDTO {
-  const sorted = [...packages].sort((a, b) => compareTiers(a.tier, b.tier));
+  const sortedPkgs = [...packages].sort((a, b) => compareTiers(a.tier, b.tier));
+  const sortedQs = [...questions].sort(
+    (a, b) => a.displayOrder - b.displayOrder,
+  );
   return {
     id: service.id,
     creatorId: service.creatorId,
@@ -52,12 +73,13 @@ export function toServiceDTO(
     coverPath: service.coverPath,
     category: service.category as CreatorServiceDTO['category'],
     tags: Array.isArray(service.tags) ? [...service.tags] : [],
+    requirementQuestions: sortedQs.map(toQuestionDTO),
     status: service.status,
     publishedAt: service.publishedAt ? service.publishedAt.toISOString() : null,
     createdAt: service.createdAt.toISOString(),
     updatedAt: service.updatedAt.toISOString(),
     version: service.version,
-    packages: sorted.map(toPackageDTO),
+    packages: sortedPkgs.map(toPackageDTO),
   };
 }
 
@@ -82,7 +104,7 @@ export function toServiceCardDTO(
     tags: Array.isArray(service.tags) ? [...service.tags] : [],
     publishedAt: (service.publishedAt ?? service.createdAt).toISOString(),
     startingPrice: cheapest?.price ?? 0,
-    currency: (cheapest?.currency ?? 'USD') as CurrencyCode,
+    currency: cheapest?.currency ?? 'USD',
     startingDeliveryDays: cheapest?.deliveryDays ?? 0,
     packageCount: dtos.length,
   };

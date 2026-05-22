@@ -34,7 +34,6 @@ import { CreatorServicesService } from './creator-services.service';
 import {
   CreateServiceSchema,
   ListServicesQuerySchema,
-  PublishServiceSchema,
   UpdateServiceSchema,
   type CreateServiceInput,
   type ListServicesQuery,
@@ -82,15 +81,11 @@ export class CreatorServicesController {
   }
 
   @Post(':id/publish')
-  publish(
-    @Param('id') idRaw: string,
-    @CurrentUser() user: AuthUser,
-    // Body is currently empty but the schema is wired so a future
-    // "publish with overrides" payload doesn't require a route shape
-    // change.
-    @Body(new ZodValidationPipe(PublishServiceSchema))
-    _body: unknown,
-  ) {
+  publish(@Param('id') idRaw: string, @CurrentUser() user: AuthUser) {
+    // No body today. PublishServiceSchema stays exported from dto.ts
+    // so a future "publish with overrides" payload (e.g. schedule
+    // listing for later) is a one-prop add without changing this
+    // signature.
     return this.svc.publish(parseIdParam(idRaw, 'id'), user.userId);
   }
 

@@ -5,9 +5,11 @@ import { AssistantModule } from './assistant/assistant.module';
 import { AuthModule, AuthGuard } from './auth';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
+import { ConversationsModule } from './conversations/conversations.module';
 import { CrewsModule } from './crews/crews.module';
 import { CreatorServicesModule } from './creator-services/creator-services.module';
 import { EpisodesModule } from './crews/episodes/episodes.module';
+import { OrdersModule } from './orders/orders.module';
 import { DbModule } from './infra/db/db.module';
 import { HealthModule } from './infra/health/health.module';
 import { RealtimeModule } from './infra/realtime/realtime.module';
@@ -37,6 +39,8 @@ import { UsersModule } from './users/users.module';
     CrewsModule,
     EpisodesModule,
     CreatorServicesModule,
+    ConversationsModule,
+    OrdersModule,
     HealthModule,
   ],
   providers: [

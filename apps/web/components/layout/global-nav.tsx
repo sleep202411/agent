@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { SiteUserMenu } from "@/components/layout/site-user-menu";
 import { CommunityCreditsChip } from "@/components/layout/community-credits-chip";
 import { BellButton } from "@/components/notifications/bell-button";
+import { MessagesButton } from "@/components/messages/messages-button";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLogout } from "@/src/hooks/use-logout";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
@@ -26,7 +27,9 @@ import {
   IconDotsVertical,
   IconUser,
   IconLogout,
+  IconMessageCircle,
 } from "@tabler/icons-react";
+import { useInbox } from "@/app/(site)/creators/_hooks/use-conversations";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -317,6 +320,12 @@ export function GlobalNav() {
 
           {user ? (
             <>
+              {/* Messages inbox shortcut — placed left of the bell so
+                  the "communicating with people" surface sits adjacent
+                  to the "platform notifications" surface, mirroring
+                  the common nav-cluster grouping (compare LinkedIn,
+                  Behance, Fiverr). Same badge convention. */}
+              <MessagesButton />
               {/* Notifications bell — badge + dropdown to recent items.
                   Sits to the left of credits / avatar; opening drawer
                   is independent of the user menu so they can coexist
@@ -477,6 +486,13 @@ export function GlobalNav() {
                     drawer. Tapping opens the coming-soon toast. */}
                 <CommunityCreditsChip layout="row" />
                 <Link
+                  href={localizePath("/messages", locale as Locale)}
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+                >
+                  <MobileInboxLine />
+                </Link>
+                <Link
                   href={localizePath("/profile", locale as Locale)}
                   onClick={() => setMobileOpen(false)}
                   className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
@@ -512,5 +528,28 @@ export function GlobalNav() {
         </div>
       )}
     </header>
+  );
+}
+
+/**
+ * Mobile-drawer inbox row. Renders icon + label + unread badge.
+ * Inline rather than a named component so it stays close to the
+ * drawer it's used from and doesn't grow the public surface.
+ */
+function MobileInboxLine() {
+  const t = useTranslations("messages");
+  const inbox = useInbox();
+  const items = inbox.data?.items ?? [];
+  const unread = items.reduce((s, c) => s + c.unreadCount, 0);
+  return (
+    <>
+      <IconMessageCircle className="size-4" />
+      <span className="flex-1">{t("inboxTitle")}</span>
+      {unread > 0 ? (
+        <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold tabular-nums text-primary-foreground">
+          {unread > 99 ? "99+" : unread}
+        </span>
+      ) : null}
+    </>
   );
 }

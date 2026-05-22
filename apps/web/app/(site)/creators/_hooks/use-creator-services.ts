@@ -106,6 +106,20 @@ export interface ServicePackageInput {
   scope: string[];
 }
 
+/**
+ * Wire shape for a single requirement question. Mirrors
+ * QuestionInputSchema on the server — `id` is optional so a
+ * brand-new (client-only) question lets the server mint the
+ * stable id.
+ */
+export interface ServiceRequirementQuestionInput {
+  id?: string;
+  prompt: string;
+  helpText: string;
+  required: boolean;
+  displayOrder: number;
+}
+
 export interface CreateServiceBody {
   title: string;
   summary: string;
@@ -113,6 +127,7 @@ export interface CreateServiceBody {
   category: ServiceCategory;
   tags?: string[];
   packages?: ServicePackageInput[];
+  requirementQuestions?: ServiceRequirementQuestionInput[];
 }
 
 export interface UpdateServiceBody {
@@ -122,6 +137,7 @@ export interface UpdateServiceBody {
   category?: ServiceCategory;
   tags?: string[];
   packages?: ServicePackageInput[];
+  requirementQuestions?: ServiceRequirementQuestionInput[];
   expectedVersion?: number;
 }
 

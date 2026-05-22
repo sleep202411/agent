@@ -1227,6 +1227,7 @@
     "wizard": {
       "overview": "基本資訊",
       "pricing": "檔位定價",
+      "questions": "需求表",
       "preview": "預覽發布"
     },
     "wizardNext": "下一步",
@@ -1254,9 +1255,35 @@
       "standard": "1 個成片 + 1 個其他版本\n含調色\n2 次修改",
       "premium": "完整剪輯 + 原始檔案\n商用授權\n無限修改\n加急交付"
     },
-    "previewHint": "這是客戶大致會看到的樣子。封面、下單、私訊將於下一階段上線。",
+    "previewHint": "這是客戶進入服務頁大致會看到的樣子。封面圖上傳將於下一階段上線。",
     "previewTitleFallback": "未命名服務",
     "previewSummaryFallback": "尚未填寫簡介。",
+    "questionsHint": "買家下單前需要回答的問題。只問不答就無法開始做的內容。",
+    "questionsEmpty": "暫無問題。買家下單時看不到問卷。",
+    "questionAddFirst": "新增第一個問題",
+    "questionAdd": "新增問題",
+    "questionLabel": "問題 {index}",
+    "questionMoveUp": "上移",
+    "questionMoveDown": "下移",
+    "questionRemove": "刪除",
+    "questionPromptLabel": "問題",
+    "questionPromptPlaceholder": "例如：這個專案用於什麼場景？",
+    "questionHelpLabel": "輔助說明（可選）",
+    "questionHelpPlaceholder": "在問題下方展示的簡短說明。",
+    "questionRequired": "必答 — 買家必須回答",
+    "questionPreviewPlaceholder": "（未填寫問題）",
+    "startRequestTitle": "立即下單",
+    "startRequestSubtitle": "選擇檔位、回答創作者的問題、提交。創作者接下來會接單或拒單。",
+    "startRequestPickTier": "選擇檔位",
+    "startRequestQuestionsHeading": "創作者的問題",
+    "startRequestAnswerPlaceholder": "你的回答……",
+    "startRequestNoQuestions": "該創作者沒有設定下單前問題。",
+    "startRequestNoteLabel": "備註（可選）",
+    "startRequestNotePlaceholder": "還有什麼要讓創作者知道的？",
+    "startRequestSubmit": "提交需求",
+    "startRequestSubmittedToast": "需求已提交，等待創作者接單。",
+    "startRequestMissingRequired": "還有 {count} 道必答題未填寫。",
+    "startRequestFailed": "提交失敗。",
     "tierEnabled": "已開啟",
     "tierTurnOn": "開啟",
     "tierTurnOff": "關閉",
@@ -4549,6 +4576,199 @@
       "vip3Body": "你已是 VIP3 最高套餐,目前隊列繁忙,稍後再試。",
       "later": "明天再說",
       "upgradeNow": "立即升級"
+    }
+  },
+  "messages": {
+    "inboxTitle": "訊息",
+    "indexPickAConversation": "從左側選擇一條會話開始閱讀。",
+    "inboxEmpty": "尚無會話。諮詢和訂單訊息會出現在這裡。",
+    "loadMore": "載入更多",
+    "loadEarlier": "載入更早訊息",
+    "noMessagesYet": "這條會話還沒有訊息。",
+    "backToInbox": "返回收件匣",
+    "openConversation": "查看會話",
+    "openOrder": "查看訂單",
+    "send": "傳送",
+    "sendFailed": "傳送失敗，請重試。",
+    "sentToast": "已傳送。",
+    "composerPlaceholder": "輸入訊息…",
+    "contactCreatorTitle": "聯絡創作者",
+    "contactCreatorSubtitle": "傳送一條簡短訊息。回覆會出現在這裡和你的收件匣。",
+    "aboutService": "關於",
+    "startingAt": "起價 {price}",
+    "firstMessageLabel": "你的訊息",
+    "firstMessagePlaceholder": "你想委製什麼？說明背景、截止時間、參考……",
+    "stayOpenAfterSend": "傳送後保持視窗開啟",
+    "toastNewProposal": "收到新報價",
+    "toastNewSystemMessage": "訂單狀態有更新",
+    "toastOpen": "查看",
+    "tabs": {
+      "all": "全部",
+      "service": "諮詢",
+      "order": "訂單"
+    },
+    "contextType": {
+      "service": "諮詢",
+      "order": "訂單"
+    },
+    "preview": {
+      "proposal": "[傳來一份報價]",
+      "image": "[圖片]",
+      "file": "[檔案]",
+      "empty": "（尚無訊息）",
+      "system": {
+        "conversation.created": "會話已建立。",
+        "conversation.context_changed_to_order": "已從這條會話建立訂單。",
+        "proposal.declined": "報價已拒絕。",
+        "order.submitted": "訂單已提交，等待創作者。",
+        "order.accepted": "訂單已接受。",
+        "order.declined": "訂單已被拒絕。",
+        "order.delivered": "已標記交付。",
+        "order.revision_requested": "已請求修改。",
+        "order.completed": "訂單已完成。",
+        "order.cancelled": "訂單已取消。",
+        "fallback": "狀態有更新"
+      }
+    },
+    "system": {
+      "conversation.created": "會話已建立。",
+      "conversation.context_changed_to_order": "這條會話已轉為訂單。",
+      "proposal.declined": "買家已拒絕該報價。",
+      "order.submitted": "訂單已提交——等待創作者回應。",
+      "order.accepted": "訂單已接受，進入交付階段。",
+      "order.declined": "訂單已被創作者拒絕。",
+      "order.delivered": "創作者已標記交付。",
+      "order.revision_requested": "買家已請求修改。",
+      "order.completed": "訂單已完成。",
+      "order.cancelled": "訂單已取消。",
+      "fallback": "{kind}"
+    },
+    "proposalLabel": "報價",
+    "proposalTierLabel": "檔位",
+    "proposalTier": {
+      "basic": "基礎",
+      "standard": "標準",
+      "premium": "高級"
+    },
+    "proposalPrice": "價格",
+    "proposalDelivery": "交付",
+    "proposalRevisions": "修改",
+    "proposalScope": "包含內容",
+    "proposalAccept": "接受",
+    "proposalDecline": "拒絕",
+    "proposalDeclineConfirm": "確認拒絕這份報價？創作者會看到你的拒絕。",
+    "proposalDeclineTitle": "確認拒絕該報價？",
+    "proposalDeclineBody": "創作者會在會話裡看到你的拒絕。如果只是想談不同的價格 / scope，直接回一條訊息就行——拒絕不會終止後續溝通。",
+    "proposalDeclineCancel": "保留",
+    "proposalDeclineConfirmAction": "拒絕",
+    "conversationNotFound": "未找到該會話",
+    "proposalAcceptedToast": "已接受報價，訂單已建立。",
+    "proposalDeclinedToast": "已拒絕報價。",
+    "proposalAcceptFailed": "接受報價失敗。",
+    "proposalDeclineFailed": "拒絕報價失敗。",
+    "proposalStatus": {
+      "open": "待回應",
+      "accepted": "已接受",
+      "declined": "已拒絕",
+      "cancelled": "已取消"
+    },
+    "nDays": "{days} 日",
+    "revisionsUnlimited": "包含無限次修改",
+    "revisionsCount": "{count} 次修改",
+    "openSendProposal": "傳送報價",
+    "sendProposalTitle": "傳送報價",
+    "sendProposalSubtitle": "鎖定檔位、價格、工期和包含內容。買家一鍵接受即生成訂單。",
+    "proposalSend": "傳送報價",
+    "proposalSentToast": "報價已傳送。",
+    "proposalSendFailed": "傳送報價失敗。",
+    "proposalPriceInvalid": "請填寫有效價格。",
+    "proposalScopePlaceholder": "一行一條，列出包含內容。",
+    "proposalScopeHint": "會展示在報價卡片上，寫具體一點。",
+    "proposalNoteLabel": "備註（可選）",
+    "proposalNotePlaceholder": "想在買家接受前說點什麼？"
+  },
+  "orders": {
+    "backToInbox": "返回收件匣",
+    "pane": {
+      "summary": "概覽",
+      "chat": "溝通"
+    },
+    "buyerLabel": "買家",
+    "creatorLabel": "創作者",
+    "role": {
+      "buyer": "買家",
+      "creator": "創作者"
+    },
+    "packageSection": "套餐",
+    "questionnaireSection": "需求表",
+    "bindingsSection": "關聯",
+    "timelineSection": "時間線",
+    "cancelSection": "取消原因",
+    "noAnswer": "（未填寫）",
+    "binding": {
+      "ip": "IP",
+      "episode": "劇集",
+      "crew": "劇組",
+      "crewPosition": "劇組職位"
+    },
+    "timeline": {
+      "created": "訂單建立",
+      "accepted": "已接受",
+      "delivered": "已交付",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "status": {
+      "pending_creator": "等待創作者",
+      "in_progress": "進行中",
+      "delivered": "已交付",
+      "revision_requested": "待修改",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "tier": {
+      "basic": "基礎",
+      "standard": "標準",
+      "premium": "高級"
+    },
+    "nDays": "{days} 日交付",
+    "revisionsUnlimited": "包含無限次修改",
+    "revisionsCount": "包含 {count} 次修改",
+    "cancelledBy": "由 {by} 取消",
+    "reasonRequired": "請填寫原因。",
+    "reasonPlaceholder": "告訴對方原因……",
+    "reasonCancel": "取消",
+    "reason": {
+      "decline": {
+        "title": "確認拒絕該訂單？",
+        "body": "告訴買家拒絕的原因。此操作不可撤銷——買家需重新發起請求。",
+        "confirm": "拒絕"
+      },
+      "cancel": {
+        "title": "確認取消該訂單？",
+        "body": "取消會停止工作並通知對方。會話歷史會保留。",
+        "confirm": "取消訂單"
+      },
+      "request_revision": {
+        "title": "請求修改？",
+        "body": "告訴創作者要修改的內容。訂單會回到進行中狀態。",
+        "confirm": "傳送請求"
+      }
+    },
+    "action": {
+      "accept": "接受訂單",
+      "decline": "拒絕",
+      "deliver": "標記交付",
+      "acceptDelivery": "確認收貨",
+      "requestRevision": "請求修改",
+      "cancel": "取消訂單",
+      "acceptedToast": "已接受訂單。",
+      "declinedToast": "已拒絕訂單。",
+      "deliveredToast": "已標記交付。",
+      "revisionRequestedToast": "已傳送修改請求。",
+      "completedToast": "訂單已完成。",
+      "cancelledToast": "訂單已取消。",
+      "failed": "操作失敗。"
     }
   }
 }

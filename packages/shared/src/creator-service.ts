@@ -102,6 +102,25 @@ export interface ServicePackageDTO {
   scope: string[];
 }
 
+/**
+ * One free-form question the creator pre-defines for buyers to
+ * answer before a questionnaire-first order can be submitted. The
+ * full list rides on `CreatorServiceDTO.requirementQuestions` (in
+ * display order) and snapshots into `OrderDTO.questionnaire` at
+ * submit time.
+ */
+export interface ServiceRequirementQuestionDTO {
+  id: string;
+  /** Prompt rendered to the buyer. ≤ 240 chars. */
+  prompt: string;
+  /** Optional helper text under the prompt. ≤ 240 chars. */
+  helpText: string;
+  /** Submit blocked until a non-blank answer is provided. */
+  required: boolean;
+  /** Sort key — lower first. Caller-controlled; server preserves. */
+  displayOrder: number;
+}
+
 export interface CreatorServiceDTO {
   id: string;
   /** String projection of the Java userId. */
@@ -114,6 +133,8 @@ export interface CreatorServiceDTO {
   category: ServiceCategory;
   /** Free-form skill / style tags (max 10). */
   tags: string[];
+  /** Buyer-facing pre-order questionnaire. ≤ 20 entries. */
+  requirementQuestions: ServiceRequirementQuestionDTO[];
   status: CreatorServiceStatus;
   /**
    * ISO timestamp when the service first transitioned to `listed`.

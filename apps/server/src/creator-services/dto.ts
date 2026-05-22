@@ -44,6 +44,26 @@ export const PackageInputSchema = z.object({
 });
 export type PackageInput = z.infer<typeof PackageInputSchema>;
 
+// ─── Requirement question ───────────────────────────────────
+
+/**
+ * One pre-order question. The on-the-wire shape mirrors
+ * ServiceRequirementQuestionDTO; we re-use the schema for both
+ * create and update because there's no per-row update path —
+ * questionnaire edits are replace-all at the service level.
+ */
+export const QuestionInputSchema = z.object({
+  /// Optional client-provided id. If absent, server mints one.
+  /// Persisting an existing id is how the client preserves answer
+  /// references through edits.
+  id: z.string().trim().min(1).max(64).optional(),
+  prompt: z.string().trim().min(1).max(240),
+  helpText: z.string().trim().max(240).default(''),
+  required: z.boolean().default(false),
+  displayOrder: z.number().int().min(0).max(1000).default(0),
+});
+export type QuestionInput = z.infer<typeof QuestionInputSchema>;
+
 // ─── Service envelope ───────────────────────────────────────
 
 const ServiceBaseSchema = z.object({
@@ -65,6 +85,10 @@ export const CreateServiceSchema = ServiceBaseSchema.extend({
       message: 'packages must have distinct tiers',
       path: ['packages'],
     }),
+  /// Replace-all set of buyer-facing pre-order questions. Optional
+  /// on create — services without a questionnaire just don't show
+  /// one in the order flow. Same replace-all semantics as packages.
+  requirementQuestions: z.array(QuestionInputSchema).max(20).default([]),
 });
 export type CreateServiceInput = z.infer<typeof CreateServiceSchema>;
 
@@ -80,6 +104,9 @@ export const UpdateServiceSchema = ServiceBaseSchema.partial().extend({
       path: ['packages'],
     })
     .optional(),
+  /// Same replace-all semantics for the questionnaire. Omit to
+  /// leave existing questions untouched.
+  requirementQuestions: z.array(QuestionInputSchema).max(20).optional(),
   /// Optimistic concurrency token from the row read prior to edit.
   expectedVersion: z.number().int().min(0).optional(),
 });

@@ -12,5 +12,7 @@ export * from "./foundry-schema.js";
 export * from "./notifications.js";
 export * from "./crew.js";
 export * from "./creator-service.js";
+export * from "./order.js";
+export * from "./conversation.js";
 export * from "./quota.js";
 export * from "./users.js";

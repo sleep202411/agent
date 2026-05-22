@@ -164,8 +164,68 @@ function tierToWire(
 
 // ─── Step config ────────────────────────────────────────────
 
-type StepId = "overview" | "pricing" | "preview";
-const STEPS: StepId[] = ["overview", "pricing", "preview"];
+type StepId = "overview" | "pricing" | "questions" | "preview";
+const STEPS: StepId[] = ["overview", "pricing", "questions", "preview"];
+
+/**
+ * Form-state shape for a single requirement question. `id` is the
+ * stable identifier — server-minted ids are kept so subsequent
+ * edits / order-answer references stay aligned (see
+ * `questionToRow` in CreatorServicesService).
+ */
+interface QuestionFormState {
+  id: string;
+  prompt: string;
+  helpText: string;
+  required: boolean;
+}
+
+/** Local-only id token used until the row gets a server-side id. */
+function localQuestionId(): string {
+  return `local-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function blankQuestion(): QuestionFormState {
+  return {
+    id: localQuestionId(),
+    prompt: "",
+    helpText: "",
+    required: false,
+  };
+}
+
+function questionFromDTO(q: {
+  id: string;
+  prompt: string;
+  helpText: string;
+  required: boolean;
+}): QuestionFormState {
+  return {
+    id: q.id,
+    prompt: q.prompt,
+    helpText: q.helpText,
+    required: q.required,
+  };
+}
+
+function questionsToWire(qs: QuestionFormState[]) {
+  return qs
+    .map((q, displayOrder) => {
+      const prompt = q.prompt.trim();
+      if (prompt.length === 0) return null;
+      // Only send `id` to the server when it's a real server id; the
+      // local- prefix sentinel signals "new — mint one".
+      const isLocal = q.id.startsWith("local-");
+      return {
+        ...(isLocal ? {} : { id: q.id }),
+        prompt,
+        helpText: q.helpText.trim(),
+        required: q.required,
+        displayOrder,
+      };
+    })
+    .filter((q): q is Exclude<typeof q, null> => q !== null);
+}
 
 // ─── Component ──────────────────────────────────────────────
 
@@ -185,8 +245,8 @@ export function CreateServiceDialog({
   const t = useTranslations("creatorService");
   const tc = useTranslations("common");
 
-  const defaultCurrency = useMemo(defaultCurrencyForCell, []);
-  const allowedCurrencies = useMemo(allowedCurrenciesForCell, []);
+  const defaultCurrency = useMemo(() => defaultCurrencyForCell(), []);
+  const allowedCurrencies = useMemo(() => allowedCurrenciesForCell(), []);
 
   // ─── State ──────────────────────────────────────
   const [step, setStep] = useState<StepId>("overview");
@@ -211,12 +271,20 @@ export function CreateServiceDialog({
     standard: blankTier(),
     premium: blankTier(),
   }));
+  // Pre-order questionnaire — list of rows the creator pre-defines
+  // for buyers to answer at order time.
+  const [questions, setQuestions] = useState<QuestionFormState[]>([]);
   // Concurrency token for PATCH.
   const [expectedVersion, setExpectedVersion] = useState<number | undefined>(undefined);
 
   // ─── Reset / prefill on open ─────────────────────
+  // Intentional setState-in-effect: the trigger is the `open`
+  // prop flipping false→true. A key-prop remount would also work
+  // but would lose the parent's hold on the dialog instance. See
+  // contact-creator-dialog.tsx for the same pattern.
   useEffect(() => {
     if (!open) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (initial) {
       setStep("overview");
       setSavedId(initial.id);
@@ -232,6 +300,7 @@ export function CreateServiceDialog({
       };
       for (const p of initial.packages) byTier[p.tier] = tierFromDTO(p);
       setTiers(byTier);
+      setQuestions(initial.requirementQuestions.map(questionFromDTO));
       setExpectedVersion(initial.version);
     } else {
       setStep("overview");
@@ -251,8 +320,10 @@ export function CreateServiceDialog({
         standard: blankTier(),
         premium: blankTier(),
       });
+      setQuestions([]);
       setExpectedVersion(undefined);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, initial, defaultCurrency]);
 
   // ─── Mutations ──────────────────────────────────
@@ -286,12 +357,14 @@ export function CreateServiceDialog({
     const packages = SERVICE_TIERS.map((tier) => tierToWire(tier, tiers[tier], currency)).filter(
       (p): p is ServicePackageInput => p !== null
     );
+    const requirementQuestions = questionsToWire(questions);
     const base = {
       title: title.trim(),
       summary: summary.trim(),
       category,
       tags,
       packages,
+      requirementQuestions,
     };
     if (forUpdate && expectedVersion !== undefined) {
       return { ...base, expectedVersion } satisfies UpdateServiceBody;
@@ -385,13 +458,15 @@ export function CreateServiceDialog({
 
   // ─── Step navigation gates ───────────────────────
   // Going from overview → pricing requires title + summary;
-  // pricing → preview requires at least one enabled tier with
-  // a non-blank title. These mirror what the server would reject.
+  // pricing → questions requires at least one enabled, non-blank
+  // tier; questions step is always valid (questionnaire is optional).
+  // Preview requires canPublish (title + ≥ 1 enabled tier).
   const stepValid: Record<StepId, boolean> = {
     overview: overviewReady,
     pricing:
       enabledCount > 0 &&
       SERVICE_TIERS.every((k) => !tiers[k].enabled || tiers[k].title.trim().length > 0),
+    questions: true,
     preview: canPublish,
   };
 
@@ -433,8 +508,15 @@ export function CreateServiceDialog({
           revisions: p.revisions,
           scope: p.scope,
         })),
+      requirementQuestions: questions.map((q, i) => ({
+        id: q.id,
+        prompt: q.prompt.trim() || t("questionPreviewPlaceholder"),
+        helpText: q.helpText.trim(),
+        required: q.required,
+        displayOrder: i,
+      })),
     }),
-    [savedId, initial?.creatorId, title, summary, category, tags, tiers, currency, t]
+    [savedId, initial?.creatorId, title, summary, category, tags, tiers, currency, questions, t]
   );
 
   // ─── Render ─────────────────────────────────────
@@ -448,6 +530,7 @@ export function CreateServiceDialog({
           eyebrow={savedId || initial ? t("heroEyebrowEdit") : t("heroEyebrowCreate")}
           title={savedId || initial ? t("editTitle") : t("createTitle")}
           description={t("subtitle")}
+          height="h-28 sm:h-44"
           className="shrink-0"
         />
 
@@ -469,7 +552,7 @@ export function CreateServiceDialog({
           }}
         />
 
-        <DialogBody className="min-h-0 flex-1 overflow-y-auto p-5">
+        <DialogBody className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
           {step === "overview" ? (
             <OverviewStep
               title={title}
@@ -490,6 +573,9 @@ export function CreateServiceDialog({
               tiers={tiers}
               updateTier={updateTier}
             />
+          ) : null}
+          {step === "questions" ? (
+            <QuestionsStep questions={questions} setQuestions={setQuestions} />
           ) : null}
           {step === "preview" ? <PreviewStep service={previewService} /> : null}
         </DialogBody>
@@ -564,28 +650,36 @@ function StepIndicator({
   onJump: (s: StepId) => void;
 }) {
   const t = useTranslations("creatorService");
+  const currentIdx = steps.indexOf(current);
   return (
     <nav
       aria-label="wizard"
-      className="flex shrink-0 items-center justify-center gap-2 border-b border-border bg-card/40 px-4 py-3"
+      className="flex shrink-0 items-center justify-center gap-1.5 border-b border-border bg-card/40 px-3 py-2.5 sm:gap-2 sm:px-4 sm:py-3"
     >
       {steps.map((s, i) => {
         const active = s === current;
         const idx = i + 1;
         const valid = stepValid[s];
+        // Mobile space-saving: only the active chip shows its
+        // label; non-active chips collapse to just a numbered
+        // circle. On sm+ all labels render. Connector lines also
+        // shrink on mobile.
+        const showLabelMobile = active;
         return (
-          <div key={s} className="flex items-center gap-2">
+          <div key={s} className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => onJump(s)}
               className={cn(
-                "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                "inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium transition-colors sm:gap-2 sm:px-3 sm:py-1.5",
                 active
                   ? "bg-primary/15 text-primary"
                   : valid
                     ? "text-muted-foreground hover:text-foreground"
                     : "text-muted-foreground/60"
               )}
+              aria-label={t(`wizard.${s}`)}
+              aria-current={active ? "step" : undefined}
             >
               <span
                 className={cn(
@@ -597,12 +691,19 @@ function StepIndicator({
               >
                 {idx}
               </span>
-              {t(`wizard.${s}`)}
+              <span className={cn(showLabelMobile ? "inline" : "hidden sm:inline")}>
+                {t(`wizard.${s}`)}
+              </span>
             </button>
-            {i < steps.length - 1 ? <span className="h-px w-6 bg-border" /> : null}
+            {i < steps.length - 1 ? <span className="h-px w-3 bg-border sm:w-6" /> : null}
           </div>
         );
       })}
+      {/* Screen-reader hint: surfaces "step 2 of 4" so AT users
+          know progress without parsing the chips visually. */}
+      <span className="sr-only">
+        Step {currentIdx + 1} of {steps.length}
+      </span>
     </nav>
   );
 }
@@ -758,8 +859,15 @@ function TierPanel({
   const unlimited = state.revisions === UNLIMITED_REVISIONS;
   const [expanded, setExpanded] = useState(state.enabled);
 
+  // Intentional setState-in-effect: when the tier toggle flips
+  // off→on, force the tier card to expand so the creator sees
+  // the fields they need to fill. Doing this in handler would
+  // miss programmatic enabling (e.g. prefill from initial DTO).
   useEffect(() => {
-    if (state.enabled) setExpanded(true);
+    if (state.enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setExpanded(true);
+    }
   }, [state.enabled]);
 
   return (
@@ -818,7 +926,7 @@ function TierPanel({
       ) : expanded ? (
         <div className="space-y-3 border-t border-border px-3 py-3">
           <Field>
-            <FieldLabel>{t("tierFieldTitle")}</FieldLabel>
+            <FieldLabel required>{t("tierFieldTitle")}</FieldLabel>
             <Input
               value={state.title}
               onChange={(e) => onChange({ title: e.target.value.slice(0, 80) })}
@@ -828,7 +936,7 @@ function TierPanel({
           </Field>
 
           <Field>
-            <FieldLabel>{t("tierFieldDescription")}</FieldLabel>
+            <FieldLabel required>{t("tierFieldDescription")}</FieldLabel>
             <Textarea
               value={state.description}
               onChange={(e) => onChange({ description: e.target.value.slice(0, 2000) })}
@@ -841,7 +949,7 @@ function TierPanel({
 
           <div className="grid gap-3 sm:grid-cols-3">
             <Field>
-              <FieldLabel>{t("tierFieldPrice")}</FieldLabel>
+              <FieldLabel required>{t("tierFieldPrice")}</FieldLabel>
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
                   {symbol}
@@ -860,7 +968,7 @@ function TierPanel({
             </Field>
 
             <Field>
-              <FieldLabel>{t("tierFieldDeliveryDays")}</FieldLabel>
+              <FieldLabel required>{t("tierFieldDeliveryDays")}</FieldLabel>
               <Input
                 type="number"
                 inputMode="numeric"
@@ -876,7 +984,7 @@ function TierPanel({
             </Field>
 
             <Field>
-              <FieldLabel>{t("tierFieldRevisions")}</FieldLabel>
+              <FieldLabel required>{t("tierFieldRevisions")}</FieldLabel>
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
@@ -925,7 +1033,175 @@ function TierPanel({
   );
 }
 
-// ─── Step 3 · Preview ───────────────────────────────────────
+// ─── Step 3 · Requirement questions ─────────────────────────
+
+const MAX_QUESTIONS = 20;
+
+function QuestionsStep({
+  questions,
+  setQuestions,
+}: {
+  questions: QuestionFormState[];
+  setQuestions: React.Dispatch<React.SetStateAction<QuestionFormState[]>>;
+}) {
+  const t = useTranslations("creatorService");
+
+  const addQuestion = () =>
+    setQuestions((qs) => (qs.length >= MAX_QUESTIONS ? qs : [...qs, blankQuestion()]));
+
+  const removeAt = (i: number) => setQuestions((qs) => qs.filter((_, idx) => idx !== i));
+
+  const move = (i: number, delta: -1 | 1) =>
+    setQuestions((qs) => {
+      const j = i + delta;
+      if (j < 0 || j >= qs.length) return qs;
+      const copy = [...qs];
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+      return copy;
+    });
+
+  const patch = (i: number, p: Partial<QuestionFormState>) =>
+    setQuestions((qs) => qs.map((q, idx) => (idx === i ? { ...q, ...p } : q)));
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg bg-card/40 px-4 py-3 text-xs text-muted-foreground">
+        {t("questionsHint")}
+      </div>
+
+      {questions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl bg-card/40 px-6 py-12 text-center">
+          <p className="text-sm text-muted-foreground">{t("questionsEmpty")}</p>
+          <Button type="button" variant="outline" color="muted" size="sm" onClick={addQuestion}>
+            + {t("questionAddFirst")}
+          </Button>
+        </div>
+      ) : (
+        <ol className="space-y-3">
+          {questions.map((q, i) => (
+            <QuestionRow
+              key={q.id}
+              index={i}
+              total={questions.length}
+              state={q}
+              onChange={(p) => patch(i, p)}
+              onMoveUp={() => move(i, -1)}
+              onMoveDown={() => move(i, 1)}
+              onRemove={() => removeAt(i)}
+            />
+          ))}
+        </ol>
+      )}
+
+      {questions.length > 0 ? (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {questions.length} / {MAX_QUESTIONS}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            color="muted"
+            size="sm"
+            onClick={addQuestion}
+            disabled={questions.length >= MAX_QUESTIONS}
+          >
+            + {t("questionAdd")}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function QuestionRow({
+  index,
+  total,
+  state,
+  onChange,
+  onMoveUp,
+  onMoveDown,
+  onRemove,
+}: {
+  index: number;
+  total: number;
+  state: QuestionFormState;
+  onChange: (patch: Partial<QuestionFormState>) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onRemove: () => void;
+}) {
+  const t = useTranslations("creatorService");
+  return (
+    <li className="rounded-xl bg-card p-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("questionLabel", { index: String(index + 1) })}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onMoveUp}
+            disabled={index === 0}
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary disabled:opacity-30"
+            aria-label={t("questionMoveUp")}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={onMoveDown}
+            disabled={index === total - 1}
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary disabled:opacity-30"
+            aria-label={t("questionMoveDown")}
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="rounded-md px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+            aria-label={t("questionRemove")}
+          >
+            {t("questionRemove")}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <Field>
+          <FieldLabel required>{t("questionPromptLabel")}</FieldLabel>
+          <Input
+            value={state.prompt}
+            onChange={(e) => onChange({ prompt: e.target.value.slice(0, 240) })}
+            placeholder={t("questionPromptPlaceholder")}
+            maxLength={240}
+          />
+        </Field>
+
+        <Field>
+          <FieldLabel>{t("questionHelpLabel")}</FieldLabel>
+          <Input
+            value={state.helpText}
+            onChange={(e) => onChange({ helpText: e.target.value.slice(0, 240) })}
+            placeholder={t("questionHelpPlaceholder")}
+            maxLength={240}
+          />
+        </Field>
+
+        <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox
+            checked={state.required}
+            onCheckedChange={(v) => onChange({ required: v === true })}
+          />
+          {t("questionRequired")}
+        </label>
+      </div>
+    </li>
+  );
+}
+
+// ─── Step 4 · Preview ───────────────────────────────────────
 
 function PreviewStep({ service }: { service: CreatorServiceDTO }) {
   const t = useTranslations("creatorService");

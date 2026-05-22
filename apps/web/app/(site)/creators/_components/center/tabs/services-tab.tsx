@@ -37,7 +37,6 @@ import { toast } from "sonner";
 import {
   CREATOR_SERVICE_STATUSES,
   type CreatorServiceCardDTO,
-  type CreatorServiceDTO,
   type CreatorServiceStatus,
 } from "@repo/shared/creator-service";
 import { ZERO_DECIMAL_CURRENCIES } from "@repo/shared/crew";

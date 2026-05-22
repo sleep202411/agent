@@ -71,8 +71,8 @@ export function WorksTab({ creator, isOwner }: WorksTabProps) {
         </div>
       ) : null}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        {works.map((w) => (
-          <WorkCard key={String(w.id ?? w.videoLink ?? Math.random())} work={w} />
+        {works.map((w, i) => (
+          <WorkCard key={String(w.id ?? w.videoLink ?? `idx-${i}`)} work={w} />
         ))}
       </div>
     </>

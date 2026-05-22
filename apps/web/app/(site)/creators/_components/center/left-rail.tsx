@@ -3,18 +3,14 @@
 /**
  * CreatorLeftRail — secondary identity column below the hero.
  *
- * After the hero takes over identity (avatar / name / level / bio /
- * CTAs), the left rail's job narrows to two cards:
+ * Renders one card: business info (creator id, verification, joined,
+ * contact).
  *
- *   1. Marketplace stats  — completed orders, rating, response,
- *      repeat-buyer rate. Phase 1a renders zeroes; Phase 1b
- *      populates from order outcomes.
- *   2. Business info       — creator id, verification status, joined
- *      date, contact channel.
- *
- * Slimmer rail = more horizontal room for the right pane, which is
- * the real content area. On mobile both cards stack above the tab
- * bar (the hero already stacks vertically there).
+ * The marketplace-stats card was removed in Phase 1a — there is no
+ * order data yet, so completed-orders / rating / response-time /
+ * repeat-buyer were all stubs that read as broken to first visitors.
+ * Bring it back when the Order schema lands and we can populate real
+ * numbers (Phase 1b).
  */
 import { useTranslations } from "@/src/i18n/i18n";
 import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
@@ -26,32 +22,12 @@ interface CreatorLeftRailProps {
   isOwner: boolean;
 }
 
-export function CreatorLeftRail({ creator, isOwner: _isOwner }: CreatorLeftRailProps) {
+export function CreatorLeftRail({ creator }: CreatorLeftRailProps) {
   const t = useTranslations("creatorCenter");
   const joined = formatJoined(creator.joinedAt);
 
-  const stats: { label: string; value: string }[] = [
-    { label: t("stats.completedOrders"), value: "0" },
-    { label: t("stats.rating"), value: "—" },
-    { label: t("stats.responseTime"), value: "—" },
-    { label: t("stats.repeatBuyers"), value: "0%" },
-  ];
-
   return (
     <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-      <div className="overflow-hidden rounded-2xl bg-card">
-        <div className="grid grid-cols-2 gap-px bg-background/60">
-          {stats.map((s) => (
-            <div key={s.label} className="bg-card px-4 py-4 text-center">
-              <div className="text-lg font-semibold tabular-nums text-foreground">{s.value}</div>
-              <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                {s.label}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       <div className="rounded-2xl bg-card px-5 py-4 text-xs">
         <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           {t("info.heading")}
