@@ -104,6 +104,25 @@ export class AgentStateService implements OnModuleDestroy {
   }
 
   /**
+   * Refresh TTL on the existing state without changing it. Cheap heartbeat
+   * called from consume() while it's actively reading chunks, so a live
+   * supervisor turn keeps its lock fresh past the 15-min `AGENT_STATE_TTL_SEC`.
+   *
+   * No-op if the key doesn't exist (defensive — better to fail silent than
+   * to revive a deleted state).
+   */
+  async touch(projectId: string): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.expire(this.k(projectId), AGENT_STATE_TTL_SEC);
+    } catch (err) {
+      this.logger.debug(
+        `touch(${projectId}) expire failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  /**
    * Compare-and-set: only update state if current `kind` is in
    * `allowedFrom`. Returns `{ ok: true, state }` on success or
    * `{ ok: false, current }` on conflict so the caller can serve a
@@ -164,7 +183,24 @@ export class AgentStateService implements OnModuleDestroy {
   }
 }
 
-const AGENT_STATE_TTL_SEC = 86_400; // 1 day — refreshed on every write.
+/**
+ * Lock TTL — was 86_400 (1 day). Dropped to 900 (15 min) on 2026-05-22 after
+ * a 30-student session left 20 projects stuck in `running` for hours because
+ * the upstream Mastra fetch hung (no AbortController, no idle detection).
+ *
+ * Safe to shorten because:
+ *  - longest legitimate supervisor turn measured ≈ 8 min (chain of 5-8 persona
+ *    calls @ 60-120s each)
+ *  - consume() now heartbeats this TTL every 30s while actively reading
+ *    chunks (see `touch()` below + agent-stream.service.ts), so a live turn
+ *    keeps its lock fresh past 15 min
+ *  - mastra-proxy.controller.ts now wraps the fetch in a 10-min hard
+ *    AbortController, so any truly-stuck fetch resolves into the catch
+ *    branch within 10 min and releases the lock via `set(... 'failed')`
+ *  - even if both safety nets above fail, the lock self-expires in 15 min
+ *    instead of leaving the user blocked for a day
+ */
+const AGENT_STATE_TTL_SEC = 900;
 
 /**
  * Atomic compare-and-set. Lives in Lua so two simultaneous submits

@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 /**
  * Art Director (艺术总监) persona — the cross-cutting aesthetic authority.
@@ -93,5 +93,6 @@ export const artDirectorAgent = new Agent({
   description:
     "Establishes the project's visual style guide and reviews department outputs (roles/scenes/storyboards) for aesthetic consistency. Advisory only — never writes to the DB.",
   instructions: artDirectorInstructions,
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22 — see scriptwriter.ts header.
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

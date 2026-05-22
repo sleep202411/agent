@@ -8,7 +8,7 @@
  * `additional_kwargs.agentPersona`).
  */
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 export const roleDesignerInstructions = `You are the **Role Designer** for FizzSpace StoryOS.
 
@@ -88,5 +88,6 @@ export const roleDesignerAgent = new Agent({
   name: "RoleDesigner",
   description: "Persona agent for character design — structured output only, no tools.",
   instructions: roleDesignerInstructions,
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22 — see scriptwriter.ts header.
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

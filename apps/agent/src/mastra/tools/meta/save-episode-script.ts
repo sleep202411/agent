@@ -46,7 +46,14 @@ export const saveEpisodeScript = createTool({
   description:
     'Save (create or replace) one episode\'s full script body in Java. Direct write — no draft gate, no HITL. Use after `ask_scriptwriter` returns a complete episode draft and the user has confirmed they want to keep it (typical trigger: user clicked the "Save script" button on a scriptwriter proposal, or said "保存这版剧本 / 入库 / 就这版"). `episodeId` comes from the workspace context or `query_context(summary).episodes`. `content` is the full script as plain text (one element per line — timecodes, [VISUAL], dialogue lines, etc.); the tool wraps each line as a Tiptap `<p>` for the Java editor. **Do not use** for tiny one-line edits to an existing script — invoke `script_edit` workflow for that, which preserves the rest verbatim. **Do not use** for episode metadata (title / synopsis) — that is `update_episode`.',
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id"),
+    // Optional — falls back to ctx.episodeId (from <WORKSPACE_CONTEXT>) if
+    // omitted. See add-shot.ts header for full rationale.
+    episodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Java episode id. Optional — auto-resolved from WORKSPACE_CONTEXT if the user is currently editing an episode."
+      ),
     content: z
       .string()
       .min(1)
@@ -61,6 +68,17 @@ export const saveEpisodeScript = createTool({
   }),
   execute: async ({ episodeId, content }, execCtx) => {
     const ctx = getContext(execCtx?.requestContext);
+
+    const effectiveEpisodeId = episodeId ?? ctx.episodeId;
+    if (!effectiveEpisodeId) {
+      return {
+        ok: false,
+        chars: 0,
+        message:
+          "episodeId is required and not in the workspace context. Ask the user which episode this script belongs to before saving.",
+      };
+    }
+
     const html = scriptToTiptapHtml(content);
     if (!html) {
       return {
@@ -71,7 +89,7 @@ export const saveEpisodeScript = createTool({
     }
     try {
       await javaRequest<unknown>(ctx, "/api/user/project/scripts/episode/createOrUpdate", {
-        data: { episodeId, content: html },
+        data: { episodeId: effectiveEpisodeId, content: html },
         timeoutMs: 120_000,
       });
     } catch (err) {
@@ -85,14 +103,14 @@ export const saveEpisodeScript = createTool({
     await publishEntityEvent(ctx, {
       entity: "script",
       action: "updated",
-      id: episodeId,
-      episodeId,
+      id: effectiveEpisodeId,
+      episodeId: effectiveEpisodeId,
       source: "save_episode_script",
     });
     return {
       ok: true,
       chars: content.length,
-      message: `Saved script for episode ${episodeId} (${content.length} chars).`,
+      message: `Saved script for episode ${effectiveEpisodeId} (${content.length} chars).`,
     };
   },
 });

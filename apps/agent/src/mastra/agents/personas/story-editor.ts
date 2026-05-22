@@ -11,7 +11,7 @@
  * rename of the former `analyst` persona.
  */
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 export const storyEditorInstructions = `You are the **Story Editor** for FizzSpace StoryOS (the equivalent of a Story Editor / adaptation editor in film and TV). Your job is **not** to design characters, write scripts, or storyboard — those belong to downstream personas. Your only deliverable is the **story skeleton**: compressing tens of thousands to hundreds of thousands of words of source material into a single **structured blueprint** every downstream worker can read.
 
@@ -80,5 +80,6 @@ export const storyEditorAgent = new Agent({
   description:
     "Reads raw source material (novels, outlines, drafts) and produces a compressed narrative skeleton for downstream personas.",
   instructions: storyEditorInstructions,
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22 — see scriptwriter.ts header.
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

@@ -23,7 +23,14 @@ export const updateEpisode = createTool({
   description:
     'Update one episode\'s title / synopsis / per-shot prompt prefix or suffix. Call when the user explicitly says "rename episode N to X" or "add Y to the episode N synopsis". For **creating** new episodes, use `batch_create_episode`. Get episodeId from query_context(summary).episodes.',
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id"),
+    // Optional — falls back to ctx.episodeId (from <WORKSPACE_CONTEXT>) if
+    // omitted. See add-shot.ts header for full rationale.
+    episodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Java episode id. Optional — auto-resolved from WORKSPACE_CONTEXT if the user is currently editing an episode."
+      ),
     title: z.string().optional(),
     introduction: z.string().optional(),
     frontPrompt: z
@@ -47,17 +54,25 @@ export const updateEpisode = createTool({
       };
     }
     const ctx = getContext(execCtx?.requestContext);
+    const effectiveEpisodeId = episodeId ?? ctx.episodeId;
+    if (!effectiveEpisodeId) {
+      return {
+        ok: false,
+        message:
+          "episodeId is required and not in the workspace context. Ask the user which episode to update.",
+      };
+    }
     const listed = await javaRequest<{
       list?: Array<Record<string, unknown>>;
     }>(ctx, "/api/user/world/list/episode", {
       data: { productId: ctx.projectId, page: 1, pageSize: 999 },
     });
-    const current = (listed.list ?? []).find((ep) => String(ep.id) === episodeId);
-    if (!current) return { ok: false, message: `Episode ${episodeId} not found` };
+    const current = (listed.list ?? []).find((ep) => String(ep.id) === effectiveEpisodeId);
+    if (!current) return { ok: false, message: `Episode ${effectiveEpisodeId} not found` };
     await javaRequest(ctx, "/api/user/world/update/episode", {
       data: {
         ...current,
-        id: episodeId,
+        id: effectiveEpisodeId,
         projectId: ctx.projectId,
         ...(title !== undefined ? { title } : {}),
         ...(introduction !== undefined ? { introduction } : {}),
@@ -68,13 +83,13 @@ export const updateEpisode = createTool({
     await publishEntityEvent(ctx, {
       entity: "episode",
       action: "updated",
-      id: episodeId,
-      episodeId,
+      id: effectiveEpisodeId,
+      episodeId: effectiveEpisodeId,
       source: "update_episode",
     });
     return {
       ok: true,
-      message: `Updated episode "${String(current.title ?? episodeId)}"`,
+      message: `Updated episode "${String(current.title ?? effectiveEpisodeId)}"`,
     };
   },
 });

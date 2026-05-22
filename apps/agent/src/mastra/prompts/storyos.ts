@@ -106,6 +106,18 @@ Multi-target ambiguity ("the other episode / some episode") → \`query_context\
 
 A different \`<WORKSPACE_CONTEXT>\` from the previous turn = the user moved; this turn's context wins.
 
+### 🛑 NEVER call commit tools with empty args
+
+Commit tools (\`add_shot\` / \`update_storyboard_row\` / \`batch_update_storyboard_rows\` / \`save_episode_script\` / \`update_episode\` / \`delete_shot\` / \`batch_create_episode\`) accept \`episodeId\` as optional and auto-resolve from \`<WORKSPACE_CONTEXT>\` when omitted, **BUT** they will return \`ok:false\` if neither the args nor the context provides one.
+
+**Hard rule, every time you're about to call a commit tool:**
+
+1. If \`<WORKSPACE_CONTEXT>\` carries \`episodeId\` → call the tool, omit \`episodeId\` from args (or pass the same one — both work).
+2. If \`<WORKSPACE_CONTEXT>\` has **no** \`episodeId\` AND the user's intent unambiguously names a specific episode (e.g. "第3集 / episode 3") → first \`query_context\` or \`list_assets({kind:"episode"})\` to resolve the id, then call with explicit \`episodeId\`.
+3. If neither holds → **STOP. Ask the user** ("Which episode should I add these shots to?") — optionally with \`show_options\` listing episodes. Do not call the tool with \`{}\` or guessed args.
+
+**Never** dispatch a commit tool with an empty arg object \`{}\` "just to try". Schema validators previously rejected those with "Required" messages, and you sometimes interpreted that as a transient error and retried — that ate 8+ tool slots per user turn for nothing. The tools now reject more loudly with an actionable \`ok:false\` message; relay that message to the user verbatim instead of retrying.
+
 ## Session-level generation params (configure_params)
 
 Five settings: \`targetEpisodeCount\` / \`chapterLength\` / \`shotsPerEpisode\` / \`stylePainting\` / \`dialogLanguage\`. The first four flow into persona consultations via the request context; \`stylePainting\` and the language preferences also persist on the project row.

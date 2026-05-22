@@ -43,7 +43,14 @@ export const updateStoryboardRow = createTool({
   description:
     'Patch one or more fields of a single shot in an episode\'s storyboard (scene / characters / description / dialogue / image prompt / video prompt / movement / shot size / perspective / duration / style). Call when the user explicitly says e.g. "change the dialogue of episode N shot M to X" / "set the scene of shot 1 to café" / "add Jack and Lina to shot 3". Pass scene as a name — existing scenes are reused, new names are auto-created. Pass characters as an array of names — only existing worldroles are accepted. For bulk changes across an episode, use `batch_update_storyboard_rows` instead.',
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id — get from query_context"),
+    // Optional — falls back to ctx.episodeId (from <WORKSPACE_CONTEXT>) if
+    // omitted. See add-shot.ts header for full rationale.
+    episodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Java episode id. Optional — auto-resolved from WORKSPACE_CONTEXT if the user is currently editing an episode."
+      ),
     shotNo: z
       .string()
       .describe(
@@ -92,11 +99,22 @@ export const updateStoryboardRow = createTool({
   execute: async ({ episodeId, shotNo, patch }, execCtx) => {
     const ctx = getContext(execCtx?.requestContext);
 
+    const effectiveEpisodeId = episodeId ?? ctx.episodeId;
+    if (!effectiveEpisodeId) {
+      return {
+        ok: false,
+        message:
+          "episodeId is required and not in the workspace context. Ask the user which episode this shot belongs to, then retry update_storyboard_row with that id.",
+        updatedFields: [],
+        failedFields: [],
+      };
+    }
+
     // 1. Resolve column ids by presetColumnKey.
     const columns = await javaRequest<Array<{ id?: string | number; presetColumnKey?: string }>>(
       ctx,
       "/api/user/shotColumn/list",
-      { data: { storyBoardId: episodeId } }
+      { data: { storyBoardId: effectiveEpisodeId } }
     );
     const columnIdByKey = new Map<string, string>();
     for (const col of columns ?? []) {
@@ -118,7 +136,7 @@ export const updateStoryboardRow = createTool({
     };
     const shotsResp = await javaRequest<{ list?: ShotRow[] }>(ctx, "/api/user/shot/queryPage", {
       data: {
-        storyBoardId: episodeId,
+        storyBoardId: effectiveEpisodeId,
         page: 1,
         pageSize: 999,
         shotIds: [],
@@ -144,8 +162,8 @@ export const updateStoryboardRow = createTool({
         ok: false,
         message:
           shots.length === 0
-            ? `Episode ${episodeId} has no shots yet — generate the storyboard first before calling this tool`
-            : `Shot ${shotNo} not found in episode ${episodeId} (episode has ${shots.length} shots)`,
+            ? `Episode ${effectiveEpisodeId} has no shots yet — generate the storyboard first before calling this tool`
+            : `Shot ${shotNo} not found in episode ${effectiveEpisodeId} (episode has ${shots.length} shots)`,
         updatedFields: [],
         failedFields: [],
       };
@@ -269,7 +287,7 @@ export const updateStoryboardRow = createTool({
       await publishEntityEvent(ctx, {
         entity: "storyboard",
         action: "updated",
-        episodeId,
+        episodeId: effectiveEpisodeId,
         source: "update_storyboard_row",
       });
     }

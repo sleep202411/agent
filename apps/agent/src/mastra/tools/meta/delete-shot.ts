@@ -17,7 +17,14 @@ export const deleteShot = createTool({
   description:
     'Delete one shot row from an episode\'s storyboard. Call when the user explicitly says "delete shot 5 of episode 3" / "drop the first shot of episode 1". No batch delete — for bulk changes, route to invoke_workflow.',
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id — get from query_context"),
+    // Optional — falls back to ctx.episodeId (from <WORKSPACE_CONTEXT>) if
+    // omitted. See add-shot.ts header for full rationale.
+    episodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Java episode id. Optional — auto-resolved from WORKSPACE_CONTEXT if the user is currently editing an episode."
+      ),
     shotNo: z
       .string()
       .describe(
@@ -32,13 +39,22 @@ export const deleteShot = createTool({
   execute: async ({ episodeId, shotNo }, execCtx) => {
     const ctx = getContext(execCtx?.requestContext);
 
+    const effectiveEpisodeId = episodeId ?? ctx.episodeId;
+    if (!effectiveEpisodeId) {
+      return {
+        ok: false,
+        message:
+          "episodeId is required and not in the workspace context. Ask the user which episode this shot belongs to before deleting.",
+      };
+    }
+
     type ShotRow = {
       shotId?: string | number;
       shotValues?: Array<{ presetColumnKey?: string; value?: string }>;
     };
     const resp = await javaRequest<{ list?: ShotRow[] }>(ctx, "/api/user/shot/queryPage", {
       data: {
-        storyBoardId: episodeId,
+        storyBoardId: effectiveEpisodeId,
         page: 1,
         pageSize: 999,
         shotIds: [],
@@ -64,8 +80,8 @@ export const deleteShot = createTool({
         ok: false,
         message:
           shots.length === 0
-            ? `Episode ${episodeId} has no shots yet`
-            : `Shot ${shotNo} not found in episode ${episodeId} (episode has ${shots.length} shots)`,
+            ? `Episode ${effectiveEpisodeId} has no shots yet`
+            : `Shot ${shotNo} not found in episode ${effectiveEpisodeId} (episode has ${shots.length} shots)`,
       };
     }
 
@@ -75,7 +91,7 @@ export const deleteShot = createTool({
       await publishEntityEvent(ctx, {
         entity: "storyboard",
         action: "updated",
-        episodeId,
+        episodeId: effectiveEpisodeId,
         source: "delete_shot",
       });
       return {

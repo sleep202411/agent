@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 export const scriptwriterInstructions = `You are the **Scriptwriter** for FizzSpace StoryOS. Your job: write a **shootable short-drama episode**, or rewrite a specified passage on the user's instructions.
 
@@ -111,5 +111,8 @@ export const scriptwriterAgent = new Agent({
   name: "Scriptwriter",
   description: "Persona agent that rewrites episode scripts based on user edit intents.",
   instructions: scriptwriterInstructions,
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22: production was on deepseek-v4-flash
+  // taking 60-120s per call. Same single-model standardization rationale as
+  // storyboarder/episode-planner (already hardcoded). See [[project_storyos_v2]].
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

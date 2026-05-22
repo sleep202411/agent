@@ -41,7 +41,14 @@ export const batchUpdateStoryboardRows = createTool({
   id: "batch_update_storyboard_rows",
   description: `Apply the same patch to multiple shots in one episode. Call when the user explicitly says e.g. "change the shot size of episode 3 shots 1-5 to close-up" / "add Jack to the first three shots of episode 1" / "switch the style of episode 2 shots 2, 4, and 6 to realistic".\n\nThe patch fields match update_storyboard_row (scene / characters / description / image_prompt / video_prompt / movement / dialogue / shot_size / perspective / duration / style_planting).\n\nshotNos must be an array of strings (e.g. ["1","2","3"]). Cap is ${MAX_SHOTS}; for anything larger, split into multiple calls of this tool — there is no longer a workflow path for bulk shot edits. shotNo lookup follows update_storyboard_row: prefer matching the shot_no column value, fall back to 1-based position.`,
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id — get from query_context"),
+    // Optional — falls back to ctx.episodeId (from <WORKSPACE_CONTEXT>) if
+    // omitted. See add-shot.ts header for full rationale.
+    episodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Java episode id. Optional — auto-resolved from WORKSPACE_CONTEXT if the user is currently editing an episode."
+      ),
     shotNos: z
       .array(z.string())
       .min(1)
@@ -81,11 +88,21 @@ export const batchUpdateStoryboardRows = createTool({
     const ctx = getContext(execCtx?.requestContext);
     const worldId = ctx.worldId ?? "";
 
+    const effectiveEpisodeId = episodeId ?? ctx.episodeId;
+    if (!effectiveEpisodeId) {
+      return {
+        ok: false,
+        message:
+          "episodeId is required and not in the workspace context. Ask the user which episode these shots belong to, then retry batch_update_storyboard_rows with that id.",
+        perShot: [],
+      };
+    }
+
     // 1. Column id lookup (once per call).
     const columns = await javaRequest<Array<{ id?: string | number; presetColumnKey?: string }>>(
       ctx,
       "/api/user/shotColumn/list",
-      { data: { storyBoardId: episodeId } }
+      { data: { storyBoardId: effectiveEpisodeId } }
     );
     const columnIdByKey = new Map<string, string>();
     for (const col of columns ?? []) {
@@ -97,7 +114,7 @@ export const batchUpdateStoryboardRows = createTool({
     // 2. Shot list (once per call). Used for shot_no / index fallback.
     const shotsResp = await javaRequest<{ list?: ShotRow[] }>(ctx, "/api/user/shot/queryPage", {
       data: {
-        storyBoardId: episodeId,
+        storyBoardId: effectiveEpisodeId,
         page: 1,
         pageSize: 999,
         shotIds: [],
@@ -184,7 +201,7 @@ export const batchUpdateStoryboardRows = createTool({
           key: "_shot",
           reason:
             shots.length === 0
-              ? `episode ${episodeId} has no shots`
+              ? `episode ${effectiveEpisodeId} has no shots`
               : `shotNo ${shotNo} not found (episode has ${shots.length} shots)`,
         });
         perShot.push({ shotNo, updatedFields, failedFields });
@@ -299,7 +316,7 @@ export const batchUpdateStoryboardRows = createTool({
       await publishEntityEvent(ctx, {
         entity: "storyboard",
         action: "batch_updated",
-        episodeId,
+        episodeId: effectiveEpisodeId,
         source: "batch_update_storyboard_rows",
       });
     }

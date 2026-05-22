@@ -267,10 +267,39 @@ export class AgentStreamService {
     projectId: string;
     seedMessage: StoredMessage;
     rawStream: ReadableStream<Uint8Array>;
+    /**
+     * Optional abort controller for upstream cancellation. Currently only
+     * the 10-min hard timeout in mastra-proxy.controller wires this. Kept
+     * as a parameter so future improvements (e.g. user-initiated cancel)
+     * have a hook.
+     *
+     * Idle-timeout-based aborts have been removed — see consume()'s
+     * implementation comment for the full reasoning. TL;DR: supervisor
+     * goes silent during ask_persona tool execution (80-180s each), so
+     * any idle threshold either false-aborts legitimate work or is so
+     * long it's useless.
+     */
+    abortController?: AbortController;
   }): Promise<void> {
-    const { projectId, seedMessage, rawStream } = opts;
+    const {
+      projectId,
+      seedMessage,
+      rawStream,
+      abortController: _abortController, // reserved for future use (user cancel)
+    } = opts;
     const chunkStream = toChunkStream(rawStream);
     const seedId = seedMessage.id;
+    void _abortController; // suppress unused warning until cancel path lands
+
+    // ── Lock heartbeat ────────────────────────────────────────────────────
+    // Refresh the agent_state Redis key's TTL every 30s so a legitimately
+    // long supervisor turn (chain of 5-8 persona calls, can run 5-8 min)
+    // doesn't lose its lock to the now-shorter 15-min TTL (was 1 day, see
+    // agent-state.service.ts). The TTL is the failsafe against truly stuck
+    // locks; the heartbeat is what lets live runs keep going past 15 min.
+    const heartbeatTimer = setInterval(() => {
+      void this.agentState.touch(projectId);
+    }, 30_000);
 
     // Sweep any stuck tool parts left behind by a prior agent run that
     // died mid-execution (process kill / fatal exception / SSE
@@ -283,7 +312,11 @@ export class AgentStreamService {
       );
     });
 
-    await this.store.setAgentState(projectId, 'running');
+    await this.store.setAgentState(projectId, 'running').catch((err) => {
+      this.logger.warn(
+        `setAgentState(running) project=${projectId} failed: ${err instanceof Error ? err.message : err}`,
+      );
+    });
 
     let lastMessage: StoredMessage | null = null;
     let previousParts: TextSnapshot[] = []; // by part index, text-only
@@ -461,10 +494,26 @@ export class AgentStreamService {
           .finalizeMessage(projectId, lastMessage)
           .catch(() => {});
       }
+      // Sweep any stuck `input-available` tool parts in messages of THIS
+      // project (including the just-failed message) → mark `output-error`
+      // and re-publish so the UI transitions out of its "consulting…"
+      // state. Without this, the fallback bubble we just wrote sits next
+      // to a tool card still showing the spinning indicator until the
+      // user sends a new message (which is when consume() runs this same
+      // sweep at startup). The stuck-ui-tool-janitor CronJob is the
+      // 2-min cadence backstop; this in-catch call is the immediate fix.
+      await this.markStuckToolPartsInterrupted(projectId).catch((sweepErr) => {
+        this.logger.warn(
+          `markStuckToolPartsInterrupted (catch path) project=${projectId} failed: ${sweepErr instanceof Error ? sweepErr.message : sweepErr}`,
+        );
+      });
+
       await this.store.setAgentState(projectId, 'failed').catch(() => {});
       await this.agentState
         .set(projectId, { kind: 'failed', lastError: msg })
         .catch(() => {});
+    } finally {
+      clearInterval(heartbeatTimer);
     }
   }
 
