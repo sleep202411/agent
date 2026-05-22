@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * WebSocket client for `/aurora/notifications/subscribe` — per-user
+ * WebSocket client for `/aurora/ws/notifications` — per-user
  * realtime push for in-app notifications.
  *
  * Same wire pattern as entity-events: heartbeat / terminate frames,
@@ -55,7 +55,7 @@ function buildUrl(): string {
   const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
   if (tokenMatch) params.set("satoken", tokenMatch[1]);
   const qs = params.toString();
-  return `${proto}//${host}${basePath}/notifications/subscribe${qs ? `?${qs}` : ""}`;
+  return `${proto}//${host}${basePath}/ws/notifications${qs ? `?${qs}` : ""}`;
 }
 
 function parseFrame(raw: string): NotificationFrame | null {

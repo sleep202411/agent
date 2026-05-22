@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * WebSocket client for `/aurora/conversations/subscribe` — per-user
+ * WebSocket client for `/aurora/ws/conversations` — per-user
  * realtime push for messages, read advances, and context flips
  * across all conversations the user participates in.
  *
@@ -67,7 +67,7 @@ function buildUrl(): string {
   const tokenMatch = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
   if (tokenMatch) params.set("satoken", tokenMatch[1]);
   const qs = params.toString();
-  return `${proto}//${host}${basePath}/conversations/subscribe${qs ? `?${qs}` : ""}`;
+  return `${proto}//${host}${basePath}/ws/conversations${qs ? `?${qs}` : ""}`;
 }
 
 function parseFrame(raw: string): ConversationFrame | null {

@@ -49,7 +49,9 @@ type TrackedSocket = WebSocket & {
 };
 
 // See EntityEventsGateway: upstreams strip `/aurora/` before forwarding.
-@WebSocketGateway({ path: '/notifications/subscribe' })
+// Path under `/ws/` to keep the WS upgrade clear of `@Controller('notifications')`
+// HTTP routes — see ConversationsGateway header for the routing collision.
+@WebSocketGateway({ path: '/ws/notifications' })
 export class NotificationGateway
   implements
     OnGatewayInit,

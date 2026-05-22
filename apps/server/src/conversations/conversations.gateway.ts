@@ -50,8 +50,11 @@ type TrackedSocket = WebSocket & {
 };
 
 // nginx / ingress strip `/aurora/` before forwarding (same convention
-// as EntityEventsGateway / NotificationGateway).
-@WebSocketGateway({ path: '/conversations/subscribe' })
+// as EntityEventsGateway / NotificationGateway). Path lives under `/ws/`
+// to avoid collision with `@Controller('conversations')` `@Get(':id')`
+// — Express would otherwise match `:id="subscribe"` and the global
+// AuthGuard would 401 the upgrade before WsAdapter sees it.
+@WebSocketGateway({ path: '/ws/conversations' })
 export class ConversationsGateway
   implements
     OnGatewayInit,

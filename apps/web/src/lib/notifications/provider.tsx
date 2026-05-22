@@ -7,7 +7,7 @@
  * user is hydrated) but ABOVE any consumer of `useUnreadCount` etc.
  * The provider:
  *
- *   1. Opens a single WS to /aurora/notifications/subscribe.
+ *   1. Opens a single WS to /aurora/ws/notifications.
  *   2. On every `notification` frame: invalidates the count + list
  *      caches so any subscribed component re-renders with the new
  *      unread count and includes the new row.

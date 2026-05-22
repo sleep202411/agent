@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 728e4c0b38057d0334f8f9a1ab242e7d71d43cd1
+    tag: ws-fix-20260522
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -147,7 +147,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: 728e4c0b38057d0334f8f9a1ab242e7d71d43cd1
+    tag: ws-fix-20260522
   containerPort: 3001
   env:
     PORT: "3001"
@@ -174,7 +174,7 @@ agent:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: 387658ce9e05a9ef838707094d5f7cc67c6a11d6
+    tag: local-fix-20260522-stuck-lock
   containerPort: 4111
   env:
     PORT: "4111"
@@ -182,6 +182,10 @@ agent:
     # DATABASE_URL + REDIS_URL come from KV via projected `fizzdragon-secrets`
     # (envFrom). Mastra storage uses PG schema `mastra` — see
     # apps/agent/src/mastra/index.ts.
+    # Per-pod Anthropic concurrency cap (was default 20). Lowered to keep
+    # 4 pods × 6 = 24 concurrent global calls inside Anthropic Tier 2's
+    # ~16K OTPM envelope. See model-hardening.ts (RateLimiter).
+    STORYOS_CLAUDE_MAX_CONCURRENCY: "6"
   resources:
     requests: {cpu: 250m, memory: 1Gi}
     limits: {cpu: 2000m, memory: 3Gi}
@@ -206,7 +210,7 @@ agentWorker:
   replicaCount: 1
   image:
     repository: fizzdragon-agent
-    tag: 387658ce9e05a9ef838707094d5f7cc67c6a11d6
+    tag: local-fix-20260522-stuck-lock
   command: ["npx", "tsx", "src/worker.ts"]
   env:
     # DATABASE_URL + REDIS_URL come from KV via projected `fizzdragon-secrets`
@@ -217,6 +221,8 @@ agentWorker:
     WORKER_CONCURRENCY: "15"
     IMAGE_WORKER_CONCURRENCY: "2"
     STORYBOARD_GENERATE_CONCURRENCY: "6"
+    # Match agent's Anthropic cap — workflow runs hit the same router.
+    STORYOS_CLAUDE_MAX_CONCURRENCY: "6"
   # Pod fits cleanly on B2as_v2 (8GB node). At WORKER_CONCURRENCY=15 with
   # ~50MB per in-flight workflow, working set ~750MB + base 500MB ≈ 1.5Gi.
   # 3Gi limit leaves headroom for bulk phases (storyboard 30 shots batched).
