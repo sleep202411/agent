@@ -35,8 +35,8 @@ import {
   UpdateCrewListingSchema,
   type UpdateCrewListingInput,
 } from './dto';
-import { parseIdParam } from './params';
-import { ZodValidationPipe } from './zod.pipe';
+import { parseIdParam } from '../common/params';
+import { ZodValidationPipe } from '../common/zod.pipe';
 
 @Controller('crews')
 export class CrewsController {

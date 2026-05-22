@@ -23,7 +23,7 @@ import {
   assertAllowedCurrency,
   toSmallestUnit,
   type CurrencyCode,
-} from './currency';
+} from '../common/currency';
 import type { CreatePositionInput, UpdatePositionInput } from './dto';
 import { newCrewDomainId } from './id';
 import { toPositionDTO } from './mappers';

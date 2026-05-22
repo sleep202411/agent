@@ -22,7 +22,6 @@ import { GradualBlur } from "@/components/ui/gradual-blur";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
-import { useCurrentUser } from "@/src/hooks/use-user";
 
 // Primary backdrop — looping muted videos served from the OSS static
 // CDN (same bucket as HERO_POSTER). The pool is randomized on mount;
@@ -40,11 +39,20 @@ const HERO_POSTER =
 export function Hero() {
   const locale = useLocale() as Locale;
   const t = useTranslations("home");
-  const { user } = useCurrentUser();
-  // Already-signed-in visitors landing here from a refresh / back-nav
-  // shouldn't be bounced to /login. Send them straight into the
-  // platform's main work surface; logged-out users still get /login.
-  const primaryCtaHref = localizePath(user ? "/art-studio" : "/login", locale);
+  // CTA story (2026-05-21 product call):
+  //   primary   "故事开启" → /ips    — IP plaza is the canonical "story
+  //                                    begins" surface (browsing or
+  //                                    authoring an IP is the front door
+  //                                    of a story). Public, no auth gate.
+  //   secondary "加入创作" → /crews  — Crew Hall is the "join the work"
+  //                                    surface. Also public; the actual
+  //                                    join action prompts login when
+  //                                    the user is anonymous.
+  // /art-studio used to be the primary CTA; it's now reached as a
+  // second-step click from inside an IP detail or a crew workspace,
+  // because it's a workbench (empty without context).
+  const primaryCtaHref = localizePath("/ips", locale);
+  const secondaryCtaHref = localizePath("/crews", locale);
 
   // Pick the video on mount only — server-rendered HTML omits `src` so
   // the SSR/CSR markup stays identical (no hydration mismatch). The
@@ -158,11 +166,6 @@ export function Hero() {
           <StarBorder color="#ff8a4c" speed="5s" thickness={1.5}>
             <Link
               href={primaryCtaHref}
-              // Open studio in a new tab so the marketing site stays
-              // open in the original one. Login still navigates in
-              // place — `/login?redirect=` round-trips back here.
-              target={user ? "_blank" : undefined}
-              rel={user ? "noopener noreferrer" : undefined}
               className="flex h-14 items-center gap-3 rounded-full bg-white px-8 text-base font-semibold text-black transition-colors hover:bg-white/90"
             >
               {t("hero.primaryCta")}
@@ -170,7 +173,7 @@ export function Hero() {
             </Link>
           </StarBorder>
           <Link
-            href={localizePath("/ips", locale)}
+            href={secondaryCtaHref}
             className="flex h-14 items-center gap-3 rounded-full border border-white/15 bg-white/[0.03] px-8 text-base font-semibold text-white/90 backdrop-blur transition-colors hover:border-white/25 hover:bg-white/[0.08]"
           >
             {t("hero.secondaryCta")}

@@ -24,8 +24,8 @@ import {
   type UpdateMemberInput,
 } from './dto';
 import { MembersService } from './members.service';
-import { parseIdParam } from './params';
-import { ZodValidationPipe } from './zod.pipe';
+import { parseIdParam } from '../common/params';
+import { ZodValidationPipe } from '../common/zod.pipe';
 
 @Controller('crews/:crewId/members')
 export class MembersController {

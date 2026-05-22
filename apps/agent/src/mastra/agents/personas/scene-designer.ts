@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 /**
  * Scene Designer (场景设计师) persona — designs individual environments.
@@ -117,5 +117,6 @@ export const sceneDesignerAgent = new Agent({
   description:
     "Designs individual environments with concrete visual anchors, lighting, atmosphere, and props — following the Art Director's style guide.",
   instructions: sceneDesignerInstructions,
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22 — see scriptwriter.ts header.
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

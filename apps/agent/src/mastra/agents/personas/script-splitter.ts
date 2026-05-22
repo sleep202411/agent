@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 /**
  * scriptSplitter — divides an uploaded 剧本 into N episode-sized chunks.
@@ -85,5 +85,6 @@ export const scriptSplitterAgent = new Agent({
   instructions: scriptSplitterInstructions,
   // DeepSeek handles this well — the work is structural pattern recognition
   // + short structured output, no long-prompt nuance needed.
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22 — see scriptwriter.ts header.
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

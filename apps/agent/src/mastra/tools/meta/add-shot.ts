@@ -31,7 +31,17 @@ export const addShot = createTool({
   description:
     'Append a new shot (new row) to the end of an episode, optionally pre-populating fields (scene / characters / description / dialogue / image prompt / video prompt / movement / shot size / perspective / duration / style). Call when the user explicitly says e.g. "add a shot at the end of episode 3, scene = café, character = Jack". Scene resolution mirrors update_storyboard_row: reuse an existing scene by name or create one; characters only accept existing worldroles.',
   inputSchema: z.object({
-    episodeId: z.string().describe("Java episode id — get from query_context"),
+    // Optional — falls back to ctx.episodeId (from <WORKSPACE_CONTEXT>) if
+    // the supervisor omits it. When BOTH are missing we return a friendly
+    // ok:false instead of letting the schema reject with "episodeId required",
+    // because Claude has a habit of emitting `{}` for tool args under load
+    // and the schema error sends it into a retry loop.
+    episodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Java episode id. Optional — if WORKSPACE_CONTEXT has an active episode, it's auto-used. Pass explicitly only when targeting a different episode than the user's current focus."
+      ),
     patch: z
       .object({
         scene: z.string().optional().describe("Scene name"),
@@ -59,11 +69,26 @@ export const addShot = createTool({
   execute: async ({ episodeId, patch }, execCtx) => {
     const ctx = getContext(execCtx?.requestContext);
 
+    // Resolve episodeId from arg → context → friendly error. Without this
+    // fallback, Claude emitting `{}` for args triggered a chain of "Required"
+    // schema errors and an 8x retry loop (see project_supervisor_context_overflow
+    // and the 2026-05-22 incident).
+    const effectiveEpisodeId = episodeId ?? ctx.episodeId;
+    if (!effectiveEpisodeId) {
+      return {
+        ok: false,
+        message:
+          "episodeId is required and not in the workspace context. Ask the user which episode they want to add a shot to (use show_options with the episode list if available), then retry add_shot with that id.",
+        updatedFields: [],
+        failedFields: [],
+      };
+    }
+
     // 1. Create the shot row.
     const createResp = await javaRequest<CreateShotResponse>(ctx, "/api/user/shot/create", {
       data: {
         projectId: ctx.projectId,
-        storyBoardId: episodeId,
+        storyBoardId: effectiveEpisodeId,
         enable: true,
       },
     });
@@ -95,7 +120,7 @@ export const addShot = createTool({
     const columns = await javaRequest<Array<{ id?: string | number; presetColumnKey?: string }>>(
       ctx,
       "/api/user/shotColumn/list",
-      { data: { storyBoardId: episodeId } }
+      { data: { storyBoardId: effectiveEpisodeId } }
     );
     const columnIdByKey = new Map<string, string>();
     for (const col of columns ?? []) {
@@ -212,7 +237,7 @@ export const addShot = createTool({
     await publishEntityEvent(ctx, {
       entity: "storyboard",
       action: "updated",
-      episodeId,
+      episodeId: effectiveEpisodeId,
       source: "add_shot",
     });
     return {

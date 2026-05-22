@@ -285,14 +285,15 @@ export class MastraProxyController {
       }
     }
 
-    // ── Agent-state gate ─────────────────────────────────────────
-    // Acquire the project's "running" lock before doing any Mastra
-    // dispatch. CAS-guarded in Redis so two concurrent submits
-    // (multi-tab / double-click / retry storms) can't both win.
-    // Released by AgentStreamService.consume on success / failure.
-    // The confirmProjectParams short-circuit above doesn't take this
-    // gate — it's a follow-on signal on top of an already-committed
-    // turn, not a new dispatch.
+    // ── Agent-state gate ───────────────────────────────────────────────
+    // Keep one running supervisor turn per project. Concurrent write turns
+    // can race on StoryOS commits, duplicate costs, and interleave chat
+    // bubbles in ways users cannot reason about.
+    //
+    // The production stuck-lock issue is handled by the safety rails below:
+    // a 15-min Redis TTL, stream heartbeat, and a 10-min hard upstream
+    // timeout. That gives users recovery without allowing overlapping
+    // commit-capable turns.
     const turnId = randomUUID();
     const gate = await this.agentState.transition(
       body.projectId,
@@ -344,14 +345,49 @@ export class MastraProxyController {
     };
     if (cookie) headers.cookie = cookie;
 
+    // ── Abort controller (hard timeout only) ─────────────────────────────
+    // Wires an AbortController into the upstream fetch so we never sit on
+    // a permanently-stalled SSE stream. Releases the agent_state lock via
+    // the catch path when fired.
+    //
+    // Idle timeout REMOVED 2026-05-22 evening. History:
+    //   - First attempt: 90s idle → fired on every legitimate persona
+    //     call (Qwen ask_* takes 80-120s with zero chunks streaming
+    //     because supervisor is awaiting tool result). ~60% false abort.
+    //   - Second attempt: 240s idle → still fired on storyboarder × 5
+    //     batches (5 × ~80s = 400s of silence is the design, not a bug).
+    //     Measured 100% of remaining aborts triggered at idleMs ~255_000.
+    //   - Decision: drop idle entirely. Rely only on the 10-min hard
+    //     timeout, which is comfortably longer than any legitimate chain
+    //     and short enough that truly stuck fetches still self-recover.
+    //
+    // True fix (deferred): have Mastra emit keepalive chunks during tool
+    // execution so the SSE stream isn't actually silent. Until that
+    // lands, no idle threshold value is correct — either we false-abort
+    // legitimate work, or we wait so long the threshold is useless.
+    const HARD_TIMEOUT_MS = 10 * 60 * 1000;
+    const streamAbortController = new AbortController();
+    const hardTimeoutKiller = setTimeout(() => {
+      if (!streamAbortController.signal.aborted) {
+        this.logger.warn(
+          `mastra stream hard-timeout project=${body.projectId} (>${HARD_TIMEOUT_MS}ms); aborting`,
+        );
+        streamAbortController.abort(
+          new Error(`hard-timeout-${HARD_TIMEOUT_MS}ms`),
+        );
+      }
+    }, HARD_TIMEOUT_MS);
+
     let upstreamResponse: globalThis.Response;
     try {
       upstreamResponse = await fetch(upstream, {
         method: 'POST',
         headers,
         body: JSON.stringify({ messages: sanitizedMessages }),
+        signal: streamAbortController.signal,
       });
     } catch (err) {
+      clearTimeout(hardTimeoutKiller);
       const msg = err instanceof Error ? err.message : 'Unknown error';
       this.logger.error(`Mastra upstream fetch failed: ${msg}`);
       // Release the gate so the user can retry. Without this the
@@ -367,6 +403,7 @@ export class MastraProxyController {
     }
 
     if (!upstreamResponse.ok) {
+      clearTimeout(hardTimeoutKiller);
       const text = await upstreamResponse.text().catch(() => '');
       this.logger.error(
         `Mastra returned ${upstreamResponse.status}: ${text.slice(0, 300)}`,
@@ -384,6 +421,7 @@ export class MastraProxyController {
     }
 
     if (!upstreamResponse.body) {
+      clearTimeout(hardTimeoutKiller);
       await this.agentState.set(body.projectId, {
         kind: 'failed',
         lastError: 'Mastra returned no body',
@@ -430,11 +468,15 @@ export class MastraProxyController {
         seedMessage,
         rawStream:
           upstreamResponse.body as unknown as ReadableStream<Uint8Array>,
+        abortController: streamAbortController,
       })
       .catch((err) => {
         this.logger.warn(
           `agentStream.consume failed project=${body.projectId}: ${err instanceof Error ? err.message : err}`,
         );
+      })
+      .finally(() => {
+        clearTimeout(hardTimeoutKiller);
       });
 
     res.status(HttpStatus.ACCEPTED).json({

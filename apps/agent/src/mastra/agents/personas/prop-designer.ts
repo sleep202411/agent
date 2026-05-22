@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 /**
  * Prop Designer (道具设计师) persona — designs individual story-relevant
@@ -104,5 +104,6 @@ export const propDesignerAgent = new Agent({
   description:
     "Designs individual story-relevant props with concrete material, era, and visual details — following the Art Director's style guide.",
   instructions: propDesignerInstructions,
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22 — see scriptwriter.ts header.
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

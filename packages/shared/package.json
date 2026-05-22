@@ -38,6 +38,18 @@
       "types": "./dist/crew.d.ts",
       "default": "./dist/crew.js"
     },
+    "./creator-service": {
+      "types": "./dist/creator-service.d.ts",
+      "default": "./dist/creator-service.js"
+    },
+    "./order": {
+      "types": "./dist/order.d.ts",
+      "default": "./dist/order.js"
+    },
+    "./conversation": {
+      "types": "./dist/conversation.d.ts",
+      "default": "./dist/conversation.js"
+    },
     "./quota": {
       "types": "./dist/quota.d.ts",
       "default": "./dist/quota.js"

@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 /**
  * Light-weight persona agent. Runs ONE structured-output call to extract
@@ -79,5 +79,6 @@ export const briefAnalyzerAgent = new Agent({
   // costs ~$0.05/call; DeepSeek does it for ~$0.005 with no meaningful
   // quality loss on this task. Claude stays on supervisor (small token
   // footprint, needs long-prompt instruction following).
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22 — see scriptwriter.ts header.
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

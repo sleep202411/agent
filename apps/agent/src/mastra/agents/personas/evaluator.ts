@@ -1,5 +1,5 @@
 import { Agent } from "@mastra/core/agent";
-import { defaultPersonaModel } from "../../lib/models";
+import { createAlibabaModel } from "../../lib/models";
 
 /**
  * Evaluator persona — a quality critic the supervisor can call on any
@@ -83,5 +83,6 @@ export const evaluatorAgent = new Agent({
   description:
     "Critiques draft characters / episodes / scripts / storyboards with concrete, actionable feedback.",
   instructions: evaluatorInstructions,
-  model: () => defaultPersonaModel(),
+  // Pinned to alibaba/qwen3.6-plus 2026-05-22 — see scriptwriter.ts header.
+  model: () => createAlibabaModel("qwen3.6-plus"),
 });

@@ -826,3 +826,397 @@ model QuotaUsageLog {
   @@index([dimension, createdAt(sort: Desc)], map: "quota_usage_log_dim_recent_idx")
   @@map("quota_usage_log")
 }
+
+// ──────────────────────────────────────────────────────────────────
+//  Creator services — marketplace layer over the talent pool.
+//
+//  CreatorService = one offering ("character design", "short-film
+//  edit"). Each service carries 1-3 ServicePackages (basic /
+//  standard / premium tiers).
+//
+//  Status state machine: draft → listed ⇄ paused → archived. Only
+//  `listed` is publicly browseable. `listed` requires ≥ 1 package.
+//
+//  Money: prices stored in smallest currency unit (cents / 分 / yen),
+//  same convention as CrewPosition.salary_min_amount.
+// ──────────────────────────────────────────────────────────────────
+
+enum CreatorServiceStatus {
+  draft
+  listed
+  paused
+  archived
+
+  @@map("creator_service_status")
+}
+
+enum ServiceTier {
+  basic
+  standard
+  premium
+
+  @@map("service_tier")
+}
+
+model CreatorService {
+  id        String @id
+  creatorId String @map("creator_id")
+
+  /// Buyer-facing headline ("Final cut · 30s vertical"). ≤ 120 chars.
+  title String @db.VarChar(120)
+  /// One-paragraph pitch (≤ 1000 chars). Plain text, newline-allowed.
+  summary String @db.Text
+  /// OSS-relative cover path. UI prefixes with BANNER_BASE_URL.
+  coverPath String @default("") @map("cover_path") @db.VarChar(512)
+
+  /// Service taxonomy. Free-form on the wire so we can rev categories
+  /// without a migration; validated against SERVICE_CATEGORIES in
+  /// `packages/shared/src/creator-service.ts` at the controller layer.
+  category String @db.VarChar(64)
+
+  /// Free-form skill / style tags. PG TEXT[], ≤ 10 entries enforced
+  /// at the service layer.
+  tags String[] @default([])
+
+  status      CreatorServiceStatus @default(draft)
+  /// First-time-listed timestamp — used as the "newest first" sort
+  /// key in the marketplace plaza. Stays NULL while draft; set on the
+  /// first publish; never cleared (pause/archive keep history).
+  publishedAt DateTime?            @map("published_at") @db.Timestamptz(6)
+
+  /// Optimistic concurrency token. Bumped on every owner-write so
+  /// the edit dialog can detect "someone else (or another tab) saved
+  /// after I loaded".
+  version Int @default(0)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Soft delete — set on archive so referenced orders (Phase 1b)
+  /// still resolve.
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  packages             ServicePackage[]
+  requirementQuestions ServiceRequirementQuestion[]
+  orders               ServiceOrder[]
+
+  /// Owner-side query: "list my services in created-order".
+  @@index([creatorId, deletedAt, createdAt(sort: Desc)], map: "creator_services_by_creator_idx")
+  /// Plaza feed: "newest listed first" — only hits when status='listed'.
+  @@index([status, publishedAt(sort: Desc)], map: "creator_services_feed_idx")
+  /// Category browse: same feed predicate scoped to category.
+  @@index([category, status, publishedAt(sort: Desc)], map: "creator_services_category_feed_idx")
+  @@map("creator_services")
+}
+
+model ServicePackage {
+  id        String      @id
+  serviceId String      @map("service_id")
+  tier      ServiceTier
+
+  /// Tier label ("30-second cut · 1080p"). ≤ 80 chars.
+  title String @db.VarChar(80)
+  /// What's included (long-form, newline-allowed). ≤ 2000 chars.
+  description String @db.Text
+
+  /// ISO 4217. Same per-cell whitelist as CrewPosition.
+  /// CHECK enforced via cell-aware service layer + DB CHECK.
+  currency String @db.VarChar(3)
+  /// Smallest currency unit (USD cents / CNY 分 / JPY yen).
+  /// CHECK price_amount >= 0 in migration SQL.
+  priceAmount BigInt @map("price_amount")
+
+  /// Calendar-day turnaround. 1-365.
+  deliveryDays Int @map("delivery_days")
+  /// Included revision count. -1 = unlimited. CHECK in migration SQL.
+  revisions Int @default(0)
+
+  /// Free-form bullet list shown under the tier card. PG TEXT[];
+  /// ≤ 12 items enforced at service layer.
+  scope String[] @default([])
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  service CreatorService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  /// One tier per service — a service can publish basic / standard /
+  /// premium independently, but never two of the same tier.
+  @@unique([serviceId, tier], map: "service_packages_service_tier_unique")
+  /// Per-service tier scan (load packages when rendering a service).
+  @@index([serviceId], map: "service_packages_by_service_idx")
+  @@map("service_packages")
+}
+
+// ──────────────────────────────────────────────────────────────────
+//  Service requirement questions
+//
+//  Free-form questions a creator pre-defines for buyers to answer
+//  before submitting an order ("用途? 时长? 风格? 参考?"). Inspired
+//  by Fiverr's "Requirements" step — these answers ride with every
+//  order via the snapshot stored on ServiceOrder.questionnaire so
+//  later edits don't rewrite history.
+// ──────────────────────────────────────────────────────────────────
+
+model ServiceRequirementQuestion {
+  id        String @id
+  serviceId String @map("service_id")
+
+  /// Prompt rendered to the buyer. ≤ 240 chars.
+  prompt String @db.VarChar(240)
+  /// Optional helper text under the prompt. ≤ 240 chars.
+  helpText String? @map("help_text") @db.VarChar(240)
+  /// When true, buyer cannot submit until a non-blank answer is
+  /// provided. Server enforces.
+  required Boolean @default(false)
+  /// Render order — lower first. We don't use array-of-jsonb on the
+  /// service row because that complicates per-question edit /
+  /// reorder and prevents future "answer template" reuse across
+  /// orders.
+  displayOrder Int @default(0) @map("display_order")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  service CreatorService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  /// Render-time scan (single service, ordered).
+  @@index([serviceId, displayOrder], map: "service_req_questions_by_service_idx")
+  @@map("service_requirement_questions")
+}
+
+// ──────────────────────────────────────────────────────────────────
+//  Service orders
+//
+//  Created in one of two paths:
+//
+//    1. Questionnaire-first: buyer fills `ServiceRequirementQuestion`s
+//       and submits → order in `pending_creator`. Creator must accept.
+//
+//    2. Proposal-first: creator sends a `proposal` message in the
+//       (existing) service-context conversation; buyer accepts →
+//       order created directly in `in_progress`. The conversation
+//       row is reused; `contextType` flips service→order.
+//
+//  Snapshots: package + questionnaire are frozen at submit time so
+//  the creator can keep editing the source service without
+//  rewriting order history.
+//
+//  Bindings: optional FK-shaped string columns linking the order to
+//  an IP / episode / crew / crew-position. Stored as plain strings
+//  (not Prisma relations) because some of these reference
+//  Java-owned tables outside the Nest schema. Server validates
+//  existence at write time.
+// ──────────────────────────────────────────────────────────────────
+
+enum ServiceOrderStatus {
+  pending_creator
+  in_progress
+  delivered
+  revision_requested
+  completed
+  cancelled
+
+  @@map("service_order_status")
+}
+
+model ServiceOrder {
+  id        String @id
+  buyerId   String @map("buyer_id")
+  creatorId String @map("creator_id")
+  serviceId String @map("service_id")
+
+  /// Frozen tier snapshot at submit time. JSON shape mirrors the
+  /// OrderPackageSnapshot DTO in `packages/shared/src/order.ts`.
+  packageSnapshot Json @map("package_snapshot")
+
+  status ServiceOrderStatus @default(pending_creator)
+
+  /// Frozen Array<{prompt, answer, required}> mirroring
+  /// OrderQuestionnaireEntry. Pre-order chat-driven orders may
+  /// arrive with an empty array.
+  questionnaire Json @default("[]")
+
+  /// 1:1 with Conversation. Set in the same transaction that
+  /// creates the order (proposal-accept path) or right after the
+  /// inquiry conversation upgrades on questionnaire-submit. Always
+  /// non-null in steady state.
+  conversationId String @unique @map("conversation_id")
+
+  /// ─── FizzDragon entity bindings ─────────────────────
+  /// All nullable. Validated at the service layer (existence + the
+  /// buyer/creator's right to bind).
+  ipId            String? @map("ip_id")
+  episodeId       String? @map("episode_id")
+  crewId          String? @map("crew_id")
+  crewPositionId  String? @map("crew_position_id")
+
+  /// Optimistic concurrency.
+  version Int @default(0)
+
+  /// Client-supplied idempotency key. NULL on rows persisted before
+  /// the key was introduced; for new submissions the client mints a
+  /// UUID per intent and resends it on retries. Server returns the
+  /// existing row when (buyerId, idempotencyKey) already maps to one.
+  /// Nullable to allow legacy callers to continue creating orders
+  /// without a key — at the cost of being open to dupes for those
+  /// callers (acceptable until every UI surface has been updated).
+  idempotencyKey String? @map("idempotency_key")
+
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  acceptedAt   DateTime? @map("accepted_at") @db.Timestamptz(6)
+  deliveredAt  DateTime? @map("delivered_at") @db.Timestamptz(6)
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
+  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  /// {by, reason, at} JSON when cancelled; null otherwise.
+  cancelInfo   Json?     @map("cancel_info")
+
+  service      CreatorService @relation(fields: [serviceId], references: [id])
+  conversation Conversation   @relation(fields: [conversationId], references: [id])
+
+  /// Buyer inbox: "my orders, newest activity first".
+  @@index([buyerId, createdAt(sort: Desc)], map: "service_orders_by_buyer_idx")
+  /// Creator inbox: "incoming orders, newest first".
+  @@index([creatorId, createdAt(sort: Desc)], map: "service_orders_by_creator_idx")
+  /// State-machine filter for inbox tabs.
+  @@index([creatorId, status, createdAt(sort: Desc)], map: "service_orders_by_creator_status_idx")
+  @@index([buyerId, status, createdAt(sort: Desc)], map: "service_orders_by_buyer_status_idx")
+  /// Per-service order list (creator stats / debugging).
+  @@index([serviceId, createdAt(sort: Desc)], map: "service_orders_by_service_idx")
+  /// FD-binding back-references (sparse — most orders bind nothing,
+  /// but when bound the lookup is "all orders tied to this IP").
+  @@index([ipId], map: "service_orders_by_ip_idx")
+  @@index([episodeId], map: "service_orders_by_episode_idx")
+  @@index([crewId], map: "service_orders_by_crew_idx")
+  /// Per-buyer idempotency. Partial-unique semantically (we only
+  /// care about non-NULL keys) but Prisma's `@@unique` doesn't
+  /// support `where` clauses — so we add a NULLS DISTINCT unique
+  /// index in the migration's raw SQL and skip declaring the
+  /// constraint here. The runtime lookup uses a regular `findFirst`.
+  @@index([buyerId, idempotencyKey], map: "service_orders_buyer_idem_idx")
+  @@map("service_orders")
+}
+
+// ──────────────────────────────────────────────────────────────────
+//  Conversations
+//
+//  Context-scoped — every conversation is rooted in a domain entity
+//  (service inquiry or active order). NOT free-form DM.
+//
+//  Identity: a `service` inquiry is unique per (buyer, creator,
+//  service) — same triple resumes the same thread. Encoded via the
+//  denormalized `lookupKey` column for an O(1) UNIQUE constraint.
+//  On proposal-accept, lookupKey rewrites to `order:<orderId>` so
+//  uniqueness shifts cleanly.
+//
+//  Realtime: each message broadcasts via Redis pub/sub on
+//  `conversation:user:{userId}` (per participant). Missed-while-
+//  offline windows recover by client refetch on reconnect.
+// ──────────────────────────────────────────────────────────────────
+
+enum ConversationContextType {
+  service
+  order
+
+  @@map("conversation_context_type")
+}
+
+enum ConversationParticipantRole {
+  buyer
+  creator
+
+  @@map("conversation_participant_role")
+}
+
+enum MessageType {
+  text
+  image
+  file
+  proposal
+  system
+
+  @@map("message_type")
+}
+
+model Conversation {
+  id String @id
+
+  contextType ConversationContextType @map("context_type")
+  contextId   String                  @map("context_id")
+
+  /// Stable lookup token used for "find or create" semantics.
+  ///   service inquiry: `service:<serviceId>:<buyerId>:<creatorId>`
+  ///   order          : `order:<orderId>`
+  /// UNIQUE so the same triple can't accidentally fork into two threads.
+  lookupKey String @unique @map("lookup_key")
+
+  lastMessageAt DateTime @default(now()) @map("last_message_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  participants ConversationParticipant[]
+  messages     Message[]
+  order        ServiceOrder?
+
+  /// Inbox sort: per-user feed ordered by activity. The user filter
+  /// lives on `ConversationParticipant`; this index makes the
+  /// joined query cheap.
+  @@index([lastMessageAt(sort: Desc)], map: "conversations_recent_idx")
+  /// Context fan-out (e.g. "all conversations about this service" —
+  /// admin / analytics, not used in the hot path).
+  @@index([contextType, contextId], map: "conversations_context_idx")
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  conversationId String                       @map("conversation_id")
+  userId         String                       @map("user_id")
+  role           ConversationParticipantRole
+
+  /// Cursor for unread-badge math: messages with createdAt >
+  /// lastReadAt are unread to this participant.
+  /// We use a message id (not timestamp) for read-receipt precision
+  /// against rapid simultaneous sends.
+  lastReadMessageId String? @map("last_read_message_id")
+  /// Mirror of the read message's createdAt for fast unread-count
+  /// queries (avoids joining to messages for every inbox row).
+  lastReadAt DateTime? @map("last_read_at") @db.Timestamptz(6)
+
+  /// Soft-mute switch (no notifications until then). NULL = not muted.
+  mutedUntil DateTime? @map("muted_until") @db.Timestamptz(6)
+
+  joinedAt DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  leftAt   DateTime? @map("left_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  /// Inbox fan-out: every conversation this user is in.
+  @@index([userId, leftAt], map: "conversation_participants_by_user_idx")
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String      @id
+  conversationId String      @map("conversation_id")
+  /// NULL for system messages — server-authored.
+  authorId       String?     @map("author_id")
+  type           MessageType
+
+  /// Plain text body. text → entire message; proposal → leading
+  /// note; system → empty (use payload.system).
+  body String @db.Text
+
+  /// Structured payload — null for plain text. Shape mirrors
+  /// MessagePayload in `packages/shared/src/conversation.ts`.
+  payload Json?
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// History / cursor pagination: per-conversation, newest first
+  /// (we paginate backwards from the latest).
+  @@index([conversationId, createdAt(sort: Desc)], map: "messages_by_conversation_idx")
+  @@map("messages")
+}
