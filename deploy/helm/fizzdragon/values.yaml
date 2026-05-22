@@ -147,7 +147,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: local-fix-20260522-idle240
+    tag: local-fix-20260522-no-idle
   containerPort: 3001
   env:
     PORT: "3001"
