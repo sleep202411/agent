@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: creator-cta-20260523
+    tag: ip-edit-20260523
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
