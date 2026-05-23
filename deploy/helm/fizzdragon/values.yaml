@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: asset-loadmore-real-20260523
+    tag: payment-toast-20260523
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
