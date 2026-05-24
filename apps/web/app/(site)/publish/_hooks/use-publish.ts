@@ -6,7 +6,7 @@
  *   POST /vedio/create/personal/video     — { title, introduction, tags, viewStatus } → id
  *   POST /vedio/update/personal/video     — { id, title, introduction, tags, viewStatus }
  *   POST /content/vedio/upload/personal/video/backup  — multipart { id, file }
- *   POST /content/personal/uploadBanner               — multipart { id, file }
+ *   POST /content/vedio/personal/uploadBanner               — multipart { id, file } → { path }
  *
  * Pre-resolved helpers in `@/src/services/project.ts` are reused
  * for create / update / upload-video. The tag-list reader (used by
@@ -78,7 +78,10 @@ export function useUploadPersonalVideoFile() {
 
 /**
  * Cover image upload for an existing personal video record. Multipart
- * to /content/personal/uploadBanner (legacy parity).
+ * to /content/vedio/personal/uploadBanner (yes, "vedio" — Java's
+ * spelling). Response shape is `{ code, msg, path }` where `path` is
+ * the OSS-relative key (e.g. `2259/personal/<uuid>.jpg`); the legacy
+ * `data` field was an earlier guess that never matched.
  */
 export interface UploadCoverArgs {
   personalId: number;
@@ -92,7 +95,7 @@ export function useUploadPersonalCover() {
       formData.append("file", file);
       formData.append("id", String(personalId));
 
-      const res = await fetch("/content/personal/uploadBanner", {
+      const res = await fetch("/content/vedio/personal/uploadBanner", {
         method: "POST",
         credentials: "include",
         body: formData,
@@ -100,9 +103,9 @@ export function useUploadPersonalCover() {
 
       if (res.status === 401) notifyUnauthorized();
 
-      const body = (await res.json()) as { code?: number; msg?: string; data?: string };
+      const body = (await res.json()) as { code?: number; msg?: string; path?: string };
       if (body.code !== 200) throw new Error(body.msg || "Cover upload failed");
-      return body.data ?? "";
+      return body.path ?? "";
     },
   });
 }
