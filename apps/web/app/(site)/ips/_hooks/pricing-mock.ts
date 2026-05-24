@@ -49,9 +49,16 @@ export interface IpPricing {
 const store = new Map<string, IpPricing>();
 
 function defaultConfig(): IpPricing {
+  // Default-price = 0 so untouched IPs evaluate to `hasPaidContent =
+  // false` in pricing-context (no chip / no paywall rendered). The
+  // owner-side pricing tab is still gated behind `?pricing=1` (see
+  // edit/page.tsx), so until backend ships real pricing + the edit
+  // UI is unlocked, the public detail page must look as if there's
+  // no paywall at all. Was 10 — but that 10 was leaking into every
+  // IP's episode rows as "🔒 10 积分", which is misleading.
   return {
     freeEpisodeIds: [],
-    defaultPriceIntegral: 10,
+    defaultPriceIntegral: 0,
     bundleIntegral: undefined,
     overrides: {},
   };

@@ -23,12 +23,11 @@ interface PricingTabProps {
 
 /**
  * Pricing tab orchestrator — fetches the current IP's pricing config
- * and episode list, keeps a local draft that the cards mutate, and
- * commits the whole config in one `useUpdateIpPricing` call on Save.
+ * and episode list, then keeps a local draft that the cards mutate.
  *
  * The draft pattern matters: tweaking the free-episode slider or the
- * default-price input shouldn't burst-fire mutations. The IP owner
- * iterates locally; the wire is hit once at the end.
+ * default-price input shouldn't burst-fire mutations. Real persistence
+ * remains gated until the Java price-rule payload is confirmed.
  */
 export function PricingTab({ ipId, locale }: PricingTabProps) {
   const t = useTranslations("ipEdit");
@@ -36,30 +35,20 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
 
   const { data: episodes = [], isLoading: episodesLoading } = useProjectEpisodes(ipId);
   const { data: remote, isLoading: pricingLoading } = useIpPricing(ipId);
-  // `useUpdateIpPricing` intentionally not consumed yet — pricing save
-  // is gated behind a coming-soon toast until backend ships. Re-wire
-  // when /project/pricing/save lands.
 
   const [draft, setDraft] = useState<IpPricing | null>(remote ?? null);
 
-  // Sync draft when the remote config (re)loads. Doesn't clobber an
-  // in-progress edit because we only adopt remote on first arrival;
-  // saves update both via `setQueryData` so this also fires post-save.
+  // Adopt the remote config once. After that, preserve local edits until
+  // the user discards them or this tab remounts.
   useEffect(() => {
-    if (remote) setDraft(remote);
-  }, [remote]);
+    if (remote && !draft) setDraft(remote);
+  }, [remote, draft]);
 
   const dirty = useMemo(() => {
     if (!remote || !draft) return false;
     return JSON.stringify(remote) !== JSON.stringify(draft);
   }, [remote, draft]);
 
-  // Save is gated until backend ships. UI is otherwise fully functional —
-  // creators can fiddle, see the preview update, and even open the
-  // viewer-preview route — they just can't persist yet. Wire the real
-  // mutation in when the `/project/pricing/save` endpoint lands (see
-  // pricing-spec.md). For now: clicking Save surfaces a toast that
-  // explains the status; the actual mutation never fires.
   const handleSaveComingSoon = () => {
     toast.info(t("pricingSaveComingSoonToast"));
   };
@@ -86,9 +75,9 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
 
   return (
     <div className="space-y-4">
-      {/* Beta banner — pricing config persistence isn't wired yet, so
-          warn creators their changes are local-only until backend ships.
-          Drop this banner when /project/pricing/save lands. */}
+      {/* Backend exposes single price-rule CRUD, so the UI mirrors that
+          row-scoped model. Real persistence remains gated until the
+          Java rule payload is confirmed and wired in use-pricing.ts. */}
       <div className="flex items-start gap-3 rounded-lg border border-amber-400/30 bg-gradient-to-br from-amber-400/[0.08] to-orange-400/[0.04] px-4 py-3">
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-amber-400">
           <IconRocket className="size-4" />
@@ -127,22 +116,6 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
               {tc("discard")}
             </Button>
           ) : null}
-          {/* Save stays present in the layout — clicking shows the
-              coming-soon toast so creators discover the status without
-              hunting for an explanation. Disabled-but-clickable via
-              not setting `disabled`; visual treatment is muted to
-              telegraph the gate. */}
-          <Button
-            type="button"
-            variant="solid"
-            color="primary"
-            size="sm"
-            onClick={handleSaveComingSoon}
-            className="cursor-not-allowed opacity-60"
-            title={t("pricingSaveComingSoonToast")}
-          >
-            {t("pricingSaveComingSoon")}
-          </Button>
         </div>
       </div>
 
@@ -165,6 +138,9 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
           defaultPriceIntegral={draft.defaultPriceIntegral}
           paidEpisodeCount={paidEpisodeCount}
           onChange={(v) => setDraft({ ...draft, bundleIntegral: v })}
+          dirty={remote ? remote.bundleIntegral !== draft.bundleIntegral : false}
+          saving={false}
+          onSave={handleSaveComingSoon}
         />
       </div>
 
@@ -173,6 +149,9 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
         episodes={episodes}
         freeEpisodeIds={draft.freeEpisodeIds}
         defaultPriceIntegral={draft.defaultPriceIntegral}
+        savedFreeEpisodeIds={remote?.freeEpisodeIds ?? []}
+        savedDefaultPriceIntegral={remote?.defaultPriceIntegral ?? draft.defaultPriceIntegral}
+        savedOverrides={remote?.overrides ?? {}}
         overrides={draft.overrides}
         onChangeOverride={(episodeId, price) => {
           if (price === draft.defaultPriceIntegral) {
@@ -191,6 +170,8 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
           delete next[episodeId];
           setDraft({ ...draft, overrides: next });
         }}
+        savingEpisodeId={null}
+        onSaveEpisode={handleSaveComingSoon}
       />
     </div>
   );

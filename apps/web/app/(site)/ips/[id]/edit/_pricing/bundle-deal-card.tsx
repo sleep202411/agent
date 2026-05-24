@@ -16,6 +16,9 @@ interface BundleDealCardProps {
   /** Number of paid episodes — `totalEpisodes - freeEpisodeCount`. */
   paidEpisodeCount: number;
   onChange: (next: number | undefined) => void;
+  dirty: boolean;
+  saving?: boolean;
+  onSave: () => void;
 }
 
 const BUNDLE_DISCOUNT = 0.7;
@@ -25,6 +28,9 @@ export function BundleDealCard({
   defaultPriceIntegral,
   paidEpisodeCount,
   onChange,
+  dirty,
+  saving,
+  onSave,
 }: BundleDealCardProps) {
   const t = useTranslations("ipEdit");
   const enabled = value != null;
@@ -84,6 +90,20 @@ export function BundleDealCard({
       ) : (
         <p className="mt-4 text-xs text-muted-foreground">{t("pricingBundleDisabledHint")}</p>
       )}
+
+      <div className="mt-auto flex items-center justify-end pt-4">
+        <Button
+          type="button"
+          variant={dirty ? "solid" : "outline"}
+          color={dirty ? "primary" : "muted"}
+          size="sm"
+          loading={saving}
+          disabled={!dirty}
+          onClick={onSave}
+        >
+          {dirty ? t("pricingSaveBundle") : t("pricingSaved")}
+        </Button>
+      </div>
     </PricingCard>
   );
 }
