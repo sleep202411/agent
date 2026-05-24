@@ -1128,6 +1128,9 @@
       "earnings": "收益",
       "editProfile": "編輯資料",
       "referralLink": "引薦連結",
+      "shareProfile": "分享主頁",
+      "shareProfileCopied": "主頁連結已複製到剪貼簿",
+      "shareProfileManualCopy": "請手動複製主頁連結：{url}",
       "startRequest": "立即下單",
       "message": "私訊",
       "follow": "追蹤"
@@ -1172,7 +1175,9 @@
       "emptyOwnerBody": "把已完成的影片發布在此，讓客戶直觀看見你的產出能力。",
       "emptyVisitorTitle": "暫無作品",
       "emptyVisitorBody": "該創作者尚未公開發布作品。",
-      "publishCta": "發布作品"
+      "publishCta": "發布作品",
+      "playFailed": "影片載入失敗，請重試。",
+      "noMedia": "此作品尚無可播放的影片。"
     },
     "ips": {
       "emptyOwnerTitle": "建立你的 IP",

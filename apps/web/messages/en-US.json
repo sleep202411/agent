@@ -1128,6 +1128,9 @@
       "earnings": "Earnings",
       "editProfile": "Edit profile",
       "referralLink": "Referral link",
+      "shareProfile": "Share profile",
+      "shareProfileCopied": "Profile link copied to clipboard",
+      "shareProfileManualCopy": "Please copy the profile link manually: {url}",
       "startRequest": "Start a request",
       "message": "Message",
       "follow": "Follow"
@@ -1172,7 +1175,9 @@
       "emptyOwnerBody": "Publish finished videos here so buyers can see what you ship.",
       "emptyVisitorTitle": "No works published yet",
       "emptyVisitorBody": "This creator hasn't shared any works on their profile.",
-      "publishCta": "Publish work"
+      "publishCta": "Publish work",
+      "playFailed": "Could not load the video. Please try again.",
+      "noMedia": "This work has no playable media yet."
     },
     "ips": {
       "emptyOwnerTitle": "Start an IP",

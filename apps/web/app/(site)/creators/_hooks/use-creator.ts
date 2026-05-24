@@ -24,6 +24,7 @@ import {
   type CreatorRow,
 } from "@/src/services/creator";
 import {
+  getMyPersonalWorks,
   getUserPersonalWorks,
   getUserProjects,
   getUserJoinedProjects,
@@ -235,13 +236,18 @@ export function useCreatorDetail(id: string) {
 }
 
 /**
- * Personal works for a given creator. Backend endpoint:
- *   POST /vedio/query/user/personal  { userId, page, pageSize }
+ * Personal works for a given creator. Two backend endpoints because Java
+ * exposes a separate "mine" path that includes records the public list
+ * filters out (just-published / pending-review / private). Match the
+ * legacy fizzdragon-web behaviour:
+ *   - owner self-view   → POST /vedio/query/mypersonal  { page, pageSize }
+ *   - visitor / others  → POST /vedio/query/user/personal { userId, ... }
+ * Cache key carries `viewer` so owner ≠ visitor caches don't collide.
  */
-export function useCreatorPersonalWorks(creatorId: string) {
+export function useCreatorPersonalWorks(creatorId: string, isOwner = false) {
   return useQuery<PersonalWork[]>({
-    queryKey: ["creator", "personal-works", creatorId],
-    queryFn: () => getUserPersonalWorks(creatorId, 1, 50),
+    queryKey: ["creator", "personal-works", creatorId, isOwner ? "owner" : "visitor"],
+    queryFn: () => (isOwner ? getMyPersonalWorks(1, 50) : getUserPersonalWorks(creatorId, 1, 50)),
     enabled: !!creatorId,
   });
 }

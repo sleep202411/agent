@@ -44,7 +44,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { useCurrentUser, useReferralCode, useUserInfo } from "@/src/hooks/use-user";
 import { useCreatorDetail, type Creator } from "@/app/(site)/creators/_hooks/use-creator";
 import { ProfileEditDialog } from "@/app/(site)/profile/profile-edit-dialog";
@@ -68,6 +70,7 @@ const DEFAULT_TAB: CreatorTabId = "services";
 
 export function CreatorCenter({ creatorId }: CreatorCenterProps) {
   const t = useTranslations("creatorCenter");
+  const locale = useLocale() as Locale;
   const { user: currentUser } = useCurrentUser();
   const { data: creator, isLoading } = useCreatorDetail(creatorId);
 
@@ -179,6 +182,19 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
     });
   };
 
+  // Share public profile link: copy `${origin}/{locale}/creators/{id}` to
+  // clipboard so the owner can paste it anywhere (chat, social, business
+  // card). No dialog — single click → toast.
+  const handleShareProfile = async () => {
+    const url = `${window.location.origin}${localizePath(`/creators/${creatorId}`, locale)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(t("cta.shareProfileCopied"));
+    } catch {
+      toast.error(t("cta.shareProfileManualCopy", { url }));
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-[calc(100dvh-56px)] items-center justify-center">
@@ -207,6 +223,7 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
         onEditProfile={isOwner ? () => setEditProfileOpen(true) : undefined}
         onShareReferral={isOwner ? handleShareReferral : undefined}
         referralPending={referralPending}
+        onShareProfile={isOwner ? handleShareProfile : undefined}
       />
       <div className="mx-auto grid max-w-[1680px] gap-6 px-4 pb-16 md:px-8 lg:grid-cols-[300px_1fr]">
         <CreatorLeftRail creator={creator} isOwner={isOwner} />
@@ -230,6 +247,11 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
                 // lands at the same place every time.
                 className="scroll-mt-24"
               >
+                {/* Section heading mirrors the tab label so users scrolling
+                    past the sticky bar still see what section they're in. */}
+                <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
+                  {t(`tabs.${id}`)}
+                </h2>
                 <SectionContent tab={id} creator={creator} isOwner={isOwner} />
               </section>
             ))}

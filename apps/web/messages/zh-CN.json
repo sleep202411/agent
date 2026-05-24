@@ -1128,6 +1128,9 @@
       "earnings": "收益",
       "editProfile": "编辑资料",
       "referralLink": "引荐链接",
+      "shareProfile": "分享主页",
+      "shareProfileCopied": "主页链接已复制到剪贴板",
+      "shareProfileManualCopy": "请手动复制主页链接：{url}",
       "startRequest": "立即下单",
       "message": "私信",
       "follow": "关注"
@@ -1172,7 +1175,9 @@
       "emptyOwnerBody": "把已完成的视频发布在这里，让客户直观看到你的产出能力。",
       "emptyVisitorTitle": "暂无作品",
       "emptyVisitorBody": "该创作者还没有公开发布作品。",
-      "publishCta": "发布作品"
+      "publishCta": "发布作品",
+      "playFailed": "视频加载失败，请重试。",
+      "noMedia": "该作品暂无可播放的视频。"
     },
     "ips": {
       "emptyOwnerTitle": "创建你的 IP",

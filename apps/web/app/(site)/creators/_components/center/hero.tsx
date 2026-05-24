@@ -21,6 +21,7 @@ import {
   IconMail,
   IconMessage,
   IconPlus,
+  IconShare3,
   IconUserPlus,
   IconWallet,
 } from "@tabler/icons-react";
@@ -48,6 +49,9 @@ interface CreatorHeroProps {
   /** Whether the referral-link generation request is in flight, so
    *  the button can show a spinner. */
   referralPending?: boolean;
+  /** Owner clicked "分享主页" — parent copies the public
+   *  `/creators/{id}` link to clipboard. */
+  onShareProfile?: () => void;
 }
 
 export function CreatorHero({
@@ -57,6 +61,7 @@ export function CreatorHero({
   onEditProfile,
   onShareReferral,
   referralPending,
+  onShareProfile,
 }: CreatorHeroProps) {
   const t = useTranslations("creatorCenter");
   const name = (creator.name || "").trim() || "—";
@@ -122,6 +127,7 @@ export function CreatorHero({
               onEditProfile={onEditProfile}
               onShareReferral={onShareReferral}
               referralPending={referralPending}
+              onShareProfile={onShareProfile}
             />
           ) : (
             <VisitorCtas t={t} />
@@ -138,12 +144,14 @@ function OwnerCtas({
   onEditProfile,
   onShareReferral,
   referralPending,
+  onShareProfile,
 }: {
   t: (k: string) => string;
   onCreateService?: () => void;
   onEditProfile?: () => void;
   onShareReferral?: () => void;
   referralPending?: boolean;
+  onShareProfile?: () => void;
 }) {
   return (
     <>
@@ -178,6 +186,10 @@ function OwnerCtas({
       >
         <IconLink className="size-4" />
         {t("cta.referralLink")}
+      </Button>
+      <Button type="button" variant="outline" color="muted" onClick={() => onShareProfile?.()}>
+        <IconShare3 className="size-4" />
+        {t("cta.shareProfile")}
       </Button>
       <Button type="button" variant="ghost" color="muted" onClick={() => onEditProfile?.()}>
         <IconEdit className="size-4" />
