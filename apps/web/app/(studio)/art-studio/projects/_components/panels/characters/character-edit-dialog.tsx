@@ -37,7 +37,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { backendApi } from "@/src/lib/api";
+import { backendApi, ApiRequestError } from "@/src/lib/api";
 import type { RawAiModel, VoiceOptionItem } from "@/src/types/workspace";
 import { buildOssUrl } from "@/src/lib/uploads/workspace-upload";
 import { useAiModels, useRawAiModels } from "@/src/hooks/use-ai-models";
@@ -243,11 +243,11 @@ export function CharacterEditDialog({
       toast.warning(t("savePleaseFirst"));
       return;
     }
+    // Empty prompt is allowed — the Seedance template provides the
+    // baseline and a uploaded reference image alone can be enough.
+    // Matches the behaviour of scene/prop edit dialogs (which never
+    // had this gate).
     const promptBase = (formData.prompt ?? "").trim();
-    if (!promptBase) {
-      toast.warning(tc("fillPromptFirst"));
-      return;
-    }
     const composedPrompt = applySeedanceTemplate(promptBase, "role");
     try {
       setThreeViewLoading(true);
@@ -268,7 +268,12 @@ export function CharacterEditDialog({
       toast.success(tc("threeViewSuccess"));
     } catch (error) {
       console.error("[CharacterEditDialog] 生成全局提示图失败:", error);
-      toast.error(tc("threeViewFailed"));
+      // Surface backend's `message` field when available — Java returns
+      // useful business hints (quota / param / model-not-supported) that
+      // a generic "failed" toast swallows.
+      const apiMsg = error instanceof ApiRequestError ? error.message : null;
+      const fallback = error instanceof Error ? error.message : null;
+      toast.error(apiMsg || fallback || tc("threeViewFailed"));
     } finally {
       setThreeViewLoading(false);
     }

@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
-import { backendApi } from "@/src/lib/api";
+import { backendApi, ApiRequestError } from "@/src/lib/api";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { AssetPickerDialog } from "@/components/assets/asset-picker-dialog";
 import { env } from "@/src/env";
@@ -167,7 +167,9 @@ export function SceneImageSection({
         toast.success(t("regeneratedImage"));
       } catch (error) {
         console.error("[SceneImageSection] AI 重新生成失败:", error);
-        toast.error(t("aiRegenerateFailed"));
+        const apiMsg = error instanceof ApiRequestError ? error.message : null;
+        const fallback = error instanceof Error ? error.message : null;
+        toast.error(apiMsg || fallback || t("aiRegenerateFailed"));
       } finally {
         setLoadingIndex(-1);
       }
@@ -202,7 +204,9 @@ export function SceneImageSection({
       toast.success(tc("panoramaSuccess"));
     } catch (error) {
       console.error("[SceneImageSection] 生成全景图失败:", error);
-      toast.error(tc("panoramaFailed"));
+      const apiMsg = error instanceof ApiRequestError ? error.message : null;
+      const fallback = error instanceof Error ? error.message : null;
+      toast.error(apiMsg || fallback || tc("panoramaFailed"));
     } finally {
       setGeneratingPanorama(false);
     }
