@@ -24,6 +24,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../auth';
+import { mastraFetch } from './mastra-fetch';
 
 type ContextHeader = {
   userId: string;
@@ -85,7 +86,7 @@ export class AssetsProxyController {
     const url = `${this.mastraUrl}${path}`;
     let upstream: globalThis.Response;
     try {
-      upstream = await fetch(url, init);
+      upstream = await mastraFetch(url, init);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Mastra assets fetch failed (${path}): ${msg}`);

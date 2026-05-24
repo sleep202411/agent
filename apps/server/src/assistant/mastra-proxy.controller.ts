@@ -28,6 +28,7 @@ import {
   type StoredMessage,
 } from './chat/message-store.service';
 import { AgentStreamService } from './chat/agent-stream.service';
+import { mastraFetch } from './mastra-fetch';
 import { AgentStateService } from './chat/agent-state.service';
 import { EntityEventsService } from './chat/entity-events.service';
 
@@ -380,7 +381,7 @@ export class MastraProxyController {
 
     let upstreamResponse: globalThis.Response;
     try {
-      upstreamResponse = await fetch(upstream, {
+      upstreamResponse = await mastraFetch(upstream, {
         method: 'POST',
         headers,
         body: JSON.stringify({ messages: sanitizedMessages }),
@@ -736,7 +737,7 @@ export class MastraProxyController {
     // Fire-and-forget: generate_project_cover is idempotent, so we don't
     // block the response on it. If it fails the user still gets the ack
     // and the next LLM turn can retry.
-    void fetch(`${this.mastraUrl}/project/cover/generate`, {
+    void mastraFetch(`${this.mastraUrl}/project/cover/generate`, {
       method: 'POST',
       headers: agentHeaders,
       body: JSON.stringify({}),

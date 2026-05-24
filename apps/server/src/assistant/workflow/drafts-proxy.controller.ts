@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../../auth';
+import { mastraFetch } from '../mastra-fetch';
 
 @Controller('drafts')
 export class DraftsProxyController {
@@ -70,7 +71,7 @@ export class DraftsProxyController {
 
     let upstream: globalThis.Response;
     try {
-      upstream = await fetch(url, { method: 'GET', headers });
+      upstream = await mastraFetch(url, { method: 'GET', headers });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Mastra upstream fetch failed: ${msg}`);
@@ -124,7 +125,7 @@ export class DraftsProxyController {
 
     let upstream: globalThis.Response;
     try {
-      upstream = await fetch(url, {
+      upstream = await mastraFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify({ data: body.data }),

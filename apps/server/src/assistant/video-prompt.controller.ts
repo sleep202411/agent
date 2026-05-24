@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../auth';
+import { mastraFetch } from './mastra-fetch';
 
 type JsonBody = Record<string, unknown>;
 
@@ -72,7 +73,7 @@ export class VideoPromptController {
 
     let upstream: globalThis.Response;
     try {
-      upstream = await fetch(url, {
+      upstream = await mastraFetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(body ?? {}),

@@ -20,6 +20,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 import { CurrentUser, type AuthUser } from '../auth';
 import { SparkService, type SparkUpload } from '../spark/spark.service';
+import { mastraFetch } from './mastra-fetch';
 
 type JsonBody = Record<string, unknown>;
 
@@ -112,7 +113,7 @@ export class ProduceProxyController {
     let upstream: globalThis.Response;
     const startedAt = Date.now();
     try {
-      upstream = await fetch(url, {
+      upstream = await mastraFetch(url, {
         method: 'POST',
         headers: this.buildHeaders(req, context),
         body: JSON.stringify(body),
