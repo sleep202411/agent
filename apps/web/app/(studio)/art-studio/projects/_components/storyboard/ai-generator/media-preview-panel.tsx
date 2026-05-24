@@ -15,6 +15,10 @@ interface MediaPreviewPanelProps {
   toolbarActions?: ToolbarAction[];
   /** Bottom action bar (edit, repaint, erase, enhance etc.) */
   bottomActions?: ToolbarAction[];
+  /** Force the bottom action bar to a single horizontally-scrollable
+   *  row instead of wrapping. Useful when the list is long (e.g. 11
+   *  video edit modes) and two rows look cluttered. */
+  bottomScrollable?: boolean;
   className?: string;
 }
 
@@ -26,6 +30,7 @@ export function MediaPreviewPanel({
   emptyIcon,
   toolbarActions,
   bottomActions,
+  bottomScrollable,
   className,
 }: MediaPreviewPanelProps) {
   const t = useTranslations("storyboard");
@@ -48,7 +53,7 @@ export function MediaPreviewPanel({
             ) : null}
 
             {type === "video" ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-black p-2">
+              <div className="absolute inset-0 flex items-center justify-center bg-black p-0">
                 <video
                   key={previewUrl}
                   src={previewUrl}
@@ -84,8 +89,12 @@ export function MediaPreviewPanel({
 
       {/* Bottom actions */}
       {previewUrl && bottomActions && bottomActions.length > 0 ? (
-        <div className="flex justify-center p-2">
-          <FloatingToolbar actions={bottomActions} className="flex-wrap gap-2" />
+        <div className={cn("min-w-0 p-2", bottomScrollable ? "" : "flex justify-center")}>
+          <FloatingToolbar
+            actions={bottomActions}
+            scrollable={bottomScrollable}
+            className={cn("gap-2", bottomScrollable ? "" : "flex-wrap")}
+          />
         </div>
       ) : null}
     </div>

@@ -130,6 +130,11 @@ interface FloatingToolbarProps {
   actions: ToolbarAction[];
   className?: string;
   position?: "top-right" | "top-left" | "bottom" | "bottom-left" | "bottom-right" | "none";
+  /** Render as a single horizontally-scrollable row: children get
+   *  `shrink-0`, the row gets `overflow-x-auto` + `max-w-full`, and
+   *  labels never wrap. Use when the action list can be long and
+   *  wrapping into 2 rows looks cluttered. */
+  scrollable?: boolean;
 }
 
 const positionClasses: Record<string, string> = {
@@ -141,14 +146,20 @@ const positionClasses: Record<string, string> = {
   none: "",
 };
 
-export function FloatingToolbar({ actions, className, position = "none" }: FloatingToolbarProps) {
+export function FloatingToolbar({
+  actions,
+  className,
+  position = "none",
+  scrollable = false,
+}: FloatingToolbarProps) {
   if (actions.length === 0) return null;
 
   return (
     <TooltipProvider delayDuration={200}>
       <div
         className={cn(
-          "flex w-fit items-center gap-2 rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm",
+          "flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm",
+          scrollable ? "max-w-full overflow-x-auto whitespace-nowrap [&>*]:shrink-0" : "w-fit",
           positionClasses[position],
           className
         )}

@@ -1018,78 +1018,83 @@ export function AiVideoGeneratorDialog({
               emptyText={t("videoClickPreview")}
               className="min-h-0 flex-[6]"
               toolbarActions={videoToolbarActions}
-              bottomActions={[
-                {
-                  key: "repaint",
-                  icon: <IconBrush className="size-3.5" />,
-                  label: t("videoRepaint"),
-                  active: editMode === "repaint",
-                  onClick: () => void enterEditMode("repaint"),
-                },
-                {
-                  key: "localEdit",
-                  icon: <IconBoxMultiple className="size-3.5" />,
-                  label: t("videoLocalEdit"),
-                  active: editMode === "localEdit",
-                  onClick: () => void enterEditMode("localEdit"),
-                },
-                {
-                  key: "adjustments",
-                  icon: <IconAdjustments className="size-3.5" />,
-                  label: t("videoChangeAttribute"),
-                  disabled: true,
-                },
-                {
-                  key: "storyboard",
-                  icon: <IconLayoutGrid className="size-3.5" />,
-                  label: t("videoCustomShot"),
-                  disabled: true,
-                },
-                {
-                  key: "extend",
-                  icon: <IconArrowBarRight className="size-3.5" />,
-                  label: t("videoExtend"),
-                  active: editMode === "extend",
-                  onClick: () => void enterEditMode("extend"),
-                },
-                {
-                  key: "outpainting",
-                  icon: <IconMaximize className="size-3.5" />,
-                  label: t("videoOutpainting"),
-                  active: editMode === "outpainting",
-                  onClick: () => void enterEditMode("outpainting"),
-                },
-                {
-                  key: "viewSwitch",
-                  icon: <IconEye className="size-3.5" />,
-                  label: t("videoAngleSwitch"),
-                  disabled: true,
-                },
-                {
-                  key: "faceSwap",
-                  icon: <IconUserCircle className="size-3.5" />,
-                  label: t("videoFaceSwap"),
-                  disabled: true,
-                },
-                {
-                  key: "motionTransfer",
-                  icon: <IconWalk className="size-3.5" />,
-                  label: t("videoMotionTransfer"),
-                  disabled: true,
-                },
-                {
-                  key: "upscale",
-                  icon: <IconZoomIn className="size-3.5" />,
-                  label: t("videoSuperRes"),
-                  disabled: true,
-                },
-                {
-                  key: "lipsync",
-                  icon: <IconMicrophone className="size-3.5" />,
-                  label: t("videoLipSync"),
-                  disabled: true,
-                },
-              ]}
+              bottomScrollable
+              // Enabled actions first, disabled "coming soon" batch last
+              // — sort is stable so within-group order is preserved.
+              bottomActions={(
+                [
+                  {
+                    key: "repaint",
+                    icon: <IconBrush className="size-3.5" />,
+                    label: t("videoRepaint"),
+                    active: editMode === "repaint",
+                    onClick: () => void enterEditMode("repaint"),
+                  },
+                  {
+                    key: "localEdit",
+                    icon: <IconBoxMultiple className="size-3.5" />,
+                    label: t("videoLocalEdit"),
+                    active: editMode === "localEdit",
+                    onClick: () => void enterEditMode("localEdit"),
+                  },
+                  {
+                    key: "adjustments",
+                    icon: <IconAdjustments className="size-3.5" />,
+                    label: t("videoChangeAttribute"),
+                    disabled: true,
+                  },
+                  {
+                    key: "storyboard",
+                    icon: <IconLayoutGrid className="size-3.5" />,
+                    label: t("videoCustomShot"),
+                    disabled: true,
+                  },
+                  {
+                    key: "extend",
+                    icon: <IconArrowBarRight className="size-3.5" />,
+                    label: t("videoExtend"),
+                    active: editMode === "extend",
+                    onClick: () => void enterEditMode("extend"),
+                  },
+                  {
+                    key: "outpainting",
+                    icon: <IconMaximize className="size-3.5" />,
+                    label: t("videoOutpainting"),
+                    active: editMode === "outpainting",
+                    onClick: () => void enterEditMode("outpainting"),
+                  },
+                  {
+                    key: "viewSwitch",
+                    icon: <IconEye className="size-3.5" />,
+                    label: t("videoAngleSwitch"),
+                    disabled: true,
+                  },
+                  {
+                    key: "faceSwap",
+                    icon: <IconUserCircle className="size-3.5" />,
+                    label: t("videoFaceSwap"),
+                    disabled: true,
+                  },
+                  {
+                    key: "motionTransfer",
+                    icon: <IconWalk className="size-3.5" />,
+                    label: t("videoMotionTransfer"),
+                    disabled: true,
+                  },
+                  {
+                    key: "upscale",
+                    icon: <IconZoomIn className="size-3.5" />,
+                    label: t("videoSuperRes"),
+                    disabled: true,
+                  },
+                  {
+                    key: "lipsync",
+                    icon: <IconMicrophone className="size-3.5" />,
+                    label: t("videoLipSync"),
+                    disabled: true,
+                  },
+                ] as ToolbarAction[]
+              ).sort((a, b) => Number(Boolean(a.disabled)) - Number(Boolean(b.disabled)))}
             />
           </div>
 
@@ -1209,8 +1214,8 @@ export function AiVideoGeneratorDialog({
                   onChange={(v) => dispatch(updateVideoForm({ key, updates: { prompt: v } }))}
                   placeholder={t("videoPromptEditorPlaceholder")}
                   mentionTypes={["character", "scene", "prop"]}
-                  minHeight={96}
-                  maxHeight={240}
+                  minHeight={120}
+                  maxHeight={120}
                   className="[&_[contenteditable]]:text-sm [&_[contenteditable]]:leading-relaxed [&_[contenteditable]]:text-foreground [&_[contenteditable]]:outline-none"
                   referenceMedia={referenceMediaItems}
                   onMentionInserted={videoRefs.handleMentionInserted}
