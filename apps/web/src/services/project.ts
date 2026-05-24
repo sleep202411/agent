@@ -157,8 +157,14 @@ export async function uploadPersonalVideo(id: number | string, file: File) {
     if (match?.[1]) formData.append("token", match[1]);
   }
 
+  // Hit `/content/vedio/...` (not bare `/vedio/...`) so nginx's
+  // `location /content/` block proxies straight to Java on
+  // localhost:8080. The bare prefix falls through to `location /` →
+  // AKS web pod → next.config.ts rewrite back to /content/vedio on
+  // ECS again — 3 hops, double CN↔SEA crossing, frequent stalls on
+  // multi-hundred-MB uploads (observed 2026-05-24).
   const response = await fetch(
-    `${typeof window !== "undefined" ? window.location.origin : ""}/vedio/upload/personal/video/backup`,
+    `${typeof window !== "undefined" ? window.location.origin : ""}/content/vedio/upload/personal/video/backup`,
     {
       method: "POST",
       credentials: "include",
