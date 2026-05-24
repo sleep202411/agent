@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: no-apex-redirect-no-recordbody-20260524
+    tag: scrollspy-real-20260524
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
