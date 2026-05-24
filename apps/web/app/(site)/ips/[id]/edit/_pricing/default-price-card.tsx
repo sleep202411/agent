@@ -4,20 +4,29 @@ import { IconCoin } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { PricingCard } from "./free-preview-card";
+import { PricingCard } from "./pricing-card";
 
 interface DefaultPriceCardProps {
   value: number;
   onChange: (n: number) => void;
+  dirty?: boolean;
+  saving?: boolean;
+  onSave?: () => void;
 }
 
-const SUGGESTIONS = [5, 10, 15];
+const SUGGESTIONS = [30, 50, 99];
 
-export function DefaultPriceCard({ value, onChange }: DefaultPriceCardProps) {
+export function DefaultPriceCard({
+  value,
+  onChange,
+  dirty = false,
+  saving = false,
+  onSave,
+}: DefaultPriceCardProps) {
   const t = useTranslations("ipEdit");
   return (
-    <PricingCard icon={<IconCoin className="size-4" />} title={t("pricingDefaultPriceTitle")}>
-      <p className="text-xs text-muted-foreground">{t("pricingDefaultPriceHint")}</p>
+    <PricingCard icon={<IconCoin className="size-4" />} title={t("pricingProjectPackageTitle")}>
+      <p className="text-xs text-muted-foreground">{t("pricingProjectPackageHint")}</p>
 
       <div className="mt-4 flex items-center gap-2">
         <Input
@@ -51,7 +60,23 @@ export function DefaultPriceCard({ value, onChange }: DefaultPriceCardProps) {
         ))}
       </div>
 
-      <p className="mt-3 text-xs text-muted-foreground">{t("pricingDefaultPriceBenchmark")}</p>
+      <p className="mt-3 text-xs text-muted-foreground">{t("pricingProjectPackageBenchmark")}</p>
+
+      {onSave ? (
+        <div className="mt-4 flex justify-end">
+          <Button
+            type="button"
+            variant={dirty ? "solid" : "outline"}
+            color={dirty ? "primary" : "muted"}
+            size="sm"
+            loading={saving}
+            disabled={!dirty}
+            onClick={onSave}
+          >
+            {dirty ? t("pricingSaveProjectPackage") : t("pricingSaved")}
+          </Button>
+        </div>
+      ) : null}
     </PricingCard>
   );
 }

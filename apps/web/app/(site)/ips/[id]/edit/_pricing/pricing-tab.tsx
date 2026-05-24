@@ -1,18 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { IconExternalLink, IconLoader2, IconRocket } from "@tabler/icons-react";
+import { IconExternalLink, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { useProjectEpisodes } from "@/app/(site)/ips/_hooks/use-ip";
-import { useIpPricing } from "@/app/(site)/ips/_hooks/use-pricing";
+import {
+  useDeletePointPriceRule,
+  useIpPricing,
+  useSavePointPriceRule,
+} from "@/app/(site)/ips/_hooks/use-pricing";
 import type { IpPricing } from "@/app/(site)/ips/_hooks/use-pricing";
 import { PaywallPreview } from "./paywall-preview";
-import { FreePreviewCard } from "./free-preview-card";
 import { DefaultPriceCard } from "./default-price-card";
-import { BundleDealCard } from "./bundle-deal-card";
 import { EpisodeOverridesList } from "./episode-overrides-list";
 
 interface PricingTabProps {
@@ -25,36 +27,95 @@ interface PricingTabProps {
  * Pricing tab orchestrator — fetches the current IP's pricing config
  * and episode list, then keeps a local draft that the cards mutate.
  *
- * The draft pattern matters: tweaking the free-episode slider or the
- * default-price input shouldn't burst-fire mutations. Real persistence
- * remains gated until the Java price-rule payload is confirmed.
+ * The draft pattern matters: price inputs should not burst-fire
+ * mutations. Java exposes single-target CRUD, so the page saves the
+ * project package rule and each episode rule independently.
  */
 export function PricingTab({ ipId, locale }: PricingTabProps) {
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
 
   const { data: episodes = [], isLoading: episodesLoading } = useProjectEpisodes(ipId);
-  const { data: remote, isLoading: pricingLoading } = useIpPricing(ipId);
+  const episodeIds = useMemo(() => episodes.map((episode) => episode.id), [episodes]);
+  const { data: remote, isLoading: pricingLoading } = useIpPricing(ipId, episodeIds);
+  const saveProjectPackagePrice = useSavePointPriceRule(ipId, episodeIds);
+  const saveEpisodePrice = useSavePointPriceRule(ipId, episodeIds);
+  const deletePriceRule = useDeletePointPriceRule(ipId, episodeIds);
 
-  const [draft, setDraft] = useState<IpPricing | null>(remote ?? null);
+  const [bundleDraft, setBundleDraft] = useState<number | null>(null);
+  const [episodeDrafts, setEpisodeDrafts] = useState<Record<string, number | null>>({});
+  const [savingEpisodeId, setSavingEpisodeId] = useState<string | null>(null);
 
-  // Adopt the remote config once. After that, preserve local edits until
-  // the user discards them or this tab remounts.
-  useEffect(() => {
-    if (remote && !draft) setDraft(remote);
-  }, [remote, draft]);
+  const draft = useMemo(() => {
+    if (!remote) return null;
+    const overrides = applyEpisodeDrafts(remote.overrides, episodeDrafts);
+    const bundleValue = bundleDraft ?? remote.bundleIntegral ?? 0;
+    return {
+      ...remote,
+      defaultPriceIntegral: 0,
+      bundleIntegral: bundleValue > 0 ? bundleValue : undefined,
+      freeEpisodeIds: Object.entries(overrides)
+        .filter(([, price]) => price <= 0)
+        .map(([episodeId]) => episodeId),
+      overrides,
+    } satisfies IpPricing;
+  }, [remote, bundleDraft, episodeDrafts]);
 
-  const dirty = useMemo(() => {
-    if (!remote || !draft) return false;
-    return JSON.stringify(remote) !== JSON.stringify(draft);
-  }, [remote, draft]);
-
-  const handleSaveComingSoon = () => {
-    toast.info(t("pricingSaveComingSoonToast"));
-  };
+  const dirty = bundleDraft !== null || Object.keys(episodeDrafts).length > 0;
 
   const handleDiscard = () => {
-    if (remote) setDraft(remote);
+    setBundleDraft(null);
+    setEpisodeDrafts({});
+  };
+
+  const handleSaveProjectPackage = async () => {
+    if (!remote || !draft) return;
+    const nextPrice = bundleDraft ?? remote.bundleIntegral ?? 0;
+    try {
+      if (nextPrice > 0) {
+        await saveProjectPackagePrice.mutateAsync({
+          priceType: 1,
+          targetId: ipId,
+          points: nextPrice,
+          existingRule: remote.projectRule,
+        });
+      } else if (remote.projectRule?.id) {
+        await deletePriceRule.mutateAsync({ ruleId: remote.projectRule.id });
+      }
+      setBundleDraft(null);
+      toast.success(t("pricingSaveSuccess"));
+    } catch (error) {
+      toast.error(errorMessage(error, t("pricingSaveFailed")));
+    }
+  };
+
+  const handleSaveEpisode = async (episodeId: string) => {
+    if (!remote || !draft) return;
+    if (!hasOwn(episodeDrafts, episodeId)) return;
+
+    setSavingEpisodeId(episodeId);
+    try {
+      const draftValue = episodeDrafts[episodeId];
+      if (typeof draftValue === "number") {
+        await saveEpisodePrice.mutateAsync({
+          priceType: 2,
+          targetId: episodeId,
+          points: draftValue,
+          existingRule: remote.episodeRules[episodeId],
+        });
+      } else {
+        const existingRule = remote.episodeRules[episodeId];
+        if (existingRule?.id) {
+          await deletePriceRule.mutateAsync({ ruleId: existingRule.id });
+        }
+      }
+      setEpisodeDrafts((prev) => omitKey(prev, episodeId));
+      toast.success(t("pricingSaveSuccess"));
+    } catch (error) {
+      toast.error(errorMessage(error, t("pricingSaveFailed")));
+    } finally {
+      setSavingEpisodeId(null);
+    }
   };
 
   if (episodesLoading || pricingLoading || !draft) {
@@ -65,36 +126,11 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
     );
   }
 
-  const totalEpisodes = episodes.length;
-  // Free episodes can be sparse picks — count by intersecting the
-  // draft's id list with currently-existing episodes (filters out
-  // stale ids for episodes that have since been deleted).
-  const episodeIds = new Set(episodes.map((e) => e.id));
-  const freeCount = draft.freeEpisodeIds.filter((id) => episodeIds.has(id)).length;
-  const paidEpisodeCount = Math.max(0, totalEpisodes - freeCount);
+  const bundleDirty = bundleDraft !== null;
+  const bundleValue = bundleDraft ?? remote?.bundleIntegral ?? 0;
 
   return (
     <div className="space-y-4">
-      {/* Backend exposes single price-rule CRUD, so the UI mirrors that
-          row-scoped model. Real persistence remains gated until the
-          Java rule payload is confirmed and wired in use-pricing.ts. */}
-      <div className="flex items-start gap-3 rounded-lg border border-amber-400/30 bg-gradient-to-br from-amber-400/[0.08] to-orange-400/[0.04] px-4 py-3">
-        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-amber-400">
-          <IconRocket className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1 text-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">
-              {t("pricingBetaBannerTitle")}
-            </span>
-            <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
-              {t("pricingBetaTag")}
-            </span>
-          </div>
-          <p className="mt-1 leading-relaxed text-muted-foreground">{t("pricingBetaBannerBody")}</p>
-        </div>
-      </div>
-
       {/* Header — title + save bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -122,57 +158,88 @@ export function PricingTab({ ipId, locale }: PricingTabProps) {
       {/* Top — paywall preview */}
       <PaywallPreview episodes={episodes} pricing={draft} />
 
-      {/* Middle — 3 config cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <FreePreviewCard
-          value={draft.freeEpisodeIds}
-          episodes={episodes}
-          onChange={(ids) => setDraft({ ...draft, freeEpisodeIds: ids })}
-        />
+      {/* Middle — project-level package rule */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <DefaultPriceCard
-          value={draft.defaultPriceIntegral}
-          onChange={(n) => setDraft({ ...draft, defaultPriceIntegral: n })}
-        />
-        <BundleDealCard
-          value={draft.bundleIntegral}
-          defaultPriceIntegral={draft.defaultPriceIntegral}
-          paidEpisodeCount={paidEpisodeCount}
-          onChange={(v) => setDraft({ ...draft, bundleIntegral: v })}
-          dirty={remote ? remote.bundleIntegral !== draft.bundleIntegral : false}
-          saving={false}
-          onSave={handleSaveComingSoon}
+          value={bundleValue}
+          onChange={(n) => {
+            setBundleDraft(n === (remote?.bundleIntegral ?? 0) ? null : n);
+          }}
+          dirty={bundleDirty}
+          saving={saveProjectPackagePrice.isPending || deletePriceRule.isPending}
+          onSave={handleSaveProjectPackage}
         />
       </div>
 
       {/* Bottom — per-episode overrides */}
       <EpisodeOverridesList
         episodes={episodes}
-        freeEpisodeIds={draft.freeEpisodeIds}
         defaultPriceIntegral={draft.defaultPriceIntegral}
-        savedFreeEpisodeIds={remote?.freeEpisodeIds ?? []}
-        savedDefaultPriceIntegral={remote?.defaultPriceIntegral ?? draft.defaultPriceIntegral}
         savedOverrides={remote?.overrides ?? {}}
         overrides={draft.overrides}
         onChangeOverride={(episodeId, price) => {
-          if (price === draft.defaultPriceIntegral) {
-            const next = { ...draft.overrides };
-            delete next[episodeId];
-            setDraft({ ...draft, overrides: next });
-          } else {
-            setDraft({
-              ...draft,
-              overrides: { ...draft.overrides, [episodeId]: price },
-            });
-          }
+          if (!remote) return;
+          setEpisodeDrafts((prev) =>
+            nextEpisodeDrafts(prev, episodeId, price, draft.defaultPriceIntegral, remote.overrides)
+          );
         }}
         onClearOverride={(episodeId) => {
-          const next = { ...draft.overrides };
-          delete next[episodeId];
-          setDraft({ ...draft, overrides: next });
+          if (!remote) return;
+          setEpisodeDrafts((prev) =>
+            hasOwn(remote.overrides, episodeId)
+              ? { ...prev, [episodeId]: null }
+              : omitKey(prev, episodeId)
+          );
         }}
-        savingEpisodeId={null}
-        onSaveEpisode={handleSaveComingSoon}
+        savingEpisodeId={savingEpisodeId}
+        onSaveEpisode={handleSaveEpisode}
       />
     </div>
   );
+}
+
+function applyEpisodeDrafts(
+  savedOverrides: Record<string, number>,
+  episodeDrafts: Record<string, number | null>
+) {
+  const next = { ...savedOverrides };
+  for (const [episodeId, price] of Object.entries(episodeDrafts)) {
+    if (price === null) delete next[episodeId];
+    else next[episodeId] = price;
+  }
+  return next;
+}
+
+function nextEpisodeDrafts(
+  prev: Record<string, number | null>,
+  episodeId: string,
+  price: number,
+  defaultPrice: number,
+  savedOverrides: Record<string, number>
+) {
+  if (price === defaultPrice) {
+    return hasOwn(savedOverrides, episodeId)
+      ? { ...prev, [episodeId]: null }
+      : omitKey(prev, episodeId);
+  }
+
+  if (hasOwn(savedOverrides, episodeId) && savedOverrides[episodeId] === price) {
+    return omitKey(prev, episodeId);
+  }
+
+  return { ...prev, [episodeId]: price };
+}
+
+function omitKey<T>(record: Record<string, T>, key: string) {
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
+
+function hasOwn(record: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
 }

@@ -41,7 +41,8 @@ export type EpisodeAccess =
   | { kind: "free" }
   | { kind: "owned-single" }
   | { kind: "owned-full" }
-  | { kind: "locked"; price: number };
+  | { kind: "locked"; price: number }
+  | { kind: "locked-bundle"; price: number };
 
 export type PricingDisplayState = "no-paywall" | "active" | "owner-bypass";
 
@@ -85,18 +86,24 @@ export function usePricing(): PricingContextValue {
 
 interface PricingProviderProps {
   ipId: string;
+  episodeIds?: string[];
   /** Whether the current viewer is the IP owner. Caller computes from
    *  `useCurrentUser().user?.id === project.ownerId`. */
   isOwner: boolean;
   children: React.ReactNode;
 }
 
-export function PricingProvider({ ipId, isOwner, children }: PricingProviderProps) {
+export function PricingProvider({
+  ipId,
+  episodeIds = [],
+  isOwner,
+  children,
+}: PricingProviderProps) {
   const t = useTranslations("paywall");
   const searchParams = useSearchParams();
   const isPreviewMode = searchParams.get("preview") === "pricing";
 
-  const { data: pricing } = useIpPricing(ipId);
+  const { data: pricing } = useIpPricing(ipId, episodeIds);
   const { data: credits = 0 } = useCredits();
 
   // Preview-mode mock state. Resets on remount (acceptable — preview
@@ -117,17 +124,20 @@ export function PricingProvider({ ipId, isOwner, children }: PricingProviderProp
   const state: PricingDisplayState =
     isOwner && !isPreviewMode ? "owner-bypass" : !hasPaidContent ? "no-paywall" : "active";
 
-  // Episode access — applies the rules from pricing-spec.md §"Access
-  // judgment". Order: explicit free → price-zero free → mock-owned →
-  // locked.
+  const bundle = useMemo(() => {
+    if (!pricing || typeof pricing.bundleIntegral !== "number") return null;
+    const owned = isPreviewMode && previewIdentity === "owns-full";
+    return { price: pricing.bundleIntegral, owned };
+  }, [pricing, isPreviewMode, previewIdentity]);
+
+  // Episode access. priceType=2 rules govern single-episode purchase.
+  // priceType=1 is the whole-IP package; if an episode has no single
+  // rule but a package exists, the row is locked behind the package CTA.
   const freeSet = useMemo(() => new Set(pricing?.freeEpisodeIds ?? []), [pricing?.freeEpisodeIds]);
 
   const episodeAccess = (epId: string): EpisodeAccess => {
     if (!pricing) return { kind: "free" };
     if (freeSet.has(epId)) return { kind: "free" };
-    const override = pricing.overrides[epId];
-    const price = typeof override === "number" ? override : pricing.defaultPriceIntegral;
-    if (price <= 0) return { kind: "free" };
 
     if (isPreviewMode) {
       if (previewIdentity === "owns-full") return { kind: "owned-full" };
@@ -135,15 +145,19 @@ export function PricingProvider({ ipId, isOwner, children }: PricingProviderProp
         return { kind: "owned-single" };
       }
     }
+
+    const override = pricing.overrides[epId];
+    const hasSingleEpisodeRule = typeof override === "number";
+    if (!hasSingleEpisodeRule && bundle && !bundle.owned) {
+      return { kind: "locked-bundle", price: bundle.price };
+    }
+
+    const price = hasSingleEpisodeRule ? Number(override) : pricing.defaultPriceIntegral;
+    if (price <= 0) return { kind: "free" };
+
     // Real mode: phase-2 would read per-user grants here.
     return { kind: "locked", price };
   };
-
-  const bundle = useMemo(() => {
-    if (!pricing || typeof pricing.bundleIntegral !== "number") return null;
-    const owned = isPreviewMode && previewIdentity === "owns-full";
-    return { price: pricing.bundleIntegral, owned };
-  }, [pricing, isPreviewMode, previewIdentity]);
 
   const unlockEpisode = async (epId: string): Promise<void> => {
     if (isPreviewMode) {

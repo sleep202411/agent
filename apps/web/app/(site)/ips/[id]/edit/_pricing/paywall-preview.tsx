@@ -35,7 +35,14 @@ export function PaywallPreview({ episodes, pricing }: PaywallPreviewProps) {
     );
   }
 
-  const freeCount = episodes.filter((ep) => freeSet.has(ep.id)).length;
+  const freeCount = episodes.filter((ep) => {
+    const hasOverride = hasOwn(pricing.overrides, ep.id);
+    if (!hasOverride && typeof pricing.bundleIntegral === "number") return false;
+    const resolvedPrice = hasOverride
+      ? Number(pricing.overrides[ep.id] ?? 0)
+      : pricing.defaultPriceIntegral;
+    return freeSet.has(ep.id) || resolvedPrice <= 0;
+  }).length;
   const paidCount = episodes.length - freeCount;
   const allFree = freeCount >= episodes.length;
 
@@ -56,26 +63,32 @@ export function PaywallPreview({ episodes, pricing }: PaywallPreviewProps) {
         {episodes.map((ep, idx) => {
           const position = idx + 1;
           const isFree = freeSet.has(ep.id);
-          const override = pricing.overrides[ep.id];
-          const resolvedPrice =
-            typeof override === "number" ? override : pricing.defaultPriceIntegral;
+          const hasOverride = hasOwn(pricing.overrides, ep.id);
+          const resolvedPrice = hasOverride
+            ? Number(pricing.overrides[ep.id] ?? 0)
+            : (pricing.bundleIntegral ?? pricing.defaultPriceIntegral);
           // Override of 0 / default of 0 → effectively free even if
           // the episode isn't in the explicit free list. Mirror the
           // access-judgment rules in pricing-spec.md.
-          const effectivelyFree = isFree || resolvedPrice === 0;
+          const effectivelyFree =
+            isFree || (!pricing.bundleIntegral && !hasOverride && resolvedPrice <= 0);
           return (
             <EpisodeChip
               key={ep.id}
               index={position}
               title={ep.title}
               price={effectivelyFree ? null : resolvedPrice}
-              hasOverride={!effectivelyFree && typeof override === "number"}
+              hasOverride={!effectivelyFree && hasOverride}
             />
           );
         })}
       </div>
     </div>
   );
+}
+
+function hasOwn(record: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 // ─── Internal atoms ────────────────────────────────────

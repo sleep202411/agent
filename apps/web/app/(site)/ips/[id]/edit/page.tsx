@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   IconBookmark,
   IconCoin,
@@ -60,6 +60,7 @@ import {
   useProjectRoles,
   type Episode,
   type FAQ,
+  type Project,
   type ProjectMember,
   type ProjectRole,
 } from "@/app/(site)/ips/_hooks/use-ip";
@@ -196,12 +197,7 @@ const TABS = [
   { id: "basic", labelKey: "editBasic", icon: IconFileText },
   { id: "trailer", labelKey: "editTrailer", icon: IconVideo },
   { id: "episodes", labelKey: "editEpisodes", icon: IconPlaylist },
-  // Pricing tab is feature-gated until the community-score / unlock
-  // endpoints ship on the backend. UI is fully built and exercises a
-  // mock data layer (see ips/_hooks/pricing-mock.ts). Default state is
-  // disabled, but `?pricing=1` URL param unlocks it for opt-in preview /
-  // demo / internal review. Drop the gate once backend ships.
-  { id: "pricing", labelKey: "editPricing", icon: IconCoin, disabled: true },
+  { id: "pricing", labelKey: "editPricing", icon: IconCoin },
   // Merchandise tab is feature-gated alongside Pricing. The full CRUD
   // UI is built and exercises a mock data layer (see
   // ips/_hooks/merchandise-mock.ts); flip `disabled` to false once
@@ -253,6 +249,35 @@ const EMPTY_FORM: EditForm = {
   coverImage: null,
 };
 
+function parseProjectTags(tag: unknown): string[] {
+  if (!tag) return [];
+  try {
+    const parsed = JSON.parse(String(tag));
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return String(tag).split(",").filter(Boolean);
+  }
+}
+
+function projectToForm(project: Project | undefined): EditForm {
+  if (!project) return EMPTY_FORM;
+  return {
+    ...EMPTY_FORM,
+    title: project.name ?? "",
+    typeId: String(project.typeId ?? ""),
+    description: project.description ?? "",
+    background: project.background ?? "",
+    bannerLink: project.bannerLink ?? "",
+    contact: project.contact ?? "",
+    tags: parseProjectTags(project.tag),
+    coverImage: project.bannerLink
+      ? project.bannerLink.startsWith("http")
+        ? project.bannerLink
+        : `${env.BANNER_BASE_URL}/${project.bannerLink}`
+      : null,
+  };
+}
+
 // ─── Two-column section layout ──────────────────────
 
 function Section({
@@ -287,7 +312,7 @@ export default function IPEditPage() {
   const tc = useTranslations("common");
   const tEp = useTranslations("episode");
   const [activeTab, setActiveTab] = useState("basic");
-  const [form, setForm] = useState<EditForm>(EMPTY_FORM);
+  const [formPatch, setFormPatch] = useState<Partial<EditForm>>({});
   const [saved, setSaved] = useState(false);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   // Episode dialog: null = closed, -1 = creating, otherwise editing index
@@ -301,6 +326,7 @@ export default function IPEditPage() {
   const { data: tagList } = useTagList();
   const { data: typeList } = useIPTypes();
   const { data: project, isLoading } = useProjectDetail(id);
+  const form = useMemo(() => ({ ...projectToForm(project), ...formPatch }), [project, formPatch]);
   const { mutate: doUpdate, isPending: saving } = useUpdateProject();
 
   // Owner gate. The /edit URL was previously unguarded — any logged-in
@@ -323,17 +349,9 @@ export default function IPEditPage() {
   // when historical data exists for this project. See useLegacyJobsByRole.
   const { data: legacyJobs = [] } = useLegacyJobsByRole(id);
 
-  // Pricing tab opt-in via `?pricing=1` URL param — lets us share preview
-  // links with stakeholders before backend lands without making the tab
-  // generally available. Drop this when the feature ships properly.
-  const searchParams = useSearchParams();
-  const pricingEnabled = searchParams.get("pricing") === "1";
   const visibleTabs = useMemo(() => {
-    const base = legacyJobs.length > 0 ? [...TABS, LEGACY_JOBS_TAB] : TABS;
-    return base.map((tab) =>
-      tab.id === "pricing" && pricingEnabled ? { ...tab, disabled: false } : tab
-    );
-  }, [legacyJobs.length, pricingEnabled]);
+    return legacyJobs.length > 0 ? [...TABS, LEGACY_JOBS_TAB] : TABS;
+  }, [legacyJobs.length]);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -376,37 +394,8 @@ export default function IPEditPage() {
   // resets `projectStatus` to 0 (pending review) automatically. The
   // hero's Save button gates this via its own confirm dialog.
 
-  // Populate form when project data loads
-  useEffect(() => {
-    if (!project) return;
-    const parseTags = (tag: unknown): string[] => {
-      if (!tag) return [];
-      try {
-        const parsed = JSON.parse(String(tag));
-        return Array.isArray(parsed) ? parsed.map(String) : [];
-      } catch {
-        return String(tag).split(",").filter(Boolean);
-      }
-    };
-    setForm((prev) => ({
-      ...prev,
-      title: project.name ?? "",
-      typeId: String(project.typeId ?? ""),
-      description: project.description ?? "",
-      background: project.background ?? "",
-      bannerLink: project.bannerLink ?? "",
-      contact: project.contact ?? "",
-      tags: parseTags(project.tag),
-      coverImage: project.bannerLink
-        ? project.bannerLink.startsWith("http")
-          ? project.bannerLink
-          : `${env.BANNER_BASE_URL}/${project.bannerLink}`
-        : null,
-    }));
-  }, [project]);
-
   const update = useCallback((patch: Partial<EditForm>) => {
-    setForm((prev) => ({ ...prev, ...patch }));
+    setFormPatch((prev) => ({ ...prev, ...patch }));
     setSaved(false);
   }, []);
 

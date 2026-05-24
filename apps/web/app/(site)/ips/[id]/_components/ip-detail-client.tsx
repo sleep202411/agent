@@ -83,6 +83,7 @@ export function IPDetailClient({ id }: { id: string }) {
   const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
   const { data: members } = useProjectMembers(id);
   const { data: episodes = [] } = useProjectEpisodes(id);
+  const pricingEpisodeIds = useMemo(() => episodes.map((episode) => episode.id), [episodes]);
   const { data: faqs = [] } = useFAQs(id);
   // Legacy job-recruitment compat — when the old `/project/job/project/list`
   // endpoint returns rows for this project's roleId, surface a "岗位招聘"
@@ -191,7 +192,7 @@ export function IPDetailClient({ id }: { id: string }) {
   const hasTrailer = !!trailerSrc;
 
   return (
-    <PricingProvider ipId={id} isOwner={isOwner}>
+    <PricingProvider ipId={id} episodeIds={pricingEpisodeIds} isOwner={isOwner}>
       <div className="min-h-screen bg-background">
         {/* Preview-mode top bar — only renders when ?preview=pricing.
             Sticky so identity switcher stays reachable while scrolling. */}

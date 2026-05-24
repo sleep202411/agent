@@ -10,31 +10,24 @@ import type { Episode } from "@/app/(site)/ips/_hooks/use-ip";
 
 interface EpisodeOverridesListProps {
   episodes: Episode[];
-  freeEpisodeIds: string[];
   defaultPriceIntegral: number;
-  savedFreeEpisodeIds: string[];
-  savedDefaultPriceIntegral: number;
   savedOverrides: Record<string, number>;
   overrides: Record<string, number>;
   onChangeOverride: (episodeId: string, price: number) => void;
   onClearOverride: (episodeId: string) => void;
   savingEpisodeId?: string | null;
-  onSaveEpisode: (episodeId: string) => void;
+  onSaveEpisode: (episodeId: string) => void | Promise<void>;
 }
 
 /**
- * Collapsible per-episode override editor. The common case (one price
- * for everything) doesn't need this; the panel stays folded by default
- * so it's discoverable but not noisy. Free episodes show a "Free" pill
- * and don't accept input — the IP owner has to un-tick the episode
- * from the Free preview card first if they want to charge for it.
+ * Collapsible per-episode rule editor. The Java backend exposes
+ * single-target price rules only: no batch save and no separate free
+ * list. A row without a rule inherits the project default price; a row
+ * rule with price 0 means that episode is free.
  */
 export function EpisodeOverridesList({
   episodes,
-  freeEpisodeIds,
   defaultPriceIntegral,
-  savedFreeEpisodeIds,
-  savedDefaultPriceIntegral,
   savedOverrides,
   overrides,
   onChangeOverride,
@@ -44,21 +37,11 @@ export function EpisodeOverridesList({
 }: EpisodeOverridesListProps) {
   const t = useTranslations("ipEdit");
   const [open, setOpen] = useState(true);
-  const freeSet = new Set(freeEpisodeIds);
-  const savedFreeSet = new Set(savedFreeEpisodeIds);
 
   // Trust the array order — `videoNumber` may be 0 / missing from
   // some backend rows. Position is computed as `idx + 1` at render time.
   const unsavedCount = episodes.filter((ep) =>
-    episodeDirty({
-      episodeId: ep.id,
-      freeSet,
-      defaultPrice: defaultPriceIntegral,
-      overrides,
-      savedFreeSet,
-      savedDefaultPrice: savedDefaultPriceIntegral,
-      savedOverrides,
-    })
+    episodeDirty(ep.id, overrides, savedOverrides)
   ).length;
 
   return (
@@ -99,12 +82,11 @@ export function EpisodeOverridesList({
                     key={ep.id}
                     episode={ep}
                     position={position}
-                    isFree={freeSet.has(ep.id)}
-                    savedIsFree={savedFreeSet.has(ep.id)}
                     defaultPrice={defaultPriceIntegral}
-                    savedDefaultPrice={savedDefaultPriceIntegral}
-                    override={overrides[ep.id]}
-                    savedOverride={savedOverrides[ep.id]}
+                    hasOverride={hasOwn(overrides, ep.id)}
+                    override={overrides[ep.id] ?? null}
+                    savedHasOverride={hasOwn(savedOverrides, ep.id)}
+                    savedOverride={savedOverrides[ep.id] ?? null}
                     onChange={(price) => onChangeOverride(ep.id, price)}
                     onClear={() => onClearOverride(ep.id)}
                     saving={savingEpisodeId === ep.id}
@@ -125,12 +107,11 @@ interface OverrideRowProps {
   /** 1-based position in the episode list (not `episode.videoNumber`,
    *  which the backend leaves at 0 for some rows). */
   position: number;
-  isFree: boolean;
-  savedIsFree: boolean;
   defaultPrice: number;
-  savedDefaultPrice: number;
-  override: number | undefined;
-  savedOverride: number | undefined;
+  hasOverride: boolean;
+  override: number | null;
+  savedHasOverride: boolean;
+  savedOverride: number | null;
   onChange: (price: number) => void;
   onClear: () => void;
   saving?: boolean;
@@ -140,11 +121,10 @@ interface OverrideRowProps {
 function OverrideRow({
   episode,
   position,
-  isFree,
-  savedIsFree,
   defaultPrice,
-  savedDefaultPrice,
+  hasOverride,
   override,
+  savedHasOverride,
   savedOverride,
   onChange,
   onClear,
@@ -152,15 +132,15 @@ function OverrideRow({
   onSave,
 }: OverrideRowProps) {
   const t = useTranslations("ipEdit");
-  const hasOverride = typeof override === "number";
-  const displayValue = hasOverride ? override : defaultPrice;
-  const savedPrice = savedIsFree
-    ? 0
-    : typeof savedOverride === "number"
-      ? savedOverride
-      : savedDefaultPrice;
-  const currentPrice = isFree ? 0 : displayValue;
-  const dirty = currentPrice !== savedPrice;
+  const displayValue = hasOverride ? (override ?? 0) : defaultPrice;
+  const dirty =
+    hasOverride !== savedHasOverride ||
+    (hasOverride && savedHasOverride && (override ?? 0) !== (savedOverride ?? 0));
+  const statusLabel = hasOverride
+    ? displayValue <= 0
+      ? t("pricingExplicitFree")
+      : t("pricingCustomPrice")
+    : t("pricingInheritedDefault");
 
   return (
     <li
@@ -179,54 +159,53 @@ function OverrideRow({
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">
         {episode.title || t("pricingOverridesUntitled")}
       </span>
-      {isFree ? (
-        <div className="flex items-center justify-end gap-2">
-          <span className="rounded-full border border-green-400/40 bg-green-400/10 px-2 py-0.5 text-xs font-semibold text-green-400">
-            {t("pricingFree")}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Input
+          type="number"
+          min={0}
+          inputMode="numeric"
+          value={String(displayValue)}
+          onChange={(e) => {
+            const n = Number.parseInt(e.target.value, 10);
+            if (Number.isFinite(n) && n >= 0) onChange(n);
+            else if (e.target.value === "") onChange(0);
+          }}
+          className={cn(
+            "h-7 w-20 text-center text-xs tabular-nums",
+            hasOverride && "border-blue-400/40"
+          )}
+        />
+        <span className="text-xs text-muted-foreground">{t("pricingScoreUnit")}</span>
+        <span
+          className={cn(
+            "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+            hasOverride
+              ? displayValue <= 0
+                ? "border-green-400/40 bg-green-400/10 text-green-400"
+                : "border-blue-400/40 bg-blue-400/10 text-blue-400"
+              : "border-border bg-secondary/60 text-muted-foreground"
+          )}
+        >
+          {statusLabel}
+        </span>
+        {hasOverride ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={onClear}
+            aria-label={t("pricingOverridesReset")}
+            title={t("pricingOverridesReset")}
+          >
+            <IconRefresh className="size-3" />
+          </Button>
+        ) : null}
+        {dirty ? (
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+            {t("pricingUnsaved")}
           </span>
-          {dirty ? (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-              {t("pricingUnsaved")}
-            </span>
-          ) : null}
-        </div>
-      ) : (
-        <div className="flex items-center justify-end gap-2">
-          <Input
-            type="number"
-            min={0}
-            inputMode="numeric"
-            value={String(displayValue)}
-            onChange={(e) => {
-              const n = Number.parseInt(e.target.value, 10);
-              if (Number.isFinite(n) && n >= 0) onChange(n);
-              else if (e.target.value === "") onChange(0);
-            }}
-            className={cn(
-              "h-7 w-20 text-center text-xs tabular-nums",
-              hasOverride && "border-blue-400/40"
-            )}
-          />
-          <span className="text-xs text-muted-foreground">{t("pricingScoreUnit")}</span>
-          {hasOverride ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={onClear}
-              aria-label={t("pricingOverridesReset")}
-              title={t("pricingOverridesReset")}
-            >
-              <IconRefresh className="size-3" />
-            </Button>
-          ) : null}
-          {dirty ? (
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-              {t("pricingUnsaved")}
-            </span>
-          ) : null}
-        </div>
-      )}
+        ) : null}
+      </div>
       <Button
         type="button"
         variant={dirty ? "solid" : "outline"}
@@ -243,24 +222,18 @@ function OverrideRow({
   );
 }
 
-function episodeDirty({
-  episodeId,
-  freeSet,
-  defaultPrice,
-  overrides,
-  savedFreeSet,
-  savedDefaultPrice,
-  savedOverrides,
-}: {
-  episodeId: string;
-  freeSet: Set<string>;
-  defaultPrice: number;
-  overrides: Record<string, number>;
-  savedFreeSet: Set<string>;
-  savedDefaultPrice: number;
-  savedOverrides: Record<string, number>;
-}) {
-  const current = freeSet.has(episodeId) ? 0 : (overrides[episodeId] ?? defaultPrice);
-  const saved = savedFreeSet.has(episodeId) ? 0 : (savedOverrides[episodeId] ?? savedDefaultPrice);
-  return current !== saved;
+function episodeDirty(
+  episodeId: string,
+  overrides: Record<string, number>,
+  savedOverrides: Record<string, number>
+) {
+  const currentHasOverride = hasOwn(overrides, episodeId);
+  const savedHasOverride = hasOwn(savedOverrides, episodeId);
+  if (currentHasOverride !== savedHasOverride) return true;
+  if (!currentHasOverride) return false;
+  return overrides[episodeId] !== savedOverrides[episodeId];
+}
+
+function hasOwn(record: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key);
 }

@@ -21,7 +21,7 @@ import { useState } from "react";
 import { IconCheck, IconCoin, IconLock, IconPlayerPlay } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
-import { usePricing, type EpisodeAccess } from "./pricing-context";
+import { usePricing } from "./pricing-context";
 import { UnlockConfirmDialog } from "./unlock-confirm-dialog";
 
 interface EpisodePaywallChipProps {
@@ -71,7 +71,7 @@ export function EpisodePaywallChip({
 
   const access = episodeAccess(episodeId);
 
-  if (access.kind === "locked") {
+  if (access.kind === "locked" || access.kind === "locked-bundle") {
     return (
       <>
         <button
@@ -87,12 +87,16 @@ export function EpisodePaywallChip({
           <IconCoin className="size-3" />
           <span className="tabular-nums">{access.price}</span>
         </button>
-        <UnlockConfirmDialog
-          mode="episode"
-          open={confirmOpen}
-          onOpenChange={setConfirmOpen}
-          episode={{ id: episodeId, title: episodeTitle, number: episodeNumber }}
-        />
+        {access.kind === "locked-bundle" ? (
+          <UnlockConfirmDialog mode="bundle" open={confirmOpen} onOpenChange={setConfirmOpen} />
+        ) : (
+          <UnlockConfirmDialog
+            mode="episode"
+            open={confirmOpen}
+            onOpenChange={setConfirmOpen}
+            episode={{ id: episodeId, title: episodeTitle, number: episodeNumber }}
+          />
+        )}
       </>
     );
   }
