@@ -15,7 +15,6 @@ import { useEntityEventsSession } from "@/src/lib/entity-events/use-entity-event
 import { NotificationProvider } from "@/src/lib/notifications";
 import { ConversationsProvider } from "@/src/lib/conversations/provider";
 import { AuthInterceptor } from "@/components/layout/auth-interceptor";
-import { ApexRedirect } from "@/components/apex-redirect";
 
 /**
  * Lives inside StoreProvider so it can hook Redux. Opens a single
@@ -72,7 +71,6 @@ export function Providers({
       <QueryClientProvider client={queryClient}>
         <HydrationBoundary state={dehydratedState}>
           <TooltipProvider>
-            <ApexRedirect />
             <AuthInterceptor />
             <EntityEventsSession>
               <NotificationProvider>

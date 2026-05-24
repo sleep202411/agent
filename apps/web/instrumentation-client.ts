@@ -31,9 +31,12 @@ posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
   // when you genuinely need to inspect a PostHog event.
   debug: false,
   session_recording: {
-    recordBody: true, // default false; captures full HTML snapshots of the page for replay. Can be a privacy concern, so opt-in only.
-    maskAllInputs: true, // default true; masks text inputs, password fields, and contenteditable elements to prevent sensitive data leaks. Set to false to capture input values (not recommended).
-    recordCrossOriginIframes: false, // default false; set to true to enable recording of cross-origin iframes. Note that this requires additional setup and may have performance implications.
+    // recordBody intentionally left at default (false) — turning it on
+    // produced 100KB+ per-snapshot uploads that overwhelmed the CN
+    // Alibaba ECS reverse proxy in front of AKS (2026-05-24). Re-enable
+    // only once the ECS bottleneck is gone or POST traffic is sized.
+    maskAllInputs: true,
+    recordCrossOriginIframes: false,
   },
   disable_session_recording: false, // default false; set to true to disable session recording entirely, including snapshots, console logs, and network requests. This is a more extreme measure than just setting recordBody to false, as it turns off all recording features.
 });
