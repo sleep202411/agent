@@ -461,6 +461,7 @@
     "detailEpisodeCount": "{count} 集",
     "detailNoEpisodes": "还没有发布剧集。",
     "detailManageEpisodes": "添加剧集",
+    "detailEditIp": "编辑 IP",
     "detailAboutTitle": "关于本作",
     "detailStoryTitle": "故事简介",
     "detailReleased": "已上线",
@@ -1126,6 +1127,7 @@
       "inbox": "收件箱",
       "earnings": "收益",
       "editProfile": "编辑资料",
+      "referralLink": "引荐链接",
       "startRequest": "立即下单",
       "message": "私信",
       "follow": "关注"
@@ -1177,7 +1179,8 @@
       "emptyOwnerBody": "IP 是你拥有的核心项目，角色、场景、剧集都归属于其下。",
       "emptyVisitorTitle": "暂无公开 IP",
       "emptyVisitorBody": "该创作者还没有公开任何 IP。",
-      "createCta": "新建 IP"
+      "createCta": "新建 IP",
+      "editIp": "编辑 IP"
     },
     "crews": {
       "emptyOwnerTitle": "加入或筹组剧组",
@@ -3300,6 +3303,9 @@
     "aiGenerated": "AI 生成",
     "noAiRecords": "暂无 AI 生成记录",
     "noUploadRecords": "暂无上传记录",
+    "noMore": "没有更多了",
+    "loadMore": "加载更多",
+    "loading": "加载中…",
     "useSelected": "使用选中",
     "imagePreview": "图片预览",
     "videoPreview": "视频预览",
@@ -3509,6 +3515,7 @@
     "verifyingPayment": "正在确认支付结果",
     "pleaseWait": "请稍候，正在查询订单状态...",
     "paymentFailed": "支付失败",
+    "paymentNoCheckoutUrl": "无法跳转支付页面，请重试，多次失败请联系客服。",
     "paymentFailedDesc": "支付未完成，请重试或联系客服。",
     "orderNo": "订单号",
     "backToCreatorCenter": "返回创作者中心",

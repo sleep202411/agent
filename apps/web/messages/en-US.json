@@ -461,6 +461,7 @@
     "detailEpisodeCount": "{count} episodes",
     "detailNoEpisodes": "No episodes published yet.",
     "detailManageEpisodes": "Add episodes",
+    "detailEditIp": "Edit IP",
     "detailAboutTitle": "About",
     "detailStoryTitle": "Story",
     "detailReleased": "Released",
@@ -1126,6 +1127,7 @@
       "inbox": "Inbox",
       "earnings": "Earnings",
       "editProfile": "Edit profile",
+      "referralLink": "Referral link",
       "startRequest": "Start a request",
       "message": "Message",
       "follow": "Follow"
@@ -1177,7 +1179,8 @@
       "emptyOwnerBody": "IPs are the canonical projects you own — characters, scenes, episodes all live under one.",
       "emptyVisitorTitle": "No IPs yet",
       "emptyVisitorBody": "This creator hasn't created any public IPs.",
-      "createCta": "Create IP"
+      "createCta": "Create IP",
+      "editIp": "Edit IP"
     },
     "crews": {
       "emptyOwnerTitle": "Join a crew",
@@ -3300,6 +3303,9 @@
     "aiGenerated": "AI Generated",
     "noAiRecords": "No AI generation records",
     "noUploadRecords": "No upload records",
+    "noMore": "No more",
+    "loadMore": "Load more",
+    "loading": "Loading…",
     "useSelected": "Use Selected",
     "imagePreview": "Image Preview",
     "videoPreview": "Video Preview",
@@ -3510,6 +3516,7 @@
     "pleaseWait": "Please wait, checking order status...",
     "paymentFailed": "Payment Failed",
     "paymentFailedDesc": "Payment was not completed. Please try again or contact support.",
+    "paymentNoCheckoutUrl": "Could not start checkout. Please retry, or contact support if it keeps happening.",
     "orderNo": "Order No",
     "backToCreatorCenter": "Back to Creator Center",
     "changePlan": "Change Plan",

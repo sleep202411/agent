@@ -76,10 +76,6 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
   };
 
   const handleGenerate = async () => {
-    // Title is required (it's how the user later finds the track in
-    // the music panel list); lyrics are optional — the model is happy
-    // to invent them from the title + tags when the user leaves the
-    // textarea blank.
     if (!formData.title.trim()) {
       toast.warning(t("musicTitleRequired"));
       return;
@@ -92,7 +88,10 @@ export function MusicCreateDialog({ open, onOpenChange, onCreated }: MusicCreate
           shotId: MUSIC_SHOT_ID,
           shotColumnId: MUSIC_COLUMN_ID,
           model: formData.model || undefined,
-          prompt: formData.prompt.trim(),
+          // Backend rejects an empty prompt but happily accepts any
+          // punctuation — backend dev confirmed 2026-05-24. Auto-fill
+          // so users who don't care about lyrics aren't blocked.
+          prompt: formData.prompt.trim() || "...",
           title: formData.title.trim(),
           tags: formData.tags.trim(),
         },
