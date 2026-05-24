@@ -12,7 +12,6 @@
  * tab is active or how full it is, and lets the left rail stay
  * laser-focused on stats + business info.
  */
-import { useMemo } from "react";
 import {
   IconCircleCheck,
   IconEdit,
@@ -30,6 +29,9 @@ import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
 import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
+
+const FALLBACK_HERO_BACKGROUND =
+  "radial-gradient(circle at 18% 20%, rgba(229,34,39,0.20), transparent 34%), radial-gradient(circle at 80% 10%, rgba(245,158,11,0.10), transparent 30%), linear-gradient(135deg, #171717 0%, #0b0b0d 58%, #050506 100%)";
 
 interface CreatorHeroProps {
   creator: Creator;
@@ -68,14 +70,12 @@ export function CreatorHero({
   const bio = (creator.bio || "").trim();
   const levels = Array.isArray(creator.levels) ? creator.levels.filter((l) => !!l?.name) : [];
 
-  const gradient = useMemo(() => gradientFromSeed(name || "fizz"), [name]);
-
   return (
     <section className="relative w-full">
       {/* ─── Cover layer ─────────────────────────────────── */}
       <div
         className="absolute inset-x-0 top-0 h-[320px] overflow-hidden md:h-[360px]"
-        style={creator.banner ? undefined : { background: gradient }}
+        style={creator.banner ? undefined : { background: FALLBACK_HERO_BACKGROUND }}
         aria-hidden
       >
         {creator.banner ? (
@@ -231,12 +231,4 @@ function VisitorCtas({ t }: { t: (k: string) => string }) {
       </Button>
     </>
   );
-}
-
-function gradientFromSeed(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
-  const hue = Math.abs(hash) % 360;
-  const hue2 = (hue + 47) % 360;
-  return `linear-gradient(135deg, hsl(${hue} 60% 22%) 0%, hsl(${hue2} 50% 14%) 60%, hsl(0 0% 8%) 100%)`;
 }

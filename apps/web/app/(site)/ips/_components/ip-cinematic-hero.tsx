@@ -32,22 +32,19 @@ export function IPCinematicHero() {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const total = slides.length;
-
-  // Reset to first slide if backend payload shrinks below the current index
-  // (e.g. an item is unfeatured while the page is open).
-  useEffect(() => {
-    if (index >= total && total > 0) setIndex(0);
-  }, [index, total]);
+  // If the backend payload shrinks below the current index, render the
+  // first available slide without a synchronous state write in an effect.
+  const activeIndex = total > 0 && index < total ? index : 0;
 
   // Auto-advance carousel; pause on hover so reading the slide isn't yanked
   // away mid-sentence.
   useEffect(() => {
     if (paused || total <= 1) return;
     const handle = window.setTimeout(() => {
-      setIndex((i) => (i + 1) % total);
+      setIndex((activeIndex + 1) % total);
     }, AUTO_ADVANCE_MS);
     return () => window.clearTimeout(handle);
-  }, [index, paused, total]);
+  }, [activeIndex, paused, total]);
 
   // Featured-empty branch. Featured comes from `/project/featured/list`
   // which the backend hasn't shipped yet, but the For You rail (sourced
@@ -120,9 +117,9 @@ export function IPCinematicHero() {
     );
   }
 
-  const prev = () => setIndex((i) => (i - 1 + total) % total);
-  const next = () => setIndex((i) => (i + 1) % total);
-  const slide = slides[index];
+  const prev = () => setIndex((activeIndex - 1 + total) % total);
+  const next = () => setIndex((activeIndex + 1) % total);
+  const slide = slides[activeIndex];
 
   return (
     <section
@@ -144,7 +141,7 @@ export function IPCinematicHero() {
             alt=""
             className={cn(
               "absolute inset-0 size-full object-cover transition-opacity duration-700",
-              i === index ? "opacity-100" : "opacity-0"
+              i === activeIndex ? "opacity-100" : "opacity-0"
             )}
           />
         ))}
@@ -171,9 +168,11 @@ export function IPCinematicHero() {
                 {slide.subtitle}
               </div>
             )}
-            <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-white/80">
-              <span>{t("detailEpisodeCount", { count: slide.episodes })}</span>
-            </div>
+            {slide.episodes > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-white/80">
+                <span>{t("detailEpisodeCount", { count: slide.episodes })}</span>
+              </div>
+            )}
             {slide.description && (
               <p className="mt-4 line-clamp-3 max-w-xl text-sm leading-relaxed text-white/85 sm:text-base">
                 {slide.description}
@@ -263,13 +262,13 @@ export function IPCinematicHero() {
                 type="button"
                 onClick={() => setIndex(i)}
                 aria-label={`Slide ${i + 1}: ${s.title ?? ""}`}
-                aria-current={i === index}
+                aria-current={i === activeIndex}
                 // Active state: solid 2px primary border + 4px halo of
                 // primary at ~30% alpha, stacked via two box-shadows so
                 // the inner edge stays sharp and the outer halo softly
                 // bleeds outward without nudging layout.
                 style={
-                  i === index
+                  i === activeIndex
                     ? {
                         boxShadow:
                           "0 0 0 2px var(--color-primary), 0 0 0 6px color-mix(in srgb, var(--color-primary) 30%, transparent)",
@@ -278,7 +277,7 @@ export function IPCinematicHero() {
                 }
                 className={cn(
                   "relative h-20 w-32 overflow-hidden rounded-lg transition-all",
-                  i === index ? "opacity-100" : "opacity-50 hover:opacity-90"
+                  i === activeIndex ? "opacity-100" : "opacity-50 hover:opacity-90"
                 )}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
