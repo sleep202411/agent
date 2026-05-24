@@ -10,6 +10,7 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconCircleCheck,
+  IconEdit,
   IconEye,
   IconHeart,
   IconHeartFilled,
@@ -210,9 +211,21 @@ export function IPDetailClient({ id }: { id: string }) {
         {/* Hero */}
         <div className="mx-auto max-w-screen-2xl px-6 py-6">
           <div className="mb-8 text-center">
-            <h1 className="mb-2 text-4xl font-bold text-foreground">
-              {title || t("detailUntitled")}
-            </h1>
+            <div className="relative">
+              <h1 className="mb-2 text-4xl font-bold text-foreground">
+                {title || t("detailUntitled")}
+              </h1>
+              {isOwner && (
+                <Link
+                  href={editUrl}
+                  className="absolute right-0 top-1 inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+                  aria-label={t("detailEditIp")}
+                >
+                  <IconEdit className="size-3.5" />
+                  {t("detailEditIp")}
+                </Link>
+              )}
+            </div>
             {tagline && <p className="mb-3 text-sm text-muted-foreground">{tagline}</p>}
             {/* Lifecycle status is intentionally NOT shown on this
               consumer-facing detail page. The previous badge claimed

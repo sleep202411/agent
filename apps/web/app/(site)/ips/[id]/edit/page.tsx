@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   IconBookmark,
   IconCoin,
@@ -65,6 +65,9 @@ import {
 } from "@/app/(site)/ips/_hooks/use-ip";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTagList } from "@/src/hooks/use-tag-list";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { useIPTypes } from "@/app/(site)/ips/_hooks/use-ip-list";
 import { uploadIPBanner } from "@/app/(site)/ips/_hooks/uploads";
 import { AddMemberDialog, type NewMember } from "./add-member-dialog";
@@ -279,6 +282,7 @@ function Section({
 export default function IPEditPage() {
   const { id } = useParams<{ id: string }>();
   const locale = useLocale();
+  const router = useRouter();
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
   const tEp = useTranslations("episode");
@@ -298,6 +302,21 @@ export default function IPEditPage() {
   const { data: typeList } = useIPTypes();
   const { data: project, isLoading } = useProjectDetail(id);
   const { mutate: doUpdate, isPending: saving } = useUpdateProject();
+
+  // Owner gate. The /edit URL was previously unguarded — any logged-in
+  // user who knew the IP id could mutate it via the same mutations the
+  // owner uses. We bounce non-owners to the read-only detail page once
+  // both project + currentUser have hydrated.
+  const { user: currentUser } = useCurrentUser();
+  const isOwner =
+    !!currentUser?.id && project?.ownerId != null && String(project.ownerId) === currentUser.id;
+  useEffect(() => {
+    if (isLoading || !project) return;
+    if (currentUser === undefined) return; // still hydrating
+    if (!isOwner) {
+      router.replace(localizePath(`/ips/${id}`, locale as Locale));
+    }
+  }, [isLoading, project, currentUser, isOwner, id, locale, router]);
   const { data: videoLink } = useProjectVideoLink(id, !!project?.videoLink);
   const { mutate: doUploadVideo, isPending: uploadingVideo } = useUploadProjectVideo();
   // Legacy job-recruitment compat — only surface the optional 6th tab

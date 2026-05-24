@@ -17,6 +17,7 @@ import {
   IconCircleCheck,
   IconEdit,
   IconInbox,
+  IconLink,
   IconMail,
   IconMessage,
   IconPlus,
@@ -39,9 +40,24 @@ interface CreatorHeroProps {
    * on save so the user lands on the page that just changed.
    */
   onCreateService?: () => void;
+  /** Owner clicked "编辑资料" — parent opens the ProfileEditDialog. */
+  onEditProfile?: () => void;
+  /** Owner clicked the referral-link CTA — parent generates the
+   *  code and opens the referral-link share dialog. */
+  onShareReferral?: () => void;
+  /** Whether the referral-link generation request is in flight, so
+   *  the button can show a spinner. */
+  referralPending?: boolean;
 }
 
-export function CreatorHero({ creator, isOwner, onCreateService }: CreatorHeroProps) {
+export function CreatorHero({
+  creator,
+  isOwner,
+  onCreateService,
+  onEditProfile,
+  onShareReferral,
+  referralPending,
+}: CreatorHeroProps) {
   const t = useTranslations("creatorCenter");
   const name = (creator.name || "").trim() || "—";
   const bio = (creator.bio || "").trim();
@@ -99,7 +115,17 @@ export function CreatorHero({ creator, isOwner, onCreateService }: CreatorHeroPr
 
         {/* CTA cluster */}
         <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 md:justify-end">
-          {isOwner ? <OwnerCtas t={t} onCreateService={onCreateService} /> : <VisitorCtas t={t} />}
+          {isOwner ? (
+            <OwnerCtas
+              t={t}
+              onCreateService={onCreateService}
+              onEditProfile={onEditProfile}
+              onShareReferral={onShareReferral}
+              referralPending={referralPending}
+            />
+          ) : (
+            <VisitorCtas t={t} />
+          )}
         </div>
       </div>
     </section>
@@ -109,9 +135,15 @@ export function CreatorHero({ creator, isOwner, onCreateService }: CreatorHeroPr
 function OwnerCtas({
   t,
   onCreateService,
+  onEditProfile,
+  onShareReferral,
+  referralPending,
 }: {
   t: (k: string) => string;
   onCreateService?: () => void;
+  onEditProfile?: () => void;
+  onShareReferral?: () => void;
+  referralPending?: boolean;
 }) {
   return (
     <>
@@ -139,10 +171,15 @@ function OwnerCtas({
       </Button>
       <Button
         type="button"
-        variant="ghost"
+        variant="outline"
         color="muted"
-        onClick={() => toast.info(t("ctaEditComingSoon"))}
+        onClick={() => onShareReferral?.()}
+        disabled={referralPending}
       >
+        <IconLink className="size-4" />
+        {t("cta.referralLink")}
+      </Button>
+      <Button type="button" variant="ghost" color="muted" onClick={() => onEditProfile?.()}>
         <IconEdit className="size-4" />
         {t("cta.editProfile")}
       </Button>

@@ -32,14 +32,25 @@
  * state and (for visitors) a "this creator hasn't published a
  * service yet" message.
  */
-import { useMemo, useState } from "react";
-import { IconLoader2 } from "@tabler/icons-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { IconCheck, IconCopy, IconLoader2 } from "@tabler/icons-react";
+import QRCode from "qrcode";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useCurrentUser } from "@/src/hooks/use-user";
+import { useCurrentUser, useReferralCode, useUserInfo } from "@/src/hooks/use-user";
 import { useCreatorDetail, type Creator } from "@/app/(site)/creators/_hooks/use-creator";
+import { ProfileEditDialog } from "@/app/(site)/profile/profile-edit-dialog";
 import { CreatorHero } from "./hero";
 import { CreatorLeftRail } from "./left-rail";
-import { CreatorTabBar, type CreatorTabId } from "./tab-bar";
+import { CreatorTabBar, CREATOR_TAB_ORDER, CREATOR_SECTION_ID, type CreatorTabId } from "./tab-bar";
 import { CreateServiceDialog } from "./dialogs/create-service-dialog";
 import { ServicesTab } from "./tabs/services-tab";
 import { WorksTab } from "./tabs/works-tab";
@@ -68,12 +79,105 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
     [currentUser, creatorId]
   );
 
+  // Scrollspy state. `activeTab` is just visual highlight on the tab
+  // bar — clicking a tab scrolls to that section, IntersectionObserver
+  // syncs the highlight as the user scrolls. All 5 sections render
+  // stacked under the tab bar.
   const [activeTab, setActiveTab] = useState<CreatorTabId>(DEFAULT_TAB);
+  const sectionRefs = useRef<Partial<Record<CreatorTabId, HTMLElement | null>>>({});
+
+  const handlePickTab = useCallback((id: CreatorTabId) => {
+    setActiveTab(id);
+    const el = sectionRefs.current[id];
+    if (!el) return;
+    // 60px = tab bar sticky height; pad so the section title isn't
+    // hidden underneath.
+    const top = el.getBoundingClientRect().top + window.scrollY - 80;
+    window.scrollTo({ top, behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Pick the entry with greatest intersectionRatio that's still
+        // intersecting; ties break by document order via TAB_ORDER.
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        const id = (visible.target as HTMLElement).dataset.sectionId as CreatorTabId | undefined;
+        if (id) setActiveTab(id);
+      },
+      {
+        // Section becomes "current" once its top crosses ~25% from the
+        // viewport top; gives the tab bar enough lead time to flip.
+        rootMargin: "-25% 0px -60% 0px",
+        threshold: [0, 0.1, 0.25, 0.5],
+      }
+    );
+    for (const id of CREATOR_TAB_ORDER) {
+      const el = sectionRefs.current[id];
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, []);
 
   // Hero "+ 新建服务包" is hoisted here so a save can both close the
-  // dialog AND flip the active tab to Services — the user just
-  // created one, the natural landing is the page that shows it.
+  // dialog AND scroll to the services section after save.
   const [createServiceOpen, setCreateServiceOpen] = useState(false);
+
+  // Edit-profile + referral are owner-only and share state pattern
+  // with /profile (the original location). We reuse ProfileEditDialog
+  // verbatim and inline a small share-link dialog here so we don't
+  // have to import the whole profile-header — it carries cover/avatar
+  // uploads that this hero already handles its own way.
+  const { data: userInfo } = useUserInfo();
+  const { mutate: doGetReferralCode, isPending: referralPending } = useReferralCode();
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [referralOpen, setReferralOpen] = useState(false);
+  const [referralLink, setReferralLink] = useState("");
+  const [referralQrDataUrl, setReferralQrDataUrl] = useState("");
+  const [referralCopied, setReferralCopied] = useState(false);
+
+  // Regenerate the share QR whenever the link changes. Same pattern as
+  // profile-header.tsx — inline data-uri PNG so we don't depend on any
+  // image host and the QR refreshes per session.
+  useEffect(() => {
+    if (!referralLink) {
+      setReferralQrDataUrl("");
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(referralLink, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 200,
+      color: { dark: "#0a0a0b", light: "#ffffff" },
+    })
+      .then((url) => {
+        if (!cancelled) setReferralQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setReferralQrDataUrl("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [referralLink]);
+
+  const tp = useTranslations("profile");
+
+  const handleShareReferral = () => {
+    doGetReferralCode(undefined, {
+      onSuccess: (code) => {
+        const link = `${window.location.origin}/register?recommendationCode=${code}`;
+        setReferralLink(link);
+        setReferralCopied(false);
+        setReferralOpen(true);
+      },
+      onError: () => toast.error(tp("referralLinkFailed")),
+    });
+  };
 
   if (isLoading) {
     return (
@@ -100,32 +204,110 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
         creator={creator}
         isOwner={isOwner}
         onCreateService={isOwner ? () => setCreateServiceOpen(true) : undefined}
+        onEditProfile={isOwner ? () => setEditProfileOpen(true) : undefined}
+        onShareReferral={isOwner ? handleShareReferral : undefined}
+        referralPending={referralPending}
       />
       <div className="mx-auto grid max-w-[1680px] gap-6 px-4 pb-16 md:px-8 lg:grid-cols-[300px_1fr]">
         <CreatorLeftRail creator={creator} isOwner={isOwner} />
         <main className="min-w-0">
-          <CreatorTabBar value={activeTab} onChange={setActiveTab} />
-          <div className="mt-6">
-            <ActiveTabContent tab={activeTab} creator={creator} isOwner={isOwner} />
+          {/* Sticky tab bar = anchor menu. 56px is the site nav offset; pin
+              right under it so the bar stays visible as the user scrolls. */}
+          <div className="sticky top-14 z-20 -mx-4 bg-background/95 px-4 backdrop-blur md:-mx-8 md:px-8">
+            <CreatorTabBar active={activeTab} onPick={handlePickTab} />
+          </div>
+          <div className="mt-6 space-y-12">
+            {CREATOR_TAB_ORDER.map((id) => (
+              <section
+                key={id}
+                id={CREATOR_SECTION_ID(id)}
+                data-section-id={id}
+                ref={(el) => {
+                  sectionRefs.current[id] = el;
+                }}
+                // scroll-mt = sticky bar height + breathing room; matches
+                // the offset handlePickTab uses so anchored navigation
+                // lands at the same place every time.
+                className="scroll-mt-24"
+              >
+                <SectionContent tab={id} creator={creator} isOwner={isOwner} />
+              </section>
+            ))}
           </div>
         </main>
       </div>
 
       {isOwner ? (
-        <CreateServiceDialog
-          open={createServiceOpen}
-          onOpenChange={setCreateServiceOpen}
-          onSaved={() => {
-            setCreateServiceOpen(false);
-            setActiveTab("services");
-          }}
-        />
+        <>
+          <CreateServiceDialog
+            open={createServiceOpen}
+            onOpenChange={setCreateServiceOpen}
+            onSaved={() => {
+              setCreateServiceOpen(false);
+              // After save, jump the user to the newly-saved card.
+              handlePickTab("services");
+            }}
+          />
+          <ProfileEditDialog
+            open={editProfileOpen}
+            onOpenChange={setEditProfileOpen}
+            userInfo={userInfo ?? null}
+          />
+          <Dialog open={referralOpen} onOpenChange={setReferralOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{tp("referralLinkTitle")}</DialogTitle>
+                <DialogDescription>{tp("referralLinkDesc")}</DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-4 p-4">
+                {referralQrDataUrl ? (
+                  <div className="flex justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={referralQrDataUrl}
+                      alt={tp("referralLinkTitle")}
+                      className="size-44 rounded-lg bg-white p-2"
+                    />
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={referralLink}
+                    className="h-10 flex-1 rounded-lg border border-border bg-muted px-3 text-sm text-foreground"
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <Button
+                    size="sm"
+                    variant={referralCopied ? "outline" : "solid"}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(referralLink);
+                        setReferralCopied(true);
+                        toast.success(tp("referralLinkCopied"));
+                      } catch {
+                        toast.error(tp("referralLinkManualCopy"));
+                      }
+                    }}
+                  >
+                    {referralCopied ? (
+                      <IconCheck className="size-4" />
+                    ) : (
+                      <IconCopy className="size-4" />
+                    )}
+                    {referralCopied ? tp("copied") : tp("copy")}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
       ) : null}
     </div>
   );
 }
 
-function ActiveTabContent({
+function SectionContent({
   tab,
   creator,
   isOwner,

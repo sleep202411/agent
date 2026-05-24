@@ -1,29 +1,29 @@
 "use client";
 
 /**
- * Tab bar that runs across the top of the creator center's right pane.
- * Underline-style nav (rather than pill) so the layout reads as
- * "categories of the same identity" instead of "five separate apps".
+ * Sticky scrollspy nav for the creator center's right pane.
+ *
+ * Behavior shift (2026-05-24): the right pane no longer swaps content
+ * when a tab is clicked. All 5 sections render stacked. The tab bar
+ * now acts as an anchor menu — click → smooth-scroll to the section,
+ * scrolling the page → highlight the section currently in view.
  *
  * Tab order is deliberate:
- *   1. 服务包  — commercial entry. Default-selected. Doc § 10.1.
+ *   1. 服务包  — commercial entry, first because it's the buy CTA.
  *   2. 作品    — videos / personal works.
  *   3. IP      — owned IP projects.
  *   4. 剧组    — joined crews.
  *   5. 关于    — bio, education, experience, socials.
  *
- * Keep this list short. Each tab here is one **horizontal click cost
- * for every visitor**, so a tab only earns its slot if a non-trivial
- * chunk of visitors will look at it. Earnings / orders for the owner
- * live in their own routes, not as tabs here, to keep the public
- * shape symmetric.
+ * Keep this list short — each tab is one horizontal click cost for
+ * every visitor.
  */
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 
 export type CreatorTabId = "services" | "works" | "ips" | "crews" | "about";
 
-const TAB_ORDER: CreatorTabId[] = ["services", "works", "ips", "crews", "about"];
+export const CREATOR_TAB_ORDER: CreatorTabId[] = ["services", "works", "ips", "crews", "about"];
 
 const TAB_I18N_KEY: Record<CreatorTabId, string> = {
   services: "tabs.services",
@@ -33,35 +33,38 @@ const TAB_I18N_KEY: Record<CreatorTabId, string> = {
   about: "tabs.about",
 };
 
+/** DOM id prefix for each section anchor (matches creator-center.tsx). */
+export const CREATOR_SECTION_ID = (id: CreatorTabId) => `creator-section-${id}`;
+
 interface CreatorTabBarProps {
-  value: CreatorTabId;
-  onChange: (next: CreatorTabId) => void;
+  /** ID of the section currently in view (driven by scrollspy in parent). */
+  active: CreatorTabId;
+  /** Click — parent scrolls the matching section into view. */
+  onPick: (id: CreatorTabId) => void;
 }
 
-export function CreatorTabBar({ value, onChange }: CreatorTabBarProps) {
+export function CreatorTabBar({ active, onPick }: CreatorTabBarProps) {
   const t = useTranslations("creatorCenter");
   return (
     <nav
-      role="tablist"
-      aria-label="creator-center"
+      aria-label="creator-center-sections"
       className="flex items-center gap-2 border-b border-border"
     >
-      {TAB_ORDER.map((id) => {
-        const active = value === id;
+      {CREATOR_TAB_ORDER.map((id) => {
+        const isActive = active === id;
         return (
           <button
             key={id}
             type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(id)}
+            aria-current={isActive ? "true" : undefined}
+            onClick={() => onPick(id)}
             className={cn(
               "relative px-4 py-2.5 text-sm font-medium transition-colors",
-              active ? "text-foreground" : "text-muted-foreground hover:text-foreground/80"
+              isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground/80"
             )}
           >
             {t(TAB_I18N_KEY[id])}
-            {active ? (
+            {isActive ? (
               <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />
             ) : null}
           </button>
