@@ -81,41 +81,90 @@ export function AssetPickerDialog({
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [uploads, setUploads] = useState<AssetRecord[]>([]);
   const [aiAssets, setAiAssets] = useState<AssetRecord[]>([]);
+  // Per-tab pagination cursors. `total` lets us short-circuit
+  // loadMore once we've fetched everything the backend has.
+  const [aiPage, setAiPage] = useState(1);
+  const [aiTotal, setAiTotal] = useState(0);
+  const [uploadsPage, setUploadsPage] = useState(1);
+  const [uploadsTotal, setUploadsTotal] = useState(0);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const PAGE_SIZE = 40;
 
   const resolvedAccept = accept || defaultAccept(assetType);
   const resolvedUploadType = uploadType || defaultUploadType(assetType);
 
   // ─── Load assets ─────────────────────────────────────
-
-  const loadAssets = useCallback(async () => {
-    setLoading(true);
-    try {
-      const apiUrl = tab === "ai" ? "/api/ai/record/ai/list" : "/api/ai/record/local/list";
-      const res = await backendApi.post<Paginated<AssetRecord>>(apiUrl, {
-        data: { page: 1, pageSize: 40, type: assetType, sort: 1 },
-      });
-      const list = res?.list ?? [];
-      if (tab === "ai") {
-        setAiAssets(list);
+  //
+  // `mode === "reset"` flushes to page 1 (used on tab / assetType switch
+  // + dialog open). `mode === "append"` pulls the next page and pushes
+  // onto the current list — driven by the IntersectionObserver below.
+  const loadAssets = useCallback(
+    async (mode: "reset" | "append") => {
+      const isAppend = mode === "append";
+      if (isAppend) {
+        if (loadingMore) return;
+        const list = tab === "ai" ? aiAssets : uploads;
+        const total = tab === "ai" ? aiTotal : uploadsTotal;
+        if (total > 0 && list.length >= total) return;
+        setLoadingMore(true);
       } else {
-        setUploads(list);
+        setLoading(true);
       }
-    } catch (err) {
-      console.error("[AssetPicker] 加载失败:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [assetType, tab]);
+      const page = isAppend ? (tab === "ai" ? aiPage : uploadsPage) + 1 : 1;
+      try {
+        const apiUrl = tab === "ai" ? "/api/ai/record/ai/list" : "/api/ai/record/local/list";
+        const res = await backendApi.post<Paginated<AssetRecord>>(apiUrl, {
+          data: { page, pageSize: PAGE_SIZE, type: assetType, sort: 1 },
+        });
+        const list = res?.list ?? [];
+        const total = res?.totalCount ?? 0;
+        if (tab === "ai") {
+          setAiAssets((prev) => (isAppend ? [...prev, ...list] : list));
+          setAiPage(page);
+          setAiTotal(total);
+        } else {
+          setUploads((prev) => (isAppend ? [...prev, ...list] : list));
+          setUploadsPage(page);
+          setUploadsTotal(total);
+        }
+      } catch (err) {
+        console.error("[AssetPicker] 加载失败:", err);
+      } finally {
+        if (isAppend) setLoadingMore(false);
+        else setLoading(false);
+      }
+    },
+    [assetType, tab, aiAssets, uploads, aiPage, uploadsPage, aiTotal, uploadsTotal, loadingMore]
+  );
 
+  // UNIQUE_MARKER_FZ_20260523_07_50: deploy verification
+  // Reset + reload on dialog open or tab/type switch. The current
+  // tab's page/total/list all reset to fresh-page-1 state so the new
+  // axis (ai↔uploads or image↔video↔audio) starts clean.
   useEffect(() => {
     if (!open) return;
     setSelectedPaths(new Set());
-    void loadAssets();
-  }, [loadAssets, open]);
+    if (tab === "ai") {
+      setAiAssets([]);
+      setAiPage(1);
+      setAiTotal(0);
+    } else {
+      setUploads([]);
+      setUploadsPage(1);
+      setUploadsTotal(0);
+    }
+    void loadAssets("reset");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tab, assetType]);
+
+  // Manual "load more" button (was an IntersectionObserver, but the
+  // dialog's inner overflow container made the default-viewport root
+  // unreliable — user prefers an explicit click anyway).
 
   // Reset to first type when dialog opens
   useEffect(() => {
@@ -337,57 +386,90 @@ export function AssetPickerDialog({
                 })}
               </div>
             ) : (
-              <div className="grid grid-cols-5 gap-2">
-                {currentList.map((asset) => {
-                  const path = String(
-                    asset.path ?? asset.url ?? asset.filePath ?? asset.storagePath ?? ""
-                  );
-                  const src = ossUrl(path);
-                  const selected = selectedPaths.has(path);
+              <>
+                <div className="grid grid-cols-5 gap-2">
+                  {currentList.map((asset) => {
+                    const path = String(
+                      asset.path ?? asset.url ?? asset.filePath ?? asset.storagePath ?? ""
+                    );
+                    const src = ossUrl(path);
+                    const selected = selectedPaths.has(path);
 
-                  return (
-                    <div
-                      key={String(asset.id ?? path)}
-                      className={cn(
-                        "group relative aspect-square cursor-pointer overflow-hidden rounded-lg border-2 transition-colors",
-                        selected ? "border-primary" : "border-transparent hover:border-primary/40"
-                      )}
-                      onClick={() => toggleSelect(path)}
-                    >
-                      {assetType === "video" ? (
-                        <div className="relative h-full w-full bg-muted">
+                    return (
+                      <div
+                        key={String(asset.id ?? path)}
+                        className={cn(
+                          "group relative aspect-square cursor-pointer overflow-hidden rounded-lg border-2 transition-colors",
+                          selected ? "border-primary" : "border-transparent hover:border-primary/40"
+                        )}
+                        onClick={() => toggleSelect(path)}
+                      >
+                        {assetType === "video" ? (
+                          <div className="relative h-full w-full bg-muted">
+                            <img
+                              src={getVideoThumbnail(src)}
+                              alt=""
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                              <IconPlayerPlay className="size-5 text-white drop-shadow" />
+                            </div>
+                          </div>
+                        ) : src ? (
                           <img
-                            src={getVideoThumbnail(src)}
+                            src={src}
                             alt=""
                             className="h-full w-full object-cover"
                             loading="lazy"
                           />
-                          <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                            <IconPlayerPlay className="size-5 text-white drop-shadow" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-muted">
+                            <IconPhoto className="size-5 text-muted-foreground/30" />
                           </div>
-                        </div>
-                      ) : src ? (
-                        <img
-                          src={src}
-                          alt=""
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-muted">
-                          <IconPhoto className="size-5 text-muted-foreground/30" />
-                        </div>
-                      )}
+                        )}
 
-                      {selected && (
-                        <div className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-primary text-white">
-                          <IconCheck className="size-3" />
+                        {selected && (
+                          <div className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-primary text-white">
+                            <IconCheck className="size-3" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Manual "load more" button + done indicator. */}
+                <div className="flex items-center justify-center pt-3 pb-1">
+                  {(() => {
+                    const listLen = tab === "ai" ? aiAssets.length : uploads.length;
+                    const total = tab === "ai" ? aiTotal : uploadsTotal;
+                    const hasMore = total > 0 && listLen < total;
+                    if (loadingMore) {
+                      return (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <IconLoader2 className="size-4 animate-spin" />
+                          {t("loading")}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    }
+                    if (hasMore) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => void loadAssets("append")}
+                          className="rounded-md border border-border bg-card px-4 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+                        >
+                          {t("loadMore")}
+                        </button>
+                      );
+                    }
+                    if (listLen > 0) {
+                      return <p className="text-xs text-muted-foreground/60">{t("noMore")}</p>;
+                    }
+                    return null;
+                  })()}
+                </div>
+              </>
             )}
           </div>
 

@@ -30,4 +30,10 @@ posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
   // default; flip with `?ph_debug=1` URL or `localStorage.debug=true`
   // when you genuinely need to inspect a PostHog event.
   debug: false,
+  session_recording: {
+    recordBody: true, // default false; captures full HTML snapshots of the page for replay. Can be a privacy concern, so opt-in only.
+    maskAllInputs: true, // default true; masks text inputs, password fields, and contenteditable elements to prevent sensitive data leaks. Set to false to capture input values (not recommended).
+    recordCrossOriginIframes: false, // default false; set to true to enable recording of cross-origin iframes. Note that this requires additional setup and may have performance implications.
+  },
+  disable_session_recording: false, // default false; set to true to disable session recording entirely, including snapshots, console logs, and network requests. This is a more extreme measure than just setting recordBody to false, as it turns off all recording features.
 });

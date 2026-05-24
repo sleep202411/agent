@@ -12,7 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { backendApi } from "@/src/lib/api";
+import { backendApi, ApiRequestError } from "@/src/lib/api";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/src/config/site";
 
@@ -163,10 +164,19 @@ export function CreditsRechargeDialog({
           } else {
             window.location.href = result.checkoutUrl;
           }
+        } else {
+          // Backend returned 200 OK but no checkoutUrl — previously the
+          // button just stopped spinning silently and the user had no
+          // signal anything went wrong. Surface a hint so they can
+          // retry or report it.
+          toast.error(t("paymentNoCheckoutUrl"));
         }
       }
     } catch (e) {
       console.error("[CreditsRecharge]", e);
+      const apiMsg = e instanceof ApiRequestError ? e.message : null;
+      const fallback = e instanceof Error ? e.message : null;
+      toast.error(apiMsg || fallback || t("paymentFailed"));
     } finally {
       setPaying(false);
     }
