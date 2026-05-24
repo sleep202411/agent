@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   IconBookmark,
   IconCoin,
@@ -308,6 +308,7 @@ export default function IPEditPage() {
   const { id } = useParams<{ id: string }>();
   const locale = useLocale();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useTranslations("ipEdit");
   const tc = useTranslations("common");
   const tEp = useTranslations("episode");
@@ -348,10 +349,12 @@ export default function IPEditPage() {
   // Legacy job-recruitment compat — only surface the optional 6th tab
   // when historical data exists for this project. See useLegacyJobsByRole.
   const { data: legacyJobs = [] } = useLegacyJobsByRole(id);
+  const pricingEnabled = searchParams.get("pricing") === "1";
 
   const visibleTabs = useMemo(() => {
-    return legacyJobs.length > 0 ? [...TABS, LEGACY_JOBS_TAB] : TABS;
-  }, [legacyJobs.length]);
+    const baseTabs = TABS.filter((tab) => tab.id !== "pricing" || pricingEnabled);
+    return legacyJobs.length > 0 ? [...baseTabs, LEGACY_JOBS_TAB] : baseTabs;
+  }, [legacyJobs.length, pricingEnabled]);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCover, setUploadingCover] = useState(false);

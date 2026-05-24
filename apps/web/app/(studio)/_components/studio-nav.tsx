@@ -13,6 +13,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import {
   IconBolt,
   IconCheck,
@@ -25,7 +26,7 @@ import {
 } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
-import { setCurrentLocale, localizePath } from "@/src/i18n/locale-url";
+import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import {
   DropdownMenu,
@@ -35,7 +36,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
 import { useCredits } from "@/src/hooks/use-user";
@@ -47,6 +47,8 @@ export function StudioNav() {
   const t = useTranslations("nav");
   const tProject = useTranslations("project");
   const locale = useLocale();
+  const router = useRouter();
+  const pathname = usePathname() ?? "/";
   const { theme, setTheme } = useTheme();
   // Avoid hydration mismatch: theme is undefined on the server, only
   // safe to read after mount. Same pattern as GlobalNav.
@@ -86,11 +88,10 @@ export function StudioNav() {
     if (next === locale) return;
     setCurrentLocale(next);
     setLanguage(next);
-    // Hard reload so SSR + proxy.ts resolve the new locale on the
-    // current URL — matches GlobalNav's behavior.
-    if (typeof window !== "undefined") {
-      window.location.reload();
-    }
+    const stripped = stripLocalePrefix(pathname);
+    const search = typeof window !== "undefined" ? window.location.search : "";
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    router.replace(`${localizePath(stripped, next)}${search}${hash}`);
   };
 
   return (
