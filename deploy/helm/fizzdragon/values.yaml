@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: creator-polish-20260524
+    tag: content-vedio-upload-20260524
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -182,10 +182,11 @@ agent:
     # DATABASE_URL + REDIS_URL come from KV via projected `fizzdragon-secrets`
     # (envFrom). Mastra storage uses PG schema `mastra` — see
     # apps/agent/src/mastra/index.ts.
-    # Per-pod Anthropic concurrency cap (was default 20). Lowered to keep
-    # 4 pods × 6 = 24 concurrent global calls inside Anthropic Tier 2's
-    # ~16K OTPM envelope. See model-hardening.ts (RateLimiter).
-    STORYOS_CLAUDE_MAX_CONCURRENCY: "6"
+    # Per-pod Anthropic concurrency cap. Tier 3 (160K OTPM) — 4 pods × 20
+    # = 80 global active, ~80K OTPM peak, well under the 160K cap. Was
+    # temporarily 6 under Tier 2; restored to 20 (the original default)
+    # after Tier 3 upgrade 2026-05-23. See model-hardening.ts (RateLimiter).
+    STORYOS_CLAUDE_MAX_CONCURRENCY: "20"
   resources:
     requests: {cpu: 250m, memory: 1Gi}
     limits: {cpu: 2000m, memory: 3Gi}
@@ -222,7 +223,7 @@ agentWorker:
     IMAGE_WORKER_CONCURRENCY: "2"
     STORYBOARD_GENERATE_CONCURRENCY: "6"
     # Match agent's Anthropic cap — workflow runs hit the same router.
-    STORYOS_CLAUDE_MAX_CONCURRENCY: "6"
+    STORYOS_CLAUDE_MAX_CONCURRENCY: "20"
   # Pod fits cleanly on B2as_v2 (8GB node). At WORKER_CONCURRENCY=15 with
   # ~50MB per in-flight workflow, working set ~750MB + base 500MB ≈ 1.5Gi.
   # 3Gi limit leaves headroom for bulk phases (storyboard 30 shots batched).
