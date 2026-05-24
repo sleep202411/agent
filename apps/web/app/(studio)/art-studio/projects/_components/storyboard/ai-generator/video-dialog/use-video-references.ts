@@ -18,8 +18,10 @@ import {
 import type { ReferenceMap } from "@/app/(studio)/art-studio/projects/_components/storyboard/editor/reference-map-context";
 import {
   dedupeRefs,
+  isVideoFrameReferenceMentionPath,
   ossUrl,
   toReferenceAssets,
+  videoFrameReferenceMentionPath,
   type MultiRefType,
   type PickerTarget,
   type ReferenceAsset,
@@ -194,7 +196,7 @@ export function useVideoReferences({
       // Single-item slots (replace with first selected)
       if (target in singleFields) {
         const field = singleFields[target];
-        const old = (references as Record<string, ReferenceAsset[]>)[field] ?? [];
+        const old = (references as unknown as Record<string, ReferenceAsset[]>)[field] ?? [];
         const newItems = toReferenceAssets(paths.slice(0, 1));
         cleanPromptOnRefRemoval(old, newItems);
         dispatch(setVideoReferences({ key, field, value: newItems }));
@@ -256,20 +258,22 @@ export function useVideoReferences({
       key,
       references,
       referenceImages,
-      firstFrames,
       multiRefImages,
       maxImages,
       maxVideos,
+      maxAudios,
       onSetReferenceImages,
-      onSetFirstFrames,
       onSetMultiRefImages,
     ]
   );
 
   // ─── Auto-add @mentioned media to reference group ──
   const handleMentionInserted = useCallback(
-    (item: { imgUrl?: string; name: string; mentionType: string }) => {
+    (item: { id?: string; imgUrl?: string; name: string; mentionType: string }) => {
       if (!item.imgUrl) return;
+      if (item.id && isVideoFrameReferenceMentionPath(item.id)) {
+        return;
+      }
       if (referenceImages.some((r) => (r.url || ossUrl(r.path)) === item.imgUrl)) return;
 
       const mediaType = detectMediaType(item.imgUrl);
@@ -424,9 +428,37 @@ export function useVideoReferences({
     () => ({ image: refPrefixImage, video: refPrefixVideo, audio: refPrefixAudio }),
     [refPrefixImage, refPrefixVideo, refPrefixAudio]
   );
+  const referenceItemsForMap = useMemo(() => {
+    if (activeMode !== "frames") return referenceImages;
+
+    const frameItems: ReferenceAsset[] = [];
+    for (const frame of firstFrames) {
+      const sourcePath = frame.path || frame.url || "";
+      if (!sourcePath) continue;
+      frameItems.push({
+        ...frame,
+        url: frame.url || ossUrl(frame.path),
+        path: videoFrameReferenceMentionPath("first", sourcePath),
+        label: t("firstFrame"),
+      });
+    }
+    for (const frame of lastFrames) {
+      const sourcePath = frame.path || frame.url || "";
+      if (!sourcePath) continue;
+      frameItems.push({
+        ...frame,
+        url: frame.url || ossUrl(frame.path),
+        path: videoFrameReferenceMentionPath("last", sourcePath),
+        label: t("lastFrame"),
+      });
+    }
+
+    return [...frameItems, ...referenceImages];
+  }, [activeMode, firstFrames, lastFrames, referenceImages, t]);
+
   const referenceMap: ReferenceMap = useMemo(
-    () => buildReferenceMap(referenceImages, promptMentions, refPrefixes),
-    [referenceImages, promptMentions, refPrefixes]
+    () => buildReferenceMap(referenceItemsForMap, promptMentions, refPrefixes),
+    [referenceItemsForMap, promptMentions, refPrefixes]
   );
   const referenceMapCtx = useMemo(
     () => ({ map: referenceMap, isFull: refIsFull }),

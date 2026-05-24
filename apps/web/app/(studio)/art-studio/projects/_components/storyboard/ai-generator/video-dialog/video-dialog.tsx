@@ -98,6 +98,7 @@ import type {
 } from "@/src/lib/video-types";
 import {
   ensureVideoReference,
+  videoFrameReferenceMentionPath,
   MAX_ACTIVE_VIDEO_TASKS,
   MAX_CONCURRENT,
   ossUrl,
@@ -518,10 +519,42 @@ export function AiVideoGeneratorDialog({
     [currentModel, size, videoLength, count]
   );
 
-  // Per-kind labels for mention popover (参考图 N / 参考视频 N / 参考音频 N)
+  // Per-kind labels for mention popover.
+  // Start/end frame mode also exposes explicit first-frame / last-frame mentions
+  // without turning those frame slots into ordinary reference images.
   const referenceMediaItems = useMemo(() => {
     const counts = { image: 0, video: 0, audio: 0 } as Record<"image" | "video" | "audio", number>;
-    return referenceImages.map((r) => {
+    const items: Array<{
+      url: string;
+      path: string;
+      label?: string;
+      kind: "image" | "video" | "audio";
+    }> = [];
+
+    if (activeMode === "frames") {
+      for (const frame of firstFrames) {
+        const sourcePath = frame.path || frame.url || "";
+        if (!sourcePath) continue;
+        items.push({
+          url: frame.url || ossUrl(frame.path),
+          path: videoFrameReferenceMentionPath("first", sourcePath),
+          label: t("firstFrame"),
+          kind: "image" as const,
+        });
+      }
+      for (const frame of lastFrames) {
+        const sourcePath = frame.path || frame.url || "";
+        if (!sourcePath) continue;
+        items.push({
+          url: frame.url || ossUrl(frame.path),
+          path: videoFrameReferenceMentionPath("last", sourcePath),
+          label: t("lastFrame"),
+          kind: "image" as const,
+        });
+      }
+    }
+
+    for (const r of referenceImages) {
       const kind = classifyAsset(r);
       counts[kind] += 1;
       const prefix =
@@ -530,14 +563,16 @@ export function AiVideoGeneratorDialog({
           : kind === "audio"
             ? t("referenceAudio")
             : t("referenceImage");
-      return {
+      items.push({
         url: r.url || ossUrl(r.path),
         path: r.path,
         label: r.label || `${prefix} ${counts[kind]}`,
         kind,
-      };
-    });
-  }, [referenceImages, t]);
+      });
+    }
+
+    return items;
+  }, [activeMode, firstFrames, lastFrames, referenceImages, t]);
 
   const title = shotNumber ? t("aiVideoTitle", { number: shotNumber }) : t("aiVideoTitleDefault");
   const modeExitLabel = editMode
@@ -913,9 +948,9 @@ export function AiVideoGeneratorDialog({
     // Resolve mode-specific inputs from state via schema config
     const { params: modeParams, error } = resolveModeInputs(
       modeConfig,
-      references as Record<string, { path: string; url?: string; typeTag?: string }[]>,
-      formData as Record<string, unknown>,
-      modeSettings as Record<string, unknown>,
+      references as unknown as Record<string, { path: string; url?: string; typeTag?: string }[]>,
+      formData as unknown as Record<string, unknown>,
+      modeSettings as unknown as Record<string, unknown>,
       ossUrl
     );
 
@@ -1297,7 +1332,14 @@ export function AiVideoGeneratorDialog({
                 )}
                 {uploadMode === "multimodal" && !editMode ? (
                   <MultimodalToolbarSelects
-                    formData={formData}
+                    formData={
+                      formData as unknown as {
+                        model: string;
+                        size: string;
+                        videoLength: string;
+                        [k: string]: unknown;
+                      }
+                    }
                     onUpdate={(updates) => dispatch(updateVideoForm({ key, updates }))}
                     models={modeModels}
                   />

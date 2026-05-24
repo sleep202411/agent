@@ -104,6 +104,18 @@ export type PickerTarget =
   | "extendLastFrame"
   | "outpaintingVideo";
 
+export type VideoFrameReferenceSlot = "first" | "last";
+
+const VIDEO_FRAME_REFERENCE_PREFIX = "__video_frame__";
+
+export function videoFrameReferenceMentionPath(slot: VideoFrameReferenceSlot, path: string) {
+  return `${VIDEO_FRAME_REFERENCE_PREFIX}:${slot}:${path}`;
+}
+
+export function isVideoFrameReferenceMentionPath(path: string) {
+  return path.startsWith(`${VIDEO_FRAME_REFERENCE_PREFIX}:`);
+}
+
 export interface AiVideoGeneratorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
