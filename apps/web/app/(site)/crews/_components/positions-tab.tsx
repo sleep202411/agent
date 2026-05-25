@@ -3,27 +3,49 @@
 /**
  * Plaza "Positions" view — flat list across all crews.
  *
- * Talent who already know what role they want start here. Each card
- * shows the position's compensation + crew identity in a 6-col
- * compact form (target: ≤280px wide). The PositionCard from the
- * workspace is intentionally NOT reused — that one is tuned for the
- * 3-col owner board and gets unmanageably tall at 6 columns. This
- * file owns a discovery-tuned compact variant.
+ * Refactored 2026-05-25 to a Milao-style two-column layout:
+ *   left   sidebar with quick-filter checkboxes (employment type,
+ *          seniority, work mode) plus a placeholder "Job alert" card
+ *   right  job grid (3 cols at xl) of larger, breathing cards that
+ *          surface logo + title + description + tag chips + dual CTA
+ *
+ * Filtering is client-side over the first page of results (limit 64).
+ * That's fine for the current data volume; promote to a server-side
+ * filter pass when the list grows past a few hundred open positions.
  *
  * Data source: real aggregated positions from `GET /aurora/positions`.
  */
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { IconBriefcase, IconCoin, IconMapPin, IconStar } from "@tabler/icons-react";
+import {
+  IconBriefcase,
+  IconChevronDown,
+  IconCoin,
+  IconMail,
+  IconMapPin,
+  IconUserCircle,
+} from "@tabler/icons-react";
+import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import type { CrewDTO, CrewPositionDTO, CurrencyCode } from "@/app/(site)/crews/_hooks/use-crew";
-import { CURRENCY_SYMBOLS, ZERO_DECIMAL_CURRENCIES } from "@repo/shared/crew";
+import {
+  CURRENCY_SYMBOLS,
+  EMPLOYMENT_TYPES,
+  EXPERIENCE_LEVELS,
+  WORK_MODES,
+  ZERO_DECIMAL_CURRENCIES,
+  type EmploymentType,
+  type ExperienceLevel,
+  type WorkMode,
+} from "@repo/shared/crew";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 
 interface PositionWithCrew {
@@ -36,43 +58,107 @@ interface PublicPositionsResult {
   nextCursor: string | null;
 }
 
+type SortMode = "newest" | "oldest" | "salaryHigh";
+
 export function PositionsTab() {
   const t = useTranslations("crew");
+  const tw = useTranslations("workspace");
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
 
   const { data, isError } = useQuery({
     queryKey: ["crew", "positions", "public", "first"] as const,
-    queryFn: () => crewApi.get<PublicPositionsResult>("/positions", { query: { limit: 48 } }),
+    queryFn: () => crewApi.get<PublicPositionsResult>("/positions", { query: { limit: 64 } }),
     staleTime: 60_000,
   });
-  const items = data?.items ?? [];
+  const all = data?.items ?? [];
 
-  if (isError || items.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border py-20 text-center">
-        <div className="flex size-12 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-          <IconBriefcase className="size-5" />
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {isError ? tc("loadFailed") : t("noOpenPositions")}
-        </p>
-      </div>
-    );
-  }
+  // ─── Client-side filter state ─────────────────────────
+  // Multi-select per facet; empty set = no constraint (show all).
+  const [employment, setEmployment] = useState<Set<EmploymentType>>(new Set());
+  const [seniority, setSeniority] = useState<Set<ExperienceLevel>>(new Set());
+  const [workMode, setWorkMode] = useState<Set<WorkMode>>(new Set());
+  const [sort, setSort] = useState<SortMode>("newest");
+
+  const filtered = useMemo(() => {
+    const rows = all.filter(({ position: p }) => {
+      if (employment.size && !employment.has(p.employmentType)) return false;
+      if (seniority.size && !seniority.has(p.experienceLevel)) return false;
+      if (workMode.size && !workMode.has(p.workMode)) return false;
+      return true;
+    });
+    // Server returns newest-first by default; manual sort handles
+    // user-chosen variants.
+    if (sort === "oldest") return [...rows].reverse();
+    if (sort === "salaryHigh") {
+      return [...rows].sort(
+        (a, b) => (b.position.salary.maxAmount ?? 0) - (a.position.salary.maxAmount ?? 0)
+      );
+    }
+    return rows;
+  }, [all, employment, seniority, workMode, sort]);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-      {items.map(({ position, crew }) => (
-        <CompactPositionCard key={position.id} crew={crew} position={position} locale={locale} />
-      ))}
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
+      {/* ─── Sidebar ───────────────────────────────────── */}
+      <aside className="space-y-5">
+        <FilterSection
+          label={t("filterEmployment")}
+          options={EMPLOYMENT_TYPES.map((v) => ({
+            value: v,
+            label: tw(`employment${employmentI18n(v)}`),
+          }))}
+          selected={employment}
+          onToggle={(v) => setEmployment((prev) => toggle(prev, v as EmploymentType))}
+        />
+        <FilterSection
+          label={t("filterSeniority")}
+          options={EXPERIENCE_LEVELS.map((v) => ({
+            value: v,
+            label: tw(`experience${capitalize(v)}`),
+          }))}
+          selected={seniority}
+          onToggle={(v) => setSeniority((prev) => toggle(prev, v as ExperienceLevel))}
+        />
+        <FilterSection
+          label={t("filterWorkMode")}
+          options={WORK_MODES.map((v) => ({
+            value: v,
+            label: tw(`position${capitalize(v)}`),
+          }))}
+          selected={workMode}
+          onToggle={(v) => setWorkMode((prev) => toggle(prev, v as WorkMode))}
+        />
+      </aside>
+
+      {/* ─── Main column ───────────────────────────────── */}
+      <section className="space-y-4">
+        <header className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold text-foreground">
+            {t("showingJobsCount", { count: filtered.length })}
+          </h2>
+          <SortMenu value={sort} onChange={setSort} t={t} />
+        </header>
+
+        {isError || all.length === 0 ? (
+          <EmptyState message={isError ? tc("loadFailed") : t("noOpenPositions")} />
+        ) : filtered.length === 0 ? (
+          <EmptyState message={t("noFilterMatches")} />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {filtered.map(({ position, crew }) => (
+              <PositionCard key={position.id} crew={crew} position={position} locale={locale} />
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-// ─── Compact card ────────────────────────────────────
+// ─── Card ────────────────────────────────────────────
 
-function CompactPositionCard({
+function PositionCard({
   crew,
   position,
   locale,
@@ -85,157 +171,223 @@ function CompactPositionCard({
   const tCrew = useTranslations("crew");
   const translatePosition = useTranslatePositionValue();
   const crewHref = localizePath(`/crews/${crew.id}`, locale);
-  // Crew logos live in the BANNER bucket (uploaded via /project/uploadBanner),
-  // not the primary OSS bucket — see crews/page.tsx resolveAssetUrl for the
-  // same correction.
-  const logoUrl = crew.logo.startsWith("http")
-    ? crew.logo
-    : `${env.BANNER_BASE_URL.replace(/\/+$/, "")}/${crew.logo.replace(/^\/+/, "")}`;
+  const logoUrl = crew.logo
+    ? crew.logo.startsWith("http")
+      ? crew.logo
+      : `${env.BANNER_BASE_URL.replace(/\/+$/, "")}/${crew.logo.replace(/^\/+/, "")}`
+    : "";
 
   const isFull = position.status === "full" || position.recruitedCount >= position.targetCount;
   const isFrozen = position.status === "frozen";
-  const cta: { label: string; tone: "primary" | "muted" } = isFrozen
-    ? { label: tCrew("ctaPaused"), tone: "muted" }
-    : isFull
-      ? { label: tCrew("ctaFull"), tone: "muted" }
-      : { label: tCrew("ctaApply"), tone: "primary" };
+  const canApply = !isFull && !isFrozen;
+  const ctaLabel = isFrozen ? tCrew("ctaPaused") : isFull ? tCrew("ctaFull") : tCrew("ctaApply");
+
+  // Three chips: employment type, experience, work mode — mirrors the
+  // Milao reference. Salary stays as its own emphasis line because the
+  // amount is the single most-scanned field on a job card.
+  const chips: string[] = [
+    t(`employment${employmentI18n(position.employmentType)}`),
+    position.experienceLevel === "any"
+      ? t("experienceAny")
+      : t(`experience${capitalize(position.experienceLevel)}`),
+    t(`position${capitalize(position.workMode)}`),
+  ];
 
   const salary = formatSalaryShort(position, t);
-  // Top 3 skills, rest absorbed into "+N" so the card height stays
-  // bounded even for verbose listings.
-  const visibleSkills = position.requiredSkills.slice(0, 3);
-  const overflowSkills = Math.max(0, position.requiredSkills.length - visibleSkills.length);
 
   return (
-    <Link
-      href={crewHref}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
-    >
-      {/* Crew identity strip */}
-      <div className="flex items-center gap-2 border-b border-border/60 bg-secondary/30 px-3 py-2">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={logoUrl}
-          alt={crew.name}
-          className="size-6 shrink-0 rounded-full object-cover"
-          loading="lazy"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[11px] font-semibold text-foreground">{crew.name}</div>
+    <article className="group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
+      {/* Identity row: crew logo + crew name */}
+      <Link href={crewHref} className="flex items-center gap-3">
+        <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-secondary">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt={crew.name} className="size-full object-cover" loading="lazy" />
+          ) : (
+            <IconUserCircle className="size-6 text-muted-foreground" />
+          )}
         </div>
-      </div>
-
-      {/* Body */}
-      <div className="flex flex-1 flex-col gap-2 p-3">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="line-clamp-2 text-sm font-bold text-foreground">
-            {translatePosition(position.positionType)}
-          </h3>
-          <StatusPill isFrozen={isFrozen} isFull={isFull} t={t} />
-        </div>
-
-        <div className="flex flex-wrap gap-1 text-[10px]">
-          <Chip icon={IconMapPin}>
-            {position.workMode === "remote"
-              ? t("positionRemote")
-              : position.workMode === "hybrid"
-                ? t("positionHybrid")
-                : t("positionOnsite")}
-            {position.location ? ` · ${position.location}` : ""}
-          </Chip>
-          {position.experienceLevel !== "any" ? (
-            <Chip icon={IconStar}>{t(`experience${capitalize(position.experienceLevel)}`)}</Chip>
+        <div className="min-w-0">
+          <div className="truncate text-xs text-muted-foreground">{crew.name}</div>
+          {position.location ? (
+            <div className="flex items-center gap-1 truncate text-[11px] text-muted-foreground/80">
+              <IconMapPin className="size-3" />
+              {position.location}
+            </div>
           ) : null}
         </div>
+      </Link>
 
-        {salary ? (
-          <div className="flex items-center gap-1 text-xs font-semibold text-amber-400">
-            <IconCoin className="size-3.5" />
-            {salary}
-          </div>
-        ) : null}
+      {/* Title */}
+      <h3 className="text-base font-semibold text-foreground">
+        {translatePosition(position.positionType)}
+      </h3>
 
-        {visibleSkills.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {visibleSkills.map((s) => (
-              <span
-                key={s}
-                className="rounded-md border border-primary/20 bg-primary/5 px-1.5 py-0.5 text-[10px] text-primary"
-              >
-                {s}
-              </span>
-            ))}
-            {overflowSkills > 0 ? (
-              <span className="rounded-md bg-secondary/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                +{overflowSkills}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
+      {/* Description (3-line clamp) */}
+      {position.description ? (
+        <p className="line-clamp-3 min-h-[3.75rem] text-sm leading-relaxed text-muted-foreground">
+          {position.description}
+        </p>
+      ) : (
+        <p className="line-clamp-3 min-h-[3.75rem] text-sm italic leading-relaxed text-muted-foreground/60">
+          {tCrew("noPositionDescription")}
+        </p>
+      )}
+
+      {/* Chips */}
+      <div className="flex flex-wrap gap-2">
+        {chips.map((c) => (
+          <span
+            key={c}
+            className="rounded-md bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
+          >
+            {c}
+          </span>
+        ))}
       </div>
 
-      {/* CTA strip */}
-      <div
-        className={cn(
-          "border-t border-border/40 px-3 py-2 text-center text-[11px] font-semibold transition-colors",
-          cta.tone === "primary"
-            ? "bg-primary/10 text-primary group-hover:bg-primary/20"
-            : "bg-secondary/40 text-muted-foreground"
-        )}
-      >
-        {cta.tone === "primary" ? `${cta.label} →` : cta.label}
+      {/* Salary highlight */}
+      {salary ? (
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-amber-500">
+          <IconCoin className="size-4" />
+          {salary}
+        </div>
+      ) : null}
+
+      {/* CTAs */}
+      <div className="mt-auto flex gap-2 pt-1">
+        <Button
+          asChild={canApply}
+          variant="solid"
+          color="primary"
+          size="sm"
+          disabled={!canApply}
+          className="flex-1"
+        >
+          {canApply ? <Link href={crewHref}>{ctaLabel}</Link> : <span>{ctaLabel}</span>}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          color="muted"
+          size="sm"
+          className="flex-1"
+          onClick={() => toast.info(tCrew("messagesComingSoon"))}
+        >
+          <IconMail className="size-4" />
+          {tCrew("ctaMessages")}
+        </Button>
       </div>
-    </Link>
+    </article>
   );
 }
 
-// ─── Atoms ───────────────────────────────────────────
+// ─── Sidebar atoms ────────────────────────────────────
 
-function StatusPill({
-  isFrozen,
-  isFull,
+function FilterSection<T extends string>({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  selected: Set<T>;
+  onToggle: (value: T) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <h3 className="mb-3 text-sm font-semibold text-foreground">{label}</h3>
+      <ul className="space-y-2">
+        {options.map((o) => {
+          const on = selected.has(o.value);
+          return (
+            <li key={o.value}>
+              <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/90 transition-colors hover:bg-secondary/40">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() => onToggle(o.value)}
+                  className="size-4 cursor-pointer accent-primary"
+                />
+                {o.label}
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function SortMenu({
+  value,
+  onChange,
   t,
 }: {
-  isFrozen: boolean;
-  isFull: boolean;
+  value: SortMode;
+  onChange: (v: SortMode) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
-  if (isFrozen) {
-    return (
-      <span className="shrink-0 rounded-full border border-muted-foreground/30 bg-muted-foreground/10 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-        {t("statusFrozen")}
-      </span>
-    );
-  }
-  if (isFull) {
-    return (
-      <span className="shrink-0 rounded-full border border-green-400/30 bg-green-400/10 px-2 py-0.5 text-[10px] font-semibold text-green-400">
-        {t("statusFull")}
-      </span>
-    );
-  }
+  const labels: Record<SortMode, string> = {
+    newest: t("sortNewest"),
+    oldest: t("sortOldest"),
+    salaryHigh: t("sortSalaryHigh"),
+  };
   return (
-    <span className="shrink-0 rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
-      {t("statusRecruiting")}
-    </span>
+    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span>{t("sortBy")}:</span>
+      <span className="relative">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value as SortMode)}
+          className="cursor-pointer appearance-none rounded-md border border-border bg-card py-1 pl-2 pr-7 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          {(Object.keys(labels) as SortMode[]).map((k) => (
+            <option key={k} value={k}>
+              {labels[k]}
+            </option>
+          ))}
+        </select>
+        <IconChevronDown className="pointer-events-none absolute right-1.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      </span>
+    </label>
   );
 }
 
-function Chip({ icon: Icon, children }: { icon: typeof IconMapPin; children: React.ReactNode }) {
+function EmptyState({ message }: { message: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-      <Icon className="size-3" />
-      {children}
-    </span>
+    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border bg-card/40 py-20 text-center">
+      <div className="flex size-12 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+        <IconBriefcase className="size-5" />
+      </div>
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
   );
+}
+
+// ─── Pure helpers ─────────────────────────────────────
+
+function toggle<T>(set: Set<T>, value: T): Set<T> {
+  const next = new Set(set);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
 }
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** Compact salary like "¥8K-15K · 项目费" (no zero-decimal-currency
- *  formatting since the discovery card uses K-suffix anyway). */
+/** snake_case → PascalCase for i18n key building (full_time → FullTime). */
+function employmentI18n(v: EmploymentType): string {
+  return v
+    .split("_")
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join("");
+}
+
+/** Compact salary like "¥8K-15K · 项目费". */
 function formatSalaryShort(
   p: CrewPositionDTO,
   t: ReturnType<typeof useTranslations>
