@@ -71,7 +71,11 @@ export const EMPLOYMENT_TYPES = [
 ] as const;
 export type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
 
-export const EXPERIENCE_LEVELS = ["any", "junior", "mid", "senior", "lead"] as const;
+// Maps 1:1 to FD certification ranks for recruiter copy:
+//   junior=FD I+, mid=FD II+, senior=FD III+, lead=FD IV+, master=FD V.
+// 'any' is the no-requirement default; everything else gates apply
+// flow against the applicant's max FD level.
+export const EXPERIENCE_LEVELS = ["any", "junior", "mid", "senior", "lead", "master"] as const;
 export type ExperienceLevel = (typeof EXPERIENCE_LEVELS)[number];
 
 export const SALARY_PERIODS = ["month", "episode", "project"] as const;

@@ -70,6 +70,7 @@ enum ExperienceLevel {
   mid
   senior
   lead
+  master
 }
 
 enum CrewMemberVia {
