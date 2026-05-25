@@ -145,7 +145,7 @@ export function PositionsTab() {
         ) : filtered.length === 0 ? (
           <EmptyState message={t("noFilterMatches")} />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {filtered.map(({ position, crew }) => (
               <PositionCard key={position.id} crew={crew} position={position} locale={locale} />
             ))}
@@ -196,22 +196,22 @@ function PositionCard({
   const salary = formatSalaryShort(position, t);
 
   return (
-    <article className="group flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
+    <article className="group flex flex-col gap-3 rounded-xl border border-border bg-card p-3.5 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
       {/* Identity row: crew logo + crew name */}
-      <Link href={crewHref} className="flex items-center gap-3">
-        <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-secondary">
+      <Link href={crewHref} className="flex items-center gap-2.5">
+        <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoUrl} alt={crew.name} className="size-full object-cover" loading="lazy" />
           ) : (
-            <IconUserCircle className="size-6 text-muted-foreground" />
+            <IconUserCircle className="size-5 text-muted-foreground" />
           )}
         </div>
         <div className="min-w-0">
-          <div className="truncate text-xs text-muted-foreground">{crew.name}</div>
+          <div className="truncate text-[11px] text-muted-foreground">{crew.name}</div>
           {position.location ? (
-            <div className="flex items-center gap-1 truncate text-[11px] text-muted-foreground/80">
-              <IconMapPin className="size-3" />
+            <div className="flex items-center gap-1 truncate text-[10px] text-muted-foreground/80">
+              <IconMapPin className="size-2.5" />
               {position.location}
             </div>
           ) : null}
@@ -219,27 +219,27 @@ function PositionCard({
       </Link>
 
       {/* Title */}
-      <h3 className="text-base font-semibold text-foreground">
+      <h3 className="text-sm font-semibold text-foreground">
         {translatePosition(position.positionType)}
       </h3>
 
-      {/* Description (3-line clamp) */}
+      {/* Description (2-line clamp) */}
       {position.description ? (
-        <p className="line-clamp-3 min-h-[3.75rem] text-sm leading-relaxed text-muted-foreground">
+        <p className="line-clamp-2 min-h-[2.5rem] text-xs leading-relaxed text-muted-foreground">
           {position.description}
         </p>
       ) : (
-        <p className="line-clamp-3 min-h-[3.75rem] text-sm italic leading-relaxed text-muted-foreground/60">
+        <p className="line-clamp-2 min-h-[2.5rem] text-xs italic leading-relaxed text-muted-foreground/60">
           {tCrew("noPositionDescription")}
         </p>
       )}
 
       {/* Chips */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {chips.map((c) => (
           <span
             key={c}
-            className="rounded-md bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
+            className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
           >
             {c}
           </span>
@@ -248,21 +248,21 @@ function PositionCard({
 
       {/* Salary highlight */}
       {salary ? (
-        <div className="flex items-center gap-1.5 text-sm font-semibold text-amber-500">
-          <IconCoin className="size-4" />
+        <div className="flex items-center gap-1 text-xs font-semibold text-amber-500">
+          <IconCoin className="size-3.5" />
           {salary}
         </div>
       ) : null}
 
       {/* CTAs */}
-      <div className="mt-auto flex gap-2 pt-1">
+      <div className="mt-auto flex gap-1.5 pt-0.5">
         <Button
           asChild={canApply}
           variant="solid"
           color="primary"
           size="sm"
           disabled={!canApply}
-          className="flex-1"
+          className="h-8 flex-1 px-2 text-xs"
         >
           {canApply ? <Link href={crewHref}>{ctaLabel}</Link> : <span>{ctaLabel}</span>}
         </Button>
@@ -271,10 +271,10 @@ function PositionCard({
           variant="outline"
           color="muted"
           size="sm"
-          className="flex-1"
+          className="h-8 flex-1 px-2 text-xs"
           onClick={() => toast.info(tCrew("messagesComingSoon"))}
         >
-          <IconMail className="size-4" />
+          <IconMail className="size-3.5" />
           {tCrew("ctaMessages")}
         </Button>
       </div>
