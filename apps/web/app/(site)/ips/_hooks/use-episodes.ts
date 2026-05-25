@@ -66,6 +66,16 @@ function mapWireEpisode(w: WireEpisode): Episode {
   };
 }
 
+function sortEpisodes(rows: Episode[]): Episode[] {
+  return rows
+    .map((episode, index) => ({ episode, index }))
+    .sort((a, b) => {
+      const order = a.episode.videoNumber - b.episode.videoNumber;
+      return order === 0 ? a.index - b.index : order;
+    })
+    .map(({ episode }) => episode);
+}
+
 async function fetchEpisodes(projectId: string): Promise<Episode[]> {
   // Backend takes `projectId` as a query-string param (Swagger §queryProjectVideo).
   const qs = new URLSearchParams({ projectId: String(projectId) });
@@ -83,7 +93,7 @@ async function fetchEpisodes(projectId: string): Promise<Episode[]> {
     data: WireEpisode[] | { list?: WireEpisode[] };
   };
   const rows = Array.isArray(json.data) ? json.data : (json.data?.list ?? []);
-  return rows.map(mapWireEpisode);
+  return sortEpisodes(rows.map(mapWireEpisode));
 }
 
 export function useProjectEpisodes(id: string) {
@@ -121,15 +131,26 @@ export function useEpisodeVideoLink(episodeId: string, enabled: boolean = true) 
 // else uses wire names. tags / other / viewStatus / sort are unused —
 // backend defaults them.
 function toWireBody(input: CreateEpisodeInput | UpdateEpisodeInput) {
-  return {
+  const body: {
+    projectId: number;
+    title?: string;
+    introduction?: string;
+    videoBanner?: string;
+    videoLink?: string;
+    videoNumber?: number;
+    videometa: string;
+  } = {
     projectId: Number(input.projectId),
     title: input.title,
     introduction: input.description,
     videoBanner: input.videoBanner,
     videoLink: input.videoLink,
-    videoNumber: input.videoNumber ?? 0,
     videometa: input.videoMeta ? JSON.stringify(input.videoMeta) : "",
   };
+  if (input.videoNumber !== undefined) {
+    body.videoNumber = input.videoNumber;
+  }
+  return body;
 }
 
 async function createEpisode(input: CreateEpisodeInput): Promise<Episode> {
@@ -243,7 +264,7 @@ async function reorderEpisode(input: ReorderEpisodeInput): Promise<void> {
     },
     body: JSON.stringify({
       videoId: input.currentVideoId,
-      beforeVideoId: input.beforeVideoId ?? 0,
+      beforeVideoId: input.beforeVideoId ?? null,
       projectId: input.projectId,
     }),
   });

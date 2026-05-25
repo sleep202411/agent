@@ -259,6 +259,14 @@ function parseProjectTags(tag: unknown): string[] {
   }
 }
 
+function arrayMove<T>(items: readonly T[], fromIndex: number, toIndex: number): T[] {
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  if (moved === undefined) return next;
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
 function projectToForm(project: Project | undefined): EditForm {
   if (!project) return EMPTY_FORM;
   return {
@@ -402,18 +410,16 @@ export default function IPEditPage() {
     setSaved(false);
   }, []);
 
-  // Drag-reorder buffer: dnd-kit fires onDragOver continuously; we batch
-  // the latest projected order and commit a single reorder mutation in
-  // onDragEnd. The optimistic setQueryData lets the UI reflect the new
-  // order immediately; if the backend call fails, the next refetch
-  // restores authoritative state. `originalRef` snapshots the order at
-  // drag-start so onDragEnd can diff against it (the live `episodes` value
-  // already reflects the optimistic mutation by then).
+  // Drag-reorder buffer: dnd-kit already performs an optimistic visual
+  // reorder while dragging. Keep React Query stable during drag so rows
+  // can animate instead of remounting, then commit the projected order
+  // once on drop.
   //
   // These hooks must live above the `if (isLoading) return …` guard so
   // the hook order stays stable across renders (Rules of Hooks).
   const pendingReorderRef = useRef<Episode[] | null>(null);
   const originalReorderRef = useRef<Episode[] | null>(null);
+  const movedEpisodeIdRef = useRef<string | null>(null);
   const handleEpisodeDragOver = useCallback(
     (event: unknown) => {
       const op = (
@@ -428,44 +434,45 @@ export default function IPEditPage() {
         originalReorderRef.current = episodes;
       }
       const list = pendingReorderRef.current ?? originalReorderRef.current ?? episodes;
-      const fromIndex = Number(source.id);
-      const toIndex = Number(target.id);
-      if (
-        Number.isNaN(fromIndex) ||
-        Number.isNaN(toIndex) ||
-        fromIndex < 0 ||
-        toIndex < 0 ||
-        fromIndex === toIndex
-      ) {
-        return;
-      }
-      const next = [...list];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      pendingReorderRef.current = next;
-      // Optimistic: paint the new order before the mutation lands.
-      queryClient.setQueryData(ipKeys.episodes(id), next);
+      const sourceId = String(source.id);
+      const targetId = String(target.id);
+      const fromIndex = list.findIndex((ep) => ep.id === sourceId);
+      const toIndex = list.findIndex((ep) => ep.id === targetId);
+      if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+      pendingReorderRef.current = arrayMove(list, fromIndex, toIndex);
+      movedEpisodeIdRef.current = sourceId;
     },
-    [episodes, id, queryClient]
+    [episodes]
   );
   const handleEpisodeDragEnd = useCallback(() => {
     const finalOrder = pendingReorderRef.current;
     const original = originalReorderRef.current;
+    const movedEpisodeId = movedEpisodeIdRef.current;
     pendingReorderRef.current = null;
     originalReorderRef.current = null;
-    if (!finalOrder || !original) return;
-    const movedIndex = finalOrder.findIndex((ep, i) => ep.id !== original[i]?.id);
+    movedEpisodeIdRef.current = null;
+    if (!finalOrder || !original || !movedEpisodeId) return;
+    if (finalOrder.every((ep, i) => ep.id === original[i]?.id)) return;
+    const movedIndex = finalOrder.findIndex((ep) => ep.id === movedEpisodeId);
     if (movedIndex === -1) return;
-    const moved = finalOrder[movedIndex];
     // Backend convention: the moved video lands BEFORE the next neighbour;
-    // omit `beforeVideoId` when dropped at the tail.
+    // pass null when dropped at the tail.
     const next = finalOrder[movedIndex + 1];
-    reorderEpisodeMut({
-      currentVideoId: moved.id,
-      beforeVideoId: next?.id,
-      projectId: id,
-    });
-  }, [id, reorderEpisodeMut]);
+    queryClient.setQueryData(ipKeys.episodes(id), finalOrder);
+    reorderEpisodeMut(
+      {
+        currentVideoId: movedEpisodeId,
+        beforeVideoId: next?.id,
+        projectId: id,
+      },
+      {
+        onError: (err) => {
+          toast.error(err instanceof Error && err.message ? err.message : tc("saveFailed"));
+          queryClient.invalidateQueries({ queryKey: ipKeys.episodes(id) });
+        },
+      }
+    );
+  }, [id, queryClient, reorderEpisodeMut, tc]);
 
   // FAQ drag-reorder — same optimistic pattern as Episodes, but the
   // backend has no dedicated reorder endpoint. We persist the new order
@@ -972,7 +979,7 @@ export default function IPEditPage() {
                   {episodes.map((ep, i) => (
                     <SortableEpisodeRow
                       key={ep.id}
-                      id={String(i)}
+                      id={ep.id}
                       index={i}
                       episode={ep}
                       onClick={() => setEpisodeDialogIndex(i)}

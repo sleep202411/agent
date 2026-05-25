@@ -29,7 +29,15 @@ export function SortableEpisodeRow({
   onDelete,
 }: SortableEpisodeRowProps) {
   const t = useTranslations("ipEdit");
-  const { ref, handleRef, isDragging } = useSortable({ id, index });
+  const { ref, handleRef, isDragging, isDropping } = useSortable({
+    id,
+    index,
+    transition: {
+      duration: 220,
+      easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+      idle: true,
+    },
+  });
 
   const coverUrl = ipImageUrl(episode.videoBanner);
   const hasCover = !!coverUrl;
@@ -44,8 +52,10 @@ export function SortableEpisodeRow({
     <div
       ref={ref}
       className={cn(
-        "group relative overflow-hidden rounded-xl border border-border/70 bg-card transition-colors hover:border-primary/30",
-        isDragging && "opacity-50 shadow-lg"
+        "group relative overflow-hidden rounded-xl border border-border/70 bg-card transition-[border-color,box-shadow,opacity,transform] duration-200 will-change-transform hover:border-primary/30",
+        isDragging &&
+          "z-20 scale-[0.985] border-primary/30 opacity-85 shadow-xl ring-1 ring-primary/15",
+        isDropping && "shadow-lg"
       )}
     >
       {/* Top strip — drag, EP marker, edit/delete */}
