@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: crew-fd-rank-20260525
+    tag: crew-card-compact-20260525
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
