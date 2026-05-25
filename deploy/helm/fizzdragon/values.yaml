@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: video-mode-cleanup-20260525
+    tag: auth-episode-reorder-20260525
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
