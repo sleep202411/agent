@@ -29,6 +29,9 @@ const PUBLIC_PATTERNS: RegExp[] = [
   // Marketing / discovery surfaces.
   /^\/about(\/|$)/,
   /^\/courses(\/|$)/,
+  // Creator detail pages are public; the talent-market list remains
+  // login-gated.
+  /^\/creators\/[^/]+(\/|$)/,
   /^\/news(\/|$)/,
   /^\/invite(\/|$)/,
   /^\/ips(\/|$)/,
