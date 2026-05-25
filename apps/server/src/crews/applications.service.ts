@@ -265,7 +265,13 @@ export class ApplicationsService {
               ? `You're now a ${app.position.positionType} in "${app.crew.name}".`
               : `Your application to "${app.crew.name}" was not accepted.`,
             meta: {
-              deeplink: `/crews/${app.crewId}`,
+              // Approved → land in the workspace they can now act on.
+              // Rejected → leave them on the crew hall page (their
+              // chance to read the body without confusion about "why
+              // am I being sent into a workspace I can't use").
+              deeplink: isApprove
+                ? `/crews/${app.crewId}/workspace`
+                : `/crews/${app.crewId}`,
               crewId: app.crewId,
               positionId: app.position.id,
               applicationId,
