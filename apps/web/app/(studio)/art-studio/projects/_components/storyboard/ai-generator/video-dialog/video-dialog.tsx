@@ -98,7 +98,6 @@ import type {
 } from "@/src/lib/video-types";
 import {
   ensureVideoReference,
-  videoFrameReferenceMentionPath,
   MAX_ACTIVE_VIDEO_TASKS,
   MAX_CONCURRENT,
   ossUrl,
@@ -519,60 +518,7 @@ export function AiVideoGeneratorDialog({
     [currentModel, size, videoLength, count]
   );
 
-  // Per-kind labels for mention popover.
-  // Start/end frame mode also exposes explicit first-frame / last-frame mentions
-  // without turning those frame slots into ordinary reference images.
-  const referenceMediaItems = useMemo(() => {
-    const counts = { image: 0, video: 0, audio: 0 } as Record<"image" | "video" | "audio", number>;
-    const items: Array<{
-      url: string;
-      path: string;
-      label?: string;
-      kind: "image" | "video" | "audio";
-    }> = [];
-
-    if (activeMode === "frames") {
-      for (const frame of firstFrames) {
-        const sourcePath = frame.path || frame.url || "";
-        if (!sourcePath) continue;
-        items.push({
-          url: frame.url || ossUrl(frame.path),
-          path: videoFrameReferenceMentionPath("first", sourcePath),
-          label: t("firstFrame"),
-          kind: "image" as const,
-        });
-      }
-      for (const frame of lastFrames) {
-        const sourcePath = frame.path || frame.url || "";
-        if (!sourcePath) continue;
-        items.push({
-          url: frame.url || ossUrl(frame.path),
-          path: videoFrameReferenceMentionPath("last", sourcePath),
-          label: t("lastFrame"),
-          kind: "image" as const,
-        });
-      }
-    }
-
-    for (const r of referenceImages) {
-      const kind = classifyAsset(r);
-      counts[kind] += 1;
-      const prefix =
-        kind === "video"
-          ? t("referenceVideo")
-          : kind === "audio"
-            ? t("referenceAudio")
-            : t("referenceImage");
-      items.push({
-        url: r.url || ossUrl(r.path),
-        path: r.path,
-        label: r.label || `${prefix} ${counts[kind]}`,
-        kind,
-      });
-    }
-
-    return items;
-  }, [activeMode, firstFrames, lastFrames, referenceImages, t]);
+  const referenceMediaItems = videoRefs.referenceMediaItems;
 
   const title = shotNumber ? t("aiVideoTitle", { number: shotNumber }) : t("aiVideoTitleDefault");
   const modeExitLabel = editMode

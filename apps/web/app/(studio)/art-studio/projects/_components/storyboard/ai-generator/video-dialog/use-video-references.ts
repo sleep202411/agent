@@ -39,6 +39,41 @@ interface UseVideoReferencesOptions {
   activeMode: string;
 }
 
+type VideoReferenceMediaItem = {
+  url: string;
+  path: string;
+  label?: string;
+  kind: "image" | "video" | "audio";
+};
+
+function removeReferenceMentionsByUrls(html: string, urlsToRemove: Set<string>) {
+  if (urlsToRemove.size === 0 || !html.includes("<mention")) return html;
+
+  const result = html.replace(
+    /<mention\s+([^>]*)>[^<]*<\/mention>/gi,
+    (fullMatch, attrs: string) => {
+      const type = attrs.match(/type="([^"]*)"/i)?.[1] ?? "";
+      const imgUrl = attrs.match(/imgUrl="([^"]*)"/i)?.[1] ?? "";
+      if (type === "reference" && imgUrl && urlsToRemove.has(imgUrl)) return "";
+      return fullMatch;
+    }
+  );
+
+  return result === html ? html : result;
+}
+
+function collectMentionUrls(items: VideoReferenceMediaItem[]) {
+  const urls = new Set<string>();
+  for (const item of items) {
+    if (item.url) urls.add(item.url);
+    if (item.path && !isVideoFrameReferenceMentionPath(item.path)) {
+      urls.add(item.path);
+      urls.add(ossUrl(item.path));
+    }
+  }
+  return urls;
+}
+
 export function useVideoReferences({
   open,
   key,
@@ -78,9 +113,122 @@ export function useVideoReferences({
     outpaintingRefVideo,
   } = references;
 
-  // @ mentions only produce image refs, so "full" is per-image count, not total bucket
+  // Only the reference/multimodal buckets auto-add @ mentions into
+  // referenceImages. Mode-specific slots expose existing assets and should
+  // not be disabled by stale refs from another mode.
   const refIsFull =
+    (activeMode === "reference" || activeMode === "multimodal") &&
     referenceImages.filter((item) => classifyAsset(item) === "image").length >= maxImages;
+
+  const referenceMediaItems = useMemo<VideoReferenceMediaItem[]>(() => {
+    const items: VideoReferenceMediaItem[] = [];
+    const addItem = (
+      asset: ReferenceAsset | undefined,
+      label?: string,
+      kind?: "image" | "video" | "audio"
+    ) => {
+      if (!asset) return;
+      const path = asset.path || asset.url || "";
+      if (!path) return;
+      items.push({
+        url: asset.url || ossUrl(asset.path),
+        path,
+        label,
+        kind: kind ?? classifyAsset(asset),
+      });
+    };
+    const addFrameItem = (
+      asset: ReferenceAsset | undefined,
+      slot: "first" | "last",
+      label: string
+    ) => {
+      if (!asset) return;
+      const sourcePath = asset.path || asset.url || "";
+      if (!sourcePath) return;
+      items.push({
+        url: asset.url || ossUrl(asset.path),
+        path: videoFrameReferenceMentionPath(slot, sourcePath),
+        label,
+        kind: "image",
+      });
+    };
+
+    switch (activeMode) {
+      case "frames":
+        addFrameItem(firstFrames[0], "first", t("firstFrame"));
+        addFrameItem(lastFrames[0], "last", t("lastFrame"));
+        return items;
+      case "multiReference": {
+        const counts = { subject: 0, background: 0 };
+        for (const item of multiRefImages) {
+          const isBackground = item.typeTag === "bg";
+          if (isBackground) {
+            counts.background += 1;
+            addItem(item, `${t("backgroundLabel")} ${counts.background}`, "image");
+          } else {
+            counts.subject += 1;
+            addItem(item, `${t("subjectLabel")} ${counts.subject}`, "image");
+          }
+        }
+        return items;
+      }
+      case "repaint":
+        addItem(repaintRefVideos[0], t("video"), "video");
+        addItem(repaintRefImage[0], t("referenceImage"), "image");
+        return items;
+      case "localEdit":
+        addItem(localEditRefVideo[0], t("video"), "video");
+        addItem(localEditMaskImage[0], t("maskImage"), "image");
+        addItem(localEditRefImage[0], t("referenceImage"), "image");
+        return items;
+      case "extend":
+        addItem(extendFirstClip[0], t("firstClipLabel"), "video");
+        addItem(extendLastClip[0], t("lastClipLabel"), "video");
+        addItem(extendFirstFrame[0], t("firstFrameImage"), "image");
+        addItem(extendLastFrame[0], t("lastFrameImage"), "image");
+        return items;
+      case "outpainting":
+        addItem(outpaintingRefVideo[0], t("video"), "video");
+        return items;
+      case "reference":
+      case "multimodal":
+      default: {
+        const counts = { image: 0, video: 0, audio: 0 } as Record<
+          "image" | "video" | "audio",
+          number
+        >;
+        for (const item of referenceImages) {
+          const kind = classifyAsset(item);
+          counts[kind] += 1;
+          const prefix =
+            kind === "video"
+              ? t("referenceVideo")
+              : kind === "audio"
+                ? t("referenceAudio")
+                : t("referenceImage");
+          addItem(item, item.label || `${prefix} ${counts[kind]}`, kind);
+        }
+        return items;
+      }
+    }
+  }, [
+    activeMode,
+    extendFirstClip,
+    extendFirstFrame,
+    extendLastClip,
+    extendLastFrame,
+    firstFrames,
+    lastFrames,
+    localEditMaskImage,
+    localEditRefImage,
+    localEditRefVideo,
+    multiRefImages,
+    outpaintingRefVideo,
+    referenceImages,
+    repaintRefImage,
+    repaintRefVideos,
+    t,
+  ]);
 
   // ─── Clean prompt when refs are removed ──
   const cleanPromptOnRefRemoval = useCallback(
@@ -271,6 +419,9 @@ export function useVideoReferences({
   const handleMentionInserted = useCallback(
     (item: { id?: string; imgUrl?: string; name: string; mentionType: string }) => {
       if (!item.imgUrl) return;
+      if (activeMode !== "reference" && activeMode !== "multimodal") {
+        return;
+      }
       if (item.id && isVideoFrameReferenceMentionPath(item.id)) {
         return;
       }
@@ -291,8 +442,35 @@ export function useVideoReferences({
         })
       );
     },
-    [dispatch, key, referenceImages, maxImages, maxVideos, maxAudios]
+    [activeMode, dispatch, key, referenceImages, maxImages, maxVideos, maxAudios]
   );
+
+  const previousModeRefs = useRef<{ mode: string; urls: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!open) {
+      previousModeRefs.current = null;
+      return;
+    }
+
+    const currentUrls = collectMentionUrls(referenceMediaItems);
+    const previous = previousModeRefs.current;
+
+    if (previous && previous.mode !== activeMode) {
+      const staleUrls = new Set<string>();
+      for (const url of previous.urls) {
+        if (!currentUrls.has(url)) staleUrls.add(url);
+      }
+
+      if (staleUrls.size > 0) {
+        const cleaned = removeReferenceMentionsByUrls(prompt, staleUrls);
+        if (cleaned !== prompt) {
+          dispatch(updateVideoForm({ key, updates: { prompt: cleaned } }));
+        }
+      }
+    }
+
+    previousModeRefs.current = { mode: activeMode, urls: currentUrls };
+  }, [activeMode, dispatch, key, open, prompt, referenceMediaItems]);
 
   // ─── Initialization + enforcement ──
   const refInitDoneRef = useRef(false);
@@ -428,37 +606,9 @@ export function useVideoReferences({
     () => ({ image: refPrefixImage, video: refPrefixVideo, audio: refPrefixAudio }),
     [refPrefixImage, refPrefixVideo, refPrefixAudio]
   );
-  const referenceItemsForMap = useMemo(() => {
-    if (activeMode !== "frames") return referenceImages;
-
-    const frameItems: ReferenceAsset[] = [];
-    for (const frame of firstFrames) {
-      const sourcePath = frame.path || frame.url || "";
-      if (!sourcePath) continue;
-      frameItems.push({
-        ...frame,
-        url: frame.url || ossUrl(frame.path),
-        path: videoFrameReferenceMentionPath("first", sourcePath),
-        label: t("firstFrame"),
-      });
-    }
-    for (const frame of lastFrames) {
-      const sourcePath = frame.path || frame.url || "";
-      if (!sourcePath) continue;
-      frameItems.push({
-        ...frame,
-        url: frame.url || ossUrl(frame.path),
-        path: videoFrameReferenceMentionPath("last", sourcePath),
-        label: t("lastFrame"),
-      });
-    }
-
-    return [...frameItems, ...referenceImages];
-  }, [activeMode, firstFrames, lastFrames, referenceImages, t]);
-
   const referenceMap: ReferenceMap = useMemo(
-    () => buildReferenceMap(referenceItemsForMap, promptMentions, refPrefixes),
-    [referenceItemsForMap, promptMentions, refPrefixes]
+    () => buildReferenceMap(referenceMediaItems, promptMentions, refPrefixes),
+    [referenceMediaItems, promptMentions, refPrefixes]
   );
   const referenceMapCtx = useMemo(
     () => ({ map: referenceMap, isFull: refIsFull }),
@@ -474,6 +624,7 @@ export function useVideoReferences({
     minVideos,
     minAudios,
     refIsFull,
+    referenceMediaItems,
     // Setters
     onSetReferenceImages,
     onSetFirstFrames,
