@@ -128,7 +128,7 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
     setDeletingKeys((prev) => new Set([...prev, ...targetKeys]));
 
     try {
-      await backendApi.post("/api/ai/record/batch/delete", { data: ids });
+      await backendApi.post("/api/ai/record/batch/delete/all", { data: ids });
       setAssets((current) => current.filter((a) => !targetKeys.has(getAssetKey(a))));
       setSelectedKeys(new Set());
       touchAssets();
