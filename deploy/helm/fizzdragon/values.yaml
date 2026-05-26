@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: crew-card-compact-20260525
+    tag: eula-zero-tolerance-20260526
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
