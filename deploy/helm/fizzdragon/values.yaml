@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: cert-verify-20260526
+    tag: community-credits-chip-20260526
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
