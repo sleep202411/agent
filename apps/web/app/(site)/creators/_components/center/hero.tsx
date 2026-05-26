@@ -14,7 +14,7 @@
  */
 import {
   IconCircleCheck,
-  IconEdit,
+  IconDots,
   IconInbox,
   IconLink,
   IconMail,
@@ -27,6 +27,12 @@ import {
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useTranslations } from "@/src/i18n/i18n";
 import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
 
@@ -43,13 +49,11 @@ interface CreatorHeroProps {
    * on save so the user lands on the page that just changed.
    */
   onCreateService?: () => void;
-  /** Owner clicked "编辑资料" — parent opens the ProfileEditDialog. */
-  onEditProfile?: () => void;
   /** Owner clicked the referral-link CTA — parent generates the
    *  code and opens the referral-link share dialog. */
   onShareReferral?: () => void;
   /** Whether the referral-link generation request is in flight, so
-   *  the button can show a spinner. */
+   *  the menu item can show a spinner / disabled state. */
   referralPending?: boolean;
   /** Owner clicked "分享主页" — parent copies the public
    *  `/creators/{id}` link to clipboard. */
@@ -60,7 +64,6 @@ export function CreatorHero({
   creator,
   isOwner,
   onCreateService,
-  onEditProfile,
   onShareReferral,
   referralPending,
   onShareProfile,
@@ -124,7 +127,6 @@ export function CreatorHero({
             <OwnerCtas
               t={t}
               onCreateService={onCreateService}
-              onEditProfile={onEditProfile}
               onShareReferral={onShareReferral}
               referralPending={referralPending}
               onShareProfile={onShareProfile}
@@ -141,60 +143,54 @@ export function CreatorHero({
 function OwnerCtas({
   t,
   onCreateService,
-  onEditProfile,
   onShareReferral,
   referralPending,
   onShareProfile,
 }: {
   t: (k: string) => string;
   onCreateService?: () => void;
-  onEditProfile?: () => void;
   onShareReferral?: () => void;
   referralPending?: boolean;
   onShareProfile?: () => void;
 }) {
+  // Secondary owner CTAs (inbox / earnings / referral / share-profile)
+  // and the profile-edit affordance moved off the hero — share/inbox/
+  // earnings collapse into this overflow menu, and edit lives next to
+  // each editable section in the left rail. The hero now carries only
+  // the single primary "+ new service" action so the band stops
+  // crowding the avatar / name on common laptop widths.
   return (
     <>
       <Button type="button" variant="solid" color="primary" onClick={() => onCreateService?.()}>
         <IconPlus className="size-4" />
         {t("cta.createService")}
       </Button>
-      <Button
-        type="button"
-        variant="outline"
-        color="muted"
-        onClick={() => toast.info(t("ctaPhase1bHint"))}
-      >
-        <IconInbox className="size-4" />
-        {t("cta.inbox")}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        color="muted"
-        onClick={() => toast.info(t("ctaPhase1bHint"))}
-      >
-        <IconWallet className="size-4" />
-        {t("cta.earnings")}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        color="muted"
-        onClick={() => onShareReferral?.()}
-        disabled={referralPending}
-      >
-        <IconLink className="size-4" />
-        {t("cta.referralLink")}
-      </Button>
-      <Button type="button" variant="outline" color="muted" onClick={() => onShareProfile?.()}>
-        <IconShare3 className="size-4" />
-        {t("cta.shareProfile")}
-      </Button>
-      <Button type="button" variant="ghost" color="muted" onClick={() => onEditProfile?.()}>
-        <IconEdit className="size-4" />
-        {t("cta.editProfile")}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="outline" color="muted" aria-label={t("cta.more")}>
+            <IconDots className="size-4" />
+            {t("cta.more")}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuItem onSelect={() => toast.info(t("ctaPhase1bHint"))}>
+            <IconInbox className="size-4 text-muted-foreground" />
+            <span>{t("cta.inbox")}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => toast.info(t("ctaPhase1bHint"))}>
+            <IconWallet className="size-4 text-muted-foreground" />
+            <span>{t("cta.earnings")}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={referralPending} onSelect={() => onShareReferral?.()}>
+            <IconLink className="size-4 text-muted-foreground" />
+            <span>{t("cta.referralLink")}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onShareProfile?.()}>
+            <IconShare3 className="size-4 text-muted-foreground" />
+            <span>{t("cta.shareProfile")}</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </>
   );
 }

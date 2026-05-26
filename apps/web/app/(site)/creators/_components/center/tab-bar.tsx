@@ -14,7 +14,11 @@
  *   3. 证书    — public trust signal / training completion proof.
  *   4. IP      — owned IP projects.
  *   5. 剧组    — joined crews.
- *   6. 关于    — bio, education, experience, socials.
+ *
+ * About (bio / education / experience / socials) was lifted out of the
+ * tab bar entirely and now lives in the left rail — identity content
+ * belongs alongside the avatar, not behind a tab click. Tab bar stays
+ * focused on portfolio surfaces.
  *
  * Keep this list short — each tab is one horizontal click cost for
  * every visitor.
@@ -22,7 +26,7 @@
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 
-export type CreatorTabId = "services" | "works" | "certificates" | "ips" | "crews" | "about";
+export type CreatorTabId = "services" | "works" | "certificates" | "ips" | "crews";
 
 export const CREATOR_TAB_ORDER: CreatorTabId[] = [
   "services",
@@ -30,7 +34,6 @@ export const CREATOR_TAB_ORDER: CreatorTabId[] = [
   "certificates",
   "ips",
   "crews",
-  "about",
 ];
 
 const TAB_I18N_KEY: Record<CreatorTabId, string> = {
@@ -39,7 +42,6 @@ const TAB_I18N_KEY: Record<CreatorTabId, string> = {
   certificates: "tabs.certificates",
   ips: "tabs.ips",
   crews: "tabs.crews",
-  about: "tabs.about",
 };
 
 /** DOM id prefix for each section anchor (matches creator-center.tsx). */

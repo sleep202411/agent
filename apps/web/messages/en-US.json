@@ -1145,6 +1145,7 @@
     "ctaWorksEdit": "Manage your works from the legacy publish flow for now.",
     "cta": {
       "createService": "New service package",
+      "more": "More",
       "inbox": "Inbox",
       "earnings": "Earnings",
       "editProfile": "Edit profile",
