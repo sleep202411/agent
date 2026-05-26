@@ -11,9 +11,10 @@
  * Tab order is deliberate:
  *   1. 服务包  — commercial entry, first because it's the buy CTA.
  *   2. 作品    — videos / personal works.
- *   3. IP      — owned IP projects.
- *   4. 剧组    — joined crews.
- *   5. 关于    — bio, education, experience, socials.
+ *   3. 证书    — public trust signal / training completion proof.
+ *   4. IP      — owned IP projects.
+ *   5. 剧组    — joined crews.
+ *   6. 关于    — bio, education, experience, socials.
  *
  * Keep this list short — each tab is one horizontal click cost for
  * every visitor.
@@ -21,13 +22,21 @@
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 
-export type CreatorTabId = "services" | "works" | "ips" | "crews" | "about";
+export type CreatorTabId = "services" | "works" | "certificates" | "ips" | "crews" | "about";
 
-export const CREATOR_TAB_ORDER: CreatorTabId[] = ["services", "works", "ips", "crews", "about"];
+export const CREATOR_TAB_ORDER: CreatorTabId[] = [
+  "services",
+  "works",
+  "certificates",
+  "ips",
+  "crews",
+  "about",
+];
 
 const TAB_I18N_KEY: Record<CreatorTabId, string> = {
   services: "tabs.services",
   works: "tabs.works",
+  certificates: "tabs.certificates",
   ips: "tabs.ips",
   crews: "tabs.crews",
   about: "tabs.about",
@@ -48,7 +57,7 @@ export function CreatorTabBar({ active, onPick }: CreatorTabBarProps) {
   return (
     <nav
       aria-label="creator-center-sections"
-      className="flex items-center gap-2 border-b border-border"
+      className="flex items-center gap-2 overflow-x-auto border-b border-border"
     >
       {CREATOR_TAB_ORDER.map((id) => {
         const isActive = active === id;
@@ -59,7 +68,7 @@ export function CreatorTabBar({ active, onPick }: CreatorTabBarProps) {
             aria-current={isActive ? "true" : undefined}
             onClick={() => onPick(id)}
             className={cn(
-              "relative px-4 py-2.5 text-sm font-medium transition-colors",
+              "relative shrink-0 px-4 py-2.5 text-sm font-medium transition-colors",
               isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground/80"
             )}
           >

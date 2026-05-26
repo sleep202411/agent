@@ -1174,6 +1174,7 @@
     "tabs": {
       "services": "服务包",
       "works": "作品",
+      "certificates": "证书",
       "ips": "IP",
       "crews": "剧组",
       "about": "关于"
@@ -1199,6 +1200,33 @@
       "publishCta": "发布作品",
       "playFailed": "视频加载失败，请重试。",
       "noMedia": "该作品暂无可播放的视频。"
+    },
+    "certificates": {
+      "eyebrow": "创作者资质",
+      "heading": "{name} 的气泡龙认证证书",
+      "body": "已签发证书用于展示该创作者完成过的训练项目、生产能力与可验证的专业资质。",
+      "verified": "已验证",
+      "publicSignal": "公开主页展示",
+      "visualMark": "气泡龙认证",
+      "previewGraduation": "结业",
+      "previewCertificate": "证书",
+      "viewCertificate": "查看证书",
+      "downloadCertificate": "下载",
+      "closePreview": "关闭证书预览",
+      "railHeading": "资质证书",
+      "railCount": "{count} 张有效证书",
+      "emptyOwnerTitle": "暂无证书",
+      "emptyOwnerBody": "下一次手动批量签发后，证书会展示在这里。",
+      "emptyVisitorTitle": "暂无证书",
+      "emptyVisitorBody": "该创作者暂未公开认证证书。",
+      "metricActive": "有效证书",
+      "metricActiveDetail": "主页可见",
+      "metricLatest": "最近签发",
+      "metricIssuer": "签发方",
+      "metricIssuerDetail": "来源已验证",
+      "program": "项目",
+      "issuedAt": "签发时间",
+      "certNo": "证书编号"
     },
     "ips": {
       "emptyOwnerTitle": "创建你的 IP",

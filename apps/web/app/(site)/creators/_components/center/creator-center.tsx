@@ -13,7 +13,7 @@
  *   ┌─────────────────────────────────────────────────────────────┐
  *   │  HERO  cover · avatar · name · level · bio · primary CTAs   │
  *   ├──────────────┬──────────────────────────────────────────────┤
- *   │ left rail    │  tab bar: 服务包 / 作品 / IP / 剧组 / 关于   │
+ *   │ left rail    │  tab bar: 服务包 / 作品 / 证书 / IP / 剧组 / 关于 │
  *   │ stats        ├──────────────────────────────────────────────┤
  *   │ business     │  active-tab content                          │
  *   │ info         │                                              │
@@ -56,6 +56,7 @@ import { CreatorTabBar, CREATOR_TAB_ORDER, CREATOR_SECTION_ID, type CreatorTabId
 import { CreateServiceDialog } from "./dialogs/create-service-dialog";
 import { ServicesTab } from "./tabs/services-tab";
 import { WorksTab } from "./tabs/works-tab";
+import { CertificatesTab } from "./tabs/certificates-tab";
 import { IpsTab } from "./tabs/ips-tab";
 import { CrewsTab } from "./tabs/crews-tab";
 import { AboutTab } from "./tabs/about-tab";
@@ -141,15 +142,13 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
   const [referralLink, setReferralLink] = useState("");
   const [referralQrDataUrl, setReferralQrDataUrl] = useState("");
   const [referralCopied, setReferralCopied] = useState(false);
+  const visibleReferralQrDataUrl = referralLink ? referralQrDataUrl : "";
 
   // Regenerate the share QR whenever the link changes. Same pattern as
   // profile-header.tsx — inline data-uri PNG so we don't depend on any
   // image host and the QR refreshes per session.
   useEffect(() => {
-    if (!referralLink) {
-      setReferralQrDataUrl("");
-      return;
-    }
+    if (!referralLink) return;
     let cancelled = false;
     QRCode.toDataURL(referralLink, {
       errorCorrectionLevel: "M",
@@ -282,11 +281,11 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
                 <DialogDescription>{tp("referralLinkDesc")}</DialogDescription>
               </DialogHeader>
               <div className="flex flex-col gap-4 p-4">
-                {referralQrDataUrl ? (
+                {visibleReferralQrDataUrl ? (
                   <div className="flex justify-center">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={referralQrDataUrl}
+                      src={visibleReferralQrDataUrl}
                       alt={tp("referralLinkTitle")}
                       className="size-44 rounded-lg bg-white p-2"
                     />
@@ -343,6 +342,8 @@ function SectionContent({
       return <ServicesTab creator={creator} isOwner={isOwner} />;
     case "works":
       return <WorksTab creator={creator} isOwner={isOwner} />;
+    case "certificates":
+      return <CertificatesTab creator={creator} isOwner={isOwner} />;
     case "ips":
       return <IpsTab creator={creator} isOwner={isOwner} />;
     case "crews":

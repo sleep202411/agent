@@ -1174,6 +1174,7 @@
     "tabs": {
       "services": "Service packages",
       "works": "Works",
+      "certificates": "Certificates",
       "ips": "IPs",
       "crews": "Crews",
       "about": "About"
@@ -1199,6 +1200,33 @@
       "publishCta": "Publish work",
       "playFailed": "Could not load the video. Please try again.",
       "noMedia": "This work has no playable media yet."
+    },
+    "certificates": {
+      "eyebrow": "Creator credentials",
+      "heading": "{name}'s verified FizzDragon certificates",
+      "body": "Issued certificates show the training programs, production skills, and verified creator capabilities this profile can stand behind.",
+      "verified": "Verified",
+      "publicSignal": "Public profile signal",
+      "visualMark": "FizzDragon certified",
+      "previewGraduation": "Graduation",
+      "previewCertificate": "Certificate",
+      "viewCertificate": "View certificate",
+      "downloadCertificate": "Download",
+      "closePreview": "Close certificate preview",
+      "railHeading": "Credentials",
+      "railCount": "{count} active certificates",
+      "emptyOwnerTitle": "No certificates yet",
+      "emptyOwnerBody": "Issued certificates will appear here after the next manual batch.",
+      "emptyVisitorTitle": "No certificates yet",
+      "emptyVisitorBody": "This creator has not published verified certificates.",
+      "metricActive": "Active certificates",
+      "metricActiveDetail": "Visible on profile",
+      "metricLatest": "Latest issued",
+      "metricIssuer": "Issuer",
+      "metricIssuerDetail": "Verified source",
+      "program": "Program",
+      "issuedAt": "Issued",
+      "certNo": "Certificate No."
     },
     "ips": {
       "emptyOwnerTitle": "Start an IP",

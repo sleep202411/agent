@@ -1174,6 +1174,7 @@
     "tabs": {
       "services": "服務包",
       "works": "作品",
+      "certificates": "證書",
       "ips": "IP",
       "crews": "劇組",
       "about": "關於"
@@ -1199,6 +1200,33 @@
       "publishCta": "發布作品",
       "playFailed": "影片載入失敗，請重試。",
       "noMedia": "此作品尚無可播放的影片。"
+    },
+    "certificates": {
+      "eyebrow": "創作者資質",
+      "heading": "{name} 的氣泡龍認證證書",
+      "body": "已簽發證書用於展示該創作者完成過的訓練項目、生產能力與可驗證的專業資質。",
+      "verified": "已驗證",
+      "publicSignal": "公開主頁展示",
+      "visualMark": "氣泡龍認證",
+      "previewGraduation": "結業",
+      "previewCertificate": "證書",
+      "viewCertificate": "查看證書",
+      "downloadCertificate": "下載",
+      "closePreview": "關閉證書預覽",
+      "railHeading": "資質證書",
+      "railCount": "{count} 張有效證書",
+      "emptyOwnerTitle": "暫無證書",
+      "emptyOwnerBody": "下一次手動批量簽發後，證書會展示在這裡。",
+      "emptyVisitorTitle": "暫無證書",
+      "emptyVisitorBody": "該創作者暫未公開認證證書。",
+      "metricActive": "有效證書",
+      "metricActiveDetail": "主頁可見",
+      "metricLatest": "最近簽發",
+      "metricIssuer": "簽發方",
+      "metricIssuerDetail": "來源已驗證",
+      "program": "項目",
+      "issuedAt": "簽發時間",
+      "certNo": "證書編號"
     },
     "ips": {
       "emptyOwnerTitle": "建立你的 IP",
