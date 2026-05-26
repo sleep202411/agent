@@ -3,16 +3,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconBook2,
+  IconChecks,
   IconFolder,
   IconLoader2,
   IconPhoto,
+  IconTrash,
   IconUpload,
   IconVideo,
+  IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { MediaPreviewModal } from "@/components/media/media-preview-modal";
 import { uploadWorkspaceFile } from "@/src/lib/uploads/workspace-upload";
 import { backendApi, type Paginated } from "@/src/lib/api";
@@ -45,6 +58,7 @@ const TYPE_TAB_ICONS: Record<AssetRecordType, React.ReactNode> = {
 
 export function AssetsPanel({ onClose }: { onClose: () => void }) {
   const t = useTranslations("asset");
+  const tc = useTranslations("common");
   const assetsVersion = useAppSelector((s) => selectCurrentInstance(s).assetsVersion);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -61,7 +75,76 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
   const [hasMore, setHasMore] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
 
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const [deletingKeys, setDeletingKeys] = useState<Set<string>>(() => new Set());
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
   const groups = useMemo(() => groupAssets(assets), [assets]);
+
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedKeys(new Set());
+  }, []);
+
+  const toggleSelected = useCallback((asset: AssetListItem) => {
+    if (asset.uploading) return;
+    const key = getAssetKey(asset);
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const handleAssetClick = useCallback(
+    (asset: AssetListItem) => {
+      if (selectionMode) {
+        toggleSelected(asset);
+        return;
+      }
+      setPreviewAsset(asset);
+    },
+    [selectionMode, toggleSelected]
+  );
+
+  // Reset selection whenever the filter set changes — the displayed list does
+  // and selectedKeys could otherwise point at items the user no longer sees.
+  useEffect(() => {
+    if (selectionMode) exitSelectionMode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, source]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (selectedKeys.size === 0) return;
+    const targets = assets.filter(
+      (a) => selectedKeys.has(getAssetKey(a)) && !a.uploading && a.id != null
+    );
+    if (targets.length === 0) return;
+    const targetKeys = new Set(targets.map(getAssetKey));
+    const ids = targets.map((a) => a.id);
+    setConfirmDeleteOpen(false);
+    setDeletingKeys((prev) => new Set([...prev, ...targetKeys]));
+
+    try {
+      await backendApi.post("/api/ai/record/batch/delete", { data: ids });
+      setAssets((current) => current.filter((a) => !targetKeys.has(getAssetKey(a))));
+      setSelectedKeys(new Set());
+      touchAssets();
+      toast.success(t("deleted", { count: targets.length }));
+      setSelectionMode(false);
+    } catch (error) {
+      console.error("[AssetsPanel] batch delete failed:", error);
+      toast.error(t("deleteFailed"));
+    } finally {
+      setDeletingKeys((prev) => {
+        const next = new Set(prev);
+        for (const k of targetKeys) next.delete(k);
+        return next;
+      });
+    }
+  }, [selectedKeys, assets, touchAssets, t]);
 
   const loadAssets = useCallback(
     async (options?: { reset?: boolean }) => {
@@ -172,21 +255,43 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
 
   const previewUrl = previewAsset ? getAssetUrl(previewAsset) : "";
 
+  const selectedCount = selectedKeys.size;
+
   return (
     <>
       <PanelLayout
         title={t("title")}
         onClose={onClose}
         footer={
-          <Button
-            className="w-full"
-            size="lg"
-            variant="solid"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <IconUpload className="size-3.5" />
-            {t("uploadAsset")}
-          </Button>
+          selectionMode ? (
+            <div className="flex w-full items-center gap-2">
+              <Button className="flex-1" size="lg" variant="outline" onClick={exitSelectionMode}>
+                <IconX className="size-3.5" />
+                {tc("cancel")}
+              </Button>
+              <Button
+                className="flex-1"
+                size="lg"
+                color="destructive"
+                variant="solid"
+                disabled={selectedCount === 0}
+                onClick={() => setConfirmDeleteOpen(true)}
+              >
+                <IconTrash className="size-3.5" />
+                {tc("delete")}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              className="w-full"
+              size="lg"
+              variant="solid"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <IconUpload className="size-3.5" />
+              {t("uploadAsset")}
+            </Button>
+          )
         }
       >
         <div
@@ -219,43 +324,72 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
             onChange={handleFileChange}
           />
 
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-            <ToggleGroup
-              type="single"
-              value={type}
-              onValueChange={(v) => v && setType(v as AssetRecordType)}
-              className="rounded-lg bg-muted/50 p-0.5"
-            >
-              {TYPE_TAB_VALUES.map((v) => (
-                <ToggleGroupItem
-                  key={v}
-                  value={v}
-                  className="gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium text-muted-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
-                >
-                  {TYPE_TAB_ICONS[v]}
-                  {t(TYPE_TAB_I18N_KEYS[v])}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+          {/* Filters / selection-mode header */}
+          {selectionMode ? (
+            <div className="flex items-center justify-between gap-2 px-4 py-3">
+              <div className="text-xs font-medium text-foreground">
+                {t("selected", { count: selectedCount })}
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={exitSelectionMode}
+                className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+              >
+                <IconX className="size-3" />
+                {t("cancelSelect")}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+              <ToggleGroup
+                type="single"
+                value={type}
+                onValueChange={(v) => v && setType(v as AssetRecordType)}
+                className="rounded-lg bg-muted/50 p-0.5"
+              >
+                {TYPE_TAB_VALUES.map((v) => (
+                  <ToggleGroupItem
+                    key={v}
+                    value={v}
+                    className="gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium text-muted-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+                  >
+                    {TYPE_TAB_ICONS[v]}
+                    {t(TYPE_TAB_I18N_KEYS[v])}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
 
-            <ToggleGroup
-              type="single"
-              value={source}
-              onValueChange={(v) => v && setSource(v as AssetRecordSource)}
-              className="rounded-lg bg-muted/50 p-0.5"
-            >
-              {SOURCE_VALUES.map((v) => (
-                <ToggleGroupItem
-                  key={v}
-                  value={v}
-                  className="rounded-md px-2.5 py-1 text-[11px] font-medium text-muted-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
-                >
-                  {t(SOURCE_I18N_KEYS[v])}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
+              <ToggleGroup
+                type="single"
+                value={source}
+                onValueChange={(v) => v && setSource(v as AssetRecordSource)}
+                className="rounded-lg bg-muted/50 p-0.5"
+              >
+                {SOURCE_VALUES.map((v) => (
+                  <ToggleGroupItem
+                    key={v}
+                    value={v}
+                    className="rounded-md px-2.5 py-1 text-[11px] font-medium text-muted-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+                  >
+                    {t(SOURCE_I18N_KEYS[v])}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectionMode(true)}
+                disabled={assets.length === 0}
+                className="ml-auto h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+                aria-label={t("select")}
+              >
+                <IconChecks className="size-3.5" />
+                {t("select")}
+              </Button>
+            </div>
+          )}
 
           {/* Content */}
           <div className="flex-1 overflow-auto px-4 pb-4">
@@ -275,11 +409,14 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
             ) : (
               <AssetList
                 groups={groups}
-                selectable={false}
+                selectable={selectionMode}
+                selectedIds={selectedKeys}
+                deletingIds={deletingKeys}
                 columns={3}
                 hasMore={hasMore}
                 loading={loading}
-                onClick={(asset) => setPreviewAsset(asset)}
+                onSelect={toggleSelected}
+                onClick={handleAssetClick}
                 onLoadMore={() => void loadAssets()}
               />
             )}
@@ -314,6 +451,26 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
         link={previewUrl}
         createdAt={previewAsset?.createTime ? String(previewAsset.createTime) : ""}
       />
+
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("confirmDeleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("confirmDeleteDescription", { count: selectedCount })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void handleConfirmDelete()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {tc("delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
