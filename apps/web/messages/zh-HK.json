@@ -301,6 +301,7 @@
     "loginError": "登入失敗",
     "agreePrefix": "我已閱讀並同意",
     "agreementRequired": "請先閱讀並同意服務條款",
+    "agreementZeroTolerance": "並知悉對違規內容與濫用行為採取零容忍政策",
     "terms": "服務條款",
     "and": "和",
     "privacy": "私隱政策",

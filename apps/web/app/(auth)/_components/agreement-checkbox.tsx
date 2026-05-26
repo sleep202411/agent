@@ -63,6 +63,11 @@ export function AgreementCheckbox({
         >
           {t("privacy")}
         </a>
+        {/* Apple Guideline 1.2 — surface the zero-tolerance policy on
+            the agreement line itself, not buried inside the linked
+            ToS document. Reviewers scan the registration screen and
+            need to see the no-tolerance language here. */}
+        , {t("agreementZeroTolerance")}.
       </span>
     </label>
   );
