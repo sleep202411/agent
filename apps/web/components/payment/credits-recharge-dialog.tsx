@@ -38,10 +38,48 @@ interface OrderStatus {
 
 type Step = "select" | "payment" | "success";
 
+/**
+ * Which credit ledger this dialog tops up.
+ *
+ * - `studio`    — paid AI generation credits used inside Art Studio
+ *                 (image / video gen). Backed by /api/payment/query/package
+ *                 and productType 1.
+ * - `community` — wallet for unlocking paid IP content. Backed by
+ *                 /api/payment/query/point/package and productType 3.
+ *
+ * Backend reuses the same checkout pipeline for both — only the
+ * package list endpoint and the productType discriminator change. The
+ * dialog UI itself is identical, so we parameterise here rather than
+ * fork the component.
+ */
+export type CreditsKind = "studio" | "community";
+
+interface KindConfig {
+  packageEndpoint: string;
+  productType: number;
+  wechatType: number;
+}
+
+const KIND_CONFIG: Record<CreditsKind, KindConfig> = {
+  studio: {
+    packageEndpoint: "/api/payment/query/package",
+    productType: 1,
+    wechatType: 1,
+  },
+  community: {
+    packageEndpoint: "/api/payment/query/point/package",
+    productType: 3,
+    wechatType: 3,
+  },
+};
+
 export interface CreditsRechargeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  /** Which credit type to top up. Defaults to `"studio"` for legacy
+   *  callers that predate the community-credits split. */
+  kind?: CreditsKind;
 }
 
 // ── Component ───────────────────────────────────────────────
@@ -50,8 +88,10 @@ export function CreditsRechargeDialog({
   open,
   onOpenChange,
   onSuccess,
+  kind = "studio",
 }: CreditsRechargeDialogProps) {
   const t = useTranslations("payment");
+  const config = KIND_CONFIG[kind];
 
   const [packages, setPackages] = useState<CreditsPackage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,7 +117,7 @@ export function CreditsRechargeDialog({
     setLoading(true);
     setSelectedId(null);
     backendApi
-      .post<CreditsPackage[]>("/api/payment/query/package", { data: { currency } })
+      .post<CreditsPackage[]>(config.packageEndpoint, { data: { currency } })
       .then((res) => {
         const list = (res ?? [])
           .filter((p) => p.status === 1 || (p.status as unknown) === "ACTIVE")
@@ -87,7 +127,7 @@ export function CreditsRechargeDialog({
       })
       .catch(() => setPackages([]))
       .finally(() => setLoading(false));
-  }, [open, currency]);
+  }, [open, currency, config.packageEndpoint]);
 
   useEffect(() => {
     if (!open) {
@@ -121,7 +161,7 @@ export function CreditsRechargeDialog({
       if (siteConfig.region === "cn") {
         // WeChat Pay: show QR code
         const result = await backendApi.post<RechargeResult>("/api/payment/wechat/recharge", {
-          data: { packageId: Number(selectedPackage.id), type: 1 },
+          data: { packageId: Number(selectedPackage.id), type: config.wechatType },
         });
         const qrDataUrl = await QRCode.toDataURL(result.url, { width: 256, margin: 2 });
         setQrUrl(qrDataUrl);
@@ -152,7 +192,7 @@ export function CreditsRechargeDialog({
           {
             data: {
               productId: selectedPackage.id,
-              productType: 1, // "credits",
+              productType: config.productType,
               // successUrl: `${window.location.origin}${window.location.pathname}?payment=success`,
               // cancelUrl: `${window.location.origin}${window.location.pathname}?payment=cancelled`,
             },
@@ -180,7 +220,7 @@ export function CreditsRechargeDialog({
     } finally {
       setPaying(false);
     }
-  }, [selectedPackage, onSuccess]);
+  }, [selectedPackage, onSuccess, config.productType, config.wechatType, t]);
 
   const handleAlreadyPaid = useCallback(async () => {
     if (!orderNo) return;
