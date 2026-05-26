@@ -1,16 +1,15 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import type { AuthUser } from '../auth';
-import {
-  AI_TIER_RANK,
-  type FoundryModelDefinition,
-  type AiUserTier,
-} from './types';
+import { AI_TIER_RANK, type AiModelDefinition, type AiUserTier } from './types';
 
 function parseDeniedLevels(): Set<string> {
-  // Backstop denylist — anyone in here is blocked from Foundry no
+  // Backstop denylist — anyone in here is blocked from AI generation no
   // matter what model.minTier says. Default empty; per-model `minTier`
   // does the real gating. Useful for emergency lockouts.
-  const raw = process.env.FOUNDRY_DENIED_LEVELS ?? '';
+  const raw =
+    process.env.AI_GENERATION_DENIED_LEVELS ??
+    process.env.FOUNDRY_DENIED_LEVELS ??
+    '';
   return new Set(
     raw
       .split(',')
@@ -51,7 +50,7 @@ export class AiGenerationAuthzService {
    */
   decideModelAccess(
     user: AuthUser,
-    model: FoundryModelDefinition,
+    model: AiModelDefinition,
   ): AiAccessDecision {
     const required = model.membership.minTier ?? null;
     if (parseDeniedLevels().has((user.userLevel ?? '').toUpperCase())) {
@@ -78,7 +77,7 @@ export class AiGenerationAuthzService {
   }
 
   /** Throws if the user can't submit to this specific model. */
-  assertCanUseModel(user: AuthUser, model: FoundryModelDefinition): void {
+  assertCanUseModel(user: AuthUser, model: AiModelDefinition): void {
     const decision = this.decideModelAccess(user, model);
     if (decision.allowed) return;
     throw new ForbiddenException({
@@ -91,7 +90,7 @@ export class AiGenerationAuthzService {
           ? 'Your membership has expired. Please renew to continue generating.'
           : decision.requiredTier
             ? `This model is available to ${decision.requiredTier}+ members.`
-            : 'Foundry generation is available to members only.',
+            : 'AI generation is available to members only.',
       requiredTier: decision.requiredTier,
     });
   }
@@ -103,7 +102,7 @@ export class AiGenerationAuthzService {
    */
   assertCanUseOptions(
     user: AuthUser,
-    model: FoundryModelDefinition,
+    model: AiModelDefinition,
     normalizedInput: Record<string, unknown>,
   ): void {
     const userRank = tierRank(user.userLevel);
@@ -125,9 +124,13 @@ export class AiGenerationAuthzService {
       const requiredRank = AI_TIER_RANK[required];
       if (requiredRank == null) continue; // unknown tier name, skip
       if (userRank >= requiredRank) continue;
+      const optionValue =
+        typeof value === 'string' || typeof value === 'number'
+          ? value
+          : JSON.stringify(value);
       throw new ForbiddenException({
         code: 'MEMBERSHIP_REQUIRED',
-        msg: `Option "${String(value)}" on field "${fieldName}" requires ${required}+ membership.`,
+        msg: `Option "${optionValue}" on field "${fieldName}" requires ${required}+ membership.`,
         requiredTier: required,
         field: fieldName,
       });

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AI_MODEL_PROTOCOL_DIALECT } from '../../types';
 import type {
   FoundryAvailability,
   FoundryCapabilityMatrix,
@@ -6,7 +7,9 @@ import type {
   FoundryDeploymentRecord,
   FoundryDocumentationLink,
   FoundryInputSchema,
+  AiGenerationMode,
   AiJobType,
+  AiModelFamily,
   FoundryModelCapability,
   FoundryModelDefinition,
   FoundryObservabilityContract,
@@ -16,8 +19,6 @@ import type {
 } from '../../types';
 
 export const FOUNDRY_SCHEMA_VERSION = '2026-05-16';
-const FOUNDRY_SCHEMA_DIALECT =
-  'https://fizzdragon.com/schemas/foundry/model/v1';
 
 const GPT_IMAGE_2_MODELS = new Set(['gpt-image-2', 'gpt-image-2-2026-04-21']);
 const OPENAI_API_VERSION = 'v1';
@@ -1390,6 +1391,16 @@ function observability(): FoundryObservabilityContract {
   };
 }
 
+function modelFamily(type: AiJobType): AiModelFamily {
+  return type === 'video' ? 'video' : 'image';
+}
+
+function aiGenerationModes(
+  matrix: FoundryCapabilityMatrix,
+): AiGenerationMode[] {
+  return matrix.generationModes as AiGenerationMode[];
+}
+
 @Injectable()
 export class FoundrySchemaFactory {
   buildModel(record: FoundryDeploymentRecord): FoundryModelDefinition | null {
@@ -1420,7 +1431,6 @@ export class FoundrySchemaFactory {
         ? `${name} deployment from Microsoft Foundry catalog.`
         : (record.description ??
           `${name} deployment from Microsoft Foundry catalog.`));
-    const isGptImage2 = type === 'image' && isGptImage2Model(record);
     const matrix = capabilityMatrix(record, type);
 
     return {
@@ -1431,13 +1441,15 @@ export class FoundrySchemaFactory {
       modelVersion: record.modelVersion,
       publisher: record.publisher,
       source: record.source,
+      family: modelFamily(type),
+      generationModes: aiGenerationModes(matrix),
       capability,
       type,
       name,
       description,
       enabled: isEnabled,
       disabledReason: isEnabled ? undefined : disabledReason(),
-      schemaDialect: FOUNDRY_SCHEMA_DIALECT,
+      schemaDialect: AI_MODEL_PROTOCOL_DIALECT,
       schemaVersion: FOUNDRY_SCHEMA_VERSION,
       documentation: modelDocumentation(record, type),
       capability_matrix: matrix,
@@ -1464,13 +1476,13 @@ export class FoundrySchemaFactory {
       queue:
         type === 'image'
           ? {
-              queueName: 'foundry-image',
+              queueName: 'ai-image-generation',
               globalConcurrency: intEnv('FOUNDRY_IMAGE_GLOBAL_CONCURRENCY', 3),
               perUserRunning: intEnv('FOUNDRY_PER_USER_IMAGE_RUNNING', 2),
               perUserQueued: intEnv('FOUNDRY_PER_USER_QUEUED_TOTAL', 10),
             }
           : {
-              queueName: 'foundry-video',
+              queueName: 'ai-video-generation',
               globalConcurrency: intEnv('FOUNDRY_VIDEO_GLOBAL_CONCURRENCY', 2),
               perUserRunning: intEnv('FOUNDRY_PER_USER_VIDEO_RUNNING', 1),
               perUserQueued: intEnv('FOUNDRY_PER_USER_QUEUED_TOTAL', 10),

@@ -568,6 +568,11 @@ model AiJob {
   requestId             String?     @map("request_id")
   input                 Json
   normalizedInput       Json        @map("normalized_input")
+  /// Immutable routing/policy snapshot selected at submit time:
+  /// route id, provider/model decision, quota/campaign policy, and
+  /// queue limits. Workers and refunds read this instead of deriving
+  /// policy from mutable runtime config.
+  routingSnapshot       Json?       @map("routing_snapshot")
   error                 Json?
   logs                  Json
   metrics               Json

@@ -1,5 +1,5 @@
 /**
- * Local fallback model used only when `/aurora/foundry/models` is not
+ * Local fallback model used only when `/aurora/ai/models` is not
  * reachable in development. Keep this intentionally close to the server
  * factory so the schema renderer does not need a separate demo path.
  */

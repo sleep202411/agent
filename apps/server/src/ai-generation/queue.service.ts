@@ -12,8 +12,6 @@ import type { Redis } from 'ioredis';
 import {
   createAiQueue,
   createAiRedisConnection,
-  AI_QUEUE_IMAGE,
-  AI_QUEUE_VIDEO,
   type AiQueueJobData,
   type AiQueueName,
 } from './queue';
@@ -38,6 +36,7 @@ export class AiGenerationQueueService implements OnApplicationShutdown {
      * paid users.
      */
     priority = 5,
+    op: AiQueueJobData['op'] = 'start',
   ): Promise<void> {
     const queue = this.queueFor(queueName);
     // BullMQ jobIds must be globally unique within the queue and
@@ -46,10 +45,10 @@ export class AiGenerationQueueService implements OnApplicationShutdown {
     // can be enqueued multiple times (initial submission + N retries)
     // without colliding. The DB jobId stays in the payload so the
     // worker always reads the canonical row.
-    const queueJobId = `${jobId}__${Date.now().toString(36)}`;
+    const queueJobId = `${jobId}__${op ?? 'start'}__${Date.now().toString(36)}`;
     await queue.add(
       'process',
-      { jobId },
+      { jobId, op },
       {
         jobId: queueJobId,
         delay: delayMs > 0 ? delayMs : undefined,

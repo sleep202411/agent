@@ -74,6 +74,10 @@ const VIDEO_WORKER_CONCURRENCY = Math.max(
 // terminationGracePeriodSeconds at the same number plus margin.
 const DRAIN_TIMEOUT_MS = 250_000;
 const DRAIN_POLL_MS = 500;
+const ASYNC_PROVIDER_POLL_DELAY_MS = Math.max(
+  1_000,
+  Number(process.env.AI_ASYNC_PROVIDER_POLL_DELAY_MS ?? 5_000),
+);
 
 @Injectable()
 export class AiGenerationWorkerService
@@ -175,14 +179,15 @@ export class AiGenerationWorkerService
 
   /**
    * Entry point for each BullMQ message. We re-read the canonical job
-   * row from Postgres rather than trusting the queue payload — the
-   * payload is just `{ jobId }`, and there could be a stale view if
-   * the row mutated between enqueue and dequeue.
+   * row from Postgres rather than trusting the queue payload. The
+   * payload only selects the operation (`start` vs async-provider
+   * `poll`); all business state comes from the DB row.
    */
   private async processQueueJob(
     queueJob: BullJob<AiQueueJobData>,
   ): Promise<void> {
     const jobId = queueJob.data.jobId;
+    const op = queueJob.data.op ?? 'start';
     const dbJob = await this.store.findById(jobId);
     if (!dbJob) {
       this.logger.warn(
@@ -190,6 +195,16 @@ export class AiGenerationWorkerService
       );
       return;
     }
+
+    if (op === 'poll') {
+      const promise = this.pollJob(dbJob).finally(() => {
+        this.inflight.delete(`${jobId}:poll`);
+      });
+      this.inflight.set(`${jobId}:poll`, promise);
+      await promise;
+      return;
+    }
+
     if (dbJob.status !== 'in_queue') {
       // Already terminal or being processed elsewhere — defensive
       // skip so a queue replay can't restart a completed job.
@@ -239,14 +254,182 @@ export class AiGenerationWorkerService
     return next;
   }
 
-  private async runJob(job: AiJob) {
+  private async pollJob(job: AiJob): Promise<void> {
+    if (job.status !== 'in_progress') {
+      this.logger.warn(
+        `Skipping poll for job ${job.id}: DB status is ${job.status}, expected IN_PROGRESS.`,
+      );
+      return;
+    }
+    if (!job.providerJobId) {
+      await this.markFailed(job, {
+        code: 'WORKER_CRASHED',
+        message: 'Async provider poll requested without providerJobId.',
+        userMessage: 'Generation failed. Please try again.',
+        retryable: true,
+        createdAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const provider = job.routingSnapshot?.selectedProvider ?? job.provider;
     let adapter: ProviderAdapter;
     try {
-      adapter = this.providers.get(job.provider);
+      adapter = this.providers.get(provider);
     } catch {
       await this.markFailed(job, {
         code: 'PROVIDER_NOT_CONFIGURED',
-        message: `No adapter registered for provider "${job.provider}"`,
+        message: `No adapter registered for provider "${provider}"`,
+        userMessage: 'This model is temporarily unavailable.',
+        retryable: false,
+        createdAt: new Date().toISOString(),
+      });
+      return;
+    }
+    if (!adapter.pollStatus) {
+      await this.markFailed(job, {
+        code: 'PROVIDER_NOT_CONFIGURED',
+        message: `Provider "${provider}" does not support polling.`,
+        userMessage: 'This model is temporarily unavailable.',
+        retryable: false,
+        createdAt: new Date().toISOString(),
+      });
+      return;
+    }
+
+    try {
+      if (this.isAsyncProviderTimedOut(job)) {
+        await this.handleFailure(job, {
+          code: 'PROVIDER_TIMEOUT',
+          message: `Provider job exceeded ${this.maxProviderRuntimeSeconds(job)}s runtime budget.`,
+          userMessage:
+            'Generation took too long and was stopped. Please try again.',
+          retryable: true,
+          createdAt: new Date().toISOString(),
+        });
+        return;
+      }
+
+      const result = await adapter.pollStatus(job.providerJobId);
+      if (result.kind === 'pending') {
+        const now = new Date().toISOString();
+        const updated = await this.store.update(job.id, {
+          stage: 'generating',
+          progress: result.progress ?? job.progress ?? 0.5,
+          logs: result.stageHint
+            ? [
+                ...job.logs,
+                {
+                  time: now,
+                  stage: 'generating',
+                  message: result.stageHint,
+                },
+              ]
+            : job.logs,
+        });
+        if (updated) this.emit(updated);
+        const priority =
+          updated?.routingSnapshot?.policy.tier.queuePriority ??
+          job.routingSnapshot?.policy.tier.queuePriority ??
+          TIERS[normalizeTier(job.userLevel)].priority;
+        await this.queueService.enqueue(
+          job.queueName,
+          job.id,
+          updated?.routingSnapshot?.policy.runtime.pollIntervalMs ??
+            job.routingSnapshot?.policy.runtime.pollIntervalMs ??
+            ASYNC_PROVIDER_POLL_DELAY_MS,
+          priority,
+          'poll',
+        );
+        return;
+      }
+
+      if (result.kind === 'completed') {
+        await this.completeWithOutputs(
+          (await this.store.findById(job.id)) ?? job,
+          result.outputs,
+        );
+        return;
+      }
+
+      await this.handleFailure(
+        (await this.store.findById(job.id)) ?? job,
+        result.error,
+      );
+    } catch (err) {
+      const payload = adapter.mapError(err);
+      await this.handlePollTransportFailure(job, payload);
+    }
+  }
+
+  private async handlePollTransportFailure(
+    job: AiJob,
+    payload: AiJobError,
+  ): Promise<void> {
+    if (!RETRYABLE_CODES.has(payload.code)) {
+      await this.handleFailure(job, payload);
+      return;
+    }
+
+    const delayMs = Math.max(
+      job.routingSnapshot?.policy.runtime.pollIntervalMs ??
+        ASYNC_PROVIDER_POLL_DELAY_MS,
+      RETRY_BACKOFFS_MS[
+        Math.min(job.attempt - 1, RETRY_BACKOFFS_MS.length - 1)
+      ],
+    );
+    const now = new Date().toISOString();
+    const updated = await this.store.update(job.id, {
+      stage: 'generating',
+      logs: [
+        ...job.logs,
+        {
+          time: now,
+          stage: 'generating',
+          message: `Provider status check returned ${payload.code}; polling again in ${Math.round(delayMs / 1000)}s.`,
+        },
+      ],
+    });
+    if (updated) this.emit(updated);
+    const priority =
+      updated?.routingSnapshot?.policy.tier.queuePriority ??
+      job.routingSnapshot?.policy.tier.queuePriority ??
+      TIERS[normalizeTier(job.userLevel)].priority;
+    await this.queueService.enqueue(
+      job.queueName,
+      job.id,
+      delayMs,
+      priority,
+      'poll',
+    );
+  }
+
+  private isAsyncProviderTimedOut(job: AiJob): boolean {
+    const startedAt =
+      Date.parse(job.providerSubmittedAt ?? '') ||
+      Date.parse(job.startedAt ?? '') ||
+      Date.parse(job.createdAt);
+    if (!Number.isFinite(startedAt)) return false;
+    return Date.now() - startedAt > this.maxProviderRuntimeSeconds(job) * 1000;
+  }
+
+  private maxProviderRuntimeSeconds(job: AiJob): number {
+    return (
+      job.routingSnapshot?.policy.runtime.maxProviderRuntimeSeconds ??
+      (job.type === 'video' ? 45 * 60 : 10 * 60)
+    );
+  }
+
+  private async runJob(job: AiJob) {
+    let adapter: ProviderAdapter;
+    const provider = job.routingSnapshot?.selectedProvider ?? job.provider;
+    const modelId = job.routingSnapshot?.selectedModelId ?? job.modelId;
+    try {
+      adapter = this.providers.get(provider);
+    } catch {
+      await this.markFailed(job, {
+        code: 'PROVIDER_NOT_CONFIGURED',
+        message: `No adapter registered for provider "${provider}"`,
         userMessage: 'This model is temporarily unavailable.',
         retryable: false,
         createdAt: new Date().toISOString(),
@@ -256,7 +439,7 @@ export class AiGenerationWorkerService
 
     try {
       const result = await adapter.startGeneration(
-        job.modelId,
+        modelId,
         job.normalizedInput,
         {
           jobId: job.id,
@@ -273,18 +456,36 @@ export class AiGenerationWorkerService
       }
 
       // Async provider (fal / Replicate): persist providerJobId and
-      // hand off to the polling/webhook path. Worker isn't done with
-      // the job; another tick (or a webhook handler) will finalize.
-      // TODO: scheduler that re-enqueues with a poll marker after
-      // `initialPollDelayMs`. For now we log + return so the job stays
-      // IN_PROGRESS and an operator can investigate. (Foundry never
-      // returns kind: 'pending' so this branch is dead today.)
-      await this.store.update(job.id, {
+      // re-enqueue a poll marker. Poll completion reuses the same
+      // upload / failure / refund paths as sync providers.
+      const now = new Date().toISOString();
+      const queued = await this.store.update(job.id, {
         stage: 'provider_queued',
         providerJobId: result.providerJobId,
+        providerSubmittedAt: now,
+        progress: 0.1,
+        logs: [
+          ...job.logs,
+          {
+            time: now,
+            stage: 'provider_queued',
+            message: 'Provider accepted the generation request.',
+          },
+        ],
       });
-      this.logger.warn(
-        `Async provider path not yet wired (job ${job.id}, providerJobId ${result.providerJobId}); stays IN_PROGRESS pending poll/webhook handler.`,
+      if (queued) this.emit(queued);
+      const priority =
+        job.routingSnapshot?.policy.tier.queuePriority ??
+        TIERS[normalizeTier(job.userLevel)].priority;
+      await this.queueService.enqueue(
+        job.queueName,
+        job.id,
+        result.initialPollDelayMs ?? ASYNC_PROVIDER_POLL_DELAY_MS,
+        priority,
+        'poll',
+      );
+      this.logger.log(
+        `job ${job.id} queued provider poll for ${result.providerJobId}`,
       );
     } catch (err) {
       const payload = adapter.mapError(err);
@@ -384,9 +585,11 @@ export class AiGenerationWorkerService
         ],
       });
       if (requeued) {
-        // Preserve the original tier-priority across retries so a VIP3
-        // user doesn't suddenly drop to default mid-flight.
-        const priority = TIERS[normalizeTier(job.userLevel)].priority;
+        // Preserve the submit-time route priority across retries so
+        // config/tier edits don't reshuffle an already accepted job.
+        const priority =
+          job.routingSnapshot?.policy.tier.queuePriority ??
+          TIERS[normalizeTier(job.userLevel)].priority;
         await this.queueService.enqueue(
           job.queueName,
           job.id,
@@ -421,21 +624,16 @@ export class AiGenerationWorkerService
       this.logger.warn(
         `job ${job.id} failed: ${payload.code} ${payload.message}`,
       );
-      // Refund the quota that QuotaGuard pre-consumed when this job
-      // was submitted. Idempotent via the original idempotencyKey
-      // (same key the controller passes to QuotaGuard via the
-      // `body:idempotencyKey` decorator option) — repeated terminal
-      // failures (e.g. multiple retry attempts hitting markFailed
-      // before the user sees it) won't double-refund. We thread the
-      // user's tier from the job row so the WS snapshot pushed to
-      // the client carries the user's real daily cap (not a
-      // sentinel that would over-write the badge with ∞).
+      // Refund the route-selected quota policy. Free campaign jobs
+      // intentionally skip refunds because they never consumed.
       if (job.idempotencyKey) {
+        const policy = job.routingSnapshot?.policy.quota;
+        if (policy?.mode === 'free') return;
         void this.quota.refundFor({
           userId: job.userId,
           tier: normalizeTier(job.userLevel),
-          dimension: 'image',
-          cost: 1,
+          dimension: policy?.dimension ?? 'image',
+          cost: policy?.cost && policy.cost > 0 ? policy.cost : 1,
           idempotencyKey: job.idempotencyKey,
           reason: `ai_job_failed_${payload.code}`,
         });
@@ -477,11 +675,12 @@ export class AiGenerationWorkerService
         // `(jobId, outputIndex)` unique + repository.replaceOutputs
         // transactional DELETE + INSERT.
         id: newShortId(),
-        type: 'image',
+        type: raw.type ?? job.type,
         url: result.url,
         storagePath: result.storagePath,
         width: raw.width,
         height: raw.height,
+        durationSeconds: raw.durationSeconds,
         mimeType: raw.mimeType,
         bytes: result.bytes,
         createdAt: new Date().toISOString(),

@@ -1,27 +1,38 @@
 import {
-  BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { newShortId } from '../common/id';
-import { TIERS, normalizeTier } from '../quota/tiers.config';
+import { GeoPolicyService, type RequestGeoContext } from '../common/region';
+import { QuotaService } from '../quota/quota.service';
+import type { QuotaDimension } from '../quota/quota.types';
+import { normalizeTier, type Tier } from '../quota/tiers.config';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationEtaService } from './eta.service';
-import { AiGenerationRepository } from './repository';
+import {
+  AiGenerationRepository,
+  type ReserveQueuedJobResult,
+} from './repository';
 import { AiGenerationOutboxService } from './outbox.service';
-import type { AiModelDefinition } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import { AiGenerationQueueService } from './queue.service';
+import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
+import { AI_MODEL_PROTOCOL_DIALECT } from './types';
 import type {
+  AiModelCatalogResponse,
   AiJob,
   AiJobListQuery,
   AiJobLog,
   AiStatusResponse,
+  AiRoutingSnapshot,
   AiSubmitJobBody,
   AiSubmitResponse,
 } from './types';
@@ -33,8 +44,18 @@ const TERMINAL_STATUSES = new Set([
   'expired',
 ]);
 
+interface QuotaRefundToken {
+  userId: string;
+  tier: Tier;
+  dimension: QuotaDimension;
+  cost: number;
+  idempotencyKey: string;
+}
+
 @Injectable()
 export class AiGenerationService {
+  private readonly logger = new Logger(AiGenerationService.name);
+
   constructor(
     private readonly providers: ProviderRegistry,
     private readonly authz: AiGenerationAuthzService,
@@ -43,6 +64,9 @@ export class AiGenerationService {
     private readonly eta: AiGenerationEtaService,
     private readonly outbox: AiGenerationOutboxService,
     private readonly queue: AiGenerationQueueService,
+    private readonly routing: AiGenerationRoutingService,
+    private readonly quota: QuotaService,
+    private readonly geoPolicy: GeoPolicyService,
   ) {}
 
   /**
@@ -71,61 +95,63 @@ export class AiGenerationService {
     }
   }
 
-  async listModels(user: AuthUser) {
+  async listModels(user: AuthUser, geo?: RequestGeoContext) {
     // Fan out across every registered provider. Each adapter returns
     // its own model definitions; we concat and stamp per-user access.
     const results = await Promise.all(
       this.providers.list().map((adapter) => adapter.listModels()),
     );
     const models = results.flat();
-    return models.map((model) => ({
-      ...model,
-      access: this.authz.decideModelAccess(user, model),
-    }));
+    return models.map((model) => {
+      const access = this.authz.decideModelAccess(user, model);
+      const geoDecision = geo
+        ? this.geoPolicy.evaluate(model.region_policy, geo)
+        : { allowed: true };
+      return {
+        ...model,
+        enabled: model.enabled && geoDecision.allowed,
+        disabledReason:
+          model.disabledReason ??
+          (!geoDecision.allowed ? geoDecision.reason : undefined),
+        access: {
+          ...access,
+          allowed: access.allowed && geoDecision.allowed,
+          reason: access.reason ?? geoDecision.reason,
+        },
+      };
+    });
   }
 
-  /**
-   * Look up a model by id across all providers. Returns the first
-   * match; model ids are unique per provider so collisions shouldn't
-   * happen (Foundry uses `foundry/<deployment>`, fal will use
-   * `fal-ai/<model-path>`).
-   */
-  private async findModel(modelId: string): Promise<{
-    model: AiModelDefinition;
-    provider: string;
-  } | null> {
-    for (const adapter of this.providers.list()) {
-      const model = await adapter.getModel(modelId);
-      if (model) return { model, provider: adapter.provider };
-    }
-    return null;
+  async listCatalog(
+    user: AuthUser,
+    geo?: RequestGeoContext,
+  ): Promise<AiModelCatalogResponse> {
+    const models = await this.listModels(user, geo);
+    const presets = this.routing.listPresets(models, geo);
+    return {
+      dialect: AI_MODEL_PROTOCOL_DIALECT,
+      version: '2026-05-26',
+      region: process.env.NEXT_PUBLIC_SITE_REGION ?? 'global',
+      context: geo ? this.geoPolicy.snapshot(geo) : undefined,
+      presets,
+      campaigns: this.routing.listCampaigns(),
+      models,
+    };
   }
 
   async submitJob(
     user: AuthUser,
     body: AiSubmitJobBody,
+    geo?: RequestGeoContext,
   ): Promise<AiSubmitResponse> {
-    const modelId = body.modelId?.trim();
-    if (!modelId) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        msg: 'modelId is required.',
-      });
-    }
-
-    const found = await this.findModel(modelId);
-    if (!found) {
-      throw new NotFoundException({
-        code: 'MODEL_NOT_FOUND',
-        msg: 'Model not found.',
-      });
-    }
-    const { model, provider } = found;
+    const now = new Date().toISOString();
+    const decision = await this.routing.resolve({ user, body, now, geo });
+    const { model, provider, snapshot } = decision;
 
     if (!model.enabled) {
       throw new ServiceUnavailableException({
         code: 'PROVIDER_NOT_CONFIGURED',
-        msg: model.disabledReason ?? 'Foundry execution is not available.',
+        msg: model.disabledReason ?? 'AI generation is not available.',
       });
     }
 
@@ -136,7 +162,7 @@ export class AiGenerationService {
     if (body.schemaVersion !== model.schemaVersion) {
       throw new ConflictException({
         code: 'SCHEMA_VERSION_MISMATCH',
-        msg: 'The Foundry model schema changed. Refresh and try again.',
+        msg: 'The AI model schema changed. Refresh and try again.',
       });
     }
 
@@ -149,99 +175,139 @@ export class AiGenerationService {
     // Per-option tier gate (e.g. resolution_tier=uhd needs VIP2).
     // Server-side enforcement; the UI already gates these.
     this.authz.assertCanUseOptions(user, model, normalizedInput);
-    const prompt = String(normalizedInput.prompt ?? '').trim();
+    const rawPrompt = normalizedInput.prompt;
+    const prompt = typeof rawPrompt === 'string' ? rawPrompt.trim() : '';
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
 
-    const now = new Date().toISOString();
+    const existing = await this.store.findByIdempotency(
+      user.userId,
+      model.id,
+      idempotencyKey,
+    );
+    if (existing) return this.toSubmitResponse(existing);
+
+    const quotaRefund = await this.consumeQuotaIfNeeded(
+      user,
+      snapshot,
+      idempotencyKey,
+    );
+
     // Generated app-side so we know the id before insert — needed to
     // enqueue BullMQ + emit the optimistic queued push before save()
     // resolves. Keep it short because this id appears in URLs/logs.
     const id = newShortId();
-    const queueName = model.queue.queueName;
-    const reservation = await this.store.reserveQueuedJob({
-      userId: user.userId,
-      modelId: model.id,
-      idempotencyKey,
-      queueName,
-      type: model.type,
-      perUserQueued: model.queue.perUserQueued,
-      perUserRunning: model.queue.perUserRunning,
-      buildJob: (queuePosition) => {
-        const estimate = this.eta.estimateForNewJob(
-          model,
-          normalizedInput,
-          queuePosition,
-        );
-        const logs: AiJobLog[] = [
-          {
-            time: now,
-            stage: 'queued',
-            message: 'Request accepted and waiting for a generation slot.',
-          },
-        ];
+    const queueName = snapshot.policy.concurrency.queueName;
+    let reservation: ReserveQueuedJobResult;
+    try {
+      reservation = await this.store.reserveQueuedJob({
+        userId: user.userId,
+        modelId: model.id,
+        idempotencyKey,
+        queueName,
+        type: model.type,
+        perUserQueued: snapshot.policy.concurrency.perUserQueued,
+        perUserRunning: snapshot.policy.concurrency.perUserRunning,
+        campaignLimit: this.campaignLimitFor(snapshot),
+        buildJob: (queuePosition) => {
+          const estimate = this.eta.estimateForNewJob(
+            model,
+            normalizedInput,
+            queuePosition,
+          );
+          const logs: AiJobLog[] = [
+            {
+              time: now,
+              stage: 'queued',
+              message: 'Request accepted and waiting for a generation slot.',
+            },
+          ];
 
-        return {
-          id,
-          userId: user.userId,
-          userLevel: user.userLevel ?? null,
-          type: model.type,
-          // `provider` is the adapter key (e.g. 'microsoft-foundry');
-          // `model.provider` happens to be the same Foundry string today
-          // but that's a coincidence — the adapter is the source of truth.
-          provider,
-          modelId: model.id,
-          deployment: model.deployment,
-          schemaVersion: model.schemaVersion,
-          status: 'in_queue',
-          stage: 'queued',
-          input,
-          normalizedInput,
-          prompt,
-          idempotencyKey,
-          outputs: [],
-          logs,
-          queueName,
-          queuePosition,
-          progress: null,
-          estimatedWaitSeconds: estimate.estimatedWaitSeconds,
-          estimatedRunSeconds: estimate.estimatedRunSeconds,
-          estimatedTotalSeconds: estimate.estimatedTotalSeconds,
-          etaConfidence: estimate.etaConfidence,
-          attempt: 1,
-          createdAt: now,
-          queuedAt: now,
-          updatedAt: now,
-          metrics: {},
-        };
-      },
-    });
+          return {
+            id,
+            userId: user.userId,
+            userLevel: user.userLevel ?? null,
+            type: model.type,
+            provider,
+            modelId: model.id,
+            deployment: model.deployment,
+            schemaVersion: model.schemaVersion,
+            status: 'in_queue',
+            stage: 'queued',
+            input,
+            normalizedInput,
+            prompt,
+            idempotencyKey,
+            routingSnapshot: snapshot,
+            outputs: [],
+            logs,
+            queueName,
+            queuePosition,
+            progress: null,
+            estimatedWaitSeconds: estimate.estimatedWaitSeconds,
+            estimatedRunSeconds: estimate.estimatedRunSeconds,
+            estimatedTotalSeconds: estimate.estimatedTotalSeconds,
+            etaConfidence: estimate.etaConfidence,
+            attempt: 1,
+            createdAt: now,
+            queuedAt: now,
+            updatedAt: now,
+            metrics: {},
+          };
+        },
+      });
+    } catch (err) {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_reserve_failed');
+      throw err;
+    }
 
     if (reservation.kind === 'existing') {
+      await this.refundQuotaIfNeeded(
+        quotaRefund,
+        'ai_job_duplicate_submission',
+      );
       return this.toSubmitResponse(reservation.job);
     }
     if (reservation.kind === 'queued_limit') {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_queue_limit');
       throw new ConflictException({
         code: 'QUEUE_LIMIT_EXCEEDED',
         msg: `You can queue up to ${reservation.limit} generation task(s).`,
       });
     }
     if (reservation.kind === 'running_limit') {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_running_limit');
       throw new ConflictException({
         code: 'RATE_LIMITED',
         msg: `You can run up to ${reservation.limit} ${reservation.type} generation task(s) at once.`,
       });
     }
+    if (reservation.kind === 'campaign_limit') {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_campaign_limit');
+      throw new HttpException(
+        {
+          code: 'CAMPAIGN_LIMIT_EXCEEDED',
+          campaignId: reservation.campaignId,
+          scope: reservation.scope,
+          limit: reservation.limit,
+          msg:
+            reservation.scope === 'user'
+              ? 'You have used all free generations for this campaign.'
+              : 'This campaign has reached its generation limit.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
 
     const job = reservation.job;
     // Hand off to BullMQ. The worker reads the canonical row from DB
     // when it picks the message up, so the payload is just the jobId.
-    // Priority is derived from the user's tier so VIP3 submissions
-    // jump to the front of a contended image queue — see TIERS in
-    // src/quota/tiers.config.ts for the full mapping.
-    const priority = TIERS[normalizeTier(user.userLevel)].priority;
+    // Priority is frozen in the routing snapshot so later tier/config
+    // edits don't reshuffle jobs already accepted into the queue.
+    const priority = snapshot.policy.tier.queuePriority;
     try {
       await this.queue.enqueue(queueName, id, 0, priority);
     } catch (err) {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_enqueue_failed');
       const failed = await this.store.update(id, {
         status: 'failed',
         stage: 'failed',
@@ -265,6 +331,94 @@ export class AiGenerationService {
     this.emitJobUpdate(saved);
     this.emitRepositioned(reservation.repositioned, saved.id);
     return this.toSubmitResponse(saved);
+  }
+
+  private async consumeQuotaIfNeeded(
+    user: AuthUser,
+    snapshot: AiRoutingSnapshot,
+    idempotencyKey: string,
+  ): Promise<QuotaRefundToken | null> {
+    const policy = snapshot.policy.quota;
+    if (policy.mode !== 'charge' || policy.cost <= 0) return null;
+
+    const tier = normalizeTier(user.userLevel);
+    const dimension = policy.dimension as QuotaDimension;
+    const result = await this.quota.consume({
+      userId: user.userId,
+      tier,
+      dimension,
+      cost: policy.cost,
+      idempotencyKey,
+      reason: policy.reason,
+      metadata: {
+        routeId: snapshot.routeId,
+        presetId: snapshot.presetId,
+        selectedProvider: snapshot.selectedProvider,
+        selectedModelId: snapshot.selectedModelId,
+        strategy: snapshot.strategy,
+        campaignId: policy.campaignId,
+      },
+    });
+
+    if (!result.ok) {
+      throw new HttpException(
+        {
+          code: 429,
+          error: result.reason,
+          dimension: result.dimension,
+          used: result.used,
+          limit: result.limit,
+          resetAt: result.resetAt,
+          nextTier: result.nextTier,
+          nextTierLimit: result.nextTierLimit,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (result.deduped) return null;
+    return {
+      userId: user.userId,
+      tier,
+      dimension,
+      cost: policy.cost,
+      idempotencyKey,
+    };
+  }
+
+  private campaignLimitFor(snapshot: AiRoutingSnapshot):
+    | {
+        campaignId: string;
+        perUserLimit?: number;
+        totalLimit?: number;
+      }
+    | undefined {
+    const campaign = snapshot.policy.quota.campaign;
+    const campaignId = campaign?.id ?? snapshot.policy.quota.campaignId;
+    if (!campaignId) return undefined;
+    if (campaign?.perUserLimit == null && campaign?.totalLimit == null) {
+      return undefined;
+    }
+    return {
+      campaignId,
+      perUserLimit: campaign.perUserLimit,
+      totalLimit: campaign.totalLimit,
+    };
+  }
+
+  private async refundQuotaIfNeeded(
+    token: QuotaRefundToken | null,
+    reason: string,
+  ): Promise<void> {
+    if (!token) return;
+    await this.quota.refundFor({
+      userId: token.userId,
+      tier: token.tier,
+      dimension: token.dimension,
+      cost: token.cost,
+      idempotencyKey: token.idempotencyKey,
+      reason,
+    });
   }
 
   async listJobs(user: AuthUser, query: AiJobListQuery) {
@@ -294,6 +448,8 @@ export class AiGenerationService {
     const job = await this.getOwnedJob(user, id);
     if (TERMINAL_STATUSES.has(job.status))
       return this.publicJob(job, { detail: true });
+
+    await this.cancelProviderJobIfNeeded(job);
 
     const now = new Date().toISOString();
     const next = await this.store.update(id, {
@@ -326,14 +482,40 @@ export class AiGenerationService {
     return this.publicJob(updated, { detail: true });
   }
 
-  async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
+  async retryJob(
+    user: AuthUser,
+    id: string,
+    geo?: RequestGeoContext,
+  ): Promise<AiSubmitResponse> {
     const job = await this.getOwnedJob(user, id);
-    return this.submitJob(user, {
-      modelId: job.modelId,
-      schemaVersion: job.schemaVersion,
-      input: job.normalizedInput,
-      idempotencyKey: randomUUID(),
-    });
+    return this.submitJob(
+      user,
+      {
+        modelId: job.modelId,
+        presetId: job.routingSnapshot?.presetId,
+        campaignId: job.routingSnapshot?.policy.quota.campaignId,
+        schemaVersion: job.schemaVersion,
+        input: job.normalizedInput,
+        idempotencyKey: randomUUID(),
+      },
+      geo,
+    );
+  }
+
+  private async cancelProviderJobIfNeeded(job: AiJob): Promise<void> {
+    if (!job.providerJobId) return;
+    const provider = job.routingSnapshot?.selectedProvider ?? job.provider;
+    try {
+      const adapter = this.providers.get(provider);
+      if (!adapter.cancelGeneration) return;
+      await adapter.cancelGeneration(job.providerJobId);
+    } catch (err) {
+      this.logger.warn(
+        `provider cancel failed for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async getOwnedJob(user: AuthUser, id: string): Promise<AiJob> {
@@ -350,8 +532,8 @@ export class AiGenerationService {
   private toSubmitResponse(job: AiJob): AiSubmitResponse {
     return {
       ...this.toStatusResponse(job),
-      status_url: `/aurora/foundry/jobs/${job.id}/status`,
-      cancel_url: `/aurora/foundry/jobs/${job.id}/cancel`,
+      status_url: `/aurora/ai/jobs/${job.id}/status`,
+      cancel_url: `/aurora/ai/jobs/${job.id}/cancel`,
     };
   }
 
@@ -367,7 +549,7 @@ export class AiGenerationService {
       estimated_total_seconds: job.estimatedTotalSeconds ?? null,
       eta_confidence: job.etaConfidence ?? 'low',
       logs: job.logs.slice(-20),
-      response_url: `/aurora/foundry/jobs/${job.id}`,
+      response_url: `/aurora/ai/jobs/${job.id}`,
     };
   }
 
@@ -381,6 +563,14 @@ export class AiGenerationService {
       deployment: job.deployment,
       status: job.status,
       stage: job.stage,
+      routing: job.routingSnapshot
+        ? {
+            presetId: job.routingSnapshot.presetId,
+            routeId: job.routingSnapshot.routeId,
+            strategy: job.routingSnapshot.strategy,
+            quota: job.routingSnapshot.policy.quota,
+          }
+        : null,
       queuePosition: job.queuePosition ?? null,
       progress: job.progress ?? null,
       estimatedWaitSeconds: job.estimatedWaitSeconds ?? null,

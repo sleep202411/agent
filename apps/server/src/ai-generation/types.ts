@@ -1,31 +1,52 @@
 import type {
-  FoundryAvailability,
-  FoundryCapabilityMatrix,
-  FoundryCostEstimate,
-  FoundryDocumentationLink,
-  FoundryJsonSchema,
-  FoundryObservabilityContract,
-  FoundryObjectSchema,
-  FoundryPreflightEstimator,
-  FoundryProviderBinding,
+  AiAvailability,
+  AiCatalogContext,
+  AiCapabilityMatrix,
+  AiConditionExpression,
+  AiCostEstimate,
+  AiDocumentationLink,
+  AiFieldConstraint,
+  AiFieldUi,
+  AiInputControl,
+  AiJsonSchema,
+  AiGenerationMode,
+  AiModelFamily,
+  AiModelDefinition as SharedAiModelDefinition,
+  AiObservabilityContract,
+  AiObjectSchema,
+  AiOutputUi,
+  AiPreflightEstimator,
+  AiProviderBinding,
+  AiSchemaRule,
+  AiUiSchema,
 } from '@repo/shared';
+export { AI_MODEL_PROTOCOL_DIALECT } from '@repo/shared';
 export type {
-  FoundryAvailability,
-  FoundryCapabilityMatrix,
-  FoundryCostEstimate,
-  FoundryDocumentationLink,
-  FoundryConditionExpression,
-  FoundryFieldConstraint,
-  FoundryFieldUi,
-  FoundryInputControl,
-  FoundryJsonSchema,
-  FoundryObservabilityContract,
-  FoundryObjectSchema,
-  FoundryOutputUi,
-  FoundryPreflightEstimator,
-  FoundryProviderBinding,
-  FoundrySchemaRule,
-  FoundryUiSchema,
+  AiAvailability,
+  AiBillingPolicy,
+  AiCatalogContext,
+  AiCampaignPolicy,
+  AiCapabilityMatrix,
+  AiConditionExpression,
+  AiCostEstimate,
+  AiDocumentationLink,
+  AiFieldConstraint,
+  AiFieldUi,
+  AiInputControl,
+  AiGenerationMode,
+  AiJsonSchema,
+  AiModelFamily,
+  AiModelCatalogResponse,
+  AiModelPresetDefinition,
+  AiObjectSchema,
+  AiObservabilityContract,
+  AiOutputUi,
+  AiPreflightEstimator,
+  AiProviderBinding,
+  AiQueuePolicy,
+  AiRegionPolicy,
+  AiSchemaRule,
+  AiUiSchema,
 } from '@repo/shared';
 
 export type AiJobType = 'image' | 'video';
@@ -39,6 +60,7 @@ export type FoundryCatalogSource =
   | 'foundry-project'
   | 'openai-models'
   | 'env-override'
+  | 'fal-config'
   | 'seed-fallback';
 
 export type AiJobStatus =
@@ -74,6 +96,66 @@ export type AiEtaConfidence = 'low' | 'medium' | 'high';
  * 'replicate', 'stability-self-hosted', 'dashscope'.
  */
 export type AiProvider = string;
+export type AiQueueName = 'ai-image-generation' | 'ai-video-generation';
+export type AiQuotaDimension = 'image' | 'chat' | 'workflow' | 'upload';
+
+export type AiRoutingStrategy =
+  | 'direct_model'
+  | 'campaign_locked'
+  | 'priority_fallback';
+
+export interface AiQuotaPolicySnapshot {
+  mode: 'charge' | 'free';
+  dimension: AiQuotaDimension;
+  cost: number;
+  reason: string;
+  campaignId?: string;
+  campaign?: {
+    id: string;
+    label?: string;
+    startsAt?: string;
+    endsAt?: string;
+    perUserLimit?: number;
+    totalLimit?: number;
+    budgetLimit?: number;
+  };
+}
+
+export interface AiRoutingPolicySnapshot {
+  quota: AiQuotaPolicySnapshot;
+  tier: {
+    userTier: string;
+    minTier: AiUserTier | null;
+    queuePriority: number;
+  };
+  concurrency: {
+    queueName: AiQueueName;
+    globalConcurrency: number;
+    perUserRunning: number;
+    perUserQueued: number;
+  };
+  runtime: {
+    maxProviderRuntimeSeconds: number;
+    maxQueueWaitSeconds: number | null;
+    pollIntervalMs: number;
+  };
+}
+
+export interface AiRoutingSnapshot {
+  version: '2026-05-25';
+  routeId: string;
+  presetId: string;
+  requestedModelId: string;
+  strategy: AiRoutingStrategy;
+  selectedProvider: AiProvider;
+  selectedModelId: string;
+  selectedDeployment: string;
+  fallbackAllowed: boolean;
+  inputMapperVersion: string;
+  geo?: AiCatalogContext;
+  policy: AiRoutingPolicySnapshot;
+  selectedAt: string;
+}
 
 /**
  * Membership tier ranks. Higher = more access. New tiers only need a
@@ -102,9 +184,28 @@ export interface AiMembership {
   minTier: AiUserTier | null;
 }
 
-export type FoundryInputSchema = FoundryObjectSchema;
-export type FoundryOutputSchema = FoundryObjectSchema;
-export type FoundryJsonSchemaProperty = FoundryJsonSchema;
+export type AiInputSchema = AiObjectSchema;
+export type AiOutputSchema = AiObjectSchema;
+export type AiJsonSchemaProperty = AiJsonSchema;
+
+export type FoundryAvailability = AiAvailability;
+export type FoundryCapabilityMatrix = AiCapabilityMatrix;
+export type FoundryCostEstimate = AiCostEstimate;
+export type FoundryDocumentationLink = AiDocumentationLink;
+export type FoundryConditionExpression = AiConditionExpression;
+export type FoundryFieldConstraint = AiFieldConstraint;
+export type FoundryFieldUi = AiFieldUi;
+export type FoundryInputControl = AiInputControl;
+export type FoundryInputSchema = AiInputSchema;
+export type FoundryOutputSchema = AiOutputSchema;
+export type FoundryJsonSchemaProperty = AiJsonSchemaProperty;
+export type FoundryObservabilityContract = AiObservabilityContract;
+export type FoundryObjectSchema = AiObjectSchema;
+export type FoundryOutputUi = AiOutputUi;
+export type FoundryPreflightEstimator = AiPreflightEstimator;
+export type FoundryProviderBinding = AiProviderBinding;
+export type FoundrySchemaRule = AiSchemaRule;
+export type FoundryUiSchema = AiUiSchema;
 
 export interface FoundryDeploymentRecord {
   id: string;
@@ -118,7 +219,7 @@ export interface FoundryDeploymentRecord {
   raw?: unknown;
 }
 
-export interface FoundryModelDefinition {
+export interface AiModelDefinition extends SharedAiModelDefinition {
   id: string;
   provider: AiProvider;
   deployment: string;
@@ -126,6 +227,8 @@ export interface FoundryModelDefinition {
   modelVersion?: string;
   publisher?: string;
   source: FoundryCatalogSource;
+  family: AiModelFamily;
+  generationModes: AiGenerationMode[];
   capability: Exclude<FoundryModelCapability, 'unsupported'>;
   type: AiJobType;
   name: string;
@@ -150,7 +253,7 @@ export interface FoundryModelDefinition {
     maxOutputs: number;
   };
   queue: {
-    queueName: 'foundry-image' | 'foundry-video';
+    queueName: AiQueueName;
     globalConcurrency: number;
     perUserRunning: number;
     perUserQueued: number;
@@ -162,6 +265,8 @@ export interface FoundryModelDefinition {
   stream_event_schema?: FoundryOutputSchema;
   provider_binding: FoundryProviderBinding;
 }
+
+export type FoundryModelDefinition = AiModelDefinition;
 
 export interface AiJobOutput {
   id: string;
@@ -234,10 +339,11 @@ export interface AiJob {
   providerJobId?: string;
   providerRequest?: Record<string, unknown>;
   providerResponse?: Record<string, unknown>;
+  routingSnapshot?: AiRoutingSnapshot | null;
   outputs: AiJobOutput[];
   error?: AiJobError;
   logs: AiJobLog[];
-  queueName: 'foundry-image' | 'foundry-video';
+  queueName: AiQueueName;
   queuePosition?: number | null;
   progress?: number | null;
   estimatedWaitSeconds?: number | null;
@@ -261,9 +367,15 @@ export interface AiJob {
 
 export interface AiSubmitJobBody {
   modelId?: string;
+  presetId?: string;
+  campaignId?: string;
   schemaVersion?: string;
   input?: Record<string, unknown>;
   idempotencyKey?: string;
+  routing?: {
+    presetId?: string;
+    campaignId?: string;
+  };
 }
 
 export interface AiJobListQuery {

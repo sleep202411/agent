@@ -30,7 +30,7 @@ import type {
   AiJobOutput,
   AiJobStage,
   AiJobType,
-  AiProvider,
+  AiRoutingSnapshot,
 } from './types';
 
 export interface AiJobListOptions {
@@ -43,6 +43,12 @@ export type ReserveQueuedJobResult =
   | { kind: 'existing'; job: AiJob }
   | { kind: 'queued_limit'; limit: number }
   | { kind: 'running_limit'; limit: number; type: AiJobType }
+  | {
+      kind: 'campaign_limit';
+      campaignId: string;
+      scope: 'user' | 'campaign';
+      limit: number;
+    }
   | { kind: 'created'; job: AiJob; repositioned: AiJob[] };
 
 export interface ReserveQueuedJobOptions {
@@ -53,6 +59,11 @@ export interface ReserveQueuedJobOptions {
   type: AiJobType;
   perUserQueued: number;
   perUserRunning: number;
+  campaignLimit?: {
+    campaignId: string;
+    perUserLimit?: number;
+    totalLimit?: number;
+  };
   buildJob: (queuePosition: number) => AiJob;
 }
 
@@ -135,6 +146,45 @@ export class AiGenerationRepository {
         options.idempotencyKey,
       );
       if (existing) return { kind: 'existing', job: existing };
+
+      if (options.campaignLimit) {
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(hashtext(${`ai-generation:campaign:${options.campaignLimit.campaignId}`})::bigint)
+        `;
+
+        const perUserLimit = options.campaignLimit.perUserLimit;
+        if (perUserLimit != null) {
+          const userCampaignCount = await this.countAcceptedCampaignJobsWith(
+            tx,
+            options.campaignLimit.campaignId,
+            options.userId,
+          );
+          if (userCampaignCount >= perUserLimit) {
+            return {
+              kind: 'campaign_limit',
+              campaignId: options.campaignLimit.campaignId,
+              scope: 'user',
+              limit: perUserLimit,
+            };
+          }
+        }
+
+        const totalLimit = options.campaignLimit.totalLimit;
+        if (totalLimit != null) {
+          const campaignCount = await this.countAcceptedCampaignJobsWith(
+            tx,
+            options.campaignLimit.campaignId,
+          );
+          if (campaignCount >= totalLimit) {
+            return {
+              kind: 'campaign_limit',
+              campaignId: options.campaignLimit.campaignId,
+              scope: 'campaign',
+              limit: totalLimit,
+            };
+          }
+        }
+      }
 
       const active = await this.activeForUserWith(tx, options.userId);
       const activeSameType = active.filter((job) => job.type === options.type);
@@ -268,6 +318,24 @@ export class AiGenerationRepository {
     return rows.map((r) => this.toDomain(r));
   }
 
+  private countAcceptedCampaignJobsWith(
+    client: DbClient,
+    campaignId: string,
+    userId?: string,
+  ): Promise<number> {
+    return client.aiJob.count({
+      where: {
+        ...(userId ? { userId } : {}),
+        deletedAt: null,
+        status: { notIn: ['failed', 'cancelled', 'expired'] },
+        routingSnapshot: {
+          path: ['policy', 'quota', 'campaignId'],
+          equals: campaignId,
+        },
+      },
+    });
+  }
+
   async waitingInQueue(queueName: AiJob['queueName']): Promise<AiJob[]> {
     return this.waitingInQueueWith(this.prisma, queueName);
   }
@@ -346,8 +414,8 @@ export class AiGenerationRepository {
       id: row.id,
       userId: row.userId,
       userLevel: row.userLevel,
-      type: row.type as AiJobType,
-      provider: row.provider as AiProvider,
+      type: row.type,
+      provider: row.provider,
       modelId: row.modelId,
       deployment: row.deployment,
       schemaVersion: row.schemaVersion,
@@ -355,6 +423,8 @@ export class AiGenerationRepository {
       stage: row.stage as AiJobStage,
       input: row.input as Record<string, unknown>,
       normalizedInput: row.normalizedInput as Record<string, unknown>,
+      routingSnapshot:
+        (row.routingSnapshot as AiRoutingSnapshot | null) ?? undefined,
       prompt: row.prompt,
       idempotencyKey: row.idempotencyKey,
       providerJobId: row.providerJobId ?? undefined,
@@ -387,7 +457,7 @@ export class AiGenerationRepository {
   private outputToDomain(row: AiJobOutputRow): AiJobOutput {
     return {
       id: row.id,
-      type: row.type as AiJobType,
+      type: row.type,
       url: row.url,
       storagePath: row.storagePath,
       width: row.width ?? undefined,
@@ -416,6 +486,9 @@ export class AiGenerationRepository {
       idempotencyKey: job.idempotencyKey,
       input: job.input as Prisma.InputJsonValue,
       normalizedInput: job.normalizedInput as Prisma.InputJsonValue,
+      routingSnapshot:
+        (job.routingSnapshot as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
       error: (job.error as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
       logs: job.logs as unknown as Prisma.InputJsonValue,
       metrics: job.metrics as unknown as Prisma.InputJsonValue,
@@ -475,10 +548,12 @@ export class AiGenerationRepository {
       if (
         key === 'input' ||
         key === 'normalizedInput' ||
+        key === 'routingSnapshot' ||
         key === 'logs' ||
         key === 'metrics'
       ) {
-        (out as Record<string, unknown>)[key] = value;
+        (out as Record<string, unknown>)[key] =
+          value === null ? Prisma.DbNull : value;
         continue;
       }
       if (key === 'error') {

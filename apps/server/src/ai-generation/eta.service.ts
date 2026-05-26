@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { AiEtaConfidence, AiJob, FoundryModelDefinition } from './types';
+import type { AiEtaConfidence, AiJob, AiModelDefinition } from './types';
 
 export interface AiEta {
   estimatedWaitSeconds: number;
@@ -11,7 +11,7 @@ export interface AiEta {
 @Injectable()
 export class AiGenerationEtaService {
   estimateForNewJob(
-    model: FoundryModelDefinition,
+    model: AiModelDefinition,
     input: Record<string, unknown>,
     queuePosition: number,
   ): AiEta {
@@ -28,7 +28,7 @@ export class AiGenerationEtaService {
     };
   }
 
-  estimateForJob(job: AiJob, model: FoundryModelDefinition): AiEta {
+  estimateForJob(job: AiJob, model: AiModelDefinition): AiEta {
     const run = this.estimateRunSeconds(model, job.normalizedInput);
     const wait =
       typeof job.queuePosition === 'number'
@@ -45,19 +45,20 @@ export class AiGenerationEtaService {
   }
 
   private estimateRunSeconds(
-    model: FoundryModelDefinition,
+    model: AiModelDefinition,
     input: Record<string, unknown>,
   ): number {
     if (model.type === 'image') {
       const n = Math.max(1, Number(input.n) || 1);
-      const quality = String(input.quality ?? 'medium');
+      const quality =
+        typeof input.quality === 'string' ? input.quality : 'medium';
       const qualityFactor =
         quality === 'high' ? 1.4 : quality === 'low' ? 0.75 : 1;
       return Math.ceil(75 * n * qualityFactor);
     }
 
     const seconds = Math.max(1, Number(input.seconds) || 4);
-    const size = String(input.size ?? '');
+    const size = typeof input.size === 'string' ? input.size : '';
     const resolutionFactor =
       size.includes('1920') || size.includes('1080') ? 1.6 : 1;
     return Math.ceil((90 + seconds * 35) * resolutionFactor);

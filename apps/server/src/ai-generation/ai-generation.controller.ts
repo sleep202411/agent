@@ -1,17 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../auth';
-import { RequireQuota } from '../quota/quota.decorator';
-import { QuotaGuard } from '../quota/quota.guard';
-import { QuotaInterceptor } from '../quota/quota.interceptor';
+import { GeoContext, type RequestGeoContext } from '../common/region';
 import { AiGenerationService } from './ai-generation.service';
 import type { AiJobListQuery, AiSubmitJobBody } from './types';
 import type { AuthUser } from '../auth';
@@ -21,38 +10,27 @@ export class AiGenerationController {
   constructor(private readonly service: AiGenerationService) {}
 
   @Get('models')
-  async listModels(@CurrentUser() user: AuthUser) {
+  async listModels(
+    @CurrentUser() user: AuthUser,
+    @GeoContext() geo: RequestGeoContext,
+  ) {
     return {
       code: 200,
-      data: { models: await this.service.listModels(user) },
+      data: await this.service.listCatalog(user, geo),
     };
   }
 
-  // Quota enforcement is opt-in **per route** here — no global APP_GUARD —
-  // so StoryOS / chat / workflow controllers stay completely untouched.
-  // The guard pre-consumes; the interceptor auto-refunds on a thrown
-  // exception; the image worker additionally refunds on terminal job
-  // failure (out-of-band of the HTTP request).
+  // Quota is enforced inside AiGenerationService after routing has
+  // selected the model/policy. This is required for campaign/free
+  // models and future preset-based routing. StoryOS / chat / workflow
+  // controllers remain untouched.
   @Post('jobs')
-  @UseGuards(QuotaGuard)
-  @UseInterceptors(QuotaInterceptor)
-  @RequireQuota({
-    dimension: 'image',
-    reason: 'ai_job_create',
-    // ai-generation dedupes submits by `body.idempotencyKey` — pull
-    // the same key into the quota consume so a retry of the same
-    // submission (which DB returns the existing job for) doesn't
-    // double-charge the user.
-    idempotencyFrom: 'body:idempotencyKey',
-  })
   async submitJob(
     @CurrentUser() user: AuthUser,
     @Body() body: AiSubmitJobBody,
+    @GeoContext() geo: RequestGeoContext,
   ) {
-    // QuotaGuard already pre-consumed (+ audit-logged) before we got
-    // here. Image and video both bucket into the `image` dimension
-    // — see worker for the per-tier split derived from the model id.
-    const data = await this.service.submitJob(user, body);
+    const data = await this.service.submitJob(user, body, geo);
     return { code: 200, data };
   }
 
@@ -80,7 +58,11 @@ export class AiGenerationController {
   }
 
   @Post('jobs/:id/retry')
-  async retryJob(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return { code: 200, data: await this.service.retryJob(user, id) };
+  async retryJob(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @GeoContext() geo: RequestGeoContext,
+  ) {
+    return { code: 200, data: await this.service.retryJob(user, id, geo) };
   }
 }

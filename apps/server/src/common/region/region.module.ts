@@ -1,13 +1,16 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { CountryMiddleware } from './country.middleware';
+import { GeoPolicyService } from './geo-policy.service';
 
 /**
- * Wires CountryMiddleware globally so every controller sees req.country.
- * Imported once from AppModule; no providers exported because the only
- * surface is the `@Country()` decorator (a free function, not a DI dep).
+ * Wires CountryMiddleware globally so every controller sees req.country /
+ * req.geo. GeoPolicyService is exported for routing, billing, and future
+ * payment-country policy checks.
  */
+@Global()
 @Module({
-  providers: [CountryMiddleware],
+  providers: [CountryMiddleware, GeoPolicyService],
+  exports: [GeoPolicyService],
 })
 export class RegionModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
