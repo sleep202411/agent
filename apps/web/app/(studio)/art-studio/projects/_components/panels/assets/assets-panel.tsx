@@ -282,15 +282,28 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
               </Button>
             </div>
           ) : (
-            <Button
-              className="w-full"
-              size="lg"
-              variant="solid"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <IconUpload className="size-3.5" />
-              {t("uploadAsset")}
-            </Button>
+            <div className="flex w-full items-center gap-2">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => setSelectionMode(true)}
+                disabled={assets.length === 0}
+                aria-label={t("select")}
+                className="shrink-0 gap-1.5"
+              >
+                <IconChecks className="size-4" />
+                {t("select")}
+              </Button>
+              <Button
+                className="flex-1"
+                size="lg"
+                variant="solid"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <IconUpload className="size-3.5" />
+                {t("uploadAsset")}
+              </Button>
+            </div>
           )
         }
       >
@@ -376,18 +389,6 @@ export function AssetsPanel({ onClose }: { onClose: () => void }) {
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setSelectionMode(true)}
-                disabled={assets.length === 0}
-                className="ml-auto h-7 gap-1 px-2 text-[11px] text-muted-foreground"
-                aria-label={t("select")}
-              >
-                <IconChecks className="size-3.5" />
-                {t("select")}
-              </Button>
             </div>
           )}
 
