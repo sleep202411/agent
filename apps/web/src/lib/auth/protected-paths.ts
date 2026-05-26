@@ -28,6 +28,7 @@ const PUBLIC_PATTERNS: RegExp[] = [
   /^\/reset-password(\/|$)/,
   // Marketing / discovery surfaces.
   /^\/about(\/|$)/,
+  /^\/certificates(\/|$)/,
   /^\/courses(\/|$)/,
   // Creator detail pages are public; the talent-market list remains
   // login-gated.

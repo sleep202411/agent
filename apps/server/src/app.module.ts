@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { AuthModule, AuthGuard } from './auth';
+import { CertificatesModule } from './certificates/certificates.module';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
 import { ConversationsModule } from './conversations/conversations.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
     NotificationModule,
     QuotaModule,
     UsersModule,
+    CertificatesModule,
     CrewsModule,
     EpisodesModule,
     CreatorServicesModule,
