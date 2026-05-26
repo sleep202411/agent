@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: asset-batch-delete-20260526
+    tag: cert-verify-20260526
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -147,7 +147,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: crew-fd-deeplink-20260525
+    tag: cert-module-20260526
   containerPort: 3001
   env:
     PORT: "3001"
