@@ -39,8 +39,8 @@ import {
   type Creator,
   type CreatorLevel,
 } from "@/app/(site)/creators/_hooks/use-creator";
+import { useCreatorCertificates } from "@/app/(site)/creators/_hooks/use-certificates";
 import type { ExperienceEntry } from "@/app/(site)/profile/_hooks/use-profile-extras";
-import { getCreatorCertificates } from "@/app/(site)/creators/_data/certificates";
 
 interface CreatorLeftRailProps {
   creator: Creator;
@@ -57,8 +57,8 @@ interface CreatorLeftRailProps {
 export function CreatorLeftRail({ creator, isOwner, onEditProfile }: CreatorLeftRailProps) {
   const t = useTranslations("creatorCenter");
   const { data: experience } = useCreatorExperience(creator.id);
+  const { data: certificates = [] } = useCreatorCertificates(creator.id);
   const joined = formatJoined(creator.joinedAt);
-  const certificates = getCreatorCertificates(creator.id);
   const topCertificate = certificates[0] ?? null;
 
   const bio = (creator.bio || "").trim();

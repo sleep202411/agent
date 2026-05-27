@@ -1,11 +1,13 @@
-import { Controller, Get, Query, Req } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { Public } from '../auth';
 import { RateLimitService } from '../common/throttle/rate-limit.service';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import { CertificatesService } from './certificates.service';
 import {
+  CertificateUserParamsSchema,
   VerifyCertificateQuerySchema,
+  type CertificateUserParams,
   type VerifyCertificateQuery,
 } from './dto';
 
@@ -31,6 +33,23 @@ export class CertificatesController {
     });
 
     return this.certificates.verify(query.certNo);
+  }
+
+  @Public()
+  @Get('users/:userId')
+  async listForUser(
+    @Req() req: Request,
+    @Param(new ZodValidationPipe(CertificateUserParamsSchema))
+    params: CertificateUserParams,
+  ) {
+    await this.rateLimit.guard({
+      bucket: 'certificate-list',
+      actorId: `${requestActor(req)}:${params.userId}`,
+      max: 120,
+      windowSec: 60,
+    });
+
+    return this.certificates.listForUser(params.userId);
   }
 }
 

@@ -18,6 +18,12 @@ export type VerifyCertificateQuery = z.infer<
   typeof VerifyCertificateQuerySchema
 >;
 
+export const CertificateUserParamsSchema = z.object({
+  userId: z.string().trim().min(1).max(64),
+});
+
+export type CertificateUserParams = z.infer<typeof CertificateUserParamsSchema>;
+
 export type CertificateVerificationStatus = 'valid' | 'revoked' | 'not_found';
 
 export interface VerifiedCertificateDTO {
@@ -36,4 +42,16 @@ export interface CertificateVerificationDTO {
   valid: boolean;
   status: CertificateVerificationStatus;
   certificate: VerifiedCertificateDTO | null;
+}
+
+export interface UserCertificateDTO {
+  id: string;
+  certNo: string;
+  title: string;
+  description: string | null;
+  program: string | null;
+  issuer: string;
+  imageUrl: string;
+  issuedAt: string;
+  validUntil: string | null;
 }
