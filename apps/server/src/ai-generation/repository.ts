@@ -35,6 +35,10 @@ import type {
 
 export interface AiJobListOptions {
   userId: string;
+  workspaceId?: string;
+  projectId?: string;
+  documentId?: string;
+  includeCollaboratorJobs?: boolean;
   type?: AiJobType;
   limit?: number;
 }
@@ -288,8 +292,11 @@ export class AiGenerationRepository {
     const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
     const rows = await this.prisma.aiJob.findMany({
       where: {
-        userId: options.userId,
+        ...(options.includeCollaboratorJobs ? {} : { userId: options.userId }),
         deletedAt: null,
+        ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+        ...(options.projectId ? { projectId: options.projectId } : {}),
+        ...(options.documentId ? { documentId: options.documentId } : {}),
         ...(options.type ? { type: options.type } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -413,12 +420,19 @@ export class AiGenerationRepository {
     return {
       id: row.id,
       userId: row.userId,
-      userLevel: row.userLevel,
+      entitlementSnapshot:
+        (row.entitlementSnapshot as AiJob['entitlementSnapshot']) ?? undefined,
       type: row.type,
       provider: row.provider,
       modelId: row.modelId,
       deployment: row.deployment,
       schemaVersion: row.schemaVersion,
+      workspaceId: row.workspaceId,
+      projectId: row.projectId,
+      documentId: row.documentId,
+      documentBlockId: row.documentBlockId,
+      siteRegion: row.siteRegion,
+      sourceSurface: row.sourceSurface,
       status: row.status as AiJobStatus,
       stage: row.stage as AiJobStage,
       input: row.input as Record<string, unknown>,
@@ -473,12 +487,20 @@ export class AiGenerationRepository {
     return {
       id: job.id,
       userId: job.userId,
-      userLevel: job.userLevel ?? null,
+      entitlementSnapshot:
+        (job.entitlementSnapshot as Prisma.InputJsonValue | undefined) ??
+        Prisma.DbNull,
       type: job.type,
       provider: job.provider,
       modelId: job.modelId,
       deployment: job.deployment,
       schemaVersion: job.schemaVersion,
+      workspaceId: job.workspaceId ?? null,
+      projectId: job.projectId ?? null,
+      documentId: job.documentId ?? null,
+      documentBlockId: job.documentBlockId ?? null,
+      siteRegion: job.siteRegion ?? null,
+      sourceSurface: job.sourceSurface ?? null,
       status: job.status,
       stage: job.stage,
       queueName: job.queueName,
@@ -548,6 +570,7 @@ export class AiGenerationRepository {
       if (
         key === 'input' ||
         key === 'normalizedInput' ||
+        key === 'entitlementSnapshot' ||
         key === 'routingSnapshot' ||
         key === 'logs' ||
         key === 'metrics'

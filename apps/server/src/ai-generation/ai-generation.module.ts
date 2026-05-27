@@ -1,6 +1,8 @@
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { RealtimeModule } from '../infra/realtime/realtime.module';
 import { StorageModule } from '../infra/storage/storage.module';
+import { EntitlementsModule } from '../entitlements';
+import { WorkspacesModule } from '../workspaces';
 import { AiGenerationController } from './ai-generation.controller';
 import { AiGenerationService } from './ai-generation.service';
 import { AiGenerationAuthzService } from './authz.service';
@@ -23,7 +25,12 @@ import { AiGenerationValidatorService } from './validator.service';
 import { AiGenerationWorkerService } from './worker.service';
 
 @Module({
-  imports: [RealtimeModule, StorageModule],
+  imports: [
+    RealtimeModule,
+    StorageModule,
+    EntitlementsModule,
+    WorkspacesModule,
+  ],
   controllers: [AiGenerationController],
   providers: [
     // Generic layer

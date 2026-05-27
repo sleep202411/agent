@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   HttpStatus,
@@ -7,13 +8,16 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { newShortId } from '../common/id';
 import { GeoPolicyService, type RequestGeoContext } from '../common/region';
+import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
 import { QuotaService } from '../quota/quota.service';
 import type { QuotaDimension } from '../quota/quota.types';
-import { normalizeTier, type Tier } from '../quota/tiers.config';
+import type { Tier } from '../quota/tiers.config';
+import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationEtaService } from './eta.service';
 import {
@@ -52,6 +56,15 @@ interface QuotaRefundToken {
   idempotencyKey: string;
 }
 
+interface AiJobContext {
+  workspaceId: string;
+  projectId?: string;
+  documentId?: string;
+  documentBlockId?: string;
+  sourceSurface?: string;
+  siteRegion: string;
+}
+
 @Injectable()
 export class AiGenerationService {
   private readonly logger = new Logger(AiGenerationService.name);
@@ -67,6 +80,9 @@ export class AiGenerationService {
     private readonly routing: AiGenerationRoutingService,
     private readonly quota: QuotaService,
     private readonly geoPolicy: GeoPolicyService,
+    private readonly workspaces: WorkspacesService,
+    private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   /**
@@ -102,8 +118,9 @@ export class AiGenerationService {
       this.providers.list().map((adapter) => adapter.listModels()),
     );
     const models = results.flat();
+    const entitlement = this.entitlements.resolveForUser(user);
     return models.map((model) => {
-      const access = this.authz.decideModelAccess(user, model);
+      const access = this.authz.decideModelAccess(entitlement, model);
       const geoDecision = geo
         ? this.geoPolicy.evaluate(model.region_policy, geo)
         : { allowed: true };
@@ -145,7 +162,17 @@ export class AiGenerationService {
     geo?: RequestGeoContext,
   ): Promise<AiSubmitResponse> {
     const now = new Date().toISOString();
-    const decision = await this.routing.resolve({ user, body, now, geo });
+    const context = await this.resolveJobContext(user, body);
+    const entitlement = this.entitlements.resolveForUser(user, {
+      workspaceId: context.workspaceId,
+      now,
+    });
+    const decision = await this.routing.resolve({
+      entitlement,
+      body,
+      now,
+      geo,
+    });
     const { model, provider, snapshot } = decision;
 
     if (!model.enabled) {
@@ -157,7 +184,7 @@ export class AiGenerationService {
 
     // Per-model tier gate. UI is supposed to keep locked models
     // un-clickable, but never trust the client.
-    this.authz.assertCanUseModel(user, model);
+    this.authz.assertCanUseModel(entitlement, model);
 
     if (body.schemaVersion !== model.schemaVersion) {
       throw new ConflictException({
@@ -172,9 +199,9 @@ export class AiGenerationService {
       model.input_schema,
       input,
     );
-    // Per-option tier gate (e.g. resolution_tier=uhd needs VIP2).
+    // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.
-    this.authz.assertCanUseOptions(user, model, normalizedInput);
+    this.authz.assertCanUseOptions(entitlement, model, normalizedInput);
     const rawPrompt = normalizedInput.prompt;
     const prompt = typeof rawPrompt === 'string' ? rawPrompt.trim() : '';
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
@@ -188,6 +215,7 @@ export class AiGenerationService {
 
     const quotaRefund = await this.consumeQuotaIfNeeded(
       user,
+      entitlement,
       snapshot,
       idempotencyKey,
     );
@@ -225,12 +253,18 @@ export class AiGenerationService {
           return {
             id,
             userId: user.userId,
-            userLevel: user.userLevel ?? null,
+            entitlementSnapshot: entitlement,
             type: model.type,
             provider,
             modelId: model.id,
             deployment: model.deployment,
             schemaVersion: model.schemaVersion,
+            workspaceId: context.workspaceId,
+            projectId: context.projectId,
+            documentId: context.documentId,
+            documentBlockId: context.documentBlockId,
+            siteRegion: context.siteRegion,
+            sourceSurface: context.sourceSurface,
             status: 'in_queue',
             stage: 'queued',
             input,
@@ -303,7 +337,7 @@ export class AiGenerationService {
     // when it picks the message up, so the payload is just the jobId.
     // Priority is frozen in the routing snapshot so later tier/config
     // edits don't reshuffle jobs already accepted into the queue.
-    const priority = snapshot.policy.tier.queuePriority;
+    const priority = snapshot.policy.entitlement.queuePriority;
     try {
       await this.queue.enqueue(queueName, id, 0, priority);
     } catch (err) {
@@ -335,13 +369,14 @@ export class AiGenerationService {
 
   private async consumeQuotaIfNeeded(
     user: AuthUser,
+    entitlement: EntitlementSnapshot,
     snapshot: AiRoutingSnapshot,
     idempotencyKey: string,
   ): Promise<QuotaRefundToken | null> {
     const policy = snapshot.policy.quota;
     if (policy.mode !== 'charge' || policy.cost <= 0) return null;
 
-    const tier = normalizeTier(user.userLevel);
+    const tier = this.entitlements.quotaTierFor(entitlement);
     const dimension = policy.dimension as QuotaDimension;
     const result = await this.quota.consume({
       userId: user.userId,
@@ -423,8 +458,13 @@ export class AiGenerationService {
 
   async listJobs(user: AuthUser, query: AiJobListQuery) {
     const limit = query.limit ? Number(query.limit) : 50;
+    const scope = await this.resolveListScope(user, query);
     const jobs = await this.store.listForUser({
       userId: user.userId,
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      documentId: scope.documentId,
+      includeCollaboratorJobs: Boolean(scope.projectId || scope.documentId),
       type: query.type,
       limit: Number.isFinite(limit) ? limit : 50,
     });
@@ -445,7 +485,7 @@ export class AiGenerationService {
   }
 
   async cancelJob(user: AuthUser, id: string) {
-    const job = await this.getOwnedJob(user, id);
+    const job = await this.getEditableJob(user, id);
     if (TERMINAL_STATUSES.has(job.status))
       return this.publicJob(job, { detail: true });
 
@@ -487,7 +527,7 @@ export class AiGenerationService {
     id: string,
     geo?: RequestGeoContext,
   ): Promise<AiSubmitResponse> {
-    const job = await this.getOwnedJob(user, id);
+    const job = await this.getEditableJob(user, id);
     return this.submitJob(
       user,
       {
@@ -495,6 +535,11 @@ export class AiGenerationService {
         presetId: job.routingSnapshot?.presetId,
         campaignId: job.routingSnapshot?.policy.quota.campaignId,
         schemaVersion: job.schemaVersion,
+        workspaceId: job.workspaceId ?? undefined,
+        projectId: job.projectId ?? undefined,
+        documentId: job.documentId ?? undefined,
+        documentBlockId: job.documentBlockId ?? undefined,
+        sourceSurface: job.sourceSurface ?? undefined,
         input: job.normalizedInput,
         idempotencyKey: randomUUID(),
       },
@@ -518,15 +563,215 @@ export class AiGenerationService {
     }
   }
 
-  private async getOwnedJob(user: AuthUser, id: string): Promise<AiJob> {
+  private async getAccessibleJob(
+    user: AuthUser,
+    id: string,
+    minimumRole: WorkspaceMemberRole,
+  ): Promise<AiJob> {
     const job = await this.store.findById(id);
-    if (!job || job.userId !== user.userId) {
+    if (!job) {
       throw new NotFoundException({
         code: 'JOB_NOT_FOUND',
         msg: 'Foundry job not found.',
       });
     }
-    return job;
+    if (job.userId === user.userId) return job;
+
+    if (job.projectId) {
+      await this.workspacePermissions.requireProjectRole(
+        user.userId,
+        job.projectId,
+        minimumRole === WorkspaceMemberRole.viewer
+          ? ProjectMemberRole.viewer
+          : ProjectMemberRole.editor,
+      );
+      return job;
+    }
+
+    if (job.workspaceId) {
+      await this.workspacePermissions.requireWorkspaceRole(
+        user.userId,
+        job.workspaceId,
+        minimumRole,
+      );
+      return job;
+    }
+
+    throw new NotFoundException({
+      code: 'JOB_NOT_FOUND',
+      msg: 'Foundry job not found.',
+    });
+  }
+
+  private async getOwnedJob(user: AuthUser, id: string): Promise<AiJob> {
+    return this.getAccessibleJob(user, id, WorkspaceMemberRole.viewer);
+  }
+
+  private async getEditableJob(user: AuthUser, id: string): Promise<AiJob> {
+    return this.getAccessibleJob(user, id, WorkspaceMemberRole.editor);
+  }
+
+  private async resolveJobContext(
+    user: AuthUser,
+    body: AiSubmitJobBody,
+  ): Promise<AiJobContext> {
+    const workspaceId = body.context?.workspaceId ?? body.workspaceId;
+    const projectId = body.context?.projectId ?? body.projectId;
+    const documentId = body.context?.documentId ?? body.documentId;
+    const documentBlockId =
+      body.context?.documentBlockId ?? body.documentBlockId;
+    const sourceSurface = this.normalizeSourceSurface(
+      body.context?.sourceSurface ?? body.sourceSurface,
+    );
+    const siteRegion = process.env.NEXT_PUBLIC_SITE_REGION ?? 'global';
+
+    if (documentId) {
+      const document = await this.workspacePermissions.requireDocumentRole(
+        user.userId,
+        documentId,
+        ProjectMemberRole.editor,
+      );
+      if (workspaceId && workspaceId !== document.workspaceId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_WORKSPACE_MISMATCH',
+          msg: 'Document does not belong to the selected workspace.',
+        });
+      }
+      if (projectId && projectId !== document.projectId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_PROJECT_MISMATCH',
+          msg: 'Document does not belong to the selected project.',
+        });
+      }
+      return {
+        workspaceId: document.workspaceId,
+        projectId: document.projectId,
+        documentId: document.id,
+        documentBlockId: this.normalizeDocumentBlockId(documentBlockId),
+        sourceSurface,
+        siteRegion,
+      };
+    }
+
+    if (projectId) {
+      const project = await this.workspacePermissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.editor,
+      );
+      if (workspaceId && workspaceId !== project.workspaceId) {
+        throw new BadRequestException({
+          code: 'PROJECT_WORKSPACE_MISMATCH',
+          msg: 'Project does not belong to the selected workspace.',
+        });
+      }
+      return {
+        workspaceId: project.workspaceId,
+        projectId: project.id,
+        sourceSurface,
+        siteRegion,
+      };
+    }
+
+    if (workspaceId) {
+      await this.workspacePermissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.editor,
+      );
+      return { workspaceId, sourceSurface, siteRegion };
+    }
+
+    const workspace = await this.workspaces.ensurePersonalWorkspace(user);
+    return { workspaceId: workspace.id, sourceSurface, siteRegion };
+  }
+
+  private async resolveListScope(
+    user: AuthUser,
+    query: AiJobListQuery,
+  ): Promise<{
+    workspaceId?: string;
+    projectId?: string;
+    documentId?: string;
+  }> {
+    if (query.documentId) {
+      const document = await this.workspacePermissions.requireDocumentRole(
+        user.userId,
+        query.documentId,
+        ProjectMemberRole.viewer,
+      );
+      if (query.workspaceId && query.workspaceId !== document.workspaceId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_WORKSPACE_MISMATCH',
+          msg: 'Document does not belong to the selected workspace.',
+        });
+      }
+      if (query.projectId && query.projectId !== document.projectId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_PROJECT_MISMATCH',
+          msg: 'Document does not belong to the selected project.',
+        });
+      }
+      return {
+        workspaceId: document.workspaceId,
+        projectId: document.projectId,
+        documentId: document.id,
+      };
+    }
+
+    if (query.projectId) {
+      const project = await this.workspacePermissions.requireProjectRole(
+        user.userId,
+        query.projectId,
+        ProjectMemberRole.viewer,
+      );
+      if (query.workspaceId && query.workspaceId !== project.workspaceId) {
+        throw new BadRequestException({
+          code: 'PROJECT_WORKSPACE_MISMATCH',
+          msg: 'Project does not belong to the selected workspace.',
+        });
+      }
+      return { workspaceId: project.workspaceId, projectId: project.id };
+    }
+
+    if (query.workspaceId) {
+      await this.workspacePermissions.requireWorkspaceRole(
+        user.userId,
+        query.workspaceId,
+        WorkspaceMemberRole.viewer,
+      );
+      return { workspaceId: query.workspaceId };
+    }
+
+    return {};
+  }
+
+  private normalizeSourceSurface(
+    value: string | undefined,
+  ): string | undefined {
+    const normalized = value?.trim();
+    if (!normalized) return undefined;
+    if (!/^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(normalized)) {
+      throw new BadRequestException({
+        code: 'INVALID_SOURCE_SURFACE',
+        msg: 'sourceSurface must be 1-64 URL-safe characters.',
+      });
+    }
+    return normalized;
+  }
+
+  private normalizeDocumentBlockId(
+    value: string | undefined,
+  ): string | undefined {
+    const normalized = value?.trim();
+    if (!normalized) return undefined;
+    if (normalized.length > 128) {
+      throw new BadRequestException({
+        code: 'INVALID_DOCUMENT_BLOCK_ID',
+        msg: 'documentBlockId must be 128 characters or fewer.',
+      });
+    }
+    return normalized;
   }
 
   private toSubmitResponse(job: AiJob): AiSubmitResponse {
@@ -540,6 +785,12 @@ export class AiGenerationService {
   private toStatusResponse(job: AiJob): AiStatusResponse {
     return {
       request_id: job.id,
+      workspace_id: job.workspaceId ?? null,
+      project_id: job.projectId ?? null,
+      document_id: job.documentId ?? null,
+      document_block_id: job.documentBlockId ?? null,
+      site_region: job.siteRegion ?? null,
+      source_surface: job.sourceSurface ?? null,
       status: job.status,
       stage: job.stage,
       progress: job.progress ?? null,
@@ -558,6 +809,12 @@ export class AiGenerationService {
       id: job.id,
       request_id: job.id,
       type: job.type,
+      workspaceId: job.workspaceId ?? null,
+      projectId: job.projectId ?? null,
+      documentId: job.documentId ?? null,
+      documentBlockId: job.documentBlockId ?? null,
+      siteRegion: job.siteRegion ?? null,
+      sourceSurface: job.sourceSurface ?? null,
       provider: job.provider,
       modelId: job.modelId,
       deployment: job.deployment,

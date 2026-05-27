@@ -26,8 +26,8 @@ import {
 import type { Worker, Job as BullJob } from 'bullmq';
 import { createHash } from 'crypto';
 import { newShortId } from '../common/id';
+import { EntitlementService } from '../entitlements';
 import { QuotaService } from '../quota/quota.service';
-import { TIERS, normalizeTier } from '../quota/tiers.config';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import { AiGenerationOutboxService } from './outbox.service';
 import type { ProviderAdapter, RawProviderOutput } from './provider-adapter';
@@ -94,7 +94,21 @@ export class AiGenerationWorkerService
     private readonly storage: OutputStorageService,
     private readonly queueService: AiGenerationQueueService,
     private readonly quota: QuotaService,
+    private readonly entitlements: EntitlementService,
   ) {}
+
+  private queuePriorityFor(job: AiJob): number {
+    return (
+      job.routingSnapshot?.policy.entitlement.queuePriority ??
+      this.entitlements.queuePriorityFor(job.entitlementSnapshot)
+    );
+  }
+
+  private quotaTierFor(job: AiJob) {
+    return job.entitlementSnapshot
+      ? this.entitlements.quotaTierFor(job.entitlementSnapshot)
+      : 'Free';
+  }
 
   onApplicationBootstrap() {
     if (this.providers.list().length === 0) {
@@ -328,17 +342,13 @@ export class AiGenerationWorkerService
             : job.logs,
         });
         if (updated) this.emit(updated);
-        const priority =
-          updated?.routingSnapshot?.policy.tier.queuePriority ??
-          job.routingSnapshot?.policy.tier.queuePriority ??
-          TIERS[normalizeTier(job.userLevel)].priority;
         await this.queueService.enqueue(
           job.queueName,
           job.id,
           updated?.routingSnapshot?.policy.runtime.pollIntervalMs ??
             job.routingSnapshot?.policy.runtime.pollIntervalMs ??
             ASYNC_PROVIDER_POLL_DELAY_MS,
-          priority,
+          this.queuePriorityFor(updated ?? job),
           'poll',
         );
         return;
@@ -391,15 +401,11 @@ export class AiGenerationWorkerService
       ],
     });
     if (updated) this.emit(updated);
-    const priority =
-      updated?.routingSnapshot?.policy.tier.queuePriority ??
-      job.routingSnapshot?.policy.tier.queuePriority ??
-      TIERS[normalizeTier(job.userLevel)].priority;
     await this.queueService.enqueue(
       job.queueName,
       job.id,
       delayMs,
-      priority,
+      this.queuePriorityFor(updated ?? job),
       'poll',
     );
   }
@@ -474,14 +480,11 @@ export class AiGenerationWorkerService
         ],
       });
       if (queued) this.emit(queued);
-      const priority =
-        job.routingSnapshot?.policy.tier.queuePriority ??
-        TIERS[normalizeTier(job.userLevel)].priority;
       await this.queueService.enqueue(
         job.queueName,
         job.id,
         result.initialPollDelayMs ?? ASYNC_PROVIDER_POLL_DELAY_MS,
-        priority,
+        this.queuePriorityFor(job),
         'poll',
       );
       this.logger.log(
@@ -587,14 +590,11 @@ export class AiGenerationWorkerService
       if (requeued) {
         // Preserve the submit-time route priority across retries so
         // config/tier edits don't reshuffle an already accepted job.
-        const priority =
-          job.routingSnapshot?.policy.tier.queuePriority ??
-          TIERS[normalizeTier(job.userLevel)].priority;
         await this.queueService.enqueue(
           job.queueName,
           job.id,
           delayMs,
-          priority,
+          this.queuePriorityFor(job),
         );
         this.emit(requeued);
         this.logger.log(
@@ -631,7 +631,7 @@ export class AiGenerationWorkerService
         if (policy?.mode === 'free') return;
         void this.quota.refundFor({
           userId: job.userId,
-          tier: normalizeTier(job.userLevel),
+          tier: this.quotaTierFor(job),
           dimension: policy?.dimension ?? 'image',
           cost: policy?.cost && policy.cost > 0 ? policy.cost : 1,
           idempotencyKey: job.idempotencyKey,

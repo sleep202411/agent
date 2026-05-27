@@ -4179,6 +4179,153 @@
       "subtitle": "加速器、出版方、电视台与制作公司，与 FizzDragon 一同把 AI 辅助创作带给全球观众。"
     }
   },
+  "aiLab": {
+    "eyebrow": "AI Lab",
+    "title": "生成工作台",
+    "subtitle": "选择产品化路线，调整 schema 参数，查看队列进度，并在同一处检查所有图片和视频任务。",
+    "mode": {
+      "image": "图片",
+      "video": "视频"
+    },
+    "source": {
+      "loading": "加载中",
+      "live": "实时模型目录",
+      "preview": "开发预览",
+      "error": "目录异常"
+    },
+    "activeCount": "{count} 个进行中",
+    "credits": "{count} 泡泡",
+    "plan": {
+      "free": "免费",
+      "creator": "Creator",
+      "pro": "Pro",
+      "studio": "Studio",
+      "enterprise": "Enterprise"
+    },
+    "cost": {
+      "free": "免费",
+      "metered": "按量计费"
+    },
+    "generationMode": {
+      "text_to_image": "文生图",
+      "image_to_image": "图生图",
+      "inpainting": "局部重绘",
+      "outpainting": "扩图",
+      "reference_image_generation": "参考图生成",
+      "text_to_video": "文生视频",
+      "image_to_video": "图生视频",
+      "first_last_frame_to_video": "首尾帧视频",
+      "video_to_video": "视频生视频"
+    },
+    "modelRail": {
+      "title": "生成路线",
+      "subtitle": "快速、标准、专业，或活动专属路线。",
+      "empty": "当前没有可用的 {mode} 路线。",
+      "cost": "消耗",
+      "queue": "队列",
+      "selectedModel": "当前模型",
+      "noModel": "无可用模型",
+      "noModelDesc": "该路线在当前区域没有可用模型。"
+    },
+    "badge": {
+      "free": "免费",
+      "locked": "锁定"
+    },
+    "canvas": {
+      "ready": "就绪",
+      "active": "{count} 个生成中",
+      "emptyTitle": "可以开始新的生成",
+      "emptyBody": "描述结果，选择路线并提交。队列进度和最终资产会保留在这里。"
+    },
+    "results": {
+      "title": "输出",
+      "empty": "已完成的结果会显示在这里。",
+      "untitled": "未命名"
+    },
+    "composer": {
+      "noPreset": "无路线",
+      "prompt": "提示词",
+      "placeholder": "描述主体、风格、运动、构图和约束...",
+      "routeTitle": "执行策略",
+      "routeBody": "任务被接受时，后端会冻结路线、权益、队列和计费策略。",
+      "cost": "消耗",
+      "queue": "运行 / 排队",
+      "model": "模型"
+    },
+    "advanced": {
+      "title": "模型参数",
+      "body": "字段由模型 schema 渲染。锁定参数会在服务端再次校验。"
+    },
+    "queue": {
+      "title": "队列",
+      "subtitle": "进行中任务、历史记录，以及重试/取消操作。",
+      "policy": "策略",
+      "running": "运行",
+      "queued": "排队",
+      "global": "全局",
+      "model": "供应商",
+      "active": "进行中",
+      "history": "历史",
+      "emptyActive": "当前没有进行中的生成任务。",
+      "emptyHistory": "还没有生成历史。",
+      "untitled": "未命名提示词",
+      "position": "第 {n} 位"
+    },
+    "detail": {
+      "title": "任务详情",
+      "id": "ID",
+      "status": "状态",
+      "model": "模型",
+      "created": "创建时间"
+    },
+    "action": {
+      "generate": "生成",
+      "upgrade": "升级",
+      "unavailable": "不可用",
+      "reset": "重置",
+      "retry": "重试",
+      "cancel": "取消"
+    },
+    "toast": {
+      "accepted": "任务已加入队列"
+    },
+    "error": {
+      "loadCatalog": "加载 AI 模型目录失败。",
+      "loadJobs": "加载生成任务失败。",
+      "submit": "提交生成任务失败。",
+      "retry": "重试生成任务失败。",
+      "cancel": "取消生成任务失败。",
+      "validation": "请先修正高亮参数。",
+      "requiresPlan": "需要 {plan} 计划。",
+      "optionRequiresPlan": "{label} 需要 {plan}。",
+      "routeUnavailable": "该路线不可用。",
+      "modelUnavailable": "该模型不可用。",
+      "accessDenied": "当前计划无法使用该模型。",
+      "fieldRequired": "请填写 {label}。",
+      "fieldMinLength": "{label} 至少需要 {min} 个字符。",
+      "fieldMaxLength": "{label} 不能超过 {max} 个字符。",
+      "fieldMinItems": "{label} 至少需要 {min} 项。",
+      "fieldMaxItems": "{label} 不能超过 {max} 项。",
+      "fieldMinimum": "{label} 不能小于 {min}。",
+      "fieldMaximum": "{label} 不能大于 {max}。",
+      "fieldUnsupportedOption": "{label} 不是支持的选项。",
+      "fieldInvalidUrl": "{label} 必须是有效链接。"
+    },
+    "stage": {
+      "created": "已创建",
+      "queued": "排队中",
+      "validating": "校验中",
+      "calling_provider": "调用供应商",
+      "provider_queued": "供应商排队",
+      "generating": "生成中",
+      "fetching_output": "拉取结果",
+      "uploading_to_oss": "上传中",
+      "completed": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消",
+      "expired": "已过期"
+    }
+  },
   "aiGen": {
     "eyebrow": "Foundry Studio",
     "title": "生图与生视频",

@@ -519,7 +519,7 @@ function gptImage2InputSchema(): FoundryInputSchema {
       // a `WIDTHxHEIGHT` string in `mapAspectAndResolutionToSize()`
       // before being sent to Azure. UX win: users think in shape +
       // sharpness, not pixels. Schema win: per-option tier gating on
-      // resolution (2K = VIP1, 4K = VIP2).
+      // resolution (2K = creator, 4K = pro).
       aspect_ratio: {
         type: 'string',
         title: 'Aspect ratio',
@@ -557,9 +557,9 @@ function gptImage2InputSchema(): FoundryInputSchema {
           importance: 'primary',
           order: 21,
           options: [
-            { value: 'hd', label: '1K HD', tier: null },
-            { value: 'fhd', label: '2K FHD', tier: 'VIP1' },
-            { value: 'uhd', label: '4K UHD', tier: 'VIP2' },
+            { value: 'hd', label: '1K HD', requiredPlan: null },
+            { value: 'fhd', label: '2K FHD', requiredPlan: 'creator' },
+            { value: 'uhd', label: '4K UHD', requiredPlan: 'pro' },
           ],
           labelKey: 'aiGen.schema.field.resolutionTier.label',
         },
@@ -1132,21 +1132,24 @@ function streamEventSchema(
   return undefined;
 }
 
-function membership(
+function entitlement(
   _record: FoundryDeploymentRecord,
   type: AiJobType,
-): FoundryModelDefinition['membership'] {
-  // Tier gate lives with the model definition so frontend lock badges,
-  // backend submit checks, and tooltip text all read from one source.
-  // Override via env (e.g. `FOUNDRY_IMAGE_MIN_TIER=VIP2`) per deploy
-  // without touching schema code. Set to `NONE` to open to free users.
+): FoundryModelDefinition['entitlement'] {
+  // Product-plan gate lives with the model definition so frontend lock
+  // badges, backend submit checks, and tooltip text all read from one
+  // source. Override via env (e.g. `FOUNDRY_IMAGE_MIN_PLAN=pro`) per
+  // deploy without touching schema code. Set to `NONE` to open to free users.
   const envKey =
-    type === 'image' ? 'FOUNDRY_IMAGE_MIN_TIER' : 'FOUNDRY_VIDEO_MIN_TIER';
-  const raw = (process.env[envKey] ?? '').trim().toUpperCase();
-  const defaultTier = type === 'image' ? 'VIP1' : 'VIP2';
-  const value = raw || defaultTier;
-  if (value === 'NONE' || value === 'FREE') return { minTier: null };
-  return { minTier: value as FoundryModelDefinition['membership']['minTier'] };
+    type === 'image' ? 'FOUNDRY_IMAGE_MIN_PLAN' : 'FOUNDRY_VIDEO_MIN_PLAN';
+  const raw = (process.env[envKey] ?? '').trim().toLowerCase();
+  const defaultPlan = type === 'image' ? 'creator' : 'pro';
+  const value = raw || defaultPlan;
+  if (value === 'none' || value === 'free') return { requiredPlan: null };
+  return {
+    requiredPlan:
+      value as FoundryModelDefinition['entitlement']['requiredPlan'],
+  };
 }
 
 function providerBinding(
@@ -1487,7 +1490,7 @@ export class FoundrySchemaFactory {
               perUserRunning: intEnv('FOUNDRY_PER_USER_VIDEO_RUNNING', 1),
               perUserQueued: intEnv('FOUNDRY_PER_USER_QUEUED_TOTAL', 10),
             },
-      membership: membership(record, type),
+      entitlement: entitlement(record, type),
       input_schema:
         type === 'image' ? imageInputSchema(record) : videoInputSchema(),
       output_schema: outputSchema(type),

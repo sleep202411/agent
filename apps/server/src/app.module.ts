@@ -8,6 +8,7 @@ import { ThrottleModule } from './common/throttle/throttle.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { CrewsModule } from './crews/crews.module';
 import { CreatorServicesModule } from './creator-services/creator-services.module';
+import { DocumentsModule } from './documents';
 import { EpisodesModule } from './crews/episodes/episodes.module';
 import { OrdersModule } from './orders/orders.module';
 import { DbModule } from './infra/db/db.module';
@@ -18,6 +19,7 @@ import { NotificationModule } from './notification';
 import { QuotaModule } from './quota/quota.module';
 import { SparkModule } from './spark/spark.module';
 import { UsersModule } from './users/users.module';
+import { WorkspacesModule } from './workspaces';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { UsersModule } from './users/users.module';
     NotificationModule,
     QuotaModule,
     UsersModule,
+    WorkspacesModule,
+    DocumentsModule,
     CrewsModule,
     EpisodesModule,
     CreatorServicesModule,

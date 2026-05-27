@@ -62,7 +62,10 @@ export default function AiImageLabPage() {
   const [modelLoadError, setModelLoadError] = useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // ─── Model + history bootstrap ────────────────────────────────
   useEffect(() => {
@@ -335,7 +338,7 @@ export default function AiImageLabPage() {
     return () => window.clearInterval(timer);
   }, [activeJobCount, realtimeConnected, reconcileFromServer]);
 
-  const userTierRank = useMemo(() => tierRank(user?.userLevel), [user?.userLevel]);
+  const userPlanRank = useMemo(() => planRank(user?.userLevel), [user?.userLevel]);
 
   const canSubmit =
     prompt.trim().length > 0 &&
@@ -570,8 +573,8 @@ export default function AiImageLabPage() {
               onOutputsChange={(n) => setFormData((prev) => ({ ...prev, n }))}
               formData={formData}
               onFieldChange={(name, value) => setFormData((prev) => ({ ...prev, [name]: value }))}
-              userTierRank={userTierRank}
-              tierRank={tierRank}
+              userPlanRank={userPlanRank}
+              planRank={planRank}
               activeJobCount={activeJobCount}
               activeJobRunning={isAnyJobRunning}
               canSubmit={canSubmit}
@@ -681,30 +684,43 @@ function deriveDefaults(
   return output;
 }
 
-// Pull `x-ui.options` off a schema field into the `{value,label,tier}`
+// Pull `x-ui.options` off a schema field into the `{value,label,requiredPlan}`
 // shape ComposeBar expects. Returns [] for fields without options so
 // callers can render nothing without an extra null check.
 function readOptions(
   field: unknown
-): Array<{ value: string; label: string; tier?: string | null }> {
+): Array<{ value: string; label: string; requiredPlan?: string | null }> {
   if (!field || typeof field !== "object") return [];
   const ui = (field as { "x-ui"?: { options?: unknown } })["x-ui"];
   const opts = ui?.options;
   if (!Array.isArray(opts)) return [];
   return opts
-    .filter(
-      (o): o is { value: string; label: string; tier?: string | null } =>
-        o != null && typeof o === "object" && typeof (o as any).value === "string"
-    )
-    .map((o) => ({ value: o.value, label: o.label ?? o.value, tier: o.tier ?? null }));
+    .filter((o): o is { value: string; label?: string; requiredPlan?: string | null } => {
+      if (o == null || typeof o !== "object") return false;
+      return typeof (o as { value?: unknown }).value === "string";
+    })
+    .map((o) => ({
+      value: o.value,
+      label: o.label ?? o.value,
+      requiredPlan: o.requiredPlan ?? null,
+    }));
 }
 
-// Mirror of server-side AI_TIER_RANK. Kept tiny because we only need
-// the relative ordering for showing lock badges; server enforces.
-const TIER_RANK: Record<string, number> = { FREE: 0, VIP: 1, VIP1: 1, VIP2: 2, VIP3: 3 };
-function tierRank(level: string | null | undefined): number {
+// Product entitlement rank. Auth still comes from the existing account
+// payload, so this page adapts that claim into the new AI model protocol.
+const PLAN_RANK: Record<string, number> = {
+  FREE: 0,
+  CREATOR: 1,
+  PRO: 2,
+  STUDIO: 3,
+  ENTERPRISE: 4,
+  VIP1: 1,
+  VIP2: 2,
+  VIP3: 3,
+};
+function planRank(level: string | null | undefined): number {
   if (!level) return 0;
-  return TIER_RANK[level.toUpperCase()] ?? 0;
+  return PLAN_RANK[level.toUpperCase()] ?? 0;
 }
 
 function jobToItems(job: AiJobView): GalleryItem[] {

@@ -15,9 +15,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { AuthUser } from '../auth';
 import { GeoPolicyService, type RequestGeoContext } from '../common/region';
-import { TIERS, normalizeTier } from '../quota/tiers.config';
+import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
 import {
   AiModelPresetRegistryService,
   type AiFreeCampaignConfig,
@@ -30,9 +29,9 @@ import type {
   AiModelDefinition,
   AiModelPresetDefinition,
   AiProvider,
+  AiRequiredPlan,
   AiRoutingSnapshot,
   AiSubmitJobBody,
-  AiUserTier,
 } from './types';
 
 export interface AiRoutingDecision {
@@ -48,10 +47,11 @@ export class AiGenerationRoutingService {
     private readonly providers: ProviderRegistry,
     private readonly presets: AiModelPresetRegistryService,
     private readonly geoPolicy: GeoPolicyService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   async resolve(args: {
-    user: AuthUser;
+    entitlement: EntitlementSnapshot;
     body: AiSubmitJobBody;
     now: string;
     geo?: RequestGeoContext;
@@ -141,11 +141,14 @@ export class AiGenerationRoutingService {
       queuePolicy.queueName,
       model.type,
     );
-    const tier = normalizeTier(args.user.userLevel);
-    const minTier =
-      configuredRoute?.minTier ??
-      (model.membership_policy?.minTier as AiUserTier | null | undefined) ??
-      model.membership.minTier;
+    const requiredPlan = this.entitlements.requiredPlan(
+      configuredRoute?.requiredPlan ??
+        (model.entitlement_policy?.requiredPlan as
+          | AiRequiredPlan
+          | null
+          | undefined) ??
+        model.entitlement.requiredPlan,
+    );
     const quotaCost =
       billingPolicy.mode === 'free'
         ? 0
@@ -158,7 +161,7 @@ export class AiGenerationRoutingService {
       provider,
       model,
       snapshot: {
-        version: '2026-05-25',
+        version: '2026-05-27',
         routeId: `${freeCampaign ? `campaign:${freeCampaign.id}` : strategy}:${provider}:${model.id}`,
         presetId: routePresetId,
         requestedModelId: requestedModelId ?? routePresetId,
@@ -200,10 +203,10 @@ export class AiGenerationRoutingService {
                   cost: Math.max(0, quotaCost),
                   reason: `ai_job_${routePresetId}`,
                 },
-          tier: {
-            userTier: tier,
-            minTier,
-            queuePriority: TIERS[tier].priority,
+          entitlement: {
+            planKey: args.entitlement.planKey,
+            requiredPlan,
+            queuePriority: args.entitlement.limits.queuePriority,
           },
           concurrency: {
             queueName,

@@ -4,10 +4,11 @@
 // `npm run db:migrate`. Models live alongside the module that owns
 // them in src/<module>/.
 //
-// ID convention: every model uses a short URL-safe random `String @id`.
-// IDs are generated in app code via src/common/id.ts instead of database
-// defaults, so URLs, logs, notifications, and internal event rows all
-// share one compact shape.
+// ID convention:
+// - Legacy/product modules that expose compact URL ids use app-generated
+//   short ids from src/common/id.ts.
+// - Platform Core modules use UUID primary keys so workspace/project/wallet
+//   records stay globally unique across future regional cells and admin tools.
 
 generator client {
   provider = "prisma-client-js"
@@ -15,6 +16,577 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// Platform Core domain (src/workspaces/)
+// ─────────────────────────────────────────────────────────────
+//
+// New-platform source of truth. This domain deliberately does not
+// mirror Java's project / point tables. Java may still provide the
+// authenticated external user id, but ownership, permissions, wallet
+// accounting, project assets, and audit records below are all Nest +
+// Postgres owned.
+//
+// Invariant:
+//   Workspace → Project → ProjectAsset
+//
+// Assets belong to projects. Projects belong to workspaces. A personal
+// project and a team project therefore use the same asset schema; the
+// difference is the workspace owner, governance, wallet, and audit
+// policy around that project.
+
+enum WorkspaceType {
+  personal
+  team
+}
+
+enum WorkspaceStatus {
+  active
+  suspended
+  archived
+}
+
+enum WorkspaceMemberRole {
+  owner
+  admin
+  editor
+  viewer
+  billing
+}
+
+enum WorkspaceMemberStatus {
+  invited
+  active
+  suspended
+  removed
+}
+
+enum WorkspaceInviteStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
+enum PlatformProjectStatus {
+  active
+  archived
+}
+
+enum ProjectMemberRole {
+  owner
+  admin
+  editor
+  viewer
+}
+
+enum ProjectMemberStatus {
+  active
+  suspended
+  removed
+}
+
+enum ProjectVisibility {
+  private
+  workspace
+  public
+}
+
+enum PlatformDocumentType {
+  brief
+  script
+  storyboard
+  shot_plan
+  timeline
+  asset_board
+  course_outline
+  gig_requirement
+}
+
+enum PlatformDocumentStatus {
+  active
+  archived
+}
+
+enum PlatformDocumentVersionSource {
+  autosave
+  manual
+  import
+  ai
+  system
+}
+
+enum PlatformDocumentOperationType {
+  patch
+  yjs_update
+  snapshot
+  comment
+  system
+}
+
+enum PlatformDocumentCommentStatus {
+  open
+  resolved
+}
+
+enum ProjectAssetType {
+  image
+  video
+  audio
+  file
+  document
+  model
+}
+
+enum ProjectAssetSourceType {
+  upload
+  ai_job
+  import
+  manual
+}
+
+enum WalletOwnerType {
+  user
+  workspace
+}
+
+enum WalletCurrencyType {
+  bubble
+  community_point
+  revenue_credit
+}
+
+enum WalletAccountStatus {
+  active
+  frozen
+  closed
+}
+
+enum WalletTransactionStatus {
+  pending
+  posted
+  voided
+  failed
+}
+
+enum WalletLedgerEntryType {
+  credit
+  debit
+  hold
+  release
+  settle
+  refund
+  adjustment
+  transfer_in
+  transfer_out
+}
+
+model Workspace {
+  id               String          @id @default(uuid()) @db.Uuid
+  type             WorkspaceType
+  status           WorkspaceStatus @default(active)
+  name             String          @db.VarChar(120)
+  slug             String?         @db.VarChar(80)
+  avatarUrl        String?         @map("avatar_url") @db.VarChar(512)
+  description      String?         @db.VarChar(500)
+  /// External authenticated user id. For personal workspaces this is
+  /// the owning user; for team workspaces this is the creator/admin who
+  /// initialized the team. No FK to Java user tables.
+  ownerUserId      String          @map("owner_user_id") @db.VarChar(64)
+  createdById      String          @map("created_by_id") @db.VarChar(64)
+  defaultProjectId String?         @map("default_project_id") @db.Uuid
+  version          Int             @default(0)
+  suspendedAt      DateTime?       @map("suspended_at") @db.Timestamptz(6)
+  archivedAt       DateTime?       @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz(6)
+
+  members       WorkspaceMember[]
+  invites       WorkspaceInvite[]
+  projects      PlatformProject[]
+  auditLogs     PlatformAuditLog[]
+  projectAssets ProjectAsset[]
+  aiJobs        AiJob[]
+  documents     PlatformDocument[]
+
+  /// Active personal uniqueness is enforced by partial unique SQL:
+  /// (owner_user_id) WHERE type='personal' AND deleted_at IS NULL.
+  @@index([ownerUserId, type, deletedAt], map: "workspaces_owner_type_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "workspaces_status_recent_idx")
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id           String                @id @default(uuid()) @db.Uuid
+  workspaceId  String                @map("workspace_id") @db.Uuid
+  userId       String                @map("user_id") @db.VarChar(64)
+  role         WorkspaceMemberRole
+  status       WorkspaceMemberStatus @default(active)
+  seatAssigned Boolean               @default(true) @map("seat_assigned")
+  invitedById  String?               @map("invited_by_id") @db.VarChar(64)
+  joinedAt     DateTime?             @default(now()) @map("joined_at") @db.Timestamptz(6)
+  removedAt    DateTime?             @map("removed_at") @db.Timestamptz(6)
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  /// Active uniqueness is enforced by partial unique SQL:
+  /// (workspace_id, user_id) WHERE removed_at IS NULL.
+  @@index([userId, status], map: "workspace_members_by_user_idx")
+  @@index([workspaceId, status, role], map: "workspace_members_by_workspace_idx")
+  @@map("workspace_members")
+}
+
+model WorkspaceInvite {
+  id            String                @id @default(uuid()) @db.Uuid
+  workspaceId   String                @map("workspace_id") @db.Uuid
+  inviteeUserId String?               @map("invitee_user_id") @db.VarChar(64)
+  inviteeEmail  String?               @map("invitee_email") @db.VarChar(320)
+  role          WorkspaceMemberRole
+  tokenHash     String                @map("token_hash") @db.VarChar(128)
+  status        WorkspaceInviteStatus @default(pending)
+  invitedById   String                @map("invited_by_id") @db.VarChar(64)
+  acceptedAt    DateTime?             @map("accepted_at") @db.Timestamptz(6)
+  revokedAt     DateTime?             @map("revoked_at") @db.Timestamptz(6)
+  expiresAt     DateTime              @map("expires_at") @db.Timestamptz(6)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash], map: "workspace_invites_token_hash_unique")
+  @@index([workspaceId, status, createdAt(sort: Desc)], map: "workspace_invites_by_workspace_idx")
+  @@index([inviteeUserId, status], map: "workspace_invites_by_user_idx")
+  @@index([inviteeEmail, status], map: "workspace_invites_by_email_idx")
+  @@map("workspace_invites")
+}
+
+model PlatformProject {
+  id           String                @id @default(uuid()) @db.Uuid
+  workspaceId  String                @map("workspace_id") @db.Uuid
+  name         String                @db.VarChar(160)
+  slug         String?               @db.VarChar(100)
+  projectType  String                @default("general") @map("project_type") @db.VarChar(64)
+  status       PlatformProjectStatus @default(active)
+  visibility   ProjectVisibility     @default(private)
+  description  String?               @db.Text
+  coverAssetId String?               @map("cover_asset_id") @db.Uuid
+  createdById  String                @map("created_by_id") @db.VarChar(64)
+  updatedById  String?               @map("updated_by_id") @db.VarChar(64)
+  version      Int                   @default(0)
+  archivedAt   DateTime?             @map("archived_at") @db.Timestamptz(6)
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?             @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members   ProjectMember[]
+  assets    ProjectAsset[]
+  auditLogs PlatformAuditLog[]
+  aiJobs    AiJob[]
+  documents PlatformDocument[]
+
+  /// Active slug uniqueness is enforced by partial unique SQL:
+  /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
+  @@unique([id, workspaceId], name: "uniq_platform_project_id_workspace", map: "platform_projects_id_workspace_unique")
+  @@index([workspaceId, status, updatedAt(sort: Desc)], map: "platform_projects_workspace_recent_idx")
+  @@index([createdById, createdAt(sort: Desc)], map: "platform_projects_creator_idx")
+  @@index([projectType, status, updatedAt(sort: Desc)], map: "platform_projects_type_recent_idx")
+  @@map("platform_projects")
+}
+
+model PlatformDocument {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  workspaceId          String                 @map("workspace_id") @db.Uuid
+  projectId            String                 @map("project_id") @db.Uuid
+  type                 PlatformDocumentType
+  status               PlatformDocumentStatus @default(active)
+  title                String                 @db.VarChar(160)
+  slug                 String?                @db.VarChar(100)
+  schemaVersion        String                 @default("2026-05-27") @map("schema_version") @db.VarChar(32)
+  collaborationDialect String                 @default("fizzdragon.document.v1") @map("collaboration_dialect") @db.VarChar(64)
+  collaborationRoomId  String                 @default(uuid()) @map("collaboration_room_id") @db.Uuid
+  contentSnapshot      Json                   @default("{}") @map("content_snapshot") @db.JsonB
+  crdtState            Bytes?                 @map("crdt_state")
+  currentSequence      Int                    @default(0) @map("current_sequence")
+  currentVersionId     String?                @map("current_version_id") @db.Uuid
+  createdById          String                 @map("created_by_id") @db.VarChar(64)
+  updatedById          String?                @map("updated_by_id") @db.VarChar(64)
+  version              Int                    @default(0)
+  archivedAt           DateTime?              @map("archived_at") @db.Timestamptz(6)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt            DateTime?              @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   PlatformProject @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  versions       PlatformDocumentVersion[]
+  operations     PlatformDocumentOperation[]
+  presences      PlatformDocumentPresence[]
+  commentThreads PlatformDocumentCommentThread[]
+  assets         ProjectAsset[]
+  aiJobs         AiJob[]
+
+  /// Active slug uniqueness is enforced by partial unique SQL:
+  /// (project_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
+  @@unique([id, workspaceId], name: "uniq_platform_document_id_workspace", map: "platform_documents_id_workspace_unique")
+  @@unique([collaborationRoomId], map: "platform_documents_room_unique")
+  @@index([projectId, type, updatedAt(sort: Desc)], map: "platform_documents_project_type_recent_idx")
+  @@index([workspaceId, updatedAt(sort: Desc)], map: "platform_documents_workspace_recent_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "platform_documents_status_recent_idx")
+  @@map("platform_documents")
+}
+
+model PlatformDocumentVersion {
+  id            String                        @id @default(uuid()) @db.Uuid
+  documentId    String                        @map("document_id") @db.Uuid
+  versionNumber Int                           @map("version_number")
+  schemaVersion String                        @map("schema_version") @db.VarChar(32)
+  sequence      Int
+  title         String?                       @db.VarChar(160)
+  label         String?                       @db.VarChar(120)
+  source        PlatformDocumentVersionSource @default(autosave)
+  sourceId      String?                       @map("source_id") @db.VarChar(128)
+  snapshot      Json                          @db.JsonB
+  crdtState     Bytes?                        @map("crdt_state")
+  metadata      Json                          @default("{}") @db.JsonB
+  createdById   String                        @map("created_by_id") @db.VarChar(64)
+  createdAt     DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document PlatformDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNumber], map: "platform_document_versions_doc_number_unique")
+  @@index([documentId, createdAt(sort: Desc)], map: "platform_document_versions_doc_recent_idx")
+  @@map("platform_document_versions")
+}
+
+model PlatformDocumentOperation {
+  id               String                        @id @default(uuid()) @db.Uuid
+  documentId       String                        @map("document_id") @db.Uuid
+  sequence         Int
+  operationType    PlatformDocumentOperationType @map("operation_type")
+  actorUserId      String                        @map("actor_user_id") @db.VarChar(64)
+  clientMutationId String?                       @map("client_mutation_id") @db.VarChar(128)
+  idempotencyKey   String?                       @map("idempotency_key") @db.VarChar(160)
+  baseSequence     Int?                          @map("base_sequence")
+  patch            Json?                         @db.JsonB
+  yjsUpdate        Bytes?                        @map("yjs_update")
+  snapshot         Json?                         @db.JsonB
+  metadata         Json                          @default("{}") @db.JsonB
+  createdAt        DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document PlatformDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, sequence], map: "platform_document_operations_doc_sequence_unique")
+  @@index([documentId, createdAt(sort: Desc)], map: "platform_document_operations_doc_recent_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "platform_document_operations_actor_recent_idx")
+  @@map("platform_document_operations")
+}
+
+model PlatformDocumentPresence {
+  id           String   @id @default(uuid()) @db.Uuid
+  documentId   String   @map("document_id") @db.Uuid
+  userId       String   @map("user_id") @db.VarChar(64)
+  connectionId String   @map("connection_id") @db.VarChar(128)
+  cursor       Json?    @db.JsonB
+  selection    Json?    @db.JsonB
+  metadata     Json     @default("{}") @db.JsonB
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document PlatformDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId, connectionId], map: "platform_document_presence_connection_unique")
+  @@index([documentId, expiresAt], map: "platform_document_presence_active_idx")
+  @@map("platform_document_presence")
+}
+
+model PlatformDocumentCommentThread {
+  id           String                        @id @default(uuid()) @db.Uuid
+  documentId   String                        @map("document_id") @db.Uuid
+  blockId      String?                       @map("block_id") @db.VarChar(128)
+  anchor       Json?                         @db.JsonB
+  title        String?                       @db.VarChar(160)
+  status       PlatformDocumentCommentStatus @default(open)
+  createdById  String                        @map("created_by_id") @db.VarChar(64)
+  resolvedById String?                       @map("resolved_by_id") @db.VarChar(64)
+  resolvedAt   DateTime?                     @map("resolved_at") @db.Timestamptz(6)
+  createdAt    DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?                     @map("deleted_at") @db.Timestamptz(6)
+
+  document PlatformDocument          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  comments PlatformDocumentComment[]
+
+  @@index([documentId, status, updatedAt(sort: Desc)], map: "platform_document_comment_threads_doc_status_idx")
+  @@index([documentId, blockId], map: "platform_document_comment_threads_block_idx")
+  @@map("platform_document_comment_threads")
+}
+
+model PlatformDocumentComment {
+  id          String    @id @default(uuid()) @db.Uuid
+  threadId    String    @map("thread_id") @db.Uuid
+  documentId  String    @map("document_id") @db.Uuid
+  body        String    @db.Text
+  createdById String    @map("created_by_id") @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  editedAt    DateTime? @map("edited_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  thread PlatformDocumentCommentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt(sort: Asc)], map: "platform_document_comments_doc_idx")
+  @@index([threadId, createdAt(sort: Asc)], map: "platform_document_comments_thread_idx")
+  @@map("platform_document_comments")
+}
+
+model ProjectMember {
+  id          String              @id @default(uuid()) @db.Uuid
+  projectId   String              @map("project_id") @db.Uuid
+  userId      String              @map("user_id") @db.VarChar(64)
+  role        ProjectMemberRole
+  status      ProjectMemberStatus @default(active)
+  grantedById String              @map("granted_by_id") @db.VarChar(64)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  removedAt   DateTime?           @map("removed_at") @db.Timestamptz(6)
+
+  project PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Project-specific active uniqueness is enforced by partial unique
+  /// SQL: (project_id, user_id) WHERE removed_at IS NULL.
+  @@index([userId, status], map: "project_members_by_user_idx")
+  @@index([projectId, status, role], map: "project_members_by_project_idx")
+  @@map("project_members")
+}
+
+model ProjectAsset {
+  id              String                 @id @default(uuid()) @db.Uuid
+  workspaceId     String                 @map("workspace_id") @db.Uuid
+  projectId       String                 @map("project_id") @db.Uuid
+  type            ProjectAssetType
+  sourceType      ProjectAssetSourceType @default(upload) @map("source_type")
+  sourceId        String?                @map("source_id") @db.VarChar(128)
+  documentId      String?                @map("document_id") @db.Uuid
+  documentBlockId String?                @map("document_block_id") @db.VarChar(128)
+  name            String?                @db.VarChar(160)
+  url             String                 @db.VarChar(1024)
+  storagePath     String?                @map("storage_path") @db.VarChar(1024)
+  thumbnailUrl    String?                @map("thumbnail_url") @db.VarChar(1024)
+  mimeType        String?                @map("mime_type") @db.VarChar(128)
+  bytes           BigInt?
+  width           Int?
+  height          Int?
+  durationSeconds Int?                   @map("duration_seconds")
+  metadata        Json                   @default("{}") @db.JsonB
+  createdById     String                 @map("created_by_id") @db.VarChar(64)
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt       DateTime?              @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   PlatformProject   @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  document  PlatformDocument? @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+
+  @@index([projectId, type, createdAt(sort: Desc)], map: "project_assets_project_type_recent_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "project_assets_workspace_recent_idx")
+  @@index([documentId, documentBlockId], map: "project_assets_document_block_idx")
+  @@index([sourceType, sourceId], map: "project_assets_source_idx")
+  @@index([deletedAt], map: "project_assets_deleted_at_idx")
+  @@map("project_assets")
+}
+
+model WalletAccount {
+  id               String              @id @default(uuid()) @db.Uuid
+  ownerType        WalletOwnerType     @map("owner_type")
+  ownerId          String              @map("owner_id") @db.VarChar(64)
+  currency         WalletCurrencyType
+  status           WalletAccountStatus @default(active)
+  availableBalance BigInt              @default(0) @map("available_balance")
+  heldBalance      BigInt              @default(0) @map("held_balance")
+  version          Int                 @default(0)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  closedAt         DateTime?           @map("closed_at") @db.Timestamptz(6)
+
+  ledgerEntries WalletLedgerEntry[]
+
+  @@unique([ownerType, ownerId, currency], map: "wallet_accounts_owner_currency_unique")
+  @@index([ownerType, ownerId, status], map: "wallet_accounts_owner_status_idx")
+  @@map("wallet_accounts")
+}
+
+model WalletTransaction {
+  id             String                  @id @default(uuid()) @db.Uuid
+  status         WalletTransactionStatus @default(posted)
+  sourceType     String                  @map("source_type") @db.VarChar(64)
+  sourceId       String?                 @map("source_id") @db.VarChar(128)
+  idempotencyKey String                  @map("idempotency_key") @db.VarChar(160)
+  actorUserId    String?                 @map("actor_user_id") @db.VarChar(64)
+  workspaceId    String?                 @map("workspace_id") @db.Uuid
+  projectId      String?                 @map("project_id") @db.Uuid
+  description    String?                 @db.VarChar(255)
+  metadata       Json                    @default("{}") @db.JsonB
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  postedAt       DateTime?               @default(now()) @map("posted_at") @db.Timestamptz(6)
+  voidedAt       DateTime?               @map("voided_at") @db.Timestamptz(6)
+
+  entries WalletLedgerEntry[]
+
+  @@unique([idempotencyKey], map: "wallet_transactions_idempotency_key_unique")
+  @@index([sourceType, sourceId], map: "wallet_transactions_source_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "wallet_transactions_actor_recent_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "wallet_transactions_workspace_recent_idx")
+  @@map("wallet_transactions")
+}
+
+model WalletLedgerEntry {
+  id                    String                @id @default(uuid()) @db.Uuid
+  transactionId         String                @map("transaction_id") @db.Uuid
+  accountId             String                @map("account_id") @db.Uuid
+  entryType             WalletLedgerEntryType @map("entry_type")
+  currency              WalletCurrencyType
+  amount                BigInt
+  availableDelta        BigInt                @map("available_delta")
+  heldDelta             BigInt                @map("held_delta")
+  availableBalanceAfter BigInt                @map("available_balance_after")
+  heldBalanceAfter      BigInt                @map("held_balance_after")
+  reason                String                @db.VarChar(80)
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  transaction WalletTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account     WalletAccount     @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, createdAt(sort: Desc)], map: "wallet_ledger_entries_account_recent_idx")
+  @@index([transactionId], map: "wallet_ledger_entries_transaction_idx")
+  @@map("wallet_ledger_entries")
+}
+
+model PlatformAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String?  @map("workspace_id") @db.Uuid
+  projectId   String?  @map("project_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.VarChar(64)
+  action      String   @db.VarChar(96)
+  entityType  String   @map("entity_type") @db.VarChar(64)
+  entityId    String   @map("entity_id") @db.VarChar(128)
+  requestId   String?  @map("request_id") @db.VarChar(128)
+  before      Json?    @db.JsonB
+  after       Json?    @db.JsonB
+  metadata    Json     @default("{}") @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  project   PlatformProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)], map: "platform_audit_workspace_recent_idx")
+  @@index([projectId, createdAt(sort: Desc)], map: "platform_audit_project_recent_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "platform_audit_actor_recent_idx")
+  @@index([entityType, entityId, createdAt(sort: Desc)], map: "platform_audit_entity_recent_idx")
+  @@map("platform_audit_logs")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -543,15 +1115,13 @@ enum AiOutboxEventType {
 //   needs an immutable `ai_cost_ledger` table with idempotency_key,
 //   amount, currency, source, reversal_of FK. This Json is a stopgap
 //   until billing goes live.
-// TODO(product-context): add projectId / workspaceId / siteRegion
-//   ('global' | 'cn') / sourceSurface ('art-studio' | 'crew' | …)
-//   once the crew + project modules ship and the ID space settles.
 model AiJob {
   id                    String      @id
   userId                String      @map("user_id")
-  /// Tier snapshot at submission time — for audit and (future) tier-
-  /// differentiated pricing. Runtime authz uses sa-token's live value.
-  userLevel             String?     @map("user_level")
+  /// Immutable product entitlement policy selected at submission time.
+  /// This is the source for model access, queue priority, quota bridge,
+  /// refunds, and audit; it intentionally does not expose Java userLevel.
+  entitlementSnapshot   Json?       @map("entitlement_snapshot")
   type                  AiJobType
   /// Adapter identifier — 'microsoft-foundry' | 'fal-ai' | …. Stays a
   /// free-form String so new providers don't need migrations.
@@ -559,6 +1129,18 @@ model AiJob {
   modelId               String      @map("model_id")
   deployment            String
   schemaVersion         String      @map("schema_version")
+  /// Platform Core context. New Studio jobs always resolve a workspace
+  /// at submit time; legacy rows may remain NULL. Project is optional
+  /// because some jobs are workspace-level drafts before a project is
+  /// selected.
+  workspaceId           String?     @map("workspace_id") @db.Uuid
+  projectId             String?     @map("project_id") @db.Uuid
+  documentId            String?     @map("document_id") @db.Uuid
+  documentBlockId       String?     @map("document_block_id") @db.VarChar(128)
+  /// Region cell and UI surface snapshot for routing / ops analysis.
+  /// Examples: 'global' | 'cn', 'art-studio' | 'timeline' | 'batch'.
+  siteRegion            String?     @map("site_region") @db.VarChar(24)
+  sourceSurface         String?     @map("source_surface") @db.VarChar(64)
   status                AiJobStatus
   stage                 AiJobStage
   queueName             String      @map("queue_name")
@@ -615,14 +1197,21 @@ model AiJob {
   /// raw Prisma callers must do the same.
   deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz(6)
 
-  outputs  AiJobOutput[]
-  attempts AiJobAttempt[]
-  events   AiEventOutbox[]
+  outputs   AiJobOutput[]
+  attempts  AiJobAttempt[]
+  events    AiEventOutbox[]
+  workspace Workspace?        @relation(fields: [workspaceId], references: [id])
+  project   PlatformProject?  @relation(fields: [projectId], references: [id])
+  document  PlatformDocument? @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
 
   /// Active-row idempotency is enforced by a partial unique index in
   /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
   @@index([userId, modelId, idempotencyKey], map: "ai_jobs_idempotency_lookup_idx")
   @@index([userId, createdAt(sort: Desc)], map: "ai_jobs_user_created_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "ai_jobs_workspace_created_idx")
+  @@index([projectId, createdAt(sort: Desc)], map: "ai_jobs_project_created_idx")
+  @@index([documentId, documentBlockId, createdAt(sort: Desc)], map: "ai_jobs_document_block_created_idx")
+  @@index([siteRegion, createdAt(sort: Desc)], map: "ai_jobs_site_region_created_idx")
   @@index([queueName, status, queuedAt], map: "ai_jobs_queue_claim_idx")
   /// Fast reverse-lookup from a webhook `(provider, providerJobId)`
   /// to the owning AiJob.
@@ -806,23 +1395,23 @@ enum QuotaDimension {
 }
 
 model QuotaUsageLog {
-  id            String         @id
-  userId        String         @map("user_id") @db.VarChar(64)
-  dimension     QuotaDimension
+  id             String         @id
+  userId         String         @map("user_id") @db.VarChar(64)
+  dimension      QuotaDimension
   /// Signed cost. Positive = consume, negative = refund. Lets one
   /// query give net usage per user/dimension/window via SUM().
-  cost          Int            @default(1)
+  cost           Int            @default(1)
   /// Free-form action label — `submit_message_to_agent`,
   /// `ai_job_create`, `workflow_start`, `upload_banner`, ...
-  reason        String         @db.VarChar(64)
+  reason         String         @db.VarChar(64)
   /// Optional client-supplied dedup key. Multiple rows with the same
   /// key represent a consume followed by its refund — useful when
   /// reconciling. NULL means no dedup needed (best-effort logging).
-  idempotencyKey String?       @map("idempotency_key") @db.VarChar(128)
+  idempotencyKey String?        @map("idempotency_key") @db.VarChar(128)
   /// Loose metadata bag — `{jobType:'image', model:'gpt-image-2'}`,
   /// `{conversationId:'...'}`. Not indexed; for forensics.
-  metadata      Json?
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 
   /// Per-user/dimension scans — `SELECT SUM(cost) FROM quota_usage_log
   /// WHERE user_id = ? AND dimension = ? AND created_at >= ?`.
@@ -868,9 +1457,9 @@ model CreatorService {
   creatorId String @map("creator_id")
 
   /// Buyer-facing headline ("Final cut · 30s vertical"). ≤ 120 chars.
-  title String @db.VarChar(120)
+  title     String @db.VarChar(120)
   /// One-paragraph pitch (≤ 1000 chars). Plain text, newline-allowed.
-  summary String @db.Text
+  summary   String @db.Text
   /// OSS-relative cover path. UI prefixes with BANNER_BASE_URL.
   coverPath String @default("") @map("cover_path") @db.VarChar(512)
 
@@ -919,13 +1508,13 @@ model ServicePackage {
   tier      ServiceTier
 
   /// Tier label ("30-second cut · 1080p"). ≤ 80 chars.
-  title String @db.VarChar(80)
+  title       String @db.VarChar(80)
   /// What's included (long-form, newline-allowed). ≤ 2000 chars.
   description String @db.Text
 
   /// ISO 4217. Same per-cell whitelist as CrewPosition.
   /// CHECK enforced via cell-aware service layer + DB CHECK.
-  currency String @db.VarChar(3)
+  currency    String @db.VarChar(3)
   /// Smallest currency unit (USD cents / CNY 分 / JPY yen).
   /// CHECK price_amount >= 0 in migration SQL.
   priceAmount BigInt @map("price_amount")
@@ -933,7 +1522,7 @@ model ServicePackage {
   /// Calendar-day turnaround. 1-365.
   deliveryDays Int @map("delivery_days")
   /// Included revision count. -1 = unlimited. CHECK in migration SQL.
-  revisions Int @default(0)
+  revisions    Int @default(0)
 
   /// Free-form bullet list shown under the tier card. PG TEXT[];
   /// ≤ 12 items enforced at service layer.
@@ -967,17 +1556,17 @@ model ServiceRequirementQuestion {
   serviceId String @map("service_id")
 
   /// Prompt rendered to the buyer. ≤ 240 chars.
-  prompt String @db.VarChar(240)
+  prompt       String  @db.VarChar(240)
   /// Optional helper text under the prompt. ≤ 240 chars.
-  helpText String? @map("help_text") @db.VarChar(240)
+  helpText     String? @map("help_text") @db.VarChar(240)
   /// When true, buyer cannot submit until a non-blank answer is
   /// provided. Server enforces.
-  required Boolean @default(false)
+  required     Boolean @default(false)
   /// Render order — lower first. We don't use array-of-jsonb on the
   /// service row because that complicates per-question edit /
   /// reorder and prevents future "answer template" reuse across
   /// orders.
-  displayOrder Int @default(0) @map("display_order")
+  displayOrder Int     @default(0) @map("display_order")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1050,10 +1639,10 @@ model ServiceOrder {
   /// ─── FizzDragon entity bindings ─────────────────────
   /// All nullable. Validated at the service layer (existence + the
   /// buyer/creator's right to bind).
-  ipId            String? @map("ip_id")
-  episodeId       String? @map("episode_id")
-  crewId          String? @map("crew_id")
-  crewPositionId  String? @map("crew_position_id")
+  ipId           String? @map("ip_id")
+  episodeId      String? @map("episode_id")
+  crewId         String? @map("crew_id")
+  crewPositionId String? @map("crew_position_id")
 
   /// Optimistic concurrency.
   version Int @default(0)
@@ -1067,13 +1656,13 @@ model ServiceOrder {
   /// callers (acceptable until every UI surface has been updated).
   idempotencyKey String? @map("idempotency_key")
 
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  acceptedAt   DateTime? @map("accepted_at") @db.Timestamptz(6)
-  deliveredAt  DateTime? @map("delivered_at") @db.Timestamptz(6)
-  completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
-  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(6)
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(6)
   /// {by, reason, at} JSON when cancelled; null otherwise.
-  cancelInfo   Json?     @map("cancel_info")
+  cancelInfo  Json?     @map("cancel_info")
 
   service      CreatorService @relation(fields: [serviceId], references: [id])
   conversation Conversation   @relation(fields: [conversationId], references: [id])
@@ -1173,18 +1762,18 @@ model Conversation {
 }
 
 model ConversationParticipant {
-  conversationId String                       @map("conversation_id")
-  userId         String                       @map("user_id")
+  conversationId String                      @map("conversation_id")
+  userId         String                      @map("user_id")
   role           ConversationParticipantRole
 
   /// Cursor for unread-badge math: messages with createdAt >
   /// lastReadAt are unread to this participant.
   /// We use a message id (not timestamp) for read-receipt precision
   /// against rapid simultaneous sends.
-  lastReadMessageId String? @map("last_read_message_id")
+  lastReadMessageId String?   @map("last_read_message_id")
   /// Mirror of the read message's createdAt for fast unread-count
   /// queries (avoids joining to messages for every inbox row).
-  lastReadAt DateTime? @map("last_read_at") @db.Timestamptz(6)
+  lastReadAt        DateTime? @map("last_read_at") @db.Timestamptz(6)
 
   /// Soft-mute switch (no notifications until then). NULL = not muted.
   mutedUntil DateTime? @map("muted_until") @db.Timestamptz(6)

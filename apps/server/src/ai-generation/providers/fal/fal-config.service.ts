@@ -26,7 +26,7 @@ const falModelConfigSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
   generationModes: z.array(z.string()).optional(),
-  minTier: z.string().nullable().optional(),
+  requiredPlan: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
   queue: z
     .object({
@@ -181,7 +181,7 @@ export class FalConfigService {
         name: parsed.name,
         description: parsed.description,
         generationModes: parsed.generationModes,
-        minTier: parsed.minTier ?? null,
+        requiredPlan: parsed.requiredPlan ?? null,
         enabled: providerEnabled && parsed.enabled !== false,
         disabledReason: providerEnabled
           ? undefined

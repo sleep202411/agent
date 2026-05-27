@@ -121,10 +121,10 @@ export interface AiQueuePolicy {
   };
 }
 
-export interface AiMembershipPolicy {
-  minTier: string | null;
-  advancedModeMinTier?: string | null;
-  optionTierField?: string;
+export interface AiEntitlementPolicy {
+  requiredPlan: string | null;
+  advancedModeRequiredPlan?: string | null;
+  optionRequiredPlanField?: string;
 }
 
 export interface AiCampaignPolicy {
@@ -208,12 +208,12 @@ export interface AiModelDefinition {
     perUserRunning: number;
     perUserQueued: number;
   };
-  membership: {
-    minTier: string | null;
+  entitlement: {
+    requiredPlan: string | null;
   };
   billing_policy?: AiBillingPolicy;
   queue_policy?: AiQueuePolicy;
-  membership_policy?: AiMembershipPolicy;
+  entitlement_policy?: AiEntitlementPolicy;
   region_policy?: AiRegionPolicy;
   ui_policy?: AiModelUiPolicy;
   input_schema: AiInputSchema;
@@ -236,7 +236,7 @@ export interface AiModelPresetDefinition {
   modelIds: string[];
   enabled: boolean;
   disabledReason?: string;
-  minTier?: string | null;
+  requiredPlan?: string | null;
   campaignId?: string;
   fallbackAllowed?: boolean;
   sortOrder?: number;

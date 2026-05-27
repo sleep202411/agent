@@ -7,7 +7,7 @@ import type {
   AiOutputSchema,
   AiQueueName,
   AiQueuePolicy,
-  AiUserTier,
+  AiRequiredPlan,
 } from '../../types';
 
 export interface FalModelRuntimeConfig {
@@ -19,7 +19,7 @@ export interface FalModelRuntimeConfig {
   description: string;
   enabled: boolean;
   disabledReason?: string;
-  minTier: AiUserTier | null;
+  requiredPlan: AiRequiredPlan | null;
   queue: {
     queueName: AiQueueName;
     globalConcurrency: number;

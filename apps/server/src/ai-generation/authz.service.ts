@@ -1,33 +1,23 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import type { AuthUser } from '../auth';
-import { AI_TIER_RANK, type AiModelDefinition, type AiUserTier } from './types';
+import {
+  EntitlementService,
+  type EntitlementPlanKey,
+  type EntitlementSnapshot,
+} from '../entitlements';
+import type { AiModelDefinition } from './types';
 
-function parseDeniedLevels(): Set<string> {
-  // Backstop denylist — anyone in here is blocked from AI generation no
-  // matter what model.minTier says. Default empty; per-model `minTier`
-  // does the real gating. Useful for emergency lockouts.
-  const raw =
-    process.env.AI_GENERATION_DENIED_LEVELS ??
-    process.env.FOUNDRY_DENIED_LEVELS ??
-    '';
+function parseDeniedPlans(): Set<EntitlementPlanKey> {
+  // Backstop denylist for emergency lockouts. Product access is plan-based;
+  // Java auth claims are adapted before this service runs.
+  const raw = process.env.AI_GENERATION_DENIED_PLANS ?? '';
   return new Set(
     raw
       .split(',')
-      .map((level) => level.trim().toUpperCase())
-      .filter(Boolean),
+      .map((plan) => plan.trim().toLowerCase())
+      .filter((plan): plan is EntitlementPlanKey =>
+        ['free', 'creator', 'pro', 'studio', 'enterprise'].includes(plan),
+      ),
   );
-}
-
-function isExpired(expireTime?: string | null): boolean {
-  if (!expireTime) return false;
-  const timestamp = Date.parse(expireTime);
-  if (!Number.isFinite(timestamp)) return false;
-  return timestamp <= Date.now();
-}
-
-function tierRank(level: string | null | undefined): number {
-  const upper = (level ?? 'FREE').toUpperCase() as AiUserTier;
-  return AI_TIER_RANK[upper] ?? 0;
 }
 
 export type AiAccessReason =
@@ -38,47 +28,54 @@ export type AiAccessReason =
 export interface AiAccessDecision {
   allowed: boolean;
   reason?: AiAccessReason;
-  /** Minimum tier this model needs (echoed back for UI tooltip). */
-  requiredTier?: AiUserTier | null;
+  /** Minimum product plan this model needs (echoed back for UI tooltip). */
+  requiredPlan?: EntitlementPlanKey | null;
 }
 
 @Injectable()
 export class AiGenerationAuthzService {
+  constructor(private readonly entitlements: EntitlementService) {}
+
   /**
-   * Pure tier check used by the model-list endpoint so the UI can
+   * Pure entitlement check used by the model-list endpoint so the UI can
    * render lock badges. Side-effect free.
    */
   decideModelAccess(
-    user: AuthUser,
+    entitlement: EntitlementSnapshot,
     model: AiModelDefinition,
   ): AiAccessDecision {
-    const required = model.membership.minTier ?? null;
-    if (parseDeniedLevels().has((user.userLevel ?? '').toUpperCase())) {
-      return { allowed: false, reason: 'denied', requiredTier: required };
+    const required = this.entitlements.requiredPlan(
+      model.entitlement_policy?.requiredPlan ?? model.entitlement.requiredPlan,
+    );
+    if (parseDeniedPlans().has(entitlement.planKey)) {
+      return { allowed: false, reason: 'denied', requiredPlan: required };
     }
-    if (isExpired(user.expireTime)) {
+    if (entitlement.status === 'expired') {
       return {
         allowed: false,
         reason: 'membership_expired',
-        requiredTier: required,
+        requiredPlan: required,
       };
     }
     if (required === null) {
-      return { allowed: true, requiredTier: null };
+      return { allowed: true, requiredPlan: null };
     }
-    if (tierRank(user.userLevel) < AI_TIER_RANK[required]) {
+    if (!this.entitlements.hasPlan(entitlement, required)) {
       return {
         allowed: false,
         reason: 'membership_required',
-        requiredTier: required,
+        requiredPlan: required,
       };
     }
-    return { allowed: true, requiredTier: required };
+    return { allowed: true, requiredPlan: required };
   }
 
   /** Throws if the user can't submit to this specific model. */
-  assertCanUseModel(user: AuthUser, model: AiModelDefinition): void {
-    const decision = this.decideModelAccess(user, model);
+  assertCanUseModel(
+    entitlement: EntitlementSnapshot,
+    model: AiModelDefinition,
+  ): void {
+    const decision = this.decideModelAccess(entitlement, model);
     if (decision.allowed) return;
     throw new ForbiddenException({
       code:
@@ -88,10 +85,10 @@ export class AiGenerationAuthzService {
       msg:
         decision.reason === 'membership_expired'
           ? 'Your membership has expired. Please renew to continue generating.'
-          : decision.requiredTier
-            ? `This model is available to ${decision.requiredTier}+ members.`
+          : decision.requiredPlan
+            ? `This model is available to ${decision.requiredPlan}+ members.`
             : 'AI generation is available to members only.',
-      requiredTier: decision.requiredTier,
+      requiredPlan: decision.requiredPlan,
     });
   }
 
@@ -101,11 +98,10 @@ export class AiGenerationAuthzService {
    * we never trust the client.
    */
   assertCanUseOptions(
-    user: AuthUser,
+    entitlement: EntitlementSnapshot,
     model: AiModelDefinition,
     normalizedInput: Record<string, unknown>,
   ): void {
-    const userRank = tierRank(user.userLevel);
     for (const [fieldName, field] of Object.entries(
       model.input_schema.properties,
     )) {
@@ -114,16 +110,19 @@ export class AiGenerationAuthzService {
       const ui = (
         field as {
           'x-ui'?: {
-            options?: Array<{ value: unknown; tier?: string | null }>;
+            options?: Array<{
+              value: unknown;
+              requiredPlan?: string | null;
+            }>;
           };
         }
       )['x-ui'];
       const option = ui?.options?.find((o) => o.value === value);
-      if (!option?.tier) continue;
-      const required = option.tier.toUpperCase() as AiUserTier;
-      const requiredRank = AI_TIER_RANK[required];
-      if (requiredRank == null) continue; // unknown tier name, skip
-      if (userRank >= requiredRank) continue;
+      if (!option?.requiredPlan) continue;
+      const required = this.entitlements.requiredPlan(option.requiredPlan);
+      if (!required || this.entitlements.hasPlan(entitlement, required)) {
+        continue;
+      }
       const optionValue =
         typeof value === 'string' || typeof value === 'number'
           ? value
@@ -131,7 +130,7 @@ export class AiGenerationAuthzService {
       throw new ForbiddenException({
         code: 'MEMBERSHIP_REQUIRED',
         msg: `Option "${optionValue}" on field "${fieldName}" requires ${required}+ membership.`,
-        requiredTier: required,
+        requiredPlan: required,
         field: fieldName,
       });
     }

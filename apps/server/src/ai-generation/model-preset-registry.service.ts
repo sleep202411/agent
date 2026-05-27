@@ -21,7 +21,7 @@ import type {
   AiQueuePolicy,
   AiRegionPolicy,
   AiRoutingStrategy,
-  AiUserTier,
+  AiRequiredPlan,
 } from './types';
 
 export interface AiModelPresetConfig {
@@ -37,7 +37,7 @@ export interface AiModelPresetConfig {
   fallbackAllowed?: boolean;
   enabled?: boolean;
   disabledReason?: string;
-  minTier?: AiUserTier | null;
+  requiredPlan?: AiRequiredPlan | null;
   campaignId?: string;
   regionPolicy?: AiRegionPolicy;
   billingPolicy?: AiBillingPolicy;
@@ -242,13 +242,13 @@ export class AiModelPresetRegistryService {
           : !anyEnabled
             ? 'All models in this preset are unavailable.'
             : undefined),
-      minTier:
-        route.minTier ??
-        (primary?.membership_policy?.minTier as
-          | AiUserTier
+      requiredPlan:
+        route.requiredPlan ??
+        (primary?.entitlement_policy?.requiredPlan as
+          | AiRequiredPlan
           | null
           | undefined) ??
-        primary?.membership.minTier ??
+        primary?.entitlement.requiredPlan ??
         null,
       campaignId: route.campaignId,
       fallbackAllowed: route.fallbackAllowed === true,
@@ -345,7 +345,7 @@ export class AiModelPresetRegistryService {
       .toLowerCase();
     const cost = Number(model.billing_policy?.preflightCost ?? 1);
     const concurrency = model.queue.globalConcurrency;
-    const tierBoost = model.membership.minTier ? 3 : 0;
+    const planBoost = model.entitlement.requiredPlan ? 3 : 0;
 
     if (preset === 'fast') {
       return (
@@ -358,7 +358,7 @@ export class AiModelPresetRegistryService {
     if (preset === 'professional') {
       return (
         (haystack.includes('pro') || haystack.includes('ultra') ? 8 : 0) +
-        tierBoost +
+        planBoost +
         cost +
         (model.capabilities.maxOutputs > 1 ? 2 : 0)
       );

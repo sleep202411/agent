@@ -27,13 +27,9 @@ export class AiGenerationQueueService implements OnApplicationShutdown {
     jobId: string,
     delayMs = 0,
     /**
-     * BullMQ priority — smaller = served first. Pass the tier-priority
-     * from tiers.config.ts (Free=10, VIP1=5, VIP2=3, VIP3=1) so VIP3
-     * users jump to the front of a contended image queue.
-     *
-     * Defaults to 5 (VIP1-equivalent) when not provided so a missing
-     * tier upstream doesn't accidentally promote a Free user past
-     * paid users.
+     * BullMQ priority — smaller = served first. The submit path freezes
+     * this value from the entitlement policy snapshot, so later plan
+     * changes do not reshuffle an accepted job.
      */
     priority = 5,
     op: AiQueueJobData['op'] = 'start',

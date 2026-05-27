@@ -10,7 +10,7 @@ import type {
   AiOutputSchema,
   AiQueueName,
   AiQueuePolicy,
-  AiUserTier,
+  AiRequiredPlan,
 } from '../../types';
 import type {
   FalModelRuntimeConfig,
@@ -25,7 +25,7 @@ interface CreateFalModelConfigArgs {
   name?: string;
   description?: string;
   generationModes?: string[];
-  minTier: string | null;
+  requiredPlan: string | null;
   enabled: boolean;
   disabledReason?: string;
   queueName: AiQueueName;
@@ -359,7 +359,7 @@ export function createFalModelConfig(
       args.description ?? `${humanizeEndpoint(args.endpointId)} via fal.ai.`,
     enabled: args.enabled,
     disabledReason: args.disabledReason,
-    minTier: (args.minTier as AiUserTier | null) ?? null,
+    requiredPlan: (args.requiredPlan as AiRequiredPlan | null) ?? null,
     queue: {
       queueName: args.queueName,
       globalConcurrency: args.globalConcurrency,
@@ -499,8 +499,8 @@ export function toAiModelDefinition(
     },
     queue: config.queue,
     queue_policy: config.queuePolicy,
-    membership: { minTier: config.minTier },
-    membership_policy: { minTier: config.minTier },
+    entitlement: { requiredPlan: config.requiredPlan },
+    entitlement_policy: { requiredPlan: config.requiredPlan },
     billing_policy: config.billingPolicy,
     ui_policy: {
       defaultMode: 'simple',

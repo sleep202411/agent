@@ -71,15 +71,15 @@ export interface FoundryUiOption {
   descriptionKey?: string;
   icon?: string;
   /**
-   * Minimum membership tier required to pick this option. Frontend
-   * renders a lock / crown badge on options whose tier exceeds the
-   * current user's; backend rejects submissions that include them
-   * with `MEMBERSHIP_REQUIRED`. `null` / undefined = available to all.
+   * Minimum product plan required to pick this option. Frontend renders
+   * a lock badge on options whose plan exceeds the current user's;
+   * backend rejects submissions with `MEMBERSHIP_REQUIRED`.
+   * `null` / undefined = available to all.
    *
    * Example use: resolution tiers — `hd` open to free users,
-   * `fhd` → 'VIP1', `uhd` → 'VIP2'.
+   * `fhd` → 'creator', `uhd` → 'pro'.
    */
-  tier?: string | null;
+  requiredPlan?: string | null;
 }
 
 export interface FoundryFieldUi {

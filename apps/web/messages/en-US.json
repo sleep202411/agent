@@ -4179,6 +4179,153 @@
       "subtitle": "Accelerators, publishers, broadcasters, and studios collaborating with FizzDragon to bring AI-assisted storytelling to global audiences."
     }
   },
+  "aiLab": {
+    "eyebrow": "AI Lab",
+    "title": "Generation cockpit",
+    "subtitle": "Choose a product route, tune schema-backed parameters, watch the queue, and inspect every image or video job in one place.",
+    "mode": {
+      "image": "Image",
+      "video": "Video"
+    },
+    "source": {
+      "loading": "Loading",
+      "live": "Live catalog",
+      "preview": "Dev preview",
+      "error": "Catalog error"
+    },
+    "activeCount": "{count} active",
+    "credits": "{count} bubbles",
+    "plan": {
+      "free": "Free",
+      "creator": "Creator",
+      "pro": "Pro",
+      "studio": "Studio",
+      "enterprise": "Enterprise"
+    },
+    "cost": {
+      "free": "Free",
+      "metered": "Metered"
+    },
+    "generationMode": {
+      "text_to_image": "Text to image",
+      "image_to_image": "Image to image",
+      "inpainting": "Inpainting",
+      "outpainting": "Outpainting",
+      "reference_image_generation": "Reference image",
+      "text_to_video": "Text to video",
+      "image_to_video": "Image to video",
+      "first_last_frame_to_video": "First/last frame",
+      "video_to_video": "Video to video"
+    },
+    "modelRail": {
+      "title": "Routes",
+      "subtitle": "Fast, standard, professional, or campaign routes.",
+      "empty": "No {mode} route is available.",
+      "cost": "Cost",
+      "queue": "Queue",
+      "selectedModel": "Selected model",
+      "noModel": "No model",
+      "noModelDesc": "The route has no available model in this region."
+    },
+    "badge": {
+      "free": "Free",
+      "locked": "Locked"
+    },
+    "canvas": {
+      "ready": "Ready",
+      "active": "{count} running",
+      "emptyTitle": "Ready for a new generation",
+      "emptyBody": "Describe the result, choose the route, and submit. Queue progress and final assets stay visible here."
+    },
+    "results": {
+      "title": "Outputs",
+      "empty": "Completed outputs appear here.",
+      "untitled": "Untitled"
+    },
+    "composer": {
+      "noPreset": "No route",
+      "prompt": "Prompt",
+      "placeholder": "Describe subject, style, motion, composition, and constraints...",
+      "routeTitle": "Execution policy",
+      "routeBody": "The backend freezes route, entitlement, queue, and billing policy when the job is accepted.",
+      "cost": "Cost",
+      "queue": "Run / queue",
+      "model": "Model"
+    },
+    "advanced": {
+      "title": "Model parameters",
+      "body": "Fields are rendered from the model schema. Locked options are enforced again on the server."
+    },
+    "queue": {
+      "title": "Queue",
+      "subtitle": "Active work, history, and retry/cancel controls.",
+      "policy": "Policy",
+      "running": "Running",
+      "queued": "Queued",
+      "global": "Global",
+      "model": "Provider",
+      "active": "Active",
+      "history": "History",
+      "emptyActive": "No active generation task.",
+      "emptyHistory": "No generation history yet.",
+      "untitled": "Untitled prompt",
+      "position": "#{n}"
+    },
+    "detail": {
+      "title": "Task details",
+      "id": "ID",
+      "status": "Status",
+      "model": "Model",
+      "created": "Created"
+    },
+    "action": {
+      "generate": "Generate",
+      "upgrade": "Upgrade",
+      "unavailable": "Unavailable",
+      "reset": "Reset",
+      "retry": "Retry",
+      "cancel": "Cancel"
+    },
+    "toast": {
+      "accepted": "Task accepted"
+    },
+    "error": {
+      "loadCatalog": "Failed to load AI catalog.",
+      "loadJobs": "Failed to load generation jobs.",
+      "submit": "Failed to submit generation task.",
+      "retry": "Failed to retry generation task.",
+      "cancel": "Failed to cancel generation task.",
+      "validation": "Please fix the highlighted parameters.",
+      "requiresPlan": "Requires {plan} plan.",
+      "optionRequiresPlan": "{label} requires {plan}.",
+      "routeUnavailable": "This route is not available.",
+      "modelUnavailable": "This model is not available.",
+      "accessDenied": "Your current plan cannot use this model.",
+      "fieldRequired": "{label} is required.",
+      "fieldMinLength": "{label} must be at least {min} characters.",
+      "fieldMaxLength": "{label} must be {max} characters or fewer.",
+      "fieldMinItems": "{label} must include at least {min} item(s).",
+      "fieldMaxItems": "{label} must include {max} item(s) or fewer.",
+      "fieldMinimum": "{label} must be at least {min}.",
+      "fieldMaximum": "{label} must be at most {max}.",
+      "fieldUnsupportedOption": "{label} is not a supported option.",
+      "fieldInvalidUrl": "{label} must be a valid URL."
+    },
+    "stage": {
+      "created": "Created",
+      "queued": "Queued",
+      "validating": "Validating",
+      "calling_provider": "Calling provider",
+      "provider_queued": "Provider queued",
+      "generating": "Generating",
+      "fetching_output": "Fetching output",
+      "uploading_to_oss": "Uploading",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "expired": "Expired"
+    }
+  },
   "aiGen": {
     "eyebrow": "Foundry Studio",
     "title": "Image and video generation",

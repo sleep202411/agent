@@ -20,6 +20,8 @@ import type {
   AiSchemaRule,
   AiUiSchema,
 } from '@repo/shared';
+import type { EntitlementPlanKey, EntitlementSnapshot } from '../entitlements';
+
 export { AI_MODEL_PROTOCOL_DIALECT } from '@repo/shared';
 export type {
   AiAvailability,
@@ -123,9 +125,9 @@ export interface AiQuotaPolicySnapshot {
 
 export interface AiRoutingPolicySnapshot {
   quota: AiQuotaPolicySnapshot;
-  tier: {
-    userTier: string;
-    minTier: AiUserTier | null;
+  entitlement: {
+    planKey: EntitlementPlanKey;
+    requiredPlan: EntitlementPlanKey | null;
     queuePriority: number;
   };
   concurrency: {
@@ -142,7 +144,7 @@ export interface AiRoutingPolicySnapshot {
 }
 
 export interface AiRoutingSnapshot {
-  version: '2026-05-25';
+  version: '2026-05-27';
   routeId: string;
   presetId: string;
   requestedModelId: string;
@@ -157,31 +159,19 @@ export interface AiRoutingSnapshot {
   selectedAt: string;
 }
 
-/**
- * Membership tier ranks. Higher = more access. New tiers only need a
- * single line added here; everything else (schema `minTier`, authz
- * comparison, frontend lock badge) reads from this table.
- */
-export const AI_TIER_RANK = {
-  FREE: 0,
-  VIP: 1,
-  VIP1: 1,
-  VIP2: 2,
-  VIP3: 3,
-} as const;
-
-export type AiUserTier = keyof typeof AI_TIER_RANK;
+export type AiRequiredPlan = EntitlementPlanKey;
 
 /**
- * Per-model membership gating. `minTier: null` = anyone (incl. free).
- * Anything else = user.userLevel rank must be >= minTier rank.
+ * Per-model entitlement gating. `requiredPlan: null` = anyone.
+ * Anything else is checked against the resolved product entitlement
+ * snapshot, not the Java auth claim.
  *
  * Deliberately tier-only (no per-day / per-month quota) until a credits
  * system exists. Schema is forward-compatible: add `quotas` here when
  * the time comes without changing call sites.
  */
-export interface AiMembership {
-  minTier: AiUserTier | null;
+export interface AiModelEntitlement {
+  requiredPlan: AiRequiredPlan | null;
 }
 
 export type AiInputSchema = AiObjectSchema;
@@ -258,7 +248,7 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
     perUserRunning: number;
     perUserQueued: number;
   };
-  membership: AiMembership;
+  entitlement: AiModelEntitlement;
   input_schema: FoundryInputSchema;
   output_schema: FoundryOutputSchema;
   provider_output_schema?: FoundryOutputSchema;
@@ -324,12 +314,18 @@ export interface AiJobMetrics {
 export interface AiJob {
   id: string;
   userId: string;
-  userLevel?: string | null;
+  entitlementSnapshot?: EntitlementSnapshot | null;
   type: AiJobType;
   provider: AiProvider;
   modelId: string;
   deployment: string;
   schemaVersion: string;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  documentId?: string | null;
+  documentBlockId?: string | null;
+  siteRegion?: string | null;
+  sourceSurface?: string | null;
   status: AiJobStatus;
   stage: AiJobStage;
   input: Record<string, unknown>;
@@ -370,6 +366,18 @@ export interface AiSubmitJobBody {
   presetId?: string;
   campaignId?: string;
   schemaVersion?: string;
+  workspaceId?: string;
+  projectId?: string;
+  documentId?: string;
+  documentBlockId?: string;
+  sourceSurface?: string;
+  context?: {
+    workspaceId?: string;
+    projectId?: string;
+    documentId?: string;
+    documentBlockId?: string;
+    sourceSurface?: string;
+  };
   input?: Record<string, unknown>;
   idempotencyKey?: string;
   routing?: {
@@ -380,6 +388,9 @@ export interface AiSubmitJobBody {
 
 export interface AiJobListQuery {
   scope?: string;
+  workspaceId?: string;
+  projectId?: string;
+  documentId?: string;
   type?: AiJobType;
   limit?: string;
   cursor?: string;
@@ -387,6 +398,12 @@ export interface AiJobListQuery {
 
 export interface AiStatusResponse {
   request_id: string;
+  workspace_id: string | null;
+  project_id: string | null;
+  document_id: string | null;
+  document_block_id: string | null;
+  site_region: string | null;
+  source_surface: string | null;
   status: AiJobStatus;
   stage: AiJobStage;
   progress: number | null;

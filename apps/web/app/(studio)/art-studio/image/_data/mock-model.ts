@@ -19,7 +19,7 @@ import type {
 export interface AiAccess {
   allowed: boolean;
   reason?: "membership_required" | "membership_expired" | "denied";
-  requiredTier?: string | null;
+  requiredPlan?: string | null;
 }
 
 export interface AiModel {
@@ -41,7 +41,7 @@ export interface AiModel {
   output_schema: FoundryObjectSchema;
   provider_binding?: FoundryProviderBinding;
   /**
-   * Server-resolved tier gating decision for the current user. Server
+   * Server-resolved entitlement gating decision for the current user. Server
    * is the source of truth; UI only mirrors it for lock badges and to
    * pre-empt obviously-blocked submits. Undefined when running in
    * fallback / preview mode (no backend).
@@ -264,9 +264,9 @@ const GPT_IMAGE_2_INPUT: FoundryObjectSchema = {
         importance: "primary",
         order: 25,
         options: [
-          { value: "hd", label: "HD", tier: null },
-          { value: "fhd", label: "FHD", tier: "VIP1" },
-          { value: "uhd", label: "4K", tier: "VIP2" },
+          { value: "hd", label: "HD", requiredPlan: null },
+          { value: "fhd", label: "FHD", requiredPlan: "creator" },
+          { value: "uhd", label: "4K", requiredPlan: "pro" },
         ],
         labelKey: "foundry.schema.field.resolutionTier.label",
       },
@@ -546,5 +546,5 @@ export const MOCK_AI_MODEL: AiModel = {
   },
   // Preview / offline fallback assumes access; real backend always
   // overwrites this with a fresh decision keyed to the current user.
-  access: { allowed: true, requiredTier: null },
+  access: { allowed: true, requiredPlan: null },
 };
