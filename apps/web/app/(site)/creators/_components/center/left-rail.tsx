@@ -20,17 +20,25 @@
  * is typically equally tall, so empty space below the rail isn't a
  * concern in practice.
  */
+import { useState } from "react";
 import {
   IconBriefcase,
   IconCertificate,
+  IconCircleCheck,
   IconEdit,
   IconSchool,
   IconShieldCheck,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTranslations } from "@/src/i18n/i18n";
 import { parseEducation, type EducationEntry } from "@/src/services/user";
-import { useCreatorExperience, type Creator } from "@/app/(site)/creators/_hooks/use-creator";
+import {
+  useCreatorExperience,
+  type Creator,
+  type CreatorLevel,
+} from "@/app/(site)/creators/_hooks/use-creator";
 import type { ExperienceEntry } from "@/app/(site)/profile/_hooks/use-profile-extras";
 import { getCreatorCertificates } from "@/app/(site)/creators/_data/certificates";
 
@@ -56,6 +64,7 @@ export function CreatorLeftRail({ creator, isOwner, onEditProfile }: CreatorLeft
   const bio = (creator.bio || "").trim();
   const education = parseEducation(creator.study);
   const experiences = (experience ?? []).filter((e): e is ExperienceEntry => !!e);
+  const levels = Array.isArray(creator.levels) ? creator.levels.filter((l) => !!l?.name) : [];
 
   const editAction = isOwner ? (
     <Button
@@ -82,6 +91,24 @@ export function CreatorLeftRail({ creator, isOwner, onEditProfile }: CreatorLeft
           {joined ? <InfoRow label={t("info.joined")} value={joined} /> : null}
           {creator.contact ? <InfoRow label={t("info.contact")} value={creator.contact} /> : null}
         </div>
+      </RailCard>
+
+      {/* FD Certification badges — GitHub-achievements pattern: grid
+          of imagePath icons, name underneath, full description on
+          hover. Empty state encourages owners to earn one and reads
+          as "not yet" rather than "broken" for visitors. */}
+      <RailCard title={t("levels.heading")}>
+        {levels.length === 0 ? (
+          <EmptyHint body={isOwner ? t("levels.emptyOwner") : t("levels.emptyVisitor")} />
+        ) : (
+          <TooltipProvider delayDuration={150}>
+            <ul className="grid grid-cols-3 gap-3">
+              {levels.map((l) => (
+                <LevelBadge key={l.id} level={l} />
+              ))}
+            </ul>
+          </TooltipProvider>
+        )}
       </RailCard>
 
       <RailCard title={t("about.bioHeading")} action={editAction}>
@@ -178,6 +205,57 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function EmptyHint({ body }: { body: string }) {
   return <p className="text-xs text-muted-foreground">{body}</p>;
+}
+
+function LevelBadge({ level }: { level: CreatorLevel }) {
+  // Image-first: render the resolved imagePath when present, fall back
+  // to a generic check chip when the badge graphic is missing or 404s
+  // so the cell never collapses to a broken-image glyph.
+  const [imageOk, setImageOk] = useState(Boolean(level.iconUrl));
+  const tooltipBody = level.description?.trim() || level.name;
+
+  return (
+    <li>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={level.name}
+            className="flex w-full flex-col items-center gap-1.5 rounded-lg p-1 outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span
+              className={cn(
+                "flex size-12 items-center justify-center overflow-hidden rounded-full",
+                !imageOk && "bg-primary/10 text-primary"
+              )}
+            >
+              {imageOk && level.iconUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={level.iconUrl}
+                  alt={level.name}
+                  className="size-full object-contain"
+                  loading="lazy"
+                  onError={() => setImageOk(false)}
+                />
+              ) : (
+                <IconCircleCheck className="size-6" />
+              )}
+            </span>
+            <span className="line-clamp-1 text-[10px] font-medium text-muted-foreground">
+              {level.name}
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-[200px] text-xs">
+          <div className="font-semibold">{level.name}</div>
+          {level.description?.trim() && level.description !== level.name ? (
+            <div className="mt-0.5 text-muted-foreground">{tooltipBody}</div>
+          ) : null}
+        </TooltipContent>
+      </Tooltip>
+    </li>
+  );
 }
 
 function EducationRow({ entry }: { entry: EducationEntry }) {

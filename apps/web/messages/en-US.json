@@ -1202,6 +1202,11 @@
       "playFailed": "Could not load the video. Please try again.",
       "noMedia": "This work has no playable media yet."
     },
+    "levels": {
+      "heading": "FD Certifications",
+      "emptyOwner": "No FD level earned yet. Complete projects and submit for review to unlock badges.",
+      "emptyVisitor": "No FD level yet."
+    },
     "certificates": {
       "eyebrow": "Creator credentials",
       "heading": "{name}'s verified FizzDragon certificates",

@@ -1202,6 +1202,11 @@
       "playFailed": "视频加载失败，请重试。",
       "noMedia": "该作品暂无可播放的视频。"
     },
+    "levels": {
+      "heading": "FD 认证",
+      "emptyOwner": "尚未获得 FD 等级。完成项目并提交评审即可解锁徽章。",
+      "emptyVisitor": "尚未获得 FD 等级。"
+    },
     "certificates": {
       "eyebrow": "创作者资质",
       "heading": "{name} 的气泡龙认证证书",

@@ -1202,6 +1202,11 @@
       "playFailed": "影片載入失敗，請重試。",
       "noMedia": "此作品尚無可播放的影片。"
     },
+    "levels": {
+      "heading": "FD 認證",
+      "emptyOwner": "尚未獲得 FD 等級。完成專案並提交評審即可解鎖徽章。",
+      "emptyVisitor": "尚未獲得 FD 等級。"
+    },
     "certificates": {
       "eyebrow": "創作者資質",
       "heading": "{name} 的氣泡龍認證證書",
