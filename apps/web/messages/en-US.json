@@ -3723,6 +3723,8 @@
     "avatarSizeLimit": "Avatar file cannot exceed 5MB",
     "avatarUpdated": "Avatar updated",
     "avatarUploadFailed": "Failed to upload avatar",
+    "avatarChange": "Change avatar",
+    "avatarHint": "Click the avatar to upload a new one. PNG / JPG up to 5MB.",
     "shareProfile": "Share",
     "profileLinkCopied": "Profile link copied",
     "generateReferralLink": "Referral Link",

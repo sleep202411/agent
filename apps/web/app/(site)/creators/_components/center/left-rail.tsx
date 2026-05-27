@@ -113,7 +113,7 @@ export function CreatorLeftRail({ creator, isOwner, onEditProfile }: CreatorLeft
 
       <RailCard title={t("about.bioHeading")} action={editAction}>
         {bio ? (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{bio}</p>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">{bio}</p>
         ) : (
           <EmptyHint body={isOwner ? t("about.bioEmptyOwner") : t("about.bioEmptyVisitor")} />
         )}

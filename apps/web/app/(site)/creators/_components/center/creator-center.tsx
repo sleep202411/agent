@@ -227,7 +227,7 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
         referralPending={referralPending}
         onShareProfile={isOwner ? handleShareProfile : undefined}
       />
-      <div className="mx-auto grid max-w-[1680px] gap-6 px-4 pb-16 md:px-8 lg:grid-cols-[300px_1fr]">
+      <div className="mx-auto grid max-w-[1680px] gap-6 px-4 pb-16 md:px-8 lg:grid-cols-[360px_1fr]">
         <CreatorLeftRail
           creator={creator}
           isOwner={isOwner}

@@ -3723,6 +3723,8 @@
     "avatarSizeLimit": "頭像檔案不能超過 5MB",
     "avatarUpdated": "頭像更新成功",
     "avatarUploadFailed": "頭像上傳失敗",
+    "avatarChange": "更換頭像",
+    "avatarHint": "點擊頭像上傳新圖片，支援 PNG / JPG，不超過 5MB。",
     "shareProfile": "Share",
     "profileLinkCopied": "Profile link copied",
     "generateReferralLink": "生成引薦連結",
