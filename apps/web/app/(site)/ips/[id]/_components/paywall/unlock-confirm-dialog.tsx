@@ -203,6 +203,12 @@ export function UnlockConfirmDialog(props: Props) {
         </DialogContent>
       </Dialog>
 
+      {/* TODO: switch to kind="community" once pricing-context reads a
+          real community-credits balance hook — today the affordability
+          check still uses Studio's scoreBalance as a placeholder, so
+          topping up community credits here would leave paywall
+          permanently unaffordable. Keep the recharge side in sync with
+          whichever ledger the check reads. */}
       <CreditsRechargeDialog open={rechargeOpen} onOpenChange={setRechargeOpen} />
     </>
   );

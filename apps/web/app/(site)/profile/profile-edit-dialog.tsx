@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { IconCheck, IconLoader2, IconPlus, IconTrash } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { IconCamera, IconCheck, IconLoader2, IconPlus, IconTrash } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,19 +13,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { UserAvatar } from "@/components/user-avatar";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useUpdateUserInfo } from "@/src/hooks/use-user";
+import { useUpdateUserInfo, useUploadAvatar } from "@/src/hooks/use-user";
 import {
   parseEducation,
   serializeEducation,
   type EducationEntry,
-  type UserInfo,
+  type UserInfoResolved,
 } from "@/src/services/user";
+
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 
 interface ProfileEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  userInfo: UserInfo | null;
+  userInfo: UserInfoResolved | null;
 }
 
 const blankEducation = (): EducationEntry => ({
@@ -45,6 +49,33 @@ export function ProfileEditDialog({ open, onOpenChange, userInfo }: ProfileEditD
   const [education, setEducation] = useState<EducationEntry[]>([]);
 
   const { mutate: updateProfile, isPending } = useUpdateUserInfo();
+  const uploadAvatar = useUploadAvatar();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploading = uploadAvatar.isPending;
+
+  // useUploadAvatar invalidates the user-info query on success, so the
+  // <UserAvatar> re-renders from the fresh `userInfo.headImgUrl`
+  // without any local "pending" state needed.
+  const handleAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error(t("pleaseUploadImage"));
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      toast.error(t("avatarSizeLimit"));
+      return;
+    }
+    try {
+      await uploadAvatar.mutateAsync(file);
+      toast.success(t("avatarUpdated"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      toast.error(msg || t("avatarUploadFailed"));
+    }
+  };
 
   // Sync form when dialog opens
   useEffect(() => {
@@ -96,6 +127,51 @@ export function ProfileEditDialog({ open, onOpenChange, userInfo }: ProfileEditD
         </DialogHeader>
 
         <div className="space-y-4 p-4">
+          {/* Avatar slot — click anywhere on the avatar to pick a new
+              image. Hover overlay matches the nickname-required-dialog
+              pattern so the affordance is consistent. Upload commits
+              immediately (independent of the Save button) since the
+              upload endpoint is separate from the profile update. */}
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => !uploading && fileInputRef.current?.click()}
+              disabled={uploading}
+              aria-label={t("avatarChange")}
+              className="group relative size-20 shrink-0 overflow-hidden rounded-full outline-none ring-1 ring-border transition-all hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait"
+            >
+              <UserAvatar
+                src={userInfo?.headImgUrl}
+                seed={userInfo?.id}
+                name={userInfo?.nickName ?? userInfo?.userName}
+                className="size-20"
+              />
+              <div
+                className={cn(
+                  "pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55 transition-opacity",
+                  uploading ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                )}
+              >
+                {uploading ? (
+                  <IconLoader2 className="size-6 animate-spin text-white" />
+                ) : (
+                  <IconCamera className="size-6 text-white" />
+                )}
+              </div>
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-foreground">{t("avatarChange")}</div>
+              <p className="mt-1 text-xs text-muted-foreground">{t("avatarHint")}</p>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarFile}
+            />
+          </div>
+
           <Field>
             <FieldLabel required>{t("nickname")}</FieldLabel>
             <Input

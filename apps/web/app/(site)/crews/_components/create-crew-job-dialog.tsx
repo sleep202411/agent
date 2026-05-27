@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { IconCheck, IconLoader2 } from "@tabler/icons-react";
+import { IconCheck, IconHelpCircle, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -98,6 +99,7 @@ const EXPERIENCE_OPTIONS: { value: ExperienceLevel; key: string }[] = [
   { value: "mid", key: "experienceMid" },
   { value: "senior", key: "experienceSenior" },
   { value: "lead", key: "experienceLead" },
+  { value: "master", key: "experienceMaster" },
 ];
 
 const SALARY_PERIOD_OPTIONS: { value: SalaryPeriod; key: string }[] = [
@@ -470,7 +472,25 @@ export function CreateCrewJobDialog({
                   </Select>
                 </Field>
                 <Field>
-                  <FieldLabel>{t("createJobExperienceLabel")}</FieldLabel>
+                  <FieldLabel className="flex items-center gap-1.5">
+                    {t("createJobExperienceLabel")}
+                    <TooltipProvider delayDuration={150}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={t("createJobExperienceHelpAria")}
+                            className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            <IconHelpCircle className="size-3.5" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                          {t("createJobExperienceHelp")}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </FieldLabel>
                   <Select
                     value={experienceLevel}
                     onValueChange={(v) => setExperienceLevel(v as ExperienceLevel)}

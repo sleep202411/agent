@@ -349,8 +349,24 @@ export function GlobalNav() {
           )}
         </div>
 
-        {/* Right cluster — mobile: a single "more" button toggles the unified drawer below */}
-        <div className="ml-auto flex items-center lg:hidden">
+        {/* Right cluster — below lg, surface the user-identity affordance
+            (avatar dropdown OR Get Started) alongside the hamburger so
+            visitors aren't one extra tap away from signing in / their
+            profile on tablets and phones. Studio CTA, bell, messages
+            and credits live inside the drawer at this breakpoint so
+            the bar stays uncluttered. */}
+        <div className="ml-auto flex items-center gap-1 lg:hidden">
+          {user ? (
+            <SiteUserMenu />
+          ) : (
+            <button
+              type="button"
+              onClick={() => router.push(localizePath("/login", locale as Locale))}
+              className="flex h-9 items-center rounded-full border border-border/40 bg-foreground/5 px-3 text-xs font-medium text-foreground transition-colors hover:bg-foreground/10"
+            >
+              {t("getStarted")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setMobileOpen((v) => !v)}
@@ -363,10 +379,15 @@ export function GlobalNav() {
         </div>
       </div>
 
-      {/* Mobile drawer — nav links + theme / language / account, all in one place */}
+      {/* Mobile drawer — nav links + theme / language / account, all in one place.
+          Cap to viewport height (minus the h-16 nav) and allow internal scroll —
+          on short screens (landscape phone, iPhone SE) the language + account
+          rows otherwise sit below the fold with no way to reach them. Use 100dvh
+          so iOS Safari's collapsing chrome doesn't clip the bottom row, and
+          overscroll-contain so flicking past the end doesn't drag the page. */}
       {mobileOpen && (
-        <div className="border-t border-white/5 bg-popover text-popover-foreground lg:hidden">
-          <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3">
+        <div className="max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain border-t border-white/5 bg-popover text-popover-foreground lg:hidden">
+          <nav className="mx-auto flex max-w-[1800px] flex-col px-6 py-3 pb-[env(safe-area-inset-bottom)]">
             {/* Studio CTA — hero entry, same red-forward liquid-glass treatment
                 as the desktop right cluster, sized up for thumb reach. */}
             <Link

@@ -8,22 +8,27 @@
  *     URL would also work, just bounces through `/profile`)
  *
  * The layout (per 2026-05-21 product spec, modelled after the
- * 新片场 creator profile reference):
+ * 新片场 creator profile reference; About lifted into the rail
+ * 2026-05-26):
  *
  *   ┌─────────────────────────────────────────────────────────────┐
- *   │  HERO  cover · avatar · name · level · bio · primary CTAs   │
+ *   │  HERO  cover · avatar · name · level · bio · primary CTA    │
  *   ├──────────────┬──────────────────────────────────────────────┤
- *   │ left rail    │  tab bar: 服务包 / 作品 / IP / 剧组 / 关于   │
- *   │ stats        ├──────────────────────────────────────────────┤
- *   │ business     │  active-tab content                          │
- *   │ info         │                                              │
+ *   │ left rail    │  tab bar: 服务包 / 作品 / 证书 / IP / 剧组      │
+ *   │ business     ├──────────────────────────────────────────────┤
+ *   │ bio          │  active-section content                      │
+ *   │ education    │                                              │
+ *   │ experience   │                                              │
+ *   │ certificate  │                                              │
  *   └──────────────┴──────────────────────────────────────────────┘
  *
  * Hero is full-width and capped at 1680px on large screens; the
  * body grid below sits inside the same 1680px container.
  *
  * Visitor sees: 关注 / 私信 / 下单 CTAs in the hero.
- * Owner sees:  编辑资料 / + 服务包 / 收件箱 / 收益 in the hero.
+ * Owner sees:  + 服务包 + ⋯More overflow (Inbox / Earnings / Referral /
+ *              Share profile); edit-profile is per-section in the left
+ *              rail instead of a hero button.
  *
  * Service packages tab is the **primary commercial entry** and
  * therefore the default-selected tab — see doc § 10.1 "do not turn
@@ -56,9 +61,9 @@ import { CreatorTabBar, CREATOR_TAB_ORDER, CREATOR_SECTION_ID, type CreatorTabId
 import { CreateServiceDialog } from "./dialogs/create-service-dialog";
 import { ServicesTab } from "./tabs/services-tab";
 import { WorksTab } from "./tabs/works-tab";
+import { CertificatesTab } from "./tabs/certificates-tab";
 import { IpsTab } from "./tabs/ips-tab";
 import { CrewsTab } from "./tabs/crews-tab";
-import { AboutTab } from "./tabs/about-tab";
 
 export interface CreatorCenterProps {
   /** Creator userId to render. For the owner self-view this is the
@@ -141,15 +146,13 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
   const [referralLink, setReferralLink] = useState("");
   const [referralQrDataUrl, setReferralQrDataUrl] = useState("");
   const [referralCopied, setReferralCopied] = useState(false);
+  const visibleReferralQrDataUrl = referralLink ? referralQrDataUrl : "";
 
   // Regenerate the share QR whenever the link changes. Same pattern as
   // profile-header.tsx — inline data-uri PNG so we don't depend on any
   // image host and the QR refreshes per session.
   useEffect(() => {
-    if (!referralLink) {
-      setReferralQrDataUrl("");
-      return;
-    }
+    if (!referralLink) return;
     let cancelled = false;
     QRCode.toDataURL(referralLink, {
       errorCorrectionLevel: "M",
@@ -220,13 +223,16 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
         creator={creator}
         isOwner={isOwner}
         onCreateService={isOwner ? () => setCreateServiceOpen(true) : undefined}
-        onEditProfile={isOwner ? () => setEditProfileOpen(true) : undefined}
         onShareReferral={isOwner ? handleShareReferral : undefined}
         referralPending={referralPending}
         onShareProfile={isOwner ? handleShareProfile : undefined}
       />
-      <div className="mx-auto grid max-w-[1680px] gap-6 px-4 pb-16 md:px-8 lg:grid-cols-[300px_1fr]">
-        <CreatorLeftRail creator={creator} isOwner={isOwner} />
+      <div className="mx-auto grid max-w-[1680px] gap-6 px-4 pb-16 md:px-8 lg:grid-cols-[360px_1fr]">
+        <CreatorLeftRail
+          creator={creator}
+          isOwner={isOwner}
+          onEditProfile={isOwner ? () => setEditProfileOpen(true) : undefined}
+        />
         <main className="min-w-0">
           {/* Sticky tab bar = anchor menu. 56px is the site nav offset; pin
               right under it so the bar stays visible as the user scrolls. */}
@@ -282,11 +288,11 @@ export function CreatorCenter({ creatorId }: CreatorCenterProps) {
                 <DialogDescription>{tp("referralLinkDesc")}</DialogDescription>
               </DialogHeader>
               <div className="flex flex-col gap-4 p-4">
-                {referralQrDataUrl ? (
+                {visibleReferralQrDataUrl ? (
                   <div className="flex justify-center">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={referralQrDataUrl}
+                      src={visibleReferralQrDataUrl}
                       alt={tp("referralLinkTitle")}
                       className="size-44 rounded-lg bg-white p-2"
                     />
@@ -343,11 +349,11 @@ function SectionContent({
       return <ServicesTab creator={creator} isOwner={isOwner} />;
     case "works":
       return <WorksTab creator={creator} isOwner={isOwner} />;
+    case "certificates":
+      return <CertificatesTab creator={creator} isOwner={isOwner} />;
     case "ips":
       return <IpsTab creator={creator} isOwner={isOwner} />;
     case "crews":
       return <CrewsTab creator={creator} isOwner={isOwner} />;
-    case "about":
-      return <AboutTab creator={creator} isOwner={isOwner} />;
   }
 }

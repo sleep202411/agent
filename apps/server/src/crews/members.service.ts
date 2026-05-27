@@ -104,7 +104,11 @@ export class MembersService {
             title: `You were added to "${crew.name}"`,
             body: `You're now a ${input.roleType} in this crew.`,
             meta: {
-              deeplink: `/crews/${crewId}`,
+              // Owner manually added them; they're already a member,
+              // so drop them straight into the workspace where they
+              // can act. The crew hall page is more useful for
+              // outside visitors deciding whether to apply.
+              deeplink: `/crews/${crewId}/workspace`,
               crewId,
             },
             idempotencyKey: `crew.member.added:${m.id}`,
