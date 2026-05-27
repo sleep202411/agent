@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: cert-real-api-20260527
+    tag: profile-avatar-upload-20260527
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
