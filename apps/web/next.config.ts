@@ -13,6 +13,7 @@ if (!JAVA_STUDIO_URL || !JAVA_CONTENT_URL) {
 const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
+  allowedDevOrigins: ["127.0.0.1"],
   // Required to support PostHog trailing slash API requests via the /ingest proxy.
   skipTrailingSlashRedirect: true,
   // Pre-existing TS errors in storyboard-save / interactive-node / etc. need dedicated cleanup;

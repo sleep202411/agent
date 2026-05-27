@@ -5026,5 +5026,307 @@
       "cancelledToast": "Order cancelled.",
       "failed": "Action failed."
     }
+  },
+  "fizzStudio": {
+    "brand": "FizzStudio",
+    "shell": {
+      "workspace": "Creator workspace",
+      "search": "Search projects, assets, prompts, shots...",
+      "personal": "Personal workspace",
+      "bubbles": "12,840 bubbles",
+      "notifications": "Notifications",
+      "readiness": "Launch readiness"
+    },
+    "workspace": {
+      "personal": "Personal workspace",
+      "current": "Current production space",
+      "allCreations": "All team creations",
+      "credits": "12,840 bubbles",
+      "creditsHint": "68% monthly balance left",
+      "tabs": {
+        "default": "Default",
+        "assist": "Assist",
+        "apps": "Apps"
+      }
+    },
+    "sidebar": {
+      "groups": {
+        "main": "Workspace",
+        "tools": "Tools"
+      },
+      "items": {
+        "home": "Home",
+        "projects": "Projects",
+        "assets": "Assets",
+        "show": "Works show",
+        "image": "Image",
+        "video": "Video",
+        "models": "Models",
+        "usage": "Usage",
+        "settings": "Settings"
+      }
+    },
+    "nav": {
+      "home": "Home",
+      "projects": "Projects",
+      "aiLab": "AI Lab",
+      "documents": "Documents",
+      "timeline": "Timeline",
+      "assets": "Assets",
+      "crew": "Crew",
+      "billing": "Usage",
+      "show": "Show",
+      "models": "Models"
+    },
+    "readiness": {
+      "model": "Model routing",
+      "quota": "Queue policy",
+      "billing": "Billing guard",
+      "ready": "Ready"
+    },
+    "hero": {
+      "eyebrow": "New FizzStudio preview",
+      "title": "One workspace for story, assets, AI jobs, and production timelines.",
+      "subtitle": "This static preview shows the target studio shell before any API is connected: project context, model routes, document surfaces, queue status, and asset review in one continuous workspace.",
+      "accessibleTitle": "FizzStudio events and creator entries",
+      "previous": "Previous event",
+      "next": "Next event",
+      "slides": {
+        "challenge": {
+          "eyebrow": "Creator campaign",
+          "title": "Finish a short film brief with FizzStudio.",
+          "body": "Join weekly briefs, reuse approved assets, and turn a prompt into a finished production package."
+        },
+        "collaboration": {
+          "eyebrow": "Team workflow",
+          "title": "Team creation is now online.",
+          "body": "Projects, assets, comments, model jobs, and review checkpoints stay in one production space."
+        },
+        "membership": {
+          "eyebrow": "Member benefit",
+          "title": "AI creation season starts today.",
+          "body": "Try premium video routes, campaign models, and member-only compute packs from the same entry."
+        },
+        "seeddance": {
+          "eyebrow": "Fast experience",
+          "title": "Seedance 2.0 is ready for directors.",
+          "body": "Start with a cinematic brief and route the job through the fastest available video model."
+        },
+        "storyboard": {
+          "eyebrow": "Storyboard",
+          "title": "Turn shots into a production board.",
+          "body": "Collect frames, notes, references, and AI edits before the timeline is locked."
+        },
+        "assetReview": {
+          "eyebrow": "Asset review",
+          "title": "Review generated assets in one pass.",
+          "body": "Compare outputs, keep approved versions, and send feedback without leaving the workspace."
+        },
+        "modelLab": {
+          "eyebrow": "Model routing",
+          "title": "Pick the outcome, not the vendor.",
+          "body": "FizzStudio can package fast, standard, professional, and campaign routes behind a single creation entry."
+        },
+        "launchPack": {
+          "eyebrow": "Launch pack",
+          "title": "Prepare the final IP package.",
+          "body": "Keep posters, trailers, episode assets, and release tasks together before publishing."
+        }
+      }
+    },
+    "pillars": {
+      "workspace": {
+        "title": "Workspace first",
+        "body": "Every project, asset, credit event, and collaborator has a clear owner."
+      },
+      "assets": {
+        "title": "Asset aware",
+        "body": "Outputs land in project storage instead of disappearing into one-off task history."
+      },
+      "routing": {
+        "title": "Model routed",
+        "body": "Fast, standard, pro, and campaign routes stay simple for creators."
+      }
+    },
+    "project": {
+      "title": "Active production",
+      "subtitle": "Mock project state for the new FizzStudio shell."
+    },
+    "action": {
+      "newProject": "New project",
+      "openProject": "Open current project",
+      "openAiLab": "Open AI Lab",
+      "reviewAssets": "Review assets"
+    },
+    "work": {
+      "storyBible": {
+        "title": "Story bible",
+        "body": "World, character rules, tone, and canon."
+      },
+      "shots": {
+        "title": "Shot table",
+        "body": "Editable storyboard rows mapped to timeline clips."
+      },
+      "videoQueue": {
+        "title": "Video queue",
+        "body": "Provider jobs, fallback policy, and retry state."
+      }
+    },
+    "routes": {
+      "title": "Model routes",
+      "subtitle": "Creators pick product routes. The system maps them to providers, schemas, quota, and price.",
+      "metric": "ETA",
+      "queue": "Queue",
+      "cost": "Cost",
+      "fast": {
+        "title": "Fast",
+        "body": "Low-latency draft route for ideation, thumbnails, and early visual exploration."
+      },
+      "standard": {
+        "title": "Standard",
+        "body": "Balanced quality and cost for daily image and short video generation."
+      },
+      "pro": {
+        "title": "Professional",
+        "body": "Higher quality route for final shots, hero stills, and production review."
+      },
+      "campaign": {
+        "title": "Campaign",
+        "body": "Sponsored or event-specific free routes with controlled quota and visibility."
+      }
+    },
+    "queue": {
+      "title": "Queue",
+      "subtitle": "No API yet. These rows show the expected visibility for active jobs.",
+      "items": {
+        "openingShot": "Opening shot render",
+        "dragonTurntable": "Dragon turntable",
+        "posterDraft": "Poster draft review"
+      },
+      "status": {
+        "running": "Running",
+        "queued": "Queued",
+        "review": "Review"
+      }
+    },
+    "assets": {
+      "title": "Project assets",
+      "subtitle": "Visual outputs, references, reusable props, and approved shots.",
+      "items": {
+        "dragonHero": "Dragon hero shot",
+        "cityStreet": "City street mood",
+        "characterSheet": "Character sheet",
+        "propBoard": "Prop board"
+      }
+    },
+    "documents": {
+      "title": "Documents",
+      "subtitle": "The future workspace should support multiple collaborative documents, not just one storyboard table.",
+      "story": {
+        "title": "Story document",
+        "body": "Long-form script, brief, and canon edits.",
+        "state": "Draft"
+      },
+      "shotTable": {
+        "title": "Shot table",
+        "body": "Spreadsheet-like rows connected to assets and timeline.",
+        "state": "Live"
+      },
+      "timeline": {
+        "title": "Timeline",
+        "body": "Tracks, clips, audio, captions, and AI edit events.",
+        "state": "Next"
+      }
+    },
+    "actions": {
+      "create": "Create",
+      "startCreate": "Start creating",
+      "quickTry": "Quick try Seedance 2.0"
+    },
+    "projects": {
+      "title": "My projects",
+      "subtitle": "Resume the stories, shots, and AI jobs you are already producing.",
+      "viewAll": "View all",
+      "status": {
+        "active": "In production",
+        "review": "In review",
+        "draft": "Draft"
+      },
+      "items": {
+        "neonDragon": {
+          "title": "Neon Dragon",
+          "body": "38 shots, 12 assets, video route in progress"
+        },
+        "skyMarket": {
+          "title": "Sky Market",
+          "body": "Commercial concept, poster and motion drafts"
+        },
+        "moonCourier": {
+          "title": "Moon Courier",
+          "body": "Story bible ready, shot table not started"
+        }
+      }
+    },
+    "show": {
+      "title": "Works show",
+      "subtitle": "A curated feed of videos, ads, pilots, and visual experiments made with FizzStudio.",
+      "search": "Search works, creators, styles...",
+      "categories": {
+        "all": "All",
+        "shortFilm": "Short film",
+        "commercial": "Commercial",
+        "animation": "Animation",
+        "mv": "MV",
+        "education": "Education",
+        "toolkit": "Toolkits"
+      },
+      "badges": {
+        "featured": "Featured",
+        "pro": "Pro",
+        "honor": "Honor"
+      },
+      "items": {
+        "clueBie": {
+          "title": "ClueBie",
+          "body": "A toy-like night city pilot."
+        },
+        "boneExchange": {
+          "title": "Bone Exchange",
+          "body": "Eastern fantasy short concept."
+        },
+        "tailCompany": {
+          "title": "The Tail Company",
+          "body": "A bright commercial short film."
+        },
+        "frostWar": {
+          "title": "Frost War",
+          "body": "Historical action look development."
+        },
+        "automata": {
+          "title": "Automata Genesis",
+          "body": "Mechanical sci-fi episode one."
+        },
+        "worldBurns": {
+          "title": "As the World Burns",
+          "body": "Stylized character trailer."
+        },
+        "greenKitchen": {
+          "title": "Green Kitchen",
+          "body": "Food macro visual experiment."
+        },
+        "iphoneSpot": {
+          "title": "iPhone Spot",
+          "body": "One image to product TVC."
+        }
+      }
+    },
+    "composer": {
+      "placeholder": "Ask FizzStudio to create a video, storyboard, image, or project plan...",
+      "attach": "Attach",
+      "image": "Image",
+      "video": "Video",
+      "voice": "Voice",
+      "send": "Send"
+    }
   }
 }

@@ -5026,5 +5026,307 @@
       "cancelledToast": "订单已取消。",
       "failed": "操作失败。"
     }
+  },
+  "fizzStudio": {
+    "brand": "FizzStudio",
+    "shell": {
+      "workspace": "创作工作区",
+      "search": "搜索项目、资产、提示词、镜头……",
+      "personal": "个人工作区",
+      "bubbles": "12,840 泡泡",
+      "notifications": "通知",
+      "readiness": "上线就绪度"
+    },
+    "workspace": {
+      "personal": "个人工作区",
+      "current": "当前制作空间",
+      "allCreations": "全部团队创作",
+      "credits": "12,840 泡泡",
+      "creditsHint": "本月余额剩余 68%",
+      "tabs": {
+        "default": "默认",
+        "assist": "Assist",
+        "apps": "Apps"
+      }
+    },
+    "sidebar": {
+      "groups": {
+        "main": "工作区",
+        "tools": "工具"
+      },
+      "items": {
+        "home": "首页",
+        "projects": "项目",
+        "assets": "资产",
+        "show": "作品 Show",
+        "image": "图片",
+        "video": "视频",
+        "models": "模型",
+        "usage": "用量",
+        "settings": "设置"
+      }
+    },
+    "nav": {
+      "home": "首页",
+      "projects": "项目",
+      "aiLab": "AI Lab",
+      "documents": "文档",
+      "timeline": "时间线",
+      "assets": "资产",
+      "crew": "剧组",
+      "billing": "用量",
+      "show": "作品 Show",
+      "models": "模型"
+    },
+    "readiness": {
+      "model": "模型路由",
+      "quota": "队列策略",
+      "billing": "计费保护",
+      "ready": "就绪"
+    },
+    "hero": {
+      "eyebrow": "新版 FizzStudio 预览",
+      "title": "把故事、资产、AI 任务和制作时间线放在同一个工作区。",
+      "subtitle": "这是未接入接口的静态预览，用来验证新版 Studio 的目标结构：项目上下文、模型路线、文档、队列状态和资产审阅在一个连续工作流里。",
+      "accessibleTitle": "FizzStudio 活动与创作入口",
+      "previous": "上一个活动",
+      "next": "下一个活动",
+      "slides": {
+        "challenge": {
+          "eyebrow": "创作者活动",
+          "title": "用 FizzStudio 完成一个短片命题。",
+          "body": "参与每周创作命题，复用已确认资产，把提示词推进成完整制作包。"
+        },
+        "collaboration": {
+          "eyebrow": "团队工作流",
+          "title": "团队协作正式上线。",
+          "body": "项目、资产、评论、模型任务和审阅节点，都沉淀在同一个制作空间。"
+        },
+        "membership": {
+          "eyebrow": "会员权益",
+          "title": "AI 创作狂欢季开启。",
+          "body": "从同一个入口体验高级视频路线、活动模型和会员专属算力包。"
+        },
+        "seeddance": {
+          "eyebrow": "快速体验",
+          "title": "Seedance 2.0 已开放给导演使用。",
+          "body": "从一个电影感 brief 开始，由系统路由到当前最快可用的视频模型。"
+        },
+        "storyboard": {
+          "eyebrow": "分镜表",
+          "title": "把镜头整理成可执行制作板。",
+          "body": "在时间线锁定前，统一管理画面、备注、参考图和 AI 编辑版本。"
+        },
+        "assetReview": {
+          "eyebrow": "资产审阅",
+          "title": "一次性审阅所有生成资产。",
+          "body": "对比输出、保留确认版本，并在不离开工作区的情况下完成反馈。"
+        },
+        "modelLab": {
+          "eyebrow": "模型路由",
+          "title": "选择结果，而不是供应商。",
+          "body": "FizzStudio 可以把快速、标准、专业和活动专属路线封装在同一个创作入口后面。"
+        },
+        "launchPack": {
+          "eyebrow": "发布包",
+          "title": "准备最终 IP 发布资产。",
+          "body": "发布前统一沉淀海报、预告片、剧集资产和上线任务。"
+        }
+      }
+    },
+    "pillars": {
+      "workspace": {
+        "title": "工作区优先",
+        "body": "项目、资产、积分事件和协作者都拥有清晰归属。"
+      },
+      "assets": {
+        "title": "资产可追踪",
+        "body": "生成结果进入项目资产库，而不是散落在一次性任务历史里。"
+      },
+      "routing": {
+        "title": "模型路由",
+        "body": "创作者只选择快速、标准、专业和活动路线。"
+      }
+    },
+    "project": {
+      "title": "进行中的制作",
+      "subtitle": "用于新版 FizzStudio shell 的 mock 项目状态。"
+    },
+    "action": {
+      "newProject": "新建项目",
+      "openProject": "打开当前项目",
+      "openAiLab": "打开 AI Lab",
+      "reviewAssets": "审阅资产"
+    },
+    "work": {
+      "storyBible": {
+        "title": "故事圣经",
+        "body": "世界观、角色规则、基调和正史设定。"
+      },
+      "shots": {
+        "title": "分镜表",
+        "body": "可编辑的分镜行，并映射到时间线片段。"
+      },
+      "videoQueue": {
+        "title": "视频队列",
+        "body": "供应商任务、降级策略和重试状态。"
+      }
+    },
+    "routes": {
+      "title": "模型路线",
+      "subtitle": "创作者选择产品路线，系统再映射供应商、参数 schema、quota 和价格。",
+      "metric": "预计",
+      "queue": "排队",
+      "cost": "消耗",
+      "fast": {
+        "title": "快速",
+        "body": "低延迟草稿路线，适合灵感探索、缩略图和早期视觉尝试。"
+      },
+      "standard": {
+        "title": "标准",
+        "body": "兼顾质量和成本，适合日常图片和短视频生成。"
+      },
+      "pro": {
+        "title": "专业",
+        "body": "更高质量路线，适合最终镜头、主视觉和制作审阅。"
+      },
+      "campaign": {
+        "title": "活动专属",
+        "body": "赞助或活动专属免费路线，带独立额度和可见性控制。"
+      }
+    },
+    "queue": {
+      "title": "队列",
+      "subtitle": "暂未接入接口，这些行展示未来任务可见性的目标形态。",
+      "items": {
+        "openingShot": "开场镜头渲染",
+        "dragonTurntable": "龙角色转台",
+        "posterDraft": "海报草稿审阅"
+      },
+      "status": {
+        "running": "运行中",
+        "queued": "排队中",
+        "review": "待审阅"
+      }
+    },
+    "assets": {
+      "title": "项目资产",
+      "subtitle": "视觉输出、参考图、可复用道具和已确认镜头。",
+      "items": {
+        "dragonHero": "龙主视觉镜头",
+        "cityStreet": "城市场景氛围",
+        "characterSheet": "角色设定表",
+        "propBoard": "道具板"
+      }
+    },
+    "documents": {
+      "title": "文档",
+      "subtitle": "未来工作区应该支持多个协作文档，而不是只有一张分镜表。",
+      "story": {
+        "title": "故事文档",
+        "body": "长剧本、项目简报和正史编辑。",
+        "state": "草稿"
+      },
+      "shotTable": {
+        "title": "分镜表",
+        "body": "类似表格的行数据，连接资产和时间线。",
+        "state": "实时"
+      },
+      "timeline": {
+        "title": "时间线",
+        "body": "轨道、片段、音频、字幕和 AI 编辑事件。",
+        "state": "下一步"
+      }
+    },
+    "actions": {
+      "create": "创作",
+      "startCreate": "开始创作",
+      "quickTry": "快速体验 Seedance 2.0"
+    },
+    "projects": {
+      "title": "我的项目",
+      "subtitle": "继续推进你正在制作的故事、镜头和 AI 任务。",
+      "viewAll": "查看全部",
+      "status": {
+        "active": "制作中",
+        "review": "审阅中",
+        "draft": "草稿"
+      },
+      "items": {
+        "neonDragon": {
+          "title": "霓虹龙城",
+          "body": "38 个镜头，12 个资产，视频路线生成中"
+        },
+        "skyMarket": {
+          "title": "天空市集",
+          "body": "商业短片概念，海报和动态草稿"
+        },
+        "moonCourier": {
+          "title": "月面信使",
+          "body": "故事设定已完成，分镜表待开始"
+        }
+      }
+    },
+    "show": {
+      "title": "作品 Show",
+      "subtitle": "精选 FizzStudio 创作者完成的视频、广告、试播和视觉实验。",
+      "search": "搜索作品、创作者、风格……",
+      "categories": {
+        "all": "全部",
+        "shortFilm": "短片",
+        "commercial": "商业广告",
+        "animation": "动画",
+        "mv": "MV",
+        "education": "教育生活",
+        "toolkit": "工具箱"
+      },
+      "badges": {
+        "featured": "先锋",
+        "pro": "专业",
+        "honor": "荣誉"
+      },
+      "items": {
+        "clueBie": {
+          "title": "ClueBie",
+          "body": "玩具质感的夜城试播短片。"
+        },
+        "boneExchange": {
+          "title": "换骨",
+          "body": "东方志怪短片概念。"
+        },
+        "tailCompany": {
+          "title": "贵司有尾",
+          "body": "明亮商业广告短片。"
+        },
+        "frostWar": {
+          "title": "霜去病",
+          "body": "历史动作视觉开发。"
+        },
+        "automata": {
+          "title": "机械纪元",
+          "body": "机械科幻第一集。"
+        },
+        "worldBurns": {
+          "title": "As the World Burns",
+          "body": "风格化角色预告。"
+        },
+        "greenKitchen": {
+          "title": "煮豆丹",
+          "body": "食物微距视觉实验。"
+        },
+        "iphoneSpot": {
+          "title": "iPhone 广告",
+          "body": "一张图片自动生成产品 TVC。"
+        }
+      }
+    },
+    "composer": {
+      "placeholder": "让 FizzStudio 创建视频、分镜、图片或项目方案……",
+      "attach": "添加附件",
+      "image": "图片",
+      "video": "视频",
+      "voice": "语音",
+      "send": "发送"
+    }
   }
 }
