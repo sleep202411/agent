@@ -124,7 +124,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: community-credits-chip-20260526
+    tag: level-badges-20260527
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
