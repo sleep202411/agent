@@ -1,4 +1,5 @@
 import { PageSection } from "@/components/page-section";
+import { Card, CardContent } from "@/components/ui/card";
 
 export default function AuditLogsPage() {
   return (
@@ -7,10 +8,12 @@ export default function AuditLogsPage() {
       title="Operator activity trail"
       description="Every sensitive admin action should be attributable, searchable, and safe to reconcile during incidents."
     >
-      <div className="rounded-lg border border-[#262629] bg-[#141416] p-6 text-sm text-[#9ca0a8]">
-        Audit log search, action details, before/after payloads, and incident exports will live
-        here.
-      </div>
+      <Card>
+        <CardContent className="p-6 text-sm text-muted-foreground">
+          Audit log search, action details, before/after payloads, and incident exports will live
+          here.
+        </CardContent>
+      </Card>
     </PageSection>
   );
 }

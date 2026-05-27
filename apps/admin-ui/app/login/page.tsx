@@ -1,52 +1,44 @@
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
   return (
-    <main className="grid min-h-dvh place-items-center bg-[#0a0a0b] px-4 py-10">
-      <section className="w-full max-w-sm rounded-xl border border-white/10 bg-white/[0.04] p-6 shadow-2xl shadow-black/40 backdrop-blur-xl">
-        <div className="mb-6">
-          <div className="mb-4 grid size-10 place-items-center rounded-lg bg-[#E52227] text-sm font-semibold text-white">
+    <main className="grid min-h-dvh place-items-center bg-background px-4 py-10">
+      <Card className="w-full max-w-sm border-border bg-card/80 shadow-2xl shadow-black/40 backdrop-blur-xl">
+        <CardHeader>
+          <div className="mb-2 grid size-10 place-items-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
             FD
           </div>
-          <h1 className="text-xl font-semibold tracking-[-0.02em] text-white">Admin sign in</h1>
-          <p className="mt-2 text-sm leading-6 text-[#9ca0a8]">
+          <CardTitle className="text-xl tracking-[-0.02em]">Admin sign in</CardTitle>
+          <FieldDescription className="leading-6">
             This is the UI shell only. Real authentication will use Nest admin sessions, 2FA, RBAC,
             and audit logs.
-          </p>
-        </div>
-
-        <form className="space-y-4">
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-[#c8cad0]">Email</span>
-            <input
-              type="email"
-              placeholder="operator@fizzdragon.com"
-              className="h-10 w-full rounded-md border border-[#262629] bg-[#101012] px-3 text-sm text-white outline-none transition placeholder:text-[#6b6f78] focus:border-[#E52227]"
-            />
-          </label>
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-[#c8cad0]">Password</span>
-            <input
-              type="password"
-              placeholder="Required"
-              className="h-10 w-full rounded-md border border-[#262629] bg-[#101012] px-3 text-sm text-white outline-none transition placeholder:text-[#6b6f78] focus:border-[#E52227]"
-            />
-          </label>
-          <button
-            type="button"
-            className="h-10 w-full rounded-md bg-[#E52227] px-4 text-sm font-medium text-white transition hover:bg-[#c91d22]"
-          >
-            Continue
-          </button>
-        </form>
-
-        <Link
-          href="/"
-          className="mt-5 block text-center text-xs font-medium text-[#9ca0a8] transition hover:text-white"
-        >
-          Back to operations overview
-        </Link>
-      </section>
+          </FieldDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-5">
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <Input id="email" type="email" placeholder="operator@fizzdragon.com" />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Input id="password" type="password" placeholder="Required" />
+              </Field>
+            </FieldGroup>
+            <Button type="button" className="w-full">
+              Continue
+            </Button>
+          </form>
+          <Button asChild variant="link" className="mt-4 w-full text-muted-foreground">
+            <Link href="/">Back to operations overview</Link>
+          </Button>
+        </CardContent>
+      </Card>
     </main>
   );
 }
