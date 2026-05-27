@@ -123,7 +123,13 @@ export class ApplicationsService {
             title: `New application for ${position.positionType}`,
             body: `Someone applied to your crew "${crew.name}".`,
             meta: {
-              deeplink: `/crews/${crewId}?tab=applications`,
+              // Deeplink lands the owner on the workspace with the
+              // applicationId in a query param; the workspace page
+              // auto-opens ApplicationReviewDialog so the owner can
+              // decide without any further navigation. The public
+              // crew page used to handle this but it lacked the
+              // approval surface entirely.
+              deeplink: `/crews/${crewId}/workspace?application=${app.id}`,
               crewId,
               positionId,
               applicationId: app.id,

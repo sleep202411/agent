@@ -15,9 +15,9 @@
  * logged-in user against `crewDetail.founderId`.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   IconArrowLeft,
   IconBook,
@@ -45,6 +45,7 @@ import {
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
 import { useUserCrewRole } from "@/app/(site)/crews/_hooks/use-user-crew-role";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
+import { ApplicationReviewDialog } from "@/app/(site)/crews/_components/application-review-dialog";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
 import { MembersGrid } from "@/app/(site)/crews/[id]/workspace/_components/members/members-grid";
@@ -77,6 +78,22 @@ export default function CrewWorkspacePage() {
   const tc = useTranslations("common");
   const params = useParams<{ id: string }>();
   const id = params.id;
+  // ?application=<id> comes from the notification deeplink. Read it
+  // once and feed it straight to the review dialog; once the owner
+  // closes the dialog we strip the param so refresh / back-nav don't
+  // reopen the same review.
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const reviewApplicationId = searchParams.get("application");
+
+  const handleCloseReview = useCallback(() => {
+    if (!searchParams.get("application")) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("application");
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [addMemberOpen, setAddMemberOpen] = useState(false);
@@ -293,6 +310,16 @@ export default function CrewWorkspacePage() {
 
       <AddCrewMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} crewId={id} />
       <CreateCrewJobDialog open={publishJobOpen} onOpenChange={setPublishJobOpen} crewId={id} />
+      {/* Notification deeplink → direct review. Only mounted for the
+          owner so applicants who somehow land on this URL never see
+          someone else's application. */}
+      {isOwner ? (
+        <ApplicationReviewDialog
+          crewId={id}
+          applicationId={reviewApplicationId}
+          onClose={handleCloseReview}
+        />
+      ) : null}
       <CreateCrewDialog
         open={editOpen}
         onOpenChange={setEditOpen}
