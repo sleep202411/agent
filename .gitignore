@@ -65,3 +65,15 @@ skills-lock.json
 
 # TypeScript
 *.tsbuildinfo
+
+# Playwright / E2E
+test-results/
+playwright-report/
+
+# Throwaway dev artifacts at repo root (screenshots / preview HTML).
+# These accumulate from manual browser work and should never enter
+# the repo. Put intentional docs under docs/ instead.
+/image.png
+/image*.png
+/image*.jpg
+/*-preview.html
