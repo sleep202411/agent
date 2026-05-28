@@ -4519,9 +4519,13 @@
         "more": "More",
         "qualityChip": "Quality",
         "lockedTier": "Available to {tier}+ members",
+        "lockedPlan": "Available on {plan}+ plans",
         "lockedMember": "Available to members only",
         "unlock": "Unlock {tier}",
+        "unlockPlan": "Unlock {plan}",
         "unlockMember": "Members only",
+        "submitPaused": "Generation paused",
+        "submitPausedNote": "Image generation is temporarily paused while model routing is being verified.",
         "referencesPlaceholder": "Paste image URLs, one per line",
         "referenceMaxReached": "Maximum {n} reference images reached",
         "referenceImageOnly": "Reference must be an image file",
@@ -5327,6 +5331,197 @@
       "video": "Video",
       "voice": "Voice",
       "send": "Send"
+    }
+  },
+  "ipCommerce": {
+    "shell": {
+      "title": "IP Commerce",
+      "subtitle": "Launch desk",
+      "nav": "IP commerce navigation",
+      "importStatus": "Import run"
+    },
+    "nav": {
+      "market": "Market",
+      "operations": "Operations",
+      "commerce": "Commerce",
+      "review": "Review",
+      "migration": "Migration"
+    },
+    "hero": {
+      "eyebrow": "New IP commerce system",
+      "title": "Launch, sell, unlock, and settle IP content in one flow.",
+      "body": "A clean product shell for public IP titles, episodes, presale campaigns, community point purchases, creator revenue, review, and migration."
+    },
+    "actions": {
+      "create": "Create IP",
+      "import": "Import legacy content",
+      "revenue": "Revenue view",
+      "openStorefront": "Open storefront",
+      "startImport": "Start import"
+    },
+    "metrics": {
+      "published": { "label": "Published IPs", "hint": "Public or scheduled storefront items" },
+      "presale": { "label": "Presale points", "hint": "Community point value locked" },
+      "review": { "label": "Review queue", "hint": "Waiting for product or rights review" },
+      "revenue": { "label": "Creator payable", "hint": "Pending creator ledger entries" }
+    },
+    "status": {
+      "draft": "Draft",
+      "submitted": "Submitted",
+      "approved": "Approved",
+      "scheduled": "Scheduled",
+      "published": "Published",
+      "hidden": "Hidden"
+    },
+    "visibility": {
+      "public": "Public",
+      "unlisted": "Unlisted",
+      "private": "Private"
+    },
+    "unit": {
+      "points": "points",
+      "episodes": "{count} episodes",
+      "sold": "{count} sold"
+    },
+    "featured": {
+      "eyebrow": "Featured launch",
+      "earlyBird": "Early bird",
+      "standard": "Standard",
+      "unlock": "Unlock date",
+      "now": "Available now",
+      "countdown": "Unlocks on {date}"
+    },
+    "titles": {
+      "hawParVilla": {
+        "title": "Haw Par Villa After Dark",
+        "body": "An AI immersive film game with branching choices, presale access, creator revenue tracking, and referral links."
+      },
+      "moonMarket": {
+        "title": "Moon Market",
+        "body": "A completed short series with title bundle pricing and episode-level entitlements."
+      },
+      "ghostKitchen": {
+        "title": "Ghost Kitchen",
+        "body": "A rights-cleared food fantasy title preparing for launch."
+      },
+      "orbitKids": {
+        "title": "Orbit Kids",
+        "body": "A private draft with content, price, and review work still in progress."
+      }
+    },
+    "storefront": {
+      "eyebrow": "Storefront",
+      "title": "Sellable titles",
+      "search": "Search IP, creator, campaign, episode..."
+    },
+    "lifecycle": {
+      "eyebrow": "Lifecycle",
+      "title": "Publication states",
+      "hints": {
+        "draft": "Editable private content.",
+        "submitted": "Waiting for reviewer intake.",
+        "approved": "Ready for launch setup.",
+        "scheduled": "Prepared for automatic release.",
+        "published": "Visible and sellable.",
+        "hidden": "Removed from discovery."
+      }
+    },
+    "readiness": {
+      "eyebrow": "Launch readiness",
+      "title": "Before public sale",
+      "score": "Readiness score",
+      "scoreHint": "Blocks risky launch paths before publishing.",
+      "items": {
+        "content": { "title": "Content package", "body": "Title, episodes, hero media, trailer" },
+        "pricing": { "title": "Price rules", "body": "Bundle and episode unlock rules" },
+        "rights": { "title": "Rights declaration", "body": "Ownership, source, AI disclosure" },
+        "revenue": { "title": "Revenue rules", "body": "Production fee, share, referral" },
+        "review": { "title": "Review approval", "body": "Content, price, rights snapshot" }
+      }
+    },
+    "commerce": {
+      "eyebrow": "Purchase flow",
+      "title": "Community point order path",
+      "steps": {
+        "priceRule": {
+          "title": "Price rule",
+          "body": "Resolve active title or episode price by site and campaign."
+        },
+        "order": { "title": "Order", "body": "Create an idempotent content purchase order." },
+        "wallet": {
+          "title": "Wallet ledger",
+          "body": "Debit community points through wallet transaction history."
+        },
+        "entitlement": { "title": "Entitlement", "body": "Grant access from the completed order." },
+        "collection": {
+          "title": "Collection",
+          "body": "Add purchased content to the viewer library."
+        },
+        "revenue": {
+          "title": "Revenue ledger",
+          "body": "Post creator share, referral commission, and platform fee."
+        }
+      }
+    },
+    "revenue": {
+      "eyebrow": "Creator income",
+      "title": "Revenue sources",
+      "ledger": "Pending ledger",
+      "pending": "Pending settlement",
+      "sources": {
+        "productionFee": {
+          "title": "Production fee",
+          "body": "Fixed fee for approved episode delivery"
+        },
+        "share": { "title": "Sales share", "body": "Creator receives configured sales share" },
+        "referral": {
+          "title": "Referral commission",
+          "body": "Attribution links generate commission"
+        }
+      }
+    },
+    "review": {
+      "eyebrow": "Trust and safety",
+      "title": "Review, rights, reports",
+      "status": {
+        "passed": "Passed",
+        "waiting": "Waiting",
+        "blocked": "Blocked"
+      },
+      "items": {
+        "rights": { "title": "Rights declaration", "body": "Approved for title and episode sale" },
+        "aiDisclosure": { "title": "AI disclosure", "body": "Generated media declaration pending" },
+        "report": { "title": "User report", "body": "Copyright report requires moderation" }
+      }
+    },
+    "entitlement": {
+      "eyebrow": "Viewer access",
+      "title": "Entitlement preview",
+      "columns": {
+        "content": "Content",
+        "access": "Access",
+        "state": "State"
+      },
+      "episode": "Episode {episode}",
+      "free": "Free",
+      "unlocked": "Unlocked",
+      "locked": "Locked"
+    },
+    "migration": {
+      "eyebrow": "Legacy import",
+      "title": "User-triggered migration",
+      "body": "The frontend starts an import run. Nest calls old services, normalizes the payload, writes clean PG records, and keeps source mapping outside the core IP tables.",
+      "runTitle": "Normalization running",
+      "runBody": "Old payloads stay in import snapshots; production records stay clean.",
+      "mapTitle": "Source map",
+      "mapBody": "Idempotent mapping between old entities and new IP records.",
+      "steps": {
+        "select": "Select",
+        "fetch": "Fetch",
+        "normalize": "Normalize",
+        "write": "Write",
+        "verify": "Verify"
+      }
     }
   }
 }

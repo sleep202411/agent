@@ -60,6 +60,8 @@ export type ComposeBarProps = {
   canSubmit: boolean;
   isSubmitting: boolean;
   onSubmit: () => void;
+  submitDisabledLabel?: string;
+  submitDisabledReason?: string;
   disabled?: boolean;
   /**
    * Monotonically-increasing token. Each increment focuses the prompt
@@ -99,6 +101,8 @@ export function ComposeBar(props: ComposeBarProps) {
     canSubmit,
     isSubmitting,
     onSubmit,
+    submitDisabledLabel,
+    submitDisabledReason,
     disabled,
     focusToken,
     t,
@@ -147,7 +151,7 @@ export function ComposeBar(props: ComposeBarProps) {
   const handleKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      if (canSubmit) onSubmit();
+      if (canSubmit && !submitDisabledReason) onSubmit();
     }
   };
 
@@ -186,19 +190,20 @@ export function ComposeBar(props: ComposeBarProps) {
     <Button
       type="button"
       onClick={onSubmit}
-      disabled={!canSubmit || modelLocked || modelBusy}
+      disabled={!canSubmit || modelLocked || modelBusy || Boolean(submitDisabledReason)}
       loading={isSubmitting}
       size="default"
       className="h-8 shrink-0 rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90"
       icon={
-        modelLocked ? (
+        submitDisabledReason || modelLocked ? (
           <IconLock className="size-4" />
         ) : !isSubmitting ? (
           <IconSparkles className="size-4" />
         ) : undefined
       }
       title={
-        modelBusy
+        submitDisabledReason ??
+        (modelBusy
           ? t("imageLab.compose.busy", "Previous task is still running.")
           : modelLocked
             ? modelLockedPlan
@@ -207,17 +212,21 @@ export function ComposeBar(props: ComposeBarProps) {
                   modelLockedPlan
                 )
               : t("imageLab.compose.lockedMember", "Available to members only")
-            : undefined
+            : undefined)
       }
     >
       <span>
-        {modelBusy
-          ? busyLabel
-          : modelLocked
-            ? modelLockedPlan
-              ? t("imageLab.compose.unlock", "Unlock {plan}").replace("{plan}", modelLockedPlan)
-              : t("imageLab.compose.unlockMember", "Members only")
-            : t("imageLab.compose.create", "Create")}
+        {submitDisabledLabel ??
+          (modelBusy
+            ? busyLabel
+            : modelLocked
+              ? modelLockedPlan
+                ? t("imageLab.compose.unlockPlan", "Unlock {plan}").replace(
+                    "{plan}",
+                    modelLockedPlan
+                  )
+                : t("imageLab.compose.unlockMember", "Members only")
+              : t("imageLab.compose.create", "Create"))}
       </span>
     </Button>
   );

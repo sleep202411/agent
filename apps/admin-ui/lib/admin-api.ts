@@ -1,57 +1,62 @@
-import { getAdminApiBaseUrl, type AdminSiteCode } from "@/lib/sites";
+import {
+  ADMIN_SITE_COOKIE,
+  adminSiteByKey,
+  normalizeAdminSiteKey,
+  type AdminSiteKey,
+} from "./admin-sites";
 
-export type AdminApiRequestOptions = Omit<RequestInit, "body"> & {
-  body?: BodyInit | Record<string, unknown> | null;
-};
+export const ADMIN_SESSION_COOKIE = "fd_admin_session";
 
-export class AdminApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly payload: unknown
-  ) {
-    super(message);
-    this.name = "AdminApiError";
-  }
+export { ADMIN_SITE_COOKIE, adminSiteByKey, normalizeAdminSiteKey };
+
+export function adminApiUrl(path: string, siteKey: AdminSiteKey = "global"): string {
+  const base = adminApiBaseUrl(siteKey);
+  const normalizedBase = base.replace(/\/$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
 }
 
-export async function adminApiFetch<T>(
-  site: AdminSiteCode,
-  path: `/${string}`,
-  options: AdminApiRequestOptions = {}
-): Promise<T> {
-  const { body, headers, ...init } = options;
-  const isJsonBody =
-    body !== null &&
-    body !== undefined &&
-    typeof body === "object" &&
-    !(body instanceof Blob) &&
-    !(body instanceof FormData) &&
-    !(body instanceof URLSearchParams);
-  const response = await fetch(`${getAdminApiBaseUrl(site)}${path}`, {
-    credentials: "include",
-    ...init,
-    headers: {
-      ...(isJsonBody ? { "Content-Type": "application/json" } : {}),
-      ...headers,
-    },
-    body: isJsonBody ? JSON.stringify(body) : body,
-  });
+export function adminApiBaseUrl(siteKey: AdminSiteKey): string {
+  const base =
+    siteKey === "cn"
+      ? (process.env.ADMIN_CN_API_BASE_URL ?? process.env.NEXT_PUBLIC_ADMIN_CN_API_BASE_URL)
+      : (process.env.ADMIN_GLOBAL_API_BASE_URL ??
+        process.env.NEXT_PUBLIC_ADMIN_GLOBAL_API_BASE_URL ??
+        process.env.ADMIN_API_BASE_URL ??
+        process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL);
+  if (base) return base;
 
-  const contentType = response.headers.get("content-type") ?? "";
-  const payload = contentType.includes("application/json")
-    ? await response.json()
-    : await response.text();
+  const localFallback =
+    process.env.ADMIN_API_BASE_URL ??
+    process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL ??
+    "http://localhost:4399/admin";
+  if (process.env.NODE_ENV !== "production") return localFallback;
 
-  if (!response.ok) {
-    throw new AdminApiError(
-      typeof payload === "object" && payload && "message" in payload
-        ? String((payload as { message: unknown }).message)
-        : `Admin API request failed with ${response.status}`,
-      response.status,
-      payload
-    );
+  const site = adminSiteByKey(siteKey);
+  throw new Error(`Missing admin API base URL for ${site.label}.`);
+}
+
+export async function parseAdminEnvelope<T>(response: Response): Promise<T> {
+  const payload = (await response.json().catch(() => null)) as {
+    code?: number;
+    msg?: string;
+    message?: string;
+    data?: T;
+  } | null;
+  if (!response.ok || !payload || payload.code !== 200) {
+    throw new Error(payload?.msg ?? payload?.message ?? `后台服务请求失败：${response.status}`);
   }
+  return payload.data as T;
+}
 
-  return payload as T;
+export function cookieHeader(sessionToken?: string): HeadersInit {
+  if (!sessionToken) return {};
+  return {
+    cookie: `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(sessionToken)}`,
+  };
+}
+
+export function adminSiteCookie(siteKey: AdminSiteKey): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${ADMIN_SITE_COOKIE}=${siteKey}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly${secure}`;
 }

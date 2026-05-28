@@ -26,19 +26,10 @@ import { useState } from "react";
 import { IconCoins, IconReceipt2, IconRocket, IconSparkles } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
+import { useCommunityPointBalance } from "@/src/lib/ip-commerce";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { cn } from "@/lib/utils";
-
-/**
- * Community-credits balance — placeholder until the dedicated wallet
- * endpoint ships. `scoreBalance` (/api/ai/record/myscore) tracks the
- * **studio tool credits** (image / video gen), a separate ledger;
- * wiring it here would lie about which wallet the chip is showing.
- */
-function useCommunityCreditsBalance(): number {
-  return 0;
-}
 
 interface CommunityCreditsChipProps {
   /** Compact mode for the mobile drawer (full-width row, no popover). */
@@ -50,7 +41,7 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
   const t = useTranslations("communityCredits");
   const [open, setOpen] = useState(false);
   const [rechargeOpen, setRechargeOpen] = useState(false);
-  const balance = useCommunityCreditsBalance();
+  const { balance, refetch } = useCommunityPointBalance();
 
   const openRecharge = () => {
     setOpen(false);
@@ -66,7 +57,12 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
   };
 
   const dialog = (
-    <CreditsRechargeDialog open={rechargeOpen} onOpenChange={setRechargeOpen} kind="community" />
+    <CreditsRechargeDialog
+      open={rechargeOpen}
+      onOpenChange={setRechargeOpen}
+      kind="community"
+      onSuccess={() => void refetch()}
+    />
   );
 
   if (layout === "row") {

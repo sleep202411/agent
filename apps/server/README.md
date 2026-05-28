@@ -9,6 +9,46 @@ NestJS 后端，负责 AI 智能体、剧本拆解 Pipeline、AI 图像/视频�
 npx turbo dev --filter=server
 ```
 
+## Admin Auth
+
+后台管理账号独立于普通用户体系，存储在 Postgres 的 `admin_*` 表中。
+本地或部署初始化管理员时，使用显式脚本创建账号，避免手写 SQL：
+
+```bash
+npm run admin:create-user -w server -- \
+  --email admin@example.com \
+  --password 'Violet#7291Secure' \
+  --name 管理员 \
+  --site-scope all \
+  --role super_admin \
+  --require-mfa true
+```
+
+可选 `--site-scope global|cn|all`、`--status invited|active|suspended|disabled`、
+`--role super_admin|admin|operations`、`--require-mfa true|false`。密码必须至少
+12 位并包含大小写字母、数字和符号，且不能复用最近 5 次管理员密码。
+如果账号已存在并传入 `--password`，脚本会更新密码并按 `--role` 重新分配固定角色。
+
+容器启动时也支持一次性 bootstrap：
+
+```bash
+ADMIN_BOOTSTRAP_EMAIL=admin@example.com
+ADMIN_BOOTSTRAP_PASSWORD='Violet#7291Secure'
+ADMIN_BOOTSTRAP_NAME=管理员
+ADMIN_BOOTSTRAP_REQUIRE_MFA=true
+```
+
+已有账号默认不会因 bootstrap 重置密码；确需重置时额外设置
+`ADMIN_BOOTSTRAP_RESET_PASSWORD=true`。
+
+后台账号管理接口挂在 `/admin/users`，受 `admin.manage` 权限保护。账号只允许
+三种固定角色：超级管理员、普通管理员、运营。支持列表查询、创建管理员、
+更新状态/角色/MFA 要求、重置密码、查看会话、撤销单个或全部会话。
+
+登录链路包含登录失败风控：短时间内多次失败会记录 `admin_login_attempts`
+并临时锁定账号；启用 MFA 的账号首次登录会返回 TOTP 绑定 challenge，验证成功后才创建
+`admin_sessions`。后台审计查询接口挂在 `/admin/audit`，受 `audit.read` 权限保护。
+
 ## AI Generation 架构（生产态）
 
 目标不是「能调通 Azure」，而是一个用户可连续创作、工程可滚动发布、

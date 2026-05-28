@@ -4,13 +4,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  LegacyProjectEntityType,
+  LegacyProjectMigrationStatus,
+  LegacyProjectSourceSystem,
   PlatformProjectStatus,
+  Prisma,
   ProjectMemberRole,
   ProjectVisibility,
   WalletOwnerType,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
   WorkspaceType,
+  type LegacyProjectWorkspaceMap,
   type PlatformProject,
   type Workspace,
   type WorkspaceMember,
@@ -21,8 +26,10 @@ import { PlatformAuditLogService } from './audit-log.service';
 import type {
   CreateProjectInput,
   CreateTeamWorkspaceInput,
+  ListLegacyProjectMappingsQuery,
   UpdateProjectInput,
   UpdateWorkspaceInput,
+  UpsertLegacyProjectMappingInput,
 } from './dto';
 import { WalletLedgerService } from './wallet-ledger.service';
 import { WorkspacePermissionService } from './workspace-permission.service';
@@ -383,6 +390,176 @@ export class WorkspacesService {
     return { project: this.projectDto(project) };
   }
 
+  async listLegacyProjectMappings(
+    user: AuthUser,
+    workspaceId: string,
+    query: ListLegacyProjectMappingsQuery,
+  ) {
+    await this.permissions.requireWorkspaceRole(
+      user.userId,
+      workspaceId,
+      WorkspaceMemberRole.viewer,
+    );
+
+    const legacyProjects = await this.prisma.legacyProjectWorkspaceMap.findMany(
+      {
+        where: {
+          workspaceId,
+          deletedAt: null,
+          sourceSystem: query.sourceSystem as
+            | LegacyProjectSourceSystem
+            | undefined,
+          entityType: query.entityType as LegacyProjectEntityType | undefined,
+          migrationStatus: query.migrationStatus as
+            | LegacyProjectMigrationStatus
+            | undefined,
+        },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        take: query.limit,
+      },
+    );
+
+    return {
+      legacyProjects: legacyProjects.map((legacyProject) =>
+        this.legacyProjectDto(legacyProject),
+      ),
+    };
+  }
+
+  async listLegacyProjectMappingsForUser(
+    user: AuthUser,
+    query: ListLegacyProjectMappingsQuery,
+  ) {
+    await this.ensurePersonalWorkspace(user);
+
+    const legacyProjects = await this.prisma.legacyProjectWorkspaceMap.findMany(
+      {
+        where: {
+          deletedAt: null,
+          sourceSystem: query.sourceSystem as
+            | LegacyProjectSourceSystem
+            | undefined,
+          entityType: query.entityType as LegacyProjectEntityType | undefined,
+          migrationStatus: query.migrationStatus as
+            | LegacyProjectMigrationStatus
+            | undefined,
+          workspace: {
+            deletedAt: null,
+            members: {
+              some: {
+                userId: user.userId,
+                status: WorkspaceMemberStatus.active,
+                removedAt: null,
+              },
+            },
+          },
+        },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        take: query.limit,
+      },
+    );
+
+    return {
+      legacyProjects: legacyProjects.map((legacyProject) =>
+        this.legacyProjectDto(legacyProject),
+      ),
+    };
+  }
+
+  async upsertLegacyProjectMapping(
+    user: AuthUser,
+    workspaceId: string,
+    input: UpsertLegacyProjectMappingInput,
+  ) {
+    await this.permissions.requireWorkspaceRole(
+      user.userId,
+      workspaceId,
+      WorkspaceMemberRole.editor,
+    );
+
+    const { before, legacyProject } = await this.upsertLegacyProjectMappingRow(
+      user,
+      workspaceId,
+      input,
+    );
+
+    await this.audit.record({
+      workspaceId,
+      actorUserId: user.userId,
+      action: before
+        ? 'legacy_project_workspace_map.updated'
+        : 'legacy_project_workspace_map.created',
+      entityType: 'legacy_project_workspace_map',
+      entityId: legacyProject.id,
+      before,
+      after: legacyProject,
+      metadata: {
+        sourceSystem: legacyProject.sourceSystem,
+        entityType: legacyProject.entityType,
+        legacyEntityId: legacyProject.legacyEntityId,
+      },
+    });
+
+    return { legacyProject: this.legacyProjectDto(legacyProject) };
+  }
+
+  async ensurePersonalLegacyProjectMapping(
+    user: AuthUser,
+    input: UpsertLegacyProjectMappingInput,
+  ) {
+    const workspace = await this.ensurePersonalWorkspace(user);
+    const existing = await this.prisma.legacyProjectWorkspaceMap.findFirst({
+      where: {
+        sourceSystem: input.sourceSystem as LegacyProjectSourceSystem,
+        entityType: input.entityType as LegacyProjectEntityType,
+        legacyEntityId: input.legacyEntityId,
+        deletedAt: null,
+        workspace: { deletedAt: null },
+      },
+      include: { workspace: true },
+    });
+
+    if (existing && existing.workspaceId !== workspace.id) {
+      const membership = await this.permissions.requireWorkspaceRole(
+        user.userId,
+        existing.workspaceId,
+        WorkspaceMemberRole.viewer,
+      );
+      return {
+        workspace: this.workspaceDto(existing.workspace, membership),
+        legacyProject: this.legacyProjectDto(existing),
+      };
+    }
+
+    const { before, legacyProject } = await this.upsertLegacyProjectMappingRow(
+      user,
+      workspace.id,
+      input,
+    );
+
+    await this.audit.record({
+      workspaceId: workspace.id,
+      actorUserId: user.userId,
+      action: before
+        ? 'legacy_project_workspace_map.personal_updated'
+        : 'legacy_project_workspace_map.personal_created',
+      entityType: 'legacy_project_workspace_map',
+      entityId: legacyProject.id,
+      before,
+      after: legacyProject,
+      metadata: {
+        sourceSystem: legacyProject.sourceSystem,
+        entityType: legacyProject.entityType,
+        legacyEntityId: legacyProject.legacyEntityId,
+      },
+    });
+
+    return {
+      workspace: this.workspaceDto(workspace),
+      legacyProject: this.legacyProjectDto(legacyProject),
+    };
+  }
+
   private workspaceDto(workspace: Workspace, membership?: WorkspaceMember) {
     return {
       id: workspace.id,
@@ -419,6 +596,101 @@ export class WorkspacesService {
       createdAt: project.createdAt.toISOString(),
       updatedAt: project.updatedAt.toISOString(),
       archivedAt: project.archivedAt?.toISOString() ?? null,
+    };
+  }
+
+  private async upsertLegacyProjectMappingRow(
+    user: AuthUser,
+    workspaceId: string,
+    input: UpsertLegacyProjectMappingInput,
+  ): Promise<{
+    before: LegacyProjectWorkspaceMap | null;
+    legacyProject: LegacyProjectWorkspaceMap;
+  }> {
+    const sourceSystem = input.sourceSystem as LegacyProjectSourceSystem;
+    const entityType = input.entityType as LegacyProjectEntityType;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`legacy-project:${sourceSystem}:${entityType}:${input.legacyEntityId}`})::bigint)
+      `;
+
+      const existing = await tx.legacyProjectWorkspaceMap.findFirst({
+        where: {
+          sourceSystem,
+          entityType,
+          legacyEntityId: input.legacyEntityId,
+          deletedAt: null,
+        },
+      });
+
+      if (existing && existing.workspaceId !== workspaceId) {
+        throw new ConflictException({
+          code: 'LEGACY_PROJECT_ALREADY_MAPPED',
+          msg: 'This legacy project is already mapped to another workspace.',
+        });
+      }
+
+      const data = {
+        legacyParentEntityId:
+          input.legacyParentEntityId === undefined
+            ? undefined
+            : input.legacyParentEntityId,
+        displayName:
+          input.displayName === undefined ? undefined : input.displayName,
+        coverUrl: input.coverUrl === undefined ? undefined : input.coverUrl,
+        metadata:
+          input.metadata === undefined
+            ? undefined
+            : (input.metadata as Prisma.InputJsonObject),
+        lastSyncedAt: new Date(),
+      };
+
+      if (existing) {
+        const legacyProject = await tx.legacyProjectWorkspaceMap.update({
+          where: { id: existing.id },
+          data,
+        });
+        return { before: existing, legacyProject };
+      }
+
+      const legacyProject = await tx.legacyProjectWorkspaceMap.create({
+        data: {
+          workspaceId,
+          ownerUserId: user.userId,
+          sourceSystem,
+          entityType,
+          legacyEntityId: input.legacyEntityId,
+          legacyParentEntityId: input.legacyParentEntityId ?? null,
+          displayName: input.displayName ?? null,
+          coverUrl: input.coverUrl ?? null,
+          metadata: (input.metadata ?? {}) as Prisma.InputJsonObject,
+          lastSyncedAt: new Date(),
+        },
+      });
+      return { before: null, legacyProject };
+    });
+  }
+
+  private legacyProjectDto(legacyProject: LegacyProjectWorkspaceMap) {
+    return {
+      id: legacyProject.id,
+      workspaceId: legacyProject.workspaceId,
+      platformProjectId: legacyProject.platformProjectId,
+      sourceSystem: legacyProject.sourceSystem,
+      entityType: legacyProject.entityType,
+      legacyEntityId: legacyProject.legacyEntityId,
+      legacyParentEntityId: legacyProject.legacyParentEntityId,
+      ownerUserId: legacyProject.ownerUserId,
+      displayName: legacyProject.displayName,
+      coverUrl: legacyProject.coverUrl,
+      migrationStatus: legacyProject.migrationStatus,
+      metadata: legacyProject.metadata,
+      lastSyncedAt: legacyProject.lastSyncedAt?.toISOString() ?? null,
+      migratedAt: legacyProject.migratedAt?.toISOString() ?? null,
+      createdAt: legacyProject.createdAt.toISOString(),
+      updatedAt: legacyProject.updatedAt.toISOString(),
+      deletedAt: legacyProject.deletedAt?.toISOString() ?? null,
     };
   }
 }

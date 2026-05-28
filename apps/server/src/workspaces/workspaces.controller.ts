@@ -1,19 +1,31 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   CreateProjectSchema,
   CreateTeamWorkspaceSchema,
+  ListLegacyProjectMappingsQuerySchema,
   ProjectParamsSchema,
   UpdateProjectSchema,
   UpdateWorkspaceSchema,
+  UpsertLegacyProjectMappingSchema,
   WorkspaceParamsSchema,
   type CreateProjectInput,
   type CreateTeamWorkspaceInput,
+  type ListLegacyProjectMappingsQuery,
   type ProjectParams,
   type UpdateProjectInput,
   type UpdateWorkspaceInput,
+  type UpsertLegacyProjectMappingInput,
   type WorkspaceParams,
 } from './dto';
 import { WorkspacesService } from './workspaces.service';
@@ -91,6 +103,69 @@ export class WorkspacesController {
     return {
       code: 200,
       data: await this.workspaces.createProject(user, params.workspaceId, body),
+    };
+  }
+
+  @Get('workspaces/:workspaceId/legacy-projects')
+  async listLegacyProjectMappings(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(WorkspaceParamsSchema))
+    params: WorkspaceParams,
+    @Query(new ZodValidationPipe(ListLegacyProjectMappingsQuerySchema))
+    query: ListLegacyProjectMappingsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.workspaces.listLegacyProjectMappings(
+        user,
+        params.workspaceId,
+        query,
+      ),
+    };
+  }
+
+  @Post('workspaces/:workspaceId/legacy-projects')
+  async upsertLegacyProjectMapping(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(WorkspaceParamsSchema))
+    params: WorkspaceParams,
+    @Body(new ZodValidationPipe(UpsertLegacyProjectMappingSchema))
+    body: UpsertLegacyProjectMappingInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.workspaces.upsertLegacyProjectMapping(
+        user,
+        params.workspaceId,
+        body,
+      ),
+    };
+  }
+
+  @Get('legacy-projects')
+  async listLegacyProjectMappingsForUser(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListLegacyProjectMappingsQuerySchema))
+    query: ListLegacyProjectMappingsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.workspaces.listLegacyProjectMappingsForUser(user, query),
+    };
+  }
+
+  @Post('legacy-projects/personal')
+  async ensurePersonalLegacyProjectMapping(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(UpsertLegacyProjectMappingSchema))
+    body: UpsertLegacyProjectMappingInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.workspaces.ensurePersonalLegacyProjectMapping(
+        user,
+        body,
+      ),
     };
   }
 

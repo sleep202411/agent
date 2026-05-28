@@ -28,6 +28,9 @@ const MOCK_RESULT_IMAGE =
 
 const HISTORY_LIMIT = 60;
 const ALLOW_LOCAL_PREVIEW = process.env.NODE_ENV !== "production";
+// Temporary release guard: keep the image lab readable while the
+// AI routing contract is verified, but prevent creating new jobs.
+const IMAGE_GENERATION_SUBMIT_DISABLED = true;
 
 export default function AiImageLabPage() {
   const rawT = useTranslations("aiGen");
@@ -70,6 +73,17 @@ export default function AiImageLabPage() {
   // ─── Model + history bootstrap ────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+
+    if (IMAGE_GENERATION_SUBMIT_DISABLED) {
+      setAvailableModels([MOCK_AI_MODEL]);
+      setModel(MOCK_AI_MODEL);
+      setFormData(deriveDefaults(MOCK_AI_MODEL.input_schema.properties));
+      setModelSource("preview");
+      setModelLoadError(null);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     async function loadModels() {
       try {
@@ -133,6 +147,7 @@ export default function AiImageLabPage() {
   // missed. Re-fetch history and merge in by id; preserve optimistic
   // `temp:*` cards that haven't been ack'd by the server yet.
   const reconcileFromServer = useCallback(async () => {
+    if (IMAGE_GENERATION_SUBMIT_DISABLED) return;
     try {
       const jobs = await listAiJobs({ type: "image", limit: HISTORY_LIMIT });
       const serverItems = jobs.flatMap(jobToItems);
@@ -240,6 +255,7 @@ export default function AiImageLabPage() {
   );
 
   useEffect(() => {
+    if (IMAGE_GENERATION_SUBMIT_DISABLED) return;
     let hasConnectedBefore = false;
     const client = openAssetsRealtime({
       onConnected: () => {
@@ -265,6 +281,7 @@ export default function AiImageLabPage() {
   // Tab returns from background — events may have piled up during
   // throttled-tab time even with the WS still nominally open.
   useEffect(() => {
+    if (IMAGE_GENERATION_SUBMIT_DISABLED) return;
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         void reconcileFromServer();
@@ -345,11 +362,12 @@ export default function AiImageLabPage() {
     !isSubmitting &&
     model.enabled &&
     (modelSource === "live" || modelSource === "preview") &&
-    activeJobCount === 0;
+    activeJobCount === 0 &&
+    !IMAGE_GENERATION_SUBMIT_DISABLED;
 
   // ─── Submit ──────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || IMAGE_GENERATION_SUBMIT_DISABLED) return;
     const promptText = prompt.trim();
     const tempId = `temp:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const ratio = aspectRatioValue;
@@ -468,6 +486,7 @@ export default function AiImageLabPage() {
 
   const handleRetry = useCallback(
     async (id: string) => {
+      if (IMAGE_GENERATION_SUBMIT_DISABLED) return;
       const original = items.find((it) => it.id === id);
       if (!original || original.kind !== "error") return;
       if (modelSource === "preview" || id.startsWith("temp:")) {
@@ -515,6 +534,15 @@ export default function AiImageLabPage() {
   if (modelSource === "unavailable") {
     return <UnavailableInRegion t={t} detail={modelLoadError} />;
   }
+  const submitPausedLabel = IMAGE_GENERATION_SUBMIT_DISABLED
+    ? t("imageLab.compose.submitPaused", "Generation paused")
+    : undefined;
+  const submitPausedReason = IMAGE_GENERATION_SUBMIT_DISABLED
+    ? t(
+        "imageLab.compose.submitPausedNote",
+        "Image generation is temporarily paused while model routing is being verified."
+      )
+    : undefined;
 
   // ─── Render ───────────────────────────────────────────────────
   return (
@@ -524,7 +552,7 @@ export default function AiImageLabPage() {
     // co-located so 429s from submitAiJob (which emit via the upgrade
     // store) only open the dialog when the user is actually on this
     // page. Gated on `user` so anonymous visits skip the WS entirely.
-    <QuotaProvider enabled={Boolean(user)}>
+    <QuotaProvider enabled={Boolean(user) && !IMAGE_GENERATION_SUBMIT_DISABLED}>
       <UpgradeDialogHost />
       <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
         {/* Canvas — the scrollable content keeps a `pb-28` runway so the
@@ -533,7 +561,12 @@ export default function AiImageLabPage() {
           overlays this area with a soft blur. */}
         <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-28 pt-4 md:px-4">
           {items.length > 0 ? (
-            <GalleryGrid items={items} onRetry={handleRetry} onReusePrompt={refillPrompt} t={t} />
+            <GalleryGrid
+              items={items}
+              onRetry={IMAGE_GENERATION_SUBMIT_DISABLED ? undefined : handleRetry}
+              onReusePrompt={refillPrompt}
+              t={t}
+            />
           ) : (
             <EmptyState t={t} onTry={refillPrompt} modelName={model.name} />
           )}
@@ -545,9 +578,16 @@ export default function AiImageLabPage() {
             {/* Inline quota chip — shows daily image used/limit so users
               see the cap BEFORE they submit and hit a 429. VIP3 renders
               an ∞ badge instead; loading state is a quiet shimmer. */}
-            <div className="mb-1.5 flex justify-end px-1">
-              <QuotaBadge dimension="image" />
-            </div>
+            {!IMAGE_GENERATION_SUBMIT_DISABLED ? (
+              <div className="mb-1.5 flex justify-end px-1">
+                <QuotaBadge dimension="image" />
+              </div>
+            ) : null}
+            {submitPausedReason ? (
+              <div className="mb-2 rounded-xl border border-white/10 bg-zinc-900/90 px-3 py-2 text-center text-xs leading-5 text-zinc-300 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)]">
+                {submitPausedReason}
+              </div>
+            ) : null}
             <ComposeBar
               prompt={prompt}
               onPromptChange={setPrompt}
@@ -580,6 +620,8 @@ export default function AiImageLabPage() {
               canSubmit={canSubmit}
               isSubmitting={isSubmitting}
               onSubmit={handleSubmit}
+              submitDisabledLabel={submitPausedLabel}
+              submitDisabledReason={submitPausedReason}
               disabled={modelSource === "loading"}
               focusToken={promptFocusToken}
               t={t}

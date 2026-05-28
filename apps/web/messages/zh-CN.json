@@ -4519,9 +4519,13 @@
         "more": "更多",
         "qualityChip": "质量",
         "lockedTier": "{tier}+ 会员可用",
+        "lockedPlan": "{plan}+ 套餐可用",
         "lockedMember": "会员可用",
         "unlock": "解锁 {tier}",
+        "unlockPlan": "解锁 {plan}",
         "unlockMember": "会员可用",
+        "submitPaused": "生成已暂停",
+        "submitPausedNote": "图像生成暂时关闭，模型路由验证完成后再开放。",
         "referencesPlaceholder": "粘贴图片 URL，每行一个",
         "referenceMaxReached": "最多可添加 {n} 张参考图",
         "referenceImageOnly": "参考图必须是图片文件",
@@ -5327,6 +5331,179 @@
       "video": "视频",
       "voice": "语音",
       "send": "发送"
+    }
+  },
+  "ipCommerce": {
+    "shell": {
+      "title": "IP 商业化",
+      "subtitle": "发行工作台",
+      "nav": "IP 商业化导航",
+      "importStatus": "导入任务"
+    },
+    "nav": {
+      "market": "市场",
+      "operations": "运营",
+      "commerce": "交易",
+      "review": "审核",
+      "migration": "迁移"
+    },
+    "hero": {
+      "eyebrow": "新版 IP 商业化系统",
+      "title": "把 IP 上架、售卖、解锁和结算放进同一条闭环。",
+      "body": "新的产品壳覆盖公开 IP、剧集、预售活动、社区积分购买、创作者收益、审核风控和旧系统导入。"
+    },
+    "actions": {
+      "create": "创建 IP",
+      "import": "导入旧内容",
+      "revenue": "收益看板",
+      "openStorefront": "打开售卖页",
+      "startImport": "开始导入"
+    },
+    "metrics": {
+      "published": { "label": "已发布 IP", "hint": "公开或已排期的售卖内容" },
+      "presale": { "label": "预售积分", "hint": "已锁定的社区积分价值" },
+      "review": { "label": "审核队列", "hint": "等待内容或版权审核" },
+      "revenue": { "label": "创作者待结算", "hint": "待结算的收益流水" }
+    },
+    "status": {
+      "draft": "草稿",
+      "submitted": "已提交",
+      "approved": "已通过",
+      "scheduled": "已排期",
+      "published": "已发布",
+      "hidden": "已隐藏"
+    },
+    "visibility": {
+      "public": "公开",
+      "unlisted": "链接可见",
+      "private": "私密"
+    },
+    "unit": {
+      "points": "积分",
+      "episodes": "{count} 集",
+      "sold": "已售 {count}"
+    },
+    "featured": {
+      "eyebrow": "重点发行",
+      "earlyBird": "早鸟价",
+      "standard": "正式价",
+      "unlock": "解锁时间",
+      "now": "当前可看",
+      "countdown": "{date} 解锁"
+    },
+    "titles": {
+      "hawParVilla": {
+        "title": "虎豹别墅夜游",
+        "body": "AI 沉浸式影游，支持剧情分支、预售、创作者收益追踪和引荐链接。"
+      },
+      "moonMarket": {
+        "title": "月亮市集",
+        "body": "已完结短剧，支持整套打包价和单集权益。"
+      },
+      "ghostKitchen": {
+        "title": "怪谈厨房",
+        "body": "版权声明已齐备，准备进入正式发行。"
+      },
+      "orbitKids": {
+        "title": "星环少年",
+        "body": "私密草稿，内容、定价和审核仍在准备。"
+      }
+    },
+    "storefront": {
+      "eyebrow": "售卖页",
+      "title": "可交易 IP",
+      "search": "搜索 IP、创作者、活动、剧集……"
+    },
+    "lifecycle": {
+      "eyebrow": "生命周期",
+      "title": "发布状态",
+      "hints": {
+        "draft": "私密编辑中的内容。",
+        "submitted": "等待审核接收。",
+        "approved": "可继续配置发行。",
+        "scheduled": "已准备自动上线。",
+        "published": "可展示、可购买。",
+        "hidden": "已从发现流移除。"
+      }
+    },
+    "readiness": {
+      "eyebrow": "上架准备度",
+      "title": "公开售卖前",
+      "score": "准备度",
+      "scoreHint": "发布前拦截高风险路径。",
+      "items": {
+        "content": { "title": "内容包", "body": "标题、剧集、头图、预告片" },
+        "pricing": { "title": "价格规则", "body": "整套价和单集解锁价" },
+        "rights": { "title": "版权声明", "body": "权属、来源、AI 生成说明" },
+        "revenue": { "title": "收益规则", "body": "制作费、分润、引荐佣金" },
+        "review": { "title": "审核通过", "body": "内容、价格、版权快照" }
+      }
+    },
+    "commerce": {
+      "eyebrow": "购买链路",
+      "title": "社区积分订单路径",
+      "steps": {
+        "priceRule": { "title": "价格规则", "body": "按站点和活动解析整 IP 或单集价格。" },
+        "order": { "title": "订单", "body": "创建可幂等重试的内容购买订单。" },
+        "wallet": { "title": "钱包流水", "body": "通过钱包交易扣减社区积分。" },
+        "entitlement": { "title": "访问权益", "body": "订单完成后发放观看权益。" },
+        "collection": { "title": "收藏夹", "body": "把已购内容加入用户内容库。" },
+        "revenue": { "title": "收益流水", "body": "写入创作者分润、引荐佣金和平台费用。" }
+      }
+    },
+    "revenue": {
+      "eyebrow": "创作者收入",
+      "title": "收益来源",
+      "ledger": "待结算流水",
+      "pending": "待结算",
+      "sources": {
+        "productionFee": { "title": "制作费", "body": "剧集交付并通过后的固定费用" },
+        "share": { "title": "销售分润", "body": "按配置比例获得销售收益" },
+        "referral": { "title": "引荐佣金", "body": "归因链接产生引荐收益" }
+      }
+    },
+    "review": {
+      "eyebrow": "信任与风控",
+      "title": "审核、版权、举报",
+      "status": {
+        "passed": "已通过",
+        "waiting": "等待中",
+        "blocked": "已阻塞"
+      },
+      "items": {
+        "rights": { "title": "版权声明", "body": "标题和剧集售卖版权已通过" },
+        "aiDisclosure": { "title": "AI 生成声明", "body": "生成媒体声明等待确认" },
+        "report": { "title": "用户举报", "body": "版权举报需要风控处理" }
+      }
+    },
+    "entitlement": {
+      "eyebrow": "观众访问",
+      "title": "权益预览",
+      "columns": {
+        "content": "内容",
+        "access": "访问",
+        "state": "状态"
+      },
+      "episode": "第 {episode} 集",
+      "free": "免费",
+      "unlocked": "已解锁",
+      "locked": "未解锁"
+    },
+    "migration": {
+      "eyebrow": "旧系统导入",
+      "title": "用户触发迁移",
+      "body": "前端只触发导入任务。Nest 调用旧服务、归一化数据、写入干净的 PG 记录，并把来源映射隔离在核心 IP 表之外。",
+      "runTitle": "正在归一化",
+      "runBody": "旧 payload 留在导入快照里，生产数据保持干净。",
+      "mapTitle": "来源映射",
+      "mapBody": "旧实体和新 IP 记录之间的幂等映射。",
+      "steps": {
+        "select": "选择",
+        "fetch": "拉取",
+        "normalize": "归一化",
+        "write": "写入",
+        "verify": "校验"
+      }
     }
   }
 }

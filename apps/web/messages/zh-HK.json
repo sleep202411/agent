@@ -4519,9 +4519,13 @@
         "more": "更多",
         "qualityChip": "質量",
         "lockedTier": "{tier}+ 會員可用",
+        "lockedPlan": "{plan}+ 套餐可用",
         "lockedMember": "會員可用",
         "unlock": "解鎖 {tier}",
+        "unlockPlan": "解鎖 {plan}",
         "unlockMember": "會員可用",
+        "submitPaused": "生成已暫停",
+        "submitPausedNote": "圖像生成暫時關閉，模型路由驗證完成後再開放。",
         "referencesPlaceholder": "貼上圖片 URL，每行一個",
         "referenceMaxReached": "最多可添加 {n} 張參考圖",
         "referenceImageOnly": "參考圖必須是圖片檔案",
@@ -5327,6 +5331,179 @@
       "video": "視頻",
       "voice": "語音",
       "send": "發送"
+    }
+  },
+  "ipCommerce": {
+    "shell": {
+      "title": "IP 商業化",
+      "subtitle": "發行工作台",
+      "nav": "IP 商業化導航",
+      "importStatus": "導入任務"
+    },
+    "nav": {
+      "market": "市場",
+      "operations": "營運",
+      "commerce": "交易",
+      "review": "審核",
+      "migration": "遷移"
+    },
+    "hero": {
+      "eyebrow": "新版 IP 商業化系統",
+      "title": "把 IP 上架、售賣、解鎖和結算放進同一條閉環。",
+      "body": "新的產品殼覆蓋公開 IP、劇集、預售活動、社區積分購買、創作者收益、審核風控和舊系統導入。"
+    },
+    "actions": {
+      "create": "創建 IP",
+      "import": "導入舊內容",
+      "revenue": "收益看板",
+      "openStorefront": "打開售賣頁",
+      "startImport": "開始導入"
+    },
+    "metrics": {
+      "published": { "label": "已發佈 IP", "hint": "公開或已排期的售賣內容" },
+      "presale": { "label": "預售積分", "hint": "已鎖定的社區積分價值" },
+      "review": { "label": "審核隊列", "hint": "等待內容或版權審核" },
+      "revenue": { "label": "創作者待結算", "hint": "待結算的收益流水" }
+    },
+    "status": {
+      "draft": "草稿",
+      "submitted": "已提交",
+      "approved": "已通過",
+      "scheduled": "已排期",
+      "published": "已發佈",
+      "hidden": "已隱藏"
+    },
+    "visibility": {
+      "public": "公開",
+      "unlisted": "連結可見",
+      "private": "私密"
+    },
+    "unit": {
+      "points": "積分",
+      "episodes": "{count} 集",
+      "sold": "已售 {count}"
+    },
+    "featured": {
+      "eyebrow": "重點發行",
+      "earlyBird": "早鳥價",
+      "standard": "正式價",
+      "unlock": "解鎖時間",
+      "now": "當前可看",
+      "countdown": "{date} 解鎖"
+    },
+    "titles": {
+      "hawParVilla": {
+        "title": "虎豹別墅夜遊",
+        "body": "AI 沉浸式影遊，支持劇情分支、預售、創作者收益追蹤和引薦連結。"
+      },
+      "moonMarket": {
+        "title": "月亮市集",
+        "body": "已完結短劇，支持整套打包價和單集權益。"
+      },
+      "ghostKitchen": {
+        "title": "怪談廚房",
+        "body": "版權聲明已齊備，準備進入正式發行。"
+      },
+      "orbitKids": {
+        "title": "星環少年",
+        "body": "私密草稿，內容、定價和審核仍在準備。"
+      }
+    },
+    "storefront": {
+      "eyebrow": "售賣頁",
+      "title": "可交易 IP",
+      "search": "搜尋 IP、創作者、活動、劇集……"
+    },
+    "lifecycle": {
+      "eyebrow": "生命週期",
+      "title": "發佈狀態",
+      "hints": {
+        "draft": "私密編輯中的內容。",
+        "submitted": "等待審核接收。",
+        "approved": "可繼續配置發行。",
+        "scheduled": "已準備自動上線。",
+        "published": "可展示、可購買。",
+        "hidden": "已從發現流移除。"
+      }
+    },
+    "readiness": {
+      "eyebrow": "上架準備度",
+      "title": "公開售賣前",
+      "score": "準備度",
+      "scoreHint": "發佈前攔截高風險路徑。",
+      "items": {
+        "content": { "title": "內容包", "body": "標題、劇集、頭圖、預告片" },
+        "pricing": { "title": "價格規則", "body": "整套價和單集解鎖價" },
+        "rights": { "title": "版權聲明", "body": "權屬、來源、AI 生成說明" },
+        "revenue": { "title": "收益規則", "body": "製作費、分潤、引薦佣金" },
+        "review": { "title": "審核通過", "body": "內容、價格、版權快照" }
+      }
+    },
+    "commerce": {
+      "eyebrow": "購買鏈路",
+      "title": "社區積分訂單路徑",
+      "steps": {
+        "priceRule": { "title": "價格規則", "body": "按站點和活動解析整 IP 或單集價格。" },
+        "order": { "title": "訂單", "body": "創建可冪等重試的內容購買訂單。" },
+        "wallet": { "title": "錢包流水", "body": "通過錢包交易扣減社區積分。" },
+        "entitlement": { "title": "訪問權益", "body": "訂單完成後發放觀看權益。" },
+        "collection": { "title": "收藏夾", "body": "把已購內容加入用戶內容庫。" },
+        "revenue": { "title": "收益流水", "body": "寫入創作者分潤、引薦佣金和平台費用。" }
+      }
+    },
+    "revenue": {
+      "eyebrow": "創作者收入",
+      "title": "收益來源",
+      "ledger": "待結算流水",
+      "pending": "待結算",
+      "sources": {
+        "productionFee": { "title": "製作費", "body": "劇集交付並通過後的固定費用" },
+        "share": { "title": "銷售分潤", "body": "按配置比例獲得銷售收益" },
+        "referral": { "title": "引薦佣金", "body": "歸因連結產生引薦收益" }
+      }
+    },
+    "review": {
+      "eyebrow": "信任與風控",
+      "title": "審核、版權、舉報",
+      "status": {
+        "passed": "已通過",
+        "waiting": "等待中",
+        "blocked": "已阻塞"
+      },
+      "items": {
+        "rights": { "title": "版權聲明", "body": "標題和劇集售賣版權已通過" },
+        "aiDisclosure": { "title": "AI 生成聲明", "body": "生成媒體聲明等待確認" },
+        "report": { "title": "用戶舉報", "body": "版權舉報需要風控處理" }
+      }
+    },
+    "entitlement": {
+      "eyebrow": "觀眾訪問",
+      "title": "權益預覽",
+      "columns": {
+        "content": "內容",
+        "access": "訪問",
+        "state": "狀態"
+      },
+      "episode": "第 {episode} 集",
+      "free": "免費",
+      "unlocked": "已解鎖",
+      "locked": "未解鎖"
+    },
+    "migration": {
+      "eyebrow": "舊系統導入",
+      "title": "用戶觸發遷移",
+      "body": "前端只觸發導入任務。Nest 調用舊服務、歸一化數據、寫入乾淨的 PG 記錄，並把來源映射隔離在核心 IP 表之外。",
+      "runTitle": "正在歸一化",
+      "runBody": "舊 payload 留在導入快照裏，生產數據保持乾淨。",
+      "mapTitle": "來源映射",
+      "mapBody": "舊實體和新 IP 記錄之間的冪等映射。",
+      "steps": {
+        "select": "選擇",
+        "fetch": "拉取",
+        "normalize": "歸一化",
+        "write": "寫入",
+        "verify": "校驗"
+      }
     }
   }
 }

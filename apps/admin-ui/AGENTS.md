@@ -8,8 +8,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 Read `../../DESIGN.md` first for shared FizzDragon brand rules, then read
 `DESIGN.md` in this directory before changing UI. This app is an internal
-operations console for AI Model Ops, billing, quota, routing, users, and audit
-workflows. Do not use the public web / marketing design language from
-`apps/web`.
+operations console for admin users, audit, security governance, billing,
+IP commerce, and model operations. Do not use the public web / marketing
+design language from `apps/web`.
 
 <!-- END:nextjs-agent-rules -->
