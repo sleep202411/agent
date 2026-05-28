@@ -1,0 +1,1027 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Model Catalog Preview</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f7f5;
+        --panel: #ffffff;
+        --panel-soft: #fafaf8;
+        --text: #181818;
+        --muted: #6b6b63;
+        --line: #deded8;
+        --red: #e52227;
+        --green: #0f8a5f;
+        --amber: #b86b00;
+        --blue: #2563eb;
+        --shadow: 0 18px 45px rgba(24, 24, 24, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      .shell {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 28px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 28px;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(120px, 1fr));
+        gap: 10px;
+        min-width: 420px;
+      }
+
+      .meta-item,
+      .card,
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .meta-item {
+        padding: 12px;
+        border-radius: 8px;
+      }
+
+      .meta-label {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 5px;
+      }
+
+      .meta-value {
+        font-size: 13px;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      .tabs {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        gap: 8px;
+        padding: 10px;
+        margin: 0 0 18px;
+        background: rgba(247, 247, 245, 0.92);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .tab {
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        border-radius: 7px;
+        padding: 9px 12px;
+        cursor: pointer;
+      }
+
+      .tab.active {
+        color: var(--text);
+        background: var(--panel);
+        border-color: var(--line);
+        box-shadow: 0 8px 22px rgba(24, 24, 24, 0.08);
+      }
+
+      .view {
+        display: none;
+      }
+
+      .view.active {
+        display: block;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .grid.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .card {
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .title {
+        margin: 0 0 6px;
+        font-size: 16px;
+        line-height: 1.25;
+      }
+
+      .desc {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .card-body {
+        padding: 16px;
+      }
+
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 12px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--panel-soft);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .badge.red {
+        color: var(--red);
+        border-color: rgba(229, 34, 39, 0.24);
+        background: rgba(229, 34, 39, 0.07);
+      }
+
+      .badge.green {
+        color: var(--green);
+        border-color: rgba(15, 138, 95, 0.24);
+        background: rgba(15, 138, 95, 0.08);
+      }
+
+      .badge.amber {
+        color: var(--amber);
+        border-color: rgba(184, 107, 0, 0.24);
+        background: rgba(184, 107, 0, 0.08);
+      }
+
+      .badge.blue {
+        color: var(--blue);
+        border-color: rgba(37, 99, 235, 0.22);
+        background: rgba(37, 99, 235, 0.07);
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .metric {
+        padding: 10px;
+        border-radius: 8px;
+        background: var(--panel-soft);
+        border: 1px solid var(--line);
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        margin-bottom: 4px;
+      }
+
+      .metric strong {
+        font-size: 14px;
+      }
+
+      .panel {
+        border-radius: 8px;
+        padding: 18px;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 420px minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .list-button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 8px;
+        padding: 12px;
+        cursor: pointer;
+      }
+
+      .list-button.active {
+        border-color: rgba(229, 34, 39, 0.4);
+        box-shadow: 0 0 0 3px rgba(229, 34, 39, 0.08);
+      }
+
+      .schema {
+        display: grid;
+        gap: 10px;
+      }
+
+      .field {
+        border: 1px solid var(--line);
+        background: var(--panel-soft);
+        border-radius: 8px;
+        padding: 12px;
+      }
+
+      .field-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .field-name {
+        font-weight: 800;
+      }
+
+      .field-type {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      pre {
+        margin: 0;
+        padding: 16px;
+        overflow: auto;
+        border-radius: 8px;
+        background: #171717;
+        color: #f5f5f5;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .flow-step {
+        position: relative;
+        padding: 14px;
+        min-height: 104px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 8px;
+      }
+
+      .flow-step strong {
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      .flow-step p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 1100px) {
+        .topbar,
+        .split {
+          grid-template-columns: 1fr;
+          display: grid;
+        }
+
+        .meta {
+          min-width: 0;
+          grid-template-columns: 1fr;
+        }
+
+        .grid,
+        .grid.two,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>AI Model Catalog 数据结构预览</h1>
+          <p class="subtitle">
+            这是写死数据的静态预览。普通模式渲染 presets，高级模式渲染 models，活动免费能力来自
+            campaigns。
+          </p>
+        </div>
+        <div class="meta" id="meta"></div>
+      </section>
+
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-view="overview">结构关系</button>
+        <button class="tab" data-view="presets">Presets</button>
+        <button class="tab" data-view="models">Models</button>
+        <button class="tab" data-view="submit">Submit</button>
+        <button class="tab" data-view="raw">Raw JSON</button>
+      </nav>
+
+      <section class="view active" id="overview"></section>
+      <section class="view" id="presets"></section>
+      <section class="view" id="models"></section>
+      <section class="view" id="submit"></section>
+      <section class="view" id="raw"></section>
+    </main>
+
+    <script>
+      const catalog = {
+        dialect: "https://fizzdragon.com/schemas/ai/model/v1",
+        version: "2026-05-26",
+        region: "cn",
+        context: {
+          cell: "cn-aliyun",
+          country: "CN",
+          ip: {
+            country: "CN",
+            region: "Zhejiang",
+            city: "Hangzhou",
+            source: "cdn",
+            confidence: "high",
+          },
+        },
+        presets: [
+          {
+            id: "image.fast",
+            label: "Fast",
+            description: "低延迟、低成本，适合日常快速出图。",
+            family: "image",
+            generationModes: ["text_to_image", "image_to_image"],
+            type: "image",
+            routeMode: "managed_preset",
+            modelIds: ["fal/fal-ai/flux/schnell", "dashscope/wanx2.1-t2i-turbo"],
+            enabled: true,
+            minTier: null,
+            fallbackAllowed: true,
+            sortOrder: 10,
+            billingPolicy: {
+              mode: "charge",
+              unit: "bubble",
+              displayCurrency: "BUBBLES",
+              preflightCost: 1,
+              finalCostSource: "fixed_table",
+              refundPolicy: "refund_on_final_failure",
+            },
+            queuePolicy: {
+              queueName: "ai-image-generation",
+              globalConcurrency: 20,
+              perUserRunning: 2,
+              perUserQueued: 10,
+              priority: 0,
+              maxProviderRuntimeSeconds: 600,
+            },
+          },
+          {
+            id: "image.standard",
+            label: "Standard",
+            description: "质量、速度、成本均衡，默认推荐。",
+            family: "image",
+            generationModes: ["text_to_image", "image_to_image"],
+            type: "image",
+            routeMode: "managed_preset",
+            modelIds: ["foundry/gpt-image-2", "fal/fal-ai/flux/schnell"],
+            enabled: true,
+            minTier: null,
+            fallbackAllowed: true,
+            sortOrder: 20,
+            billingPolicy: {
+              mode: "charge",
+              unit: "bubble",
+              displayCurrency: "BUBBLES",
+              preflightCost: 2,
+              finalCostSource: "fixed_table",
+              refundPolicy: "refund_on_final_failure",
+            },
+            queuePolicy: {
+              queueName: "ai-image-generation",
+              globalConcurrency: 12,
+              perUserRunning: 2,
+              perUserQueued: 10,
+              priority: 0,
+              maxProviderRuntimeSeconds: 900,
+            },
+          },
+          {
+            id: "image.professional",
+            label: "Professional",
+            description: "更高质量和更完整参数能力，面向专业用户。",
+            family: "image",
+            generationModes: ["text_to_image", "image_to_image", "reference_image_generation"],
+            type: "image",
+            routeMode: "managed_preset",
+            modelIds: ["foundry/gpt-image-2"],
+            enabled: true,
+            minTier: "VIP",
+            fallbackAllowed: true,
+            sortOrder: 30,
+            billingPolicy: {
+              mode: "charge",
+              unit: "bubble",
+              displayCurrency: "BUBBLES",
+              preflightCost: 5,
+              finalCostSource: "fixed_table",
+              refundPolicy: "refund_on_final_failure",
+            },
+            queuePolicy: {
+              queueName: "ai-image-generation",
+              globalConcurrency: 6,
+              perUserRunning: 1,
+              perUserQueued: 10,
+              priority: 0,
+              maxProviderRuntimeSeconds: 1200,
+            },
+          },
+          {
+            id: "video.standard",
+            label: "Video Standard",
+            description: "默认视频生成能力，支持文生视频和首尾帧。",
+            family: "video",
+            generationModes: ["text_to_video", "image_to_video", "first_last_frame_to_video"],
+            type: "video",
+            routeMode: "managed_preset",
+            modelIds: ["fal/fal-ai/wan/v2.2-a14b/text-to-video"],
+            enabled: true,
+            minTier: "VIP",
+            fallbackAllowed: true,
+            sortOrder: 50,
+            billingPolicy: {
+              mode: "charge",
+              unit: "bubble",
+              displayCurrency: "BUBBLES",
+              preflightCost: 20,
+              finalCostSource: "fixed_table",
+              refundPolicy: "refund_on_final_failure",
+            },
+            queuePolicy: {
+              queueName: "ai-video-generation",
+              globalConcurrency: 4,
+              perUserRunning: 1,
+              perUserQueued: 5,
+              priority: 0,
+              maxProviderRuntimeSeconds: 2700,
+            },
+          },
+          {
+            id: "campaign.aliyun-2026",
+            label: "Alibaba Event",
+            description: "活动专属免费模型，由运营配置活动时间、预算和限额。",
+            family: "image",
+            generationModes: ["text_to_image"],
+            type: "image",
+            routeMode: "campaign_locked",
+            modelIds: ["dashscope/wanx2.1-t2i-turbo"],
+            enabled: true,
+            campaignId: "aliyun-competition-2026",
+            regionPolicy: {
+              allowedCells: ["cn", "cn-aliyun"],
+              allowedCountries: ["CN"],
+              preferredProviderRegions: ["cn-hangzhou"],
+            },
+            fallbackAllowed: false,
+            sortOrder: 5,
+            billingPolicy: {
+              mode: "free",
+              unit: "bubble",
+              displayCurrency: "BUBBLES",
+              preflightCost: 0,
+              finalCostSource: "campaign",
+              refundPolicy: "no_refund",
+            },
+            queuePolicy: {
+              queueName: "ai-image-generation",
+              globalConcurrency: 30,
+              perUserRunning: 2,
+              perUserQueued: 10,
+              priority: 0,
+              maxProviderRuntimeSeconds: 600,
+            },
+          },
+        ],
+        campaigns: [
+          {
+            campaignId: "aliyun-competition-2026",
+            label: "Alibaba Cloud 竞赛活动",
+            startsAt: "2026-06-01T00:00:00.000Z",
+            endsAt: "2026-06-30T23:59:59.999Z",
+            eligibleModelIds: ["dashscope/wanx2.1-t2i-turbo"],
+            perUserLimit: 200,
+            totalLimit: 100000,
+            budgetLimit: 500000,
+          },
+        ],
+        models: [
+          {
+            id: "fal/fal-ai/flux/schnell",
+            provider: "fal-ai",
+            providerModelId: "fal-ai/flux/schnell",
+            deployment: "fal-ai/flux/schnell",
+            modelName: "FLUX Schnell",
+            source: "fal-config",
+            family: "image",
+            generationModes: ["text_to_image"],
+            type: "image",
+            name: "FLUX Schnell",
+            description: "Fast image generation model.",
+            enabled: true,
+            schemaDialect: "https://fizzdragon.com/schemas/ai/model/v1",
+            schemaVersion: "2026-05-26",
+            capabilities: {
+              textToImage: true,
+              imageToImage: false,
+              supportsSeed: true,
+              supportsCancel: true,
+              maxOutputs: 4,
+            },
+            queue: {
+              queueName: "ai-image-generation",
+              globalConcurrency: 20,
+              perUserRunning: 2,
+              perUserQueued: 10,
+            },
+            membership: { minTier: null },
+            billing_policy: {
+              mode: "charge",
+              unit: "bubble",
+              displayCurrency: "BUBBLES",
+              preflightCost: 1,
+              finalCostSource: "fixed_table",
+              refundPolicy: "refund_on_final_failure",
+            },
+            ui_policy: {
+              defaultMode: "simple",
+              advancedVisible: true,
+              showProviderName: false,
+              showCostEstimate: true,
+              showQueueEstimate: true,
+            },
+            input_schema: {
+              type: "object",
+              required: ["prompt"],
+              properties: {
+                prompt: {
+                  type: "string",
+                  title: "Prompt",
+                  maxLength: 4000,
+                  "x-ui": { control: "textarea", order: 10 },
+                },
+                imageSize: {
+                  type: "string",
+                  title: "Image size",
+                  enum: ["square", "portrait", "landscape"],
+                  default: "square",
+                  "x-ui": { control: "segmented", order: 20 },
+                },
+                numOutputs: {
+                  type: "integer",
+                  title: "Outputs",
+                  minimum: 1,
+                  maximum: 4,
+                  default: 1,
+                  "x-ui": { control: "stepper", order: 30 },
+                },
+                seed: {
+                  type: "integer",
+                  title: "Seed",
+                  minimum: 0,
+                  "x-ui": { control: "number", order: 90, advanced: true },
+                },
+              },
+            },
+            output_schema: { type: "object" },
+            provider_binding: {
+              provider: "fal-ai",
+              endpoint: "fal-ai/flux/schnell",
+              requestContentType: "application/json",
+            },
+            access: { allowed: true, reason: null },
+          },
+          {
+            id: "fal/fal-ai/wan/v2.2-a14b/text-to-video",
+            provider: "fal-ai",
+            providerModelId: "fal-ai/wan/v2.2-a14b/text-to-video",
+            deployment: "fal-ai/wan/v2.2-a14b/text-to-video",
+            modelName: "WAN 2.2 A14B Text To Video",
+            source: "fal-config",
+            family: "video",
+            generationModes: ["text_to_video", "image_to_video", "first_last_frame_to_video"],
+            type: "video",
+            name: "WAN 2.2 Video",
+            description: "Async video generation with queue polling.",
+            enabled: true,
+            schemaDialect: "https://fizzdragon.com/schemas/ai/model/v1",
+            schemaVersion: "2026-05-26",
+            capabilities: {
+              textToVideo: true,
+              imageToVideo: true,
+              supportsSeed: true,
+              supportsCancel: true,
+              maxOutputs: 1,
+            },
+            queue: {
+              queueName: "ai-video-generation",
+              globalConcurrency: 4,
+              perUserRunning: 1,
+              perUserQueued: 5,
+            },
+            membership: { minTier: "VIP" },
+            billing_policy: {
+              mode: "charge",
+              unit: "bubble",
+              displayCurrency: "BUBBLES",
+              preflightCost: 20,
+              finalCostSource: "fixed_table",
+              refundPolicy: "refund_on_final_failure",
+            },
+            ui_policy: {
+              defaultMode: "simple",
+              advancedVisible: true,
+              showProviderName: false,
+              showCostEstimate: true,
+              showQueueEstimate: true,
+            },
+            input_schema: {
+              type: "object",
+              required: ["prompt"],
+              properties: {
+                prompt: {
+                  type: "string",
+                  title: "Prompt",
+                  maxLength: 4000,
+                  "x-ui": { control: "textarea", order: 10 },
+                },
+                startFrame: {
+                  type: "string",
+                  format: "uri",
+                  title: "Start frame",
+                  "x-ui": { control: "media-picker", order: 20 },
+                },
+                endFrame: {
+                  type: "string",
+                  format: "uri",
+                  title: "End frame",
+                  "x-ui": { control: "media-picker", order: 30 },
+                },
+                durationSeconds: {
+                  type: "integer",
+                  title: "Duration",
+                  enum: [5, 8, 10],
+                  default: 5,
+                  "x-ui": { control: "segmented", order: 40 },
+                },
+                aspectRatio: {
+                  type: "string",
+                  title: "Aspect ratio",
+                  enum: ["9:16", "16:9", "1:1"],
+                  default: "9:16",
+                  "x-ui": { control: "segmented", order: 50 },
+                },
+              },
+            },
+            output_schema: { type: "object" },
+            provider_binding: {
+              provider: "fal-ai",
+              endpoint: "fal-ai/wan/v2.2-a14b/text-to-video",
+              requestContentType: "application/json",
+            },
+            access: { allowed: true, reason: null },
+          },
+        ],
+      };
+
+      const $ = (selector) => document.querySelector(selector);
+      const views = [...document.querySelectorAll(".view")];
+      const tabs = [...document.querySelectorAll(".tab")];
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          tabs.forEach((item) => item.classList.remove("active"));
+          views.forEach((item) => item.classList.remove("active"));
+          tab.classList.add("active");
+          document.getElementById(tab.dataset.view).classList.add("active");
+        });
+      });
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+
+      function pretty(value) {
+        return escapeHtml(JSON.stringify(value, null, 2));
+      }
+
+      function badge(value, tone = "") {
+        return `<span class="badge ${tone}">${escapeHtml(value)}</span>`;
+      }
+
+      function metric(label, value) {
+        return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+      }
+
+      function renderMeta() {
+        $("#meta").innerHTML = [
+          ["Dialect", catalog.dialect],
+          ["Version", catalog.version],
+          ["Cell", catalog.context.cell],
+          ["Country", catalog.context.country],
+          ["Geo Source", `${catalog.context.ip.source} · ${catalog.context.ip.confidence}`],
+        ]
+          .map(
+            ([label, value]) =>
+              `<div class="meta-item"><span class="meta-label">${label}</span><span class="meta-value">${escapeHtml(value)}</span></div>`
+          )
+          .join("");
+      }
+
+      function renderOverview() {
+        $("#overview").innerHTML = `
+          <div class="flow">
+            <div class="flow-step"><strong>1. Catalog</strong><p>前端获取完整模型目录：presets、campaigns、models。</p></div>
+            <div class="flow-step"><strong>2. Presets</strong><p>普通模式展示快速、标准、专业、活动专属。</p></div>
+            <div class="flow-step"><strong>3. Schema</strong><p>高级模式读取 model.input_schema 渲染参数表单。</p></div>
+            <div class="flow-step"><strong>4. Submit</strong><p>提交 presetId 或 modelId，后端统一路由。</p></div>
+            <div class="flow-step"><strong>5. Snapshot</strong><p>后端冻结路由、扣费、队列、活动策略。</p></div>
+          </div>
+          <div class="grid two">
+            <div class="panel">
+              <h2 class="title">普通模式</h2>
+              <p class="desc">只需要渲染 presets。用户看到的是产品选择，不看到具体供应商。</p>
+              <pre>${pretty({ presets: catalog.presets.map(({ id, label, billingPolicy, queuePolicy }) => ({ id, label, billingPolicy, queuePolicy })) })}</pre>
+            </div>
+            <div class="panel">
+              <h2 class="title">高级模式</h2>
+              <p class="desc">从 models 中选择具体模型，并使用 input_schema 渲染动态表单。</p>
+              <pre>${pretty({ models: catalog.models.map(({ id, provider, generationModes, input_schema }) => ({ id, provider, generationModes, input_schema })) })}</pre>
+            </div>
+          </div>
+        `;
+      }
+
+      function renderPresets() {
+        $("#presets").innerHTML = `
+          <div class="grid">
+            ${catalog.presets
+              .map(
+                (preset) => `
+                  <article class="card">
+                    <header class="card-head">
+                      <div>
+                        <h2 class="title">${escapeHtml(preset.label)}</h2>
+                        <p class="desc">${escapeHtml(preset.description || "")}</p>
+                      </div>
+                      ${badge(preset.enabled ? "enabled" : "disabled", preset.enabled ? "green" : "red")}
+                    </header>
+                    <div class="card-body">
+                      <div class="badge-row">
+                        ${badge(preset.id, "blue")}
+                        ${badge(preset.type)}
+                        ${badge(preset.routeMode, preset.routeMode === "campaign_locked" ? "amber" : "")}
+                        ${preset.minTier ? badge(preset.minTier, "red") : badge("free tier")}
+                      </div>
+                      <div class="metric-grid">
+                        ${metric("Cost", `${preset.billingPolicy.preflightCost ?? 0} ${preset.billingPolicy.displayCurrency}`)}
+                        ${metric("Billing", preset.billingPolicy.mode)}
+                        ${metric("Global concurrency", preset.queuePolicy.globalConcurrency)}
+                        ${metric("Per user running", preset.queuePolicy.perUserRunning)}
+                      </div>
+                      <div class="badge-row">
+                        ${preset.generationModes.map((mode) => badge(mode)).join("")}
+                      </div>
+                      <pre style="margin-top:14px">${pretty({ modelIds: preset.modelIds, campaignId: preset.campaignId, fallbackAllowed: preset.fallbackAllowed })}</pre>
+                    </div>
+                  </article>
+                `
+              )
+              .join("")}
+          </div>
+        `;
+      }
+
+      function renderModels() {
+        let selectedId = catalog.models[0].id;
+
+        function renderDetail() {
+          const model = catalog.models.find((item) => item.id === selectedId);
+          const properties = model.input_schema.properties || {};
+          $("#model-detail").innerHTML = `
+            <div class="panel">
+              <h2 class="title">${escapeHtml(model.name)}</h2>
+              <p class="desc">${escapeHtml(model.description)}</p>
+              <div class="badge-row">
+                ${badge(model.id, "blue")}
+                ${badge(model.provider)}
+                ${badge(model.family)}
+                ${badge(model.membership.minTier || "free tier")}
+              </div>
+              <div class="schema" style="margin-top:16px">
+                ${Object.entries(properties)
+                  .sort((a, b) => (a[1]["x-ui"]?.order || 999) - (b[1]["x-ui"]?.order || 999))
+                  .map(
+                    ([name, schema]) => `
+                      <div class="field">
+                        <div class="field-head">
+                          <span class="field-name">${escapeHtml(schema.title || name)}</span>
+                          <span class="field-type">${escapeHtml(schema.type || "unknown")} · ${escapeHtml(schema["x-ui"]?.control || "auto")}</span>
+                        </div>
+                        <pre>${pretty({ key: name, ...schema })}</pre>
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>
+            </div>
+          `;
+        }
+
+        $("#models").innerHTML = `
+          <div class="split">
+            <div class="list">
+              ${catalog.models
+                .map(
+                  (model) => `
+                    <button class="list-button ${model.id === selectedId ? "active" : ""}" data-model="${escapeHtml(model.id)}">
+                      <strong>${escapeHtml(model.name)}</strong>
+                      <p class="desc">${escapeHtml(model.provider)} · ${escapeHtml(model.generationModes.join(", "))}</p>
+                    </button>
+                  `
+                )
+                .join("")}
+            </div>
+            <div id="model-detail"></div>
+          </div>
+        `;
+
+        document.querySelectorAll("[data-model]").forEach((button) => {
+          button.addEventListener("click", () => {
+            selectedId = button.dataset.model;
+            document
+              .querySelectorAll("[data-model]")
+              .forEach((item) => item.classList.remove("active"));
+            button.classList.add("active");
+            renderDetail();
+          });
+        });
+        renderDetail();
+      }
+
+      function renderSubmit() {
+        const simple = {
+          presetId: "image.standard",
+          schemaVersion: "2026-05-26",
+          input: {
+            prompt: "A cinematic dragon city at sunrise",
+            imageSize: "landscape",
+            numOutputs: 1,
+          },
+          idempotencyKey: "client-generated-uuid",
+        };
+        const campaign = {
+          presetId: "campaign.aliyun-2026",
+          campaignId: "aliyun-competition-2026",
+          schemaVersion: "2026-05-26",
+          input: {
+            prompt: "A friendly mascot dragon holding a glowing bubble",
+          },
+          idempotencyKey: "client-generated-uuid",
+        };
+        const advanced = {
+          modelId: "fal/fal-ai/flux/schnell",
+          schemaVersion: "2026-05-26",
+          input: {
+            prompt: "High quality character concept art",
+            imageSize: "portrait",
+            numOutputs: 2,
+            seed: 12345,
+          },
+          idempotencyKey: "client-generated-uuid",
+        };
+        $("#submit").innerHTML = `
+          <div class="grid two">
+            <div class="panel">
+              <h2 class="title">普通模式提交</h2>
+              <p class="desc">用户选择快速、标准、专业时，只提交 presetId。</p>
+              <pre>${pretty(simple)}</pre>
+            </div>
+            <div class="panel">
+              <h2 class="title">活动免费提交</h2>
+              <p class="desc">活动专属 preset 绑定 campaignId，后端按活动策略免费。</p>
+              <pre>${pretty(campaign)}</pre>
+            </div>
+            <div class="panel">
+              <h2 class="title">高级模式提交</h2>
+              <p class="desc">高级用户可以选择具体 modelId，并使用该模型 schema。</p>
+              <pre>${pretty(advanced)}</pre>
+            </div>
+            <div class="panel">
+              <h2 class="title">后端冻结 Snapshot</h2>
+              <p class="desc">真实 job 会保存路由、扣费、队列、活动策略，便于重试和退款。</p>
+              <pre>${pretty({
+                routingSnapshot: {
+                  presetId: "image.standard",
+                  selectedProvider: "fal-ai",
+                  selectedModelId: "fal/fal-ai/flux/schnell",
+                  policy: {
+                    quota: { mode: "charge", dimension: "image", cost: 2 },
+                    concurrency: { queueName: "ai-image-generation", perUserRunning: 2 },
+                  },
+                },
+              })}</pre>
+            </div>
+          </div>
+        `;
+      }
+
+      function renderRaw() {
+        $("#raw").innerHTML = `<pre>${pretty({ code: 200, data: catalog })}</pre>`;
+      }
+
+      renderMeta();
+      renderOverview();
+      renderPresets();
+      renderModels();
+      renderSubmit();
+      renderRaw();
+    </script>
+  </body>
+</html>

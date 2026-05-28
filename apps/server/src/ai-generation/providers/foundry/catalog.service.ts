@@ -95,7 +95,7 @@ export class FoundryCatalogService {
     );
   }
 
-  private async fromEnvOverrides(): Promise<FoundryDeploymentRecord[]> {
+  private fromEnvOverrides(): FoundryDeploymentRecord[] {
     const raw = process.env.FOUNDRY_DEPLOYMENTS_JSON?.trim();
     if (!raw) return [];
 
@@ -191,6 +191,7 @@ export class FoundryCatalogService {
       pickString(source, ['description']) ??
       pickString(properties, ['description']) ??
       (publisher ? `${publisher} ${modelName}` : modelName);
+    const skuName = pickString(sku, ['name']);
 
     return {
       id: `${sourceName}:${deployment}`,
@@ -199,7 +200,7 @@ export class FoundryCatalogService {
       modelVersion,
       publisher,
       displayName,
-      description: sku.name ? `${description} (${sku.name})` : description,
+      description: skuName ? `${description} (${skuName})` : description,
       source: sourceName,
       raw,
     };

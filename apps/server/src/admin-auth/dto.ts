@@ -1,0 +1,43 @@
+import { z } from 'zod';
+
+export const AdminLoginSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .email()
+      .max(320)
+      .transform((v) => v.toLowerCase()),
+    password: z.string().min(8).max(200),
+  })
+  .strict();
+export type AdminLoginInput = z.infer<typeof AdminLoginSchema>;
+
+export const AdminMfaVerifySchema = z
+  .object({
+    challengeToken: z.string().min(20).max(120),
+    code: z
+      .string()
+      .trim()
+      .regex(/^\d{6}$/),
+  })
+  .strict();
+export type AdminMfaVerifyInput = z.infer<typeof AdminMfaVerifySchema>;
+
+export const AdminSessionResponseSchema = z.object({
+  user: z.object({
+    id: z.string().uuid(),
+    email: z.string().email(),
+    displayName: z.string(),
+    status: z.string(),
+    siteScope: z.enum(['global', 'cn', 'all']),
+    roleKeys: z.array(z.string()).optional(),
+    requireMfa: z.boolean().optional(),
+    mfaEnabledAt: z.string().nullable().optional(),
+    permissions: z.array(z.string()),
+  }),
+  session: z.object({
+    id: z.string().uuid(),
+    expiresAt: z.string(),
+  }),
+});

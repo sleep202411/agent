@@ -4,10 +4,11 @@
 // `npm run db:migrate`. Models live alongside the module that owns
 // them in src/<module>/.
 //
-// ID convention: product-facing existing domains mostly use short URL-safe
-// random `String @id` generated in app code via src/common/id.ts. New
-// back-office/internal domains may use database UUIDs when the id is not a
-// public URL affordance.
+// ID convention:
+// - Legacy/product modules that expose compact URL ids use app-generated
+//   short ids from src/common/id.ts.
+// - Platform Core modules use UUID primary keys so workspace/project/wallet
+//   records stay globally unique across future regional cells and admin tools.
 
 generator client {
   provider = "prisma-client-js"
@@ -15,6 +16,2097 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────
+// Platform Core domain (src/workspaces/)
+// ─────────────────────────────────────────────────────────────
+//
+// New-platform source of truth. This domain deliberately does not
+// mirror Java's project / point tables. Java may still provide the
+// authenticated external user id, but ownership, permissions, wallet
+// accounting, project assets, and audit records below are all Nest +
+// Postgres owned.
+//
+// Invariant:
+//   Workspace → Project → ProjectAsset
+//
+// Assets belong to projects. Projects belong to workspaces. A personal
+// project and a team project therefore use the same asset schema; the
+// difference is the workspace owner, governance, wallet, and audit
+// policy around that project.
+
+enum WorkspaceType {
+  personal
+  team
+}
+
+enum WorkspaceStatus {
+  active
+  suspended
+  archived
+}
+
+enum WorkspaceMemberRole {
+  owner
+  admin
+  editor
+  viewer
+  billing
+}
+
+enum WorkspaceMemberStatus {
+  invited
+  active
+  suspended
+  removed
+}
+
+enum WorkspaceInviteStatus {
+  pending
+  accepted
+  revoked
+  expired
+}
+
+enum PlatformProjectStatus {
+  active
+  archived
+}
+
+enum ProjectMemberRole {
+  owner
+  admin
+  editor
+  viewer
+}
+
+enum ProjectMemberStatus {
+  active
+  suspended
+  removed
+}
+
+enum ProjectVisibility {
+  private
+  workspace
+  public
+}
+
+enum LegacyProjectSourceSystem {
+  java_content
+  java_studio
+}
+
+enum LegacyProjectEntityType {
+  project
+  episode
+}
+
+enum LegacyProjectMigrationStatus {
+  mapped
+  importing
+  migrated
+  failed
+  ignored
+}
+
+enum PlatformDocumentType {
+  brief
+  script
+  storyboard
+  shot_plan
+  timeline
+  asset_board
+  course_outline
+  gig_requirement
+}
+
+enum PlatformDocumentStatus {
+  active
+  archived
+}
+
+enum PlatformDocumentVersionSource {
+  autosave
+  manual
+  import
+  ai
+  system
+}
+
+enum PlatformDocumentOperationType {
+  patch
+  yjs_update
+  snapshot
+  comment
+  system
+}
+
+enum PlatformDocumentCommentStatus {
+  open
+  resolved
+}
+
+enum ProjectAssetType {
+  image
+  video
+  audio
+  file
+  document
+  model
+}
+
+enum ProjectAssetSourceType {
+  upload
+  ai_job
+  import
+  manual
+}
+
+enum WalletOwnerType {
+  user
+  workspace
+}
+
+enum WalletCurrencyType {
+  bubble
+  community_point
+  revenue_credit
+}
+
+enum WalletAccountStatus {
+  active
+  frozen
+  closed
+}
+
+enum WalletTransactionStatus {
+  pending
+  posted
+  voided
+  failed
+}
+
+enum WalletLedgerEntryType {
+  credit
+  debit
+  hold
+  release
+  settle
+  refund
+  adjustment
+  transfer_in
+  transfer_out
+}
+
+enum BillingSiteRegion {
+  global
+  cn
+}
+
+enum BillingSubjectType {
+  user
+  workspace
+}
+
+enum BillingProductType {
+  bubble_pack
+  community_point_pack
+  membership_plan
+  team_membership_plan
+  custom
+}
+
+enum BillingPriceInterval {
+  one_time
+  month
+  year
+}
+
+enum BillingOrderType {
+  bubble_topup
+  community_point_topup
+  membership_purchase
+  subscription_checkout
+  manual_adjustment
+}
+
+enum BillingOrderStatus {
+  draft
+  pending_payment
+  paid
+  fulfilled
+  canceled
+  expired
+  failed
+  refunded
+  partially_refunded
+}
+
+enum PaymentProvider {
+  airwallex
+  wechat_pay
+  manual
+  internal
+}
+
+enum PaymentIntentKind {
+  hosted_checkout
+  payment_intent
+  external_redirect
+}
+
+enum PaymentIntentStatus {
+  requires_action
+  pending
+  succeeded
+  failed
+  canceled
+  expired
+}
+
+enum BillingSubscriptionStatus {
+  incomplete
+  active
+  past_due
+  canceled
+  expired
+}
+
+enum PaymentProviderEventStatus {
+  received
+  processed
+  ignored
+  failed
+}
+
+enum EntitlementGrantStatus {
+  pending
+  active
+  expired
+  revoked
+}
+
+enum AdminUserStatus {
+  invited
+  active
+  suspended
+  disabled
+}
+
+enum AdminSiteScope {
+  global
+  cn
+  all
+}
+
+enum AdminSessionStatus {
+  active
+  revoked
+  expired
+}
+
+enum AdminAuditOutcome {
+  success
+  failure
+}
+
+enum AdminLoginAttemptOutcome {
+  success
+  failure
+  blocked
+}
+
+enum IpContentType {
+  series
+  interactive_film
+  film
+  course
+  collection
+  other
+}
+
+enum IpPublicationStatus {
+  draft
+  submitted
+  in_review
+  changes_requested
+  approved
+  scheduled
+  published
+  hidden
+  suspended
+  archived
+}
+
+enum IpListingVisibility {
+  private
+  unlisted
+  public
+}
+
+enum IpAgeRating {
+  general
+  teen
+  mature
+  restricted
+}
+
+enum IpStoryNodeType {
+  linear
+  branch
+  ending
+  bonus
+}
+
+enum IpCampaignType {
+  presale
+  early_bird
+  launch
+  event
+  referral
+  custom
+}
+
+enum IpCampaignStatus {
+  draft
+  scheduled
+  active
+  ended
+  canceled
+}
+
+enum IpCommerceTargetType {
+  title
+  episode
+}
+
+enum IpPriceRuleStatus {
+  draft
+  active
+  disabled
+  archived
+}
+
+enum IpPurchaseOrderStatus {
+  pending
+  paid
+  fulfilled
+  canceled
+  failed
+  refunded
+  partially_refunded
+}
+
+enum IpEntitlementStatus {
+  active
+  expired
+  revoked
+  refunded
+}
+
+enum IpCollectionItemStatus {
+  active
+  removed
+}
+
+enum IpContributorRole {
+  owner
+  producer
+  director
+  writer
+  artist
+  editor
+  performer
+  investor
+  referrer
+  other
+}
+
+enum IpRevenueRuleType {
+  production_fee
+  revenue_share
+  referral_commission
+  platform_fee
+  manual
+}
+
+enum IpRevenueRuleStatus {
+  draft
+  active
+  disabled
+  archived
+}
+
+enum IpRevenueLedgerEntryType {
+  production_fee
+  revenue_share
+  referral_commission
+  platform_fee
+  refund_reversal
+  manual_adjustment
+}
+
+enum IpRevenueLedgerStatus {
+  pending
+  posted
+  voided
+}
+
+enum IpReferralLinkStatus {
+  active
+  disabled
+  expired
+}
+
+enum IpReviewTargetType {
+  title
+  episode
+  price_rule
+  revenue_rule
+  campaign
+}
+
+enum IpReviewStatus {
+  submitted
+  in_review
+  changes_requested
+  approved
+  rejected
+  canceled
+}
+
+enum IpReviewEventType {
+  submitted
+  assigned
+  comment
+  changes_requested
+  approved
+  rejected
+  canceled
+}
+
+enum IpRightsTargetType {
+  title
+  episode
+}
+
+enum IpRightsOwnershipType {
+  original
+  licensed
+  public_domain
+  ai_generated
+  mixed
+  unknown
+}
+
+enum IpRightsDeclarationStatus {
+  draft
+  submitted
+  approved
+  rejected
+}
+
+enum IpModerationTargetType {
+  title
+  episode
+  review_submission
+  report
+}
+
+enum IpModerationActionType {
+  hide
+  suspend_sales
+  takedown
+  region_block
+  age_gate
+  restore
+  reject
+  approve
+}
+
+enum IpReportReason {
+  copyright
+  unsafe_content
+  fraud
+  misleading
+  privacy
+  harassment
+  other
+}
+
+enum IpReportStatus {
+  submitted
+  triaged
+  actioned
+  dismissed
+}
+
+enum IpUserBlockTargetType {
+  title
+  creator
+}
+
+enum IpImportSourceSystem {
+  java_content
+  java_studio
+  admin_csv
+  manual
+}
+
+enum IpImportRunStatus {
+  queued
+  running
+  completed
+  failed
+  canceled
+}
+
+enum IpImportEntityType {
+  title
+  episode
+  story_node
+  media_asset
+  price_rule
+  contributor
+}
+
+model Workspace {
+  id               String          @id @default(uuid()) @db.Uuid
+  type             WorkspaceType
+  status           WorkspaceStatus @default(active)
+  name             String          @db.VarChar(120)
+  slug             String?         @db.VarChar(80)
+  avatarUrl        String?         @map("avatar_url") @db.VarChar(512)
+  description      String?         @db.VarChar(500)
+  /// External authenticated user id. For personal workspaces this is
+  /// the owning user; for team workspaces this is the creator/admin who
+  /// initialized the team. No FK to Java user tables.
+  ownerUserId      String          @map("owner_user_id") @db.VarChar(64)
+  createdById      String          @map("created_by_id") @db.VarChar(64)
+  defaultProjectId String?         @map("default_project_id") @db.Uuid
+  version          Int             @default(0)
+  suspendedAt      DateTime?       @map("suspended_at") @db.Timestamptz(6)
+  archivedAt       DateTime?       @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz(6)
+
+  members        WorkspaceMember[]
+  invites        WorkspaceInvite[]
+  projects       PlatformProject[]
+  auditLogs      PlatformAuditLog[]
+  projectAssets  ProjectAsset[]
+  aiJobs         AiJob[]
+  documents      PlatformDocument[]
+  legacyProjects LegacyProjectWorkspaceMap[]
+  billingOrders  BillingOrder[]
+  subscriptions  BillingSubscription[]
+  ipTitles       IpTitle[]
+  ipOrders       IpPurchaseOrder[]
+  ipImportRuns   IpImportRun[]
+  ipImportMaps   IpImportMap[]
+
+  /// Active personal uniqueness is enforced by partial unique SQL:
+  /// (owner_user_id) WHERE type='personal' AND deleted_at IS NULL.
+  @@index([ownerUserId, type, deletedAt], map: "workspaces_owner_type_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "workspaces_status_recent_idx")
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id           String                @id @default(uuid()) @db.Uuid
+  workspaceId  String                @map("workspace_id") @db.Uuid
+  userId       String                @map("user_id") @db.VarChar(64)
+  role         WorkspaceMemberRole
+  status       WorkspaceMemberStatus @default(active)
+  seatAssigned Boolean               @default(true) @map("seat_assigned")
+  invitedById  String?               @map("invited_by_id") @db.VarChar(64)
+  joinedAt     DateTime?             @default(now()) @map("joined_at") @db.Timestamptz(6)
+  removedAt    DateTime?             @map("removed_at") @db.Timestamptz(6)
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  /// Active uniqueness is enforced by partial unique SQL:
+  /// (workspace_id, user_id) WHERE removed_at IS NULL.
+  @@index([userId, status], map: "workspace_members_by_user_idx")
+  @@index([workspaceId, status, role], map: "workspace_members_by_workspace_idx")
+  @@map("workspace_members")
+}
+
+model WorkspaceInvite {
+  id            String                @id @default(uuid()) @db.Uuid
+  workspaceId   String                @map("workspace_id") @db.Uuid
+  inviteeUserId String?               @map("invitee_user_id") @db.VarChar(64)
+  inviteeEmail  String?               @map("invitee_email") @db.VarChar(320)
+  role          WorkspaceMemberRole
+  tokenHash     String                @map("token_hash") @db.VarChar(128)
+  status        WorkspaceInviteStatus @default(pending)
+  invitedById   String                @map("invited_by_id") @db.VarChar(64)
+  acceptedAt    DateTime?             @map("accepted_at") @db.Timestamptz(6)
+  revokedAt     DateTime?             @map("revoked_at") @db.Timestamptz(6)
+  expiresAt     DateTime              @map("expires_at") @db.Timestamptz(6)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash], map: "workspace_invites_token_hash_unique")
+  @@index([workspaceId, status, createdAt(sort: Desc)], map: "workspace_invites_by_workspace_idx")
+  @@index([inviteeUserId, status], map: "workspace_invites_by_user_idx")
+  @@index([inviteeEmail, status], map: "workspace_invites_by_email_idx")
+  @@map("workspace_invites")
+}
+
+model PlatformProject {
+  id           String                @id @default(uuid()) @db.Uuid
+  workspaceId  String                @map("workspace_id") @db.Uuid
+  name         String                @db.VarChar(160)
+  slug         String?               @db.VarChar(100)
+  projectType  String                @default("general") @map("project_type") @db.VarChar(64)
+  status       PlatformProjectStatus @default(active)
+  visibility   ProjectVisibility     @default(private)
+  description  String?               @db.Text
+  coverAssetId String?               @map("cover_asset_id") @db.Uuid
+  createdById  String                @map("created_by_id") @db.VarChar(64)
+  updatedById  String?               @map("updated_by_id") @db.VarChar(64)
+  version      Int                   @default(0)
+  archivedAt   DateTime?             @map("archived_at") @db.Timestamptz(6)
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?             @map("deleted_at") @db.Timestamptz(6)
+
+  workspace        Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members          ProjectMember[]
+  assets           ProjectAsset[]
+  auditLogs        PlatformAuditLog[]
+  aiJobs           AiJob[]
+  documents        PlatformDocument[]
+  legacyProjects   LegacyProjectWorkspaceMap[]
+  sourceIpTitles   IpTitle[]                   @relation("IpTitleSourceProject")
+  sourceIpEpisodes IpEpisode[]                 @relation("IpEpisodeSourceProject")
+
+  /// Active slug uniqueness is enforced by partial unique SQL:
+  /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
+  @@unique([id, workspaceId], name: "uniq_platform_project_id_workspace", map: "platform_projects_id_workspace_unique")
+  @@index([workspaceId, status, updatedAt(sort: Desc)], map: "platform_projects_workspace_recent_idx")
+  @@index([createdById, createdAt(sort: Desc)], map: "platform_projects_creator_idx")
+  @@index([projectType, status, updatedAt(sort: Desc)], map: "platform_projects_type_recent_idx")
+  @@map("platform_projects")
+}
+
+model LegacyProjectWorkspaceMap {
+  id                   String                       @id @default(uuid()) @db.Uuid
+  workspaceId          String                       @map("workspace_id") @db.Uuid
+  platformProjectId    String?                      @map("platform_project_id") @db.Uuid
+  sourceSystem         LegacyProjectSourceSystem    @map("source_system")
+  entityType           LegacyProjectEntityType      @map("entity_type")
+  legacyEntityId       String                       @map("legacy_entity_id") @db.VarChar(64)
+  legacyParentEntityId String?                      @map("legacy_parent_entity_id") @db.VarChar(64)
+  ownerUserId          String                       @map("owner_user_id") @db.VarChar(64)
+  displayName          String?                      @map("display_name") @db.VarChar(160)
+  coverUrl             String?                      @map("cover_url") @db.VarChar(1024)
+  migrationStatus      LegacyProjectMigrationStatus @default(mapped) @map("migration_status")
+  metadata             Json                         @default("{}") @db.JsonB
+  lastSyncedAt         DateTime?                    @map("last_synced_at") @db.Timestamptz(6)
+  migratedAt           DateTime?                    @map("migrated_at") @db.Timestamptz(6)
+  createdAt            DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt            DateTime?                    @map("deleted_at") @db.Timestamptz(6)
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  platformProject PlatformProject? @relation(fields: [platformProjectId], references: [id], onDelete: SetNull)
+
+  /// Active legacy source uniqueness is enforced by partial unique SQL:
+  /// (source_system, entity_type, legacy_entity_id) WHERE deleted_at IS NULL.
+  @@index([workspaceId, entityType, updatedAt(sort: Desc)], map: "legacy_project_maps_workspace_recent_idx")
+  @@index([ownerUserId, entityType, updatedAt(sort: Desc)], map: "legacy_project_maps_owner_recent_idx")
+  @@index([platformProjectId], map: "legacy_project_maps_platform_project_idx")
+  @@index([migrationStatus, updatedAt(sort: Desc)], map: "legacy_project_maps_migration_status_idx")
+  @@map("legacy_project_workspace_maps")
+}
+
+model PlatformDocument {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  workspaceId          String                 @map("workspace_id") @db.Uuid
+  projectId            String                 @map("project_id") @db.Uuid
+  type                 PlatformDocumentType
+  status               PlatformDocumentStatus @default(active)
+  title                String                 @db.VarChar(160)
+  slug                 String?                @db.VarChar(100)
+  schemaVersion        String                 @default("2026-05-27") @map("schema_version") @db.VarChar(32)
+  collaborationDialect String                 @default("fizzdragon.document.v1") @map("collaboration_dialect") @db.VarChar(64)
+  collaborationRoomId  String                 @default(uuid()) @map("collaboration_room_id") @db.Uuid
+  contentSnapshot      Json                   @default("{}") @map("content_snapshot") @db.JsonB
+  crdtState            Bytes?                 @map("crdt_state")
+  currentSequence      Int                    @default(0) @map("current_sequence")
+  currentVersionId     String?                @map("current_version_id") @db.Uuid
+  createdById          String                 @map("created_by_id") @db.VarChar(64)
+  updatedById          String?                @map("updated_by_id") @db.VarChar(64)
+  version              Int                    @default(0)
+  archivedAt           DateTime?              @map("archived_at") @db.Timestamptz(6)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt            DateTime?              @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   PlatformProject @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+
+  versions       PlatformDocumentVersion[]
+  operations     PlatformDocumentOperation[]
+  presences      PlatformDocumentPresence[]
+  commentThreads PlatformDocumentCommentThread[]
+  assets         ProjectAsset[]
+  aiJobs         AiJob[]
+
+  /// Active slug uniqueness is enforced by partial unique SQL:
+  /// (project_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
+  @@unique([id, workspaceId], name: "uniq_platform_document_id_workspace", map: "platform_documents_id_workspace_unique")
+  @@unique([collaborationRoomId], map: "platform_documents_room_unique")
+  @@index([projectId, type, updatedAt(sort: Desc)], map: "platform_documents_project_type_recent_idx")
+  @@index([workspaceId, updatedAt(sort: Desc)], map: "platform_documents_workspace_recent_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "platform_documents_status_recent_idx")
+  @@map("platform_documents")
+}
+
+model PlatformDocumentVersion {
+  id            String                        @id @default(uuid()) @db.Uuid
+  documentId    String                        @map("document_id") @db.Uuid
+  versionNumber Int                           @map("version_number")
+  schemaVersion String                        @map("schema_version") @db.VarChar(32)
+  sequence      Int
+  title         String?                       @db.VarChar(160)
+  label         String?                       @db.VarChar(120)
+  source        PlatformDocumentVersionSource @default(autosave)
+  sourceId      String?                       @map("source_id") @db.VarChar(128)
+  snapshot      Json                          @db.JsonB
+  crdtState     Bytes?                        @map("crdt_state")
+  metadata      Json                          @default("{}") @db.JsonB
+  createdById   String                        @map("created_by_id") @db.VarChar(64)
+  createdAt     DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document PlatformDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, versionNumber], map: "platform_document_versions_doc_number_unique")
+  @@index([documentId, createdAt(sort: Desc)], map: "platform_document_versions_doc_recent_idx")
+  @@map("platform_document_versions")
+}
+
+model PlatformDocumentOperation {
+  id               String                        @id @default(uuid()) @db.Uuid
+  documentId       String                        @map("document_id") @db.Uuid
+  sequence         Int
+  operationType    PlatformDocumentOperationType @map("operation_type")
+  actorUserId      String                        @map("actor_user_id") @db.VarChar(64)
+  clientMutationId String?                       @map("client_mutation_id") @db.VarChar(128)
+  idempotencyKey   String?                       @map("idempotency_key") @db.VarChar(160)
+  baseSequence     Int?                          @map("base_sequence")
+  patch            Json?                         @db.JsonB
+  yjsUpdate        Bytes?                        @map("yjs_update")
+  snapshot         Json?                         @db.JsonB
+  metadata         Json                          @default("{}") @db.JsonB
+  createdAt        DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document PlatformDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, sequence], map: "platform_document_operations_doc_sequence_unique")
+  @@index([documentId, createdAt(sort: Desc)], map: "platform_document_operations_doc_recent_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "platform_document_operations_actor_recent_idx")
+  @@map("platform_document_operations")
+}
+
+model PlatformDocumentPresence {
+  id           String   @id @default(uuid()) @db.Uuid
+  documentId   String   @map("document_id") @db.Uuid
+  userId       String   @map("user_id") @db.VarChar(64)
+  connectionId String   @map("connection_id") @db.VarChar(128)
+  cursor       Json?    @db.JsonB
+  selection    Json?    @db.JsonB
+  metadata     Json     @default("{}") @db.JsonB
+  lastSeenAt   DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document PlatformDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId, connectionId], map: "platform_document_presence_connection_unique")
+  @@index([documentId, expiresAt], map: "platform_document_presence_active_idx")
+  @@map("platform_document_presence")
+}
+
+model PlatformDocumentCommentThread {
+  id           String                        @id @default(uuid()) @db.Uuid
+  documentId   String                        @map("document_id") @db.Uuid
+  blockId      String?                       @map("block_id") @db.VarChar(128)
+  anchor       Json?                         @db.JsonB
+  title        String?                       @db.VarChar(160)
+  status       PlatformDocumentCommentStatus @default(open)
+  createdById  String                        @map("created_by_id") @db.VarChar(64)
+  resolvedById String?                       @map("resolved_by_id") @db.VarChar(64)
+  resolvedAt   DateTime?                     @map("resolved_at") @db.Timestamptz(6)
+  createdAt    DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt    DateTime?                     @map("deleted_at") @db.Timestamptz(6)
+
+  document PlatformDocument          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  comments PlatformDocumentComment[]
+
+  @@index([documentId, status, updatedAt(sort: Desc)], map: "platform_document_comment_threads_doc_status_idx")
+  @@index([documentId, blockId], map: "platform_document_comment_threads_block_idx")
+  @@map("platform_document_comment_threads")
+}
+
+model PlatformDocumentComment {
+  id          String    @id @default(uuid()) @db.Uuid
+  threadId    String    @map("thread_id") @db.Uuid
+  documentId  String    @map("document_id") @db.Uuid
+  body        String    @db.Text
+  createdById String    @map("created_by_id") @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  editedAt    DateTime? @map("edited_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  thread PlatformDocumentCommentThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt(sort: Asc)], map: "platform_document_comments_doc_idx")
+  @@index([threadId, createdAt(sort: Asc)], map: "platform_document_comments_thread_idx")
+  @@map("platform_document_comments")
+}
+
+model ProjectMember {
+  id          String              @id @default(uuid()) @db.Uuid
+  projectId   String              @map("project_id") @db.Uuid
+  userId      String              @map("user_id") @db.VarChar(64)
+  role        ProjectMemberRole
+  status      ProjectMemberStatus @default(active)
+  grantedById String              @map("granted_by_id") @db.VarChar(64)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  removedAt   DateTime?           @map("removed_at") @db.Timestamptz(6)
+
+  project PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Project-specific active uniqueness is enforced by partial unique
+  /// SQL: (project_id, user_id) WHERE removed_at IS NULL.
+  @@index([userId, status], map: "project_members_by_user_idx")
+  @@index([projectId, status, role], map: "project_members_by_project_idx")
+  @@map("project_members")
+}
+
+model ProjectAsset {
+  id              String                 @id @default(uuid()) @db.Uuid
+  workspaceId     String                 @map("workspace_id") @db.Uuid
+  projectId       String                 @map("project_id") @db.Uuid
+  type            ProjectAssetType
+  sourceType      ProjectAssetSourceType @default(upload) @map("source_type")
+  sourceId        String?                @map("source_id") @db.VarChar(128)
+  documentId      String?                @map("document_id") @db.Uuid
+  documentBlockId String?                @map("document_block_id") @db.VarChar(128)
+  name            String?                @db.VarChar(160)
+  url             String                 @db.VarChar(1024)
+  storagePath     String?                @map("storage_path") @db.VarChar(1024)
+  thumbnailUrl    String?                @map("thumbnail_url") @db.VarChar(1024)
+  mimeType        String?                @map("mime_type") @db.VarChar(128)
+  bytes           BigInt?
+  width           Int?
+  height          Int?
+  durationSeconds Int?                   @map("duration_seconds")
+  metadata        Json                   @default("{}") @db.JsonB
+  createdById     String                 @map("created_by_id") @db.VarChar(64)
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt       DateTime?              @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   PlatformProject   @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  document  PlatformDocument? @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+
+  @@index([projectId, type, createdAt(sort: Desc)], map: "project_assets_project_type_recent_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "project_assets_workspace_recent_idx")
+  @@index([documentId, documentBlockId], map: "project_assets_document_block_idx")
+  @@index([sourceType, sourceId], map: "project_assets_source_idx")
+  @@index([deletedAt], map: "project_assets_deleted_at_idx")
+  @@map("project_assets")
+}
+
+model WalletAccount {
+  id               String              @id @default(uuid()) @db.Uuid
+  ownerType        WalletOwnerType     @map("owner_type")
+  ownerId          String              @map("owner_id") @db.VarChar(64)
+  currency         WalletCurrencyType
+  status           WalletAccountStatus @default(active)
+  availableBalance BigInt              @default(0) @map("available_balance")
+  heldBalance      BigInt              @default(0) @map("held_balance")
+  version          Int                 @default(0)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  closedAt         DateTime?           @map("closed_at") @db.Timestamptz(6)
+
+  ledgerEntries WalletLedgerEntry[]
+
+  @@unique([ownerType, ownerId, currency], map: "wallet_accounts_owner_currency_unique")
+  @@index([ownerType, ownerId, status], map: "wallet_accounts_owner_status_idx")
+  @@map("wallet_accounts")
+}
+
+model WalletTransaction {
+  id             String                  @id @default(uuid()) @db.Uuid
+  status         WalletTransactionStatus @default(posted)
+  sourceType     String                  @map("source_type") @db.VarChar(64)
+  sourceId       String?                 @map("source_id") @db.VarChar(128)
+  idempotencyKey String                  @map("idempotency_key") @db.VarChar(160)
+  actorUserId    String?                 @map("actor_user_id") @db.VarChar(64)
+  workspaceId    String?                 @map("workspace_id") @db.Uuid
+  projectId      String?                 @map("project_id") @db.Uuid
+  description    String?                 @db.VarChar(255)
+  metadata       Json                    @default("{}") @db.JsonB
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  postedAt       DateTime?               @default(now()) @map("posted_at") @db.Timestamptz(6)
+  voidedAt       DateTime?               @map("voided_at") @db.Timestamptz(6)
+
+  entries                WalletLedgerEntry[]
+  ipPurchaseOrders       IpPurchaseOrder[]
+  ipRevenueLedgerEntries IpRevenueLedgerEntry[]
+
+  @@unique([idempotencyKey], map: "wallet_transactions_idempotency_key_unique")
+  @@index([sourceType, sourceId], map: "wallet_transactions_source_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "wallet_transactions_actor_recent_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "wallet_transactions_workspace_recent_idx")
+  @@map("wallet_transactions")
+}
+
+model WalletLedgerEntry {
+  id                    String                @id @default(uuid()) @db.Uuid
+  transactionId         String                @map("transaction_id") @db.Uuid
+  accountId             String                @map("account_id") @db.Uuid
+  entryType             WalletLedgerEntryType @map("entry_type")
+  currency              WalletCurrencyType
+  amount                BigInt
+  availableDelta        BigInt                @map("available_delta")
+  heldDelta             BigInt                @map("held_delta")
+  availableBalanceAfter BigInt                @map("available_balance_after")
+  heldBalanceAfter      BigInt                @map("held_balance_after")
+  reason                String                @db.VarChar(80)
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  transaction WalletTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account     WalletAccount     @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, createdAt(sort: Desc)], map: "wallet_ledger_entries_account_recent_idx")
+  @@index([transactionId], map: "wallet_ledger_entries_transaction_idx")
+  @@map("wallet_ledger_entries")
+}
+
+model BillingCatalogItem {
+  id          String             @id @default(uuid()) @db.Uuid
+  siteRegion  BillingSiteRegion  @default(global) @map("site_region")
+  productType BillingProductType @map("product_type")
+  code        String             @db.VarChar(96)
+  name        String             @db.VarChar(160)
+  description String?            @db.Text
+  isActive    Boolean            @default(true) @map("is_active")
+  metadata    Json               @default("{}") @db.JsonB
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt  DateTime?          @map("archived_at") @db.Timestamptz(6)
+
+  prices BillingPrice[]
+  orders BillingOrder[]
+
+  @@unique([siteRegion, code], map: "billing_catalog_items_region_code_unique")
+  @@index([siteRegion, productType, isActive], map: "billing_catalog_items_region_type_idx")
+  @@map("billing_catalog_items")
+}
+
+model BillingPrice {
+  id                   String               @id @default(uuid()) @db.Uuid
+  itemId               String               @map("item_id") @db.Uuid
+  provider             PaymentProvider
+  providerPriceId      String?              @map("provider_price_id") @db.VarChar(128)
+  currency             String               @db.Char(3)
+  amountMinor          BigInt               @map("amount_minor")
+  interval             BillingPriceInterval @default(one_time)
+  subjectType          BillingSubjectType   @default(user) @map("subject_type")
+  grantsWalletCurrency WalletCurrencyType?  @map("grants_wallet_currency")
+  grantsWalletAmount   BigInt?              @map("grants_wallet_amount")
+  grantsPlanKey        String?              @map("grants_plan_key") @db.VarChar(64)
+  grantDurationDays    Int?                 @map("grant_duration_days")
+  providerMode         String?              @map("provider_mode") @db.VarChar(32)
+  isActive             Boolean              @default(true) @map("is_active")
+  metadata             Json                 @default("{}") @db.JsonB
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt           DateTime?            @map("archived_at") @db.Timestamptz(6)
+
+  item          BillingCatalogItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  orders        BillingOrder[]
+  subscriptions BillingSubscription[]
+
+  /// Active provider-price uniqueness is enforced by partial unique SQL:
+  /// (provider, provider_price_id) WHERE provider_price_id IS NOT NULL AND archived_at IS NULL.
+  @@index([itemId, isActive], map: "billing_prices_item_active_idx")
+  @@index([provider, providerPriceId], map: "billing_prices_provider_price_idx")
+  @@index([currency, amountMinor], map: "billing_prices_currency_amount_idx")
+  @@map("billing_prices")
+}
+
+model BillingOrder {
+  id          String             @id @default(uuid()) @db.Uuid
+  orderNo     String             @map("order_no") @db.VarChar(64)
+  userId      String             @map("user_id") @db.VarChar(64)
+  workspaceId String?            @map("workspace_id") @db.Uuid
+  subjectType BillingSubjectType @map("subject_type")
+  subjectId   String             @map("subject_id") @db.VarChar(64)
+  siteRegion  BillingSiteRegion  @default(global) @map("site_region")
+  orderType   BillingOrderType   @map("order_type")
+  status      BillingOrderStatus @default(draft)
+  itemId      String             @map("item_id") @db.Uuid
+  priceId     String             @map("price_id") @db.Uuid
+  provider    PaymentProvider
+  currency    String             @db.Char(3)
+  amountMinor BigInt             @map("amount_minor")
+  quantity    Int                @default(1)
+  description String?            @db.VarChar(255)
+  metadata    Json               @default("{}") @db.JsonB
+  version     Int                @default(0)
+  expiresAt   DateTime?          @map("expires_at") @db.Timestamptz(6)
+  paidAt      DateTime?          @map("paid_at") @db.Timestamptz(6)
+  fulfilledAt DateTime?          @map("fulfilled_at") @db.Timestamptz(6)
+  canceledAt  DateTime?          @map("canceled_at") @db.Timestamptz(6)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace      Workspace?             @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  item           BillingCatalogItem     @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  price          BillingPrice           @relation(fields: [priceId], references: [id], onDelete: Restrict)
+  paymentIntents BillingPaymentIntent[]
+
+  @@unique([orderNo], map: "billing_orders_order_no_unique")
+  @@index([userId, createdAt(sort: Desc)], map: "billing_orders_user_recent_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "billing_orders_workspace_recent_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "billing_orders_status_recent_idx")
+  @@index([subjectType, subjectId, createdAt(sort: Desc)], map: "billing_orders_subject_recent_idx")
+  @@map("billing_orders")
+}
+
+model BillingPaymentIntent {
+  id                      String              @id @default(uuid()) @db.Uuid
+  orderId                 String              @map("order_id") @db.Uuid
+  provider                PaymentProvider
+  kind                    PaymentIntentKind
+  status                  PaymentIntentStatus @default(requires_action)
+  requestId               String              @map("request_id") @db.VarChar(64)
+  providerPaymentIntentId String?             @map("provider_payment_intent_id") @db.VarChar(128)
+  providerCheckoutId      String?             @map("provider_checkout_id") @db.VarChar(128)
+  providerCustomerId      String?             @map("provider_customer_id") @db.VarChar(128)
+  providerSubscriptionId  String?             @map("provider_subscription_id") @db.VarChar(128)
+  providerInvoiceId       String?             @map("provider_invoice_id") @db.VarChar(128)
+  checkoutUrl             String?             @map("checkout_url") @db.VarChar(2048)
+  clientSecret            String?             @map("client_secret") @db.VarChar(2048)
+  currency                String              @db.Char(3)
+  amountMinor             BigInt              @map("amount_minor")
+  providerStatus          String?             @map("provider_status") @db.VarChar(64)
+  providerPayload         Json                @default("{}") @map("provider_payload") @db.JsonB
+  expiresAt               DateTime?           @map("expires_at") @db.Timestamptz(6)
+  completedAt             DateTime?           @map("completed_at") @db.Timestamptz(6)
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  order  BillingOrder                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  events BillingPaymentProviderEvent[]
+
+  @@unique([requestId], map: "billing_payment_intents_request_id_unique")
+  @@index([orderId, createdAt(sort: Desc)], map: "billing_payment_intents_order_idx")
+  @@index([provider, providerCheckoutId], map: "billing_payment_intents_provider_checkout_idx")
+  @@index([provider, providerPaymentIntentId], map: "billing_payment_intents_provider_pi_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "billing_payment_intents_status_idx")
+  @@map("billing_payment_intents")
+}
+
+model BillingPaymentProviderEvent {
+  id              String                     @id @default(uuid()) @db.Uuid
+  provider        PaymentProvider
+  providerEventId String                     @map("provider_event_id") @db.VarChar(160)
+  eventType       String                     @map("event_type") @db.VarChar(120)
+  status          PaymentProviderEventStatus @default(received)
+  orderId         String?                    @map("order_id") @db.Uuid
+  paymentIntentId String?                    @map("payment_intent_id") @db.Uuid
+  payload         Json                       @db.JsonB
+  error           String?                    @db.Text
+  receivedAt      DateTime                   @default(now()) @map("received_at") @db.Timestamptz(6)
+  processedAt     DateTime?                  @map("processed_at") @db.Timestamptz(6)
+
+  paymentIntent BillingPaymentIntent? @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId], map: "billing_provider_events_provider_event_unique")
+  @@index([status, receivedAt(sort: Desc)], map: "billing_provider_events_status_recent_idx")
+  @@index([orderId, receivedAt(sort: Desc)], map: "billing_provider_events_order_recent_idx")
+  @@index([paymentIntentId, receivedAt(sort: Desc)], map: "billing_provider_events_intent_recent_idx")
+  @@map("billing_payment_provider_events")
+}
+
+model BillingSubscription {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  userId                 String                    @map("user_id") @db.VarChar(64)
+  workspaceId            String?                   @map("workspace_id") @db.Uuid
+  subjectType            BillingSubjectType        @map("subject_type")
+  subjectId              String                    @map("subject_id") @db.VarChar(64)
+  provider               PaymentProvider
+  providerSubscriptionId String?                   @map("provider_subscription_id") @db.VarChar(128)
+  status                 BillingSubscriptionStatus @default(incomplete)
+  priceId                String                    @map("price_id") @db.Uuid
+  planKey                String?                   @map("plan_key") @db.VarChar(64)
+  currentPeriodStart     DateTime?                 @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd       DateTime?                 @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd      Boolean                   @default(false) @map("cancel_at_period_end")
+  metadata               Json                      @default("{}") @db.JsonB
+  createdAt              DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  canceledAt             DateTime?                 @map("canceled_at") @db.Timestamptz(6)
+
+  workspace Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  price     BillingPrice @relation(fields: [priceId], references: [id], onDelete: Restrict)
+
+  /// Provider subscription uniqueness is enforced by partial unique SQL:
+  /// (provider, provider_subscription_id) WHERE provider_subscription_id IS NOT NULL.
+  @@index([subjectType, subjectId, status], map: "billing_subscriptions_subject_status_idx")
+  @@index([userId, status, updatedAt(sort: Desc)], map: "billing_subscriptions_user_status_idx")
+  @@map("billing_subscriptions")
+}
+
+model EntitlementGrant {
+  id          String                 @id @default(uuid()) @db.Uuid
+  subjectType BillingSubjectType     @map("subject_type")
+  subjectId   String                 @map("subject_id") @db.VarChar(64)
+  planKey     String                 @map("plan_key") @db.VarChar(64)
+  status      EntitlementGrantStatus @default(pending)
+  sourceType  String                 @map("source_type") @db.VarChar(64)
+  sourceId    String                 @map("source_id") @db.VarChar(128)
+  startsAt    DateTime               @map("starts_at") @db.Timestamptz(6)
+  endsAt      DateTime?              @map("ends_at") @db.Timestamptz(6)
+  metadata    Json                   @default("{}") @db.JsonB
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  revokedAt   DateTime?              @map("revoked_at") @db.Timestamptz(6)
+
+  @@unique([sourceType, sourceId], map: "entitlement_grants_source_unique")
+  @@index([subjectType, subjectId, status, endsAt], map: "entitlement_grants_subject_status_idx")
+  @@map("entitlement_grants")
+}
+
+model PlatformAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String?  @map("workspace_id") @db.Uuid
+  projectId   String?  @map("project_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.VarChar(64)
+  action      String   @db.VarChar(96)
+  entityType  String   @map("entity_type") @db.VarChar(64)
+  entityId    String   @map("entity_id") @db.VarChar(128)
+  requestId   String?  @map("request_id") @db.VarChar(128)
+  before      Json?    @db.JsonB
+  after       Json?    @db.JsonB
+  metadata    Json     @default("{}") @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  project   PlatformProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)], map: "platform_audit_workspace_recent_idx")
+  @@index([projectId, createdAt(sort: Desc)], map: "platform_audit_project_recent_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "platform_audit_actor_recent_idx")
+  @@index([entityType, entityId, createdAt(sort: Desc)], map: "platform_audit_entity_recent_idx")
+  @@map("platform_audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Admin domain (src/admin-auth/)
+// ─────────────────────────────────────────────────────────────
+//
+// Internal operators are not Java users. Admin access is isolated to
+// Nest + Postgres with explicit roles, permissions, httpOnly sessions,
+// and audit events. The admin UI may point at either production cell,
+// but each cell owns its own admin users and permissions.
+
+model AdminUser {
+  id                String          @id @default(uuid()) @db.Uuid
+  email             String          @unique @db.VarChar(320)
+  displayName       String          @map("display_name") @db.VarChar(120)
+  passwordHash      String?         @map("password_hash") @db.VarChar(255)
+  status            AdminUserStatus @default(invited)
+  siteScope         AdminSiteScope  @default(all) @map("site_scope")
+  requireMfa        Boolean         @default(false) @map("require_mfa")
+  mfaSecretHash     String?         @map("mfa_secret_hash") @db.VarChar(255)
+  mfaEnabledAt      DateTime?       @map("mfa_enabled_at") @db.Timestamptz(6)
+  failedLoginCount  Int             @default(0) @map("failed_login_count")
+  lockedUntil       DateTime?       @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt       DateTime?       @map("last_login_at") @db.Timestamptz(6)
+  passwordChangedAt DateTime?       @map("password_changed_at") @db.Timestamptz(6)
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  disabledAt        DateTime?       @map("disabled_at") @db.Timestamptz(6)
+
+  roles     AdminUserRole[]
+  sessions  AdminSession[]
+  passwordHistory AdminPasswordHistory[]
+  mfaChallenges   AdminMfaChallenge[]
+  loginAttempts   AdminLoginAttempt[]
+  auditLogs AdminAuditLog[] @relation("AdminAuditActor")
+
+  @@index([status, updatedAt(sort: Desc)], map: "admin_users_status_recent_idx")
+  @@index([siteScope, status], map: "admin_users_site_scope_idx")
+  @@index([lockedUntil], map: "admin_users_locked_until_idx")
+  @@map("admin_users")
+}
+
+model AdminRole {
+  id          String         @id @default(uuid()) @db.Uuid
+  key         String         @unique @db.VarChar(80)
+  name        String         @db.VarChar(120)
+  description String?        @db.VarChar(500)
+  siteScope   AdminSiteScope @default(all) @map("site_scope")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  users       AdminUserRole[]
+  permissions AdminRolePermission[]
+
+  @@index([siteScope], map: "admin_roles_site_scope_idx")
+  @@map("admin_roles")
+}
+
+model AdminPermission {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique @db.VarChar(120)
+  description String   @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  roles AdminRolePermission[]
+
+  @@map("admin_permissions")
+}
+
+model AdminUserRole {
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  grantedBy String?  @map("granted_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role AdminRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId], map: "admin_user_roles_role_idx")
+  @@map("admin_user_roles")
+}
+
+model AdminRolePermission {
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  role       AdminRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission AdminPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId], map: "admin_role_permissions_permission_idx")
+  @@map("admin_role_permissions")
+}
+
+model AdminSession {
+  id         String             @id @default(uuid()) @db.Uuid
+  userId     String             @map("user_id") @db.Uuid
+  tokenHash  String             @unique @map("token_hash") @db.VarChar(128)
+  status     AdminSessionStatus @default(active)
+  expiresAt  DateTime           @map("expires_at") @db.Timestamptz(6)
+  lastSeenAt DateTime           @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  revokedAt  DateTime?          @map("revoked_at") @db.Timestamptz(6)
+  ipAddress  String?            @map("ip_address") @db.VarChar(64)
+  userAgent  String?            @map("user_agent") @db.VarChar(512)
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      AdminUser       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  auditLogs AdminAuditLog[]
+
+  @@index([userId, status, expiresAt], map: "admin_sessions_user_status_idx")
+  @@index([expiresAt, status], map: "admin_sessions_expiry_idx")
+  @@map("admin_sessions")
+}
+
+model AdminPasswordHistory {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "admin_password_history_user_recent_idx")
+  @@map("admin_password_history")
+}
+
+model AdminMfaChallenge {
+  id              String    @id @default(uuid()) @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  tokenHash       String    @unique @map("token_hash") @db.VarChar(128)
+  purpose         String    @db.VarChar(32)
+  secretEncrypted String?   @map("secret_encrypted") @db.VarChar(255)
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt      DateTime? @map("consumed_at") @db.Timestamptz(6)
+  ipAddress       String?   @map("ip_address") @db.VarChar(64)
+  userAgent       String?   @map("user_agent") @db.VarChar(512)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt, expiresAt], map: "admin_mfa_challenges_user_idx")
+  @@index([expiresAt, consumedAt], map: "admin_mfa_challenges_expiry_idx")
+  @@map("admin_mfa_challenges")
+}
+
+model AdminLoginAttempt {
+  id        String                   @id @default(uuid()) @db.Uuid
+  email     String                   @db.VarChar(320)
+  userId    String?                  @map("user_id") @db.Uuid
+  outcome   AdminLoginAttemptOutcome
+  reason    String?                  @db.VarChar(255)
+  ipAddress String?                  @map("ip_address") @db.VarChar(64)
+  userAgent String?                  @map("user_agent") @db.VarChar(512)
+  createdAt DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user AdminUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email, outcome, createdAt(sort: Desc)], map: "admin_login_attempts_email_idx")
+  @@index([ipAddress, outcome, createdAt(sort: Desc)], map: "admin_login_attempts_ip_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "admin_login_attempts_user_idx")
+  @@map("admin_login_attempts")
+}
+
+model AdminAuditLog {
+  id             String            @id @default(uuid()) @db.Uuid
+  actorUserId    String?           @map("actor_user_id") @db.Uuid
+  actorSessionId String?           @map("actor_session_id") @db.Uuid
+  siteScope      AdminSiteScope    @default(all) @map("site_scope")
+  action         String            @db.VarChar(120)
+  resourceType   String            @map("resource_type") @db.VarChar(80)
+  resourceId     String?           @map("resource_id") @db.VarChar(128)
+  outcome        AdminAuditOutcome @default(success)
+  reason         String?           @db.VarChar(1000)
+  ipAddress      String?           @map("ip_address") @db.VarChar(64)
+  userAgent      String?           @map("user_agent") @db.VarChar(512)
+  before         Json?             @db.JsonB
+  after          Json?             @db.JsonB
+  metadata       Json              @default("{}") @db.JsonB
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor   AdminUser?    @relation("AdminAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  session AdminSession? @relation(fields: [actorSessionId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt(sort: Desc)], map: "admin_audit_actor_recent_idx")
+  @@index([action, createdAt(sort: Desc)], map: "admin_audit_action_recent_idx")
+  @@index([resourceType, resourceId, createdAt(sort: Desc)], map: "admin_audit_resource_recent_idx")
+  @@index([outcome, createdAt(sort: Desc)], map: "admin_audit_outcome_recent_idx")
+  @@map("admin_audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// IP Commerce domain (src/ip-commerce/)
+// ─────────────────────────────────────────────────────────────
+//
+// New source of truth for public IP titles, episode commerce,
+// community-point purchases, presale campaigns, creator revenue,
+// referral attribution, review, rights declarations, reports, and
+// moderation. This deliberately does not mirror Java's project /
+// episode tables. A PlatformProject is the internal production
+// workspace; an IpTitle is the public commercial object users buy.
+//
+// Money movement invariant:
+//   IpPurchaseOrder -> WalletTransaction -> IpContentEntitlement
+//
+// No service is allowed to unlock content by directly mutating an IP
+// row. Unlock state is always derived from entitlements and wallet
+// ledger history.
+
+model IpTitle {
+  id                String              @id @default(uuid()) @db.Uuid
+  workspaceId       String              @map("workspace_id") @db.Uuid
+  sourceProjectId   String?             @map("source_project_id") @db.Uuid
+  slug              String?             @db.VarChar(120)
+  contentType       IpContentType       @default(series) @map("content_type")
+  status            IpPublicationStatus @default(draft)
+  listingVisibility IpListingVisibility @default(private) @map("listing_visibility")
+  ageRating         IpAgeRating         @default(general) @map("age_rating")
+  title             String              @db.VarChar(160)
+  subtitle          String?             @db.VarChar(160)
+  summary           String              @db.VarChar(500)
+  description       String?             @db.Text
+  language          String              @default("zh-CN") @db.VarChar(16)
+  genres            String[]            @default([])
+  tags              String[]            @default([])
+  copyrightOwner    String?             @map("copyright_owner") @db.VarChar(160)
+  rightsSummary     Json                @default("{}") @map("rights_summary") @db.JsonB
+  aiDisclosure      Json                @default("{}") @map("ai_disclosure") @db.JsonB
+  coverAssetId      String?             @map("cover_asset_id") @db.Uuid
+  heroAssetId       String?             @map("hero_asset_id") @db.Uuid
+  trailerAssetId    String?             @map("trailer_asset_id") @db.Uuid
+  createdById       String              @map("created_by_id") @db.VarChar(64)
+  updatedById       String?             @map("updated_by_id") @db.VarChar(64)
+  version           Int                 @default(0)
+  scheduledAt       DateTime?           @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt       DateTime?           @map("published_at") @db.Timestamptz(6)
+  suspendedAt       DateTime?           @map("suspended_at") @db.Timestamptz(6)
+  archivedAt        DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt         DateTime?           @map("deleted_at") @db.Timestamptz(6)
+
+  workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sourceProject PlatformProject? @relation("IpTitleSourceProject", fields: [sourceProjectId], references: [id], onDelete: SetNull)
+  coverAsset    MediaAsset?      @relation("IpTitleCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  heroAsset     MediaAsset?      @relation("IpTitleHeroAsset", fields: [heroAssetId], references: [id], onDelete: SetNull)
+  trailerAsset  MediaAsset?      @relation("IpTitleTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
+
+  episodes             IpEpisode[]
+  campaigns            IpCampaign[]
+  priceRules           IpPriceRule[]
+  purchaseOrders       IpPurchaseOrder[]
+  entitlements         IpContentEntitlement[]
+  collectionItems      IpCollectionItem[]
+  contributors         IpContributor[]
+  revenueRules         IpRevenueRule[]
+  revenueEntries       IpRevenueLedgerEntry[]
+  referralLinks        IpReferralLink[]
+  referralAttributions IpReferralAttribution[]
+  reviewSubmissions    IpReviewSubmission[]
+  rightsDeclarations   IpRightsDeclaration[]
+  reports              IpContentReport[]
+  userBlocks           IpUserContentBlock[]
+  importMaps           IpImportMap[]
+
+  /// Active public slug uniqueness is enforced by partial unique SQL:
+  /// (slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
+  @@unique([id, workspaceId], name: "uniq_ip_title_id_workspace", map: "ip_titles_id_workspace_unique")
+  @@index([workspaceId, status, updatedAt(sort: Desc)], map: "ip_titles_workspace_recent_idx")
+  @@index([status, listingVisibility, publishedAt(sort: Desc)], map: "ip_titles_public_feed_idx")
+  @@index([contentType, status, publishedAt(sort: Desc)], map: "ip_titles_type_feed_idx")
+  @@map("ip_titles")
+}
+
+model IpEpisode {
+  id              String              @id @default(uuid()) @db.Uuid
+  titleId         String              @map("title_id") @db.Uuid
+  sourceProjectId String?             @map("source_project_id") @db.Uuid
+  episodeNo       Int                 @map("episode_no")
+  sortOrder       Int                 @default(0) @map("sort_order")
+  status          IpPublicationStatus @default(draft)
+  title           String              @db.VarChar(160)
+  subtitle        String?             @db.VarChar(160)
+  summary         String?             @db.VarChar(500)
+  description     String?             @db.Text
+  durationSeconds Int?                @map("duration_seconds")
+  isFreePreview   Boolean             @default(false) @map("is_free_preview")
+  coverAssetId    String?             @map("cover_asset_id") @db.Uuid
+  mediaAssetId    String?             @map("media_asset_id") @db.Uuid
+  trailerAssetId  String?             @map("trailer_asset_id") @db.Uuid
+  createdById     String              @map("created_by_id") @db.VarChar(64)
+  updatedById     String?             @map("updated_by_id") @db.VarChar(64)
+  version         Int                 @default(0)
+  scheduledAt     DateTime?           @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt     DateTime?           @map("published_at") @db.Timestamptz(6)
+  suspendedAt     DateTime?           @map("suspended_at") @db.Timestamptz(6)
+  archivedAt      DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?           @map("deleted_at") @db.Timestamptz(6)
+
+  ipTitle       IpTitle          @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  sourceProject PlatformProject? @relation("IpEpisodeSourceProject", fields: [sourceProjectId], references: [id], onDelete: SetNull)
+  coverAsset    MediaAsset?      @relation("IpEpisodeCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  mediaAsset    MediaAsset?      @relation("IpEpisodeMediaAsset", fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  trailerAsset  MediaAsset?      @relation("IpEpisodeTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
+
+  storyNodes           IpStoryNode[]
+  priceRules           IpPriceRule[]
+  purchaseOrders       IpPurchaseOrder[]
+  entitlements         IpContentEntitlement[]
+  collectionItems      IpCollectionItem[]
+  revenueRules         IpRevenueRule[]
+  revenueEntries       IpRevenueLedgerEntry[]
+  referralLinks        IpReferralLink[]
+  referralAttributions IpReferralAttribution[]
+  reviewSubmissions    IpReviewSubmission[]
+  rightsDeclarations   IpRightsDeclaration[]
+  reports              IpContentReport[]
+  importMaps           IpImportMap[]
+
+  @@unique([titleId, episodeNo], map: "ip_episodes_title_number_unique")
+  @@unique([id, titleId], name: "uniq_ip_episode_id_title", map: "ip_episodes_id_title_unique")
+  @@index([titleId, status, sortOrder], map: "ip_episodes_title_status_order_idx")
+  @@map("ip_episodes")
+}
+
+model IpImportRun {
+  id            String               @id @default(uuid()) @db.Uuid
+  workspaceId   String               @map("workspace_id") @db.Uuid
+  sourceSystem  IpImportSourceSystem @map("source_system")
+  sourceRootId  String?              @map("source_root_id") @db.VarChar(128)
+  status        IpImportRunStatus    @default(queued)
+  requestedById String               @map("requested_by_id") @db.VarChar(64)
+  totalCount    Int                  @default(0) @map("total_count")
+  importedCount Int                  @default(0) @map("imported_count")
+  skippedCount  Int                  @default(0) @map("skipped_count")
+  failedCount   Int                  @default(0) @map("failed_count")
+  error         String?              @db.Text
+  metadata      Json                 @default("{}") @db.JsonB
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  startedAt     DateTime?            @map("started_at") @db.Timestamptz(6)
+  completedAt   DateTime?            @map("completed_at") @db.Timestamptz(6)
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  maps      IpImportMap[]
+
+  @@index([workspaceId, status, createdAt(sort: Desc)], map: "ip_import_runs_workspace_recent_idx")
+  @@index([sourceSystem, sourceRootId], map: "ip_import_runs_source_idx")
+  @@map("ip_import_runs")
+}
+
+model IpImportMap {
+  id                   String               @id @default(uuid()) @db.Uuid
+  workspaceId          String               @map("workspace_id") @db.Uuid
+  runId                String?              @map("run_id") @db.Uuid
+  sourceSystem         IpImportSourceSystem @map("source_system")
+  sourceEntityType     IpImportEntityType   @map("source_entity_type")
+  sourceEntityId       String               @map("source_entity_id") @db.VarChar(128)
+  sourceParentEntityId String?              @map("source_parent_entity_id") @db.VarChar(128)
+  targetEntityType     IpImportEntityType   @map("target_entity_type")
+  targetEntityId       String               @map("target_entity_id") @db.VarChar(128)
+  targetTitleId        String?              @map("target_title_id") @db.Uuid
+  targetEpisodeId      String?              @map("target_episode_id") @db.Uuid
+  sourceChecksum       String?              @map("source_checksum") @db.VarChar(128)
+  sourceSnapshot       Json?                @map("source_snapshot") @db.JsonB
+  metadata             Json                 @default("{}") @db.JsonB
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastImportedAt       DateTime             @default(now()) @map("last_imported_at") @db.Timestamptz(6)
+
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run           IpImportRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  targetTitle   IpTitle?     @relation(fields: [targetTitleId], references: [id], onDelete: SetNull)
+  targetEpisode IpEpisode?   @relation(fields: [targetEpisodeId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceSystem, sourceEntityType, sourceEntityId], map: "ip_import_maps_source_unique")
+  @@index([workspaceId, sourceSystem, updatedAt(sort: Desc)], map: "ip_import_maps_workspace_source_idx")
+  @@index([targetEntityType, targetEntityId], map: "ip_import_maps_target_idx")
+  @@index([targetTitleId], map: "ip_import_maps_title_idx")
+  @@index([targetEpisodeId], map: "ip_import_maps_episode_idx")
+  @@map("ip_import_maps")
+}
+
+model IpStoryNode {
+  id            String          @id @default(uuid()) @db.Uuid
+  episodeId     String          @map("episode_id") @db.Uuid
+  nodeType      IpStoryNodeType @default(linear) @map("node_type")
+  code          String          @db.VarChar(64)
+  title         String          @db.VarChar(160)
+  summary       String?         @db.VarChar(500)
+  displayOrder  Int             @default(0) @map("display_order")
+  mediaAssetId  String?         @map("media_asset_id") @db.Uuid
+  isFreePreview Boolean         @default(false) @map("is_free_preview")
+  metadata      Json            @default("{}") @db.JsonB
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime?       @map("deleted_at") @db.Timestamptz(6)
+
+  episode    IpEpisode   @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset? @relation("IpStoryNodeMediaAsset", fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  outgoingChoices IpStoryChoice[] @relation("IpStoryChoiceFrom")
+  incomingChoices IpStoryChoice[] @relation("IpStoryChoiceTo")
+
+  @@unique([episodeId, code], map: "ip_story_nodes_episode_code_unique")
+  @@index([episodeId, displayOrder], map: "ip_story_nodes_episode_order_idx")
+  @@map("ip_story_nodes")
+}
+
+model IpStoryChoice {
+  id           String   @id @default(uuid()) @db.Uuid
+  fromNodeId   String   @map("from_node_id") @db.Uuid
+  toNodeId     String   @map("to_node_id") @db.Uuid
+  label        String   @db.VarChar(120)
+  displayOrder Int      @default(0) @map("display_order")
+  metadata     Json     @default("{}") @db.JsonB
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  fromNode IpStoryNode @relation("IpStoryChoiceFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode   IpStoryNode @relation("IpStoryChoiceTo", fields: [toNodeId], references: [id], onDelete: Restrict)
+
+  @@unique([fromNodeId, toNodeId], map: "ip_story_choices_edge_unique")
+  @@index([fromNodeId, displayOrder], map: "ip_story_choices_from_order_idx")
+  @@map("ip_story_choices")
+}
+
+model IpCampaign {
+  id             String            @id @default(uuid()) @db.Uuid
+  titleId        String            @map("title_id") @db.Uuid
+  campaignType   IpCampaignType    @default(custom) @map("campaign_type")
+  status         IpCampaignStatus  @default(draft)
+  siteRegion     BillingSiteRegion @default(global) @map("site_region")
+  code           String            @db.VarChar(96)
+  name           String            @db.VarChar(160)
+  description    String?           @db.Text
+  startsAt       DateTime?         @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime?         @map("ends_at") @db.Timestamptz(6)
+  unlocksAt      DateTime?         @map("unlocks_at") @db.Timestamptz(6)
+  trackingConfig Json              @default("{}") @map("tracking_config") @db.JsonB
+  metadata       Json              @default("{}") @db.JsonB
+  createdById    String            @map("created_by_id") @db.VarChar(64)
+  updatedById    String?           @map("updated_by_id") @db.VarChar(64)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt     DateTime?         @map("archived_at") @db.Timestamptz(6)
+
+  ipTitle           IpTitle              @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  priceRules        IpPriceRule[]
+  purchaseOrders    IpPurchaseOrder[]
+  reviewSubmissions IpReviewSubmission[]
+
+  @@unique([titleId, code], map: "ip_campaigns_title_code_unique")
+  @@index([titleId, status, startsAt], map: "ip_campaigns_title_status_idx")
+  @@index([siteRegion, status, startsAt], map: "ip_campaigns_region_status_idx")
+  @@map("ip_campaigns")
+}
+
+model IpPriceRule {
+  id              String               @id @default(uuid()) @db.Uuid
+  titleId         String               @map("title_id") @db.Uuid
+  episodeId       String?              @map("episode_id") @db.Uuid
+  campaignId      String?              @map("campaign_id") @db.Uuid
+  targetType      IpCommerceTargetType @map("target_type")
+  status          IpPriceRuleStatus    @default(draft)
+  siteRegion      BillingSiteRegion    @default(global) @map("site_region")
+  currency        WalletCurrencyType   @default(community_point)
+  amount          BigInt
+  originalAmount  BigInt?              @map("original_amount")
+  priority        Int                  @default(0)
+  startsAt        DateTime?            @map("starts_at") @db.Timestamptz(6)
+  endsAt          DateTime?            @map("ends_at") @db.Timestamptz(6)
+  unlocksAt       DateTime?            @map("unlocks_at") @db.Timestamptz(6)
+  maxPerUser      Int?                 @map("max_per_user")
+  refundPolicyKey String?              @map("refund_policy_key") @db.VarChar(64)
+  metadata        Json                 @default("{}") @db.JsonB
+  createdById     String               @map("created_by_id") @db.VarChar(64)
+  updatedById     String?              @map("updated_by_id") @db.VarChar(64)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt      DateTime?            @map("archived_at") @db.Timestamptz(6)
+
+  ipTitle           IpTitle              @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode           IpEpisode?           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  campaign          IpCampaign?          @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  purchaseOrders    IpPurchaseOrder[]
+  reviewSubmissions IpReviewSubmission[]
+
+  @@index([titleId, targetType, status, priority], map: "ip_price_rules_title_target_idx")
+  @@index([episodeId, status], map: "ip_price_rules_episode_idx")
+  @@index([campaignId, status], map: "ip_price_rules_campaign_idx")
+  @@index([siteRegion, status, startsAt, endsAt], map: "ip_price_rules_effective_idx")
+  @@map("ip_price_rules")
+}
+
+model IpPurchaseOrder {
+  id                  String                @id @default(uuid()) @db.Uuid
+  orderNo             String                @map("order_no") @db.VarChar(64)
+  userId              String                @map("user_id") @db.VarChar(64)
+  workspaceId         String?               @map("workspace_id") @db.Uuid
+  subjectType         BillingSubjectType    @map("subject_type")
+  subjectId           String                @map("subject_id") @db.VarChar(64)
+  titleId             String                @map("title_id") @db.Uuid
+  episodeId           String?               @map("episode_id") @db.Uuid
+  targetType          IpCommerceTargetType  @map("target_type")
+  status              IpPurchaseOrderStatus @default(pending)
+  siteRegion          BillingSiteRegion     @default(global) @map("site_region")
+  priceRuleId         String?               @map("price_rule_id") @db.Uuid
+  campaignId          String?               @map("campaign_id") @db.Uuid
+  referralLinkId      String?               @map("referral_link_id") @db.Uuid
+  walletTransactionId String?               @map("wallet_transaction_id") @db.Uuid
+  currency            WalletCurrencyType    @default(community_point)
+  priceAmount         BigInt                @map("price_amount")
+  discountAmount      BigInt                @default(0) @map("discount_amount")
+  totalAmount         BigInt                @map("total_amount")
+  priceSnapshot       Json                  @map("price_snapshot") @db.JsonB
+  idempotencyKey      String                @map("idempotency_key") @db.VarChar(160)
+  metadata            Json                  @default("{}") @db.JsonB
+  version             Int                   @default(0)
+  paidAt              DateTime?             @map("paid_at") @db.Timestamptz(6)
+  fulfilledAt         DateTime?             @map("fulfilled_at") @db.Timestamptz(6)
+  refundedAt          DateTime?             @map("refunded_at") @db.Timestamptz(6)
+  canceledAt          DateTime?             @map("canceled_at") @db.Timestamptz(6)
+  refundReason        String?               @map("refund_reason") @db.VarChar(255)
+  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace         Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  ipTitle           IpTitle            @relation(fields: [titleId], references: [id], onDelete: Restrict)
+  episode           IpEpisode?         @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  priceRule         IpPriceRule?       @relation(fields: [priceRuleId], references: [id], onDelete: SetNull)
+  campaign          IpCampaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  referralLink      IpReferralLink?    @relation(fields: [referralLinkId], references: [id], onDelete: SetNull)
+  walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
+
+  entitlements         IpContentEntitlement[]
+  revenueEntries       IpRevenueLedgerEntry[]
+  referralAttributions IpReferralAttribution[]
+
+  @@unique([orderNo], map: "ip_purchase_orders_order_no_unique")
+  @@unique([userId, idempotencyKey], map: "ip_purchase_orders_user_idem_unique")
+  @@index([userId, createdAt(sort: Desc)], map: "ip_purchase_orders_user_recent_idx")
+  @@index([subjectType, subjectId, createdAt(sort: Desc)], map: "ip_purchase_orders_subject_recent_idx")
+  @@index([titleId, status, createdAt(sort: Desc)], map: "ip_purchase_orders_title_status_idx")
+  @@index([episodeId, status, createdAt(sort: Desc)], map: "ip_purchase_orders_episode_status_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "ip_purchase_orders_status_recent_idx")
+  @@map("ip_purchase_orders")
+}
+
+model IpContentEntitlement {
+  id            String               @id @default(uuid()) @db.Uuid
+  subjectType   BillingSubjectType   @map("subject_type")
+  subjectId     String               @map("subject_id") @db.VarChar(64)
+  titleId       String               @map("title_id") @db.Uuid
+  episodeId     String?              @map("episode_id") @db.Uuid
+  targetType    IpCommerceTargetType @map("target_type")
+  status        IpEntitlementStatus  @default(active)
+  sourceType    String               @map("source_type") @db.VarChar(64)
+  sourceId      String               @map("source_id") @db.VarChar(128)
+  sourceOrderId String?              @map("source_order_id") @db.Uuid
+  startsAt      DateTime             @default(now()) @map("starts_at") @db.Timestamptz(6)
+  endsAt        DateTime?            @map("ends_at") @db.Timestamptz(6)
+  metadata      Json                 @default("{}") @db.JsonB
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  revokedAt     DateTime?            @map("revoked_at") @db.Timestamptz(6)
+
+  ipTitle         IpTitle            @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode         IpEpisode?         @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  sourceOrder     IpPurchaseOrder?   @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
+  collectionItems IpCollectionItem[]
+
+  @@unique([sourceType, sourceId], map: "ip_entitlements_source_unique")
+  @@index([subjectType, subjectId, status, startsAt], map: "ip_entitlements_subject_status_idx")
+  @@index([titleId, targetType, status], map: "ip_entitlements_title_target_idx")
+  @@index([episodeId, status], map: "ip_entitlements_episode_idx")
+  @@map("ip_content_entitlements")
+}
+
+model IpCollectionItem {
+  id            String                 @id @default(uuid()) @db.Uuid
+  userId        String                 @map("user_id") @db.VarChar(64)
+  titleId       String                 @map("title_id") @db.Uuid
+  episodeId     String?                @map("episode_id") @db.Uuid
+  entitlementId String?                @map("entitlement_id") @db.Uuid
+  targetType    IpCommerceTargetType   @map("target_type")
+  status        IpCollectionItemStatus @default(active)
+  progress      Json                   @default("{}") @db.JsonB
+  metadata      Json                   @default("{}") @db.JsonB
+  addedAt       DateTime               @default(now()) @map("added_at") @db.Timestamptz(6)
+  lastViewedAt  DateTime?              @map("last_viewed_at") @db.Timestamptz(6)
+  removedAt     DateTime?              @map("removed_at") @db.Timestamptz(6)
+
+  ipTitle     IpTitle               @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode     IpEpisode?            @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  entitlement IpContentEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
+
+  /// Active uniqueness is enforced by partial unique SQL:
+  /// (user_id, target_type, title_id, coalesce(episode_id, nil_uuid))
+  /// WHERE removed_at IS NULL.
+  @@index([userId, status, addedAt(sort: Desc)], map: "ip_collection_items_user_recent_idx")
+  @@index([titleId, status], map: "ip_collection_items_title_idx")
+  @@map("ip_collection_items")
+}
+
+model IpContributor {
+  id              String            @id @default(uuid()) @db.Uuid
+  titleId         String            @map("title_id") @db.Uuid
+  userId          String?           @map("user_id") @db.VarChar(64)
+  displayName     String            @map("display_name") @db.VarChar(120)
+  role            IpContributorRole
+  customRole      String?           @map("custom_role") @db.VarChar(80)
+  isPublic        Boolean           @default(true) @map("is_public")
+  revenueEligible Boolean           @default(false) @map("revenue_eligible")
+  displayOrder    Int               @default(0) @map("display_order")
+  metadata        Json              @default("{}") @db.JsonB
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  removedAt       DateTime?         @map("removed_at") @db.Timestamptz(6)
+
+  ipTitle      IpTitle         @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  revenueRules IpRevenueRule[]
+
+  @@index([titleId, displayOrder], map: "ip_contributors_title_order_idx")
+  @@index([userId, removedAt], map: "ip_contributors_user_idx")
+  @@map("ip_contributors")
+}
+
+model IpRevenueRule {
+  id                String              @id @default(uuid()) @db.Uuid
+  titleId           String              @map("title_id") @db.Uuid
+  episodeId         String?             @map("episode_id") @db.Uuid
+  contributorId     String?             @map("contributor_id") @db.Uuid
+  beneficiaryUserId String?             @map("beneficiary_user_id") @db.VarChar(64)
+  ruleType          IpRevenueRuleType   @map("rule_type")
+  status            IpRevenueRuleStatus @default(draft)
+  currency          WalletCurrencyType  @default(revenue_credit)
+  shareBps          Int?                @map("share_bps")
+  fixedAmount       BigInt?             @map("fixed_amount")
+  startsAt          DateTime?           @map("starts_at") @db.Timestamptz(6)
+  endsAt            DateTime?           @map("ends_at") @db.Timestamptz(6)
+  contractSnapshot  Json                @default("{}") @map("contract_snapshot") @db.JsonB
+  metadata          Json                @default("{}") @db.JsonB
+  createdById       String              @map("created_by_id") @db.VarChar(64)
+  updatedById       String?             @map("updated_by_id") @db.VarChar(64)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt        DateTime?           @map("archived_at") @db.Timestamptz(6)
+
+  ipTitle     IpTitle        @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode     IpEpisode?     @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  contributor IpContributor? @relation(fields: [contributorId], references: [id], onDelete: SetNull)
+
+  revenueEntries    IpRevenueLedgerEntry[]
+  reviewSubmissions IpReviewSubmission[]
+
+  @@index([titleId, status, ruleType], map: "ip_revenue_rules_title_status_idx")
+  @@index([beneficiaryUserId, status], map: "ip_revenue_rules_beneficiary_idx")
+  @@map("ip_revenue_rules")
+}
+
+model IpRevenueLedgerEntry {
+  id                  String                   @id @default(uuid()) @db.Uuid
+  userId              String                   @map("user_id") @db.VarChar(64)
+  titleId             String                   @map("title_id") @db.Uuid
+  episodeId           String?                  @map("episode_id") @db.Uuid
+  orderId             String?                  @map("order_id") @db.Uuid
+  ruleId              String?                  @map("rule_id") @db.Uuid
+  referralLinkId      String?                  @map("referral_link_id") @db.Uuid
+  walletTransactionId String?                  @map("wallet_transaction_id") @db.Uuid
+  entryType           IpRevenueLedgerEntryType @map("entry_type")
+  status              IpRevenueLedgerStatus    @default(pending)
+  currency            WalletCurrencyType       @default(revenue_credit)
+  amount              BigInt
+  sourceAmount        BigInt?                  @map("source_amount")
+  shareBps            Int?                     @map("share_bps")
+  metadata            Json                     @default("{}") @db.JsonB
+  createdAt           DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  postedAt            DateTime?                @map("posted_at") @db.Timestamptz(6)
+  voidedAt            DateTime?                @map("voided_at") @db.Timestamptz(6)
+
+  ipTitle           IpTitle            @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode           IpEpisode?         @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  order             IpPurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  rule              IpRevenueRule?     @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  referralLink      IpReferralLink?    @relation(fields: [referralLinkId], references: [id], onDelete: SetNull)
+  walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status, createdAt(sort: Desc)], map: "ip_revenue_entries_user_recent_idx")
+  @@index([titleId, status, createdAt(sort: Desc)], map: "ip_revenue_entries_title_recent_idx")
+  @@index([orderId], map: "ip_revenue_entries_order_idx")
+  @@map("ip_revenue_ledger_entries")
+}
+
+model IpReferralLink {
+  id            String               @id @default(uuid()) @db.Uuid
+  titleId       String               @map("title_id") @db.Uuid
+  episodeId     String?              @map("episode_id") @db.Uuid
+  userId        String               @map("user_id") @db.VarChar(64)
+  code          String               @db.VarChar(64)
+  status        IpReferralLinkStatus @default(active)
+  commissionBps Int                  @default(1000) @map("commission_bps")
+  landingPath   String?              @map("landing_path") @db.VarChar(512)
+  posterAssetId String?              @map("poster_asset_id") @db.Uuid
+  qrAssetId     String?              @map("qr_asset_id") @db.Uuid
+  metadata      Json                 @default("{}") @db.JsonB
+  startsAt      DateTime?            @map("starts_at") @db.Timestamptz(6)
+  endsAt        DateTime?            @map("ends_at") @db.Timestamptz(6)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  disabledAt    DateTime?            @map("disabled_at") @db.Timestamptz(6)
+
+  ipTitle     IpTitle     @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode     IpEpisode?  @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  posterAsset MediaAsset? @relation("IpReferralPosterAsset", fields: [posterAssetId], references: [id], onDelete: SetNull)
+  qrAsset     MediaAsset? @relation("IpReferralQrAsset", fields: [qrAssetId], references: [id], onDelete: SetNull)
+
+  purchaseOrders IpPurchaseOrder[]
+  attributions   IpReferralAttribution[]
+  revenueEntries IpRevenueLedgerEntry[]
+
+  @@unique([code], map: "ip_referral_links_code_unique")
+  @@index([userId, status, createdAt(sort: Desc)], map: "ip_referral_links_user_recent_idx")
+  @@index([titleId, status], map: "ip_referral_links_title_status_idx")
+  @@map("ip_referral_links")
+}
+
+model IpReferralAttribution {
+  id             String   @id @default(uuid()) @db.Uuid
+  referralLinkId String   @map("referral_link_id") @db.Uuid
+  titleId        String   @map("title_id") @db.Uuid
+  episodeId      String?  @map("episode_id") @db.Uuid
+  orderId        String?  @map("order_id") @db.Uuid
+  buyerUserId    String?  @map("buyer_user_id") @db.VarChar(64)
+  anonymousId    String?  @map("anonymous_id") @db.VarChar(128)
+  metadata       Json     @default("{}") @db.JsonB
+  attributedAt   DateTime @default(now()) @map("attributed_at") @db.Timestamptz(6)
+
+  referralLink IpReferralLink   @relation(fields: [referralLinkId], references: [id], onDelete: Cascade)
+  ipTitle      IpTitle          @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode      IpEpisode?       @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  order        IpPurchaseOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([referralLinkId, attributedAt(sort: Desc)], map: "ip_referral_attr_link_recent_idx")
+  @@index([buyerUserId, attributedAt(sort: Desc)], map: "ip_referral_attr_buyer_recent_idx")
+  @@index([orderId], map: "ip_referral_attr_order_idx")
+  @@map("ip_referral_attributions")
+}
+
+model IpReviewSubmission {
+  id             String             @id @default(uuid()) @db.Uuid
+  targetType     IpReviewTargetType @map("target_type")
+  targetId       String             @map("target_id") @db.VarChar(64)
+  titleId        String?            @map("title_id") @db.Uuid
+  episodeId      String?            @map("episode_id") @db.Uuid
+  campaignId     String?            @map("campaign_id") @db.Uuid
+  priceRuleId    String?            @map("price_rule_id") @db.Uuid
+  revenueRuleId  String?            @map("revenue_rule_id") @db.Uuid
+  status         IpReviewStatus     @default(submitted)
+  snapshot       Json               @db.JsonB
+  changeSummary  String?            @map("change_summary") @db.Text
+  submittedById  String             @map("submitted_by_id") @db.VarChar(64)
+  reviewerId     String?            @map("reviewer_id") @db.VarChar(64)
+  decisionReason String?            @map("decision_reason") @db.Text
+  metadata       Json               @default("{}") @db.JsonB
+  submittedAt    DateTime           @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt     DateTime?          @map("reviewed_at") @db.Timestamptz(6)
+  canceledAt     DateTime?          @map("canceled_at") @db.Timestamptz(6)
+
+  ipTitle     IpTitle?        @relation(fields: [titleId], references: [id], onDelete: SetNull)
+  episode     IpEpisode?      @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  campaign    IpCampaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  priceRule   IpPriceRule?    @relation(fields: [priceRuleId], references: [id], onDelete: SetNull)
+  revenueRule IpRevenueRule?  @relation(fields: [revenueRuleId], references: [id], onDelete: SetNull)
+  events      IpReviewEvent[]
+
+  @@index([status, submittedAt(sort: Asc)], map: "ip_review_submissions_queue_idx")
+  @@index([targetType, targetId, submittedAt(sort: Desc)], map: "ip_review_submissions_target_idx")
+  @@index([titleId, submittedAt(sort: Desc)], map: "ip_review_submissions_title_idx")
+  @@map("ip_review_submissions")
+}
+
+model IpReviewEvent {
+  id           String            @id @default(uuid()) @db.Uuid
+  submissionId String            @map("submission_id") @db.Uuid
+  eventType    IpReviewEventType @map("event_type")
+  actorUserId  String            @map("actor_user_id") @db.VarChar(64)
+  message      String?           @db.Text
+  metadata     Json              @default("{}") @db.JsonB
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  submission IpReviewSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, createdAt(sort: Asc)], map: "ip_review_events_submission_idx")
+  @@map("ip_review_events")
+}
+
+model IpRightsDeclaration {
+  id             String                    @id @default(uuid()) @db.Uuid
+  targetType     IpRightsTargetType        @map("target_type")
+  titleId        String                    @map("title_id") @db.Uuid
+  episodeId      String?                   @map("episode_id") @db.Uuid
+  status         IpRightsDeclarationStatus @default(draft)
+  ownershipType  IpRightsOwnershipType     @map("ownership_type")
+  aiGenerated    Boolean                   @default(false) @map("ai_generated")
+  copyrightOwner String?                   @map("copyright_owner") @db.VarChar(160)
+  sourceSummary  String?                   @map("source_summary") @db.Text
+  licenseSummary String?                   @map("license_summary") @db.Text
+  riskNotes      String?                   @map("risk_notes") @db.Text
+  metadata       Json                      @default("{}") @db.JsonB
+  declaredById   String                    @map("declared_by_id") @db.VarChar(64)
+  reviewedById   String?                   @map("reviewed_by_id") @db.VarChar(64)
+  submittedAt    DateTime?                 @map("submitted_at") @db.Timestamptz(6)
+  reviewedAt     DateTime?                 @map("reviewed_at") @db.Timestamptz(6)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipTitle IpTitle    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  episode IpEpisode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([titleId, targetType, status], map: "ip_rights_declarations_title_idx")
+  @@index([status, submittedAt(sort: Asc)], map: "ip_rights_declarations_queue_idx")
+  @@map("ip_rights_declarations")
+}
+
+model IpContentReport {
+  id              String                 @id @default(uuid()) @db.Uuid
+  targetType      IpModerationTargetType @map("target_type")
+  targetId        String                 @map("target_id") @db.VarChar(64)
+  titleId         String?                @map("title_id") @db.Uuid
+  episodeId       String?                @map("episode_id") @db.Uuid
+  reporterUserId  String?                @map("reporter_user_id") @db.VarChar(64)
+  reason          IpReportReason
+  status          IpReportStatus         @default(submitted)
+  description     String?                @db.Text
+  evidenceAssetId String?                @map("evidence_asset_id") @db.Uuid
+  metadata        Json                   @default("{}") @db.JsonB
+  resolvedById    String?                @map("resolved_by_id") @db.VarChar(64)
+  resolutionNote  String?                @map("resolution_note") @db.Text
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt      DateTime?              @map("resolved_at") @db.Timestamptz(6)
+
+  ipTitle       IpTitle?    @relation(fields: [titleId], references: [id], onDelete: SetNull)
+  episode       IpEpisode?  @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  evidenceAsset MediaAsset? @relation("IpReportEvidenceAsset", fields: [evidenceAssetId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Asc)], map: "ip_content_reports_queue_idx")
+  @@index([targetType, targetId, createdAt(sort: Desc)], map: "ip_content_reports_target_idx")
+  @@index([reporterUserId, createdAt(sort: Desc)], map: "ip_content_reports_reporter_idx")
+  @@map("ip_content_reports")
+}
+
+model IpModerationAction {
+  id          String                 @id @default(uuid()) @db.Uuid
+  targetType  IpModerationTargetType @map("target_type")
+  targetId    String                 @map("target_id") @db.VarChar(64)
+  actionType  IpModerationActionType @map("action_type")
+  actorUserId String                 @map("actor_user_id") @db.VarChar(64)
+  reason      String                 @db.Text
+  before      Json?                  @db.JsonB
+  after       Json?                  @db.JsonB
+  startsAt    DateTime?              @map("starts_at") @db.Timestamptz(6)
+  endsAt      DateTime?              @map("ends_at") @db.Timestamptz(6)
+  metadata    Json                   @default("{}") @db.JsonB
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([targetType, targetId, createdAt(sort: Desc)], map: "ip_moderation_actions_target_idx")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "ip_moderation_actions_actor_idx")
+  @@map("ip_moderation_actions")
+}
+
+model IpUserContentBlock {
+  id          String                @id @default(uuid()) @db.Uuid
+  userId      String                @map("user_id") @db.VarChar(64)
+  targetType  IpUserBlockTargetType @map("target_type")
+  targetId    String                @map("target_id") @db.VarChar(64)
+  titleId     String?               @map("title_id") @db.Uuid
+  reason      String?               @db.VarChar(160)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  unblockedAt DateTime?             @map("unblocked_at") @db.Timestamptz(6)
+
+  ipTitle IpTitle? @relation(fields: [titleId], references: [id], onDelete: SetNull)
+
+  /// Active uniqueness is enforced by partial unique SQL:
+  /// (user_id, target_type, target_id) WHERE unblocked_at IS NULL.
+  @@index([userId, targetType, targetId], map: "ip_user_content_blocks_lookup_idx")
+  @@map("ip_user_content_blocks")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -544,15 +2636,13 @@ enum AiOutboxEventType {
 //   needs an immutable `ai_cost_ledger` table with idempotency_key,
 //   amount, currency, source, reversal_of FK. This Json is a stopgap
 //   until billing goes live.
-// TODO(product-context): add projectId / workspaceId / siteRegion
-//   ('global' | 'cn') / sourceSurface ('art-studio' | 'crew' | …)
-//   once the crew + project modules ship and the ID space settles.
 model AiJob {
   id                    String      @id
   userId                String      @map("user_id")
-  /// Tier snapshot at submission time — for audit and (future) tier-
-  /// differentiated pricing. Runtime authz uses sa-token's live value.
-  userLevel             String?     @map("user_level")
+  /// Immutable product entitlement policy selected at submission time.
+  /// This is the source for model access, queue priority, quota bridge,
+  /// refunds, and audit; it intentionally does not expose Java userLevel.
+  entitlementSnapshot   Json?       @map("entitlement_snapshot")
   type                  AiJobType
   /// Adapter identifier — 'microsoft-foundry' | 'fal-ai' | …. Stays a
   /// free-form String so new providers don't need migrations.
@@ -560,6 +2650,18 @@ model AiJob {
   modelId               String      @map("model_id")
   deployment            String
   schemaVersion         String      @map("schema_version")
+  /// Platform Core context. New Studio jobs always resolve a workspace
+  /// at submit time; legacy rows may remain NULL. Project is optional
+  /// because some jobs are workspace-level drafts before a project is
+  /// selected.
+  workspaceId           String?     @map("workspace_id") @db.Uuid
+  projectId             String?     @map("project_id") @db.Uuid
+  documentId            String?     @map("document_id") @db.Uuid
+  documentBlockId       String?     @map("document_block_id") @db.VarChar(128)
+  /// Region cell and UI surface snapshot for routing / ops analysis.
+  /// Examples: 'global' | 'cn', 'art-studio' | 'timeline' | 'batch'.
+  siteRegion            String?     @map("site_region") @db.VarChar(24)
+  sourceSurface         String?     @map("source_surface") @db.VarChar(64)
   status                AiJobStatus
   stage                 AiJobStage
   queueName             String      @map("queue_name")
@@ -569,6 +2671,11 @@ model AiJob {
   requestId             String?     @map("request_id")
   input                 Json
   normalizedInput       Json        @map("normalized_input")
+  /// Immutable routing/policy snapshot selected at submit time:
+  /// route id, provider/model decision, quota/campaign policy, and
+  /// queue limits. Workers and refunds read this instead of deriving
+  /// policy from mutable runtime config.
+  routingSnapshot       Json?       @map("routing_snapshot")
   error                 Json?
   logs                  Json
   metrics               Json
@@ -611,14 +2718,21 @@ model AiJob {
   /// raw Prisma callers must do the same.
   deletedAt             DateTime?   @map("deleted_at") @db.Timestamptz(6)
 
-  outputs  AiJobOutput[]
-  attempts AiJobAttempt[]
-  events   AiEventOutbox[]
+  outputs   AiJobOutput[]
+  attempts  AiJobAttempt[]
+  events    AiEventOutbox[]
+  workspace Workspace?        @relation(fields: [workspaceId], references: [id])
+  project   PlatformProject?  @relation(fields: [projectId], references: [id])
+  document  PlatformDocument? @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
 
   /// Active-row idempotency is enforced by a partial unique index in
   /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
   @@index([userId, modelId, idempotencyKey], map: "ai_jobs_idempotency_lookup_idx")
   @@index([userId, createdAt(sort: Desc)], map: "ai_jobs_user_created_idx")
+  @@index([workspaceId, createdAt(sort: Desc)], map: "ai_jobs_workspace_created_idx")
+  @@index([projectId, createdAt(sort: Desc)], map: "ai_jobs_project_created_idx")
+  @@index([documentId, documentBlockId, createdAt(sort: Desc)], map: "ai_jobs_document_block_created_idx")
+  @@index([siteRegion, createdAt(sort: Desc)], map: "ai_jobs_site_region_created_idx")
   @@index([queueName, status, queuedAt], map: "ai_jobs_queue_claim_idx")
   /// Fast reverse-lookup from a webhook `(provider, providerJobId)`
   /// to the owning AiJob.
@@ -802,23 +2916,23 @@ enum QuotaDimension {
 }
 
 model QuotaUsageLog {
-  id            String         @id
-  userId        String         @map("user_id") @db.VarChar(64)
-  dimension     QuotaDimension
+  id             String         @id
+  userId         String         @map("user_id") @db.VarChar(64)
+  dimension      QuotaDimension
   /// Signed cost. Positive = consume, negative = refund. Lets one
   /// query give net usage per user/dimension/window via SUM().
-  cost          Int            @default(1)
+  cost           Int            @default(1)
   /// Free-form action label — `submit_message_to_agent`,
   /// `ai_job_create`, `workflow_start`, `upload_banner`, ...
-  reason        String         @db.VarChar(64)
+  reason         String         @db.VarChar(64)
   /// Optional client-supplied dedup key. Multiple rows with the same
   /// key represent a consume followed by its refund — useful when
   /// reconciling. NULL means no dedup needed (best-effort logging).
-  idempotencyKey String?       @map("idempotency_key") @db.VarChar(128)
+  idempotencyKey String?        @map("idempotency_key") @db.VarChar(128)
   /// Loose metadata bag — `{jobType:'image', model:'gpt-image-2'}`,
   /// `{conversationId:'...'}`. Not indexed; for forensics.
-  metadata      Json?
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  metadata       Json?
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
 
   /// Per-user/dimension scans — `SELECT SUM(cost) FROM quota_usage_log
   /// WHERE user_id = ? AND dimension = ? AND created_at >= ?`.
@@ -864,9 +2978,9 @@ model CreatorService {
   creatorId String @map("creator_id")
 
   /// Buyer-facing headline ("Final cut · 30s vertical"). ≤ 120 chars.
-  title String @db.VarChar(120)
+  title     String @db.VarChar(120)
   /// One-paragraph pitch (≤ 1000 chars). Plain text, newline-allowed.
-  summary String @db.Text
+  summary   String @db.Text
   /// OSS-relative cover path. UI prefixes with BANNER_BASE_URL.
   coverPath String @default("") @map("cover_path") @db.VarChar(512)
 
@@ -915,13 +3029,13 @@ model ServicePackage {
   tier      ServiceTier
 
   /// Tier label ("30-second cut · 1080p"). ≤ 80 chars.
-  title String @db.VarChar(80)
+  title       String @db.VarChar(80)
   /// What's included (long-form, newline-allowed). ≤ 2000 chars.
   description String @db.Text
 
   /// ISO 4217. Same per-cell whitelist as CrewPosition.
   /// CHECK enforced via cell-aware service layer + DB CHECK.
-  currency String @db.VarChar(3)
+  currency    String @db.VarChar(3)
   /// Smallest currency unit (USD cents / CNY 分 / JPY yen).
   /// CHECK price_amount >= 0 in migration SQL.
   priceAmount BigInt @map("price_amount")
@@ -929,7 +3043,7 @@ model ServicePackage {
   /// Calendar-day turnaround. 1-365.
   deliveryDays Int @map("delivery_days")
   /// Included revision count. -1 = unlimited. CHECK in migration SQL.
-  revisions Int @default(0)
+  revisions    Int @default(0)
 
   /// Free-form bullet list shown under the tier card. PG TEXT[];
   /// ≤ 12 items enforced at service layer.
@@ -963,17 +3077,17 @@ model ServiceRequirementQuestion {
   serviceId String @map("service_id")
 
   /// Prompt rendered to the buyer. ≤ 240 chars.
-  prompt String @db.VarChar(240)
+  prompt       String  @db.VarChar(240)
   /// Optional helper text under the prompt. ≤ 240 chars.
-  helpText String? @map("help_text") @db.VarChar(240)
+  helpText     String? @map("help_text") @db.VarChar(240)
   /// When true, buyer cannot submit until a non-blank answer is
   /// provided. Server enforces.
-  required Boolean @default(false)
+  required     Boolean @default(false)
   /// Render order — lower first. We don't use array-of-jsonb on the
   /// service row because that complicates per-question edit /
   /// reorder and prevents future "answer template" reuse across
   /// orders.
-  displayOrder Int @default(0) @map("display_order")
+  displayOrder Int     @default(0) @map("display_order")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1046,10 +3160,10 @@ model ServiceOrder {
   /// ─── FizzDragon entity bindings ─────────────────────
   /// All nullable. Validated at the service layer (existence + the
   /// buyer/creator's right to bind).
-  ipId            String? @map("ip_id")
-  episodeId       String? @map("episode_id")
-  crewId          String? @map("crew_id")
-  crewPositionId  String? @map("crew_position_id")
+  ipId           String? @map("ip_id")
+  episodeId      String? @map("episode_id")
+  crewId         String? @map("crew_id")
+  crewPositionId String? @map("crew_position_id")
 
   /// Optimistic concurrency.
   version Int @default(0)
@@ -1063,13 +3177,13 @@ model ServiceOrder {
   /// callers (acceptable until every UI surface has been updated).
   idempotencyKey String? @map("idempotency_key")
 
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  acceptedAt   DateTime? @map("accepted_at") @db.Timestamptz(6)
-  deliveredAt  DateTime? @map("delivered_at") @db.Timestamptz(6)
-  completedAt  DateTime? @map("completed_at") @db.Timestamptz(6)
-  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(6)
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamptz(6)
   /// {by, reason, at} JSON when cancelled; null otherwise.
-  cancelInfo   Json?     @map("cancel_info")
+  cancelInfo  Json?     @map("cancel_info")
 
   service      CreatorService @relation(fields: [serviceId], references: [id])
   conversation Conversation   @relation(fields: [conversationId], references: [id])
@@ -1169,18 +3283,18 @@ model Conversation {
 }
 
 model ConversationParticipant {
-  conversationId String                       @map("conversation_id")
-  userId         String                       @map("user_id")
+  conversationId String                      @map("conversation_id")
+  userId         String                      @map("user_id")
   role           ConversationParticipantRole
 
   /// Cursor for unread-badge math: messages with createdAt >
   /// lastReadAt are unread to this participant.
   /// We use a message id (not timestamp) for read-receipt precision
   /// against rapid simultaneous sends.
-  lastReadMessageId String? @map("last_read_message_id")
+  lastReadMessageId String?   @map("last_read_message_id")
   /// Mirror of the read message's createdAt for fast unread-count
   /// queries (avoids joining to messages for every inbox row).
-  lastReadAt DateTime? @map("last_read_at") @db.Timestamptz(6)
+  lastReadAt        DateTime? @map("last_read_at") @db.Timestamptz(6)
 
   /// Soft-mute switch (no notifications until then). NULL = not muted.
   mutedUntil DateTime? @map("muted_until") @db.Timestamptz(6)
@@ -1293,6 +3407,16 @@ model MediaAsset {
   deletedAt       DateTime?            @map("deleted_at") @db.Timestamptz(6)
 
   certificateImages UserCertificate[] @relation("UserCertificateImage")
+  ipTitleCovers     IpTitle[]         @relation("IpTitleCoverAsset")
+  ipTitleHeroes     IpTitle[]         @relation("IpTitleHeroAsset")
+  ipTitleTrailers   IpTitle[]         @relation("IpTitleTrailerAsset")
+  ipEpisodeCovers   IpEpisode[]       @relation("IpEpisodeCoverAsset")
+  ipEpisodeMedia    IpEpisode[]       @relation("IpEpisodeMediaAsset")
+  ipEpisodeTrailers IpEpisode[]       @relation("IpEpisodeTrailerAsset")
+  ipStoryNodeMedia  IpStoryNode[]     @relation("IpStoryNodeMediaAsset")
+  ipReferralPosters IpReferralLink[]  @relation("IpReferralPosterAsset")
+  ipReferralQrCodes IpReferralLink[]  @relation("IpReferralQrAsset")
+  ipReportEvidence  IpContentReport[] @relation("IpReportEvidenceAsset")
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
   @@index([kind, status, createdAt(sort: Desc)], map: "media_assets_kind_status_idx")

@@ -1,27 +1,42 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { ProjectMemberRole, WorkspaceMemberRole } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
 import { newShortId } from '../common/id';
-import { TIERS, normalizeTier } from '../quota/tiers.config';
+import { GeoPolicyService, type RequestGeoContext } from '../common/region';
+import { EntitlementService, type EntitlementSnapshot } from '../entitlements';
+import { QuotaService } from '../quota/quota.service';
+import type { QuotaDimension } from '../quota/quota.types';
+import type { Tier } from '../quota/tiers.config';
+import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
 import { AiGenerationAuthzService } from './authz.service';
 import { AiGenerationEtaService } from './eta.service';
-import { AiGenerationRepository } from './repository';
+import {
+  AiGenerationRepository,
+  type ReserveQueuedJobResult,
+} from './repository';
 import { AiGenerationOutboxService } from './outbox.service';
-import type { AiModelDefinition } from './provider-adapter';
 import { ProviderRegistry } from './provider-registry.service';
 import { AiGenerationQueueService } from './queue.service';
+import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
+import { AI_MODEL_PROTOCOL_DIALECT } from './types';
 import type {
+  AiModelCatalogResponse,
   AiJob,
   AiJobListQuery,
   AiJobLog,
   AiStatusResponse,
+  AiRoutingSnapshot,
   AiSubmitJobBody,
   AiSubmitResponse,
 } from './types';
@@ -33,8 +48,27 @@ const TERMINAL_STATUSES = new Set([
   'expired',
 ]);
 
+interface QuotaRefundToken {
+  userId: string;
+  tier: Tier;
+  dimension: QuotaDimension;
+  cost: number;
+  idempotencyKey: string;
+}
+
+interface AiJobContext {
+  workspaceId: string;
+  projectId?: string;
+  documentId?: string;
+  documentBlockId?: string;
+  sourceSurface?: string;
+  siteRegion: string;
+}
+
 @Injectable()
 export class AiGenerationService {
+  private readonly logger = new Logger(AiGenerationService.name);
+
   constructor(
     private readonly providers: ProviderRegistry,
     private readonly authz: AiGenerationAuthzService,
@@ -43,6 +77,12 @@ export class AiGenerationService {
     private readonly eta: AiGenerationEtaService,
     private readonly outbox: AiGenerationOutboxService,
     private readonly queue: AiGenerationQueueService,
+    private readonly routing: AiGenerationRoutingService,
+    private readonly quota: QuotaService,
+    private readonly geoPolicy: GeoPolicyService,
+    private readonly workspaces: WorkspacesService,
+    private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly entitlements: EntitlementService,
   ) {}
 
   /**
@@ -71,72 +111,85 @@ export class AiGenerationService {
     }
   }
 
-  async listModels(user: AuthUser) {
+  async listModels(user: AuthUser, geo?: RequestGeoContext) {
     // Fan out across every registered provider. Each adapter returns
     // its own model definitions; we concat and stamp per-user access.
     const results = await Promise.all(
       this.providers.list().map((adapter) => adapter.listModels()),
     );
     const models = results.flat();
-    return models.map((model) => ({
-      ...model,
-      access: this.authz.decideModelAccess(user, model),
-    }));
+    const entitlement = this.entitlements.resolveForUser(user);
+    return models.map((model) => {
+      const access = this.authz.decideModelAccess(entitlement, model);
+      const geoDecision = geo
+        ? this.geoPolicy.evaluate(model.region_policy, geo)
+        : { allowed: true };
+      return {
+        ...model,
+        enabled: model.enabled && geoDecision.allowed,
+        disabledReason:
+          model.disabledReason ??
+          (!geoDecision.allowed ? geoDecision.reason : undefined),
+        access: {
+          ...access,
+          allowed: access.allowed && geoDecision.allowed,
+          reason: access.reason ?? geoDecision.reason,
+        },
+      };
+    });
   }
 
-  /**
-   * Look up a model by id across all providers. Returns the first
-   * match; model ids are unique per provider so collisions shouldn't
-   * happen (Foundry uses `foundry/<deployment>`, fal will use
-   * `fal-ai/<model-path>`).
-   */
-  private async findModel(modelId: string): Promise<{
-    model: AiModelDefinition;
-    provider: string;
-  } | null> {
-    for (const adapter of this.providers.list()) {
-      const model = await adapter.getModel(modelId);
-      if (model) return { model, provider: adapter.provider };
-    }
-    return null;
+  async listCatalog(
+    user: AuthUser,
+    geo?: RequestGeoContext,
+  ): Promise<AiModelCatalogResponse> {
+    const models = await this.listModels(user, geo);
+    const presets = this.routing.listPresets(models, geo);
+    return {
+      dialect: AI_MODEL_PROTOCOL_DIALECT,
+      version: '2026-05-26',
+      region: process.env.NEXT_PUBLIC_SITE_REGION ?? 'global',
+      context: geo ? this.geoPolicy.snapshot(geo) : undefined,
+      presets,
+      campaigns: this.routing.listCampaigns(),
+      models,
+    };
   }
 
   async submitJob(
     user: AuthUser,
     body: AiSubmitJobBody,
+    geo?: RequestGeoContext,
   ): Promise<AiSubmitResponse> {
-    const modelId = body.modelId?.trim();
-    if (!modelId) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        msg: 'modelId is required.',
-      });
-    }
-
-    const found = await this.findModel(modelId);
-    if (!found) {
-      throw new NotFoundException({
-        code: 'MODEL_NOT_FOUND',
-        msg: 'Model not found.',
-      });
-    }
-    const { model, provider } = found;
+    const now = new Date().toISOString();
+    const context = await this.resolveJobContext(user, body);
+    const entitlement = this.entitlements.resolveForUser(user, {
+      workspaceId: context.workspaceId,
+      now,
+    });
+    const decision = await this.routing.resolve({
+      entitlement,
+      body,
+      now,
+      geo,
+    });
+    const { model, provider, snapshot } = decision;
 
     if (!model.enabled) {
       throw new ServiceUnavailableException({
         code: 'PROVIDER_NOT_CONFIGURED',
-        msg: model.disabledReason ?? 'Foundry execution is not available.',
+        msg: model.disabledReason ?? 'AI generation is not available.',
       });
     }
 
     // Per-model tier gate. UI is supposed to keep locked models
     // un-clickable, but never trust the client.
-    this.authz.assertCanUseModel(user, model);
+    this.authz.assertCanUseModel(entitlement, model);
 
     if (body.schemaVersion !== model.schemaVersion) {
       throw new ConflictException({
         code: 'SCHEMA_VERSION_MISMATCH',
-        msg: 'The Foundry model schema changed. Refresh and try again.',
+        msg: 'The AI model schema changed. Refresh and try again.',
       });
     }
 
@@ -146,102 +199,149 @@ export class AiGenerationService {
       model.input_schema,
       input,
     );
-    // Per-option tier gate (e.g. resolution_tier=uhd needs VIP2).
+    // Per-option plan gate (for example, high-resolution renders).
     // Server-side enforcement; the UI already gates these.
-    this.authz.assertCanUseOptions(user, model, normalizedInput);
-    const prompt = String(normalizedInput.prompt ?? '').trim();
+    this.authz.assertCanUseOptions(entitlement, model, normalizedInput);
+    const rawPrompt = normalizedInput.prompt;
+    const prompt = typeof rawPrompt === 'string' ? rawPrompt.trim() : '';
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
 
-    const now = new Date().toISOString();
+    const existing = await this.store.findByIdempotency(
+      user.userId,
+      model.id,
+      idempotencyKey,
+    );
+    if (existing) return this.toSubmitResponse(existing);
+
+    const quotaRefund = await this.consumeQuotaIfNeeded(
+      user,
+      entitlement,
+      snapshot,
+      idempotencyKey,
+    );
+
     // Generated app-side so we know the id before insert — needed to
     // enqueue BullMQ + emit the optimistic queued push before save()
     // resolves. Keep it short because this id appears in URLs/logs.
     const id = newShortId();
-    const queueName = model.queue.queueName;
-    const reservation = await this.store.reserveQueuedJob({
-      userId: user.userId,
-      modelId: model.id,
-      idempotencyKey,
-      queueName,
-      type: model.type,
-      perUserQueued: model.queue.perUserQueued,
-      perUserRunning: model.queue.perUserRunning,
-      buildJob: (queuePosition) => {
-        const estimate = this.eta.estimateForNewJob(
-          model,
-          normalizedInput,
-          queuePosition,
-        );
-        const logs: AiJobLog[] = [
-          {
-            time: now,
-            stage: 'queued',
-            message: 'Request accepted and waiting for a generation slot.',
-          },
-        ];
+    const queueName = snapshot.policy.concurrency.queueName;
+    let reservation: ReserveQueuedJobResult;
+    try {
+      reservation = await this.store.reserveQueuedJob({
+        userId: user.userId,
+        modelId: model.id,
+        idempotencyKey,
+        queueName,
+        type: model.type,
+        perUserQueued: snapshot.policy.concurrency.perUserQueued,
+        perUserRunning: snapshot.policy.concurrency.perUserRunning,
+        campaignLimit: this.campaignLimitFor(snapshot),
+        buildJob: (queuePosition) => {
+          const estimate = this.eta.estimateForNewJob(
+            model,
+            normalizedInput,
+            queuePosition,
+          );
+          const logs: AiJobLog[] = [
+            {
+              time: now,
+              stage: 'queued',
+              message: 'Request accepted and waiting for a generation slot.',
+            },
+          ];
 
-        return {
-          id,
-          userId: user.userId,
-          userLevel: user.userLevel ?? null,
-          type: model.type,
-          // `provider` is the adapter key (e.g. 'microsoft-foundry');
-          // `model.provider` happens to be the same Foundry string today
-          // but that's a coincidence — the adapter is the source of truth.
-          provider,
-          modelId: model.id,
-          deployment: model.deployment,
-          schemaVersion: model.schemaVersion,
-          status: 'in_queue',
-          stage: 'queued',
-          input,
-          normalizedInput,
-          prompt,
-          idempotencyKey,
-          outputs: [],
-          logs,
-          queueName,
-          queuePosition,
-          progress: null,
-          estimatedWaitSeconds: estimate.estimatedWaitSeconds,
-          estimatedRunSeconds: estimate.estimatedRunSeconds,
-          estimatedTotalSeconds: estimate.estimatedTotalSeconds,
-          etaConfidence: estimate.etaConfidence,
-          attempt: 1,
-          createdAt: now,
-          queuedAt: now,
-          updatedAt: now,
-          metrics: {},
-        };
-      },
-    });
+          return {
+            id,
+            userId: user.userId,
+            entitlementSnapshot: entitlement,
+            type: model.type,
+            provider,
+            modelId: model.id,
+            deployment: model.deployment,
+            schemaVersion: model.schemaVersion,
+            workspaceId: context.workspaceId,
+            projectId: context.projectId,
+            documentId: context.documentId,
+            documentBlockId: context.documentBlockId,
+            siteRegion: context.siteRegion,
+            sourceSurface: context.sourceSurface,
+            status: 'in_queue',
+            stage: 'queued',
+            input,
+            normalizedInput,
+            prompt,
+            idempotencyKey,
+            routingSnapshot: snapshot,
+            outputs: [],
+            logs,
+            queueName,
+            queuePosition,
+            progress: null,
+            estimatedWaitSeconds: estimate.estimatedWaitSeconds,
+            estimatedRunSeconds: estimate.estimatedRunSeconds,
+            estimatedTotalSeconds: estimate.estimatedTotalSeconds,
+            etaConfidence: estimate.etaConfidence,
+            attempt: 1,
+            createdAt: now,
+            queuedAt: now,
+            updatedAt: now,
+            metrics: {},
+          };
+        },
+      });
+    } catch (err) {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_reserve_failed');
+      throw err;
+    }
 
     if (reservation.kind === 'existing') {
+      await this.refundQuotaIfNeeded(
+        quotaRefund,
+        'ai_job_duplicate_submission',
+      );
       return this.toSubmitResponse(reservation.job);
     }
     if (reservation.kind === 'queued_limit') {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_queue_limit');
       throw new ConflictException({
         code: 'QUEUE_LIMIT_EXCEEDED',
         msg: `You can queue up to ${reservation.limit} generation task(s).`,
       });
     }
     if (reservation.kind === 'running_limit') {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_running_limit');
       throw new ConflictException({
         code: 'RATE_LIMITED',
         msg: `You can run up to ${reservation.limit} ${reservation.type} generation task(s) at once.`,
       });
     }
+    if (reservation.kind === 'campaign_limit') {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_campaign_limit');
+      throw new HttpException(
+        {
+          code: 'CAMPAIGN_LIMIT_EXCEEDED',
+          campaignId: reservation.campaignId,
+          scope: reservation.scope,
+          limit: reservation.limit,
+          msg:
+            reservation.scope === 'user'
+              ? 'You have used all free generations for this campaign.'
+              : 'This campaign has reached its generation limit.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
 
     const job = reservation.job;
     // Hand off to BullMQ. The worker reads the canonical row from DB
     // when it picks the message up, so the payload is just the jobId.
-    // Priority is derived from the user's tier so VIP3 submissions
-    // jump to the front of a contended image queue — see TIERS in
-    // src/quota/tiers.config.ts for the full mapping.
-    const priority = TIERS[normalizeTier(user.userLevel)].priority;
+    // Priority is frozen in the routing snapshot so later tier/config
+    // edits don't reshuffle jobs already accepted into the queue.
+    const priority = snapshot.policy.entitlement.queuePriority;
     try {
       await this.queue.enqueue(queueName, id, 0, priority);
     } catch (err) {
+      await this.refundQuotaIfNeeded(quotaRefund, 'ai_job_enqueue_failed');
       const failed = await this.store.update(id, {
         status: 'failed',
         stage: 'failed',
@@ -267,10 +367,104 @@ export class AiGenerationService {
     return this.toSubmitResponse(saved);
   }
 
+  private async consumeQuotaIfNeeded(
+    user: AuthUser,
+    entitlement: EntitlementSnapshot,
+    snapshot: AiRoutingSnapshot,
+    idempotencyKey: string,
+  ): Promise<QuotaRefundToken | null> {
+    const policy = snapshot.policy.quota;
+    if (policy.mode !== 'charge' || policy.cost <= 0) return null;
+
+    const tier = this.entitlements.quotaTierFor(entitlement);
+    const dimension = policy.dimension as QuotaDimension;
+    const result = await this.quota.consume({
+      userId: user.userId,
+      tier,
+      dimension,
+      cost: policy.cost,
+      idempotencyKey,
+      reason: policy.reason,
+      metadata: {
+        routeId: snapshot.routeId,
+        presetId: snapshot.presetId,
+        selectedProvider: snapshot.selectedProvider,
+        selectedModelId: snapshot.selectedModelId,
+        strategy: snapshot.strategy,
+        campaignId: policy.campaignId,
+      },
+    });
+
+    if (!result.ok) {
+      throw new HttpException(
+        {
+          code: 429,
+          error: result.reason,
+          dimension: result.dimension,
+          used: result.used,
+          limit: result.limit,
+          resetAt: result.resetAt,
+          nextTier: result.nextTier,
+          nextTierLimit: result.nextTierLimit,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (result.deduped) return null;
+    return {
+      userId: user.userId,
+      tier,
+      dimension,
+      cost: policy.cost,
+      idempotencyKey,
+    };
+  }
+
+  private campaignLimitFor(snapshot: AiRoutingSnapshot):
+    | {
+        campaignId: string;
+        perUserLimit?: number;
+        totalLimit?: number;
+      }
+    | undefined {
+    const campaign = snapshot.policy.quota.campaign;
+    const campaignId = campaign?.id ?? snapshot.policy.quota.campaignId;
+    if (!campaignId) return undefined;
+    if (campaign?.perUserLimit == null && campaign?.totalLimit == null) {
+      return undefined;
+    }
+    return {
+      campaignId,
+      perUserLimit: campaign.perUserLimit,
+      totalLimit: campaign.totalLimit,
+    };
+  }
+
+  private async refundQuotaIfNeeded(
+    token: QuotaRefundToken | null,
+    reason: string,
+  ): Promise<void> {
+    if (!token) return;
+    await this.quota.refundFor({
+      userId: token.userId,
+      tier: token.tier,
+      dimension: token.dimension,
+      cost: token.cost,
+      idempotencyKey: token.idempotencyKey,
+      reason,
+    });
+  }
+
   async listJobs(user: AuthUser, query: AiJobListQuery) {
     const limit = query.limit ? Number(query.limit) : 50;
+    const scope = await this.resolveListScope(user, query);
     const jobs = await this.store.listForUser({
       userId: user.userId,
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      documentId: scope.documentId,
+      includeCollaboratorJobs: Boolean(scope.projectId || scope.documentId),
       type: query.type,
       limit: Number.isFinite(limit) ? limit : 50,
     });
@@ -291,9 +485,11 @@ export class AiGenerationService {
   }
 
   async cancelJob(user: AuthUser, id: string) {
-    const job = await this.getOwnedJob(user, id);
+    const job = await this.getEditableJob(user, id);
     if (TERMINAL_STATUSES.has(job.status))
       return this.publicJob(job, { detail: true });
+
+    await this.cancelProviderJobIfNeeded(job);
 
     const now = new Date().toISOString();
     const next = await this.store.update(id, {
@@ -326,38 +522,275 @@ export class AiGenerationService {
     return this.publicJob(updated, { detail: true });
   }
 
-  async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
-    const job = await this.getOwnedJob(user, id);
-    return this.submitJob(user, {
-      modelId: job.modelId,
-      schemaVersion: job.schemaVersion,
-      input: job.normalizedInput,
-      idempotencyKey: randomUUID(),
-    });
+  async retryJob(
+    user: AuthUser,
+    id: string,
+    geo?: RequestGeoContext,
+  ): Promise<AiSubmitResponse> {
+    const job = await this.getEditableJob(user, id);
+    return this.submitJob(
+      user,
+      {
+        modelId: job.modelId,
+        presetId: job.routingSnapshot?.presetId,
+        campaignId: job.routingSnapshot?.policy.quota.campaignId,
+        schemaVersion: job.schemaVersion,
+        workspaceId: job.workspaceId ?? undefined,
+        projectId: job.projectId ?? undefined,
+        documentId: job.documentId ?? undefined,
+        documentBlockId: job.documentBlockId ?? undefined,
+        sourceSurface: job.sourceSurface ?? undefined,
+        input: job.normalizedInput,
+        idempotencyKey: randomUUID(),
+      },
+      geo,
+    );
   }
 
-  private async getOwnedJob(user: AuthUser, id: string): Promise<AiJob> {
+  private async cancelProviderJobIfNeeded(job: AiJob): Promise<void> {
+    if (!job.providerJobId) return;
+    const provider = job.routingSnapshot?.selectedProvider ?? job.provider;
+    try {
+      const adapter = this.providers.get(provider);
+      if (!adapter.cancelGeneration) return;
+      await adapter.cancelGeneration(job.providerJobId);
+    } catch (err) {
+      this.logger.warn(
+        `provider cancel failed for job ${job.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private async getAccessibleJob(
+    user: AuthUser,
+    id: string,
+    minimumRole: WorkspaceMemberRole,
+  ): Promise<AiJob> {
     const job = await this.store.findById(id);
-    if (!job || job.userId !== user.userId) {
+    if (!job) {
       throw new NotFoundException({
         code: 'JOB_NOT_FOUND',
         msg: 'Foundry job not found.',
       });
     }
-    return job;
+    if (job.userId === user.userId) return job;
+
+    if (job.projectId) {
+      await this.workspacePermissions.requireProjectRole(
+        user.userId,
+        job.projectId,
+        minimumRole === WorkspaceMemberRole.viewer
+          ? ProjectMemberRole.viewer
+          : ProjectMemberRole.editor,
+      );
+      return job;
+    }
+
+    if (job.workspaceId) {
+      await this.workspacePermissions.requireWorkspaceRole(
+        user.userId,
+        job.workspaceId,
+        minimumRole,
+      );
+      return job;
+    }
+
+    throw new NotFoundException({
+      code: 'JOB_NOT_FOUND',
+      msg: 'Foundry job not found.',
+    });
+  }
+
+  private async getOwnedJob(user: AuthUser, id: string): Promise<AiJob> {
+    return this.getAccessibleJob(user, id, WorkspaceMemberRole.viewer);
+  }
+
+  private async getEditableJob(user: AuthUser, id: string): Promise<AiJob> {
+    return this.getAccessibleJob(user, id, WorkspaceMemberRole.editor);
+  }
+
+  private async resolveJobContext(
+    user: AuthUser,
+    body: AiSubmitJobBody,
+  ): Promise<AiJobContext> {
+    const workspaceId = body.context?.workspaceId ?? body.workspaceId;
+    const projectId = body.context?.projectId ?? body.projectId;
+    const documentId = body.context?.documentId ?? body.documentId;
+    const documentBlockId =
+      body.context?.documentBlockId ?? body.documentBlockId;
+    const sourceSurface = this.normalizeSourceSurface(
+      body.context?.sourceSurface ?? body.sourceSurface,
+    );
+    const siteRegion = process.env.NEXT_PUBLIC_SITE_REGION ?? 'global';
+
+    if (documentId) {
+      const document = await this.workspacePermissions.requireDocumentRole(
+        user.userId,
+        documentId,
+        ProjectMemberRole.editor,
+      );
+      if (workspaceId && workspaceId !== document.workspaceId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_WORKSPACE_MISMATCH',
+          msg: 'Document does not belong to the selected workspace.',
+        });
+      }
+      if (projectId && projectId !== document.projectId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_PROJECT_MISMATCH',
+          msg: 'Document does not belong to the selected project.',
+        });
+      }
+      return {
+        workspaceId: document.workspaceId,
+        projectId: document.projectId,
+        documentId: document.id,
+        documentBlockId: this.normalizeDocumentBlockId(documentBlockId),
+        sourceSurface,
+        siteRegion,
+      };
+    }
+
+    if (projectId) {
+      const project = await this.workspacePermissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.editor,
+      );
+      if (workspaceId && workspaceId !== project.workspaceId) {
+        throw new BadRequestException({
+          code: 'PROJECT_WORKSPACE_MISMATCH',
+          msg: 'Project does not belong to the selected workspace.',
+        });
+      }
+      return {
+        workspaceId: project.workspaceId,
+        projectId: project.id,
+        sourceSurface,
+        siteRegion,
+      };
+    }
+
+    if (workspaceId) {
+      await this.workspacePermissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.editor,
+      );
+      return { workspaceId, sourceSurface, siteRegion };
+    }
+
+    const workspace = await this.workspaces.ensurePersonalWorkspace(user);
+    return { workspaceId: workspace.id, sourceSurface, siteRegion };
+  }
+
+  private async resolveListScope(
+    user: AuthUser,
+    query: AiJobListQuery,
+  ): Promise<{
+    workspaceId?: string;
+    projectId?: string;
+    documentId?: string;
+  }> {
+    if (query.documentId) {
+      const document = await this.workspacePermissions.requireDocumentRole(
+        user.userId,
+        query.documentId,
+        ProjectMemberRole.viewer,
+      );
+      if (query.workspaceId && query.workspaceId !== document.workspaceId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_WORKSPACE_MISMATCH',
+          msg: 'Document does not belong to the selected workspace.',
+        });
+      }
+      if (query.projectId && query.projectId !== document.projectId) {
+        throw new BadRequestException({
+          code: 'DOCUMENT_PROJECT_MISMATCH',
+          msg: 'Document does not belong to the selected project.',
+        });
+      }
+      return {
+        workspaceId: document.workspaceId,
+        projectId: document.projectId,
+        documentId: document.id,
+      };
+    }
+
+    if (query.projectId) {
+      const project = await this.workspacePermissions.requireProjectRole(
+        user.userId,
+        query.projectId,
+        ProjectMemberRole.viewer,
+      );
+      if (query.workspaceId && query.workspaceId !== project.workspaceId) {
+        throw new BadRequestException({
+          code: 'PROJECT_WORKSPACE_MISMATCH',
+          msg: 'Project does not belong to the selected workspace.',
+        });
+      }
+      return { workspaceId: project.workspaceId, projectId: project.id };
+    }
+
+    if (query.workspaceId) {
+      await this.workspacePermissions.requireWorkspaceRole(
+        user.userId,
+        query.workspaceId,
+        WorkspaceMemberRole.viewer,
+      );
+      return { workspaceId: query.workspaceId };
+    }
+
+    return {};
+  }
+
+  private normalizeSourceSurface(
+    value: string | undefined,
+  ): string | undefined {
+    const normalized = value?.trim();
+    if (!normalized) return undefined;
+    if (!/^[a-z0-9][a-z0-9:_-]{0,63}$/i.test(normalized)) {
+      throw new BadRequestException({
+        code: 'INVALID_SOURCE_SURFACE',
+        msg: 'sourceSurface must be 1-64 URL-safe characters.',
+      });
+    }
+    return normalized;
+  }
+
+  private normalizeDocumentBlockId(
+    value: string | undefined,
+  ): string | undefined {
+    const normalized = value?.trim();
+    if (!normalized) return undefined;
+    if (normalized.length > 128) {
+      throw new BadRequestException({
+        code: 'INVALID_DOCUMENT_BLOCK_ID',
+        msg: 'documentBlockId must be 128 characters or fewer.',
+      });
+    }
+    return normalized;
   }
 
   private toSubmitResponse(job: AiJob): AiSubmitResponse {
     return {
       ...this.toStatusResponse(job),
-      status_url: `/aurora/foundry/jobs/${job.id}/status`,
-      cancel_url: `/aurora/foundry/jobs/${job.id}/cancel`,
+      status_url: `/aurora/ai/jobs/${job.id}/status`,
+      cancel_url: `/aurora/ai/jobs/${job.id}/cancel`,
     };
   }
 
   private toStatusResponse(job: AiJob): AiStatusResponse {
     return {
       request_id: job.id,
+      workspace_id: job.workspaceId ?? null,
+      project_id: job.projectId ?? null,
+      document_id: job.documentId ?? null,
+      document_block_id: job.documentBlockId ?? null,
+      site_region: job.siteRegion ?? null,
+      source_surface: job.sourceSurface ?? null,
       status: job.status,
       stage: job.stage,
       progress: job.progress ?? null,
@@ -367,7 +800,7 @@ export class AiGenerationService {
       estimated_total_seconds: job.estimatedTotalSeconds ?? null,
       eta_confidence: job.etaConfidence ?? 'low',
       logs: job.logs.slice(-20),
-      response_url: `/aurora/foundry/jobs/${job.id}`,
+      response_url: `/aurora/ai/jobs/${job.id}`,
     };
   }
 
@@ -376,11 +809,25 @@ export class AiGenerationService {
       id: job.id,
       request_id: job.id,
       type: job.type,
+      workspaceId: job.workspaceId ?? null,
+      projectId: job.projectId ?? null,
+      documentId: job.documentId ?? null,
+      documentBlockId: job.documentBlockId ?? null,
+      siteRegion: job.siteRegion ?? null,
+      sourceSurface: job.sourceSurface ?? null,
       provider: job.provider,
       modelId: job.modelId,
       deployment: job.deployment,
       status: job.status,
       stage: job.stage,
+      routing: job.routingSnapshot
+        ? {
+            presetId: job.routingSnapshot.presetId,
+            routeId: job.routingSnapshot.routeId,
+            strategy: job.routingSnapshot.strategy,
+            quota: job.routingSnapshot.policy.quota,
+          }
+        : null,
       queuePosition: job.queuePosition ?? null,
       progress: job.progress ?? null,
       estimatedWaitSeconds: job.estimatedWaitSeconds ?? null,

@@ -1,29 +1,32 @@
 /**
- * BullMQ queue + worker wiring for Foundry.
+ * BullMQ queue + worker wiring for AI generation.
  *
  * Two queues, one per job type, so image throughput doesn't share a
  * concurrency budget with video (which is slower and rarer). Each
  * queue owns a separate Redis prefix space; Bull's stalled detection
  * and delayed-job timers apply per-queue.
  *
- * Submit path:    foundryQueue(type).add('process', { jobId }, { jobId, delay })
- * Worker path:    Worker('foundry-image', async (job) => ..., { connection })
+ * Submit path:    queue.add('process', { jobId, op }, { jobId: uniqueQueueJobId, delay })
+ * Worker path:    Worker('ai-image-generation', async (job) => ..., { connection })
  *
- * jobId === DB jobId. BullMQ refuses to enqueue a duplicate jobId, so
- * an accidental double-submit collapses into one queue entry. The DB
- * row is the source of truth for inputs/outputs; the queue payload
- * is just `{ jobId }` — workers re-read the row to avoid stale data.
+ * payload.jobId === DB jobId. BullMQ's queue job id is unique per
+ * enqueue attempt so the same DB job can be requeued for retries and
+ * async-provider polls. The DB row is the source of truth for
+ * inputs/outputs; the queue payload is only `{ jobId, op }` (`start`
+ * or async-provider `poll`) — workers re-read the row to avoid stale
+ * data.
  */
 import IORedis, { type Redis } from 'ioredis';
 import { Queue, Worker, type Processor } from 'bullmq';
 
-export const AI_QUEUE_IMAGE = 'foundry-image';
-export const AI_QUEUE_VIDEO = 'foundry-video';
+export const AI_QUEUE_IMAGE = 'ai-image-generation';
+export const AI_QUEUE_VIDEO = 'ai-video-generation';
 
 export type AiQueueName = typeof AI_QUEUE_IMAGE | typeof AI_QUEUE_VIDEO;
 
 export interface AiQueueJobData {
   jobId: string;
+  op?: 'start' | 'poll';
 }
 
 /**

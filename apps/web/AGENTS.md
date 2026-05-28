@@ -7,6 +7,13 @@ Turbopack is the default bundler — no flags needed.
 > `node_modules/next/dist/docs/01-app/02-guides/upgrading/version-16.md` before
 > writing anything non-trivial.
 
+## Design system
+
+Read `../../DESIGN.md` first for shared FizzDragon brand rules, then read
+`DESIGN.md` in this directory for the web-specific design system. This app owns
+the public and creator-facing FizzDragon experience; do not import the
+admin-console design language from `apps/admin-ui`.
+
 ## Key conventions
 
 - **Routing**: file-based under `app/`. Groups `(foo)/` are pathless (don't

@@ -50,16 +50,20 @@ for zh-CN / zh-HK locales only.
 
 ## Deep dives (start here for any real work)
 
-- **UI / visual / design tokens / component conventions** → `@DESIGN.md`
+- **UI / design routing + shared brand rules** → `@DESIGN.md`
+- **Web UI design system** → `@apps/web/DESIGN.md`
+- **Admin UI design system** → `@apps/admin-ui/DESIGN.md`
 - **Web frontend (Next.js)** → `@apps/web/AGENTS.md`
 - **Agent backend (Mastra)** → `@apps/agent/AGENTS.md`
 - **NestJS server** → no AGENTS yet; conventions live in code comments
   and `apps/server/README.md` (TODO: write one).
 
-If your task touches UI in any meaningful way, **`DESIGN.md` is
-load-bearing** — it carries the two-mode surface system (solid
-Framer-style for marketing, liquid glass for floating UI), brand red
-(`#E52227`), persona palette, dialog patterns, and i18n rules.
+If your task touches UI in any meaningful way, **root `DESIGN.md` is the
+entry point, not the full visual spec**. Read it first for shared brand
+and cross-app rules, then read the app-level `DESIGN.md` for the surface
+you are changing. Do not apply the web/marketing design language to
+`admin-ui`, and do not apply the internal admin-console language to
+public creator surfaces.
 
 ## Production deployment
 
@@ -127,9 +131,10 @@ callers can inspect `code` / `msg`. See `apps/web/src/lib/api.ts`.
 
 ### Error reporting
 
-UI surfaces backend errors verbatim — see `DESIGN.md § Error toasts`
-for the canonical pattern. Don't replace upstream error messages with
-generic localized fallbacks (the user needs the actionable detail).
+UI surfaces backend errors verbatim — see root `DESIGN.md § Error
+Toasts` for the canonical cross-app pattern. Don't replace upstream
+error messages with generic localized fallbacks (the user needs the
+actionable detail).
 
 ## Skills
 

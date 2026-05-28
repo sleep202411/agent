@@ -4282,6 +4282,153 @@
       "subtitle": "加速器、出版社、電視台與製作公司，與 FizzDragon 一同把 AI 輔助創作帶給全球觀眾。"
     }
   },
+  "aiLab": {
+    "eyebrow": "AI Lab",
+    "title": "生成工作台",
+    "subtitle": "選擇產品化路線，調整 schema 參數，查看隊列進度，並在同一處檢查所有圖片和影片任務。",
+    "mode": {
+      "image": "圖片",
+      "video": "影片"
+    },
+    "source": {
+      "loading": "載入中",
+      "live": "即時模型目錄",
+      "preview": "開發預覽",
+      "error": "目錄異常"
+    },
+    "activeCount": "{count} 個進行中",
+    "credits": "{count} 泡泡",
+    "plan": {
+      "free": "免費",
+      "creator": "Creator",
+      "pro": "Pro",
+      "studio": "Studio",
+      "enterprise": "Enterprise"
+    },
+    "cost": {
+      "free": "免費",
+      "metered": "按量計費"
+    },
+    "generationMode": {
+      "text_to_image": "文生圖",
+      "image_to_image": "圖生圖",
+      "inpainting": "局部重繪",
+      "outpainting": "擴圖",
+      "reference_image_generation": "參考圖生成",
+      "text_to_video": "文生影片",
+      "image_to_video": "圖生影片",
+      "first_last_frame_to_video": "首尾幀影片",
+      "video_to_video": "影片生影片"
+    },
+    "modelRail": {
+      "title": "生成路線",
+      "subtitle": "快速、標準、專業，或活動專屬路線。",
+      "empty": "目前沒有可用的 {mode} 路線。",
+      "cost": "消耗",
+      "queue": "隊列",
+      "selectedModel": "目前模型",
+      "noModel": "無可用模型",
+      "noModelDesc": "該路線在目前區域沒有可用模型。"
+    },
+    "badge": {
+      "free": "免費",
+      "locked": "鎖定"
+    },
+    "canvas": {
+      "ready": "就緒",
+      "active": "{count} 個生成中",
+      "emptyTitle": "可以開始新的生成",
+      "emptyBody": "描述結果，選擇路線並提交。隊列進度和最終資產會保留在這裏。"
+    },
+    "results": {
+      "title": "輸出",
+      "empty": "已完成的結果會顯示在這裏。",
+      "untitled": "未命名"
+    },
+    "composer": {
+      "noPreset": "無路線",
+      "prompt": "提示詞",
+      "placeholder": "描述主體、風格、運動、構圖和約束...",
+      "routeTitle": "執行策略",
+      "routeBody": "任務被接受時，後端會凍結路線、權益、隊列和計費策略。",
+      "cost": "消耗",
+      "queue": "運行 / 排隊",
+      "model": "模型"
+    },
+    "advanced": {
+      "title": "模型參數",
+      "body": "欄位由模型 schema 渲染。鎖定參數會在服務端再次校驗。"
+    },
+    "queue": {
+      "title": "隊列",
+      "subtitle": "進行中任務、歷史記錄，以及重試/取消操作。",
+      "policy": "策略",
+      "running": "運行",
+      "queued": "排隊",
+      "global": "全局",
+      "model": "供應商",
+      "active": "進行中",
+      "history": "歷史",
+      "emptyActive": "目前沒有進行中的生成任務。",
+      "emptyHistory": "還沒有生成歷史。",
+      "untitled": "未命名提示詞",
+      "position": "第 {n} 位"
+    },
+    "detail": {
+      "title": "任務詳情",
+      "id": "ID",
+      "status": "狀態",
+      "model": "模型",
+      "created": "建立時間"
+    },
+    "action": {
+      "generate": "生成",
+      "upgrade": "升級",
+      "unavailable": "不可用",
+      "reset": "重置",
+      "retry": "重試",
+      "cancel": "取消"
+    },
+    "toast": {
+      "accepted": "任務已加入隊列"
+    },
+    "error": {
+      "loadCatalog": "載入 AI 模型目錄失敗。",
+      "loadJobs": "載入生成任務失敗。",
+      "submit": "提交生成任務失敗。",
+      "retry": "重試生成任務失敗。",
+      "cancel": "取消生成任務失敗。",
+      "validation": "請先修正高亮參數。",
+      "requiresPlan": "需要 {plan} 計劃。",
+      "optionRequiresPlan": "{label} 需要 {plan}。",
+      "routeUnavailable": "該路線不可用。",
+      "modelUnavailable": "該模型不可用。",
+      "accessDenied": "目前計劃無法使用該模型。",
+      "fieldRequired": "請填寫 {label}。",
+      "fieldMinLength": "{label} 至少需要 {min} 個字元。",
+      "fieldMaxLength": "{label} 不能超過 {max} 個字元。",
+      "fieldMinItems": "{label} 至少需要 {min} 項。",
+      "fieldMaxItems": "{label} 不能超過 {max} 項。",
+      "fieldMinimum": "{label} 不能小於 {min}。",
+      "fieldMaximum": "{label} 不能大於 {max}。",
+      "fieldUnsupportedOption": "{label} 不是支援的選項。",
+      "fieldInvalidUrl": "{label} 必須是有效連結。"
+    },
+    "stage": {
+      "created": "已建立",
+      "queued": "排隊中",
+      "validating": "校驗中",
+      "calling_provider": "調用供應商",
+      "provider_queued": "供應商排隊",
+      "generating": "生成中",
+      "fetching_output": "拉取結果",
+      "uploading_to_oss": "上傳中",
+      "completed": "已完成",
+      "failed": "失敗",
+      "cancelled": "已取消",
+      "expired": "已過期"
+    }
+  },
   "aiGen": {
     "eyebrow": "Foundry Studio",
     "title": "生圖與生影片",
@@ -4386,9 +4533,13 @@
         "more": "更多",
         "qualityChip": "質量",
         "lockedTier": "{tier}+ 會員可用",
+        "lockedPlan": "{plan}+ 套餐可用",
         "lockedMember": "會員可用",
         "unlock": "解鎖 {tier}",
+        "unlockPlan": "解鎖 {plan}",
         "unlockMember": "會員可用",
+        "submitPaused": "生成已暫停",
+        "submitPausedNote": "圖像生成暫時關閉，模型路由驗證完成後再開放。",
         "referencesPlaceholder": "貼上圖片 URL，每行一個",
         "referenceMaxReached": "最多可添加 {n} 張參考圖",
         "referenceImageOnly": "參考圖必須是圖片檔案",
@@ -4892,6 +5043,481 @@
       "completedToast": "訂單已完成。",
       "cancelledToast": "訂單已取消。",
       "failed": "操作失敗。"
+    }
+  },
+  "fizzStudio": {
+    "brand": "FizzStudio",
+    "shell": {
+      "workspace": "創作工作區",
+      "search": "搜尋項目、資產、提示詞、鏡頭……",
+      "personal": "個人工作區",
+      "bubbles": "12,840 泡泡",
+      "notifications": "通知",
+      "readiness": "上線就緒度"
+    },
+    "workspace": {
+      "personal": "個人工作區",
+      "current": "當前製作空間",
+      "allCreations": "全部團隊創作",
+      "credits": "12,840 泡泡",
+      "creditsHint": "本月餘額剩餘 68%",
+      "tabs": {
+        "default": "默認",
+        "assist": "Assist",
+        "apps": "Apps"
+      }
+    },
+    "sidebar": {
+      "groups": {
+        "main": "工作區",
+        "tools": "工具"
+      },
+      "items": {
+        "home": "首頁",
+        "projects": "項目",
+        "assets": "資產",
+        "show": "作品 Show",
+        "image": "圖片",
+        "video": "視頻",
+        "models": "模型",
+        "usage": "用量",
+        "settings": "設置"
+      }
+    },
+    "nav": {
+      "home": "首頁",
+      "projects": "項目",
+      "aiLab": "AI Lab",
+      "documents": "文檔",
+      "timeline": "時間線",
+      "assets": "資產",
+      "crew": "劇組",
+      "billing": "用量",
+      "show": "作品 Show",
+      "models": "模型"
+    },
+    "readiness": {
+      "model": "模型路由",
+      "quota": "隊列策略",
+      "billing": "計費保護",
+      "ready": "就緒"
+    },
+    "hero": {
+      "eyebrow": "新版 FizzStudio 預覽",
+      "title": "把故事、資產、AI 任務和製作時間線放在同一個工作區。",
+      "subtitle": "這是未接入接口的靜態預覽，用來驗證新版 Studio 的目標結構：項目上下文、模型路線、文檔、隊列狀態和資產審閱在一個連續工作流裡。",
+      "accessibleTitle": "FizzStudio 活動與創作入口",
+      "previous": "上一個活動",
+      "next": "下一個活動",
+      "slides": {
+        "challenge": {
+          "eyebrow": "創作者活動",
+          "title": "用 FizzStudio 完成一個短片命題。",
+          "body": "參與每週創作命題，複用已確認資產，把提示詞推進成完整製作包。"
+        },
+        "collaboration": {
+          "eyebrow": "團隊工作流",
+          "title": "團隊協作正式上線。",
+          "body": "項目、資產、評論、模型任務和審閱節點，都沉澱在同一個製作空間。"
+        },
+        "membership": {
+          "eyebrow": "會員權益",
+          "title": "AI 創作狂歡季開啟。",
+          "body": "從同一個入口體驗高級視頻路線、活動模型和會員專屬算力包。"
+        },
+        "seeddance": {
+          "eyebrow": "快速體驗",
+          "title": "Seedance 2.0 已開放給導演使用。",
+          "body": "從一個電影感 brief 開始，由系統路由到當前最快可用的視頻模型。"
+        },
+        "storyboard": {
+          "eyebrow": "分鏡表",
+          "title": "把鏡頭整理成可執行製作板。",
+          "body": "在時間線鎖定前，統一管理畫面、備註、參考圖和 AI 編輯版本。"
+        },
+        "assetReview": {
+          "eyebrow": "資產審閱",
+          "title": "一次性審閱所有生成資產。",
+          "body": "對比輸出、保留確認版本，並在不離開工作區的情況下完成反饋。"
+        },
+        "modelLab": {
+          "eyebrow": "模型路由",
+          "title": "選擇結果，而不是供應商。",
+          "body": "FizzStudio 可以把快速、標準、專業和活動專屬路線封裝在同一個創作入口後面。"
+        },
+        "launchPack": {
+          "eyebrow": "發布包",
+          "title": "準備最終 IP 發布資產。",
+          "body": "發布前統一沉澱海報、預告片、劇集資產和上線任務。"
+        }
+      }
+    },
+    "pillars": {
+      "workspace": {
+        "title": "工作區優先",
+        "body": "項目、資產、積分事件和協作者都有清晰歸屬。"
+      },
+      "assets": {
+        "title": "資產可追蹤",
+        "body": "生成結果進入項目資產庫，而不是散落在一次性任務歷史裡。"
+      },
+      "routing": {
+        "title": "模型路由",
+        "body": "創作者只選擇快速、標準、專業和活動路線。"
+      }
+    },
+    "project": {
+      "title": "進行中的製作",
+      "subtitle": "用於新版 FizzStudio shell 的 mock 項目狀態。"
+    },
+    "action": {
+      "newProject": "新建項目",
+      "openProject": "打開當前項目",
+      "openAiLab": "打開 AI Lab",
+      "reviewAssets": "審閱資產"
+    },
+    "work": {
+      "storyBible": {
+        "title": "故事聖經",
+        "body": "世界觀、角色規則、基調和正史設定。"
+      },
+      "shots": {
+        "title": "分鏡表",
+        "body": "可編輯的分鏡行，並映射到時間線片段。"
+      },
+      "videoQueue": {
+        "title": "視頻隊列",
+        "body": "供應商任務、降級策略和重試狀態。"
+      }
+    },
+    "routes": {
+      "title": "模型路線",
+      "subtitle": "創作者選擇產品路線，系統再映射供應商、參數 schema、quota 和價格。",
+      "metric": "預計",
+      "queue": "排隊",
+      "cost": "消耗",
+      "fast": {
+        "title": "快速",
+        "body": "低延遲草稿路線，適合靈感探索、縮略圖和早期視覺嘗試。"
+      },
+      "standard": {
+        "title": "標準",
+        "body": "兼顧質量和成本，適合日常圖片和短視頻生成。"
+      },
+      "pro": {
+        "title": "專業",
+        "body": "更高質量路線，適合最終鏡頭、主視覺和製作審閱。"
+      },
+      "campaign": {
+        "title": "活動專屬",
+        "body": "贊助或活動專屬免費路線，帶獨立額度和可見性控制。"
+      }
+    },
+    "queue": {
+      "title": "隊列",
+      "subtitle": "暫未接入接口，這些行展示未來任務可見性的目標形態。",
+      "items": {
+        "openingShot": "開場鏡頭渲染",
+        "dragonTurntable": "龍角色轉台",
+        "posterDraft": "海報草稿審閱"
+      },
+      "status": {
+        "running": "運行中",
+        "queued": "排隊中",
+        "review": "待審閱"
+      }
+    },
+    "assets": {
+      "title": "項目資產",
+      "subtitle": "視覺輸出、參考圖、可複用道具和已確認鏡頭。",
+      "items": {
+        "dragonHero": "龍主視覺鏡頭",
+        "cityStreet": "城市場景氛圍",
+        "characterSheet": "角色設定表",
+        "propBoard": "道具板"
+      }
+    },
+    "documents": {
+      "title": "文檔",
+      "subtitle": "未來工作區應該支持多個協作文檔，而不是只有一張分鏡表。",
+      "story": {
+        "title": "故事文檔",
+        "body": "長劇本、項目簡報和正史編輯。",
+        "state": "草稿"
+      },
+      "shotTable": {
+        "title": "分鏡表",
+        "body": "類似表格的行數據，連接資產和時間線。",
+        "state": "實時"
+      },
+      "timeline": {
+        "title": "時間線",
+        "body": "軌道、片段、音頻、字幕和 AI 編輯事件。",
+        "state": "下一步"
+      }
+    },
+    "actions": {
+      "create": "創作",
+      "startCreate": "開始創作",
+      "quickTry": "快速體驗 Seedance 2.0"
+    },
+    "projects": {
+      "title": "我的項目",
+      "subtitle": "繼續推進你正在製作的故事、鏡頭和 AI 任務。",
+      "viewAll": "查看全部",
+      "status": {
+        "active": "製作中",
+        "review": "審閱中",
+        "draft": "草稿"
+      },
+      "items": {
+        "neonDragon": {
+          "title": "霓虹龍城",
+          "body": "38 個鏡頭，12 個資產，視頻路線生成中"
+        },
+        "skyMarket": {
+          "title": "天空市集",
+          "body": "商業短片概念，海報和動態草稿"
+        },
+        "moonCourier": {
+          "title": "月面信使",
+          "body": "故事設定已完成，分鏡表待開始"
+        }
+      }
+    },
+    "show": {
+      "title": "作品 Show",
+      "subtitle": "精選 FizzStudio 創作者完成的視頻、廣告、試播和視覺實驗。",
+      "search": "搜尋作品、創作者、風格……",
+      "categories": {
+        "all": "全部",
+        "shortFilm": "短片",
+        "commercial": "商業廣告",
+        "animation": "動畫",
+        "mv": "MV",
+        "education": "教育生活",
+        "toolkit": "工具箱"
+      },
+      "badges": {
+        "featured": "先鋒",
+        "pro": "專業",
+        "honor": "榮譽"
+      },
+      "items": {
+        "clueBie": {
+          "title": "ClueBie",
+          "body": "玩具質感的夜城試播短片。"
+        },
+        "boneExchange": {
+          "title": "換骨",
+          "body": "東方誌怪短片概念。"
+        },
+        "tailCompany": {
+          "title": "貴司有尾",
+          "body": "明亮商業廣告短片。"
+        },
+        "frostWar": {
+          "title": "霜去病",
+          "body": "歷史動作視覺開發。"
+        },
+        "automata": {
+          "title": "機械紀元",
+          "body": "機械科幻第一集。"
+        },
+        "worldBurns": {
+          "title": "As the World Burns",
+          "body": "風格化角色預告。"
+        },
+        "greenKitchen": {
+          "title": "煮豆丹",
+          "body": "食物微距視覺實驗。"
+        },
+        "iphoneSpot": {
+          "title": "iPhone 廣告",
+          "body": "一張圖片自動生成產品 TVC。"
+        }
+      }
+    },
+    "composer": {
+      "placeholder": "讓 FizzStudio 創建視頻、分鏡、圖片或項目方案……",
+      "attach": "添加附件",
+      "image": "圖片",
+      "video": "視頻",
+      "voice": "語音",
+      "send": "發送"
+    }
+  },
+  "ipCommerce": {
+    "shell": {
+      "title": "IP 商業化",
+      "subtitle": "發行工作台",
+      "nav": "IP 商業化導航",
+      "importStatus": "導入任務"
+    },
+    "nav": {
+      "market": "市場",
+      "operations": "營運",
+      "commerce": "交易",
+      "review": "審核",
+      "migration": "遷移"
+    },
+    "hero": {
+      "eyebrow": "新版 IP 商業化系統",
+      "title": "把 IP 上架、售賣、解鎖和結算放進同一條閉環。",
+      "body": "新的產品殼覆蓋公開 IP、劇集、預售活動、社區積分購買、創作者收益、審核風控和舊系統導入。"
+    },
+    "actions": {
+      "create": "創建 IP",
+      "import": "導入舊內容",
+      "revenue": "收益看板",
+      "openStorefront": "打開售賣頁",
+      "startImport": "開始導入"
+    },
+    "metrics": {
+      "published": { "label": "已發佈 IP", "hint": "公開或已排期的售賣內容" },
+      "presale": { "label": "預售積分", "hint": "已鎖定的社區積分價值" },
+      "review": { "label": "審核隊列", "hint": "等待內容或版權審核" },
+      "revenue": { "label": "創作者待結算", "hint": "待結算的收益流水" }
+    },
+    "status": {
+      "draft": "草稿",
+      "submitted": "已提交",
+      "approved": "已通過",
+      "scheduled": "已排期",
+      "published": "已發佈",
+      "hidden": "已隱藏"
+    },
+    "visibility": {
+      "public": "公開",
+      "unlisted": "連結可見",
+      "private": "私密"
+    },
+    "unit": {
+      "points": "積分",
+      "episodes": "{count} 集",
+      "sold": "已售 {count}"
+    },
+    "featured": {
+      "eyebrow": "重點發行",
+      "earlyBird": "早鳥價",
+      "standard": "正式價",
+      "unlock": "解鎖時間",
+      "now": "當前可看",
+      "countdown": "{date} 解鎖"
+    },
+    "titles": {
+      "hawParVilla": {
+        "title": "虎豹別墅夜遊",
+        "body": "AI 沉浸式影遊，支持劇情分支、預售、創作者收益追蹤和引薦連結。"
+      },
+      "moonMarket": {
+        "title": "月亮市集",
+        "body": "已完結短劇，支持整套打包價和單集權益。"
+      },
+      "ghostKitchen": {
+        "title": "怪談廚房",
+        "body": "版權聲明已齊備，準備進入正式發行。"
+      },
+      "orbitKids": {
+        "title": "星環少年",
+        "body": "私密草稿，內容、定價和審核仍在準備。"
+      }
+    },
+    "storefront": {
+      "eyebrow": "售賣頁",
+      "title": "可交易 IP",
+      "search": "搜尋 IP、創作者、活動、劇集……"
+    },
+    "lifecycle": {
+      "eyebrow": "生命週期",
+      "title": "發佈狀態",
+      "hints": {
+        "draft": "私密編輯中的內容。",
+        "submitted": "等待審核接收。",
+        "approved": "可繼續配置發行。",
+        "scheduled": "已準備自動上線。",
+        "published": "可展示、可購買。",
+        "hidden": "已從發現流移除。"
+      }
+    },
+    "readiness": {
+      "eyebrow": "上架準備度",
+      "title": "公開售賣前",
+      "score": "準備度",
+      "scoreHint": "發佈前攔截高風險路徑。",
+      "items": {
+        "content": { "title": "內容包", "body": "標題、劇集、頭圖、預告片" },
+        "pricing": { "title": "價格規則", "body": "整套價和單集解鎖價" },
+        "rights": { "title": "版權聲明", "body": "權屬、來源、AI 生成說明" },
+        "revenue": { "title": "收益規則", "body": "製作費、分潤、引薦佣金" },
+        "review": { "title": "審核通過", "body": "內容、價格、版權快照" }
+      }
+    },
+    "commerce": {
+      "eyebrow": "購買鏈路",
+      "title": "社區積分訂單路徑",
+      "steps": {
+        "priceRule": { "title": "價格規則", "body": "按站點和活動解析整 IP 或單集價格。" },
+        "order": { "title": "訂單", "body": "創建可冪等重試的內容購買訂單。" },
+        "wallet": { "title": "錢包流水", "body": "通過錢包交易扣減社區積分。" },
+        "entitlement": { "title": "訪問權益", "body": "訂單完成後發放觀看權益。" },
+        "collection": { "title": "收藏夾", "body": "把已購內容加入用戶內容庫。" },
+        "revenue": { "title": "收益流水", "body": "寫入創作者分潤、引薦佣金和平台費用。" }
+      }
+    },
+    "revenue": {
+      "eyebrow": "創作者收入",
+      "title": "收益來源",
+      "ledger": "待結算流水",
+      "pending": "待結算",
+      "sources": {
+        "productionFee": { "title": "製作費", "body": "劇集交付並通過後的固定費用" },
+        "share": { "title": "銷售分潤", "body": "按配置比例獲得銷售收益" },
+        "referral": { "title": "引薦佣金", "body": "歸因連結產生引薦收益" }
+      }
+    },
+    "review": {
+      "eyebrow": "信任與風控",
+      "title": "審核、版權、舉報",
+      "status": {
+        "passed": "已通過",
+        "waiting": "等待中",
+        "blocked": "已阻塞"
+      },
+      "items": {
+        "rights": { "title": "版權聲明", "body": "標題和劇集售賣版權已通過" },
+        "aiDisclosure": { "title": "AI 生成聲明", "body": "生成媒體聲明等待確認" },
+        "report": { "title": "用戶舉報", "body": "版權舉報需要風控處理" }
+      }
+    },
+    "entitlement": {
+      "eyebrow": "觀眾訪問",
+      "title": "權益預覽",
+      "columns": {
+        "content": "內容",
+        "access": "訪問",
+        "state": "狀態"
+      },
+      "episode": "第 {episode} 集",
+      "free": "免費",
+      "unlocked": "已解鎖",
+      "locked": "未解鎖"
+    },
+    "migration": {
+      "eyebrow": "舊系統導入",
+      "title": "用戶觸發遷移",
+      "body": "前端只觸發導入任務。Nest 調用舊服務、歸一化數據、寫入乾淨的 PG 記錄，並把來源映射隔離在核心 IP 表之外。",
+      "runTitle": "正在歸一化",
+      "runBody": "舊 payload 留在導入快照裏，生產數據保持乾淨。",
+      "mapTitle": "來源映射",
+      "mapBody": "舊實體和新 IP 記錄之間的冪等映射。",
+      "steps": {
+        "select": "選擇",
+        "fetch": "拉取",
+        "normalize": "歸一化",
+        "write": "寫入",
+        "verify": "校驗"
+      }
     }
   }
 }

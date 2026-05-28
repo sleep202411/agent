@@ -15,18 +15,8 @@
  * or schedule a status poll.
  */
 
-import type { AiJobError, FoundryModelDefinition } from './types';
-
-/**
- * Until we formally split the schema dialect from Foundry's shape,
- * the generic layer treats every model description as the same rich
- * object Foundry uses. fal.ai / Replicate adapters will translate
- * their own schemas into this shape at the boundary.
- *
- * TODO(ai-schema-spec): rename to `AiModelDefinition` in
- * packages/shared once the dialect is rebranded.
- */
-export type AiModelDefinition = FoundryModelDefinition;
+import type { AiJobError, AiJobType, AiModelDefinition } from './types';
+export type { AiModelDefinition } from './types';
 
 /**
  * Context passed to adapter calls. The adapter doesn't usually need
@@ -48,6 +38,8 @@ export interface ProviderGenerationContext {
 export interface RawProviderOutput {
   /** 0-based index within this generation's output set. */
   index: number;
+  /** Output modality. Defaults to the owning job type when omitted. */
+  type?: AiJobType;
   /** Inline bytes — sync providers (Azure b64) populate this. */
   buffer?: Buffer;
   /** Provider-hosted URL — async providers (fal/Replicate) populate this;
@@ -58,6 +50,7 @@ export interface RawProviderOutput {
   ext: string;
   width?: number;
   height?: number;
+  durationSeconds?: number;
   /** Provider-reported seed (BigInt to fit 64-bit values like fal's). */
   seed?: bigint;
   /** Content safety signals from the provider (provider-specific shape). */
@@ -142,6 +135,14 @@ export interface ProviderAdapter {
 
   /** Required for webhook-based providers; omit for poll-only or sync. */
   parseWebhook?(headers: Record<string, string>, body: unknown): WebhookResult;
+
+  /**
+   * Best-effort provider-side cancellation for async jobs. The caller
+   * must still mark the local DB row cancelled even when this fails;
+   * provider cancellation is a cost-control / cleanup optimization,
+   * not the source of truth for user-visible state.
+   */
+  cancelGeneration?(providerJobId: string): Promise<void>;
 
   /**
    * Translate a provider-native error (thrown by SDK / HTTP layer)

@@ -28,6 +28,9 @@ const MOCK_RESULT_IMAGE =
 
 const HISTORY_LIMIT = 60;
 const ALLOW_LOCAL_PREVIEW = process.env.NODE_ENV !== "production";
+// Temporary release guard: keep the image lab readable while the
+// AI routing contract is verified, but prevent creating new jobs.
+const IMAGE_GENERATION_SUBMIT_DISABLED = true;
 
 export default function AiImageLabPage() {
   const rawT = useTranslations("aiGen");
@@ -62,11 +65,25 @@ export default function AiImageLabPage() {
   const [modelLoadError, setModelLoadError] = useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const itemsRef = useRef(items);
-  itemsRef.current = items;
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // ─── Model + history bootstrap ────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+
+    if (IMAGE_GENERATION_SUBMIT_DISABLED) {
+      setAvailableModels([MOCK_AI_MODEL]);
+      setModel(MOCK_AI_MODEL);
+      setFormData(deriveDefaults(MOCK_AI_MODEL.input_schema.properties));
+      setModelSource("preview");
+      setModelLoadError(null);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     async function loadModels() {
       try {
@@ -130,6 +147,7 @@ export default function AiImageLabPage() {
   // missed. Re-fetch history and merge in by id; preserve optimistic
   // `temp:*` cards that haven't been ack'd by the server yet.
   const reconcileFromServer = useCallback(async () => {
+    if (IMAGE_GENERATION_SUBMIT_DISABLED) return;
     try {
       const jobs = await listAiJobs({ type: "image", limit: HISTORY_LIMIT });
       const serverItems = jobs.flatMap(jobToItems);
@@ -237,6 +255,7 @@ export default function AiImageLabPage() {
   );
 
   useEffect(() => {
+    if (IMAGE_GENERATION_SUBMIT_DISABLED) return;
     let hasConnectedBefore = false;
     const client = openAssetsRealtime({
       onConnected: () => {
@@ -262,6 +281,7 @@ export default function AiImageLabPage() {
   // Tab returns from background — events may have piled up during
   // throttled-tab time even with the WS still nominally open.
   useEffect(() => {
+    if (IMAGE_GENERATION_SUBMIT_DISABLED) return;
     const onVisible = () => {
       if (document.visibilityState === "visible") {
         void reconcileFromServer();
@@ -335,18 +355,19 @@ export default function AiImageLabPage() {
     return () => window.clearInterval(timer);
   }, [activeJobCount, realtimeConnected, reconcileFromServer]);
 
-  const userTierRank = useMemo(() => tierRank(user?.userLevel), [user?.userLevel]);
+  const userPlanRank = useMemo(() => planRank(user?.userLevel), [user?.userLevel]);
 
   const canSubmit =
     prompt.trim().length > 0 &&
     !isSubmitting &&
     model.enabled &&
     (modelSource === "live" || modelSource === "preview") &&
-    activeJobCount === 0;
+    activeJobCount === 0 &&
+    !IMAGE_GENERATION_SUBMIT_DISABLED;
 
   // ─── Submit ──────────────────────────────────────────────────
   const handleSubmit = useCallback(async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || IMAGE_GENERATION_SUBMIT_DISABLED) return;
     const promptText = prompt.trim();
     const tempId = `temp:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const ratio = aspectRatioValue;
@@ -465,6 +486,7 @@ export default function AiImageLabPage() {
 
   const handleRetry = useCallback(
     async (id: string) => {
+      if (IMAGE_GENERATION_SUBMIT_DISABLED) return;
       const original = items.find((it) => it.id === id);
       if (!original || original.kind !== "error") return;
       if (modelSource === "preview" || id.startsWith("temp:")) {
@@ -512,6 +534,15 @@ export default function AiImageLabPage() {
   if (modelSource === "unavailable") {
     return <UnavailableInRegion t={t} detail={modelLoadError} />;
   }
+  const submitPausedLabel = IMAGE_GENERATION_SUBMIT_DISABLED
+    ? t("imageLab.compose.submitPaused", "Generation paused")
+    : undefined;
+  const submitPausedReason = IMAGE_GENERATION_SUBMIT_DISABLED
+    ? t(
+        "imageLab.compose.submitPausedNote",
+        "Image generation is temporarily paused while model routing is being verified."
+      )
+    : undefined;
 
   // ─── Render ───────────────────────────────────────────────────
   return (
@@ -521,7 +552,7 @@ export default function AiImageLabPage() {
     // co-located so 429s from submitAiJob (which emit via the upgrade
     // store) only open the dialog when the user is actually on this
     // page. Gated on `user` so anonymous visits skip the WS entirely.
-    <QuotaProvider enabled={Boolean(user)}>
+    <QuotaProvider enabled={Boolean(user) && !IMAGE_GENERATION_SUBMIT_DISABLED}>
       <UpgradeDialogHost />
       <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
         {/* Canvas — the scrollable content keeps a `pb-28` runway so the
@@ -530,7 +561,12 @@ export default function AiImageLabPage() {
           overlays this area with a soft blur. */}
         <main className="min-h-0 flex-1 overflow-y-auto px-2 pb-28 pt-4 md:px-4">
           {items.length > 0 ? (
-            <GalleryGrid items={items} onRetry={handleRetry} onReusePrompt={refillPrompt} t={t} />
+            <GalleryGrid
+              items={items}
+              onRetry={IMAGE_GENERATION_SUBMIT_DISABLED ? undefined : handleRetry}
+              onReusePrompt={refillPrompt}
+              t={t}
+            />
           ) : (
             <EmptyState t={t} onTry={refillPrompt} modelName={model.name} />
           )}
@@ -542,9 +578,16 @@ export default function AiImageLabPage() {
             {/* Inline quota chip — shows daily image used/limit so users
               see the cap BEFORE they submit and hit a 429. VIP3 renders
               an ∞ badge instead; loading state is a quiet shimmer. */}
-            <div className="mb-1.5 flex justify-end px-1">
-              <QuotaBadge dimension="image" />
-            </div>
+            {!IMAGE_GENERATION_SUBMIT_DISABLED ? (
+              <div className="mb-1.5 flex justify-end px-1">
+                <QuotaBadge dimension="image" />
+              </div>
+            ) : null}
+            {submitPausedReason ? (
+              <div className="mb-2 rounded-xl border border-white/10 bg-zinc-900/90 px-3 py-2 text-center text-xs leading-5 text-zinc-300 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)]">
+                {submitPausedReason}
+              </div>
+            ) : null}
             <ComposeBar
               prompt={prompt}
               onPromptChange={setPrompt}
@@ -570,13 +613,15 @@ export default function AiImageLabPage() {
               onOutputsChange={(n) => setFormData((prev) => ({ ...prev, n }))}
               formData={formData}
               onFieldChange={(name, value) => setFormData((prev) => ({ ...prev, [name]: value }))}
-              userTierRank={userTierRank}
-              tierRank={tierRank}
+              userPlanRank={userPlanRank}
+              planRank={planRank}
               activeJobCount={activeJobCount}
               activeJobRunning={isAnyJobRunning}
               canSubmit={canSubmit}
               isSubmitting={isSubmitting}
               onSubmit={handleSubmit}
+              submitDisabledLabel={submitPausedLabel}
+              submitDisabledReason={submitPausedReason}
               disabled={modelSource === "loading"}
               focusToken={promptFocusToken}
               t={t}
@@ -681,30 +726,43 @@ function deriveDefaults(
   return output;
 }
 
-// Pull `x-ui.options` off a schema field into the `{value,label,tier}`
+// Pull `x-ui.options` off a schema field into the `{value,label,requiredPlan}`
 // shape ComposeBar expects. Returns [] for fields without options so
 // callers can render nothing without an extra null check.
 function readOptions(
   field: unknown
-): Array<{ value: string; label: string; tier?: string | null }> {
+): Array<{ value: string; label: string; requiredPlan?: string | null }> {
   if (!field || typeof field !== "object") return [];
   const ui = (field as { "x-ui"?: { options?: unknown } })["x-ui"];
   const opts = ui?.options;
   if (!Array.isArray(opts)) return [];
   return opts
-    .filter(
-      (o): o is { value: string; label: string; tier?: string | null } =>
-        o != null && typeof o === "object" && typeof (o as any).value === "string"
-    )
-    .map((o) => ({ value: o.value, label: o.label ?? o.value, tier: o.tier ?? null }));
+    .filter((o): o is { value: string; label?: string; requiredPlan?: string | null } => {
+      if (o == null || typeof o !== "object") return false;
+      return typeof (o as { value?: unknown }).value === "string";
+    })
+    .map((o) => ({
+      value: o.value,
+      label: o.label ?? o.value,
+      requiredPlan: o.requiredPlan ?? null,
+    }));
 }
 
-// Mirror of server-side AI_TIER_RANK. Kept tiny because we only need
-// the relative ordering for showing lock badges; server enforces.
-const TIER_RANK: Record<string, number> = { FREE: 0, VIP: 1, VIP1: 1, VIP2: 2, VIP3: 3 };
-function tierRank(level: string | null | undefined): number {
+// Product entitlement rank. Auth still comes from the existing account
+// payload, so this page adapts that claim into the new AI model protocol.
+const PLAN_RANK: Record<string, number> = {
+  FREE: 0,
+  CREATOR: 1,
+  PRO: 2,
+  STUDIO: 3,
+  ENTERPRISE: 4,
+  VIP1: 1,
+  VIP2: 2,
+  VIP3: 3,
+};
+function planRank(level: string | null | undefined): number {
   if (!level) return 0;
-  return TIER_RANK[level.toUpperCase()] ?? 0;
+  return PLAN_RANK[level.toUpperCase()] ?? 0;
 }
 
 function jobToItems(job: AiJobView): GalleryItem[] {

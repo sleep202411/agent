@@ -1,9 +1,14 @@
-# Foundry Model Schema v1
+# Legacy Foundry Model Schema v1
 
-Foundry model schemas are the product contract between model discovery,
-automatic UI rendering, validation, queue submission, and provider execution.
-The frontend renders from this contract only. Provider-specific request shapes
-are owned by backend adapters.
+This document is retained for the Microsoft Foundry provider implementation.
+The product-level contract is now `docs/ai-model-protocol-v1.md`. New frontend,
+routing, billing, queue, and provider work should use the AI Model Protocol
+language and treat Foundry as one provider adapter.
+
+Foundry model schemas are the legacy provider-specific schema used by the first
+Microsoft Foundry adapter. The frontend should render from the AI Model
+Protocol contract; provider-specific request shapes are owned by backend
+adapters.
 
 ## Goals
 

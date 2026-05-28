@@ -12,8 +12,6 @@ import type { Redis } from 'ioredis';
 import {
   createAiQueue,
   createAiRedisConnection,
-  AI_QUEUE_IMAGE,
-  AI_QUEUE_VIDEO,
   type AiQueueJobData,
   type AiQueueName,
 } from './queue';
@@ -29,15 +27,12 @@ export class AiGenerationQueueService implements OnApplicationShutdown {
     jobId: string,
     delayMs = 0,
     /**
-     * BullMQ priority — smaller = served first. Pass the tier-priority
-     * from tiers.config.ts (Free=10, VIP1=5, VIP2=3, VIP3=1) so VIP3
-     * users jump to the front of a contended image queue.
-     *
-     * Defaults to 5 (VIP1-equivalent) when not provided so a missing
-     * tier upstream doesn't accidentally promote a Free user past
-     * paid users.
+     * BullMQ priority — smaller = served first. The submit path freezes
+     * this value from the entitlement policy snapshot, so later plan
+     * changes do not reshuffle an accepted job.
      */
     priority = 5,
+    op: AiQueueJobData['op'] = 'start',
   ): Promise<void> {
     const queue = this.queueFor(queueName);
     // BullMQ jobIds must be globally unique within the queue and
@@ -46,10 +41,10 @@ export class AiGenerationQueueService implements OnApplicationShutdown {
     // can be enqueued multiple times (initial submission + N retries)
     // without colliding. The DB jobId stays in the payload so the
     // worker always reads the canonical row.
-    const queueJobId = `${jobId}__${Date.now().toString(36)}`;
+    const queueJobId = `${jobId}__${op ?? 'start'}__${Date.now().toString(36)}`;
     await queue.add(
       'process',
-      { jobId },
+      { jobId, op },
       {
         jobId: queueJobId,
         delay: delayMs > 0 ? delayMs : undefined,

@@ -332,7 +332,7 @@ export class FoundryProviderAdapter implements ProviderAdapter {
             const ext = mimeToExt(item.type) ?? 'bin';
             form.append(`${key}[]`, item, `reference.${ext}`);
           } else {
-            form.append(`${key}[]`, String(item));
+            form.append(`${key}[]`, primitiveToFormValue(item));
           }
         }
       } else if (value instanceof Blob) {
@@ -341,7 +341,7 @@ export class FoundryProviderAdapter implements ProviderAdapter {
       } else if (typeof value === 'object') {
         form.append(key, JSON.stringify(value));
       } else {
-        form.append(key, String(value));
+        form.append(key, primitiveToFormValue(value));
       }
     }
     return form;
@@ -445,4 +445,16 @@ function mimeToExt(mime: string | undefined | null): string | undefined {
   if (normalized.includes('webp')) return 'webp';
   if (normalized.includes('gif')) return 'gif';
   return undefined;
+}
+
+function primitiveToFormValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return value.toString();
+  }
+  return JSON.stringify(value) ?? '';
 }

@@ -16,8 +16,8 @@ import { ReferenceImageStack } from "./reference-image-stack";
 export interface AiOption {
   value: string;
   label: string;
-  /** Membership tier the option requires. `null` = open to all. */
-  tier?: string | null;
+  /** Product plan the option requires. `null` = open to all. */
+  requiredPlan?: string | null;
 }
 
 export type ComposeBarProps = {
@@ -40,9 +40,9 @@ export type ComposeBarProps = {
   onOutputsChange: (n: number) => void;
   formData: Record<string, unknown>;
   onFieldChange: (name: string, value: unknown) => void;
-  /** Current user's tier rank — used to lock high-tier options. */
-  userTierRank: number;
-  tierRank: (tier: string | null | undefined) => number;
+  /** Current user's plan rank — used to lock higher-plan options. */
+  userPlanRank: number;
+  planRank: (plan: string | null | undefined) => number;
   /**
    * Number of this user's image jobs currently queued or running on
    * the selected model. When > 0 we surface a badge on the model
@@ -60,6 +60,8 @@ export type ComposeBarProps = {
   canSubmit: boolean;
   isSubmitting: boolean;
   onSubmit: () => void;
+  submitDisabledLabel?: string;
+  submitDisabledReason?: string;
   disabled?: boolean;
   /**
    * Monotonically-increasing token. Each increment focuses the prompt
@@ -92,13 +94,15 @@ export function ComposeBar(props: ComposeBarProps) {
     onOutputsChange,
     formData,
     onFieldChange,
-    userTierRank,
-    tierRank,
+    userPlanRank,
+    planRank,
     activeJobCount,
     activeJobRunning,
     canSubmit,
     isSubmitting,
     onSubmit,
+    submitDisabledLabel,
+    submitDisabledReason,
     disabled,
     focusToken,
     t,
@@ -135,11 +139,10 @@ export function ComposeBar(props: ComposeBarProps) {
       /* some browsers throw on hidden inputs — ignore */
     }
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusToken]);
 
   const modelLocked = model.access?.allowed === false;
-  const modelLockedTier = model.access?.requiredTier ?? null;
+  const modelLockedPlan = model.access?.requiredPlan ?? null;
   const modelBusy = activeJobCount > 0;
   const busyLabel = activeJobRunning
     ? t("imageLab.compose.generating", "Generating")
@@ -148,11 +151,12 @@ export function ComposeBar(props: ComposeBarProps) {
   const handleKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
-      if (canSubmit) onSubmit();
+      if (canSubmit && !submitDisabledReason) onSubmit();
     }
   };
 
-  const isOptionLocked = (opt: AiOption) => opt.tier != null && tierRank(opt.tier) > userTierRank;
+  const isOptionLocked = (opt: AiOption) =>
+    opt.requiredPlan != null && planRank(opt.requiredPlan) > userPlanRank;
 
   const activeResolution = resolutionTierOptions.find((o) => o.value === resolutionTierValue);
   const advancedFields = useMemo(() => getAdvancedFields(model, formData), [model, formData]);
@@ -186,38 +190,43 @@ export function ComposeBar(props: ComposeBarProps) {
     <Button
       type="button"
       onClick={onSubmit}
-      disabled={!canSubmit || modelLocked || modelBusy}
+      disabled={!canSubmit || modelLocked || modelBusy || Boolean(submitDisabledReason)}
       loading={isSubmitting}
       size="default"
       className="h-8 shrink-0 rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90"
       icon={
-        modelLocked ? (
+        submitDisabledReason || modelLocked ? (
           <IconLock className="size-4" />
         ) : !isSubmitting ? (
           <IconSparkles className="size-4" />
         ) : undefined
       }
       title={
-        modelBusy
+        submitDisabledReason ??
+        (modelBusy
           ? t("imageLab.compose.busy", "Previous task is still running.")
           : modelLocked
-            ? modelLockedTier
-              ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
-                  "{tier}",
-                  modelLockedTier
+            ? modelLockedPlan
+              ? t("imageLab.compose.lockedPlan", "Available to {plan}+ members").replace(
+                  "{plan}",
+                  modelLockedPlan
                 )
               : t("imageLab.compose.lockedMember", "Available to members only")
-            : undefined
+            : undefined)
       }
     >
       <span>
-        {modelBusy
-          ? busyLabel
-          : modelLocked
-            ? modelLockedTier
-              ? t("imageLab.compose.unlock", "Unlock {tier}").replace("{tier}", modelLockedTier)
-              : t("imageLab.compose.unlockMember", "Members only")
-            : t("imageLab.compose.create", "Create")}
+        {submitDisabledLabel ??
+          (modelBusy
+            ? busyLabel
+            : modelLocked
+              ? modelLockedPlan
+                ? t("imageLab.compose.unlockPlan", "Unlock {plan}").replace(
+                    "{plan}",
+                    modelLockedPlan
+                  )
+                : t("imageLab.compose.unlockMember", "Members only")
+              : t("imageLab.compose.create", "Create"))}
       </span>
     </Button>
   );
@@ -287,7 +296,7 @@ export function ComposeBar(props: ComposeBarProps) {
           {models.map((option) => {
             const active = option.id === model.id;
             const locked = option.access?.allowed === false;
-            const tier = option.access?.requiredTier ?? null;
+            const requiredPlan = option.access?.requiredPlan ?? null;
             return (
               <PopoverItem
                 key={option.id}
@@ -299,7 +308,7 @@ export function ComposeBar(props: ComposeBarProps) {
               >
                 <div className="flex items-center gap-1.5">
                   <span className="block flex-1 truncate text-sm font-semibold">{option.name}</span>
-                  {locked && <TierBadge tier={tier ?? "VIP"} />}
+                  {locked && <PlanBadge plan={requiredPlan ?? "member"} />}
                 </div>
                 {option.description && (
                   <span className="block truncate text-[11px] text-zinc-400">
@@ -344,7 +353,7 @@ export function ComposeBar(props: ComposeBarProps) {
           </div>
         </ChipPopover>
 
-        {/* Resolution chip — with crown on premium tiers */}
+        {/* Resolution chip — with lock on higher-plan options */}
         {resolutionTierOptions.length > 0 && (
           <ChipPopover
             open={openPopover === "resolution"}
@@ -362,9 +371,9 @@ export function ComposeBar(props: ComposeBarProps) {
                   disabled={locked}
                   title={
                     locked
-                      ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
-                          "{tier}",
-                          option.tier ?? "VIP"
+                      ? t("imageLab.compose.lockedPlan", "Available to {plan}+ members").replace(
+                          "{plan}",
+                          option.requiredPlan ?? "member"
                         )
                       : undefined
                   }
@@ -378,7 +387,7 @@ export function ComposeBar(props: ComposeBarProps) {
                     <span className="block flex-1 truncate text-sm font-medium">
                       {option.label}
                     </span>
-                    {locked && <TierBadge tier={option.tier ?? "VIP"} />}
+                    {locked && <PlanBadge plan={option.requiredPlan ?? "member"} />}
                   </div>
                 </PopoverItem>
               );
@@ -467,8 +476,8 @@ export function ComposeBar(props: ComposeBarProps) {
                     fields={customizeFields}
                     formData={formData}
                     onFieldChange={onFieldChange}
-                    userTierRank={userTierRank}
-                    tierRank={tierRank}
+                    userPlanRank={userPlanRank}
+                    planRank={planRank}
                     disabled={disabled}
                     t={t}
                   />
@@ -488,11 +497,11 @@ export function ComposeBar(props: ComposeBarProps) {
 }
 
 // ─── Schema-driven advanced controls ────────────────────────────
-// The server is the source of truth for schema, validation, and tier
+// The server is the source of truth for schema, validation, and plan
 // enforcement. The compose bar renders secondary fields from that same
 // contract so new provider parameters can ship without hand-editing
 // page state for every field.
-type SchemaOption = Pick<FoundryUiOption, "label" | "labelKey" | "tier"> & {
+type SchemaOption = Pick<FoundryUiOption, "label" | "labelKey" | "requiredPlan"> & {
   value: Exclude<FoundryJsonPrimitive, null>;
 };
 
@@ -510,16 +519,16 @@ function AdvancedFieldList({
   fields,
   formData,
   onFieldChange,
-  userTierRank,
-  tierRank,
+  userPlanRank,
+  planRank,
   disabled,
   t,
 }: {
   fields: AdvancedField[];
   formData: Record<string, unknown>;
   onFieldChange: (name: string, value: unknown) => void;
-  userTierRank: number;
-  tierRank: (tier: string | null | undefined) => number;
+  userPlanRank: number;
+  planRank: (plan: string | null | undefined) => number;
   disabled?: boolean;
   t: ComposeBarProps["t"];
 }) {
@@ -531,8 +540,8 @@ function AdvancedFieldList({
           item={item}
           value={formData[item.name] ?? item.field.default}
           onChange={(value) => onFieldChange(item.name, value)}
-          userTierRank={userTierRank}
-          tierRank={tierRank}
+          userPlanRank={userPlanRank}
+          planRank={planRank}
           disabled={disabled || !item.enabled}
           t={t}
         />
@@ -545,16 +554,16 @@ function SchemaFieldControl({
   item,
   value,
   onChange,
-  userTierRank,
-  tierRank,
+  userPlanRank,
+  planRank,
   disabled,
   t,
 }: {
   item: AdvancedField;
   value: unknown;
   onChange: (value: unknown) => void;
-  userTierRank: number;
-  tierRank: (tier: string | null | undefined) => number;
+  userPlanRank: number;
+  planRank: (plan: string | null | undefined) => number;
   disabled?: boolean;
   t: ComposeBarProps["t"];
 }) {
@@ -586,7 +595,8 @@ function SchemaFieldControl({
         <div className="flex flex-wrap gap-1.5">
           {options.map((option) => {
             const active = valuesEqual(value, option.value);
-            const locked = option.tier != null && tierRank(option.tier) > userTierRank;
+            const locked =
+              option.requiredPlan != null && planRank(option.requiredPlan) > userPlanRank;
             const label = option.labelKey
               ? t(option.labelKey, option.label)
               : t(`options.${String(option.value)}`, option.label);
@@ -600,9 +610,9 @@ function SchemaFieldControl({
                 disabled={disabled || locked}
                 title={
                   locked
-                    ? t("imageLab.compose.lockedTier", "Available to {tier}+ members").replace(
-                        "{tier}",
-                        option.tier ?? "VIP"
+                    ? t("imageLab.compose.lockedPlan", "Available to {plan}+ members").replace(
+                        "{plan}",
+                        option.requiredPlan ?? "member"
                       )
                     : undefined
                 }
@@ -613,7 +623,7 @@ function SchemaFieldControl({
                 } disabled:cursor-not-allowed disabled:opacity-55`}
               >
                 <span>{label}</span>
-                {locked && <TierBadge tier={option.tier ?? "VIP"} />}
+                {locked && <PlanBadge plan={option.requiredPlan ?? "member"} />}
               </button>
             );
           })}
@@ -759,7 +769,7 @@ function fieldOptions(field: FoundryJsonSchema, ui: FoundryFieldUi): SchemaOptio
       value: option.value as SchemaOption["value"],
       label: option.label ?? String(option.value),
       labelKey: option.labelKey,
-      tier: option.tier ?? null,
+      requiredPlan: option.requiredPlan ?? null,
     }));
 }
 
@@ -899,12 +909,12 @@ function parseRatio(ratio: string): [number, number] {
   return [a, b];
 }
 
-// ─── Tier badge (lock + tier name) ────────────────────────────
-function TierBadge({ tier }: { tier: string }) {
+// ─── Plan badge (lock + plan name) ────────────────────────────
+function PlanBadge({ plan }: { plan: string }) {
   return (
     <span className="inline-flex items-center gap-0.5 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-zinc-300">
       <IconLock className="size-3" />
-      {tier}
+      {plan}
     </span>
   );
 }

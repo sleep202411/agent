@@ -70,7 +70,14 @@ async function bootstrap() {
 
   // Increase body size limit for large AI conversations
   const { json, urlencoded } = await import('express');
-  app.use(json({ limit: '10mb' }));
+  app.use(
+    json({
+      limit: '10mb',
+      verify: (req, _res, buf) => {
+        (req as { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+      },
+    }),
+  );
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
   app.enableCors({ origin: true, credentials: true });
@@ -88,7 +95,10 @@ async function bootstrap() {
   // Mastra server.timeout (30 min) so the upstream's clean 504 wins
   // the race when the workflow truly overruns. `headersTimeout` must
   // exceed `requestTimeout` per Node's invariant.
-  const httpServer = app.getHttpServer();
+  const httpServer = app.getHttpServer() as {
+    requestTimeout: number;
+    headersTimeout: number;
+  };
   httpServer.requestTimeout = 32 * 60 * 1000;
   httpServer.headersTimeout = httpServer.requestTimeout + 5_000;
 

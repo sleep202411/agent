@@ -1,6 +1,5 @@
 import type {
   FoundryConditionExpression,
-  FoundryInputSchema,
   FoundryJsonSchemaProperty,
   FoundryModelDefinition,
   FoundryProviderBinding,
@@ -122,24 +121,33 @@ function transformProviderValue(
   if (transform === 'omitAuto') return value === 'auto' ? undefined : value;
   if (transform === 'mediaArrayToOpenAIImageInput') {
     if (!Array.isArray(value) || value.length === 0) return undefined;
-    return value.map((item) => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item === 'object' && 'url' in item) {
-        return (item as { url: unknown }).url;
-      }
-      return item;
-    });
+    return value.map(mediaUrlValue);
   }
   if (transform === 'uriArrayToFiles') {
     if (!Array.isArray(value) || value.length === 0) return undefined;
-    return value.map((item) =>
-      item && typeof item === 'object' && 'url' in item
-        ? (item as { url: unknown }).url
-        : item,
-    );
+    return value.map(mediaUrlValue);
   }
-  if (transform === 'secondsToDuration') return `${value}s`;
+  if (transform === 'secondsToDuration') return `${durationSeconds(value)}s`;
   return value;
+}
+
+function mediaUrlValue(item: unknown): unknown {
+  if (typeof item === 'string') return item;
+  if (item && typeof item === 'object' && 'url' in item) {
+    const url = (item as { url?: unknown }).url;
+    return typeof url === 'string' ? url : item;
+  }
+  return item;
+}
+
+function durationSeconds(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+  return '0';
 }
 
 function setPath(

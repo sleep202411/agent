@@ -1,28 +1,27 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type {
-  FoundryConditionExpression,
-  FoundryFieldConstraint,
-  FoundryInputSchema,
-  FoundryJsonSchemaProperty,
-  FoundryObjectSchema,
-  FoundrySchemaRule,
+  AiConditionExpression,
+  AiFieldConstraint,
+  AiInputSchema,
+  AiJsonSchemaProperty,
+  AiObjectSchema,
+  AiSchemaRule,
 } from './types';
 
 @Injectable()
 export class AiGenerationValidatorService {
   normalizeInput(
-    schema: FoundryInputSchema,
+    schema: AiInputSchema,
     input: Record<string, unknown>,
   ): Record<string, unknown> {
-    const normalized = this.normalizeObject(schema, input, 'Input');
+    const normalized = this.normalizeObject(schema, input);
     this.applyRules(schema['x-rules'] ?? [], normalized);
     return normalized;
   }
 
   private normalizeObject(
-    schema: FoundryObjectSchema,
+    schema: AiObjectSchema,
     input: Record<string, unknown>,
-    title: string,
   ): Record<string, unknown> {
     const normalized: Record<string, unknown> = {};
     const required = new Set(schema.required ?? []);
@@ -51,7 +50,7 @@ export class AiGenerationValidatorService {
 
   private normalizeField(
     key: string,
-    field: FoundryJsonSchemaProperty,
+    field: AiJsonSchemaProperty,
     raw: unknown,
   ): unknown {
     switch (field.type) {
@@ -124,7 +123,7 @@ export class AiGenerationValidatorService {
             `${this.fieldTitle(field, key)} must be an object.`,
           );
         }
-        return this.normalizeObject(field, raw, this.fieldTitle(field, key));
+        return this.normalizeObject(field, raw);
       }
       default:
         return raw;
@@ -133,20 +132,20 @@ export class AiGenerationValidatorService {
 
   private normalizeArrayItem(
     key: string,
-    itemSchema: FoundryJsonSchemaProperty,
+    itemSchema: AiJsonSchemaProperty,
     item: unknown,
     index: number,
   ): unknown {
     if (itemSchema.type === 'object' && typeof item === 'string') {
       const url = item.trim();
       this.assertUri(url, `${key}[${index}]`);
-      return this.normalizeObject(itemSchema, { url }, `${key}[${index}]`);
+      return this.normalizeObject(itemSchema, { url });
     }
     return this.normalizeField(`${key}[${index}]`, itemSchema, item);
   }
 
   private normalizeBoolean(
-    field: FoundryJsonSchemaProperty,
+    field: AiJsonSchemaProperty,
     raw: unknown,
     key: string,
   ): boolean {
@@ -159,7 +158,7 @@ export class AiGenerationValidatorService {
   }
 
   private applyRules(
-    rules: FoundrySchemaRule[],
+    rules: AiSchemaRule[],
     normalized: Record<string, unknown>,
   ): void {
     for (const rule of rules) {
@@ -186,7 +185,7 @@ export class AiGenerationValidatorService {
   }
 
   private matchesCondition(
-    condition: FoundryConditionExpression,
+    condition: AiConditionExpression,
     input: Record<string, unknown>,
   ): boolean {
     if ('all' in condition && condition.all) {
@@ -230,7 +229,7 @@ export class AiGenerationValidatorService {
   }
 
   private assertEnum(
-    field: FoundryJsonSchemaProperty,
+    field: AiJsonSchemaProperty,
     value: unknown,
     key: string,
   ): void {
@@ -243,7 +242,7 @@ export class AiGenerationValidatorService {
   }
 
   private assertPattern(
-    field: FoundryJsonSchemaProperty,
+    field: AiJsonSchemaProperty,
     value: string,
     key: string,
   ): void {
@@ -256,7 +255,7 @@ export class AiGenerationValidatorService {
   }
 
   private assertStringFormat(
-    field: FoundryJsonSchemaProperty,
+    field: AiJsonSchemaProperty,
     value: string,
     key: string,
   ): void {
@@ -266,7 +265,7 @@ export class AiGenerationValidatorService {
   }
 
   private assertRange(
-    field: FoundryJsonSchemaProperty,
+    field: AiJsonSchemaProperty,
     value: number,
     key: string,
   ): void {
@@ -289,10 +288,10 @@ export class AiGenerationValidatorService {
   }
 
   private assertConstraints(
-    constraints: FoundryFieldConstraint[],
+    constraints: AiFieldConstraint[],
     value: unknown,
     key: string,
-    field: FoundryJsonSchemaProperty,
+    field: AiJsonSchemaProperty,
   ): void {
     for (const constraint of constraints) {
       if (constraint.kind === 'dimension2d') {
@@ -302,10 +301,10 @@ export class AiGenerationValidatorService {
   }
 
   private assertDimension2d(
-    constraint: Extract<FoundryFieldConstraint, { kind: 'dimension2d' }>,
+    constraint: Extract<AiFieldConstraint, { kind: 'dimension2d' }>,
     value: string,
     key: string,
-    field: FoundryJsonSchemaProperty,
+    field: AiJsonSchemaProperty,
   ): void {
     const label = this.fieldTitle(field, key);
     if (value === 'auto' && constraint.allowAuto) return;
@@ -366,10 +365,7 @@ export class AiGenerationValidatorService {
     }
   }
 
-  private fieldTitle(
-    field: FoundryJsonSchemaProperty,
-    fallback: string,
-  ): string {
+  private fieldTitle(field: AiJsonSchemaProperty, fallback: string): string {
     return field.title ?? fallback;
   }
 

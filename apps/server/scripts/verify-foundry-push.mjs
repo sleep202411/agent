@@ -1,7 +1,7 @@
-// Verify foundry-job-update push flow:
+// Verify AI job update push flow:
 //   1. Browser connects to assets hub via /realtime/negotiate/assets
-//   2. POST /foundry/jobs (which triggers emitJobUpdate inside Nest)
-//   3. Expect a `foundry_job_update` event to land on the assets group
+//   2. POST /ai/jobs (which triggers emitJobUpdate inside Nest)
+//   3. Expect an `ai_job_update` event to land on the assets group
 
 import WebSocket from "ws";
 
@@ -35,8 +35,8 @@ async function main() {
 
   await new Promise((r) => setTimeout(r, 500));
 
-  console.log("→ POST /foundry/jobs with a minimal payload...");
-  const submitRes = await fetch(`${NEST_URL}/foundry/jobs`, {
+  console.log("→ POST /ai/jobs with a minimal payload...");
+  const submitRes = await fetch(`${NEST_URL}/ai/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -54,17 +54,17 @@ async function main() {
     (m) =>
       m?.type === "message" &&
       m?.from === "group" &&
-      m?.data?.kind === "foundry_job_update"
+      m?.data?.kind === "ai_job_update"
   );
 
   if (got) {
-    console.log("\n🎉 SUCCESS — foundry submit triggered a push");
+    console.log("\nSUCCESS — AI submit triggered a push");
     console.log(`  job.id    = ${got.data.job.id}`);
     console.log(`  job.status= ${got.data.job.status}`);
     console.log(`  job.stage = ${got.data.job.stage}`);
     process.exit(0);
   } else {
-    console.error("\n❌ FAIL — no foundry_job_update push received");
+    console.error("\nFAIL — no ai_job_update push received");
     console.error("All ws messages:");
     console.error(JSON.stringify(received, null, 2));
     process.exit(1);

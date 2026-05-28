@@ -71,15 +71,15 @@ export interface FoundryUiOption {
   descriptionKey?: string;
   icon?: string;
   /**
-   * Minimum membership tier required to pick this option. Frontend
-   * renders a lock / crown badge on options whose tier exceeds the
-   * current user's; backend rejects submissions that include them
-   * with `MEMBERSHIP_REQUIRED`. `null` / undefined = available to all.
+   * Minimum product plan required to pick this option. Frontend renders
+   * a lock badge on options whose plan exceeds the current user's;
+   * backend rejects submissions with `MEMBERSHIP_REQUIRED`.
+   * `null` / undefined = available to all.
    *
    * Example use: resolution tiers — `hd` open to free users,
-   * `fhd` → 'VIP1', `uhd` → 'VIP2'.
+   * `fhd` → 'creator', `uhd` → 'pro'.
    */
-  tier?: string | null;
+  requiredPlan?: string | null;
 }
 
 export interface FoundryFieldUi {
@@ -146,9 +146,12 @@ export interface FoundryProviderFieldBinding {
   transform?:
     | "identity"
     | "omitAuto"
+    | "mediaUrl"
+    | "mediaArrayToUrls"
     | "mediaArrayToOpenAIImageInput"
     | "uriArrayToFiles"
-    | "secondsToDuration";
+    | "secondsToDuration"
+    | "secondsToInteger";
   omitWhen?: FoundryConditionExpression;
   omitIfDefault?: boolean;
   omitIfEmpty?: boolean;
@@ -231,7 +234,7 @@ export interface FoundryObjectSchema extends FoundrySchemaBase {
   properties: Record<string, FoundryJsonSchema>;
   required?: string[];
   additionalProperties?: boolean;
-  "x-ui"?: FoundryUiSchema;
+  "x-ui"?: FoundryFieldUi | FoundryUiSchema;
   "x-rules"?: FoundrySchemaRule[];
 }
 
@@ -262,9 +265,18 @@ export type FoundryGenerationMode =
   | "text_to_image"
   | "image_to_image"
   | "inpainting"
+  | "outpainting"
+  | "reference_image_generation"
   | "text_to_video"
   | "image_to_video"
-  | "video_to_video";
+  | "first_last_frame_to_video"
+  | "video_to_video"
+  | "text_to_audio"
+  | "audio_to_audio"
+  | "text_to_text"
+  | "multimodal_to_text"
+  | "multimodal_to_image"
+  | "multimodal_to_video";
 
 export interface FoundryCapabilityMatrix {
   source: FoundryCapabilitySource;
@@ -324,7 +336,7 @@ export interface FoundryCostEstimate {
    * before execution. Heuristic UI chips are represented by preflight_estimator.
    */
   supportsPreflightEstimate: boolean;
-  finalCostSource: "provider_usage" | "internal_metering" | "fixed_table" | "unknown";
+  finalCostSource: "provider_usage" | "internal_metering" | "fixed_table" | "campaign" | "unknown";
 }
 
 export type FoundryPreflightEstimateConfidence = "low" | "medium" | "high";
