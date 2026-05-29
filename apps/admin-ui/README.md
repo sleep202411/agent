@@ -30,8 +30,8 @@ Postgres `admin_users / admin_sessions` 表。
 
 ```bash
 npm run admin:create-user -w server -- \
-  --email 505421473@qq.com \
-  --password 'Violet#7291Secure' \
+  --email admin@example.com \
+  --password '<temporary-password>' \
   --name 临时管理员 \
   --site-scope all \
   --role super_admin \
@@ -41,8 +41,8 @@ npm run admin:create-user -w server -- \
 也可以使用环境变量：
 
 ```bash
-ADMIN_CREATE_EMAIL=505421473@qq.com \
-ADMIN_CREATE_PASSWORD='Violet#7291Secure' \
+ADMIN_CREATE_EMAIL=admin@example.com \
+ADMIN_CREATE_PASSWORD='<temporary-password>' \
 ADMIN_CREATE_NAME=临时管理员 \
 ADMIN_CREATE_ROLE=super_admin \
 ADMIN_CREATE_REQUIRE_MFA=true \

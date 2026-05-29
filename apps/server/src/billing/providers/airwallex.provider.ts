@@ -5,12 +5,18 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PaymentProvider } from '@prisma/client';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import type {
   CreateHostedCheckoutInput,
+  CreateProviderRefundInput,
+  CreateProviderRefundResult,
   HostedCheckoutResult,
   PaymentProviderAdapter,
   ProviderWebhookVerification,
+  SyncProviderCouponInput,
+  SyncProviderCouponResult,
+  SyncProviderPriceInput,
+  SyncProviderPriceResult,
 } from './payment-provider';
 
 interface AirwallexToken {
@@ -29,6 +35,29 @@ interface AirwallexCheckoutResponse {
   [key: string]: unknown;
 }
 
+interface AirwallexProductResponse {
+  id?: string;
+  [key: string]: unknown;
+}
+
+interface AirwallexPriceResponse {
+  id?: string;
+  [key: string]: unknown;
+}
+
+interface AirwallexCouponResponse {
+  id?: string;
+  [key: string]: unknown;
+}
+
+interface AirwallexRefundResponse {
+  id?: string;
+  request_id?: string;
+  payment_intent_id?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
 @Injectable()
 export class AirwallexProvider implements PaymentProviderAdapter {
   readonly provider = PaymentProvider.airwallex;
@@ -39,19 +68,47 @@ export class AirwallexProvider implements PaymentProviderAdapter {
     input: CreateHostedCheckoutInput,
   ): Promise<HostedCheckoutResult> {
     const token = await this.getAccessToken();
+    const lineItems = input.lineItems.map((item) => {
+      if (!item.providerPriceId) {
+        throw new ServiceUnavailableException({
+          code: 'AIRWALLEX_PRICE_BINDING_INCOMPLETE',
+          msg: `Airwallex price binding is missing provider_price_id for ${item.internalPriceId}.`,
+        });
+      }
+      return {
+        price_id: item.providerPriceId,
+        quantity: item.quantity,
+        ...(item.providerCouponId
+          ? {
+              discounts: [
+                {
+                  type: 'COUPON',
+                  coupon: { id: item.providerCouponId },
+                },
+              ],
+            }
+          : {}),
+      };
+    });
     const body: Record<string, unknown> = {
       request_id: input.requestId,
       mode: input.mode,
-      legal_entity_id: requiredEnv('AIRWALLEX_LEGAL_ENTITY_ID'),
       linked_payment_account_id: requiredEnv(
         'AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID',
       ),
       success_url: input.successUrl,
       back_url: input.backUrl,
-      line_items: input.lineItems.map((item) => ({
-        price_id: item.providerPriceId,
-        quantity: item.quantity,
-      })),
+      line_items: lineItems,
+      ...(input.providerCouponId
+        ? {
+            discounts: [
+              {
+                type: 'COUPON',
+                coupon: { id: input.providerCouponId },
+              },
+            ],
+          }
+        : {}),
     };
 
     const checkout = await this.request<AirwallexCheckoutResponse>(
@@ -81,6 +138,148 @@ export class AirwallexProvider implements PaymentProviderAdapter {
       providerInvoiceId: checkout.invoice_id ?? null,
       expiresAt: parseDate(checkout.expires_at),
       raw: checkout,
+    };
+  }
+
+  async syncPrice(
+    input: SyncProviderPriceInput,
+  ): Promise<SyncProviderPriceResult> {
+    const token = await this.getAccessToken();
+    const providerProductId =
+      input.providerProductId ??
+      (
+        await this.request<AirwallexProductResponse>(
+          '/api/v1/products/create',
+          {
+            method: 'POST',
+            token,
+            body: {
+              request_id: randomUUID(),
+              active: input.productActive,
+              name: input.productName,
+              description: input.productDescription ?? undefined,
+            },
+          },
+        )
+      ).id;
+    if (!providerProductId) {
+      throw new ServiceUnavailableException({
+        code: 'AIRWALLEX_PRODUCT_INVALID_RESPONSE',
+        msg: 'Airwallex did not return a product id.',
+      });
+    }
+
+    const recurring =
+      input.interval === 'one_time'
+        ? null
+        : {
+            period: 1,
+            period_unit: input.interval === 'month' ? 'MONTH' : 'YEAR',
+          };
+    const price = await this.request<AirwallexPriceResponse>(
+      '/api/v1/prices/create',
+      {
+        method: 'POST',
+        token,
+        body: {
+          request_id: randomUUID(),
+          active: input.priceActive,
+          billing_type: 'IN_ADVANCE',
+          currency: input.currency,
+          pricing_model: 'PER_UNIT',
+          unit_amount: minorToMajorNumber(input.amountMinor),
+          description: input.priceDescription ?? undefined,
+          product_id: providerProductId,
+          recurring,
+        },
+      },
+    );
+    if (!price.id) {
+      throw new ServiceUnavailableException({
+        code: 'AIRWALLEX_PRICE_INVALID_RESPONSE',
+        msg: 'Airwallex did not return a price id.',
+      });
+    }
+    return {
+      providerProductId,
+      providerPriceId: price.id,
+      raw: price,
+    };
+  }
+
+  async syncCoupon(
+    input: SyncProviderCouponInput,
+  ): Promise<SyncProviderCouponResult> {
+    const token = await this.getAccessToken();
+    const body: Record<string, unknown> = {
+      request_id: input.requestId,
+      active: input.active,
+      name: input.name,
+      description: input.description ?? undefined,
+      discount_model: 'PERCENTAGE',
+      percentage_off: input.percentOffBps / 100,
+      duration_type:
+        input.durationType === 'forever'
+          ? 'INDEFINITELY'
+          : input.durationType === 'repeating'
+            ? 'CUSTOM'
+            : 'ONCE',
+      expires_at: input.expiresAt?.toISOString(),
+      metadata: input.metadata,
+    };
+    if (input.durationType === 'repeating') {
+      body.duration = {
+        period: input.durationCount,
+        period_unit: durationUnitToAirwallex(input.durationUnit),
+      };
+    }
+
+    const coupon = await this.request<AirwallexCouponResponse>(
+      '/api/v1/coupons/create',
+      {
+        method: 'POST',
+        token,
+        body,
+      },
+    );
+    if (!coupon.id) {
+      throw new ServiceUnavailableException({
+        code: 'AIRWALLEX_COUPON_INVALID_RESPONSE',
+        msg: 'Airwallex did not return a coupon id.',
+      });
+    }
+    return { providerCouponId: coupon.id, raw: coupon };
+  }
+
+  async createRefund(
+    input: CreateProviderRefundInput,
+  ): Promise<CreateProviderRefundResult> {
+    const token = await this.getAccessToken();
+    const refund = await this.request<AirwallexRefundResponse>(
+      '/api/v1/pa/refunds/create',
+      {
+        method: 'POST',
+        token,
+        body: {
+          request_id: input.requestId,
+          payment_intent_id: input.providerPaymentIntentId,
+          amount: minorToMajorNumber(input.amountMinor),
+          reason: input.reason,
+        },
+      },
+    );
+    if (!refund.id) {
+      throw new ServiceUnavailableException({
+        code: 'AIRWALLEX_REFUND_INVALID_RESPONSE',
+        msg: 'Airwallex did not return a refund id.',
+      });
+    }
+    return {
+      providerRefundId: refund.id,
+      providerStatus: refund.status ?? null,
+      providerPaymentIntentId:
+        refund.payment_intent_id ?? input.providerPaymentIntentId,
+      raw: refund,
     };
   }
 
@@ -269,4 +468,32 @@ function stringField(
 ): string | null {
   const field = value[key];
   return typeof field === 'string' && field.trim() ? field : null;
+}
+
+function minorToMajorNumber(amountMinor: bigint): number {
+  if (amountMinor < 0n || amountMinor > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new ServiceUnavailableException({
+      code: 'AIRWALLEX_AMOUNT_OUT_OF_RANGE',
+      msg: 'Airwallex amount is outside the safe supported range.',
+    });
+  }
+  return Number(amountMinor) / 100;
+}
+
+function durationUnitToAirwallex(unit: string | null | undefined): string {
+  switch (unit) {
+    case 'day':
+      return 'DAY';
+    case 'week':
+      return 'WEEK';
+    case 'month':
+      return 'MONTH';
+    case 'year':
+      return 'YEAR';
+    default:
+      throw new ServiceUnavailableException({
+        code: 'AIRWALLEX_COUPON_DURATION_UNIT_INVALID',
+        msg: 'Airwallex coupon duration unit is invalid.',
+      });
+  }
 }

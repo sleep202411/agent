@@ -5,15 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  BillingSiteRegion,
   BillingSubjectType,
   IpCampaignStatus,
   IpContentType,
-  IpCommerceTargetType,
+  IpTargetType,
   IpCollectionItemStatus,
   IpEntitlementStatus,
-  IpImportEntityType,
-  IpImportSourceSystem,
   IpListingVisibility,
   IpModerationActionType,
   IpModerationTargetType,
@@ -29,6 +26,7 @@ import {
   IpUserBlockTargetType,
   Prisma,
   WalletAccountStatus,
+  WalletBalanceKind,
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
@@ -41,7 +39,6 @@ import { WalletLedgerService } from '../workspaces';
 import type {
   CreateIpContentReportInput,
   CreateIpPurchaseInput,
-  IpLegacyTitleQuery,
   IpTitleAccessQuery,
   ListAdminIpTitlesQuery,
   ListIpTitlesQuery,
@@ -175,7 +172,6 @@ export class IpCommerceService {
   ) {}
 
   async getAdminOverview(query: ListAdminIpTitlesQuery) {
-    const siteRegion = query.siteRegion ?? siteRegionFromEnv();
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const titleWhere = adminTitleWhere(query);
 
@@ -218,7 +214,6 @@ export class IpCommerceService {
         where: {
           status: IpPriceRuleStatus.active,
           archivedAt: null,
-          siteRegion,
         },
       }),
       this.prisma.ipContentReport.count({
@@ -229,7 +224,6 @@ export class IpCommerceService {
       this.prisma.ipPurchaseOrder.findMany({
         where: {
           status: IpPurchaseOrderStatus.fulfilled,
-          siteRegion,
           createdAt: { gte: sevenDaysAgo },
         },
         orderBy: { createdAt: 'desc' },
@@ -307,7 +301,6 @@ export class IpCommerceService {
     ]);
 
     return {
-      siteRegion,
       generatedAt: new Date().toISOString(),
       metrics: {
         totalTitles,
@@ -320,15 +313,12 @@ export class IpCommerceService {
       },
       reviewQueue: reviewQueue.map(adminReviewDto),
       reports: reports.map(adminReportDto),
-      recentTitles: recentTitles.map((title) =>
-        adminTitleSummaryDto(title, siteRegion),
-      ),
+      recentTitles: recentTitles.map(adminTitleSummaryDto),
       recentOrders: recentOrders.map(purchaseOrderDto),
     };
   }
 
   async listAdminTitles(query: ListAdminIpTitlesQuery) {
-    const siteRegion = query.siteRegion ?? siteRegionFromEnv();
     const rows = await this.prisma.ipTitle.findMany({
       where: adminTitleWhere(query),
       cursor: query.cursor ? { id: query.cursor } : undefined,
@@ -340,14 +330,12 @@ export class IpCommerceService {
 
     const items = rows.slice(0, query.limit);
     return {
-      siteRegion,
-      items: items.map((title) => adminTitleSummaryDto(title, siteRegion)),
+      items: items.map(adminTitleSummaryDto),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
 
   async getAdminTitle(titleId: string) {
-    const siteRegion = siteRegionFromEnv();
     const title = await this.prisma.ipTitle.findFirst({
       where: { id: titleId, deletedAt: null },
       include: adminTitleInclude,
@@ -358,7 +346,7 @@ export class IpCommerceService {
         msg: 'IP title not found.',
       });
     }
-    return { title: adminTitleDetailDto(title, siteRegion) };
+    return { title: adminTitleDetailDto(title) };
   }
 
   async updateAdminTitlePublication(
@@ -461,7 +449,7 @@ export class IpCommerceService {
       },
     });
 
-    return { title: adminTitleDetailDto(updated, siteRegionFromEnv()) };
+    return { title: adminTitleDetailDto(updated) };
   }
 
   async resolveAdminReport(
@@ -529,7 +517,6 @@ export class IpCommerceService {
   }
 
   async listPublicTitles(query: ListIpTitlesQuery, user?: AuthUser) {
-    const siteRegion = query.siteRegion ?? siteRegionFromEnv();
     const viewerBlockWhere = await this.viewerBlockWhere(user);
     const cursor = query.cursor
       ? await this.prisma.ipTitle.findUnique({
@@ -565,13 +552,12 @@ export class IpCommerceService {
 
     const items = rows.slice(0, query.limit);
     return {
-      items: items.map((title) => titleDto(title, siteRegion)),
+      items: items.map(titleDto),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
     };
   }
 
   async getPublicTitle(titleId: string, user?: AuthUser) {
-    const siteRegion = siteRegionFromEnv();
     const viewerBlockWhere = await this.viewerBlockWhere(user);
     const title = await this.prisma.ipTitle.findFirst({
       where: {
@@ -589,53 +575,7 @@ export class IpCommerceService {
         msg: 'IP title not found.',
       });
     }
-    return { title: titleDto(title, siteRegion) };
-  }
-
-  async getPublicTitleByImportSource(
-    input: Pick<IpLegacyTitleQuery, 'sourceSystem' | 'siteRegion'> & {
-      sourceEntityId: string;
-    },
-  ) {
-    const siteRegion = input.siteRegion ?? siteRegionFromEnv();
-    const importMap = await this.prisma.ipImportMap.findFirst({
-      where: {
-        sourceSystem: input.sourceSystem as IpImportSourceSystem,
-        sourceEntityType: IpImportEntityType.title,
-        sourceEntityId: input.sourceEntityId,
-        targetTitleId: { not: null },
-      },
-      include: {
-        targetTitle: {
-          include: titleInclude,
-        },
-      },
-    });
-    const targetTitle = importMap?.targetTitle;
-    if (
-      !importMap ||
-      !targetTitle ||
-      targetTitle.deletedAt ||
-      !PUBLIC_TITLE_STATUSES.includes(targetTitle.status) ||
-      !['public', 'unlisted'].includes(targetTitle.listingVisibility)
-    ) {
-      throw new NotFoundException({
-        code: 'IP_LEGACY_TITLE_NOT_FOUND',
-        msg: 'Migrated IP title was not found.',
-      });
-    }
-
-    return {
-      importMap: {
-        id: importMap.id,
-        sourceSystem: importMap.sourceSystem,
-        sourceEntityType: importMap.sourceEntityType,
-        sourceEntityId: importMap.sourceEntityId,
-        targetTitleId: importMap.targetTitleId,
-        lastImportedAt: importMap.lastImportedAt.toISOString(),
-      },
-      title: titleDto(targetTitle, siteRegion),
-    };
+    return { title: titleDto(title) };
   }
 
   async getTitleAccess(
@@ -643,7 +583,6 @@ export class IpCommerceService {
     titleId: string,
     query: IpTitleAccessQuery,
   ) {
-    const siteRegion = query.siteRegion ?? siteRegionFromEnv();
     const now = new Date();
     const viewerBlockWhere = await this.viewerBlockWhere(user);
     const title = await this.prisma.ipTitle.findFirst({
@@ -672,10 +611,7 @@ export class IpCommerceService {
         : title.episodes;
 
     const titlePrice = selectActivePrice(
-      title.priceRules.filter(
-        (rule) => rule.targetType === IpCommerceTargetType.title,
-      ),
-      siteRegion,
+      title.priceRules.filter((rule) => rule.targetType === IpTargetType.title),
       now,
     );
     const entitlements = user
@@ -691,14 +627,13 @@ export class IpCommerceService {
       : [];
     const titleEntitlement = entitlements.find(
       (entitlement) =>
-        entitlement.targetType === IpCommerceTargetType.title &&
+        entitlement.targetType === IpTargetType.title &&
         entitlement.episodeId === null,
     );
     const ownedEpisodeIds = new Set(
       entitlements
         .filter(
-          (entitlement) =>
-            entitlement.targetType === IpCommerceTargetType.episode,
+          (entitlement) => entitlement.targetType === IpTargetType.episode,
         )
         .map((entitlement) => entitlement.episodeId)
         .filter(Boolean) as string[],
@@ -706,10 +641,11 @@ export class IpCommerceService {
     const communityPointAccount = user
       ? await this.prisma.walletAccount.findUnique({
           where: {
-            ownerType_ownerId_currency: {
+            ownerType_ownerId_currency_balanceKind: {
               ownerType: WalletOwnerType.user,
               ownerId: user.userId,
               currency: WalletCurrencyType.community_point,
+              balanceKind: WalletBalanceKind.consumable,
             },
           },
         })
@@ -720,6 +656,7 @@ export class IpCommerceService {
       wallet: communityPointAccount
         ? {
             currency: communityPointAccount.currency,
+            balanceKind: communityPointAccount.balanceKind,
             status: communityPointAccount.status,
             availableBalance: communityPointAccount.availableBalance.toString(),
             heldBalance: communityPointAccount.heldBalance.toString(),
@@ -732,11 +669,7 @@ export class IpCommerceService {
         price: titlePrice ? priceRuleDto(titlePrice) : null,
       },
       episodes: episodes.map((episode) => {
-        const episodePrice = selectActivePrice(
-          episode.priceRules,
-          siteRegion,
-          now,
-        );
+        const episodePrice = selectActivePrice(episode.priceRules, now);
         const owned =
           Boolean(titleEntitlement) || ownedEpisodeIds.has(episode.id);
         const access = owned
@@ -773,6 +706,7 @@ export class IpCommerceService {
         ownerType: account.ownerType,
         ownerId: account.ownerId,
         currency: account.currency,
+        balanceKind: account.balanceKind,
         status: account.status,
         availableBalance: account.availableBalance.toString(),
         heldBalance: account.heldBalance.toString(),
@@ -844,7 +778,6 @@ export class IpCommerceService {
   }
 
   async purchaseContent(user: AuthUser, input: CreateIpPurchaseInput) {
-    const siteRegion = input.siteRegion ?? siteRegionFromEnv();
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
@@ -926,7 +859,6 @@ export class IpCommerceService {
         titleId: input.titleId,
         episodeId: input.episodeId ?? null,
         targetType: input.targetType,
-        siteRegion,
         priceRuleId: input.priceRuleId,
         now,
       });
@@ -952,7 +884,6 @@ export class IpCommerceService {
           episodeId: episode?.id ?? null,
           targetType: input.targetType,
           status: IpPurchaseOrderStatus.pending,
-          siteRegion,
           priceRuleId: priceRule.id,
           campaignId: priceRule.campaignId,
           referralLinkId:
@@ -1321,8 +1252,7 @@ export class IpCommerceService {
     input: {
       titleId: string;
       episodeId: string | null;
-      targetType: IpCommerceTargetType;
-      siteRegion: BillingSiteRegion;
+      targetType: IpTargetType;
       priceRuleId?: string;
       now: Date;
     },
@@ -1331,11 +1261,8 @@ export class IpCommerceService {
       id: input.priceRuleId,
       titleId: input.titleId,
       episodeId:
-        input.targetType === IpCommerceTargetType.episode
-          ? input.episodeId
-          : null,
+        input.targetType === IpTargetType.episode ? input.episodeId : null,
       targetType: input.targetType,
-      siteRegion: input.siteRegion,
       currency: WalletCurrencyType.community_point,
       status: IpPriceRuleStatus.active,
       archivedAt: null,
@@ -1491,7 +1418,8 @@ export class IpCommerceService {
                   ? IpRevenueLedgerEntryType.platform_fee
                   : IpRevenueLedgerEntryType.revenue_share,
           status: IpRevenueLedgerStatus.posted,
-          currency: WalletCurrencyType.revenue_credit,
+          currency: WalletCurrencyType.community_point,
+          balanceKind: WalletBalanceKind.withdrawable,
           amount,
           sourceAmount: input.totalAmount,
           shareBps: rule.shareBps,
@@ -1561,7 +1489,8 @@ export class IpCommerceService {
         walletTransactionId: walletTransaction.id,
         entryType: IpRevenueLedgerEntryType.referral_commission,
         status: IpRevenueLedgerStatus.posted,
-        currency: WalletCurrencyType.revenue_credit,
+        currency: WalletCurrencyType.community_point,
+        balanceKind: WalletBalanceKind.withdrawable,
         amount,
         sourceAmount: input.totalAmount,
         shareBps: input.referralLink.commissionBps,
@@ -1577,7 +1506,7 @@ async function findActiveEntitlementTx(
   input: {
     userId: string;
     titleId: string;
-    targetType: IpCommerceTargetType;
+    targetType: IpTargetType;
     episodeId: string | null;
     now: Date;
   },
@@ -1587,7 +1516,7 @@ async function findActiveEntitlementTx(
       subjectType: BillingSubjectType.user,
       subjectId: input.userId,
       titleId: input.titleId,
-      targetType: IpCommerceTargetType.title,
+      targetType: IpTargetType.title,
       episodeId: null,
       status: IpEntitlementStatus.active,
       OR: [{ endsAt: null }, { endsAt: { gt: input.now } }],
@@ -1595,14 +1524,14 @@ async function findActiveEntitlementTx(
   });
   if (titleEntitlement) return titleEntitlement;
 
-  if (input.targetType === IpCommerceTargetType.title) return null;
+  if (input.targetType === IpTargetType.title) return null;
   return tx.ipContentEntitlement.findFirst({
     where: {
       subjectType: BillingSubjectType.user,
       subjectId: input.userId,
       titleId: input.titleId,
       episodeId: input.episodeId,
-      targetType: IpCommerceTargetType.episode,
+      targetType: IpTargetType.episode,
       status: IpEntitlementStatus.active,
       OR: [{ endsAt: null }, { endsAt: { gt: input.now } }],
     },
@@ -1616,7 +1545,7 @@ async function ensureCollectionItemTx(
     id: string;
     titleId: string;
     episodeId: string | null;
-    targetType: IpCommerceTargetType;
+    targetType: IpTargetType;
   },
 ) {
   const existing = await tx.ipCollectionItem.findFirst({
@@ -1663,16 +1592,18 @@ async function debitCommunityPointTx(
 ) {
   const account = await tx.walletAccount.upsert({
     where: {
-      ownerType_ownerId_currency: {
+      ownerType_ownerId_currency_balanceKind: {
         ownerType: WalletOwnerType.user,
         ownerId: input.userId,
         currency: WalletCurrencyType.community_point,
+        balanceKind: WalletBalanceKind.consumable,
       },
     },
     create: {
       ownerType: WalletOwnerType.user,
       ownerId: input.userId,
       currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.consumable,
       status: WalletAccountStatus.active,
     },
     update: {},
@@ -1725,6 +1656,7 @@ async function debitCommunityPointTx(
       accountId: locked.id,
       entryType: WalletLedgerEntryType.debit,
       currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.consumable,
       amount: input.amount,
       availableDelta: -input.amount,
       heldDelta: 0n,
@@ -1763,16 +1695,18 @@ async function creditRevenueTx(
 
   const account = await tx.walletAccount.upsert({
     where: {
-      ownerType_ownerId_currency: {
+      ownerType_ownerId_currency_balanceKind: {
         ownerType: WalletOwnerType.user,
         ownerId: input.userId,
-        currency: WalletCurrencyType.revenue_credit,
+        currency: WalletCurrencyType.community_point,
+        balanceKind: WalletBalanceKind.withdrawable,
       },
     },
     create: {
       ownerType: WalletOwnerType.user,
       ownerId: input.userId,
-      currency: WalletCurrencyType.revenue_credit,
+      currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.withdrawable,
       status: WalletAccountStatus.active,
     },
     update: {},
@@ -1800,7 +1734,8 @@ async function creditRevenueTx(
       transactionId: transaction.id,
       accountId: locked.id,
       entryType: WalletLedgerEntryType.credit,
-      currency: WalletCurrencyType.revenue_credit,
+      currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.withdrawable,
       amount: input.amount,
       availableDelta: input.amount,
       heldDelta: 0n,
@@ -1843,18 +1778,12 @@ function adminTitleWhere(
   };
 }
 
-function adminTitleSummaryDto(
-  title: AdminTitleWithCommerce,
-  siteRegion: BillingSiteRegion,
-) {
+function adminTitleSummaryDto(title: AdminTitleWithCommerce) {
   const activeBundlePrice = selectActivePrice(
-    title.priceRules.filter(
-      (rule) => rule.targetType === IpCommerceTargetType.title,
-    ),
-    siteRegion,
+    title.priceRules.filter((rule) => rule.targetType === IpTargetType.title),
   );
   const activeEpisodePrices = title.episodes
-    .map((episode) => selectActivePrice(episode.priceRules, siteRegion))
+    .map((episode) => selectActivePrice(episode.priceRules))
     .filter(Boolean);
   return {
     id: title.id,
@@ -1911,12 +1840,9 @@ function adminTitleSummaryDto(
   };
 }
 
-function adminTitleDetailDto(
-  title: AdminTitleWithCommerce,
-  siteRegion: BillingSiteRegion,
-) {
+function adminTitleDetailDto(title: AdminTitleWithCommerce) {
   return {
-    ...adminTitleSummaryDto(title, siteRegion),
+    ...adminTitleSummaryDto(title),
     description: title.description,
     copyrightOwner: title.copyrightOwner,
     rightsSummary: title.rightsSummary,
@@ -1978,9 +1904,8 @@ function adminTitleDetailDto(
 
 function adminPriceRuleDto(rule: {
   id: string;
-  targetType: IpCommerceTargetType;
+  targetType: IpTargetType;
   status: IpPriceRuleStatus;
-  siteRegion: BillingSiteRegion;
   currency: WalletCurrencyType;
   amount: bigint;
   originalAmount: bigint | null;
@@ -1995,7 +1920,6 @@ function adminPriceRuleDto(rule: {
     id: rule.id,
     targetType: rule.targetType,
     status: rule.status,
-    siteRegion: rule.siteRegion,
     currency: rule.currency,
     amount: rule.amount.toString(),
     originalAmount: rule.originalAmount?.toString() ?? null,
@@ -2012,7 +1936,6 @@ function adminCampaignDto(campaign: {
   id: string;
   campaignType: string;
   status: IpCampaignStatus;
-  siteRegion: BillingSiteRegion;
   code: string;
   name: string;
   description: string | null;
@@ -2024,7 +1947,6 @@ function adminCampaignDto(campaign: {
     id: campaign.id,
     campaignType: campaign.campaignType,
     status: campaign.status,
-    siteRegion: campaign.siteRegion,
     code: campaign.code,
     name: campaign.name,
     description: campaign.description,
@@ -2278,12 +2200,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function titleDto(title: TitleWithCommerce, siteRegion: BillingSiteRegion) {
+function titleDto(title: TitleWithCommerce) {
   const activeTitlePrice = selectActivePrice(
-    title.priceRules.filter(
-      (rule) => rule.targetType === IpCommerceTargetType.title,
-    ),
-    siteRegion,
+    title.priceRules.filter((rule) => rule.targetType === IpTargetType.title),
   );
   return {
     id: title.id,
@@ -2313,7 +2232,6 @@ function titleDto(title: TitleWithCommerce, siteRegion: BillingSiteRegion) {
       id: campaign.id,
       campaignType: campaign.campaignType,
       status: campaign.status,
-      siteRegion: campaign.siteRegion,
       code: campaign.code,
       name: campaign.name,
       startsAt: campaign.startsAt?.toISOString() ?? null,
@@ -2321,7 +2239,7 @@ function titleDto(title: TitleWithCommerce, siteRegion: BillingSiteRegion) {
       unlocksAt: campaign.unlocksAt?.toISOString() ?? null,
     })),
     episodes: title.episodes.map((episode) => {
-      const price = selectActivePrice(episode.priceRules, siteRegion);
+      const price = selectActivePrice(episode.priceRules);
       return {
         id: episode.id,
         episodeNo: episode.episodeNo,
@@ -2346,20 +2264,18 @@ function selectActivePrice<
   T extends {
     status: IpPriceRuleStatus;
     archivedAt: Date | null;
-    siteRegion: BillingSiteRegion;
     startsAt: Date | null;
     endsAt: Date | null;
     priority: number;
     amount: bigint;
   },
->(rules: T[], siteRegion: BillingSiteRegion, now = new Date()): T | null {
+>(rules: T[], now = new Date()): T | null {
   return (
     rules
       .filter(
         (rule) =>
           rule.status === IpPriceRuleStatus.active &&
           !rule.archivedAt &&
-          rule.siteRegion === siteRegion &&
           (!rule.startsAt || rule.startsAt <= now) &&
           (!rule.endsAt || rule.endsAt > now),
       )
@@ -2371,7 +2287,7 @@ function selectActivePrice<
 
 function priceRuleDto(rule: {
   id: string;
-  targetType: IpCommerceTargetType;
+  targetType: IpTargetType;
   currency: WalletCurrencyType;
   amount: bigint;
   originalAmount: bigint | null;
@@ -2397,7 +2313,7 @@ function priceRuleDto(rule: {
 
 function priceSnapshot(rule: {
   id: string;
-  targetType: IpCommerceTargetType;
+  targetType: IpTargetType;
   currency: WalletCurrencyType;
   amount: bigint;
   originalAmount: bigint | null;
@@ -2420,7 +2336,7 @@ function purchaseOrderDto(order: {
   workspaceId: string | null;
   titleId: string;
   episodeId: string | null;
-  targetType: IpCommerceTargetType;
+  targetType: IpTargetType;
   currency: WalletCurrencyType;
   priceAmount: bigint;
   discountAmount: bigint;
@@ -2464,7 +2380,7 @@ function entitlementDto(entitlement: {
   subjectId: string;
   titleId: string;
   episodeId: string | null;
-  targetType: IpCommerceTargetType;
+  targetType: IpTargetType;
   status: IpEntitlementStatus;
   sourceType: string;
   sourceId: string;
@@ -2545,10 +2461,4 @@ function createIpOrderNo(): string {
     .replace(/[-:TZ.]/g, '')
     .slice(0, 14);
   return `IP${stamp}${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
-}
-
-function siteRegionFromEnv(): BillingSiteRegion {
-  return process.env.NEXT_PUBLIC_SITE_REGION === 'cn'
-    ? BillingSiteRegion.cn
-    : BillingSiteRegion.global;
 }

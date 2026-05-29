@@ -2,6 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import {
   Prisma,
   WalletAccountStatus,
+  WalletBalanceKind,
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
@@ -12,10 +13,19 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 
-const DEFAULT_CURRENCIES = [
-  WalletCurrencyType.bubble,
-  WalletCurrencyType.community_point,
-  WalletCurrencyType.revenue_credit,
+const DEFAULT_WALLET_ACCOUNTS = [
+  {
+    currency: WalletCurrencyType.bubble,
+    balanceKind: WalletBalanceKind.consumable,
+  },
+  {
+    currency: WalletCurrencyType.community_point,
+    balanceKind: WalletBalanceKind.consumable,
+  },
+  {
+    currency: WalletCurrencyType.community_point,
+    balanceKind: WalletBalanceKind.withdrawable,
+  },
 ] as const;
 
 export interface PostWalletEntryInput {
@@ -50,20 +60,22 @@ export class WalletLedgerService {
     ownerId: string,
   ): Promise<WalletAccount[]> {
     const accounts: WalletAccount[] = [];
-    for (const currency of DEFAULT_CURRENCIES) {
+    for (const accountSpec of DEFAULT_WALLET_ACCOUNTS) {
       accounts.push(
         await this.prisma.walletAccount.upsert({
           where: {
-            ownerType_ownerId_currency: {
+            ownerType_ownerId_currency_balanceKind: {
               ownerType,
               ownerId,
-              currency,
+              currency: accountSpec.currency,
+              balanceKind: accountSpec.balanceKind,
             },
           },
           create: {
             ownerType,
             ownerId,
-            currency,
+            currency: accountSpec.currency,
+            balanceKind: accountSpec.balanceKind,
             status: WalletAccountStatus.active,
           },
           update: {},
@@ -140,6 +152,7 @@ export class WalletLedgerService {
           accountId: account.id,
           entryType: input.entryType,
           currency: account.currency,
+          balanceKind: account.balanceKind,
           amount: input.amount,
           availableDelta: input.availableDelta,
           heldDelta: input.heldDelta,

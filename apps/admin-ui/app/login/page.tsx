@@ -5,6 +5,8 @@ import { LoginForm } from "@/components/admin/login-form";
 import { getAdminSession } from "@/lib/admin-session";
 import { ADMIN_SITE_COOKIE, ADMIN_SITE_OPTIONS, normalizeAdminSiteKey } from "@/lib/admin-sites";
 
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage() {
   const session = await getAdminSession();
   if (session) redirect("/");

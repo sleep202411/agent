@@ -1,14 +1,22 @@
 import { Module } from '@nestjs/common';
+import { AdminAuthModule } from '../admin-auth';
 import { WorkspacesModule } from '../workspaces';
+import { BillingAdminController } from './billing-admin.controller';
 import { BillingController } from './billing.controller';
+import { BillingLedgerService } from './billing-ledger.service';
 import { BillingService } from './billing.service';
 import { PaymentProviderRegistry } from './payment-provider-registry.service';
 import { AirwallexProvider } from './providers/airwallex.provider';
 
 @Module({
-  imports: [WorkspacesModule],
-  controllers: [BillingController],
-  providers: [BillingService, PaymentProviderRegistry, AirwallexProvider],
+  imports: [AdminAuthModule, WorkspacesModule],
+  controllers: [BillingController, BillingAdminController],
+  providers: [
+    BillingService,
+    BillingLedgerService,
+    PaymentProviderRegistry,
+    AirwallexProvider,
+  ],
   exports: [BillingService],
 })
 export class BillingModule {}

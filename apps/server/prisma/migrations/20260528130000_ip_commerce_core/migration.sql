@@ -14,7 +14,7 @@ CREATE TYPE "IpAgeRating" AS ENUM ('general', 'teen', 'mature', 'restricted');
 CREATE TYPE "IpStoryNodeType" AS ENUM ('linear', 'branch', 'ending', 'bonus');
 CREATE TYPE "IpCampaignType" AS ENUM ('presale', 'early_bird', 'launch', 'event', 'referral', 'custom');
 CREATE TYPE "IpCampaignStatus" AS ENUM ('draft', 'scheduled', 'active', 'ended', 'canceled');
-CREATE TYPE "IpCommerceTargetType" AS ENUM ('title', 'episode');
+CREATE TYPE "IpTargetType" AS ENUM ('title', 'episode');
 CREATE TYPE "IpPriceRuleStatus" AS ENUM ('draft', 'active', 'disabled', 'archived');
 CREATE TYPE "IpPurchaseOrderStatus" AS ENUM ('pending', 'paid', 'fulfilled', 'canceled', 'failed', 'refunded', 'partially_refunded');
 CREATE TYPE "IpEntitlementStatus" AS ENUM ('active', 'expired', 'revoked', 'refunded');
@@ -36,9 +36,6 @@ CREATE TYPE "IpModerationActionType" AS ENUM ('hide', 'suspend_sales', 'takedown
 CREATE TYPE "IpReportReason" AS ENUM ('copyright', 'unsafe_content', 'fraud', 'misleading', 'privacy', 'harassment', 'other');
 CREATE TYPE "IpReportStatus" AS ENUM ('submitted', 'triaged', 'actioned', 'dismissed');
 CREATE TYPE "IpUserBlockTargetType" AS ENUM ('title', 'creator');
-CREATE TYPE "IpImportSourceSystem" AS ENUM ('java_content', 'java_studio', 'admin_csv', 'manual');
-CREATE TYPE "IpImportRunStatus" AS ENUM ('queued', 'running', 'completed', 'failed', 'canceled');
-CREATE TYPE "IpImportEntityType" AS ENUM ('title', 'episode', 'story_node', 'media_asset', 'price_rule', 'contributor');
 
 CREATE TABLE "ip_titles" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
@@ -112,62 +109,6 @@ CREATE TABLE "ip_episodes" (
   CONSTRAINT "ip_episodes_duration_positive" CHECK ("duration_seconds" IS NULL OR "duration_seconds" > 0)
 );
 
-CREATE TABLE "ip_import_runs" (
-  "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-  "workspace_id" UUID NOT NULL,
-  "source_system" "IpImportSourceSystem" NOT NULL,
-  "source_root_id" VARCHAR(128),
-  "status" "IpImportRunStatus" NOT NULL DEFAULT 'queued',
-  "requested_by_id" VARCHAR(64) NOT NULL,
-  "total_count" INTEGER NOT NULL DEFAULT 0,
-  "imported_count" INTEGER NOT NULL DEFAULT 0,
-  "skipped_count" INTEGER NOT NULL DEFAULT 0,
-  "failed_count" INTEGER NOT NULL DEFAULT 0,
-  "error" TEXT,
-  "metadata" JSONB NOT NULL DEFAULT '{}',
-  "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "started_at" TIMESTAMPTZ(6),
-  "completed_at" TIMESTAMPTZ(6),
-
-  CONSTRAINT "ip_import_runs_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "ip_import_runs_counts_nonnegative"
-    CHECK ("total_count" >= 0 AND "imported_count" >= 0 AND "skipped_count" >= 0 AND "failed_count" >= 0),
-  CONSTRAINT "ip_import_runs_source_root_nonempty"
-    CHECK ("source_root_id" IS NULL OR btrim("source_root_id") <> '')
-);
-
-CREATE TABLE "ip_import_maps" (
-  "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-  "workspace_id" UUID NOT NULL,
-  "run_id" UUID,
-  "source_system" "IpImportSourceSystem" NOT NULL,
-  "source_entity_type" "IpImportEntityType" NOT NULL,
-  "source_entity_id" VARCHAR(128) NOT NULL,
-  "source_parent_entity_id" VARCHAR(128),
-  "target_entity_type" "IpImportEntityType" NOT NULL,
-  "target_entity_id" VARCHAR(128) NOT NULL,
-  "target_title_id" UUID,
-  "target_episode_id" UUID,
-  "source_checksum" VARCHAR(128),
-  "source_snapshot" JSONB,
-  "metadata" JSONB NOT NULL DEFAULT '{}',
-  "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "last_imported_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-  CONSTRAINT "ip_import_maps_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "ip_import_maps_source_nonempty"
-    CHECK (btrim("source_entity_id") <> '' AND ("source_parent_entity_id" IS NULL OR btrim("source_parent_entity_id") <> '')),
-  CONSTRAINT "ip_import_maps_target_nonempty" CHECK (btrim("target_entity_id") <> ''),
-  CONSTRAINT "ip_import_maps_target_consistency"
-    CHECK (
-      ("target_entity_type" = 'title' AND "target_title_id" IS NOT NULL)
-      OR ("target_entity_type" = 'episode' AND "target_episode_id" IS NOT NULL)
-      OR ("target_entity_type" NOT IN ('title', 'episode'))
-    )
-);
-
 CREATE TABLE "ip_story_nodes" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
   "episode_id" UUID NOT NULL,
@@ -208,7 +149,6 @@ CREATE TABLE "ip_campaigns" (
   "title_id" UUID NOT NULL,
   "campaign_type" "IpCampaignType" NOT NULL DEFAULT 'custom',
   "status" "IpCampaignStatus" NOT NULL DEFAULT 'draft',
-  "site_region" "BillingSiteRegion" NOT NULL DEFAULT 'global',
   "code" VARCHAR(96) NOT NULL,
   "name" VARCHAR(160) NOT NULL,
   "description" TEXT,
@@ -234,9 +174,8 @@ CREATE TABLE "ip_price_rules" (
   "title_id" UUID NOT NULL,
   "episode_id" UUID,
   "campaign_id" UUID,
-  "target_type" "IpCommerceTargetType" NOT NULL,
+  "target_type" "IpTargetType" NOT NULL,
   "status" "IpPriceRuleStatus" NOT NULL DEFAULT 'draft',
-  "site_region" "BillingSiteRegion" NOT NULL DEFAULT 'global',
   "currency" "WalletCurrencyType" NOT NULL DEFAULT 'community_point',
   "amount" BIGINT NOT NULL,
   "original_amount" BIGINT,
@@ -298,9 +237,8 @@ CREATE TABLE "ip_purchase_orders" (
   "subject_id" VARCHAR(64) NOT NULL,
   "title_id" UUID NOT NULL,
   "episode_id" UUID,
-  "target_type" "IpCommerceTargetType" NOT NULL,
+  "target_type" "IpTargetType" NOT NULL,
   "status" "IpPurchaseOrderStatus" NOT NULL DEFAULT 'pending',
-  "site_region" "BillingSiteRegion" NOT NULL DEFAULT 'global',
   "price_rule_id" UUID,
   "campaign_id" UUID,
   "referral_link_id" UUID,
@@ -337,7 +275,7 @@ CREATE TABLE "ip_content_entitlements" (
   "subject_id" VARCHAR(64) NOT NULL,
   "title_id" UUID NOT NULL,
   "episode_id" UUID,
-  "target_type" "IpCommerceTargetType" NOT NULL,
+  "target_type" "IpTargetType" NOT NULL,
   "status" "IpEntitlementStatus" NOT NULL DEFAULT 'active',
   "source_type" VARCHAR(64) NOT NULL,
   "source_id" VARCHAR(128) NOT NULL,
@@ -365,7 +303,7 @@ CREATE TABLE "ip_collection_items" (
   "title_id" UUID NOT NULL,
   "episode_id" UUID,
   "entitlement_id" UUID,
-  "target_type" "IpCommerceTargetType" NOT NULL,
+  "target_type" "IpTargetType" NOT NULL,
   "status" "IpCollectionItemStatus" NOT NULL DEFAULT 'active',
   "progress" JSONB NOT NULL DEFAULT '{}',
   "metadata" JSONB NOT NULL DEFAULT '{}',
@@ -408,7 +346,8 @@ CREATE TABLE "ip_revenue_rules" (
   "beneficiary_user_id" VARCHAR(64),
   "rule_type" "IpRevenueRuleType" NOT NULL,
   "status" "IpRevenueRuleStatus" NOT NULL DEFAULT 'draft',
-  "currency" "WalletCurrencyType" NOT NULL DEFAULT 'revenue_credit',
+  "currency" "WalletCurrencyType" NOT NULL DEFAULT 'community_point',
+  "balance_kind" "WalletBalanceKind" NOT NULL DEFAULT 'withdrawable',
   "share_bps" INTEGER,
   "fixed_amount" BIGINT,
   "starts_at" TIMESTAMPTZ(6),
@@ -425,6 +364,8 @@ CREATE TABLE "ip_revenue_rules" (
   CONSTRAINT "ip_revenue_rules_share_bps_range" CHECK ("share_bps" IS NULL OR ("share_bps" >= 0 AND "share_bps" <= 10000)),
   CONSTRAINT "ip_revenue_rules_fixed_nonnegative" CHECK ("fixed_amount" IS NULL OR "fixed_amount" >= 0),
   CONSTRAINT "ip_revenue_rules_has_beneficiary" CHECK ("contributor_id" IS NOT NULL OR "beneficiary_user_id" IS NOT NULL),
+  CONSTRAINT "ip_revenue_rules_withdrawable_community_point"
+    CHECK ("currency" = 'community_point' AND "balance_kind" = 'withdrawable'),
   CONSTRAINT "ip_revenue_rules_time_window" CHECK ("starts_at" IS NULL OR "ends_at" IS NULL OR "ends_at" > "starts_at")
 );
 
@@ -439,7 +380,8 @@ CREATE TABLE "ip_revenue_ledger_entries" (
   "wallet_transaction_id" UUID,
   "entry_type" "IpRevenueLedgerEntryType" NOT NULL,
   "status" "IpRevenueLedgerStatus" NOT NULL DEFAULT 'pending',
-  "currency" "WalletCurrencyType" NOT NULL DEFAULT 'revenue_credit',
+  "currency" "WalletCurrencyType" NOT NULL DEFAULT 'community_point',
+  "balance_kind" "WalletBalanceKind" NOT NULL DEFAULT 'withdrawable',
   "amount" BIGINT NOT NULL,
   "source_amount" BIGINT,
   "share_bps" INTEGER,
@@ -450,6 +392,8 @@ CREATE TABLE "ip_revenue_ledger_entries" (
 
   CONSTRAINT "ip_revenue_ledger_entries_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "ip_revenue_entries_amount_nonzero" CHECK ("amount" <> 0),
+  CONSTRAINT "ip_revenue_entries_withdrawable_community_point"
+    CHECK ("currency" = 'community_point' AND "balance_kind" = 'withdrawable'),
   CONSTRAINT "ip_revenue_entries_share_bps_range" CHECK ("share_bps" IS NULL OR ("share_bps" >= 0 AND "share_bps" <= 10000))
 );
 
@@ -606,21 +550,6 @@ CREATE UNIQUE INDEX "ip_episodes_id_title_unique"
 CREATE INDEX "ip_episodes_title_status_order_idx"
   ON "ip_episodes" ("title_id", "status", "sort_order");
 
-CREATE INDEX "ip_import_runs_workspace_recent_idx"
-  ON "ip_import_runs" ("workspace_id", "status", "created_at" DESC);
-CREATE INDEX "ip_import_runs_source_idx"
-  ON "ip_import_runs" ("source_system", "source_root_id");
-CREATE UNIQUE INDEX "ip_import_maps_source_unique"
-  ON "ip_import_maps" ("source_system", "source_entity_type", "source_entity_id");
-CREATE INDEX "ip_import_maps_workspace_source_idx"
-  ON "ip_import_maps" ("workspace_id", "source_system", "updated_at" DESC);
-CREATE INDEX "ip_import_maps_target_idx"
-  ON "ip_import_maps" ("target_entity_type", "target_entity_id");
-CREATE INDEX "ip_import_maps_title_idx"
-  ON "ip_import_maps" ("target_title_id");
-CREATE INDEX "ip_import_maps_episode_idx"
-  ON "ip_import_maps" ("target_episode_id");
-
 CREATE UNIQUE INDEX "ip_story_nodes_episode_code_unique"
   ON "ip_story_nodes" ("episode_id", "code");
 CREATE INDEX "ip_story_nodes_episode_order_idx"
@@ -634,8 +563,8 @@ CREATE UNIQUE INDEX "ip_campaigns_title_code_unique"
   ON "ip_campaigns" ("title_id", "code");
 CREATE INDEX "ip_campaigns_title_status_idx"
   ON "ip_campaigns" ("title_id", "status", "starts_at");
-CREATE INDEX "ip_campaigns_region_status_idx"
-  ON "ip_campaigns" ("site_region", "status", "starts_at");
+CREATE INDEX "ip_campaigns_status_idx"
+  ON "ip_campaigns" ("status", "starts_at");
 
 CREATE INDEX "ip_price_rules_title_target_idx"
   ON "ip_price_rules" ("title_id", "target_type", "status", "priority");
@@ -644,7 +573,7 @@ CREATE INDEX "ip_price_rules_episode_idx"
 CREATE INDEX "ip_price_rules_campaign_idx"
   ON "ip_price_rules" ("campaign_id", "status");
 CREATE INDEX "ip_price_rules_effective_idx"
-  ON "ip_price_rules" ("site_region", "status", "starts_at", "ends_at");
+  ON "ip_price_rules" ("status", "starts_at", "ends_at");
 
 CREATE UNIQUE INDEX "ip_purchase_orders_order_no_unique"
   ON "ip_purchase_orders" ("order_no");
@@ -793,27 +722,6 @@ ALTER TABLE "ip_episodes"
 ALTER TABLE "ip_episodes"
   ADD CONSTRAINT "ip_episodes_trailer_asset_id_fkey"
   FOREIGN KEY ("trailer_asset_id") REFERENCES "media_assets"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
-
-ALTER TABLE "ip_import_runs"
-  ADD CONSTRAINT "ip_import_runs_workspace_id_fkey"
-  FOREIGN KEY ("workspace_id") REFERENCES "workspaces"("id")
-  ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "ip_import_maps"
-  ADD CONSTRAINT "ip_import_maps_workspace_id_fkey"
-  FOREIGN KEY ("workspace_id") REFERENCES "workspaces"("id")
-  ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "ip_import_maps"
-  ADD CONSTRAINT "ip_import_maps_run_id_fkey"
-  FOREIGN KEY ("run_id") REFERENCES "ip_import_runs"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "ip_import_maps"
-  ADD CONSTRAINT "ip_import_maps_target_title_id_fkey"
-  FOREIGN KEY ("target_title_id") REFERENCES "ip_titles"("id")
-  ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "ip_import_maps"
-  ADD CONSTRAINT "ip_import_maps_target_episode_id_fkey"
-  FOREIGN KEY ("target_episode_id") REFERENCES "ip_episodes"("id")
   ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "ip_story_nodes"

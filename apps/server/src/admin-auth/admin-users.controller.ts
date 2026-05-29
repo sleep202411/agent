@@ -135,6 +135,29 @@ export class AdminUsersController {
     return { code: 200, data: user };
   }
 
+  @Post(':userId/reset-mfa')
+  @HttpCode(200)
+  async resetMfa(
+    @CurrentAdmin() actor: AdminActor,
+    @Param(new ZodValidationPipe(AdminUserParamsSchema))
+    params: AdminUserParams,
+    @Req() request: Request,
+  ) {
+    const user = await this.adminUsers.resetMfa(
+      params.userId,
+      actor.id === params.userId ? actor.sessionId : undefined,
+    );
+    await this.adminAuth.writeAudit({
+      actor,
+      action: 'admin.user.mfa.reset',
+      resourceType: 'admin_user',
+      resourceId: user.id,
+      metadata: { email: user.email, requireMfa: user.requireMfa },
+      context: requestContext(request),
+    });
+    return { code: 200, data: user };
+  }
+
   @Post(':userId/revoke-sessions')
   @HttpCode(200)
   async revokeSessions(
@@ -216,6 +239,7 @@ function summarizeAdminUser(user: AdminUserSummary) {
     id: user.id,
     email: user.email,
     displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
     status: user.status,
     siteScope: user.siteScope,
     roleKeys: user.roleKeys,

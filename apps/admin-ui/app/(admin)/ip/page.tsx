@@ -1,16 +1,72 @@
-import { ModulePlaceholder } from "@/components/admin/module-placeholder";
+import { cookies } from "next/headers";
+import {
+  AdminIpCommercePanel,
+  type AdminIpOverviewData,
+  type AdminIpTitlesData,
+} from "@/components/admin/admin-ip-commerce-panel";
+import {
+  ADMIN_SESSION_COOKIE,
+  ADMIN_SITE_COOKIE,
+  adminApiUrl,
+  adminSiteByKey,
+  cookieHeader,
+  normalizeAdminSiteKey,
+  parseAdminEnvelope,
+} from "@/lib/admin-api";
+import { getAdminSession } from "@/lib/admin-session";
 
-export default function IpAdminPage() {
+export default async function IpAdminPage() {
+  const session = await getAdminSession();
+  const initial = await getInitialIpData();
+
   return (
-    <ModulePlaceholder
-      title="IP 内容"
-      description="管理 IP 标题、剧集、预售活动、价格规则、版权声明和上下架状态。"
-      items={[
-        "IP 标题列表、状态筛选、版本冲突保护",
-        "剧集价格、打包价、早鸟价和解锁时间",
-        "版权声明、AI 生成声明、年龄分级和内容风险标记",
-        "上架、隐藏、暂停销售、排期发布的操作闭环",
-      ]}
+    <AdminIpCommercePanel
+      siteLabel={session?.site.label ?? "当前站点"}
+      databaseLabel={session?.site.databaseLabel ?? "当前站点数据库"}
+      initialOverview={initial.overview}
+      initialTitles={initial.titles}
+      initialError={initial.error}
     />
   );
+}
+
+async function getInitialIpData(): Promise<{
+  overview: AdminIpOverviewData | null;
+  titles: AdminIpTitlesData | null;
+  error: string | null;
+}> {
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
+  const siteKey = normalizeAdminSiteKey(cookieStore.get(ADMIN_SITE_COOKIE)?.value);
+  if (!sessionToken) {
+    return { overview: null, titles: null, error: "后台登录已失效，请重新登录。" };
+  }
+
+  try {
+    const headers = cookieHeader(sessionToken);
+    const [overviewResponse, titlesResponse] = await Promise.all([
+      fetch(adminApiUrl("/ip-commerce/overview", siteKey), {
+        headers,
+        cache: "no-store",
+      }),
+      fetch(adminApiUrl("/ip-commerce/titles", siteKey), {
+        headers,
+        cache: "no-store",
+      }),
+    ]);
+    const [overview, titles] = await Promise.all([
+      parseAdminEnvelope<AdminIpOverviewData>(overviewResponse),
+      parseAdminEnvelope<AdminIpTitlesData>(titlesResponse),
+    ]);
+    return { overview, titles, error: null };
+  } catch (error) {
+    return {
+      overview: null,
+      titles: null,
+      error:
+        error instanceof Error
+          ? error.message
+          : `${adminSiteByKey(siteKey).label} IP 内容数据加载失败。`,
+    };
+  }
 }

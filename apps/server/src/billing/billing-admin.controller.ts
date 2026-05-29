@@ -1,0 +1,561 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import type { Request } from 'express';
+import {
+  ADMIN_PERMISSION_KEYS,
+  AdminAuthGuard,
+  AdminAuthService,
+  AdminPermissionGuard,
+  CurrentAdmin,
+  RequireAdminPermissions,
+  type AdminActor,
+} from '../admin-auth';
+import { Public } from '../auth';
+import { ZodValidationPipe } from '../common/zod.pipe';
+import { BillingLedgerService } from './billing-ledger.service';
+import { BillingService } from './billing.service';
+import {
+  ListAdminBillingLedgerJournalsQuerySchema,
+  ListAdminBillingOrdersQuerySchema,
+  ListAdminBillingProviderEventsQuerySchema,
+  ListAdminBillingPricesQuerySchema,
+  ListAdminBillingPromotionsQuerySchema,
+  ListAdminBillingRefundsQuerySchema,
+  ListAdminBillingReconciliationRunsQuerySchema,
+  ListAdminBillingSettlementsQuerySchema,
+  BillingPriceParamsSchema,
+  BillingProviderEventParamsSchema,
+  BillingProviderBindingParamsSchema,
+  BillingPromotionParamsSchema,
+  CreateAdminBillingPriceSchema,
+  CreateAdminBillingPromotionSchema,
+  CreateAdminBillingRefundSchema,
+  IgnoreAdminBillingProviderEventSchema,
+  QuoteAdminBillingRefundSchema,
+  UpdateAdminBillingPriceSchema,
+  UpdateAdminBillingPromotionSchema,
+  UpsertAdminBillingProviderBindingSchema,
+  UpsertAdminBillingPromotionProviderBindingSchema,
+  type BillingPriceParams,
+  type BillingProviderEventParams,
+  type BillingProviderBindingParams,
+  type BillingPromotionParams,
+  type CreateAdminBillingPriceInput,
+  type CreateAdminBillingPromotionInput,
+  type CreateAdminBillingRefundInput,
+  type IgnoreAdminBillingProviderEventInput,
+  type ListAdminBillingLedgerJournalsQuery,
+  type ListAdminBillingOrdersQuery,
+  type ListAdminBillingProviderEventsQuery,
+  type ListAdminBillingPricesQuery,
+  type ListAdminBillingPromotionsQuery,
+  type ListAdminBillingRefundsQuery,
+  type ListAdminBillingReconciliationRunsQuery,
+  type ListAdminBillingSettlementsQuery,
+  type QuoteAdminBillingRefundInput,
+  type UpdateAdminBillingPriceInput,
+  type UpdateAdminBillingPromotionInput,
+  type UpsertAdminBillingProviderBindingInput,
+  type UpsertAdminBillingPromotionProviderBindingInput,
+} from './dto';
+
+@Public()
+@UseGuards(AdminAuthGuard, AdminPermissionGuard)
+@Controller('admin/billing')
+export class BillingAdminController {
+  constructor(
+    private readonly billing: BillingService,
+    private readonly ledger: BillingLedgerService,
+    private readonly adminAuth: AdminAuthService,
+  ) {}
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('overview')
+  async overview() {
+    return {
+      code: 200,
+      data: await this.billing.getAdminOverview(),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('prices')
+  async listPrices(
+    @Query(new ZodValidationPipe(ListAdminBillingPricesQuerySchema))
+    query: ListAdminBillingPricesQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminPrices(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('prices')
+  async createPrice(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminBillingPriceSchema))
+    body: CreateAdminBillingPriceInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.createAdminPrice(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.price.create',
+      'billing_price',
+      data.id,
+      {
+        code: body.itemCode,
+        productType: body.productType,
+        currency: body.currency,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Patch('prices/:priceId')
+  async updatePrice(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingPriceParamsSchema))
+    params: BillingPriceParams,
+    @Body(new ZodValidationPipe(UpdateAdminBillingPriceSchema))
+    body: UpdateAdminBillingPriceInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.updateAdminPrice(params.priceId, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.price.update',
+      'billing_price',
+      params.priceId,
+      body,
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('prices/:priceId/provider-bindings')
+  async upsertPriceProviderBinding(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingPriceParamsSchema))
+    params: BillingPriceParams,
+    @Body(new ZodValidationPipe(UpsertAdminBillingProviderBindingSchema))
+    body: UpsertAdminBillingProviderBindingInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.upsertAdminProviderBinding(
+      params.priceId,
+      body,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.price.provider_binding.upsert',
+      'billing_provider_price_binding',
+      data.id,
+      { priceId: params.priceId, provider: body.provider },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('provider-bindings/:bindingId/sync')
+  async syncPriceProviderBinding(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingProviderBindingParamsSchema))
+    params: BillingProviderBindingParams,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.syncAdminProviderBinding(params.bindingId);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.price.provider_binding.sync',
+      'billing_provider_price_binding',
+      params.bindingId,
+      { provider: data.provider, providerPriceId: data.providerPriceId },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('promotions')
+  async listPromotions(
+    @Query(new ZodValidationPipe(ListAdminBillingPromotionsQuerySchema))
+    query: ListAdminBillingPromotionsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminPromotions(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('promotions')
+  async createPromotion(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminBillingPromotionSchema))
+    body: CreateAdminBillingPromotionInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.createAdminPromotion(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.promotion.create',
+      'billing_promotion',
+      data.id,
+      {
+        code: body.code,
+        percentOffBps: body.percentOffBps,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Patch('promotions/:promotionId')
+  async updatePromotion(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingPromotionParamsSchema))
+    params: BillingPromotionParams,
+    @Body(new ZodValidationPipe(UpdateAdminBillingPromotionSchema))
+    body: UpdateAdminBillingPromotionInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.updateAdminPromotion(
+      params.promotionId,
+      admin.id,
+      body,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.promotion.update',
+      'billing_promotion',
+      params.promotionId,
+      body,
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('promotions/:promotionId/provider-bindings')
+  async upsertPromotionProviderBinding(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingPromotionParamsSchema))
+    params: BillingPromotionParams,
+    @Body(
+      new ZodValidationPipe(UpsertAdminBillingPromotionProviderBindingSchema),
+    )
+    body: UpsertAdminBillingPromotionProviderBindingInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.upsertAdminPromotionProviderBinding(
+      params.promotionId,
+      body,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.promotion.provider_binding.upsert',
+      'billing_promotion_provider_binding',
+      data.id,
+      { promotionId: params.promotionId, provider: body.provider },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('promotion-provider-bindings/:bindingId/sync')
+  async syncPromotionProviderBinding(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingProviderBindingParamsSchema))
+    params: BillingProviderBindingParams,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.syncAdminPromotionProviderBinding(
+      params.bindingId,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.promotion.provider_binding.sync',
+      'billing_promotion_provider_binding',
+      params.bindingId,
+      { provider: data.provider, providerCouponId: data.providerCouponId },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('orders')
+  async listOrders(
+    @Query(new ZodValidationPipe(ListAdminBillingOrdersQuerySchema))
+    query: ListAdminBillingOrdersQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminOrders(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('refunds')
+  async listRefunds(
+    @Query(new ZodValidationPipe(ListAdminBillingRefundsQuerySchema))
+    query: ListAdminBillingRefundsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminRefunds(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Post('refunds/quote')
+  async quoteRefund(
+    @Body(new ZodValidationPipe(QuoteAdminBillingRefundSchema))
+    body: QuoteAdminBillingRefundInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.quoteAdminRefund(body),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('refunds')
+  async createRefund(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminBillingRefundSchema))
+    body: CreateAdminBillingRefundInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.createAdminRefund(admin.id, body);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.refund.create',
+      'billing_refund',
+      data.id,
+      {
+        refundNo: data.refundNo,
+        orderId: body.orderId,
+        amountMinor: data.amountMinor,
+        percentBps: body.percentBps ?? null,
+        reasonCode: body.reasonCode,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('provider-events')
+  async listProviderEvents(
+    @Query(new ZodValidationPipe(ListAdminBillingProviderEventsQuerySchema))
+    query: ListAdminBillingProviderEventsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminProviderEvents(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('provider-events/:eventId/reprocess')
+  async reprocessProviderEvent(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingProviderEventParamsSchema))
+    params: BillingProviderEventParams,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.reprocessAdminProviderEvent(params.eventId);
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.provider_event.reprocess',
+      'billing_payment_provider_event',
+      params.eventId,
+      {
+        provider: data.provider,
+        providerEventId: data.providerEventId,
+        eventType: data.eventType,
+        status: data.status,
+        orderId: data.orderId,
+        paymentIntentId: data.paymentIntentId,
+        refundId: data.refundId,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @Post('provider-events/:eventId/ignore')
+  async ignoreProviderEvent(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(BillingProviderEventParamsSchema))
+    params: BillingProviderEventParams,
+    @Body(new ZodValidationPipe(IgnoreAdminBillingProviderEventSchema))
+    body: IgnoreAdminBillingProviderEventInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.billing.ignoreAdminProviderEvent(
+      params.eventId,
+      body.reason,
+    );
+    await this.audit(
+      admin,
+      request,
+      'admin.billing.provider_event.ignore',
+      'billing_payment_provider_event',
+      params.eventId,
+      {
+        provider: data.provider,
+        providerEventId: data.providerEventId,
+        eventType: data.eventType,
+        reason: body.reason,
+      },
+    );
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('ledger/overview')
+  async ledgerOverview() {
+    return {
+      code: 200,
+      data: await this.ledger.getAdminLedgerOverview(),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('ledger/journals')
+  async listLedgerJournals(
+    @Query(new ZodValidationPipe(ListAdminBillingLedgerJournalsQuerySchema))
+    query: ListAdminBillingLedgerJournalsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ledger.listAdminLedgerJournals(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('ledger/settlements')
+  async listSettlements(
+    @Query(new ZodValidationPipe(ListAdminBillingSettlementsQuerySchema))
+    query: ListAdminBillingSettlementsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ledger.listAdminSettlements(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('ledger/reconciliation-runs')
+  async listReconciliationRuns(
+    @Query(new ZodValidationPipe(ListAdminBillingReconciliationRunsQuerySchema))
+    query: ListAdminBillingReconciliationRunsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ledger.listAdminReconciliationRuns(query),
+    };
+  }
+
+  private async audit(
+    admin: AdminActor,
+    request: Request,
+    action: string,
+    resourceType: string,
+    resourceId: string,
+    metadata: Record<string, unknown>,
+  ) {
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action,
+      resourceType,
+      resourceId,
+      metadata: toAuditJsonObject(metadata),
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+  }
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value.join(', ') : value;
+}
+
+function toAuditJsonObject(
+  value: Record<string, unknown>,
+): Prisma.InputJsonObject {
+  const output: Record<string, Prisma.InputJsonValue | null> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) {
+      continue;
+    }
+    output[key] = toAuditJsonValue(entry);
+  }
+  return output as Prisma.InputJsonObject;
+}
+
+function toAuditJsonValue(value: unknown): Prisma.InputJsonValue | null {
+  if (value === null) {
+    return null;
+  }
+  if (typeof value === 'undefined') {
+    return null;
+  }
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : String(value);
+  }
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => toAuditJsonValue(entry));
+  }
+  if (typeof value === 'object') {
+    const output: Record<string, Prisma.InputJsonValue | null> = {};
+    for (const [key, entry] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      if (entry === undefined) {
+        continue;
+      }
+      output[key] = toAuditJsonValue(entry);
+    }
+    return output as Prisma.InputJsonObject;
+  }
+  if (typeof value === 'symbol') {
+    return value.description ?? 'symbol';
+  }
+  if (typeof value === 'function') {
+    return value.name ? `function:${value.name}` : 'function';
+  }
+  return 'unknown';
+}

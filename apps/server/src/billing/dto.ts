@@ -1,17 +1,91 @@
 import { z } from 'zod';
 
-export const BillingSiteRegionSchema = z.enum(['global', 'cn']);
+export const CheckoutPaymentProviderSchema = z.enum([
+  'airwallex',
+  'wechat_pay',
+]);
+export const AdminPaymentProviderSchema = z.enum([
+  'airwallex',
+  'wechat_pay',
+  'manual',
+  'internal',
+]);
 export const BillingProductTypeSchema = z.enum([
   'bubble_pack',
   'community_point_pack',
   'membership_plan',
   'team_membership_plan',
-  'custom',
+]);
+export const BillingOrderStatusSchema = z.enum([
+  'draft',
+  'pending_payment',
+  'paid',
+  'fulfilled',
+  'canceled',
+  'expired',
+  'failed',
+  'refunded',
+  'partially_refunded',
+]);
+export const BillingRefundStatusSchema = z.enum([
+  'requested',
+  'provider_pending',
+  'succeeded',
+  'failed',
+  'canceled',
+]);
+export const BillingLedgerJournalTypeSchema = z.enum([
+  'payment_capture',
+  'fulfillment_allocation',
+  'settlement',
+  'refund',
+  'chargeback',
+  'revenue_recognition',
+  'provider_fee',
+  'manual_adjustment',
+  'reversal',
+]);
+export const BillingSettlementStatusSchema = z.enum([
+  'pending',
+  'reconciled',
+  'partially_reconciled',
+  'failed',
+]);
+export const BillingReconciliationStatusSchema = z.enum([
+  'running',
+  'completed',
+  'failed',
+]);
+export const BillingPriceIntervalSchema = z.enum(['one_time', 'month', 'year']);
+export const BillingSubjectTypeSchema = z.enum(['user', 'workspace']);
+export const WalletCurrencyTypeSchema = z.enum(['bubble', 'community_point']);
+export const BillingProviderBindingStatusSchema = z.enum([
+  'active',
+  'inactive',
+  'sync_pending',
+  'sync_failed',
+]);
+export const BillingPromotionStatusSchema = z.enum([
+  'draft',
+  'active',
+  'paused',
+  'archived',
+]);
+export const BillingPromotionDurationTypeSchema = z.enum([
+  'once',
+  'forever',
+  'repeating',
+]);
+export const BillingProviderEventStatusSchema = z.enum([
+  'received',
+  'processed',
+  'ignored',
+  'failed',
 ]);
 
 export const ListBillingPricesQuerySchema = z.object({
-  siteRegion: BillingSiteRegionSchema.optional(),
   productType: BillingProductTypeSchema.optional(),
+  provider: CheckoutPaymentProviderSchema.optional(),
   currency: z
     .string()
     .trim()
@@ -26,6 +100,9 @@ export type ListBillingPricesQuery = z.infer<
 
 export const CreateBillingCheckoutSchema = z.object({
   priceId: z.string().uuid(),
+  provider: CheckoutPaymentProviderSchema.optional(),
+  promotionCode: z.string().trim().min(3).max(64).optional(),
+  idempotencyKey: z.string().trim().min(8).max(160),
   quantity: z.coerce.number().int().min(1).max(100).default(1),
   workspaceId: z.string().uuid().optional(),
   successUrl: z.string().trim().url().max(2048),
@@ -33,6 +110,376 @@ export const CreateBillingCheckoutSchema = z.object({
 });
 export type CreateBillingCheckoutInput = z.infer<
   typeof CreateBillingCheckoutSchema
+>;
+
+export const ListAdminBillingPricesQuerySchema = z.object({
+  productType: BillingProductTypeSchema.optional(),
+  provider: AdminPaymentProviderSchema.optional(),
+  currency: z
+    .string()
+    .trim()
+    .length(3)
+    .transform((value) => value.toUpperCase())
+    .optional(),
+  includeInactive: z.coerce.boolean().default(false),
+});
+export type ListAdminBillingPricesQuery = z.infer<
+  typeof ListAdminBillingPricesQuerySchema
+>;
+
+const MetadataSchema = z.record(z.string(), z.unknown()).default({});
+
+const ProviderBindingInputSchema = z.object({
+  provider: AdminPaymentProviderSchema,
+  providerProductId: z.string().trim().min(1).max(128).optional(),
+  providerPriceId: z.string().trim().min(1).max(128).optional(),
+  providerMode: z.string().trim().min(1).max(32).optional(),
+  status: BillingProviderBindingStatusSchema.default('active'),
+  metadata: MetadataSchema.optional(),
+});
+
+export const CreateAdminBillingPriceSchema = z
+  .object({
+    itemCode: z
+      .string()
+      .trim()
+      .min(3)
+      .max(96)
+      .transform((value) => value.toUpperCase()),
+    itemName: z.string().trim().min(2).max(160),
+    itemDescription: z.string().trim().max(2000).optional(),
+    productType: BillingProductTypeSchema,
+    currency: z
+      .string()
+      .trim()
+      .length(3)
+      .transform((value) => value.toUpperCase()),
+    amountMinor: z.coerce.bigint().min(1n),
+    interval: BillingPriceIntervalSchema.default('one_time'),
+    subjectType: BillingSubjectTypeSchema.default('user'),
+    grantsWalletCurrency: WalletCurrencyTypeSchema.optional(),
+    grantsWalletAmount: z.coerce.bigint().min(1n).optional(),
+    grantsPlanKey: z.string().trim().min(2).max(64).optional(),
+    grantDurationDays: z.coerce.number().int().min(1).max(3660).optional(),
+    itemMetadata: MetadataSchema.optional(),
+    priceMetadata: MetadataSchema.optional(),
+    providerBindings: z.array(ProviderBindingInputSchema).max(8).default([]),
+  })
+  .superRefine((value, ctx) => {
+    const hasWalletGrant =
+      Boolean(value.grantsWalletCurrency) ||
+      value.grantsWalletAmount !== undefined;
+    if (
+      hasWalletGrant &&
+      (!value.grantsWalletCurrency || value.grantsWalletAmount === undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['grantsWalletAmount'],
+        message: 'Wallet grants require currency and amount.',
+      });
+    }
+    if (value.grantsWalletCurrency && value.grantsPlanKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['grantsPlanKey'],
+        message:
+          'A price cannot grant wallet balance and membership at the same time.',
+      });
+    }
+  });
+export type CreateAdminBillingPriceInput = z.infer<
+  typeof CreateAdminBillingPriceSchema
+>;
+
+export const BillingPriceParamsSchema = z.object({
+  priceId: z.string().uuid(),
+});
+export type BillingPriceParams = z.infer<typeof BillingPriceParamsSchema>;
+
+export const UpdateAdminBillingPriceSchema = z.object({
+  itemName: z.string().trim().min(2).max(160).optional(),
+  itemDescription: z.string().trim().max(2000).nullable().optional(),
+  isActive: z.coerce.boolean().optional(),
+  archived: z.coerce.boolean().optional(),
+  priceMetadata: MetadataSchema.optional(),
+});
+export type UpdateAdminBillingPriceInput = z.infer<
+  typeof UpdateAdminBillingPriceSchema
+>;
+
+export const UpsertAdminBillingProviderBindingSchema =
+  ProviderBindingInputSchema;
+export type UpsertAdminBillingProviderBindingInput = z.infer<
+  typeof UpsertAdminBillingProviderBindingSchema
+>;
+
+export const BillingProviderBindingParamsSchema = z.object({
+  bindingId: z.string().uuid(),
+});
+export type BillingProviderBindingParams = z.infer<
+  typeof BillingProviderBindingParamsSchema
+>;
+
+export const ListAdminBillingPromotionsQuerySchema = z.object({
+  q: z.string().trim().min(1).max(120).optional(),
+  status: BillingPromotionStatusSchema.optional(),
+  provider: AdminPaymentProviderSchema.optional(),
+  includeArchived: z.coerce.boolean().default(false),
+});
+export type ListAdminBillingPromotionsQuery = z.infer<
+  typeof ListAdminBillingPromotionsQuerySchema
+>;
+
+export const CreateAdminBillingPromotionSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .min(3)
+      .max(64)
+      .transform((value) => value.toUpperCase()),
+    name: z.string().trim().min(2).max(160),
+    description: z.string().trim().max(2000).optional(),
+    status: BillingPromotionStatusSchema.default('draft'),
+    percentOffBps: z.coerce.number().int().min(1).max(10000),
+    durationType: BillingPromotionDurationTypeSchema.default('once'),
+    durationCount: z.coerce.number().int().min(1).max(120).optional(),
+    durationUnit: z.enum(['day', 'week', 'month', 'year']).optional(),
+    appliesProductType: BillingProductTypeSchema.optional(),
+    appliesItemId: z.string().uuid().optional(),
+    appliesPriceId: z.string().uuid().optional(),
+    startsAt: z.coerce.date().optional(),
+    endsAt: z.coerce.date().optional(),
+    maxRedemptions: z.coerce.number().int().min(1).optional(),
+    maxRedemptionsPerUser: z.coerce.number().int().min(1).optional(),
+    metadata: MetadataSchema.optional(),
+    providerBindings: z
+      .array(
+        z.object({
+          provider: AdminPaymentProviderSchema,
+          providerCouponId: z.string().trim().min(1).max(128).optional(),
+          status: BillingProviderBindingStatusSchema.default('active'),
+          metadata: MetadataSchema.optional(),
+        }),
+      )
+      .max(8)
+      .default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.durationType === 'repeating' &&
+      (!value.durationCount || !value.durationUnit)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['durationCount'],
+        message: 'Repeating promotions require duration count and unit.',
+      });
+    }
+    if (value.startsAt && value.endsAt && value.endsAt <= value.startsAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endsAt'],
+        message: 'Promotion end time must be after start time.',
+      });
+    }
+  });
+export type CreateAdminBillingPromotionInput = z.infer<
+  typeof CreateAdminBillingPromotionSchema
+>;
+
+export const BillingPromotionParamsSchema = z.object({
+  promotionId: z.string().uuid(),
+});
+export type BillingPromotionParams = z.infer<
+  typeof BillingPromotionParamsSchema
+>;
+
+export const UpdateAdminBillingPromotionSchema = z.object({
+  name: z.string().trim().min(2).max(160).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  status: BillingPromotionStatusSchema.optional(),
+  startsAt: z.coerce.date().nullable().optional(),
+  endsAt: z.coerce.date().nullable().optional(),
+  maxRedemptions: z.coerce.number().int().min(1).nullable().optional(),
+  maxRedemptionsPerUser: z.coerce.number().int().min(1).nullable().optional(),
+  metadata: MetadataSchema.optional(),
+  archived: z.coerce.boolean().optional(),
+});
+export type UpdateAdminBillingPromotionInput = z.infer<
+  typeof UpdateAdminBillingPromotionSchema
+>;
+
+export const UpsertAdminBillingPromotionProviderBindingSchema = z.object({
+  provider: AdminPaymentProviderSchema,
+  providerCouponId: z.string().trim().min(1).max(128).optional(),
+  status: BillingProviderBindingStatusSchema.default('active'),
+  metadata: MetadataSchema.optional(),
+});
+export type UpsertAdminBillingPromotionProviderBindingInput = z.infer<
+  typeof UpsertAdminBillingPromotionProviderBindingSchema
+>;
+
+export const ListAdminBillingOrdersQuerySchema = z.object({
+  q: z.string().trim().min(1).max(120).optional(),
+  status: BillingOrderStatusSchema.optional(),
+  provider: AdminPaymentProviderSchema.optional(),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListAdminBillingOrdersQuery = z.infer<
+  typeof ListAdminBillingOrdersQuerySchema
+>;
+
+export const ListAdminBillingRefundsQuerySchema = z.object({
+  q: z.string().trim().min(1).max(120).optional(),
+  status: BillingRefundStatusSchema.optional(),
+  provider: AdminPaymentProviderSchema.optional(),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListAdminBillingRefundsQuery = z.infer<
+  typeof ListAdminBillingRefundsQuerySchema
+>;
+
+export const ListAdminBillingProviderEventsQuerySchema = z.object({
+  q: z.string().trim().min(1).max(160).optional(),
+  status: BillingProviderEventStatusSchema.optional(),
+  provider: AdminPaymentProviderSchema.optional(),
+  eventType: z.string().trim().min(1).max(120).optional(),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListAdminBillingProviderEventsQuery = z.infer<
+  typeof ListAdminBillingProviderEventsQuerySchema
+>;
+
+export const BillingProviderEventParamsSchema = z.object({
+  eventId: z.string().uuid(),
+});
+export type BillingProviderEventParams = z.infer<
+  typeof BillingProviderEventParamsSchema
+>;
+
+export const IgnoreAdminBillingProviderEventSchema = z.object({
+  reason: z.string().trim().min(3).max(1000),
+});
+export type IgnoreAdminBillingProviderEventInput = z.infer<
+  typeof IgnoreAdminBillingProviderEventSchema
+>;
+
+const AdminBillingRefundAmountShape = {
+  amountMinor: z.coerce.bigint().min(1n).optional(),
+  percentBps: z.coerce.number().int().min(1).max(10000).optional(),
+};
+
+function validateRefundAmountChoice(
+  value: {
+    amountMinor?: bigint;
+    percentBps?: number;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (value.amountMinor !== undefined && value.percentBps !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['amountMinor'],
+      message: 'Refund amount and percent cannot be supplied together.',
+    });
+  }
+}
+
+export const QuoteAdminBillingRefundSchema = z
+  .object({
+    ...AdminBillingRefundAmountShape,
+    orderId: z.string().uuid(),
+    reasonCode: z
+      .string()
+      .trim()
+      .min(3)
+      .max(64)
+      .transform((value) => value.toLowerCase())
+      .optional(),
+  })
+  .superRefine(validateRefundAmountChoice);
+export type QuoteAdminBillingRefundInput = z.infer<
+  typeof QuoteAdminBillingRefundSchema
+>;
+
+export const CreateAdminBillingRefundSchema = z
+  .object({
+    ...AdminBillingRefundAmountShape,
+    orderId: z.string().uuid(),
+    reasonCode: z
+      .string()
+      .trim()
+      .min(3)
+      .max(64)
+      .transform((value) => value.toLowerCase()),
+    operatorNote: z.string().trim().max(2000).optional(),
+    idempotencyKey: z.string().trim().min(8).max(180),
+  })
+  .superRefine((value, ctx) => {
+    validateRefundAmountChoice(value, ctx);
+    if (value.amountMinor === undefined && value.percentBps === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['amountMinor'],
+        message: 'Refund requires either amountMinor or percentBps.',
+      });
+    }
+  });
+export type CreateAdminBillingRefundInput = z.infer<
+  typeof CreateAdminBillingRefundSchema
+>;
+
+export const ListAdminBillingLedgerJournalsQuerySchema = z.object({
+  journalType: BillingLedgerJournalTypeSchema.optional(),
+  provider: AdminPaymentProviderSchema.optional(),
+  currency: z
+    .string()
+    .trim()
+    .length(3)
+    .transform((value) => value.toUpperCase())
+    .optional(),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListAdminBillingLedgerJournalsQuery = z.infer<
+  typeof ListAdminBillingLedgerJournalsQuerySchema
+>;
+
+export const ListAdminBillingSettlementsQuerySchema = z.object({
+  provider: AdminPaymentProviderSchema.optional(),
+  status: BillingSettlementStatusSchema.optional(),
+  currency: z
+    .string()
+    .trim()
+    .length(3)
+    .transform((value) => value.toUpperCase())
+    .optional(),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListAdminBillingSettlementsQuery = z.infer<
+  typeof ListAdminBillingSettlementsQuerySchema
+>;
+
+export const ListAdminBillingReconciliationRunsQuerySchema = z.object({
+  provider: AdminPaymentProviderSchema.optional(),
+  status: BillingReconciliationStatusSchema.optional(),
+  currency: z
+    .string()
+    .trim()
+    .length(3)
+    .transform((value) => value.toUpperCase())
+    .optional(),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type ListAdminBillingReconciliationRunsQuery = z.infer<
+  typeof ListAdminBillingReconciliationRunsQuerySchema
 >;
 
 export const BillingOrderParamsSchema = z.object({

@@ -23,10 +23,10 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 //
 // New-platform source of truth. This domain deliberately does not
-// mirror Java's project / point tables. Java may still provide the
-// authenticated external user id, but ownership, permissions, wallet
-// accounting, project assets, and audit records below are all Nest +
-// Postgres owned.
+// mirror external project / point tables. External auth may still
+// provide the authenticated user id, but ownership, permissions,
+// wallet accounting, project assets, and audit records below are all
+// Nest + Postgres owned.
 //
 // Invariant:
 //   Workspace → Project → ProjectAsset
@@ -93,24 +93,6 @@ enum ProjectVisibility {
   public
 }
 
-enum LegacyProjectSourceSystem {
-  java_content
-  java_studio
-}
-
-enum LegacyProjectEntityType {
-  project
-  episode
-}
-
-enum LegacyProjectMigrationStatus {
-  mapped
-  importing
-  migrated
-  failed
-  ignored
-}
-
 enum PlatformDocumentType {
   brief
   script
@@ -172,7 +154,11 @@ enum WalletOwnerType {
 enum WalletCurrencyType {
   bubble
   community_point
-  revenue_credit
+}
+
+enum WalletBalanceKind {
+  consumable
+  withdrawable
 }
 
 enum WalletAccountStatus {
@@ -200,22 +186,20 @@ enum WalletLedgerEntryType {
   transfer_out
 }
 
-enum BillingSiteRegion {
-  global
-  cn
-}
-
 enum BillingSubjectType {
   user
   workspace
 }
 
 enum BillingProductType {
+  /// Paid package that grants consumable AI compute credits.
   bubble_pack
+  /// Paid package that grants consumable community points.
   community_point_pack
+  /// Individual user membership entitlement.
   membership_plan
+  /// Workspace or team membership entitlement.
   team_membership_plan
-  custom
 }
 
 enum BillingPriceInterval {
@@ -225,10 +209,15 @@ enum BillingPriceInterval {
 }
 
 enum BillingOrderType {
+  /// Fiat checkout that grants AI compute credits.
   bubble_topup
+  /// Fiat checkout that grants consumable community points.
   community_point_topup
+  /// One-time membership purchase.
   membership_purchase
+  /// Recurring provider subscription checkout.
   subscription_checkout
+  /// Back-office correction order. This is not a user-facing redemption code.
   manual_adjustment
 }
 
@@ -245,10 +234,45 @@ enum BillingOrderStatus {
 }
 
 enum PaymentProvider {
+  /// International payment provider used by the .com deployment.
   airwallex
+  /// China payment provider used by the .cn deployment.
   wechat_pay
+  /// Back-office confirmed offline payment, such as bank transfer or enterprise invoicing.
+  /// This is not a coupon or redemption-code flow; it still requires an order,
+  /// fulfillment, ledger journals, and admin audit trail.
   manual
+  /// Platform-funded fulfillment, such as migration compensation, operator grants,
+  /// test orders, or 100% free redemption-code orders. It should not be used for
+  /// external money collection.
   internal
+}
+
+enum BillingProviderBindingStatus {
+  active
+  inactive
+  sync_pending
+  sync_failed
+}
+
+enum BillingPromotionStatus {
+  draft
+  active
+  paused
+  archived
+}
+
+enum BillingPromotionDurationType {
+  once
+  forever
+  repeating
+}
+
+enum BillingPromotionRedemptionStatus {
+  reserved
+  applied
+  voided
+  refunded
 }
 
 enum PaymentIntentKind {
@@ -266,6 +290,22 @@ enum PaymentIntentStatus {
   expired
 }
 
+enum BillingRefundStatus {
+  /// Internal refund row was created and benefit reversal was reserved.
+  requested
+  /// Refund request was submitted to the payment provider and is waiting for
+  /// provider acceptance, settlement, or failure webhooks.
+  provider_pending
+  /// Provider accepted/settled the refund and internal financial ledger was posted.
+  succeeded
+  /// Provider rejected the refund or internal safety checks failed; any reserved
+  /// wallet or entitlement reversal must be restored before entering this state.
+  failed
+  /// Refund was canceled before provider submission. Submitted provider refunds
+  /// are not canceled internally; they must follow provider state.
+  canceled
+}
+
 enum BillingSubscriptionStatus {
   incomplete
   active
@@ -274,10 +314,101 @@ enum BillingSubscriptionStatus {
   expired
 }
 
-enum PaymentProviderEventStatus {
-  received
-  processed
+enum BillingLedgerAllocationTarget {
+  /// Allocate fulfilled customer funds to wallet liability because the user
+  /// received consumable platform balance.
+  wallet_credit_liability
+  /// Allocate fulfilled customer funds to deferred membership revenue until the
+  /// membership service period is recognized.
+  subscription_deferred_revenue
+  /// Allocate fulfilled customer funds directly to earned revenue.
+  immediate_revenue
+}
+
+enum BillingLedgerAccountType {
+  asset
+  liability
+  revenue
+  expense
+  equity
+  clearing
+}
+
+enum BillingLedgerNormalBalance {
+  debit
+  credit
+}
+
+enum BillingLedgerAccountStatus {
+  active
+  archived
+}
+
+enum BillingLedgerJournalType {
+  /// Provider confirmed money capture: debit provider receivable, credit customer
+  /// funds clearing.
+  payment_capture
+  /// Order fulfillment allocation: debit customer funds clearing, credit wallet
+  /// liability / deferred revenue / immediate revenue according to price policy.
+  fulfillment_allocation
+  /// Provider settlement or payout batch. Used to reconcile money received and
+  /// provider-side payout references.
+  settlement
+  /// Customer refund against a paid order.
+  refund
+  /// Provider dispute / chargeback. Kept separate from normal refunds.
+  chargeback
+  /// Recognition of previously deferred membership revenue.
+  revenue_recognition
+  /// Payment provider fees, usually imported from settlement data.
+  provider_fee
+  /// Finance correction journal. It is not a regular way to grant credits and
+  /// must carry admin audit context.
+  manual_adjustment
+  /// Reversal of an already posted journal; original journal remains immutable.
+  reversal
+}
+
+enum BillingLedgerJournalStatus {
+  posted
+  reversed
+  voided
+}
+
+enum BillingLedgerEntryDirection {
+  debit
+  credit
+}
+
+enum BillingSettlementStatus {
+  pending
+  reconciled
+  partially_reconciled
+  failed
+}
+
+enum BillingReconciliationStatus {
+  running
+  completed
+  failed
+}
+
+enum BillingReconciliationItemStatus {
+  matched
+  mismatch
+  missing_internal
+  missing_provider
   ignored
+}
+
+enum PaymentProviderEventStatus {
+  /// Event has been durably stored but not yet successfully applied.
+  received
+  /// Event matched an internal object and all business side effects finished.
+  processed
+  /// Event was deliberately closed because it is duplicate, test-only, or cannot map to an internal order/refund.
+  ignored
+  /// Event processing threw after persistence; operators can inspect and replay it from admin-ui.
   failed
 }
 
@@ -377,7 +508,7 @@ enum IpCampaignStatus {
   canceled
 }
 
-enum IpCommerceTargetType {
+enum IpTargetType {
   title
   episode
 }
@@ -548,30 +679,6 @@ enum IpUserBlockTargetType {
   creator
 }
 
-enum IpImportSourceSystem {
-  java_content
-  java_studio
-  admin_csv
-  manual
-}
-
-enum IpImportRunStatus {
-  queued
-  running
-  completed
-  failed
-  canceled
-}
-
-enum IpImportEntityType {
-  title
-  episode
-  story_node
-  media_asset
-  price_rule
-  contributor
-}
-
 model Workspace {
   id               String          @id @default(uuid()) @db.Uuid
   type             WorkspaceType
@@ -582,7 +689,7 @@ model Workspace {
   description      String?         @db.VarChar(500)
   /// External authenticated user id. For personal workspaces this is
   /// the owning user; for team workspaces this is the creator/admin who
-  /// initialized the team. No FK to Java user tables.
+  /// initialized the team. No FK to external user tables.
   ownerUserId      String          @map("owner_user_id") @db.VarChar(64)
   createdById      String          @map("created_by_id") @db.VarChar(64)
   defaultProjectId String?         @map("default_project_id") @db.Uuid
@@ -593,20 +700,17 @@ model Workspace {
   updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt        DateTime?       @map("deleted_at") @db.Timestamptz(6)
 
-  members        WorkspaceMember[]
-  invites        WorkspaceInvite[]
-  projects       PlatformProject[]
-  auditLogs      PlatformAuditLog[]
-  projectAssets  ProjectAsset[]
-  aiJobs         AiJob[]
-  documents      PlatformDocument[]
-  legacyProjects LegacyProjectWorkspaceMap[]
-  billingOrders  BillingOrder[]
-  subscriptions  BillingSubscription[]
-  ipTitles       IpTitle[]
-  ipOrders       IpPurchaseOrder[]
-  ipImportRuns   IpImportRun[]
-  ipImportMaps   IpImportMap[]
+  members       WorkspaceMember[]
+  invites       WorkspaceInvite[]
+  projects      PlatformProject[]
+  auditLogs     PlatformAuditLog[]
+  projectAssets ProjectAsset[]
+  aiJobs        AiJob[]
+  documents     PlatformDocument[]
+  billingOrders BillingOrder[]
+  subscriptions BillingSubscription[]
+  ipTitles      IpTitle[]
+  ipOrders      IpPurchaseOrder[]
 
   /// Active personal uniqueness is enforced by partial unique SQL:
   /// (owner_user_id) WHERE type='personal' AND deleted_at IS NULL.
@@ -678,15 +782,14 @@ model PlatformProject {
   updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt    DateTime?             @map("deleted_at") @db.Timestamptz(6)
 
-  workspace        Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace        Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   members          ProjectMember[]
   assets           ProjectAsset[]
   auditLogs        PlatformAuditLog[]
   aiJobs           AiJob[]
   documents        PlatformDocument[]
-  legacyProjects   LegacyProjectWorkspaceMap[]
-  sourceIpTitles   IpTitle[]                   @relation("IpTitleSourceProject")
-  sourceIpEpisodes IpEpisode[]                 @relation("IpEpisodeSourceProject")
+  sourceIpTitles   IpTitle[]          @relation("IpTitleSourceProject")
+  sourceIpEpisodes IpEpisode[]        @relation("IpEpisodeSourceProject")
 
   /// Active slug uniqueness is enforced by partial unique SQL:
   /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
@@ -695,37 +798,6 @@ model PlatformProject {
   @@index([createdById, createdAt(sort: Desc)], map: "platform_projects_creator_idx")
   @@index([projectType, status, updatedAt(sort: Desc)], map: "platform_projects_type_recent_idx")
   @@map("platform_projects")
-}
-
-model LegacyProjectWorkspaceMap {
-  id                   String                       @id @default(uuid()) @db.Uuid
-  workspaceId          String                       @map("workspace_id") @db.Uuid
-  platformProjectId    String?                      @map("platform_project_id") @db.Uuid
-  sourceSystem         LegacyProjectSourceSystem    @map("source_system")
-  entityType           LegacyProjectEntityType      @map("entity_type")
-  legacyEntityId       String                       @map("legacy_entity_id") @db.VarChar(64)
-  legacyParentEntityId String?                      @map("legacy_parent_entity_id") @db.VarChar(64)
-  ownerUserId          String                       @map("owner_user_id") @db.VarChar(64)
-  displayName          String?                      @map("display_name") @db.VarChar(160)
-  coverUrl             String?                      @map("cover_url") @db.VarChar(1024)
-  migrationStatus      LegacyProjectMigrationStatus @default(mapped) @map("migration_status")
-  metadata             Json                         @default("{}") @db.JsonB
-  lastSyncedAt         DateTime?                    @map("last_synced_at") @db.Timestamptz(6)
-  migratedAt           DateTime?                    @map("migrated_at") @db.Timestamptz(6)
-  createdAt            DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt            DateTime?                    @map("deleted_at") @db.Timestamptz(6)
-
-  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  platformProject PlatformProject? @relation(fields: [platformProjectId], references: [id], onDelete: SetNull)
-
-  /// Active legacy source uniqueness is enforced by partial unique SQL:
-  /// (source_system, entity_type, legacy_entity_id) WHERE deleted_at IS NULL.
-  @@index([workspaceId, entityType, updatedAt(sort: Desc)], map: "legacy_project_maps_workspace_recent_idx")
-  @@index([ownerUserId, entityType, updatedAt(sort: Desc)], map: "legacy_project_maps_owner_recent_idx")
-  @@index([platformProjectId], map: "legacy_project_maps_platform_project_idx")
-  @@index([migrationStatus, updatedAt(sort: Desc)], map: "legacy_project_maps_migration_status_idx")
-  @@map("legacy_project_workspace_maps")
 }
 
 model PlatformDocument {
@@ -935,6 +1007,10 @@ model WalletAccount {
   ownerType        WalletOwnerType     @map("owner_type")
   ownerId          String              @map("owner_id") @db.VarChar(64)
   currency         WalletCurrencyType
+  /// Balance class is separate from currency. `availableBalance` and
+  /// `heldBalance` are lifecycle states inside this class; they do not
+  /// decide whether funds can be consumed or withdrawn.
+  balanceKind      WalletBalanceKind   @default(consumable) @map("balance_kind")
   status           WalletAccountStatus @default(active)
   availableBalance BigInt              @default(0) @map("available_balance")
   heldBalance      BigInt              @default(0) @map("held_balance")
@@ -945,8 +1021,8 @@ model WalletAccount {
 
   ledgerEntries WalletLedgerEntry[]
 
-  @@unique([ownerType, ownerId, currency], map: "wallet_accounts_owner_currency_unique")
-  @@index([ownerType, ownerId, status], map: "wallet_accounts_owner_status_idx")
+  @@unique([ownerType, ownerId, currency, balanceKind], map: "wallet_accounts_owner_currency_kind_unique")
+  @@index([ownerType, ownerId, status, balanceKind], map: "wallet_accounts_owner_status_idx")
   @@map("wallet_accounts")
 }
 
@@ -968,6 +1044,7 @@ model WalletTransaction {
   entries                WalletLedgerEntry[]
   ipPurchaseOrders       IpPurchaseOrder[]
   ipRevenueLedgerEntries IpRevenueLedgerEntry[]
+  billingRefunds         BillingRefund[]
 
   @@unique([idempotencyKey], map: "wallet_transactions_idempotency_key_unique")
   @@index([sourceType, sourceId], map: "wallet_transactions_source_idx")
@@ -982,6 +1059,7 @@ model WalletLedgerEntry {
   accountId             String                @map("account_id") @db.Uuid
   entryType             WalletLedgerEntryType @map("entry_type")
   currency              WalletCurrencyType
+  balanceKind           WalletBalanceKind     @map("balance_kind")
   amount                BigInt
   availableDelta        BigInt                @map("available_delta")
   heldDelta             BigInt                @map("held_delta")
@@ -1000,8 +1078,11 @@ model WalletLedgerEntry {
 
 model BillingCatalogItem {
   id          String             @id @default(uuid()) @db.Uuid
-  siteRegion  BillingSiteRegion  @default(global) @map("site_region")
+  /// Internal product category. This decides fulfillment shape and default
+  /// ledger allocation; it is independent from provider-side product objects.
   productType BillingProductType @map("product_type")
+  /// Stable internal SKU-like code used by admin, reporting, provider sync, and
+  /// reconciliation. Do not overload it with provider IDs.
   code        String             @db.VarChar(96)
   name        String             @db.VarChar(160)
   description String?            @db.Text
@@ -1011,83 +1092,263 @@ model BillingCatalogItem {
   updatedAt   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   archivedAt  DateTime?          @map("archived_at") @db.Timestamptz(6)
 
-  prices BillingPrice[]
-  orders BillingOrder[]
+  prices     BillingPrice[]
+  orders     BillingOrder[]
+  promotions BillingPromotion[]
 
-  @@unique([siteRegion, code], map: "billing_catalog_items_region_code_unique")
-  @@index([siteRegion, productType, isActive], map: "billing_catalog_items_region_type_idx")
+  @@unique([code], map: "billing_catalog_items_code_unique")
+  @@index([productType, isActive], map: "billing_catalog_items_type_idx")
   @@map("billing_catalog_items")
 }
 
 model BillingPrice {
-  id                   String               @id @default(uuid()) @db.Uuid
-  itemId               String               @map("item_id") @db.Uuid
-  provider             PaymentProvider
-  providerPriceId      String?              @map("provider_price_id") @db.VarChar(128)
-  currency             String               @db.Char(3)
-  amountMinor          BigInt               @map("amount_minor")
-  interval             BillingPriceInterval @default(one_time)
-  subjectType          BillingSubjectType   @default(user) @map("subject_type")
-  grantsWalletCurrency WalletCurrencyType?  @map("grants_wallet_currency")
-  grantsWalletAmount   BigInt?              @map("grants_wallet_amount")
-  grantsPlanKey        String?              @map("grants_plan_key") @db.VarChar(64)
-  grantDurationDays    Int?                 @map("grant_duration_days")
-  providerMode         String?              @map("provider_mode") @db.VarChar(32)
-  isActive             Boolean              @default(true) @map("is_active")
-  metadata             Json                 @default("{}") @db.JsonB
-  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt           DateTime?            @map("archived_at") @db.Timestamptz(6)
+  id                      String               @id @default(uuid()) @db.Uuid
+  itemId                  String               @map("item_id") @db.Uuid
+  /// Fiat order currency, not wallet currency. Use ISO 4217 such as USD or CNY.
+  currency                String               @db.Char(3)
+  /// Fiat minor units. USD 9900 means 99.00 USD.
+  amountMinor             BigInt               @map("amount_minor")
+  interval                BillingPriceInterval @default(one_time)
+  subjectType             BillingSubjectType   @default(user) @map("subject_type")
+  /// Paid catalog and promotion grants are consumable wallet balances.
+  /// Withdrawable community points originate from creator revenue / payout
+  /// workflows, not checkout products or coupons. Enforced by migration SQL.
+  grantsWalletCurrency    WalletCurrencyType?  @map("grants_wallet_currency")
+  grantsWalletBalanceKind WalletBalanceKind?   @map("grants_wallet_balance_kind")
+  grantsWalletAmount      BigInt?              @map("grants_wallet_amount")
+  grantsPlanKey           String?              @map("grants_plan_key") @db.VarChar(64)
+  grantDurationDays       Int?                 @map("grant_duration_days")
+  isActive                Boolean              @default(true) @map("is_active")
+  metadata                Json                 @default("{}") @db.JsonB
+  createdAt               DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt              DateTime?            @map("archived_at") @db.Timestamptz(6)
 
-  item          BillingCatalogItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  orders        BillingOrder[]
-  subscriptions BillingSubscription[]
+  item              BillingCatalogItem             @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  orders            BillingOrder[]
+  subscriptions     BillingSubscription[]
+  providerBindings  BillingProviderPriceBinding[]
+  ledgerAllocations BillingPriceLedgerAllocation[]
+  promotions        BillingPromotion[]
 
-  /// Active provider-price uniqueness is enforced by partial unique SQL:
-  /// (provider, provider_price_id) WHERE provider_price_id IS NOT NULL AND archived_at IS NULL.
   @@index([itemId, isActive], map: "billing_prices_item_active_idx")
-  @@index([provider, providerPriceId], map: "billing_prices_provider_price_idx")
   @@index([currency, amountMinor], map: "billing_prices_currency_amount_idx")
   @@map("billing_prices")
 }
 
-model BillingOrder {
-  id          String             @id @default(uuid()) @db.Uuid
-  orderNo     String             @map("order_no") @db.VarChar(64)
-  userId      String             @map("user_id") @db.VarChar(64)
-  workspaceId String?            @map("workspace_id") @db.Uuid
-  subjectType BillingSubjectType @map("subject_type")
-  subjectId   String             @map("subject_id") @db.VarChar(64)
-  siteRegion  BillingSiteRegion  @default(global) @map("site_region")
-  orderType   BillingOrderType   @map("order_type")
-  status      BillingOrderStatus @default(draft)
-  itemId      String             @map("item_id") @db.Uuid
-  priceId     String             @map("price_id") @db.Uuid
-  provider    PaymentProvider
-  currency    String             @db.Char(3)
-  amountMinor BigInt             @map("amount_minor")
-  quantity    Int                @default(1)
-  description String?            @db.VarChar(255)
-  metadata    Json               @default("{}") @db.JsonB
-  version     Int                @default(0)
-  expiresAt   DateTime?          @map("expires_at") @db.Timestamptz(6)
-  paidAt      DateTime?          @map("paid_at") @db.Timestamptz(6)
-  fulfilledAt DateTime?          @map("fulfilled_at") @db.Timestamptz(6)
-  canceledAt  DateTime?          @map("canceled_at") @db.Timestamptz(6)
-  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+model BillingPriceLedgerAllocation {
+  id                String                        @id @default(uuid()) @db.Uuid
+  priceId           String                        @map("price_id") @db.Uuid
+  /// Fulfillment accounting target. It determines which ledger account receives
+  /// customer funds after payment is fulfilled.
+  target            BillingLedgerAllocationTarget
+  /// Percentage allocation in basis points. 10000 means 100%.
+  allocationBps     Int?                          @map("allocation_bps")
+  /// Fixed fiat minor-unit allocation, multiplied by order quantity when used.
+  amountMinor       BigInt?                       @map("amount_minor")
+  /// Wallet currency granted by this allocation. Only consumable wallet balances
+  /// may be sold or coupon-granted; withdrawable community points come from
+  /// creator revenue workflows.
+  walletCurrency    WalletCurrencyType?           @map("wallet_currency")
+  walletBalanceKind WalletBalanceKind?            @map("wallet_balance_kind")
+  /// Membership plan key for deferred revenue allocation.
+  planKey           String?                       @map("plan_key") @db.VarChar(64)
+  /// Revenue category for immediate revenue allocation.
+  revenueCategory   String?                       @map("revenue_category") @db.VarChar(80)
+  priority          Int                           @default(100)
+  metadata          Json                          @default("{}") @db.JsonB
+  createdAt         DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt        DateTime?                     @map("archived_at") @db.Timestamptz(6)
 
-  workspace      Workspace?             @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  item           BillingCatalogItem     @relation(fields: [itemId], references: [id], onDelete: Restrict)
-  price          BillingPrice           @relation(fields: [priceId], references: [id], onDelete: Restrict)
-  paymentIntents BillingPaymentIntent[]
+  price BillingPrice @relation(fields: [priceId], references: [id], onDelete: Cascade)
+
+  @@index([priceId, archivedAt, priority], map: "billing_price_ledger_allocations_price_idx")
+  @@map("billing_price_ledger_allocations")
+}
+
+model BillingProviderPriceBinding {
+  id                String                       @id @default(uuid()) @db.Uuid
+  priceId           String                       @map("price_id") @db.Uuid
+  /// Provider used for checkout or fulfillment source. `manual` means offline
+  /// payment confirmed by an operator; `internal` means platform-funded
+  /// fulfillment. Neither one is a coupon/redeem-code concept.
+  provider          PaymentProvider
+  /// Provider-side product identifier when the provider has a catalog product.
+  providerProductId String?                      @map("provider_product_id") @db.VarChar(128)
+  /// Provider-side price identifier used for checkout/subscription creation.
+  providerPriceId   String?                      @map("provider_price_id") @db.VarChar(128)
+  providerMode      String?                      @map("provider_mode") @db.VarChar(32)
+  status            BillingProviderBindingStatus @default(active)
+  syncError         String?                      @map("sync_error") @db.Text
+  providerPayload   Json                         @default("{}") @map("provider_payload") @db.JsonB
+  metadata          Json                         @default("{}") @db.JsonB
+  lastSyncedAt      DateTime?                    @map("last_synced_at") @db.Timestamptz(6)
+  createdAt         DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt        DateTime?                    @map("archived_at") @db.Timestamptz(6)
+
+  price  BillingPrice   @relation(fields: [priceId], references: [id], onDelete: Cascade)
+  orders BillingOrder[]
+
+  /// Active binding uniqueness is enforced by partial unique SQL:
+  /// (price_id, provider) WHERE archived_at IS NULL.
+  /// Provider catalog id uniqueness is enforced by partial unique SQL:
+  /// (provider, provider_price_id) WHERE provider_price_id IS NOT NULL AND archived_at IS NULL.
+  @@index([priceId, status], map: "billing_provider_bindings_price_status_idx")
+  @@index([provider, status], map: "billing_provider_bindings_provider_status_idx")
+  @@index([provider, providerProductId], map: "billing_provider_bindings_provider_product_idx")
+  @@index([provider, providerPriceId], map: "billing_provider_bindings_provider_price_idx")
+  @@map("billing_provider_price_bindings")
+}
+
+model BillingPromotion {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  /// User-entered promotion or redemption code. This is separate from
+  /// PaymentProvider; a free code still creates an order and fulfillment record.
+  code                  String                       @db.VarChar(64)
+  name                  String                       @db.VarChar(160)
+  description           String?                      @db.Text
+  status                BillingPromotionStatus       @default(draft)
+  /// Percentage discount in basis points. 10000 means 100% off and can power
+  /// free redemption codes while preserving order + fulfillment + ledger traceability.
+  percentOffBps         Int                          @map("percent_off_bps")
+  durationType          BillingPromotionDurationType @default(once) @map("duration_type")
+  durationCount         Int?                         @map("duration_count")
+  durationUnit          String?                      @map("duration_unit") @db.VarChar(16)
+  appliesProductType    BillingProductType?          @map("applies_product_type")
+  appliesItemId         String?                      @map("applies_item_id") @db.Uuid
+  appliesPriceId        String?                      @map("applies_price_id") @db.Uuid
+  startsAt              DateTime?                    @map("starts_at") @db.Timestamptz(6)
+  endsAt                DateTime?                    @map("ends_at") @db.Timestamptz(6)
+  maxRedemptions        Int?                         @map("max_redemptions")
+  maxRedemptionsPerUser Int?                         @map("max_redemptions_per_user")
+  redemptionCount       Int                          @default(0) @map("redemption_count")
+  metadata              Json                         @default("{}") @db.JsonB
+  createdById           String                       @map("created_by_id") @db.VarChar(64)
+  updatedById           String?                      @map("updated_by_id") @db.VarChar(64)
+  createdAt             DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt            DateTime?                    @map("archived_at") @db.Timestamptz(6)
+
+  appliesItem      BillingCatalogItem?               @relation(fields: [appliesItemId], references: [id], onDelete: SetNull)
+  appliesPrice     BillingPrice?                     @relation(fields: [appliesPriceId], references: [id], onDelete: SetNull)
+  providerBindings BillingPromotionProviderBinding[]
+  redemptions      BillingPromotionRedemption[]
+
+  @@unique([code], map: "billing_promotions_code_unique")
+  @@index([status, startsAt, endsAt], map: "billing_promotions_effective_idx")
+  @@index([appliesProductType, status], map: "billing_promotions_product_type_idx")
+  @@index([appliesItemId, status], map: "billing_promotions_item_idx")
+  @@index([appliesPriceId, status], map: "billing_promotions_price_idx")
+  @@map("billing_promotions")
+}
+
+model BillingPromotionProviderBinding {
+  id               String                       @id @default(uuid()) @db.Uuid
+  promotionId      String                       @map("promotion_id") @db.Uuid
+  /// Provider-side coupon binding. Free internal redemption codes may have no
+  /// provider binding and should be fulfilled through internal zero-amount orders.
+  provider         PaymentProvider
+  providerCouponId String?                      @map("provider_coupon_id") @db.VarChar(128)
+  status           BillingProviderBindingStatus @default(active)
+  syncError        String?                      @map("sync_error") @db.Text
+  providerPayload  Json                         @default("{}") @map("provider_payload") @db.JsonB
+  metadata         Json                         @default("{}") @db.JsonB
+  lastSyncedAt     DateTime?                    @map("last_synced_at") @db.Timestamptz(6)
+  createdAt        DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt       DateTime?                    @map("archived_at") @db.Timestamptz(6)
+
+  promotion BillingPromotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@index([promotionId, status], map: "billing_promotion_bindings_promotion_idx")
+  @@index([provider, status], map: "billing_promotion_bindings_provider_idx")
+  @@index([provider, providerCouponId], map: "billing_promotion_bindings_provider_coupon_idx")
+  @@map("billing_promotion_provider_bindings")
+}
+
+model BillingOrder {
+  id                  String             @id @default(uuid()) @db.Uuid
+  orderNo             String             @map("order_no") @db.VarChar(64)
+  /// Client or server idempotency key. Retrying checkout must not create another
+  /// payable order for the same logical request.
+  idempotencyKey      String             @map("idempotency_key") @db.VarChar(160)
+  userId              String             @map("user_id") @db.VarChar(64)
+  workspaceId         String?            @map("workspace_id") @db.Uuid
+  subjectType         BillingSubjectType @map("subject_type")
+  subjectId           String             @map("subject_id") @db.VarChar(64)
+  orderType           BillingOrderType   @map("order_type")
+  status              BillingOrderStatus @default(draft)
+  itemId              String             @map("item_id") @db.Uuid
+  priceId             String             @map("price_id") @db.Uuid
+  providerBindingId   String?            @map("provider_binding_id") @db.Uuid
+  provider            PaymentProvider
+  currency            String             @db.Char(3)
+  /// Amount before promotion discount.
+  subtotalAmountMinor BigInt             @default(0) @map("subtotal_amount_minor")
+  /// Promotion discount applied to this order.
+  discountAmountMinor BigInt             @default(0) @map("discount_amount_minor")
+  /// Final payable fiat amount after discount.
+  amountMinor         BigInt             @map("amount_minor")
+  /// Provider-accepted refunded fiat amount. Pending refund requests are tracked
+  /// in BillingRefund and are not counted here until provider acceptance.
+  refundedAmountMinor BigInt             @default(0) @map("refunded_amount_minor")
+  quantity            Int                @default(1)
+  description         String?            @db.VarChar(255)
+  metadata            Json               @default("{}") @db.JsonB
+  version             Int                @default(0)
+  expiresAt           DateTime?          @map("expires_at") @db.Timestamptz(6)
+  paidAt              DateTime?          @map("paid_at") @db.Timestamptz(6)
+  fulfilledAt         DateTime?          @map("fulfilled_at") @db.Timestamptz(6)
+  canceledAt          DateTime?          @map("canceled_at") @db.Timestamptz(6)
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace            Workspace?                   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  item                 BillingCatalogItem           @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  price                BillingPrice                 @relation(fields: [priceId], references: [id], onDelete: Restrict)
+  providerBinding      BillingProviderPriceBinding? @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
+  paymentIntents       BillingPaymentIntent[]
+  refunds              BillingRefund[]
+  ledgerJournals       BillingLedgerJournal[]
+  promotionRedemptions BillingPromotionRedemption[]
 
   @@unique([orderNo], map: "billing_orders_order_no_unique")
+  @@unique([userId, idempotencyKey], map: "billing_orders_user_idempotency_unique")
   @@index([userId, createdAt(sort: Desc)], map: "billing_orders_user_recent_idx")
   @@index([workspaceId, createdAt(sort: Desc)], map: "billing_orders_workspace_recent_idx")
   @@index([status, updatedAt(sort: Desc)], map: "billing_orders_status_recent_idx")
   @@index([subjectType, subjectId, createdAt(sort: Desc)], map: "billing_orders_subject_recent_idx")
+  @@index([providerBindingId, createdAt(sort: Desc)], map: "billing_orders_provider_binding_recent_idx")
   @@map("billing_orders")
+}
+
+model BillingPromotionRedemption {
+  id                  String                           @id @default(uuid()) @db.Uuid
+  promotionId         String                           @map("promotion_id") @db.Uuid
+  orderId             String?                          @map("order_id") @db.Uuid
+  userId              String                           @map("user_id") @db.VarChar(64)
+  /// Snapshot of BillingPromotion.code at reservation time for auditability.
+  codeSnapshot        String                           @map("code_snapshot") @db.VarChar(64)
+  provider            PaymentProvider?
+  providerDiscountId  String?                          @map("provider_discount_id") @db.VarChar(128)
+  status              BillingPromotionRedemptionStatus @default(reserved)
+  currency            String                           @db.Char(3)
+  subtotalAmountMinor BigInt                           @map("subtotal_amount_minor")
+  discountAmountMinor BigInt                           @map("discount_amount_minor")
+  metadata            Json                             @default("{}") @db.JsonB
+  createdAt           DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+  appliedAt           DateTime?                        @map("applied_at") @db.Timestamptz(6)
+  voidedAt            DateTime?                        @map("voided_at") @db.Timestamptz(6)
+
+  promotion BillingPromotion @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  order     BillingOrder?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([promotionId, status], map: "billing_promotion_redemptions_promotion_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "billing_promotion_redemptions_user_idx")
+  @@index([orderId], map: "billing_promotion_redemptions_order_idx")
+  @@map("billing_promotion_redemptions")
 }
 
 model BillingPaymentIntent {
@@ -1113,8 +1374,10 @@ model BillingPaymentIntent {
   createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt               DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  order  BillingOrder                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  events BillingPaymentProviderEvent[]
+  order          BillingOrder                  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  events         BillingPaymentProviderEvent[]
+  refunds        BillingRefund[]
+  ledgerJournals BillingLedgerJournal[]
 
   @@unique([requestId], map: "billing_payment_intents_request_id_unique")
   @@index([orderId, createdAt(sort: Desc)], map: "billing_payment_intents_order_idx")
@@ -1127,23 +1390,116 @@ model BillingPaymentIntent {
 model BillingPaymentProviderEvent {
   id              String                     @id @default(uuid()) @db.Uuid
   provider        PaymentProvider
+  /// Stable provider webhook/event id. This is the idempotency key for ingestion.
   providerEventId String                     @map("provider_event_id") @db.VarChar(160)
+  /// Provider-native event type, for example billing_checkout.completed or refund.settled.
   eventType       String                     @map("event_type") @db.VarChar(120)
+  /// Operational processing state. Failed/ignored events remain queryable and auditable.
   status          PaymentProviderEventStatus @default(received)
+  /// Matched internal order, if this event can be tied to one.
   orderId         String?                    @map("order_id") @db.Uuid
+  /// Matched internal payment intent, if this event affects payment state.
   paymentIntentId String?                    @map("payment_intent_id") @db.Uuid
+  /// Matched internal refund, if this event affects refund state.
+  refundId        String?                    @map("refund_id") @db.Uuid
+  /// Raw provider payload for replay, support escalation, and audit evidence.
   payload         Json                       @db.JsonB
+  /// Last processing error or manual ignore reason.
   error           String?                    @db.Text
   receivedAt      DateTime                   @default(now()) @map("received_at") @db.Timestamptz(6)
+  /// Set once processing reached a terminal processed/ignored/failed state.
   processedAt     DateTime?                  @map("processed_at") @db.Timestamptz(6)
 
-  paymentIntent BillingPaymentIntent? @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  paymentIntent  BillingPaymentIntent?  @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  refund         BillingRefund?         @relation(fields: [refundId], references: [id], onDelete: SetNull)
+  ledgerJournals BillingLedgerJournal[]
 
   @@unique([provider, providerEventId], map: "billing_provider_events_provider_event_unique")
   @@index([status, receivedAt(sort: Desc)], map: "billing_provider_events_status_recent_idx")
   @@index([orderId, receivedAt(sort: Desc)], map: "billing_provider_events_order_recent_idx")
   @@index([paymentIntentId, receivedAt(sort: Desc)], map: "billing_provider_events_intent_recent_idx")
+  @@index([refundId, receivedAt(sort: Desc)], map: "billing_provider_events_refund_recent_idx")
   @@map("billing_payment_provider_events")
+}
+
+model BillingRefund {
+  id                      String              @id @default(uuid()) @db.Uuid
+  refundNo                String              @map("refund_no") @db.VarChar(64)
+  orderId                 String              @map("order_id") @db.Uuid
+  paymentIntentId         String?             @map("payment_intent_id") @db.Uuid
+  provider                PaymentProvider
+  status                  BillingRefundStatus @default(requested)
+  /// Admin/API idempotency key. Retrying the same refund action must return the
+  /// same refund instead of creating a second provider refund.
+  idempotencyKey          String              @map("idempotency_key") @db.VarChar(180)
+  /// Provider request id used for Airwallex request_id and future providers'
+  /// idempotency/request identifiers.
+  requestId               String              @map("request_id") @db.VarChar(64)
+  providerRefundId        String?             @map("provider_refund_id") @db.VarChar(128)
+  providerPaymentIntentId String?             @map("provider_payment_intent_id") @db.VarChar(128)
+  providerStatus          String?             @map("provider_status") @db.VarChar(64)
+  currency                String              @db.Char(3)
+  amountMinor             BigInt              @map("amount_minor")
+  reasonCode              String              @map("reason_code") @db.VarChar(64)
+  operatorNote            String?             @map("operator_note") @db.Text
+  /// Virtual wallet amount reserved/reversed before provider submission, if the
+  /// refunded order had already granted consumable credits.
+  walletReversalCurrency  WalletCurrencyType? @map("wallet_reversal_currency")
+  walletReversalAmount    BigInt?             @map("wallet_reversal_amount")
+  walletTransactionId     String?             @map("wallet_transaction_id") @db.Uuid
+  /// Entitlement revoked before provider submission for admin-approved membership refunds.
+  /// The refund amount is capped by policy/unused service time; the remaining
+  /// entitlement is revoked before sending the provider refund request.
+  entitlementGrantId      String?             @map("entitlement_grant_id") @db.Uuid
+  failureCode             String?             @map("failure_code") @db.VarChar(80)
+  failureMessage          String?             @map("failure_message") @db.Text
+  providerPayload         Json                @default("{}") @map("provider_payload") @db.JsonB
+  metadata                Json                @default("{}") @db.JsonB
+  requestedById           String              @map("requested_by_id") @db.VarChar(64)
+  submittedAt             DateTime?           @map("submitted_at") @db.Timestamptz(6)
+  succeededAt             DateTime?           @map("succeeded_at") @db.Timestamptz(6)
+  failedAt                DateTime?           @map("failed_at") @db.Timestamptz(6)
+  canceledAt              DateTime?           @map("canceled_at") @db.Timestamptz(6)
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  order             BillingOrder                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  paymentIntent     BillingPaymentIntent?         @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  walletTransaction WalletTransaction?            @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
+  entitlementGrant  EntitlementGrant?             @relation(fields: [entitlementGrantId], references: [id], onDelete: SetNull)
+  events            BillingPaymentProviderEvent[]
+  refundEvents      BillingRefundEvent[]
+  ledgerJournals    BillingLedgerJournal[]
+
+  @@unique([refundNo], map: "billing_refunds_no_unique")
+  @@unique([idempotencyKey], map: "billing_refunds_idempotency_unique")
+  @@unique([requestId], map: "billing_refunds_request_id_unique")
+  @@index([orderId, createdAt(sort: Desc)], map: "billing_refunds_order_recent_idx")
+  @@index([paymentIntentId, createdAt(sort: Desc)], map: "billing_refunds_intent_recent_idx")
+  @@index([walletTransactionId], map: "billing_refunds_wallet_transaction_idx")
+  @@index([entitlementGrantId], map: "billing_refunds_entitlement_grant_idx")
+  @@index([provider, providerRefundId], map: "billing_refunds_provider_refund_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "billing_refunds_status_recent_idx")
+  @@map("billing_refunds")
+}
+
+model BillingRefundEvent {
+  id              String               @id @default(uuid()) @db.Uuid
+  refundId        String               @map("refund_id") @db.Uuid
+  eventType       String               @map("event_type") @db.VarChar(120)
+  fromStatus      BillingRefundStatus? @map("from_status")
+  toStatus        BillingRefundStatus? @map("to_status")
+  providerStatus  String?              @map("provider_status") @db.VarChar(64)
+  providerEventId String?              @map("provider_event_id") @db.Uuid
+  actorAdminId    String?              @map("actor_admin_id") @db.VarChar(64)
+  payload         Json                 @default("{}") @db.JsonB
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  refund BillingRefund @relation(fields: [refundId], references: [id], onDelete: Cascade)
+
+  @@index([refundId, createdAt(sort: Desc)], map: "billing_refund_events_refund_recent_idx")
+  @@index([eventType, createdAt(sort: Desc)], map: "billing_refund_events_type_recent_idx")
+  @@map("billing_refund_events")
 }
 
 model BillingSubscription {
@@ -1175,6 +1531,182 @@ model BillingSubscription {
   @@map("billing_subscriptions")
 }
 
+model BillingLedgerAccount {
+  id                String                     @id @default(uuid()) @db.Uuid
+  /// Stable chart-of-accounts code. Generated by ledger service from provider,
+  /// currency, wallet type, and revenue category.
+  code              String                     @db.VarChar(120)
+  name              String                     @db.VarChar(160)
+  accountType       BillingLedgerAccountType   @map("account_type")
+  normalBalance     BillingLedgerNormalBalance @map("normal_balance")
+  status            BillingLedgerAccountStatus @default(active)
+  currency          String                     @db.Char(3)
+  provider          PaymentProvider?
+  /// Running debit total in fiat minor units.
+  postedDebitMinor  BigInt                     @default(0) @map("posted_debit_minor")
+  /// Running credit total in fiat minor units.
+  postedCreditMinor BigInt                     @default(0) @map("posted_credit_minor")
+  /// Running account balance in the account's normal balance direction.
+  balanceMinor      BigInt                     @default(0) @map("balance_minor")
+  metadata          Json                       @default("{}") @db.JsonB
+  createdAt         DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt        DateTime?                  @map("archived_at") @db.Timestamptz(6)
+
+  entries BillingLedgerEntry[]
+
+  @@unique([code], map: "billing_ledger_accounts_code_unique")
+  @@index([accountType, currency, status], map: "billing_ledger_accounts_type_currency_idx")
+  @@index([provider, currency, status], map: "billing_ledger_accounts_provider_currency_idx")
+  @@map("billing_ledger_accounts")
+}
+
+model BillingLedgerJournal {
+  id               String                     @id @default(uuid()) @db.Uuid
+  /// Human-readable journal number. The idempotency key is the real duplicate
+  /// guard for posting.
+  journalNo        String                     @map("journal_no") @db.VarChar(64)
+  journalType      BillingLedgerJournalType   @map("journal_type")
+  status           BillingLedgerJournalStatus @default(posted)
+  sourceType       String                     @map("source_type") @db.VarChar(80)
+  sourceId         String?                    @map("source_id") @db.VarChar(128)
+  /// Immutable posting idempotency key. All retries for the same business event
+  /// must reuse this key.
+  idempotencyKey   String                     @map("idempotency_key") @db.VarChar(180)
+  provider         PaymentProvider?
+  currency         String                     @db.Char(3)
+  orderId          String?                    @map("order_id") @db.Uuid
+  paymentIntentId  String?                    @map("payment_intent_id") @db.Uuid
+  refundId         String?                    @map("refund_id") @db.Uuid
+  providerEventId  String?                    @map("provider_event_id") @db.Uuid
+  settlementId     String?                    @map("settlement_id") @db.Uuid
+  /// Reversal target. Do not delete or mutate the original posted journal.
+  reversalOfId     String?                    @map("reversal_of_id") @db.Uuid
+  /// Debits and credits must always be equal.
+  totalDebitMinor  BigInt                     @map("total_debit_minor")
+  totalCreditMinor BigInt                     @map("total_credit_minor")
+  description      String?                    @db.VarChar(255)
+  metadata         Json                       @default("{}") @db.JsonB
+  postedAt         DateTime                   @default(now()) @map("posted_at") @db.Timestamptz(6)
+  createdAt        DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order         BillingOrder?                @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  paymentIntent BillingPaymentIntent?        @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  refund        BillingRefund?               @relation(fields: [refundId], references: [id], onDelete: SetNull)
+  providerEvent BillingPaymentProviderEvent? @relation(fields: [providerEventId], references: [id], onDelete: SetNull)
+  settlement    BillingSettlement?           @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+  reversalOf    BillingLedgerJournal?        @relation("BillingLedgerReversal", fields: [reversalOfId], references: [id], onDelete: SetNull)
+  reversals     BillingLedgerJournal[]       @relation("BillingLedgerReversal")
+  entries       BillingLedgerEntry[]
+
+  @@unique([journalNo], map: "billing_ledger_journals_no_unique")
+  @@unique([idempotencyKey], map: "billing_ledger_journals_idempotency_unique")
+  @@index([journalType, postedAt(sort: Desc)], map: "billing_ledger_journals_type_recent_idx")
+  @@index([sourceType, sourceId], map: "billing_ledger_journals_source_idx")
+  @@index([orderId, postedAt(sort: Desc)], map: "billing_ledger_journals_order_recent_idx")
+  @@index([refundId, postedAt(sort: Desc)], map: "billing_ledger_journals_refund_recent_idx")
+  @@index([provider, postedAt(sort: Desc)], map: "billing_ledger_journals_provider_recent_idx")
+  @@index([settlementId], map: "billing_ledger_journals_settlement_idx")
+  @@map("billing_ledger_journals")
+}
+
+model BillingLedgerEntry {
+  id                String                      @id @default(uuid()) @db.Uuid
+  journalId         String                      @map("journal_id") @db.Uuid
+  accountId         String                      @map("account_id") @db.Uuid
+  direction         BillingLedgerEntryDirection
+  currency          String                      @db.Char(3)
+  /// Fiat minor-unit amount for this double-entry line.
+  amountMinor       BigInt                      @map("amount_minor")
+  /// Account balance after this entry, in the account's normal balance direction.
+  balanceAfterMinor BigInt                      @map("balance_after_minor")
+  description       String?                     @db.VarChar(255)
+  metadata          Json                        @default("{}") @db.JsonB
+  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  journal BillingLedgerJournal @relation(fields: [journalId], references: [id], onDelete: Cascade)
+  account BillingLedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, createdAt(sort: Desc)], map: "billing_ledger_entries_account_recent_idx")
+  @@index([journalId], map: "billing_ledger_entries_journal_idx")
+  @@map("billing_ledger_entries")
+}
+
+model BillingSettlement {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  provider             PaymentProvider
+  /// Provider-side settlement / payout batch id.
+  providerSettlementId String                  @map("provider_settlement_id") @db.VarChar(160)
+  status               BillingSettlementStatus @default(pending)
+  currency             String                  @db.Char(3)
+  /// Provider settlement gross amount before fees.
+  grossAmountMinor     BigInt                  @default(0) @map("gross_amount_minor")
+  /// Provider fees deducted from the settlement.
+  feeAmountMinor       BigInt                  @default(0) @map("fee_amount_minor")
+  /// Actual payout amount received from provider.
+  netAmountMinor       BigInt                  @default(0) @map("net_amount_minor")
+  providerPayload      Json                    @default("{}") @map("provider_payload") @db.JsonB
+  settledAt            DateTime?               @map("settled_at") @db.Timestamptz(6)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ledgerJournals      BillingLedgerJournal[]
+  reconciliationItems BillingReconciliationItem[]
+
+  @@unique([provider, providerSettlementId], map: "billing_settlements_provider_unique")
+  @@index([provider, status, settledAt(sort: Desc)], map: "billing_settlements_provider_status_idx")
+  @@map("billing_settlements")
+}
+
+model BillingReconciliationRun {
+  id                   String                      @id @default(uuid()) @db.Uuid
+  provider             PaymentProvider
+  status               BillingReconciliationStatus @default(running)
+  currency             String?                     @db.Char(3)
+  periodStart          DateTime                    @map("period_start") @db.Timestamptz(6)
+  periodEnd            DateTime                    @map("period_end") @db.Timestamptz(6)
+  checkedAt            DateTime?                   @map("checked_at") @db.Timestamptz(6)
+  matchedCount         Int                         @default(0) @map("matched_count")
+  mismatchCount        Int                         @default(0) @map("mismatch_count")
+  missingInternalCount Int                         @default(0) @map("missing_internal_count")
+  missingProviderCount Int                         @default(0) @map("missing_provider_count")
+  error                String?                     @db.Text
+  metadata             Json                        @default("{}") @db.JsonB
+  createdAt            DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  items BillingReconciliationItem[]
+
+  @@index([provider, status, createdAt(sort: Desc)], map: "billing_reconciliation_runs_provider_idx")
+  @@map("billing_reconciliation_runs")
+}
+
+model BillingReconciliationItem {
+  id                  String                          @id @default(uuid()) @db.Uuid
+  runId               String                          @map("run_id") @db.Uuid
+  status              BillingReconciliationItemStatus
+  issueType           String?                         @map("issue_type") @db.VarChar(80)
+  orderId             String?                         @map("order_id") @db.Uuid
+  paymentIntentId     String?                         @map("payment_intent_id") @db.Uuid
+  providerEventId     String?                         @map("provider_event_id") @db.Uuid
+  settlementId        String?                         @map("settlement_id") @db.Uuid
+  providerReference   String?                         @map("provider_reference") @db.VarChar(160)
+  currency            String                          @db.Char(3)
+  providerAmountMinor BigInt?                         @map("provider_amount_minor")
+  internalAmountMinor BigInt?                         @map("internal_amount_minor")
+  differenceMinor     BigInt?                         @map("difference_minor")
+  metadata            Json                            @default("{}") @db.JsonB
+  createdAt           DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  run        BillingReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  settlement BillingSettlement?       @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+
+  @@index([runId, status], map: "billing_reconciliation_items_run_status_idx")
+  @@index([orderId], map: "billing_reconciliation_items_order_idx")
+  @@index([providerReference], map: "billing_reconciliation_items_provider_ref_idx")
+  @@map("billing_reconciliation_items")
+}
+
 model EntitlementGrant {
   id          String                 @id @default(uuid()) @db.Uuid
   subjectType BillingSubjectType     @map("subject_type")
@@ -1189,6 +1721,8 @@ model EntitlementGrant {
   createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   revokedAt   DateTime?              @map("revoked_at") @db.Timestamptz(6)
+
+  billingRefunds BillingRefund[]
 
   @@unique([sourceType, sourceId], map: "entitlement_grants_source_unique")
   @@index([subjectType, subjectId, status, endsAt], map: "entitlement_grants_subject_status_idx")
@@ -1223,7 +1757,7 @@ model PlatformAuditLog {
 // Admin domain (src/admin-auth/)
 // ─────────────────────────────────────────────────────────────
 //
-// Internal operators are not Java users. Admin access is isolated to
+// Internal operators are not consumer users. Admin access is isolated to
 // Nest + Postgres with explicit roles, permissions, httpOnly sessions,
 // and audit events. The admin UI may point at either production cell,
 // but each cell owns its own admin users and permissions.
@@ -1232,6 +1766,7 @@ model AdminUser {
   id                String          @id @default(uuid()) @db.Uuid
   email             String          @unique @db.VarChar(320)
   displayName       String          @map("display_name") @db.VarChar(120)
+  avatarUrl         String?         @map("avatar_url") @db.VarChar(512)
   passwordHash      String?         @map("password_hash") @db.VarChar(255)
   status            AdminUserStatus @default(invited)
   siteScope         AdminSiteScope  @default(all) @map("site_scope")
@@ -1246,12 +1781,12 @@ model AdminUser {
   updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   disabledAt        DateTime?       @map("disabled_at") @db.Timestamptz(6)
 
-  roles     AdminUserRole[]
-  sessions  AdminSession[]
+  roles           AdminUserRole[]
+  sessions        AdminSession[]
   passwordHistory AdminPasswordHistory[]
   mfaChallenges   AdminMfaChallenge[]
   loginAttempts   AdminLoginAttempt[]
-  auditLogs AdminAuditLog[] @relation("AdminAuditActor")
+  auditLogs       AdminAuditLog[]        @relation("AdminAuditActor")
 
   @@index([status, updatedAt(sort: Desc)], map: "admin_users_status_recent_idx")
   @@index([siteScope, status], map: "admin_users_site_scope_idx")
@@ -1416,7 +1951,7 @@ model AdminAuditLog {
 // New source of truth for public IP titles, episode commerce,
 // community-point purchases, presale campaigns, creator revenue,
 // referral attribution, review, rights declarations, reports, and
-// moderation. This deliberately does not mirror Java's project /
+// moderation. This deliberately does not mirror external project /
 // episode tables. A PlatformProject is the internal production
 // workspace; an IpTitle is the public commercial object users buy.
 //
@@ -1481,7 +2016,6 @@ model IpTitle {
   rightsDeclarations   IpRightsDeclaration[]
   reports              IpContentReport[]
   userBlocks           IpUserContentBlock[]
-  importMaps           IpImportMap[]
 
   /// Active public slug uniqueness is enforced by partial unique SQL:
   /// (slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
@@ -1537,70 +2071,11 @@ model IpEpisode {
   reviewSubmissions    IpReviewSubmission[]
   rightsDeclarations   IpRightsDeclaration[]
   reports              IpContentReport[]
-  importMaps           IpImportMap[]
 
   @@unique([titleId, episodeNo], map: "ip_episodes_title_number_unique")
   @@unique([id, titleId], name: "uniq_ip_episode_id_title", map: "ip_episodes_id_title_unique")
   @@index([titleId, status, sortOrder], map: "ip_episodes_title_status_order_idx")
   @@map("ip_episodes")
-}
-
-model IpImportRun {
-  id            String               @id @default(uuid()) @db.Uuid
-  workspaceId   String               @map("workspace_id") @db.Uuid
-  sourceSystem  IpImportSourceSystem @map("source_system")
-  sourceRootId  String?              @map("source_root_id") @db.VarChar(128)
-  status        IpImportRunStatus    @default(queued)
-  requestedById String               @map("requested_by_id") @db.VarChar(64)
-  totalCount    Int                  @default(0) @map("total_count")
-  importedCount Int                  @default(0) @map("imported_count")
-  skippedCount  Int                  @default(0) @map("skipped_count")
-  failedCount   Int                  @default(0) @map("failed_count")
-  error         String?              @db.Text
-  metadata      Json                 @default("{}") @db.JsonB
-  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  startedAt     DateTime?            @map("started_at") @db.Timestamptz(6)
-  completedAt   DateTime?            @map("completed_at") @db.Timestamptz(6)
-
-  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  maps      IpImportMap[]
-
-  @@index([workspaceId, status, createdAt(sort: Desc)], map: "ip_import_runs_workspace_recent_idx")
-  @@index([sourceSystem, sourceRootId], map: "ip_import_runs_source_idx")
-  @@map("ip_import_runs")
-}
-
-model IpImportMap {
-  id                   String               @id @default(uuid()) @db.Uuid
-  workspaceId          String               @map("workspace_id") @db.Uuid
-  runId                String?              @map("run_id") @db.Uuid
-  sourceSystem         IpImportSourceSystem @map("source_system")
-  sourceEntityType     IpImportEntityType   @map("source_entity_type")
-  sourceEntityId       String               @map("source_entity_id") @db.VarChar(128)
-  sourceParentEntityId String?              @map("source_parent_entity_id") @db.VarChar(128)
-  targetEntityType     IpImportEntityType   @map("target_entity_type")
-  targetEntityId       String               @map("target_entity_id") @db.VarChar(128)
-  targetTitleId        String?              @map("target_title_id") @db.Uuid
-  targetEpisodeId      String?              @map("target_episode_id") @db.Uuid
-  sourceChecksum       String?              @map("source_checksum") @db.VarChar(128)
-  sourceSnapshot       Json?                @map("source_snapshot") @db.JsonB
-  metadata             Json                 @default("{}") @db.JsonB
-  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  lastImportedAt       DateTime             @default(now()) @map("last_imported_at") @db.Timestamptz(6)
-
-  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  run           IpImportRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
-  targetTitle   IpTitle?     @relation(fields: [targetTitleId], references: [id], onDelete: SetNull)
-  targetEpisode IpEpisode?   @relation(fields: [targetEpisodeId], references: [id], onDelete: SetNull)
-
-  @@unique([sourceSystem, sourceEntityType, sourceEntityId], map: "ip_import_maps_source_unique")
-  @@index([workspaceId, sourceSystem, updatedAt(sort: Desc)], map: "ip_import_maps_workspace_source_idx")
-  @@index([targetEntityType, targetEntityId], map: "ip_import_maps_target_idx")
-  @@index([targetTitleId], map: "ip_import_maps_title_idx")
-  @@index([targetEpisodeId], map: "ip_import_maps_episode_idx")
-  @@map("ip_import_maps")
 }
 
 model IpStoryNode {
@@ -1648,24 +2123,23 @@ model IpStoryChoice {
 }
 
 model IpCampaign {
-  id             String            @id @default(uuid()) @db.Uuid
-  titleId        String            @map("title_id") @db.Uuid
-  campaignType   IpCampaignType    @default(custom) @map("campaign_type")
-  status         IpCampaignStatus  @default(draft)
-  siteRegion     BillingSiteRegion @default(global) @map("site_region")
-  code           String            @db.VarChar(96)
-  name           String            @db.VarChar(160)
-  description    String?           @db.Text
-  startsAt       DateTime?         @map("starts_at") @db.Timestamptz(6)
-  endsAt         DateTime?         @map("ends_at") @db.Timestamptz(6)
-  unlocksAt      DateTime?         @map("unlocks_at") @db.Timestamptz(6)
-  trackingConfig Json              @default("{}") @map("tracking_config") @db.JsonB
-  metadata       Json              @default("{}") @db.JsonB
-  createdById    String            @map("created_by_id") @db.VarChar(64)
-  updatedById    String?           @map("updated_by_id") @db.VarChar(64)
-  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt     DateTime?         @map("archived_at") @db.Timestamptz(6)
+  id             String           @id @default(uuid()) @db.Uuid
+  titleId        String           @map("title_id") @db.Uuid
+  campaignType   IpCampaignType   @default(custom) @map("campaign_type")
+  status         IpCampaignStatus @default(draft)
+  code           String           @db.VarChar(96)
+  name           String           @db.VarChar(160)
+  description    String?          @db.Text
+  startsAt       DateTime?        @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime?        @map("ends_at") @db.Timestamptz(6)
+  unlocksAt      DateTime?        @map("unlocks_at") @db.Timestamptz(6)
+  trackingConfig Json             @default("{}") @map("tracking_config") @db.JsonB
+  metadata       Json             @default("{}") @db.JsonB
+  createdById    String           @map("created_by_id") @db.VarChar(64)
+  updatedById    String?          @map("updated_by_id") @db.VarChar(64)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt     DateTime?        @map("archived_at") @db.Timestamptz(6)
 
   ipTitle           IpTitle              @relation(fields: [titleId], references: [id], onDelete: Cascade)
   priceRules        IpPriceRule[]
@@ -1674,33 +2148,32 @@ model IpCampaign {
 
   @@unique([titleId, code], map: "ip_campaigns_title_code_unique")
   @@index([titleId, status, startsAt], map: "ip_campaigns_title_status_idx")
-  @@index([siteRegion, status, startsAt], map: "ip_campaigns_region_status_idx")
+  @@index([status, startsAt], map: "ip_campaigns_status_idx")
   @@map("ip_campaigns")
 }
 
 model IpPriceRule {
-  id              String               @id @default(uuid()) @db.Uuid
-  titleId         String               @map("title_id") @db.Uuid
-  episodeId       String?              @map("episode_id") @db.Uuid
-  campaignId      String?              @map("campaign_id") @db.Uuid
-  targetType      IpCommerceTargetType @map("target_type")
-  status          IpPriceRuleStatus    @default(draft)
-  siteRegion      BillingSiteRegion    @default(global) @map("site_region")
-  currency        WalletCurrencyType   @default(community_point)
+  id              String             @id @default(uuid()) @db.Uuid
+  titleId         String             @map("title_id") @db.Uuid
+  episodeId       String?            @map("episode_id") @db.Uuid
+  campaignId      String?            @map("campaign_id") @db.Uuid
+  targetType      IpTargetType       @map("target_type")
+  status          IpPriceRuleStatus  @default(draft)
+  currency        WalletCurrencyType @default(community_point)
   amount          BigInt
-  originalAmount  BigInt?              @map("original_amount")
-  priority        Int                  @default(0)
-  startsAt        DateTime?            @map("starts_at") @db.Timestamptz(6)
-  endsAt          DateTime?            @map("ends_at") @db.Timestamptz(6)
-  unlocksAt       DateTime?            @map("unlocks_at") @db.Timestamptz(6)
-  maxPerUser      Int?                 @map("max_per_user")
-  refundPolicyKey String?              @map("refund_policy_key") @db.VarChar(64)
-  metadata        Json                 @default("{}") @db.JsonB
-  createdById     String               @map("created_by_id") @db.VarChar(64)
-  updatedById     String?              @map("updated_by_id") @db.VarChar(64)
-  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt      DateTime?            @map("archived_at") @db.Timestamptz(6)
+  originalAmount  BigInt?            @map("original_amount")
+  priority        Int                @default(0)
+  startsAt        DateTime?          @map("starts_at") @db.Timestamptz(6)
+  endsAt          DateTime?          @map("ends_at") @db.Timestamptz(6)
+  unlocksAt       DateTime?          @map("unlocks_at") @db.Timestamptz(6)
+  maxPerUser      Int?               @map("max_per_user")
+  refundPolicyKey String?            @map("refund_policy_key") @db.VarChar(64)
+  metadata        Json               @default("{}") @db.JsonB
+  createdById     String             @map("created_by_id") @db.VarChar(64)
+  updatedById     String?            @map("updated_by_id") @db.VarChar(64)
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt      DateTime?          @map("archived_at") @db.Timestamptz(6)
 
   ipTitle           IpTitle              @relation(fields: [titleId], references: [id], onDelete: Cascade)
   episode           IpEpisode?           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
@@ -1711,7 +2184,7 @@ model IpPriceRule {
   @@index([titleId, targetType, status, priority], map: "ip_price_rules_title_target_idx")
   @@index([episodeId, status], map: "ip_price_rules_episode_idx")
   @@index([campaignId, status], map: "ip_price_rules_campaign_idx")
-  @@index([siteRegion, status, startsAt, endsAt], map: "ip_price_rules_effective_idx")
+  @@index([status, startsAt, endsAt], map: "ip_price_rules_effective_idx")
   @@map("ip_price_rules")
 }
 
@@ -1724,9 +2197,8 @@ model IpPurchaseOrder {
   subjectId           String                @map("subject_id") @db.VarChar(64)
   titleId             String                @map("title_id") @db.Uuid
   episodeId           String?               @map("episode_id") @db.Uuid
-  targetType          IpCommerceTargetType  @map("target_type")
+  targetType          IpTargetType          @map("target_type")
   status              IpPurchaseOrderStatus @default(pending)
-  siteRegion          BillingSiteRegion     @default(global) @map("site_region")
   priceRuleId         String?               @map("price_rule_id") @db.Uuid
   campaignId          String?               @map("campaign_id") @db.Uuid
   referralLinkId      String?               @map("referral_link_id") @db.Uuid
@@ -1770,22 +2242,22 @@ model IpPurchaseOrder {
 }
 
 model IpContentEntitlement {
-  id            String               @id @default(uuid()) @db.Uuid
-  subjectType   BillingSubjectType   @map("subject_type")
-  subjectId     String               @map("subject_id") @db.VarChar(64)
-  titleId       String               @map("title_id") @db.Uuid
-  episodeId     String?              @map("episode_id") @db.Uuid
-  targetType    IpCommerceTargetType @map("target_type")
-  status        IpEntitlementStatus  @default(active)
-  sourceType    String               @map("source_type") @db.VarChar(64)
-  sourceId      String               @map("source_id") @db.VarChar(128)
-  sourceOrderId String?              @map("source_order_id") @db.Uuid
-  startsAt      DateTime             @default(now()) @map("starts_at") @db.Timestamptz(6)
-  endsAt        DateTime?            @map("ends_at") @db.Timestamptz(6)
-  metadata      Json                 @default("{}") @db.JsonB
-  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  revokedAt     DateTime?            @map("revoked_at") @db.Timestamptz(6)
+  id            String              @id @default(uuid()) @db.Uuid
+  subjectType   BillingSubjectType  @map("subject_type")
+  subjectId     String              @map("subject_id") @db.VarChar(64)
+  titleId       String              @map("title_id") @db.Uuid
+  episodeId     String?             @map("episode_id") @db.Uuid
+  targetType    IpTargetType        @map("target_type")
+  status        IpEntitlementStatus @default(active)
+  sourceType    String              @map("source_type") @db.VarChar(64)
+  sourceId      String              @map("source_id") @db.VarChar(128)
+  sourceOrderId String?             @map("source_order_id") @db.Uuid
+  startsAt      DateTime            @default(now()) @map("starts_at") @db.Timestamptz(6)
+  endsAt        DateTime?           @map("ends_at") @db.Timestamptz(6)
+  metadata      Json                @default("{}") @db.JsonB
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  revokedAt     DateTime?           @map("revoked_at") @db.Timestamptz(6)
 
   ipTitle         IpTitle            @relation(fields: [titleId], references: [id], onDelete: Cascade)
   episode         IpEpisode?         @relation(fields: [episodeId], references: [id], onDelete: Cascade)
@@ -1805,7 +2277,7 @@ model IpCollectionItem {
   titleId       String                 @map("title_id") @db.Uuid
   episodeId     String?                @map("episode_id") @db.Uuid
   entitlementId String?                @map("entitlement_id") @db.Uuid
-  targetType    IpCommerceTargetType   @map("target_type")
+  targetType    IpTargetType           @map("target_type")
   status        IpCollectionItemStatus @default(active)
   progress      Json                   @default("{}") @db.JsonB
   metadata      Json                   @default("{}") @db.JsonB
@@ -1856,7 +2328,8 @@ model IpRevenueRule {
   beneficiaryUserId String?             @map("beneficiary_user_id") @db.VarChar(64)
   ruleType          IpRevenueRuleType   @map("rule_type")
   status            IpRevenueRuleStatus @default(draft)
-  currency          WalletCurrencyType  @default(revenue_credit)
+  currency          WalletCurrencyType  @default(community_point)
+  balanceKind       WalletBalanceKind   @default(withdrawable) @map("balance_kind")
   shareBps          Int?                @map("share_bps")
   fixedAmount       BigInt?             @map("fixed_amount")
   startsAt          DateTime?           @map("starts_at") @db.Timestamptz(6)
@@ -1892,7 +2365,8 @@ model IpRevenueLedgerEntry {
   walletTransactionId String?                  @map("wallet_transaction_id") @db.Uuid
   entryType           IpRevenueLedgerEntryType @map("entry_type")
   status              IpRevenueLedgerStatus    @default(pending)
-  currency            WalletCurrencyType       @default(revenue_credit)
+  currency            WalletCurrencyType       @default(community_point)
+  balanceKind         WalletBalanceKind        @default(withdrawable) @map("balance_kind")
   amount              BigInt
   sourceAmount        BigInt?                  @map("source_amount")
   shareBps            Int?                     @map("share_bps")
@@ -2114,10 +2588,9 @@ model IpUserContentBlock {
 // ─────────────────────────────────────────────────────────────
 //
 // Server-owned crew module (剧组). End-to-end ownership: every table
-// here is Prisma + Nest, NOT Java. Java's only contribution is satoken
-// auth — `userId` columns reference Java's user id space (string) but
-// no FK crosses the boundary; orphaned rows just render as "Unknown
-// user" client-side.
+// here is Prisma + Nest. `userId` columns reference the external auth
+// user id space (string), but no FK crosses the boundary; orphaned rows
+// just render as "Unknown user" client-side.
 //
 // Soft delete: `deletedAt` on Crew + CrewPosition (audit trail).
 //   CrewMember uses `removedAt`; CrewApplication transitions through
@@ -2218,7 +2691,7 @@ model Crew {
   /// First entry is featured as the visitor-page hero background.
   /// Max 10 entries.
   showcaseWorks Json?             @map("showcase_works") @db.JsonB
-  /// Java userId (numeric string). FK not enforced — see header.
+  /// External auth user id. FK not enforced — see header.
   founderId     String            @map("founder_id")
   /// User-controlled discovery state. New crews start unlisted; only
   /// listed crews appear in the public Crew Hall.
@@ -2641,7 +3114,7 @@ model AiJob {
   userId                String      @map("user_id")
   /// Immutable product entitlement policy selected at submission time.
   /// This is the source for model access, queue priority, quota bridge,
-  /// refunds, and audit; it intentionally does not expose Java userLevel.
+  /// refunds, and audit; it intentionally does not expose upstream userLevel.
   entitlementSnapshot   Json?       @map("entitlement_snapshot")
   type                  AiJobType
   /// Adapter identifier — 'microsoft-foundry' | 'fal-ai' | …. Stays a
@@ -3118,9 +3591,8 @@ model ServiceRequirementQuestion {
 //
 //  Bindings: optional FK-shaped string columns linking the order to
 //  an IP / episode / crew / crew-position. Stored as plain strings
-//  (not Prisma relations) because some of these reference
-//  Java-owned tables outside the Nest schema. Server validates
-//  existence at write time.
+//  (not Prisma relations) because some of these reference entities
+//  outside the Nest schema. Server validates existence at write time.
 // ──────────────────────────────────────────────────────────────────
 
 enum ServiceOrderStatus {
@@ -3444,7 +3916,7 @@ model MediaAsset {
 
 model UserCertificate {
   id            String     @id @default(uuid()) @db.Uuid
-  /// Java user id (numeric string). FK not enforced — orphaned rows
+  /// External auth user id. FK not enforced — orphaned rows
   /// just render as "Unknown user" client-side, matching the crew /
   /// services convention.
   userId        String     @map("user_id") @db.VarChar(64)

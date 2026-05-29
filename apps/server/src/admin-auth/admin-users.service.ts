@@ -88,6 +88,7 @@ export class AdminUsersService {
   }
 
   async create(input: CreateAdminUserInput) {
+    this.assertAssignableRoleKey(input.roleKey);
     const existing = await this.prisma.adminUser.findUnique({
       where: { email: input.email },
       select: { id: true },
@@ -127,6 +128,16 @@ export class AdminUsersService {
 
   async update(actor: AdminActor, userId: string, input: UpdateAdminUserInput) {
     const existing = await this.findExisting(userId);
+    if (input.roleKey) {
+      this.assertAssignableRoleKey(input.roleKey);
+      const existingWithRoles = await this.findExistingWithRoles(userId);
+      if (primaryRoleKey(existingWithRoles) === ADMIN_ROLE_KEYS.SuperAdmin) {
+        throw new BadRequestException({
+          code: 'ADMIN_SUPER_ADMIN_ROLE_MANAGED_OUT_OF_BAND',
+          msg: '超级管理员角色只能通过受控部署脚本维护，不能在后台页面降级或重新授权。',
+        });
+      }
+    }
     if (
       actor.id === userId &&
       ((input.status && input.status !== AdminUserStatus.active) ||
@@ -167,6 +178,22 @@ export class AdminUsersService {
     if (input.status && input.status !== AdminUserStatus.active) {
       await this.revokeSessions(userId, actor.sessionId);
     }
+    return this.getById(userId);
+  }
+
+  async resetMfa(userId: string, exceptSessionId?: string) {
+    await this.findExisting(userId);
+    await this.prisma.adminUser.update({
+      where: { id: userId },
+      data: {
+        requireMfa: true,
+        mfaSecretHash: null,
+        mfaEnabledAt: null,
+        failedLoginCount: 0,
+        lockedUntil: null,
+      },
+    });
+    await this.revokeSessions(userId, exceptSessionId);
     return this.getById(userId);
   }
 
@@ -312,11 +339,26 @@ export class AdminUsersService {
     return existing;
   }
 
+  private async findExistingWithRoles(userId: string) {
+    const existing = await this.prisma.adminUser.findUnique({
+      where: { id: userId },
+      include: adminUserListInclude,
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'ADMIN_USER_NOT_FOUND',
+        msg: '后台账号不存在。',
+      });
+    }
+    return existing;
+  }
+
   private toAdminUserDto(user: AdminUserForList) {
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
       status: user.status,
       siteScope: user.siteScope,
       roleKeys: user.roles.map((userRole) => userRole.role.key).sort(),
@@ -346,6 +388,15 @@ export class AdminUsersService {
         code: 'ADMIN_PASSWORD_POLICY_FAILED',
         msg: issues.join(' '),
         issues: issues.map((message) => ({ message })),
+      });
+    }
+  }
+
+  private assertAssignableRoleKey(roleKey: string) {
+    if (roleKey === ADMIN_ROLE_KEYS.SuperAdmin) {
+      throw new BadRequestException({
+        code: 'ADMIN_SUPER_ADMIN_ROLE_MANAGED_OUT_OF_BAND',
+        msg: '超级管理员只能通过受控部署脚本开通，不能在后台页面创建或授权。',
       });
     }
   }

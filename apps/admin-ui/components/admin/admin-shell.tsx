@@ -11,11 +11,13 @@ import {
   IconLogout,
   IconPhoto,
   IconShieldLock,
+  IconUserCog,
   IconUsersGroup,
   IconVersions,
 } from "@tabler/icons-react";
 import { BrandLogo } from "@/components/admin/brand-logo";
 import { Button } from "@/components/ui/button";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import type { AdminSession } from "@/lib/admin-session";
 
@@ -27,6 +29,7 @@ const navItems = [
   { href: "/media", label: "媒体资产", icon: IconPhoto, permission: "media.read" },
   { href: "/users", label: "账号权限", icon: IconUsersGroup, permission: "admin.manage" },
   { href: "/audit", label: "系统审计", icon: IconFileAnalytics, permission: "audit.read" },
+  { href: "/account", label: "我的账户", icon: IconUserCog },
 ];
 
 export function AdminShell({
@@ -47,7 +50,7 @@ export function AdminShell({
     ) ?? visibleNavItems[0];
 
   async function logout() {
-    await fetch("/api/admin/auth/logout", { method: "POST" });
+    await fetch(adminUiApiPath("/api/admin/auth/logout"), { method: "POST" });
     router.replace("/login");
     router.refresh();
   }
@@ -94,10 +97,27 @@ export function AdminShell({
               </p>
               <p className="truncate text-[11px] text-slate-500">{session.site.domain}</p>
             </div>
-            <p className="truncate text-[12px] font-medium text-slate-900">
-              {session.user.displayName}
-            </p>
-            <p className="truncate text-[11px] text-slate-500">{session.user.email}</p>
+            <Link
+              href="/account"
+              className="flex items-center gap-2 rounded-md px-1 py-1 transition hover:bg-slate-100"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-[12px] font-semibold text-white">
+                {session.user.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={session.user.avatarUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  session.user.displayName.slice(0, 1).toUpperCase()
+                )}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] font-medium text-slate-900">
+                  {session.user.displayName}
+                </span>
+                <span className="block truncate text-[11px] text-slate-500">
+                  {session.user.email}
+                </span>
+              </span>
+            </Link>
             <p className="mt-1 text-[11px] text-slate-500">
               {session.user.permissions.length} 项权限
             </p>

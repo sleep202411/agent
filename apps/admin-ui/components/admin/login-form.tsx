@@ -1,9 +1,18 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconDatabase, IconLock, IconMail, IconShieldCheck } from "@tabler/icons-react";
+import QRCode from "qrcode";
+import {
+  IconCopy,
+  IconDatabase,
+  IconLock,
+  IconMail,
+  IconQrcode,
+  IconShieldCheck,
+} from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import type { AdminSiteKey, AdminSiteOption } from "@/lib/admin-sites";
 
@@ -19,6 +28,8 @@ export function LoginForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  const [mfaQrDataUrl, setMfaQrDataUrl] = useState("");
+  const [secretCopied, setSecretCopied] = useState(false);
   const [mfaChallenge, setMfaChallenge] = useState<{
     setupRequired: boolean;
     challengeToken: string;
@@ -28,12 +39,46 @@ export function LoginForm({
   } | null>(null);
   const activeSite = sites.find((item) => item.key === site) ?? sites[0];
 
+  useEffect(() => {
+    let cancelled = false;
+    setMfaQrDataUrl("");
+    setSecretCopied(false);
+    if (!mfaChallenge?.setupRequired || !mfaChallenge.otpauthUri) return;
+
+    QRCode.toDataURL(mfaChallenge.otpauthUri, {
+      width: 192,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: {
+        dark: "#020617",
+        light: "#ffffff",
+      },
+    })
+      .then((url) => {
+        if (!cancelled) setMfaQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setMfaQrDataUrl("");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mfaChallenge]);
+
+  async function copyMfaSecret() {
+    if (!mfaChallenge?.secret) return;
+    await navigator.clipboard.writeText(mfaChallenge.secret);
+    setSecretCopied(true);
+    window.setTimeout(() => setSecretCopied(false), 1800);
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setPending(true);
     const formData = new FormData(event.currentTarget);
-    const response = await fetch("/api/admin/auth/login", {
+    const response = await fetch(adminUiApiPath("/api/admin/auth/login"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -62,7 +107,7 @@ export function LoginForm({
     if (!mfaChallenge) return;
     setError(null);
     setPending(true);
-    const response = await fetch("/api/admin/auth/mfa/verify", {
+    const response = await fetch(adminUiApiPath("/api/admin/auth/mfa/verify"), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -98,14 +143,48 @@ export function LoginForm({
         </div>
         {mfaChallenge.setupRequired ? (
           <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-[12px] leading-5 text-amber-900">
-            <p className="font-semibold">首次登录需要绑定 MFA。</p>
-            <p>在 Google Authenticator、1Password 或 Microsoft Authenticator 中添加此密钥。</p>
-            <code className="block break-all rounded-md bg-white/70 px-2 py-1 font-mono text-[12px]">
-              {mfaChallenge.secret}
-            </code>
-            {mfaChallenge.otpauthUri ? (
-              <p className="break-all text-[11px] text-amber-800">{mfaChallenge.otpauthUri}</p>
-            ) : null}
+            <div className="flex items-start gap-2">
+              <IconQrcode className="mt-0.5 size-4 shrink-0 text-amber-700" />
+              <div>
+                <p className="font-semibold">首次登录需要绑定 MFA。</p>
+                <p className="mt-1">
+                  使用 Google Authenticator、1Password 或 Microsoft Authenticator 扫描二维码。
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[164px_1fr]">
+              <div className="flex h-[164px] w-[164px] items-center justify-center rounded-lg border border-amber-200 bg-white p-2">
+                {mfaQrDataUrl ? (
+                  <img
+                    src={mfaQrDataUrl}
+                    alt="MFA 绑定二维码"
+                    className="h-36 w-36"
+                    draggable={false}
+                  />
+                ) : (
+                  <span className="text-center text-[11px] text-amber-700">正在生成二维码</span>
+                )}
+              </div>
+              <div className="min-w-0 space-y-2">
+                <p className="text-[11px] font-medium text-amber-800">不能扫码时，手动输入密钥。</p>
+                <div className="flex items-center gap-2 rounded-md bg-white/80 px-2 py-2">
+                  <code className="min-w-0 flex-1 break-all font-mono text-[12px]">
+                    {mfaChallenge.secret}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={copyMfaSecret}
+                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-amber-200 bg-white px-2 text-[11px] font-medium text-amber-900 transition hover:border-amber-300 hover:bg-amber-100"
+                  >
+                    <IconCopy className="size-3.5" />
+                    {secretCopied ? "已复制" : "复制"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-amber-800">
+                  绑定后输入应用中显示的 6 位验证码完成登录。
+                </p>
+              </div>
+            </div>
           </div>
         ) : null}
         <div className="space-y-2">
@@ -117,7 +196,7 @@ export function LoginForm({
             value={mfaCode}
             onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
             inputMode="numeric"
-            pattern="\\d{6}"
+            pattern="[0-9]{6}"
             required
             className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-center font-mono text-lg tracking-[0.3em] outline-none transition focus:border-slate-900 focus:ring-3 focus:ring-slate-200"
             placeholder="000000"
@@ -155,7 +234,7 @@ export function LoginForm({
             {activeSite.databaseLabel}
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className={cn("grid gap-2", sites.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
           {sites.map((item) => {
             const selected = item.key === site;
             return (

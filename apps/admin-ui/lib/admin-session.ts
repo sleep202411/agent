@@ -14,6 +14,7 @@ export type AdminSessionUser = {
   id: string;
   email: string;
   displayName: string;
+  avatarUrl?: string | null;
   status: string;
   siteScope: "global" | "cn" | "all";
   roleKeys: string[];

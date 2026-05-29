@@ -93,6 +93,10 @@ jobs:
             dockerfile: apps/web/Dockerfile
             image: fizzdragon-web
             needs_build_args: true
+          - service: admin-ui
+            dockerfile: apps/admin-ui/Dockerfile
+            image: fizzdragon-admin-ui
+            needs_build_args: true
           - service: server
             dockerfile: apps/server/Dockerfile
             image: fizzdragon-server
@@ -158,6 +162,8 @@ jobs:
             SERVER_URL=http://fizzdragon-server:3001
             JAVA_STUDIO_URL=${{ env.JAVA_STUDIO_URL }}
             JAVA_CONTENT_URL=${{ env.JAVA_CONTENT_URL }}
+            NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/admin
+            NEXT_PUBLIC_ADMIN_ENABLED_SITES=global
           cache-from: type=gha,scope=aks-${{ matrix.service }}
           cache-to: type=gha,scope=aks-${{ matrix.service }},mode=max
 
@@ -191,6 +197,7 @@ jobs:
         run: |
           # yq is preinstalled on ubuntu-latest (mikefarah build).
           yq -i ".web.image.tag = strenv(SHA)" "$CHART_VALUES"
+          yq -i ".adminUi.image.tag = strenv(SHA)" "$CHART_VALUES"
           yq -i ".server.image.tag = strenv(SHA)" "$CHART_VALUES"
           yq -i ".agent.image.tag = strenv(SHA)" "$CHART_VALUES"
           yq -i ".agentWorker.image.tag = strenv(SHA)" "$CHART_VALUES"
@@ -211,7 +218,7 @@ jobs:
           git add "$CHART_VALUES"
           git commit -m "ci(deploy): bump fizzdragon-com images to ${SHORT}
 
-          web/server/agent/agent-worker → ${SHA}
+          web/admin-ui/server/agent/agent-worker → ${SHA}
           ArgoCD will pick this up on next reconcile.
 
           [skip ci]"
@@ -242,7 +249,7 @@ jobs:
       - name: Prune old SHA tags per repo
         run: |
           set -e
-          for repo in fizzdragon-web fizzdragon-server fizzdragon-agent; do
+          for repo in fizzdragon-web fizzdragon-admin-ui fizzdragon-server fizzdragon-agent; do
             echo "::group::Pruning $repo"
             # Tags sorted newest-first, skip the first KEEP_LAST, skip :latest.
             mapfile -t to_delete < <(

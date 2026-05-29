@@ -13,6 +13,7 @@ export const AdminRoleKeySchema = z.enum([
   'admin',
   'operations',
 ]);
+export const AssignableAdminRoleKeySchema = z.enum(['admin', 'operations']);
 
 export const ListAdminUsersQuerySchema = z
   .object({
@@ -53,7 +54,7 @@ export const CreateAdminUserSchema = z
     password: z.string().min(8).max(200),
     displayName: z.string().trim().min(1).max(120),
     siteScope: AdminSiteScopeSchema.default('all'),
-    roleKey: AdminRoleKeySchema.default('operations'),
+    roleKey: AssignableAdminRoleKeySchema.default('operations'),
     requireMfa: z.boolean().default(true),
     status: AdminUserStatusSchema.default('active'),
   })
@@ -64,7 +65,7 @@ export const UpdateAdminUserSchema = z
   .object({
     displayName: z.string().trim().min(1).max(120).optional(),
     siteScope: AdminSiteScopeSchema.optional(),
-    roleKey: AdminRoleKeySchema.optional(),
+    roleKey: AssignableAdminRoleKeySchema.optional(),
     requireMfa: z.boolean().optional(),
     status: AdminUserStatusSchema.optional(),
   })

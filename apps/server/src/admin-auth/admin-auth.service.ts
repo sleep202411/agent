@@ -33,7 +33,12 @@ import {
   validateAdminPasswordPolicy,
   verifyAdminPassword,
 } from './admin-password';
-import type { AdminLoginInput, AdminMfaVerifyInput } from './dto';
+import type {
+  AdminLoginInput,
+  AdminMfaVerifyInput,
+  AdminPasswordChangeInput,
+  AdminProfileUpdateInput,
+} from './dto';
 import type {
   AdminActor,
   AdminAuthResult,
@@ -325,6 +330,7 @@ export class AdminAuthService implements OnModuleInit {
           id: actor.id,
           email: actor.email,
           displayName: actor.displayName,
+          avatarUrl: actor.avatarUrl,
           status: actor.status,
           siteScope: actor.siteScope,
           roleKeys: actor.roleKeys,
@@ -401,6 +407,161 @@ export class AdminAuthService implements OnModuleInit {
     });
   }
 
+  async updateOwnProfile(
+    actor: AdminActor,
+    input: AdminProfileUpdateInput,
+    context: AdminRequestContext,
+  ): Promise<AdminAuthResult> {
+    const before = await this.prisma.adminUser.findUniqueOrThrow({
+      where: { id: actor.id },
+      select: { id: true, email: true, displayName: true, avatarUrl: true },
+    });
+    const updated = await this.prisma.adminUser.update({
+      where: { id: actor.id },
+      data: {
+        displayName: input.displayName,
+        avatarUrl: input.avatarUrl,
+      },
+      include: adminUserInclude,
+    });
+    const nextActor = this.toActor(updated, actor.sessionId);
+    await this.writeAudit({
+      actor: nextActor,
+      action: 'admin.account.profile.update',
+      resourceType: 'admin_user',
+      resourceId: actor.id,
+      before: {
+        id: before.id,
+        email: before.email,
+        displayName: before.displayName,
+        avatarUrl: before.avatarUrl,
+      },
+      after: {
+        id: updated.id,
+        email: updated.email,
+        displayName: updated.displayName,
+        avatarUrl: updated.avatarUrl,
+      },
+      metadata: { fields: Object.keys(input) },
+      context,
+    });
+    return this.authResultForActor(nextActor);
+  }
+
+  async changeOwnPassword(
+    actor: AdminActor,
+    input: AdminPasswordChangeInput,
+    context: AdminRequestContext,
+  ): Promise<AdminAuthResult> {
+    const user = await this.prisma.adminUser.findUniqueOrThrow({
+      where: { id: actor.id },
+      include: adminUserInclude,
+    });
+    if (
+      !user.passwordHash ||
+      !verifyAdminPassword(input.currentPassword, user.passwordHash)
+    ) {
+      await this.writeAudit({
+        actor,
+        action: 'admin.account.password.change',
+        resourceType: 'admin_user',
+        resourceId: actor.id,
+        outcome: AdminAuditOutcome.failure,
+        reason: 'Invalid current password.',
+        context,
+      });
+      throw new UnauthorizedException({
+        code: 'ADMIN_CURRENT_PASSWORD_INVALID',
+        msg: '当前密码不正确。',
+      });
+    }
+    const previousHashes = await this.recentPasswordHashes(actor.id);
+    const issues = validateAdminPasswordPolicy({
+      password: input.newPassword,
+      email: user.email,
+      displayName: user.displayName,
+      previousHashes,
+    });
+    if (issues.length) {
+      throw new BadRequestException({
+        code: 'ADMIN_PASSWORD_POLICY_FAILED',
+        msg: issues.join(' '),
+        issues: issues.map((message) => ({ message })),
+      });
+    }
+    const passwordHash = hashAdminPassword(input.newPassword);
+    await this.prisma.$transaction([
+      this.prisma.adminUser.update({
+        where: { id: actor.id },
+        data: {
+          passwordHash,
+          passwordChangedAt: new Date(),
+          failedLoginCount: 0,
+          lockedUntil: null,
+        },
+      }),
+      this.prisma.adminPasswordHistory.create({
+        data: { userId: actor.id, passwordHash },
+      }),
+      this.prisma.adminSession.updateMany({
+        where: {
+          userId: actor.id,
+          id: { not: actor.sessionId },
+          status: AdminSessionStatus.active,
+        },
+        data: { status: AdminSessionStatus.revoked, revokedAt: new Date() },
+      }),
+    ]);
+    await this.writeAudit({
+      actor,
+      action: 'admin.account.password.change',
+      resourceType: 'admin_user',
+      resourceId: actor.id,
+      metadata: { revokedOtherSessions: true },
+      context,
+    });
+    const refreshed = await this.prisma.adminUser.findUniqueOrThrow({
+      where: { id: actor.id },
+      include: adminUserInclude,
+    });
+    return this.authResultForActor(this.toActor(refreshed, actor.sessionId));
+  }
+
+  async resetOwnMfa(
+    actor: AdminActor,
+    context: AdminRequestContext,
+  ): Promise<AdminAuthResult> {
+    const updated = await this.prisma.adminUser.update({
+      where: { id: actor.id },
+      data: {
+        requireMfa: true,
+        mfaSecretHash: null,
+        mfaEnabledAt: null,
+        failedLoginCount: 0,
+        lockedUntil: null,
+      },
+      include: adminUserInclude,
+    });
+    await this.prisma.adminSession.updateMany({
+      where: {
+        userId: actor.id,
+        id: { not: actor.sessionId },
+        status: AdminSessionStatus.active,
+      },
+      data: { status: AdminSessionStatus.revoked, revokedAt: new Date() },
+    });
+    const nextActor = this.toActor(updated, actor.sessionId);
+    await this.writeAudit({
+      actor: nextActor,
+      action: 'admin.account.mfa.reset',
+      resourceType: 'admin_user',
+      resourceId: actor.id,
+      metadata: { requireMfa: true },
+      context,
+    });
+    return this.authResultForActor(nextActor);
+  }
+
   async writeAudit(input: AuditInput): Promise<void> {
     await this.prisma.adminAuditLog.create({
       data: {
@@ -432,6 +593,7 @@ export class AdminAuthService implements OnModuleInit {
     return {
       id: user.id,
       email: user.email,
+      avatarUrl: user.avatarUrl,
       displayName: user.displayName,
       status: user.status,
       siteScope: user.siteScope as AdminSiteScopeValue,
@@ -441,6 +603,43 @@ export class AdminAuthService implements OnModuleInit {
       mfaEnabledAt: user.mfaEnabledAt?.toISOString() ?? null,
       permissions: [...permissions].sort(),
     };
+  }
+
+  private async authResultForActor(
+    actor: AdminActor,
+  ): Promise<AdminAuthResult> {
+    const session = await this.prisma.adminSession.findUnique({
+      where: { id: actor.sessionId },
+      select: { expiresAt: true },
+    });
+    return {
+      user: {
+        id: actor.id,
+        email: actor.email,
+        displayName: actor.displayName,
+        avatarUrl: actor.avatarUrl,
+        status: actor.status,
+        siteScope: actor.siteScope,
+        roleKeys: actor.roleKeys,
+        requireMfa: actor.requireMfa,
+        mfaEnabledAt: actor.mfaEnabledAt,
+        permissions: actor.permissions,
+      },
+      session: {
+        id: actor.sessionId,
+        expiresAt: session?.expiresAt.toISOString() ?? '',
+      },
+    };
+  }
+
+  private async recentPasswordHashes(userId: string) {
+    const history = await this.prisma.adminPasswordHistory.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: { passwordHash: true },
+    });
+    return history.map((item) => item.passwordHash);
   }
 
   private async assertLoginTrafficAllowed(

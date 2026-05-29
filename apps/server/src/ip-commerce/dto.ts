@@ -1,13 +1,5 @@
 import { z } from 'zod';
-
-export const IpCommerceSiteRegionSchema = z.enum(['global', 'cn']);
-export const IpImportSourceSystemSchema = z.enum([
-  'java_content',
-  'java_studio',
-  'admin_csv',
-  'manual',
-]);
-export const IpCommerceContentTypeSchema = z.enum([
+export const IpContentTypeSchema = z.enum([
   'series',
   'interactive_film',
   'film',
@@ -15,7 +7,7 @@ export const IpCommerceContentTypeSchema = z.enum([
   'collection',
   'other',
 ]);
-export const IpCommerceTargetTypeSchema = z.enum(['title', 'episode']);
+export const IpTargetTypeSchema = z.enum(['title', 'episode']);
 export const IpReportReasonSchema = z.enum([
   'copyright',
   'unsafe_content',
@@ -60,33 +52,38 @@ export const IpModerationActionTypeSchema = z.enum([
   'approve',
 ]);
 
-const UuidListFromQuerySchema = z.preprocess((value) => {
+function queryValueParts(value: unknown): string[] {
   if (value == null || value === '') return [];
   if (Array.isArray(value)) {
-    return value.flatMap((item) =>
-      String(item)
-        .split(',')
-        .map((part) => part.trim())
-        .filter(Boolean),
-    );
+    return value.flatMap((item) => queryValueParts(item));
+  }
+  if (
+    typeof value !== 'string' &&
+    typeof value !== 'number' &&
+    typeof value !== 'boolean'
+  ) {
+    return [];
   }
   return String(value)
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
-}, z.array(z.string().uuid()).max(100).default([]));
+}
+
+const UuidListFromQuerySchema = z.preprocess(
+  queryValueParts,
+  z.array(z.string().uuid()).max(100).default([]),
+);
 
 export const ListIpTitlesQuerySchema = z.object({
-  siteRegion: IpCommerceSiteRegionSchema.optional(),
-  contentType: IpCommerceContentTypeSchema.optional(),
+  contentType: IpContentTypeSchema.optional(),
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 export type ListIpTitlesQuery = z.infer<typeof ListIpTitlesQuerySchema>;
 
 export const ListAdminIpTitlesQuerySchema = z.object({
-  siteRegion: IpCommerceSiteRegionSchema.optional(),
-  contentType: IpCommerceContentTypeSchema.optional(),
+  contentType: IpContentTypeSchema.optional(),
   status: IpPublicationStatusSchema.optional(),
   listingVisibility: IpListingVisibilitySchema.optional(),
   q: z.string().trim().min(1).max(120).optional(),
@@ -148,30 +145,17 @@ export type ResolveAdminIpReportInput = z.infer<
 >;
 
 export const IpTitleAccessQuerySchema = z.object({
-  siteRegion: IpCommerceSiteRegionSchema.optional(),
   episodeIds: UuidListFromQuerySchema,
 });
 export type IpTitleAccessQuery = z.infer<typeof IpTitleAccessQuerySchema>;
 
-export const IpLegacyTitleParamsSchema = z.object({
-  sourceEntityId: z.string().trim().min(1).max(128),
-});
-export type IpLegacyTitleParams = z.infer<typeof IpLegacyTitleParamsSchema>;
-
-export const IpLegacyTitleQuerySchema = z.object({
-  sourceSystem: IpImportSourceSystemSchema.default('java_content'),
-  siteRegion: IpCommerceSiteRegionSchema.optional(),
-});
-export type IpLegacyTitleQuery = z.infer<typeof IpLegacyTitleQuerySchema>;
-
 export const CreateIpPurchaseSchema = z
   .object({
     titleId: z.string().uuid(),
-    targetType: IpCommerceTargetTypeSchema,
+    targetType: IpTargetTypeSchema,
     episodeId: z.string().uuid().optional(),
     priceRuleId: z.string().uuid().optional(),
     referralCode: z.string().trim().min(1).max(64).optional(),
-    siteRegion: IpCommerceSiteRegionSchema.optional(),
     idempotencyKey: z.string().trim().min(8).max(160),
   })
   .superRefine((value, ctx) => {

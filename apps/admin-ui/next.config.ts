@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
+const rawBasePath = process.env.NEXT_PUBLIC_ADMIN_UI_BASE_PATH?.trim() ?? "";
+const basePath = rawBasePath === "/" ? "" : rawBasePath.replace(/\/+$/, "");
+
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "standalone",
+  ...(basePath ? { basePath } : {}),
 };
 
 export default nextConfig;

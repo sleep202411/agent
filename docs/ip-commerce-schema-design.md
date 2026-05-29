@@ -4,8 +4,7 @@
 产品级内容商业化模型，支撑社区积分、预售、购买权益、创作者收益、
 引荐、审核、版权声明、举报与屏蔽。
 
-旧系统只作为导入来源存在。新模型不迁就、不复刻 Java 侧已有的项目、
-剧集、价格表结构。
+新模型不迁就、不复刻旧项目、剧集、价格表结构。
 
 ## 设计边界
 
@@ -18,9 +17,8 @@ AI job、团队协作。
 这意味着：
 
 - 项目协作者不自动等于 IP 公开创作者。
-- IP 可以从旧系统导入，也可以从新的 PlatformProject 生成。
-- 购买、权益、分润、审核都围绕 `IpTitle` / `IpEpisode`，不围绕 Java
-  project id。
+- IP 可以从新的 `PlatformProject` 生成，也可以由后台直接创建。
+- 购买、权益、分润、审核都围绕 `IpTitle` / `IpEpisode`，不围绕旧项目 ID。
 
 ## 核心闭环
 
@@ -75,7 +73,8 @@ linear node；互动内容可以通过 choice 连接多个 node。
 - `episode`：单集价。
 
 价格使用 `WalletCurrencyType`，当前主要是 `community_point`。表中保留
-`site_region`，支持 `.com` / `.cn` 两套部署配置不同价格或不同活动。
+的是当前部署数据库内的价格；国际站和中国站使用不同数据库，不在同一张
+业务表里混放不同站点的价格或活动。
 
 ## 购买和权益
 
@@ -153,27 +152,23 @@ age_gate、restore 等。
 
 用户级屏蔽 / 不感兴趣。它只影响该用户自己的推荐和展示，不等于平台下架。
 
-## 导入迁移策略
+## 数据录入策略
 
-迁移是一个导入流程，不是数据模型兼容层。目标库只保存产品定义后的
-标准结构：
+IP 商业化模块不建旧系统兼容层。目标库只保存产品定义后的标准结构：
 
-1. 前端提供“迁移 / 导入”入口，让用户选择要迁移的旧项目或旧内容。
-2. 前端只负责触发任务和展示进度，不直接编排多接口写库。
-3. Nest 创建 `IpImportRun`，后台调用旧系统相关接口，聚合并归一化数据。
-4. Nest 将旧系统返回的数据写入新的 `IpTitle` / `IpEpisode` / `IpPriceRule`
-   等标准表。
-5. `IpImportMap` 只用于记录旧来源到新实体的映射、幂等键、checksum 和
-   `sourceSnapshot`，方便重跑、排查和增量同步。
-6. 如果旧内容已经对应一个新的生产项目，再写入 `source_project_id`。
-7. 新购买、新权益、新价格、新审核全部走 Nest + Postgres。
+1. 后台或创作工作流直接创建 `IpTitle` / `IpEpisode` / `IpPriceRule` 等标准表。
+2. 如果内容来源于新的生产项目，只通过 `source_project_id` 关联
+   `PlatformProject`。
+3. 新购买、新权益、新价格、新审核全部走 Nest + Postgres。
+4. 批量导入如果未来成为产品需求，应按 CSV / 管理台任务单独设计，不把
+   旧来源 ID 或旧接口映射写进核心 schema。
 
-这个设计保证核心表不会出现 `legacy_project_id`、`priceType`、`targetId`
-这类旧系统概念。旧系统结构只停留在导入映射和原始快照里。
+这个设计保证核心表不会出现旧项目 ID、`priceType`、`targetId`
+这类旧系统概念，也不会为任何旧系统保留专用映射表。
 
 ## 不做的事
 
 - 不把 IP 建成 `PlatformProject.projectType = ip`。
 - 不把社区积分消费塞进 `BillingOrder`。
 - 不把已购状态写到 IP 或 episode 行上。
-- 不让前端理解 Java 的 priceType / targetId 设计。
+- 不让前端理解旧价格接口的 `priceType` / `targetId` 设计。

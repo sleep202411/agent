@@ -3,9 +3,7 @@
 -- The platform owns product catalog, order state, payment sessions,
 -- provider webhooks, wallet fulfillment, and entitlement grants. Payment
 -- providers are adapters. Airwallex is the first .com adapter; WeChat Pay
--- can later attach to the same order / webhook / ledger model.
-
-CREATE TYPE "BillingSiteRegion" AS ENUM ('global', 'cn');
+-- attaches through provider binding rows in the China deployment database.
 
 CREATE TYPE "BillingSubjectType" AS ENUM ('user', 'workspace');
 
@@ -44,6 +42,13 @@ CREATE TYPE "PaymentProvider" AS ENUM (
   'wechat_pay',
   'manual',
   'internal'
+);
+
+CREATE TYPE "BillingProviderBindingStatus" AS ENUM (
+  'active',
+  'inactive',
+  'sync_pending',
+  'sync_failed'
 );
 
 CREATE TYPE "PaymentIntentKind" AS ENUM (
@@ -85,7 +90,6 @@ CREATE TYPE "EntitlementGrantStatus" AS ENUM (
 
 CREATE TABLE "billing_catalog_items" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
-  "site_region" "BillingSiteRegion" NOT NULL DEFAULT 'global',
   "product_type" "BillingProductType" NOT NULL,
   "code" VARCHAR(96) NOT NULL,
   "name" VARCHAR(160) NOT NULL,
@@ -104,17 +108,15 @@ CREATE TABLE "billing_catalog_items" (
 CREATE TABLE "billing_prices" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
   "item_id" UUID NOT NULL,
-  "provider" "PaymentProvider" NOT NULL,
-  "provider_price_id" VARCHAR(128),
   "currency" CHAR(3) NOT NULL,
   "amount_minor" BIGINT NOT NULL,
   "interval" "BillingPriceInterval" NOT NULL DEFAULT 'one_time',
   "subject_type" "BillingSubjectType" NOT NULL DEFAULT 'user',
   "grants_wallet_currency" "WalletCurrencyType",
+  "grants_wallet_balance_kind" "WalletBalanceKind",
   "grants_wallet_amount" BIGINT,
   "grants_plan_key" VARCHAR(64),
   "grant_duration_days" INTEGER,
-  "provider_mode" VARCHAR(32),
   "is_active" BOOLEAN NOT NULL DEFAULT true,
   "metadata" JSONB NOT NULL DEFAULT '{}',
   "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -126,25 +128,53 @@ CREATE TABLE "billing_prices" (
   CONSTRAINT "billing_prices_currency_upper" CHECK ("currency" = upper("currency")),
   CONSTRAINT "billing_prices_wallet_grant_pair"
     CHECK (
-      ("grants_wallet_currency" IS NULL AND "grants_wallet_amount" IS NULL)
-      OR ("grants_wallet_currency" IS NOT NULL AND "grants_wallet_amount" > 0)
+      (
+        "grants_wallet_currency" IS NULL
+        AND "grants_wallet_balance_kind" IS NULL
+        AND "grants_wallet_amount" IS NULL
+      )
+      OR (
+        "grants_wallet_currency" IS NOT NULL
+        AND "grants_wallet_balance_kind" = 'consumable'
+        AND "grants_wallet_amount" > 0
+      )
     ),
   CONSTRAINT "billing_prices_duration_positive"
     CHECK ("grant_duration_days" IS NULL OR "grant_duration_days" > 0)
 );
 
+CREATE TABLE "billing_provider_price_bindings" (
+  "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+  "price_id" UUID NOT NULL,
+  "provider" "PaymentProvider" NOT NULL,
+  "provider_product_id" VARCHAR(128),
+  "provider_price_id" VARCHAR(128),
+  "provider_mode" VARCHAR(32),
+  "status" "BillingProviderBindingStatus" NOT NULL DEFAULT 'active',
+  "sync_error" TEXT,
+  "provider_payload" JSONB NOT NULL DEFAULT '{}',
+  "metadata" JSONB NOT NULL DEFAULT '{}',
+  "last_synced_at" TIMESTAMPTZ(6),
+  "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "archived_at" TIMESTAMPTZ(6),
+
+  CONSTRAINT "billing_provider_price_bindings_pkey" PRIMARY KEY ("id")
+);
+
 CREATE TABLE "billing_orders" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
   "order_no" VARCHAR(64) NOT NULL,
+  "idempotency_key" VARCHAR(160) NOT NULL,
   "user_id" VARCHAR(64) NOT NULL,
   "workspace_id" UUID,
   "subject_type" "BillingSubjectType" NOT NULL,
   "subject_id" VARCHAR(64) NOT NULL,
-  "site_region" "BillingSiteRegion" NOT NULL DEFAULT 'global',
   "order_type" "BillingOrderType" NOT NULL,
   "status" "BillingOrderStatus" NOT NULL DEFAULT 'draft',
   "item_id" UUID NOT NULL,
   "price_id" UUID NOT NULL,
+  "provider_binding_id" UUID,
   "provider" "PaymentProvider" NOT NULL,
   "currency" CHAR(3) NOT NULL,
   "amount_minor" BIGINT NOT NULL,
@@ -160,6 +190,7 @@ CREATE TABLE "billing_orders" (
   "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   CONSTRAINT "billing_orders_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "billing_orders_idempotency_key_nonempty" CHECK (btrim("idempotency_key") <> ''),
   CONSTRAINT "billing_orders_amount_positive" CHECK ("amount_minor" > 0),
   CONSTRAINT "billing_orders_quantity_positive" CHECK ("quantity" > 0),
   CONSTRAINT "billing_orders_currency_upper" CHECK ("currency" = upper("currency"))
@@ -255,6 +286,11 @@ ALTER TABLE "billing_prices"
   FOREIGN KEY ("item_id") REFERENCES "billing_catalog_items"("id")
   ON DELETE CASCADE ON UPDATE CASCADE;
 
+ALTER TABLE "billing_provider_price_bindings"
+  ADD CONSTRAINT "billing_provider_price_bindings_price_id_fkey"
+  FOREIGN KEY ("price_id") REFERENCES "billing_prices"("id")
+  ON DELETE CASCADE ON UPDATE CASCADE;
+
 ALTER TABLE "billing_orders"
   ADD CONSTRAINT "billing_orders_workspace_id_fkey"
   FOREIGN KEY ("workspace_id") REFERENCES "workspaces"("id")
@@ -269,6 +305,11 @@ ALTER TABLE "billing_orders"
   ADD CONSTRAINT "billing_orders_price_id_fkey"
   FOREIGN KEY ("price_id") REFERENCES "billing_prices"("id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "billing_orders"
+  ADD CONSTRAINT "billing_orders_provider_binding_id_fkey"
+  FOREIGN KEY ("provider_binding_id") REFERENCES "billing_provider_price_bindings"("id")
+  ON DELETE SET NULL ON UPDATE CASCADE;
 
 ALTER TABLE "billing_payment_intents"
   ADD CONSTRAINT "billing_payment_intents_order_id_fkey"
@@ -290,15 +331,22 @@ ALTER TABLE "billing_subscriptions"
   FOREIGN KEY ("price_id") REFERENCES "billing_prices"("id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
 
-CREATE UNIQUE INDEX "billing_catalog_items_region_code_unique"
-  ON "billing_catalog_items" ("site_region", "code");
+CREATE UNIQUE INDEX "billing_catalog_items_code_unique"
+  ON "billing_catalog_items" ("code");
 
-CREATE UNIQUE INDEX "billing_prices_active_provider_price_unique"
-  ON "billing_prices" ("provider", "provider_price_id")
+CREATE UNIQUE INDEX "billing_provider_bindings_price_provider_active_unique"
+  ON "billing_provider_price_bindings" ("price_id", "provider")
+  WHERE "archived_at" IS NULL;
+
+CREATE UNIQUE INDEX "billing_provider_bindings_provider_price_unique"
+  ON "billing_provider_price_bindings" ("provider", "provider_price_id")
   WHERE "provider_price_id" IS NOT NULL AND "archived_at" IS NULL;
 
 CREATE UNIQUE INDEX "billing_orders_order_no_unique"
   ON "billing_orders" ("order_no");
+
+CREATE UNIQUE INDEX "billing_orders_user_idempotency_unique"
+  ON "billing_orders" ("user_id", "idempotency_key");
 
 CREATE UNIQUE INDEX "billing_payment_intents_request_id_unique"
   ON "billing_payment_intents" ("request_id");
@@ -313,17 +361,26 @@ CREATE UNIQUE INDEX "billing_subscriptions_provider_subscription_unique"
 CREATE UNIQUE INDEX "entitlement_grants_source_unique"
   ON "entitlement_grants" ("source_type", "source_id");
 
-CREATE INDEX "billing_catalog_items_region_type_idx"
-  ON "billing_catalog_items" ("site_region", "product_type", "is_active");
+CREATE INDEX "billing_catalog_items_type_idx"
+  ON "billing_catalog_items" ("product_type", "is_active");
 
 CREATE INDEX "billing_prices_item_active_idx"
   ON "billing_prices" ("item_id", "is_active");
 
-CREATE INDEX "billing_prices_provider_price_idx"
-  ON "billing_prices" ("provider", "provider_price_id");
-
 CREATE INDEX "billing_prices_currency_amount_idx"
   ON "billing_prices" ("currency", "amount_minor");
+
+CREATE INDEX "billing_provider_bindings_price_status_idx"
+  ON "billing_provider_price_bindings" ("price_id", "status");
+
+CREATE INDEX "billing_provider_bindings_provider_status_idx"
+  ON "billing_provider_price_bindings" ("provider", "status");
+
+CREATE INDEX "billing_provider_bindings_provider_product_idx"
+  ON "billing_provider_price_bindings" ("provider", "provider_product_id");
+
+CREATE INDEX "billing_provider_bindings_provider_price_idx"
+  ON "billing_provider_price_bindings" ("provider", "provider_price_id");
 
 CREATE INDEX "billing_orders_user_recent_idx"
   ON "billing_orders" ("user_id", "created_at" DESC);
@@ -336,6 +393,9 @@ CREATE INDEX "billing_orders_status_recent_idx"
 
 CREATE INDEX "billing_orders_subject_recent_idx"
   ON "billing_orders" ("subject_type", "subject_id", "created_at" DESC);
+
+CREATE INDEX "billing_orders_provider_binding_recent_idx"
+  ON "billing_orders" ("provider_binding_id", "created_at" DESC);
 
 CREATE INDEX "billing_payment_intents_order_idx"
   ON "billing_payment_intents" ("order_id", "created_at" DESC);

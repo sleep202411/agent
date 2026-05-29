@@ -21,7 +21,8 @@ CREATE TYPE "PlatformDocumentCommentStatus" AS ENUM ('open', 'resolved');
 CREATE TYPE "ProjectAssetType" AS ENUM ('image', 'video', 'audio', 'file', 'document', 'model');
 CREATE TYPE "ProjectAssetSourceType" AS ENUM ('upload', 'ai_job', 'import', 'manual');
 CREATE TYPE "WalletOwnerType" AS ENUM ('user', 'workspace');
-CREATE TYPE "WalletCurrencyType" AS ENUM ('bubble', 'community_point', 'revenue_credit');
+CREATE TYPE "WalletCurrencyType" AS ENUM ('bubble', 'community_point');
+CREATE TYPE "WalletBalanceKind" AS ENUM ('consumable', 'withdrawable');
 CREATE TYPE "WalletAccountStatus" AS ENUM ('active', 'frozen', 'closed');
 CREATE TYPE "WalletTransactionStatus" AS ENUM ('pending', 'posted', 'voided', 'failed');
 CREATE TYPE "WalletLedgerEntryType" AS ENUM ('credit', 'debit', 'hold', 'release', 'settle', 'refund', 'adjustment', 'transfer_in', 'transfer_out');
@@ -444,6 +445,7 @@ CREATE TABLE "wallet_accounts" (
   "owner_type" "WalletOwnerType" NOT NULL,
   "owner_id" VARCHAR(64) NOT NULL,
   "currency" "WalletCurrencyType" NOT NULL,
+  "balance_kind" "WalletBalanceKind" NOT NULL DEFAULT 'consumable',
   "status" "WalletAccountStatus" NOT NULL DEFAULT 'active',
   "available_balance" BIGINT NOT NULL DEFAULT 0,
   "held_balance" BIGINT NOT NULL DEFAULT 0,
@@ -453,14 +455,16 @@ CREATE TABLE "wallet_accounts" (
   "closed_at" TIMESTAMPTZ(6),
 
   CONSTRAINT "wallet_accounts_nonnegative_balance_chk"
-    CHECK ("available_balance" >= 0 AND "held_balance" >= 0)
+    CHECK ("available_balance" >= 0 AND "held_balance" >= 0),
+  CONSTRAINT "wallet_accounts_kind_currency_chk"
+    CHECK ("currency" <> 'bubble' OR "balance_kind" = 'consumable')
 );
 
-CREATE UNIQUE INDEX "wallet_accounts_owner_currency_unique"
-  ON "wallet_accounts" ("owner_type", "owner_id", "currency");
+CREATE UNIQUE INDEX "wallet_accounts_owner_currency_kind_unique"
+  ON "wallet_accounts" ("owner_type", "owner_id", "currency", "balance_kind");
 
 CREATE INDEX "wallet_accounts_owner_status_idx"
-  ON "wallet_accounts" ("owner_type", "owner_id", "status");
+  ON "wallet_accounts" ("owner_type", "owner_id", "status", "balance_kind");
 
 CREATE TABLE "wallet_transactions" (
   "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -496,6 +500,7 @@ CREATE TABLE "wallet_ledger_entries" (
   "account_id" UUID NOT NULL,
   "entry_type" "WalletLedgerEntryType" NOT NULL,
   "currency" "WalletCurrencyType" NOT NULL,
+  "balance_kind" "WalletBalanceKind" NOT NULL,
   "amount" BIGINT NOT NULL,
   "available_delta" BIGINT NOT NULL,
   "held_delta" BIGINT NOT NULL,

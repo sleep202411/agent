@@ -12,35 +12,20 @@ import {
   unblockIpContent,
   type CreateIpPurchaseInput,
   type CreateIpReportInput,
-  type IpCommerceSiteRegion,
   type UpsertIpBlockInput,
 } from "./api";
 
 export const ipCommerceKeys = {
   all: ["ip-commerce"] as const,
-  titles: (params?: {
-    siteRegion?: IpCommerceSiteRegion;
-    contentType?: string;
-    cursor?: string;
-    limit?: number;
-  }) => ["ip-commerce", "titles", params ?? {}] as const,
-  titleAccess: (
-    titleId: string,
-    params?: { siteRegion?: IpCommerceSiteRegion; episodeIds?: readonly string[] }
-  ) =>
-    [
-      "ip-commerce",
-      "title-access",
-      titleId,
-      params?.siteRegion ?? null,
-      params?.episodeIds?.join(",") ?? "",
-    ] as const,
+  titles: (params?: { contentType?: string; cursor?: string; limit?: number }) =>
+    ["ip-commerce", "titles", params ?? {}] as const,
+  titleAccess: (titleId: string, params?: { episodeIds?: readonly string[] }) =>
+    ["ip-commerce", "title-access", titleId, params?.episodeIds?.join(",") ?? ""] as const,
   wallet: ["ip-commerce", "wallet"] as const,
   collection: ["ip-commerce", "collection"] as const,
 };
 
 export function useIpCommerceTitles(params?: {
-  siteRegion?: IpCommerceSiteRegion;
   contentType?: string;
   cursor?: string;
   limit?: number;
@@ -54,13 +39,12 @@ export function useIpCommerceTitles(params?: {
 
 export function useIpTitleAccess(
   titleId: string | null | undefined,
-  params?: { siteRegion?: IpCommerceSiteRegion; episodeIds?: readonly string[] }
+  params?: { episodeIds?: readonly string[] }
 ) {
   return useQuery({
     queryKey: ipCommerceKeys.titleAccess(titleId ?? "", params),
     queryFn: () =>
       getIpTitleAccess(titleId!, {
-        siteRegion: params?.siteRegion,
         episodeIds: params?.episodeIds ? [...params.episodeIds] : undefined,
       }),
     enabled: Boolean(titleId),
@@ -79,7 +63,9 @@ export function useIpCommerceWallet(enabled = true) {
 
 export function useCommunityPointBalance(enabled = true) {
   const query = useIpCommerceWallet(enabled);
-  const account = query.data?.accounts.find((item) => item.currency === "community_point");
+  const account = query.data?.accounts.find(
+    (item) => item.currency === "community_point" && item.balanceKind === "consumable"
+  );
   return {
     ...query,
     balance: account?.availableBalance ?? "0",

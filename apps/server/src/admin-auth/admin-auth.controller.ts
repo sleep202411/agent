@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Patch,
   Post,
   Req,
   Res,
@@ -19,8 +20,12 @@ import type { AdminActor } from './admin-auth.types';
 import {
   AdminLoginSchema,
   AdminMfaVerifySchema,
+  AdminPasswordChangeSchema,
+  AdminProfileUpdateSchema,
   type AdminLoginInput,
   type AdminMfaVerifyInput,
+  type AdminPasswordChangeInput,
+  type AdminProfileUpdateInput,
 } from './dto';
 
 @Public()
@@ -70,6 +75,7 @@ export class AdminAuthController {
           id: admin.id,
           email: admin.email,
           displayName: admin.displayName,
+          avatarUrl: admin.avatarUrl,
           status: admin.status,
           siteScope: admin.siteScope,
           roleKeys: admin.roleKeys,
@@ -81,6 +87,56 @@ export class AdminAuthController {
           id: admin.sessionId,
         },
       },
+    };
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Patch('me/profile')
+  async updateProfile(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(AdminProfileUpdateSchema))
+    body: AdminProfileUpdateInput,
+    @Req() request: Request,
+  ) {
+    return {
+      code: 200,
+      data: await this.adminAuth.updateOwnProfile(
+        admin,
+        body,
+        requestContext(request),
+      ),
+    };
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Post('me/password')
+  @HttpCode(200)
+  async changePassword(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(AdminPasswordChangeSchema))
+    body: AdminPasswordChangeInput,
+    @Req() request: Request,
+  ) {
+    return {
+      code: 200,
+      data: await this.adminAuth.changeOwnPassword(
+        admin,
+        body,
+        requestContext(request),
+      ),
+    };
+  }
+
+  @UseGuards(AdminAuthGuard)
+  @Post('me/mfa/reset')
+  @HttpCode(200)
+  async resetOwnMfa(
+    @CurrentAdmin() admin: AdminActor,
+    @Req() request: Request,
+  ) {
+    return {
+      code: 200,
+      data: await this.adminAuth.resetOwnMfa(admin, requestContext(request)),
     };
   }
 

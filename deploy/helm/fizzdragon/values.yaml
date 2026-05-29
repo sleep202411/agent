@@ -49,6 +49,7 @@ ingress:
       secretName: fizzdragon-tls
       certManager: "" # empty = use pre-uploaded Secret, no cert-manager involvement
       rewriteTarget: "" # no path rewrite, serve full Next.js app
+      adminUi: true
     - name: studio
       # New dedicated subdomain for art-studio. Testing-phase: serves the
       # full web app (same as main host) so we can browser-verify the AKS
@@ -59,6 +60,7 @@ ingress:
       secretName: fizzdragon-studio-tls
       certManager: ""
       rewriteTarget: ""
+      adminUi: false
 # ---------------------------------------------------------------------------
 # Shared environment (non-secret config) injected into every app pod
 # that needs it. Secrets live in Key Vault, see secretProviderClass below.
@@ -116,6 +118,23 @@ secrets:
       env: REDIS_ADDRESS
     - kv: redis-password
       env: REDIS_PASSWORD
+# Server-only secrets. Keep payment provider credentials out of web, agent,
+# and worker pods; only NestJS billing routes need these values.
+serverSecrets:
+  projectedName: fizzdragon-server-secrets
+  mapping:
+    - kv: airwallex-client-id
+      env: AIRWALLEX_CLIENT_ID
+    - kv: airwallex-api-key
+      env: AIRWALLEX_API_KEY
+    - kv: airwallex-login-as-account-id
+      env: AIRWALLEX_LOGIN_AS_ACCOUNT_ID
+    - kv: airwallex-linked-payment-account-id
+      env: AIRWALLEX_LINKED_PAYMENT_ACCOUNT_ID
+    - kv: airwallex-webhook-secret
+      env: AIRWALLEX_WEBHOOK_SECRET
+    - kv: admin-mfa-secret-key
+      env: ADMIN_MFA_SECRET_KEY
 # ---------------------------------------------------------------------------
 # web — Next.js front-of-stack. Public via Ingress.
 # ---------------------------------------------------------------------------
@@ -124,13 +143,51 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: review-dialog-20260528
+    tag: manual-20260529115053-96cb2cd
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
+  nodeSelector:
+    pool: worker
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: worker
+      effect: NoSchedule
+# ---------------------------------------------------------------------------
+# admin-ui — internal operations console. Public host is temporary:
+# https://fizzstudio.fizzdragon.com/admin
+# Keep the ingress fail-closed until operator public IP CIDRs are set.
+# ---------------------------------------------------------------------------
+adminUi:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: fizzdragon-admin-ui
+    tag: manual-20260529141041-96cb2cd
+  containerPort: 3000
+  readinessPath: /admin/login
+  livenessPath: /admin/login
+  ingress:
+    enabled: true
+    path: /admin(/|$)(.*)
+    # Fail-closed default. Replace with operator public CIDRs before opening
+    # production access, e.g. ["203.0.113.10/32"].
+    allowedCidrs:
+      - 31.205.217.189/32
+  env:
+    PORT: "3000"
+    HOSTNAME: "0.0.0.0"
+    NEXT_PUBLIC_ADMIN_UI_BASE_PATH: /admin
+    NEXT_PUBLIC_ADMIN_ENABLED_SITES: global
+    ADMIN_GLOBAL_API_BASE_URL: http://fizzdragon-server:3001/admin
+    ADMIN_API_BASE_URL: http://fizzdragon-server:3001/admin
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -147,7 +204,7 @@ server:
   migrateOnStart: true
   image:
     repository: fizzdragon-server
-    tag: review-dialog-deeplink-20260528
+    tag: manual-20260529141041-96cb2cd
   containerPort: 3001
   env:
     PORT: "3001"
@@ -156,9 +213,11 @@ server:
     MASTRA_URL: http://fizzdragon-agent:4111
     DISABLE_CONTENT_MODERATION: "false"
     AUTH_DISABLED: "false"
+    PAYMENT_PROVIDER: airwallex
+    AIRWALLEX_API_BASE_URL: https://api.airwallex.com
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {cpu: 1000m, memory: 1Gi}
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1000m, memory: 1Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -188,8 +247,8 @@ agent:
     # after Tier 3 upgrade 2026-05-23. See model-hardening.ts (RateLimiter).
     STORYOS_CLAUDE_MAX_CONCURRENCY: "20"
   resources:
-    requests: {cpu: 250m, memory: 1Gi}
-    limits: {cpu: 2000m, memory: 3Gi}
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { cpu: 2000m, memory: 3Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -228,8 +287,8 @@ agentWorker:
   # ~50MB per in-flight workflow, working set ~750MB + base 500MB ≈ 1.5Gi.
   # 3Gi limit leaves headroom for bulk phases (storyboard 30 shots batched).
   resources:
-    requests: {cpu: 500m, memory: 1Gi}
-    limits: {cpu: 1500m, memory: 3Gi}
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: 1500m, memory: 3Gi }
   nodeSelector:
     pool: worker
   tolerations:

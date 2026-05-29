@@ -1,5 +1,10 @@
 import type { NextRequest } from "next/server";
-import { ADMIN_SITE_COOKIE, adminApiUrl, normalizeAdminSiteKey } from "./admin-api";
+import {
+  ADMIN_SITE_COOKIE,
+  adminApiUrl,
+  adminCookiePath,
+  normalizeAdminSiteKey,
+} from "./admin-api";
 
 type ForwardOptions = {
   json?: boolean;
@@ -38,10 +43,17 @@ export async function relayAdminResponse(upstream: Response): Promise<Response> 
     },
   });
   const setCookie = upstream.headers.get("set-cookie");
-  if (setCookie) response.headers.append("set-cookie", setCookie);
+  if (setCookie) response.headers.append("set-cookie", scopeAdminCookie(setCookie));
   return response;
 }
 
 export function adminUnavailableResponse() {
   return Response.json({ code: 503, msg: "后台服务暂时不可用，请稍后重试。" }, { status: 503 });
+}
+
+function scopeAdminCookie(setCookie: string): string {
+  const path = adminCookiePath();
+  return /;\s*Path=/i.test(setCookie)
+    ? setCookie.replace(/;\s*Path=[^;]*/i, `; Path=${path}`)
+    : `${setCookie}; Path=${path}`;
 }

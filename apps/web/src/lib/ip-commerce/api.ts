@@ -1,7 +1,6 @@
 import { api } from "@/src/lib/api";
 
-export type IpCommerceSiteRegion = "global" | "cn";
-export type IpCommerceTargetType = "title" | "episode";
+export type IpTargetType = "title" | "episode";
 export type IpCommerceAccess =
   | "free"
   | "free_preview"
@@ -27,8 +26,8 @@ export interface IpCommerceAsset {
 
 export interface IpCommercePriceRule {
   id: string;
-  targetType: IpCommerceTargetType;
-  currency: "community_point" | "bubble" | "revenue_credit";
+  targetType: IpTargetType;
+  currency: "community_point" | "bubble";
   amount: string;
   originalAmount: string | null;
   campaignId: string | null;
@@ -83,7 +82,6 @@ export interface IpCommerceTitle {
     id: string;
     campaignType: string;
     status: string;
-    siteRegion: IpCommerceSiteRegion;
     code: string;
     name: string;
     startsAt: string | null;
@@ -97,7 +95,8 @@ export interface IpCommerceWalletAccount {
   id: string;
   ownerType: "user" | "workspace";
   ownerId: string;
-  currency: "bubble" | "community_point" | "revenue_credit";
+  currency: "bubble" | "community_point";
+  balanceKind: "consumable" | "withdrawable";
   status: "active" | "frozen" | "closed";
   availableBalance: string;
   heldBalance: string;
@@ -108,6 +107,7 @@ export interface IpTitleAccess {
   authenticated: boolean;
   wallet: {
     currency: "community_point";
+    balanceKind: "consumable";
     status: string;
     availableBalance: string;
     heldBalance: string;
@@ -134,7 +134,7 @@ export interface IpContentEntitlement {
   subjectId: string;
   titleId: string;
   episodeId: string | null;
-  targetType: IpCommerceTargetType;
+  targetType: IpTargetType;
   status: string;
   sourceType: string;
   sourceId: string;
@@ -150,7 +150,7 @@ export interface IpPurchaseOrder {
   workspaceId: string | null;
   titleId: string;
   episodeId: string | null;
-  targetType: IpCommerceTargetType;
+  targetType: IpTargetType;
   currency: string;
   priceAmount: string;
   discountAmount: string;
@@ -167,11 +167,10 @@ export interface IpPurchaseOrder {
 
 export interface CreateIpPurchaseInput {
   titleId: string;
-  targetType: IpCommerceTargetType;
+  targetType: IpTargetType;
   episodeId?: string;
   priceRuleId?: string;
   referralCode?: string;
-  siteRegion?: IpCommerceSiteRegion;
   idempotencyKey: string;
 }
 
@@ -197,7 +196,6 @@ export interface UpsertIpBlockInput {
 }
 
 export function listIpCommerceTitles(params?: {
-  siteRegion?: IpCommerceSiteRegion;
   contentType?: string;
   cursor?: string;
   limit?: number;
@@ -214,32 +212,11 @@ export function getIpCommerceTitle(titleId: string) {
   );
 }
 
-export function getIpCommerceTitleByLegacyId(
-  sourceEntityId: string,
-  params?: { sourceSystem?: "java_content" | "java_studio"; siteRegion?: IpCommerceSiteRegion }
-) {
-  return api.get<{
-    importMap: {
-      id: string;
-      sourceSystem: string;
-      sourceEntityType: string;
-      sourceEntityId: string;
-      targetTitleId: string | null;
-      lastImportedAt: string;
-    };
-    title: IpCommerceTitle;
-  }>(`/aurora/ip-commerce/legacy/titles/${encodeURIComponent(sourceEntityId)}`, { params });
-}
-
-export function getIpTitleAccess(
-  titleId: string,
-  params?: { siteRegion?: IpCommerceSiteRegion; episodeIds?: string[] }
-) {
+export function getIpTitleAccess(titleId: string, params?: { episodeIds?: string[] }) {
   return api.get<IpTitleAccess>(
     `/aurora/ip-commerce/titles/${encodeURIComponent(titleId)}/access`,
     {
       params: {
-        siteRegion: params?.siteRegion,
         episodeIds: params?.episodeIds?.join(","),
       },
     }

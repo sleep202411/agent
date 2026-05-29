@@ -9,6 +9,27 @@ export const ADMIN_SESSION_COOKIE = "fd_admin_session";
 
 export { ADMIN_SITE_COOKIE, adminSiteByKey, normalizeAdminSiteKey };
 
+export function adminUiBasePath(): string {
+  const raw = process.env.NEXT_PUBLIC_ADMIN_UI_BASE_PATH?.trim() ?? "";
+  if (!raw || raw === "/") return "";
+  return raw.startsWith("/") ? raw.replace(/\/+$/, "") : `/${raw.replace(/\/+$/, "")}`;
+}
+
+export function adminUiPath(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (normalizedPath === "/") return adminUiBasePath() || "/";
+  return `${adminUiBasePath()}${normalizedPath}`;
+}
+
+export function adminUiApiPath(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${adminUiBasePath()}${normalizedPath}`;
+}
+
+export function adminCookiePath(): string {
+  return adminUiBasePath() || "/";
+}
+
 export function adminApiUrl(path: string, siteKey: AdminSiteKey = "global"): string {
   const base = adminApiBaseUrl(siteKey);
   const normalizedBase = base.replace(/\/$/, "");
@@ -58,5 +79,5 @@ export function cookieHeader(sessionToken?: string): HeadersInit {
 
 export function adminSiteCookie(siteKey: AdminSiteKey): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${ADMIN_SITE_COOKIE}=${siteKey}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly${secure}`;
+  return `${ADMIN_SITE_COOKIE}=${siteKey}; Path=${adminCookiePath()}; Max-Age=31536000; SameSite=Lax; HttpOnly${secure}`;
 }

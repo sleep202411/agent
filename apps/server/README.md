@@ -9,6 +9,46 @@ NestJS 后端，负责 AI 智能体、剧本拆解 Pipeline、AI 图像/视频�
 npx turbo dev --filter=server
 ```
 
+## Prisma Migration 策略
+
+本仓库以 `apps/server/prisma/migrations/*/migration.sql` 作为数据库变更的
+唯一来源。未部署、未执行、未 push 的 migration 可以在开发期继续整理；
+一旦进入共享环境或生产环境，就只能追加新 migration，不再改写历史目录。
+
+本地开发：
+
+```bash
+npm run db:migrate -w server
+```
+
+共享环境 / 生产环境：
+
+```bash
+npm run db:deploy -w server
+```
+
+约束：
+
+- 生产环境只跑 `prisma migrate deploy`，不跑 `prisma migrate dev`。
+- 不手写临时 SQL 改结构；确需数据修复时，单独写可审计脚本或 migration。
+- `migrate status` 在本地返回 non-zero 只代表还有未应用 migration；先看
+  “Following migrations have not yet been applied” 列表，不等于 schema 错误。
+- 当前 admin/payment/IP 相关新 migration 是：
+  `20260528120000_billing_core`、`20260528130000_ip_commerce_core`、
+  `20260528150000_admin_auth_core`、`20260528170000_admin_security_governance`。
+
+## Billing Catalog 边界
+
+国际站和中国站部署同一套代码，但连接不同数据库。商品、价格、订单、
+钱包流水、IP 价格规则都只描述当前数据库所属站点的数据，不通过
+`site_region` 在同库里混放两站。
+
+支付供应商不是商品目录的源头。`billing_catalog_items` 和
+`billing_prices` 是内部事实表；Airwallex Product/Price、微信支付商户侧
+配置等外部对象只通过 `billing_provider_price_bindings` 映射到内部价格。
+结账时使用内部 `priceId`，订单快照锁定内部金额和权益，provider webhook
+只推进支付状态，不反推商品、价格或会员权益。
+
 ## Admin Auth
 
 后台管理账号独立于普通用户体系，存储在 Postgres 的 `admin_*` 表中。
@@ -17,7 +57,7 @@ npx turbo dev --filter=server
 ```bash
 npm run admin:create-user -w server -- \
   --email admin@example.com \
-  --password 'Violet#7291Secure' \
+  --password '<temporary-password>' \
   --name 管理员 \
   --site-scope all \
   --role super_admin \
@@ -33,7 +73,7 @@ npm run admin:create-user -w server -- \
 
 ```bash
 ADMIN_BOOTSTRAP_EMAIL=admin@example.com
-ADMIN_BOOTSTRAP_PASSWORD='Violet#7291Secure'
+ADMIN_BOOTSTRAP_PASSWORD='<temporary-password>'
 ADMIN_BOOTSTRAP_NAME=管理员
 ADMIN_BOOTSTRAP_REQUIRE_MFA=true
 ```

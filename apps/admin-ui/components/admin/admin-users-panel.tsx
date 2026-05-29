@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 type AdminUserStatus = "invited" | "active" | "suspended" | "disabled";
 type AdminRoleKey = "super_admin" | "admin" | "operations";
+type AssignableAdminRoleKey = Exclude<AdminRoleKey, "super_admin">;
 
 export type AdminUserRow = {
   id: string;
@@ -76,6 +77,11 @@ const roleOptions: Array<{ value: AdminRoleKey; label: string }> = [
   { value: "admin", label: "普通管理员" },
   { value: "operations", label: "运营" },
 ];
+const assignableRoleOptions: Array<{ value: AssignableAdminRoleKey; label: string }> =
+  roleOptions.filter(
+    (option): option is { value: AssignableAdminRoleKey; label: string } =>
+      option.value !== "super_admin"
+  );
 
 const emptyData: AdminUsersListData = {
   items: [],
@@ -109,7 +115,7 @@ export function AdminUsersPanel({
     email: "",
     displayName: "",
     password: "",
-    roleKey: "operations" as AdminRoleKey,
+    roleKey: "operations" as AssignableAdminRoleKey,
     requireMfa: true,
     status: "active" as AdminUserStatus,
   });
@@ -119,6 +125,10 @@ export function AdminUsersPanel({
     const sessions = data.items.reduce((sum, item) => sum + item.activeSessionCount, 0);
     return { active, sessions };
   }, [data.items]);
+  const currentUser = useMemo(
+    () => data.items.find((item) => item.id === currentUserId) ?? null,
+    [currentUserId, data.items]
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -210,6 +220,33 @@ export function AdminUsersPanel({
       );
       setNotice(`已撤销 ${result.revokedCount} 个活跃会话。`);
       await refreshUsers({ silent: true });
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setPendingKey(null);
+    }
+  }
+
+  async function resetMfa(user: AdminUserRow) {
+    const confirmed = window.confirm(
+      user.id === currentUserId
+        ? "确认重置当前账号的 MFA？当前会话会保留，其他会话会被撤销；下次登录需要重新绑定 MFA。"
+        : `确认重置 ${user.displayName} 的 MFA？该账号的现有 MFA 绑定会清空，并需要下次登录重新绑定。`
+    );
+    if (!confirmed) return;
+    setNotice(null);
+    setError(null);
+    const actionKey = `${user.id}:reset-mfa`;
+    setPendingKey(actionKey);
+    try {
+      const updated = await requestEnvelope<AdminUserRow>(`/api/admin/users/${user.id}/reset-mfa`, {
+        method: "POST",
+      });
+      setData((current) => ({
+        ...current,
+        items: current.items.map((item) => (item.id === updated.id ? updated : item)),
+      }));
+      setNotice(`已重置 ${updated.displayName} 的 MFA，账号下次登录需要重新绑定。`);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -380,6 +417,8 @@ export function AdminUsersPanel({
               <tbody>
                 {data.items.map((user) => {
                   const isSelf = user.id === currentUserId;
+                  const roleSelectOptions =
+                    user.roleKey === "super_admin" ? roleOptions : assignableRoleOptions;
                   return (
                     <tr key={user.id} className="group border-t border-slate-100">
                       <TableCell>
@@ -420,8 +459,12 @@ export function AdminUsersPanel({
                           onChange={(value) =>
                             void updateUser(user, { roleKey: value as AdminRoleKey })
                           }
-                          disabled={isSelf || pendingKey === `${user.id}:roleKey`}
-                          options={roleOptions}
+                          disabled={
+                            isSelf ||
+                            user.roleKey === "super_admin" ||
+                            pendingKey === `${user.id}:roleKey`
+                          }
+                          options={roleSelectOptions}
                           className="h-8 min-w-[112px]"
                         />
                       </TableCell>
@@ -467,7 +510,15 @@ export function AdminUsersPanel({
                             disabled={pendingKey === `${user.id}:reset-password`}
                           >
                             <IconKey className="size-3.5" />
-                            重置
+                            {isSelf ? "改密码" : "重置密码"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void resetMfa(user)}
+                            disabled={pendingKey === `${user.id}:reset-mfa`}
+                          >
+                            MFA
                           </Button>
                           <Button
                             variant="outline"
@@ -505,6 +556,55 @@ export function AdminUsersPanel({
         </section>
 
         <aside className="space-y-4">
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+            <div className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-slate-950 text-white">
+                <IconShieldCheck className="size-4" />
+              </span>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-950">我的安全</h3>
+                <p className="text-[12px] text-slate-500">
+                  密码和 MFA 只作用于当前登录的后台账号。
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-2">
+              <Button
+                className="h-9 w-full"
+                type="button"
+                variant="outline"
+                onClick={() => currentUser && setResetTarget(currentUser)}
+                disabled={!currentUser}
+              >
+                <IconKey className="size-4" />
+                修改我的密码
+              </Button>
+              <Button
+                className="h-9 w-full"
+                type="button"
+                variant="outline"
+                onClick={() => currentUser && void resetMfa(currentUser)}
+                disabled={!currentUser || pendingKey === `${currentUser.id}:reset-mfa`}
+              >
+                <IconShieldCheck className="size-4" />
+                重新绑定 MFA
+              </Button>
+            </div>
+            {currentUser ? (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
+                <p className="font-medium text-slate-800">{currentUser.email}</p>
+                <p>
+                  MFA：
+                  {currentUser.mfaEnabledAt
+                    ? `已绑定，${formatDate(currentUser.mfaEnabledAt)}`
+                    : currentUser.requireMfa
+                      ? "待绑定"
+                      : "未强制"}
+                </p>
+              </div>
+            ) : null}
+          </section>
+
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
             <div className="flex items-center gap-2">
               <span className="flex size-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
@@ -559,10 +659,10 @@ export function AdminUsersPanel({
                     onChange={(value) =>
                       setCreateForm((current) => ({
                         ...current,
-                        roleKey: value as AdminRoleKey,
+                        roleKey: value as AssignableAdminRoleKey,
                       }))
                     }
-                    options={roleOptions}
+                    options={assignableRoleOptions}
                   />
                 </FieldLabel>
                 <FieldLabel label="账号状态">
@@ -606,6 +706,7 @@ export function AdminUsersPanel({
             </div>
             <ul className="mt-3 space-y-2 text-[12px] leading-5 text-slate-300">
               <li>权限只允许超级管理员、普通管理员、运营三种固定角色。</li>
+              <li>超级管理员只能通过受控部署脚本开通，后台页面不能创建或授权。</li>
               <li>新账号默认要求 MFA，首次登录完成绑定后才会创建会话。</li>
               <li>创建、更新、重置密码、撤销会话都会进入后台审计。</li>
               <li>后台账号不复用普通用户登录态，避免业务侧登录污染管理侧权限。</li>
@@ -626,7 +727,9 @@ export function AdminUsersPanel({
               <div>
                 <h3 className="text-base font-semibold text-slate-950">重置登录密码</h3>
                 <p className="mt-1 text-sm text-slate-600">
-                  {resetTarget.displayName} 的旧会话会被撤销，需要使用新密码重新登录。
+                  {resetTarget.id === currentUserId
+                    ? "当前会话会保留，其他会话会被撤销。"
+                    : `${resetTarget.displayName} 的旧会话会被撤销，需要使用新密码重新登录。`}
                 </p>
               </div>
               <button

@@ -4,16 +4,12 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   CreateIpContentReportSchema,
   CreateIpPurchaseSchema,
-  IpLegacyTitleParamsSchema,
-  IpLegacyTitleQuerySchema,
   IpTitleAccessQuerySchema,
   IpTitleParamsSchema,
   ListIpTitlesQuerySchema,
   UpsertIpUserBlockSchema,
   type CreateIpContentReportInput,
   type CreateIpPurchaseInput,
-  type IpLegacyTitleParams,
-  type IpLegacyTitleQuery,
   type IpTitleAccessQuery,
   type IpTitleParams,
   type ListIpTitlesQuery,
@@ -35,24 +31,6 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.listPublicTitles(query, user),
-    };
-  }
-
-  @Public()
-  @Get('legacy/titles/:sourceEntityId')
-  async getLegacyTitle(
-    @Param(new ZodValidationPipe(IpLegacyTitleParamsSchema))
-    params: IpLegacyTitleParams,
-    @Query(new ZodValidationPipe(IpLegacyTitleQuerySchema))
-    query: IpLegacyTitleQuery,
-  ) {
-    return {
-      code: 200,
-      data: await this.ipCommerce.getPublicTitleByImportSource({
-        sourceSystem: query.sourceSystem,
-        sourceEntityId: params.sourceEntityId,
-        siteRegion: query.siteRegion,
-      }),
     };
   }
 

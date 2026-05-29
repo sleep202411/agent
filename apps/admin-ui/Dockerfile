@@ -1,0 +1,66 @@
+FROM node:22-alpine AS base
+
+# ─── Stage 1: Prune monorepo ──────────────────────────────
+FROM base AS pruner
+RUN npm install -g turbo@^2
+WORKDIR /app
+COPY . .
+RUN turbo prune admin-ui --docker
+
+# ─── Stage 2: Install dependencies ───────────────────────
+FROM base AS deps
+WORKDIR /app
+COPY --from=pruner /app/out/json/ .
+RUN npm ci --ignore-scripts
+
+# ─── Stage 3: Build ──────────────────────────────────────
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/ ./
+COPY --from=pruner /app/out/full/ .
+
+ARG NEXT_PUBLIC_ADMIN_UI_BASE_PATH
+ARG NEXT_PUBLIC_ADMIN_ENABLED_SITES
+ARG ADMIN_GLOBAL_API_BASE_URL=http://fizzdragon-server:3001/admin
+ARG ADMIN_API_BASE_URL=http://fizzdragon-server:3001/admin
+ENV NEXT_PUBLIC_ADMIN_UI_BASE_PATH=$NEXT_PUBLIC_ADMIN_UI_BASE_PATH
+ENV NEXT_PUBLIC_ADMIN_ENABLED_SITES=$NEXT_PUBLIC_ADMIN_ENABLED_SITES
+ENV ADMIN_GLOBAL_API_BASE_URL=$ADMIN_GLOBAL_API_BASE_URL
+ENV ADMIN_API_BASE_URL=$ADMIN_API_BASE_URL
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV TURBO_TELEMETRY_DISABLED=1
+
+RUN mkdir -p apps/admin-ui/node_modules && \
+    rm -rf apps/admin-ui/node_modules/next && \
+    ln -s ../../../node_modules/next apps/admin-ui/node_modules/next && \
+    rm -rf apps/admin-ui/node_modules/typescript && \
+    ln -s ../../../node_modules/typescript apps/admin-ui/node_modules/typescript && \
+    mkdir -p apps/admin-ui/node_modules/@types && \
+    rm -rf apps/admin-ui/node_modules/@types/node && \
+    ln -s ../../../../node_modules/@types/node apps/admin-ui/node_modules/@types/node && \
+    test -f apps/admin-ui/node_modules/next/dist/lib/default-transpiled-packages.json && \
+    test -f apps/admin-ui/node_modules/typescript/lib/typescript.js && \
+    test -f apps/admin-ui/node_modules/@types/node/index.d.ts
+RUN npx turbo run build --filter=admin-ui
+
+# ─── Stage 4: Runner ────────────────────────────────────
+FROM base AS runner
+LABEL org.opencontainers.image.source=https://github.com/Fizzdragon-Pte-Ltd-2/fizzdragon-platform
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 appuser
+
+COPY --from=builder --chown=appuser:nodejs /app/apps/admin-ui/.next/standalone ./
+COPY --from=builder --chown=appuser:nodejs /app/apps/admin-ui/.next/static ./apps/admin-ui/.next/static
+COPY --from=builder --chown=appuser:nodejs /app/apps/admin-ui/public ./apps/admin-ui/public
+
+USER appuser
+
+EXPOSE 3000
+
+CMD ["node", "apps/admin-ui/server.js"]
