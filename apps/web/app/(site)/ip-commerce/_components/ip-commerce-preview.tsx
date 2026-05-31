@@ -21,13 +21,12 @@ import {
   CHECKLIST,
   COMMERCE_FLOW,
   IMPORT_STEPS,
+  IPS,
   METRICS,
   NAV_ITEMS,
   REVIEW_ITEMS,
-  REVENUE_SOURCES,
-  TITLES,
   type IpCommerceStatus,
-  type IpCommerceTitle,
+  type IpCommerceIp,
 } from "../_data/preview-data";
 
 const LIFECYCLE: IpCommerceStatus[] = [
@@ -51,7 +50,7 @@ const STATUS_TONE: Record<IpCommerceStatus, string> = {
 export function IpCommercePreview() {
   const t = useTranslations("ipCommerce");
   const locale = useLocale() as Locale;
-  const featured = TITLES[0];
+  const featured = IPS[0];
 
   return (
     <div className="min-h-screen bg-[#f9f7f3] text-[#202020]">
@@ -115,7 +114,7 @@ export function IpCommercePreview() {
                   {t("hero.body")}
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-3 xl:w-[420px]">
+              <div className="grid gap-2 sm:grid-cols-2 xl:w-[300px]">
                 <Link
                   href={localizePath("/ips/create", locale)}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-[#ea2804] px-4 text-sm font-semibold text-white"
@@ -128,12 +127,6 @@ export function IpCommercePreview() {
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#202020] bg-white px-4 text-sm font-semibold"
                 >
                   {t("actions.import")}
-                </a>
-                <a
-                  href="#commerce"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#202020]/10 bg-[#f3f0e8] px-4 text-sm font-semibold"
-                >
-                  {t("actions.revenue")}
                 </a>
               </div>
             </div>
@@ -171,7 +164,7 @@ export function IpCommercePreview() {
             id="market"
             className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.28fr)_minmax(360px,0.72fr)]"
           >
-            <FeaturedLaunch title={featured} />
+            <FeaturedLaunch ip={featured} />
             <StorefrontPanel />
           </section>
 
@@ -183,9 +176,8 @@ export function IpCommercePreview() {
             <ReadinessPanel />
           </section>
 
-          <section id="commerce" className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_390px]">
+          <section id="commerce" className="mt-6">
             <CommerceFlowPanel />
-            <RevenuePanel />
           </section>
 
           <section
@@ -205,7 +197,7 @@ export function IpCommercePreview() {
   );
 }
 
-function FeaturedLaunch({ title }: { title: IpCommerceTitle }) {
+function FeaturedLaunch({ ip }: { ip: IpCommerceIp }) {
   const t = useTranslations("ipCommerce");
   const pointsUnit = t("unit.points");
 
@@ -213,42 +205,36 @@ function FeaturedLaunch({ title }: { title: IpCommerceTitle }) {
     <article className="relative min-h-[460px] overflow-hidden rounded-[10px] bg-[#202020] text-white">
       <div
         className="absolute inset-0 bg-cover bg-center opacity-55"
-        style={{ backgroundImage: `url(${title.image})` }}
+        style={{ backgroundImage: `url(${ip.image})` }}
       />
-      <div className={cn("absolute inset-0 bg-linear-to-br", title.tone)} />
+      <div className={cn("absolute inset-0 bg-linear-to-br", ip.tone)} />
       <div className="absolute inset-0 bg-linear-to-t from-black/72 via-black/30 to-black/10" />
       <div className="relative flex min-h-[460px] flex-col justify-between p-5 sm:p-7">
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge status={title.status} invert />
+          <StatusBadge status={ip.status} invert />
           <span className="rounded-full border border-white/16 bg-white/10 px-3 py-1 text-xs font-semibold">
-            {t(`visibility.${title.visibility}`)}
+            {t(`visibility.${ip.visibility}`)}
           </span>
           <span className="rounded-full border border-white/16 bg-white/10 px-3 py-1 text-xs font-semibold">
-            {t("unit.episodes", { count: title.episodes })}
+            {t("unit.episodes", { count: ip.episodes })}
           </span>
         </div>
 
         <div className="max-w-2xl">
           <p className="text-sm font-semibold text-white/70">{t("featured.eyebrow")}</p>
           <h2 className="mt-3 max-w-2xl text-4xl font-semibold leading-none tracking-[-0.03em] sm:text-6xl">
-            {t(`titles.${title.key}.title`)}
+            {t(`ips.${ip.key}.title`)}
           </h2>
           <p className="mt-4 max-w-xl text-sm leading-6 text-white/76 sm:text-base">
-            {t(`titles.${title.key}.body`)}
+            {t(`ips.${ip.key}.body`)}
           </p>
           <div className="mt-6 grid max-w-xl gap-3 sm:grid-cols-3">
             <LaunchStat
               label={t("featured.earlyBird")}
-              value={formatPoints(title.earlyBirdPrice ?? title.price, pointsUnit)}
+              value={formatPoints(ip.earlyBirdPrice ?? ip.price, pointsUnit)}
             />
-            <LaunchStat
-              label={t("featured.standard")}
-              value={formatPoints(title.price, pointsUnit)}
-            />
-            <LaunchStat
-              label={t("featured.unlock")}
-              value={title.unlockDate ?? t("featured.now")}
-            />
+            <LaunchStat label={t("featured.standard")} value={formatPoints(ip.price, pointsUnit)} />
+            <LaunchStat label={t("featured.unlock")} value={ip.unlockDate ?? t("featured.now")} />
           </div>
         </div>
 
@@ -256,7 +242,7 @@ function FeaturedLaunch({ title }: { title: IpCommerceTitle }) {
           <div className="flex min-w-0 items-center gap-3 rounded-full border border-white/12 bg-black/28 px-3 py-2 backdrop-blur">
             <IconCalendarClock className="size-4 shrink-0 text-[#f4a8a0]" />
             <span className="truncate text-sm font-semibold">
-              {t("featured.countdown", { date: title.unlockDate ?? "-" })}
+              {t("featured.countdown", { date: ip.unlockDate ?? "-" })}
             </span>
           </div>
           <button
@@ -283,15 +269,15 @@ function StorefrontPanel() {
         <span className="truncate">{t("storefront.search")}</span>
       </div>
       <div className="mt-4 space-y-3">
-        {TITLES.slice(1).map((title) => (
-          <TitleListCard key={title.key} title={title} />
+        {IPS.slice(1).map((ip) => (
+          <IpListCard key={ip.key} ip={ip} />
         ))}
       </div>
     </section>
   );
 }
 
-function TitleListCard({ title }: { title: IpCommerceTitle }) {
+function IpListCard({ ip }: { ip: IpCommerceIp }) {
   const t = useTranslations("ipCommerce");
   const pointsUnit = t("unit.points");
 
@@ -299,24 +285,24 @@ function TitleListCard({ title }: { title: IpCommerceTitle }) {
     <article className="grid gap-3 rounded-[8px] border border-[#202020]/10 bg-[#f9f7f3] p-2.5 sm:grid-cols-[136px_minmax(0,1fr)]">
       <div
         className="aspect-video rounded-[7px] bg-cover bg-center"
-        style={{ backgroundImage: `url(${title.image})` }}
+        style={{ backgroundImage: `url(${ip.image})` }}
       />
       <div className="min-w-0 py-1 pr-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold">{t(`titles.${title.key}.title`)}</h3>
+            <h3 className="truncate text-sm font-semibold">{t(`ips.${ip.key}.title`)}</h3>
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#646464]">
-              {t(`titles.${title.key}.body`)}
+              {t(`ips.${ip.key}.body`)}
             </p>
           </div>
-          <StatusBadge status={title.status} />
+          <StatusBadge status={ip.status} />
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#646464]">
-          <span>{formatPoints(title.price, pointsUnit)}</span>
+          <span>{formatPoints(ip.price, pointsUnit)}</span>
           <span className="text-[#bbbbbb]">/</span>
-          <span>{t("unit.episodes", { count: title.episodes })}</span>
+          <span>{t("unit.episodes", { count: ip.episodes })}</span>
           <span className="text-[#bbbbbb]">/</span>
-          <span>{t("unit.sold", { count: title.sold })}</span>
+          <span>{t("unit.sold", { count: ip.sold })}</span>
         </div>
       </div>
     </article>
@@ -327,7 +313,7 @@ function LifecycleBoard() {
   const t = useTranslations("ipCommerce");
   const counts = LIFECYCLE.map((status) => ({
     status,
-    count: TITLES.filter((title) => title.status === status).length,
+    count: IPS.filter((ip) => ip.status === status).length,
   }));
 
   return (
@@ -442,49 +428,6 @@ function CommerceFlowPanel() {
   );
 }
 
-function RevenuePanel() {
-  const t = useTranslations("ipCommerce");
-
-  return (
-    <section className="rounded-[10px] border border-[#202020]/10 bg-white p-4 sm:p-5">
-      <SectionHeader eyebrow={t("revenue.eyebrow")} title={t("revenue.title")} />
-      <div className="mt-5 space-y-3">
-        {REVENUE_SOURCES.map((source) => {
-          const Icon = source.icon;
-          return (
-            <div
-              key={source.key}
-              className="flex items-center gap-3 rounded-[8px] border border-[#202020]/10 bg-[#f9f7f3] p-3"
-            >
-              <span className="flex size-9 items-center justify-center rounded-full bg-white text-[#ea2804]">
-                <Icon className="size-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">
-                  {t(`revenue.sources.${source.key}.title`)}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-[#646464]">
-                  {t(`revenue.sources.${source.key}.body`)}
-                </p>
-              </div>
-              <strong className="shrink-0 text-sm">{source.amount}</strong>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-4 rounded-[8px] bg-[#202020] p-4 text-white">
-        <p className="text-xs font-semibold uppercase text-white/50">{t("revenue.ledger")}</p>
-        <div className="mt-3 flex items-end justify-between gap-3">
-          <strong className="text-3xl leading-none tracking-[-0.03em]">S$24,450</strong>
-          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">
-            {t("revenue.pending")}
-          </span>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function ReviewPanel() {
   const t = useTranslations("ipCommerce");
 
@@ -531,7 +474,7 @@ function ReviewPanel() {
 function EntitlementPanel() {
   const t = useTranslations("ipCommerce");
   const pointsUnit = t("unit.points");
-  const title = TITLES[0];
+  const ip = IPS[0];
 
   return (
     <section className="rounded-[10px] border border-[#202020]/10 bg-white p-4 sm:p-5">
@@ -549,7 +492,7 @@ function EntitlementPanel() {
           >
             <span className="truncate">{t("entitlement.episode", { episode })}</span>
             <span className="text-[#646464]">
-              {episode === 1 ? t("entitlement.free") : formatPoints(title.price, pointsUnit)}
+              {episode === 1 ? t("entitlement.free") : formatPoints(ip.price, pointsUnit)}
             </span>
             <span className="inline-flex items-center gap-1.5 font-semibold">
               {episode <= 2 ? (

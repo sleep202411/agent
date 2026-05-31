@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import {
   AdminIpCommercePanel,
   type AdminIpOverviewData,
-  type AdminIpTitlesData,
+  type AdminIpsData,
 } from "@/components/admin/admin-ip-commerce-panel";
 import {
   ADMIN_SESSION_COOKIE,
@@ -24,7 +24,7 @@ export default async function IpAdminPage() {
       siteLabel={session?.site.label ?? "当前站点"}
       databaseLabel={session?.site.databaseLabel ?? "当前站点数据库"}
       initialOverview={initial.overview}
-      initialTitles={initial.titles}
+      initialIps={initial.ips}
       initialError={initial.error}
     />
   );
@@ -32,37 +32,37 @@ export default async function IpAdminPage() {
 
 async function getInitialIpData(): Promise<{
   overview: AdminIpOverviewData | null;
-  titles: AdminIpTitlesData | null;
+  ips: AdminIpsData | null;
   error: string | null;
 }> {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
   const siteKey = normalizeAdminSiteKey(cookieStore.get(ADMIN_SITE_COOKIE)?.value);
   if (!sessionToken) {
-    return { overview: null, titles: null, error: "后台登录已失效，请重新登录。" };
+    return { overview: null, ips: null, error: "后台登录已失效，请重新登录。" };
   }
 
   try {
     const headers = cookieHeader(sessionToken);
-    const [overviewResponse, titlesResponse] = await Promise.all([
+    const [overviewResponse, ipsResponse] = await Promise.all([
       fetch(adminApiUrl("/ip-commerce/overview", siteKey), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/ip-commerce/titles", siteKey), {
+      fetch(adminApiUrl("/ip-commerce/ips", siteKey), {
         headers,
         cache: "no-store",
       }),
     ]);
-    const [overview, titles] = await Promise.all([
+    const [overview, ips] = await Promise.all([
       parseAdminEnvelope<AdminIpOverviewData>(overviewResponse),
-      parseAdminEnvelope<AdminIpTitlesData>(titlesResponse),
+      parseAdminEnvelope<AdminIpsData>(ipsResponse),
     ]);
-    return { overview, titles, error: null };
+    return { overview, ips, error: null };
   } catch (error) {
     return {
       overview: null,
-      titles: null,
+      ips: null,
       error:
         error instanceof Error
           ? error.message

@@ -1,64 +1,333 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser, Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
+  CreateIpDraftSchema,
+  CreateCreatorIpEpisodeSchema,
   CreateIpContentReportSchema,
   CreateIpPurchaseSchema,
-  IpTitleAccessQuerySchema,
-  IpTitleParamsSchema,
-  ListIpTitlesQuerySchema,
+  UpdateCreatorIpProfileSchema,
+  UpdateCreatorIpAssetsSchema,
+  UpdateCreatorIpEpisodeSchema,
+  SubmitCreatorIpReviewSchema,
+  UploadCreatorIpMediaQuerySchema,
+  IpAccessQuerySchema,
+  IpAssetParamsSchema,
+  IpEpisodeParamsSchema,
+  IpLocaleQuerySchema,
+  IpParamsSchema,
+  ListCreatorIpAssetsQuerySchema,
+  ListCreatorIpsQuerySchema,
+  ListIpsQuerySchema,
+  UpsertCreatorIpPriceRuleSchema,
+  UpsertIpCollectionItemSchema,
   UpsertIpUserBlockSchema,
+  type CreateIpDraftInput,
+  type CreateCreatorIpEpisodeInput,
   type CreateIpContentReportInput,
   type CreateIpPurchaseInput,
-  type IpTitleAccessQuery,
-  type IpTitleParams,
-  type ListIpTitlesQuery,
+  type IpAssetParams,
+  type SubmitCreatorIpReviewInput,
+  type UploadCreatorIpMediaQuery,
+  type UpdateCreatorIpAssetsInput,
+  type UpdateCreatorIpEpisodeInput,
+  type UpdateCreatorIpProfileInput,
+  type IpAccessQuery,
+  type IpEpisodeParams,
+  type IpLocaleQuery,
+  type IpParams,
+  type ListCreatorIpAssetsQuery,
+  type ListCreatorIpsQuery,
+  type ListIpsQuery,
+  type UpsertCreatorIpPriceRuleInput,
+  type UpsertIpCollectionItemInput,
   type UpsertIpUserBlockInput,
 } from './dto';
 import { IpCommerceService } from './ip-commerce.service';
+
+const IP_MEDIA_UPLOAD_MAX_BYTES = 256 * 1024 * 1024;
+
+type UploadedIpMediaFile = {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+};
 
 @Controller('ip-commerce')
 export class IpCommerceController {
   constructor(private readonly ipCommerce: IpCommerceService) {}
 
-  @Public()
-  @Get('titles')
-  async listTitles(
-    @CurrentUser() user: AuthUser | undefined,
-    @Query(new ZodValidationPipe(ListIpTitlesQuerySchema))
-    query: ListIpTitlesQuery,
+  @Get('me/ips')
+  async listMyIps(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListCreatorIpsQuerySchema))
+    query: ListCreatorIpsQuery,
   ) {
     return {
       code: 200,
-      data: await this.ipCommerce.listPublicTitles(query, user),
+      data: await this.ipCommerce.listCreatorIps(user, query),
+    };
+  }
+
+  @Get('me/ips/:ipId')
+  async getMyIp(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Query(new ZodValidationPipe(IpLocaleQuerySchema))
+    query: IpLocaleQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.getCreatorIp(user, params.ipId, query),
+    };
+  }
+
+  @Post('ips')
+  async createIp(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(CreateIpDraftSchema))
+    body: CreateIpDraftInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.createCreatorIp(user, body),
+    };
+  }
+
+  @Put('me/ips/:ipId')
+  async updateMyIp(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(UpdateCreatorIpProfileSchema))
+    body: UpdateCreatorIpProfileInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.updateCreatorIpProfile(
+        user,
+        params.ipId,
+        body,
+      ),
+    };
+  }
+
+  @Get('me/ips/:ipId/assets')
+  async listMyIpAssets(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Query(new ZodValidationPipe(ListCreatorIpAssetsQuerySchema))
+    query: ListCreatorIpAssetsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listCreatorIpAssets(user, params.ipId, query),
+    };
+  }
+
+  @Put('me/ips/:ipId/assets')
+  async updateMyIpAssets(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(UpdateCreatorIpAssetsSchema))
+    body: UpdateCreatorIpAssetsInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.updateCreatorIpAssets(
+        user,
+        params.ipId,
+        body,
+      ),
+    };
+  }
+
+  @Post('me/ips/:ipId/media')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: IP_MEDIA_UPLOAD_MAX_BYTES },
+    }),
+  )
+  async uploadMyIpMedia(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Query(new ZodValidationPipe(UploadCreatorIpMediaQuerySchema))
+    query: UploadCreatorIpMediaQuery,
+    @UploadedFile() file: UploadedIpMediaFile | undefined,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.uploadCreatorIpMedia(
+        user,
+        params.ipId,
+        query,
+        file,
+      ),
+    };
+  }
+
+  @Delete('me/ips/:ipId/assets/:assetId')
+  async deleteMyIpAsset(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpAssetParamsSchema))
+    params: IpAssetParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.removeCreatorIpAsset(
+        user,
+        params.ipId,
+        params.assetId,
+      ),
+    };
+  }
+
+  @Post('me/ips/:ipId/episodes')
+  async createMyIpEpisode(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(CreateCreatorIpEpisodeSchema))
+    body: CreateCreatorIpEpisodeInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.createCreatorIpEpisode(
+        user,
+        params.ipId,
+        body,
+      ),
+    };
+  }
+
+  @Put('me/ips/:ipId/episodes/:episodeId')
+  async updateMyIpEpisode(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpEpisodeParamsSchema))
+    params: IpEpisodeParams,
+    @Body(new ZodValidationPipe(UpdateCreatorIpEpisodeSchema))
+    body: UpdateCreatorIpEpisodeInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.updateCreatorIpEpisode(
+        user,
+        params.ipId,
+        params.episodeId,
+        body,
+      ),
+    };
+  }
+
+  @Delete('me/ips/:ipId/episodes/:episodeId')
+  async deleteMyIpEpisode(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpEpisodeParamsSchema))
+    params: IpEpisodeParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.deleteCreatorIpEpisode(
+        user,
+        params.ipId,
+        params.episodeId,
+      ),
+    };
+  }
+
+  @Put('me/ips/:ipId/price-rules')
+  async upsertMyIpPriceRule(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(UpsertCreatorIpPriceRuleSchema))
+    body: UpsertCreatorIpPriceRuleInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.upsertCreatorIpPriceRule(
+        user,
+        params.ipId,
+        body,
+      ),
+    };
+  }
+
+  @Post('me/ips/:ipId/review-submissions')
+  async submitMyIpForReview(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(SubmitCreatorIpReviewSchema))
+    body: SubmitCreatorIpReviewInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.submitCreatorIpForReview(
+        user,
+        params.ipId,
+        body,
+      ),
     };
   }
 
   @Public()
-  @Get('titles/:titleId/access')
-  async getTitleAccess(
+  @Get('ips')
+  async listIps(
     @CurrentUser() user: AuthUser | undefined,
-    @Param(new ZodValidationPipe(IpTitleParamsSchema))
-    params: IpTitleParams,
-    @Query(new ZodValidationPipe(IpTitleAccessQuerySchema))
-    query: IpTitleAccessQuery,
+    @Query(new ZodValidationPipe(ListIpsQuerySchema))
+    query: ListIpsQuery,
   ) {
     return {
       code: 200,
-      data: await this.ipCommerce.getTitleAccess(user, params.titleId, query),
+      data: await this.ipCommerce.listPublicIps(query, user),
     };
   }
 
   @Public()
-  @Get('titles/:titleId')
-  async getTitle(
+  @Get('ips/:ipId/access')
+  async getIpAccess(
     @CurrentUser() user: AuthUser | undefined,
-    @Param(new ZodValidationPipe(IpTitleParamsSchema))
-    params: IpTitleParams,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Query(new ZodValidationPipe(IpAccessQuerySchema))
+    query: IpAccessQuery,
   ) {
     return {
       code: 200,
-      data: await this.ipCommerce.getPublicTitle(params.titleId, user),
+      data: await this.ipCommerce.getIpAccess(user, params.ipId, query),
+    };
+  }
+
+  @Public()
+  @Get('ips/:ipId')
+  async getIp(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Query(new ZodValidationPipe(IpLocaleQuerySchema))
+    query: IpLocaleQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.getPublicIp(params.ipId, user, query),
     };
   }
 
@@ -71,10 +340,38 @@ export class IpCommerceController {
   }
 
   @Get('me/collection')
-  async listMyCollection(@CurrentUser() user: AuthUser) {
+  async listMyCollection(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(IpLocaleQuerySchema))
+    query: IpLocaleQuery,
+  ) {
     return {
       code: 200,
-      data: await this.ipCommerce.listUserCollection(user),
+      data: await this.ipCommerce.listUserCollection(user, query),
+    };
+  }
+
+  @Post('me/collection')
+  async saveCollectionItem(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(UpsertIpCollectionItemSchema))
+    body: UpsertIpCollectionItemInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.saveCollectionItem(user, body),
+    };
+  }
+
+  @Post('me/collection/remove')
+  async removeCollectionItem(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(UpsertIpCollectionItemSchema))
+    body: UpsertIpCollectionItemInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.removeCollectionItem(user, body),
     };
   }
 

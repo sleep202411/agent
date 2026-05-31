@@ -8,10 +8,10 @@
  * it; the main-site `GlobalNav` stays on the marketing surface.
  *
  * Right-cluster order matches the spec:
- *   Language · Credits · Recharge · Membership · Theme · Avatar
+ *   Language · Credits · Recharge · Membership · Avatar
  */
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -19,12 +19,9 @@ import {
   IconCheck,
   IconCrown,
   IconLanguage,
-  IconMoon,
   IconPlus,
   IconSparkles,
-  IconSun,
 } from "@tabler/icons-react";
-import { useTheme } from "next-themes";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
@@ -49,15 +46,6 @@ export function StudioNav() {
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname() ?? "/";
-  const { theme, setTheme } = useTheme();
-  // Avoid hydration mismatch: theme is undefined on the server, only
-  // safe to read after mount. Same pattern as GlobalNav.
-  const mounted = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false
-  );
-  const isDark = mounted && theme === "dark";
 
   const { data: credits } = useCredits();
   const displayCredits = Number.isFinite(Number(credits)) ? Number(credits) : 0;
@@ -223,16 +211,6 @@ export function StudioNav() {
             />
             <IconCrown className="relative size-3.5" />
             <span className="relative">{t("membership")}</span>
-          </button>
-
-          {/* Theme toggle */}
-          <button
-            type="button"
-            onClick={() => setTheme(isDark ? "light" : "dark")}
-            aria-label={t("theme")}
-            className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-          >
-            {isDark ? <IconMoon className="size-4" /> : <IconSun className="size-4" />}
           </button>
 
           {/* Avatar / user menu — reuses the global UserMenu so logout

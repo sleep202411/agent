@@ -3,18 +3,14 @@ import {
   IconArchive,
   IconBooks,
   IconChartBar,
-  IconClock,
-  IconCoins,
   IconFileCheck,
   IconFileImport,
   IconFlag,
   IconGavel,
-  IconLink,
   IconLockOpen,
   IconReceipt,
   IconShieldCheck,
   IconTicket,
-  IconUsers,
   IconWallet,
 } from "@tabler/icons-react";
 
@@ -28,12 +24,12 @@ export type IpCommerceStatus =
   | "published"
   | "hidden";
 
-export type IpCommerceTitleKey = "hawParVilla" | "moonMarket" | "ghostKitchen" | "orbitKids";
+export type IpCommerceIpKey = "hawParVilla" | "moonMarket" | "ghostKitchen" | "orbitKids";
 
-export type IpCommerceMetricKey = "published" | "presale" | "review" | "revenue";
+export type IpCommerceMetricKey = "published" | "presale" | "review";
 
-export interface IpCommerceTitle {
-  key: IpCommerceTitleKey;
+export interface IpCommerceIp {
+  key: IpCommerceIpKey;
   status: IpCommerceStatus;
   visibility: "public" | "unlisted" | "private";
   image: string;
@@ -42,7 +38,6 @@ export interface IpCommerceTitle {
   earlyBirdPrice?: number;
   episodes: number;
   sold: number;
-  revenue: number;
   progress: number;
   unlockDate?: string;
   tags: string[];
@@ -89,10 +84,9 @@ export const METRICS: IpCommerceMetric[] = [
   { key: "published", value: "12", delta: "+3", icon: IconBooks },
   { key: "presale", value: "58.4k", delta: "+18%", icon: IconTicket },
   { key: "review", value: "4", delta: "2h", icon: IconFileCheck },
-  { key: "revenue", value: "9.8k", delta: "+6.1k", icon: IconCoins },
 ];
 
-export const TITLES: IpCommerceTitle[] = [
+export const IPS: IpCommerceIp[] = [
   {
     key: "hawParVilla",
     status: "scheduled",
@@ -104,7 +98,6 @@ export const TITLES: IpCommerceTitle[] = [
     earlyBirdPrice: 750,
     episodes: 8,
     sold: 326,
-    revenue: 244500,
     progress: 78,
     unlockDate: "2026-07-15",
     tags: ["presale", "interactive", "featured"],
@@ -119,7 +112,6 @@ export const TITLES: IpCommerceTitle[] = [
     price: 880,
     episodes: 6,
     sold: 1180,
-    revenue: 1038400,
     progress: 100,
     tags: ["series", "top"],
   },
@@ -133,7 +125,6 @@ export const TITLES: IpCommerceTitle[] = [
     price: 420,
     episodes: 4,
     sold: 0,
-    revenue: 0,
     progress: 86,
     tags: ["rights", "ready"],
   },
@@ -147,7 +138,6 @@ export const TITLES: IpCommerceTitle[] = [
     price: 360,
     episodes: 3,
     sold: 0,
-    revenue: 0,
     progress: 42,
     tags: ["draft", "kids"],
   },
@@ -157,7 +147,6 @@ export const CHECKLIST: IpCommerceChecklistItem[] = [
   { key: "content", done: true, icon: IconBooks },
   { key: "pricing", done: true, icon: IconTicket },
   { key: "rights", done: true, icon: IconShieldCheck },
-  { key: "revenue", done: false, icon: IconCoins },
   { key: "review", done: false, icon: IconGavel },
 ];
 
@@ -167,7 +156,6 @@ export const COMMERCE_FLOW: IpCommerceFlowStep[] = [
   { key: "wallet", icon: IconWallet },
   { key: "entitlement", icon: IconLockOpen },
   { key: "collection", icon: IconArchive },
-  { key: "revenue", icon: IconCoins },
 ];
 
 export const REVIEW_ITEMS: IpCommerceReviewItem[] = [
@@ -183,9 +171,3 @@ export const IMPORT_STEPS: IpCommerceImportStep[] = [
   { key: "write", state: "pending" },
   { key: "verify", state: "pending" },
 ];
-
-export const REVENUE_SOURCES = [
-  { key: "productionFee", amount: "S$1,000", icon: IconUsers },
-  { key: "share", amount: "10%", icon: IconChartBar },
-  { key: "referral", amount: "10%", icon: IconLink },
-] as const;

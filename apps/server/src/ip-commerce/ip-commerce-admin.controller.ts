@@ -22,15 +22,17 @@ import { Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   IpReportParamsSchema,
-  IpTitleParamsSchema,
-  ListAdminIpTitlesQuerySchema,
+  IpLocaleQuerySchema,
+  IpParamsSchema,
+  ListAdminIpsQuerySchema,
   ResolveAdminIpReportSchema,
-  UpdateAdminIpTitlePublicationSchema,
+  UpdateAdminIpPublicationSchema,
+  type IpLocaleQuery,
   type IpReportParams,
-  type IpTitleParams,
-  type ListAdminIpTitlesQuery,
+  type IpParams,
+  type ListAdminIpsQuery,
   type ResolveAdminIpReportInput,
-  type UpdateAdminIpTitlePublicationInput,
+  type UpdateAdminIpPublicationInput,
 } from './dto';
 import { IpCommerceService } from './ip-commerce.service';
 
@@ -46,8 +48,8 @@ export class IpCommerceAdminController {
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
   @Get('overview')
   async overview(
-    @Query(new ZodValidationPipe(ListAdminIpTitlesQuerySchema))
-    query: ListAdminIpTitlesQuery,
+    @Query(new ZodValidationPipe(ListAdminIpsQuerySchema))
+    query: ListAdminIpsQuery,
   ) {
     return {
       code: 200,
@@ -56,49 +58,51 @@ export class IpCommerceAdminController {
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
-  @Get('titles')
-  async listTitles(
-    @Query(new ZodValidationPipe(ListAdminIpTitlesQuerySchema))
-    query: ListAdminIpTitlesQuery,
+  @Get('ips')
+  async listIps(
+    @Query(new ZodValidationPipe(ListAdminIpsQuerySchema))
+    query: ListAdminIpsQuery,
   ) {
     return {
       code: 200,
-      data: await this.ipCommerce.listAdminTitles(query),
+      data: await this.ipCommerce.listAdminIps(query),
     };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
-  @Get('titles/:titleId')
-  async getTitle(
-    @Param(new ZodValidationPipe(IpTitleParamsSchema))
-    params: IpTitleParams,
+  @Get('ips/:ipId')
+  async getIp(
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Query(new ZodValidationPipe(IpLocaleQuerySchema))
+    query: IpLocaleQuery,
   ) {
     return {
       code: 200,
-      data: await this.ipCommerce.getAdminTitle(params.titleId),
+      data: await this.ipCommerce.getAdminIp(params.ipId, query),
     };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpPublish)
-  @Patch('titles/:titleId/publication')
+  @Patch('ips/:ipId/publication')
   async updatePublication(
     @CurrentAdmin() admin: AdminActor,
-    @Param(new ZodValidationPipe(IpTitleParamsSchema))
-    params: IpTitleParams,
-    @Body(new ZodValidationPipe(UpdateAdminIpTitlePublicationSchema))
-    body: UpdateAdminIpTitlePublicationInput,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Body(new ZodValidationPipe(UpdateAdminIpPublicationSchema))
+    body: UpdateAdminIpPublicationInput,
     @Req() request: Request,
   ) {
-    const data = await this.ipCommerce.updateAdminTitlePublication(
+    const data = await this.ipCommerce.updateAdminIpPublication(
       adminToAuthUser(admin),
-      params.titleId,
+      params.ipId,
       body,
     );
     await this.adminAuth.writeAudit({
       actor: admin,
       action: 'admin.ip.publish',
-      resourceType: 'ip_title',
-      resourceId: params.titleId,
+      resourceType: 'ip',
+      resourceId: params.ipId,
       metadata: {
         status: body.status,
         listingVisibility: body.listingVisibility ?? null,

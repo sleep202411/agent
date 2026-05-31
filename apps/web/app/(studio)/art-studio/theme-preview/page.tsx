@@ -38,7 +38,6 @@ import { Empty, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale } from "@/src/i18n/locale-url";
 import { useRouter } from "next/navigation";
@@ -76,7 +75,6 @@ export default function Home() {
                   </button>
                 ))}
               </div>
-              <ThemeToggle />
             </div>
           </div>
 

@@ -449,12 +449,9 @@ enum AdminLoginAttemptOutcome {
   blocked
 }
 
-enum IpContentType {
+enum IpType {
   series
-  interactive_film
-  film
-  course
-  collection
+  film_short
   other
 }
 
@@ -471,6 +468,30 @@ enum IpPublicationStatus {
   archived
 }
 
+enum IpLocalizationStatus {
+  draft
+  machine_translated
+  needs_review
+  approved
+  published
+  outdated
+  archived
+}
+
+enum IpTranslationJobStatus {
+  queued
+  running
+  succeeded
+  failed
+  canceled
+}
+
+enum IpTranslationTargetType {
+  ip
+  episode
+  campaign
+}
+
 enum IpListingVisibility {
   private
   unlisted
@@ -484,20 +505,12 @@ enum IpAgeRating {
   restricted
 }
 
-enum IpStoryNodeType {
-  linear
-  branch
-  ending
-  bonus
-}
-
 enum IpCampaignType {
   presale
   early_bird
+  limited_time_discount
   launch
   event
-  referral
-  custom
 }
 
 enum IpCampaignStatus {
@@ -509,8 +522,14 @@ enum IpCampaignStatus {
 }
 
 enum IpTargetType {
-  title
+  ip
   episode
+}
+
+enum IpAssetPurpose {
+  source_material
+  reference_art
+  production_asset
 }
 
 enum IpPriceRuleStatus {
@@ -550,39 +569,7 @@ enum IpContributorRole {
   artist
   editor
   performer
-  investor
-  referrer
   other
-}
-
-enum IpRevenueRuleType {
-  production_fee
-  revenue_share
-  referral_commission
-  platform_fee
-  manual
-}
-
-enum IpRevenueRuleStatus {
-  draft
-  active
-  disabled
-  archived
-}
-
-enum IpRevenueLedgerEntryType {
-  production_fee
-  revenue_share
-  referral_commission
-  platform_fee
-  refund_reversal
-  manual_adjustment
-}
-
-enum IpRevenueLedgerStatus {
-  pending
-  posted
-  voided
 }
 
 enum IpReferralLinkStatus {
@@ -592,10 +579,9 @@ enum IpReferralLinkStatus {
 }
 
 enum IpReviewTargetType {
-  title
+  ip
   episode
   price_rule
-  revenue_rule
   campaign
 }
 
@@ -619,7 +605,7 @@ enum IpReviewEventType {
 }
 
 enum IpRightsTargetType {
-  title
+  ip
   episode
 }
 
@@ -640,7 +626,7 @@ enum IpRightsDeclarationStatus {
 }
 
 enum IpModerationTargetType {
-  title
+  ip
   episode
   review_submission
   report
@@ -675,7 +661,7 @@ enum IpReportStatus {
 }
 
 enum IpUserBlockTargetType {
-  title
+  ip
   creator
 }
 
@@ -709,8 +695,6 @@ model Workspace {
   documents     PlatformDocument[]
   billingOrders BillingOrder[]
   subscriptions BillingSubscription[]
-  ipTitles      IpTitle[]
-  ipOrders      IpPurchaseOrder[]
 
   /// Active personal uniqueness is enforced by partial unique SQL:
   /// (owner_user_id) WHERE type='personal' AND deleted_at IS NULL.
@@ -782,14 +766,12 @@ model PlatformProject {
   updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt    DateTime?             @map("deleted_at") @db.Timestamptz(6)
 
-  workspace        Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  members          ProjectMember[]
-  assets           ProjectAsset[]
-  auditLogs        PlatformAuditLog[]
-  aiJobs           AiJob[]
-  documents        PlatformDocument[]
-  sourceIpTitles   IpTitle[]          @relation("IpTitleSourceProject")
-  sourceIpEpisodes IpEpisode[]        @relation("IpEpisodeSourceProject")
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members   ProjectMember[]
+  assets    ProjectAsset[]
+  auditLogs PlatformAuditLog[]
+  aiJobs    AiJob[]
+  documents PlatformDocument[]
 
   /// Active slug uniqueness is enforced by partial unique SQL:
   /// (workspace_id, slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
@@ -1041,10 +1023,9 @@ model WalletTransaction {
   postedAt       DateTime?               @default(now()) @map("posted_at") @db.Timestamptz(6)
   voidedAt       DateTime?               @map("voided_at") @db.Timestamptz(6)
 
-  entries                WalletLedgerEntry[]
-  ipPurchaseOrders       IpPurchaseOrder[]
-  ipRevenueLedgerEntries IpRevenueLedgerEntry[]
-  billingRefunds         BillingRefund[]
+  entries          WalletLedgerEntry[]
+  ipPurchaseOrders IpPurchaseOrder[]
+  billingRefunds   BillingRefund[]
 
   @@unique([idempotencyKey], map: "wallet_transactions_idempotency_key_unique")
   @@index([sourceType, sourceId], map: "wallet_transactions_source_idx")
@@ -1948,12 +1929,13 @@ model AdminAuditLog {
 // IP Commerce domain (src/ip-commerce/)
 // ─────────────────────────────────────────────────────────────
 //
-// New source of truth for public IP titles, episode commerce,
-// community-point purchases, presale campaigns, creator revenue,
-// referral attribution, review, rights declarations, reports, and
-// moderation. This deliberately does not mirror external project /
-// episode tables. A PlatformProject is the internal production
-// workspace; an IpTitle is the public commercial object users buy.
+// New source of truth for IP as a creator-owned production nucleus:
+// profile, localization, media assets, episode commerce, community-point
+// purchases, presale campaigns, referral attribution, review, rights
+// declarations, reports, and moderation. It is deliberately not tied to
+// workspace, project, crew, gig, or legacy Java tables. Future studio
+// projects, crews, and gigs should attach through explicit integration/link
+// tables rather than polluting the IP root.
 //
 // Money movement invariant:
 //   IpPurchaseOrder -> WalletTransaction -> IpContentEntitlement
@@ -1962,27 +1944,17 @@ model AdminAuditLog {
 // row. Unlock state is always derived from entitlements and wallet
 // ledger history.
 
-model IpTitle {
+model Ip {
   id                String              @id @default(uuid()) @db.Uuid
-  workspaceId       String              @map("workspace_id") @db.Uuid
-  sourceProjectId   String?             @map("source_project_id") @db.Uuid
-  slug              String?             @db.VarChar(120)
-  contentType       IpContentType       @default(series) @map("content_type")
+  ipType            IpType              @default(series) @map("ip_type")
   status            IpPublicationStatus @default(draft)
   listingVisibility IpListingVisibility @default(private) @map("listing_visibility")
   ageRating         IpAgeRating         @default(general) @map("age_rating")
-  title             String              @db.VarChar(160)
-  subtitle          String?             @db.VarChar(160)
-  summary           String              @db.VarChar(500)
-  description       String?             @db.Text
-  language          String              @default("zh-CN") @db.VarChar(16)
-  genres            String[]            @default([])
-  tags              String[]            @default([])
+  sourceLocale      String              @default("zh-CN") @map("source_locale") @db.VarChar(16)
   copyrightOwner    String?             @map("copyright_owner") @db.VarChar(160)
   rightsSummary     Json                @default("{}") @map("rights_summary") @db.JsonB
   aiDisclosure      Json                @default("{}") @map("ai_disclosure") @db.JsonB
   coverAssetId      String?             @map("cover_asset_id") @db.Uuid
-  heroAssetId       String?             @map("hero_asset_id") @db.Uuid
   trailerAssetId    String?             @map("trailer_asset_id") @db.Uuid
   createdById       String              @map("created_by_id") @db.VarChar(64)
   updatedById       String?             @map("updated_by_id") @db.VarChar(64)
@@ -1995,21 +1967,18 @@ model IpTitle {
   updatedAt         DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt         DateTime?           @map("deleted_at") @db.Timestamptz(6)
 
-  workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  sourceProject PlatformProject? @relation("IpTitleSourceProject", fields: [sourceProjectId], references: [id], onDelete: SetNull)
-  coverAsset    MediaAsset?      @relation("IpTitleCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
-  heroAsset     MediaAsset?      @relation("IpTitleHeroAsset", fields: [heroAssetId], references: [id], onDelete: SetNull)
-  trailerAsset  MediaAsset?      @relation("IpTitleTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
+  coverAsset   MediaAsset? @relation("IpCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  trailerAsset MediaAsset? @relation("IpTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
 
+  localizations        IpLocalization[]
   episodes             IpEpisode[]
+  assets               IpAsset[]
   campaigns            IpCampaign[]
   priceRules           IpPriceRule[]
   purchaseOrders       IpPurchaseOrder[]
   entitlements         IpContentEntitlement[]
   collectionItems      IpCollectionItem[]
   contributors         IpContributor[]
-  revenueRules         IpRevenueRule[]
-  revenueEntries       IpRevenueLedgerEntry[]
   referralLinks        IpReferralLink[]
   referralAttributions IpReferralAttribution[]
   reviewSubmissions    IpReviewSubmission[]
@@ -2017,26 +1986,43 @@ model IpTitle {
   reports              IpContentReport[]
   userBlocks           IpUserContentBlock[]
 
-  /// Active public slug uniqueness is enforced by partial unique SQL:
-  /// (slug) WHERE slug IS NOT NULL AND deleted_at IS NULL.
-  @@unique([id, workspaceId], name: "uniq_ip_title_id_workspace", map: "ip_titles_id_workspace_unique")
-  @@index([workspaceId, status, updatedAt(sort: Desc)], map: "ip_titles_workspace_recent_idx")
-  @@index([status, listingVisibility, publishedAt(sort: Desc)], map: "ip_titles_public_feed_idx")
-  @@index([contentType, status, publishedAt(sort: Desc)], map: "ip_titles_type_feed_idx")
-  @@map("ip_titles")
+  /// Public slug uniqueness is locale-aware and enforced on
+  /// IpLocalization by partial unique SQL.
+  @@index([createdById, status, updatedAt(sort: Desc)], map: "ips_creator_recent_idx")
+  @@index([status, listingVisibility, publishedAt(sort: Desc)], map: "ips_public_feed_idx")
+  @@index([ipType, status, publishedAt(sort: Desc)], map: "ips_ip_type_feed_idx")
+  @@map("ips")
+}
+
+model IpAsset {
+  id           String         @id @default(uuid()) @db.Uuid
+  ipId         String         @map("ip_id") @db.Uuid
+  mediaAssetId String         @map("media_asset_id") @db.Uuid
+  purpose      IpAssetPurpose @default(source_material)
+  title        String?        @db.VarChar(160)
+  description  String?        @db.Text
+  displayOrder Int            @default(0) @map("display_order")
+  createdById  String         @map("created_by_id") @db.VarChar(64)
+  updatedById  String?        @map("updated_by_id") @db.VarChar(64)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  removedAt    DateTime?      @map("removed_at") @db.Timestamptz(6)
+
+  ip         Ip         @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset @relation("IpLibraryMediaAsset", fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([ipId, mediaAssetId], map: "ip_assets_ip_media_unique")
+  @@index([ipId, purpose, createdAt(sort: Desc)], map: "ip_assets_ip_purpose_recent_idx")
+  @@index([mediaAssetId], map: "ip_assets_media_idx")
+  @@map("ip_assets")
 }
 
 model IpEpisode {
   id              String              @id @default(uuid()) @db.Uuid
-  titleId         String              @map("title_id") @db.Uuid
-  sourceProjectId String?             @map("source_project_id") @db.Uuid
+  ipId            String              @map("ip_id") @db.Uuid
   episodeNo       Int                 @map("episode_no")
   sortOrder       Int                 @default(0) @map("sort_order")
   status          IpPublicationStatus @default(draft)
-  title           String              @db.VarChar(160)
-  subtitle        String?             @db.VarChar(160)
-  summary         String?             @db.VarChar(500)
-  description     String?             @db.Text
   durationSeconds Int?                @map("duration_seconds")
   isFreePreview   Boolean             @default(false) @map("is_free_preview")
   coverAssetId    String?             @map("cover_asset_id") @db.Uuid
@@ -2053,83 +2039,34 @@ model IpEpisode {
   updatedAt       DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime?           @map("deleted_at") @db.Timestamptz(6)
 
-  ipTitle       IpTitle          @relation(fields: [titleId], references: [id], onDelete: Cascade)
-  sourceProject PlatformProject? @relation("IpEpisodeSourceProject", fields: [sourceProjectId], references: [id], onDelete: SetNull)
-  coverAsset    MediaAsset?      @relation("IpEpisodeCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
-  mediaAsset    MediaAsset?      @relation("IpEpisodeMediaAsset", fields: [mediaAssetId], references: [id], onDelete: SetNull)
-  trailerAsset  MediaAsset?      @relation("IpEpisodeTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
+  ip           Ip          @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  coverAsset   MediaAsset? @relation("IpEpisodeCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  mediaAsset   MediaAsset? @relation("IpEpisodeMediaAsset", fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  trailerAsset MediaAsset? @relation("IpEpisodeTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
 
-  storyNodes           IpStoryNode[]
+  localizations        IpEpisodeLocalization[]
   priceRules           IpPriceRule[]
   purchaseOrders       IpPurchaseOrder[]
   entitlements         IpContentEntitlement[]
   collectionItems      IpCollectionItem[]
-  revenueRules         IpRevenueRule[]
-  revenueEntries       IpRevenueLedgerEntry[]
   referralLinks        IpReferralLink[]
   referralAttributions IpReferralAttribution[]
   reviewSubmissions    IpReviewSubmission[]
   rightsDeclarations   IpRightsDeclaration[]
   reports              IpContentReport[]
 
-  @@unique([titleId, episodeNo], map: "ip_episodes_title_number_unique")
-  @@unique([id, titleId], name: "uniq_ip_episode_id_title", map: "ip_episodes_id_title_unique")
-  @@index([titleId, status, sortOrder], map: "ip_episodes_title_status_order_idx")
+  @@unique([ipId, episodeNo], map: "ip_episodes_ip_number_unique")
+  @@unique([id, ipId], name: "uniq_ip_episode_id_ip", map: "ip_episodes_id_ip_unique")
+  @@index([ipId, status, sortOrder], map: "ip_episodes_ip_status_order_idx")
   @@map("ip_episodes")
-}
-
-model IpStoryNode {
-  id            String          @id @default(uuid()) @db.Uuid
-  episodeId     String          @map("episode_id") @db.Uuid
-  nodeType      IpStoryNodeType @default(linear) @map("node_type")
-  code          String          @db.VarChar(64)
-  title         String          @db.VarChar(160)
-  summary       String?         @db.VarChar(500)
-  displayOrder  Int             @default(0) @map("display_order")
-  mediaAssetId  String?         @map("media_asset_id") @db.Uuid
-  isFreePreview Boolean         @default(false) @map("is_free_preview")
-  metadata      Json            @default("{}") @db.JsonB
-  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt     DateTime?       @map("deleted_at") @db.Timestamptz(6)
-
-  episode    IpEpisode   @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  mediaAsset MediaAsset? @relation("IpStoryNodeMediaAsset", fields: [mediaAssetId], references: [id], onDelete: SetNull)
-
-  outgoingChoices IpStoryChoice[] @relation("IpStoryChoiceFrom")
-  incomingChoices IpStoryChoice[] @relation("IpStoryChoiceTo")
-
-  @@unique([episodeId, code], map: "ip_story_nodes_episode_code_unique")
-  @@index([episodeId, displayOrder], map: "ip_story_nodes_episode_order_idx")
-  @@map("ip_story_nodes")
-}
-
-model IpStoryChoice {
-  id           String   @id @default(uuid()) @db.Uuid
-  fromNodeId   String   @map("from_node_id") @db.Uuid
-  toNodeId     String   @map("to_node_id") @db.Uuid
-  label        String   @db.VarChar(120)
-  displayOrder Int      @default(0) @map("display_order")
-  metadata     Json     @default("{}") @db.JsonB
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  fromNode IpStoryNode @relation("IpStoryChoiceFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
-  toNode   IpStoryNode @relation("IpStoryChoiceTo", fields: [toNodeId], references: [id], onDelete: Restrict)
-
-  @@unique([fromNodeId, toNodeId], map: "ip_story_choices_edge_unique")
-  @@index([fromNodeId, displayOrder], map: "ip_story_choices_from_order_idx")
-  @@map("ip_story_choices")
 }
 
 model IpCampaign {
   id             String           @id @default(uuid()) @db.Uuid
-  titleId        String           @map("title_id") @db.Uuid
-  campaignType   IpCampaignType   @default(custom) @map("campaign_type")
+  ipId           String           @map("ip_id") @db.Uuid
+  campaignType   IpCampaignType   @map("campaign_type")
   status         IpCampaignStatus @default(draft)
   code           String           @db.VarChar(96)
-  name           String           @db.VarChar(160)
-  description    String?          @db.Text
   startsAt       DateTime?        @map("starts_at") @db.Timestamptz(6)
   endsAt         DateTime?        @map("ends_at") @db.Timestamptz(6)
   unlocksAt      DateTime?        @map("unlocks_at") @db.Timestamptz(6)
@@ -2141,24 +2078,137 @@ model IpCampaign {
   updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   archivedAt     DateTime?        @map("archived_at") @db.Timestamptz(6)
 
-  ipTitle           IpTitle              @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  ip                Ip                       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  localizations     IpCampaignLocalization[]
   priceRules        IpPriceRule[]
   purchaseOrders    IpPurchaseOrder[]
   reviewSubmissions IpReviewSubmission[]
 
-  @@unique([titleId, code], map: "ip_campaigns_title_code_unique")
-  @@index([titleId, status, startsAt], map: "ip_campaigns_title_status_idx")
+  @@unique([ipId, code], map: "ip_campaigns_ip_code_unique")
+  @@index([ipId, status, startsAt], map: "ip_campaigns_ip_status_idx")
   @@index([status, startsAt], map: "ip_campaigns_status_idx")
   @@map("ip_campaigns")
 }
 
+model IpLocalization {
+  id                   String               @id @default(uuid()) @db.Uuid
+  ipId                 String               @map("ip_id") @db.Uuid
+  locale               String               @db.VarChar(16)
+  status               IpLocalizationStatus @default(draft)
+  slug                 String?              @db.VarChar(120)
+  title                String               @db.VarChar(160)
+  subtitle             String?              @db.VarChar(160)
+  summary              String               @db.VarChar(500)
+  description          String?              @db.Text
+  genres               String[]             @default([])
+  tags                 String[]             @default([])
+  seoTitle             String?              @map("seo_title") @db.VarChar(180)
+  seoDescription       String?              @map("seo_description") @db.VarChar(300)
+  sourceHash           String?              @map("source_hash") @db.VarChar(64)
+  translatedFromLocale String?              @map("translated_from_locale") @db.VarChar(16)
+  translationProvider  String?              @map("translation_provider") @db.VarChar(64)
+  reviewedById         String?              @map("reviewed_by_id") @db.VarChar(64)
+  publishedAt          DateTime?            @map("published_at") @db.Timestamptz(6)
+  archivedAt           DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  /// Public slug uniqueness is enforced by partial unique SQL:
+  /// (locale, slug) WHERE slug IS NOT NULL AND archived_at IS NULL AND status = 'published'.
+  @@unique([ipId, locale], map: "ip_localizations_ip_locale_unique")
+  @@index([locale, status, publishedAt(sort: Desc)], map: "ip_localizations_public_locale_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "ip_localizations_status_recent_idx")
+  @@map("ip_localizations")
+}
+
+model IpEpisodeLocalization {
+  id                   String               @id @default(uuid()) @db.Uuid
+  episodeId            String               @map("episode_id") @db.Uuid
+  locale               String               @db.VarChar(16)
+  status               IpLocalizationStatus @default(draft)
+  title                String               @db.VarChar(160)
+  subtitle             String?              @db.VarChar(160)
+  summary              String?              @db.VarChar(500)
+  description          String?              @db.Text
+  sourceHash           String?              @map("source_hash") @db.VarChar(64)
+  translatedFromLocale String?              @map("translated_from_locale") @db.VarChar(16)
+  translationProvider  String?              @map("translation_provider") @db.VarChar(64)
+  reviewedById         String?              @map("reviewed_by_id") @db.VarChar(64)
+  publishedAt          DateTime?            @map("published_at") @db.Timestamptz(6)
+  archivedAt           DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  episode IpEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([episodeId, locale], map: "ip_episode_localizations_episode_locale_unique")
+  @@index([locale, status, publishedAt(sort: Desc)], map: "ip_episode_localizations_public_locale_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "ip_episode_localizations_status_recent_idx")
+  @@map("ip_episode_localizations")
+}
+
+model IpCampaignLocalization {
+  id                   String               @id @default(uuid()) @db.Uuid
+  campaignId           String               @map("campaign_id") @db.Uuid
+  locale               String               @db.VarChar(16)
+  status               IpLocalizationStatus @default(draft)
+  name                 String               @db.VarChar(160)
+  description          String?              @db.Text
+  sourceHash           String?              @map("source_hash") @db.VarChar(64)
+  translatedFromLocale String?              @map("translated_from_locale") @db.VarChar(16)
+  translationProvider  String?              @map("translation_provider") @db.VarChar(64)
+  reviewedById         String?              @map("reviewed_by_id") @db.VarChar(64)
+  publishedAt          DateTime?            @map("published_at") @db.Timestamptz(6)
+  archivedAt           DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  campaign IpCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, locale], map: "ip_campaign_localizations_campaign_locale_unique")
+  @@index([locale, status, publishedAt(sort: Desc)], map: "ip_campaign_localizations_public_locale_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "ip_campaign_localizations_status_recent_idx")
+  @@map("ip_campaign_localizations")
+}
+
+model IpTranslationJob {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  targetType           IpTranslationTargetType @map("target_type")
+  targetId             String                  @map("target_id") @db.Uuid
+  sourceLocale         String                  @map("source_locale") @db.VarChar(16)
+  targetLocale         String                  @map("target_locale") @db.VarChar(16)
+  status               IpTranslationJobStatus  @default(queued)
+  provider             String?                 @db.VarChar(64)
+  requestedById        String?                 @map("requested_by_id") @db.VarChar(64)
+  idempotencyKey       String                  @unique(map: "ip_translation_jobs_idempotency_key_unique") @map("idempotency_key") @db.VarChar(180)
+  inputHash            String?                 @map("input_hash") @db.VarChar(64)
+  resultLocalizationId String?                 @map("result_localization_id") @db.Uuid
+  errorCode            String?                 @map("error_code") @db.VarChar(64)
+  errorMessage         String?                 @map("error_message") @db.Text
+  attempts             Int                     @default(0)
+  metadata             Json                    @default("{}") @db.JsonB
+  requestedAt          DateTime                @default(now()) @map("requested_at") @db.Timestamptz(6)
+  startedAt            DateTime?               @map("started_at") @db.Timestamptz(6)
+  completedAt          DateTime?               @map("completed_at") @db.Timestamptz(6)
+  updatedAt            DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([targetType, targetId, targetLocale, status], map: "ip_translation_jobs_target_idx")
+  @@index([status, requestedAt(sort: Desc)], map: "ip_translation_jobs_queue_idx")
+  @@map("ip_translation_jobs")
+}
+
 model IpPriceRule {
   id              String             @id @default(uuid()) @db.Uuid
-  titleId         String             @map("title_id") @db.Uuid
+  ipId            String             @map("ip_id") @db.Uuid
   episodeId       String?            @map("episode_id") @db.Uuid
   campaignId      String?            @map("campaign_id") @db.Uuid
   targetType      IpTargetType       @map("target_type")
   status          IpPriceRuleStatus  @default(draft)
+  /// IP content purchases are always priced in community points. Compute
+  /// points are reserved for AI generation workloads and are blocked by a DB
+  /// check constraint in the matching migration.
   currency        WalletCurrencyType @default(community_point)
   amount          BigInt
   originalAmount  BigInt?            @map("original_amount")
@@ -2175,13 +2225,13 @@ model IpPriceRule {
   updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   archivedAt      DateTime?          @map("archived_at") @db.Timestamptz(6)
 
-  ipTitle           IpTitle              @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  ip                Ip                   @relation(fields: [ipId], references: [id], onDelete: Cascade)
   episode           IpEpisode?           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   campaign          IpCampaign?          @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   purchaseOrders    IpPurchaseOrder[]
   reviewSubmissions IpReviewSubmission[]
 
-  @@index([titleId, targetType, status, priority], map: "ip_price_rules_title_target_idx")
+  @@index([ipId, targetType, status, priority], map: "ip_price_rules_ip_target_idx")
   @@index([episodeId, status], map: "ip_price_rules_episode_idx")
   @@index([campaignId, status], map: "ip_price_rules_campaign_idx")
   @@index([status, startsAt, endsAt], map: "ip_price_rules_effective_idx")
@@ -2192,10 +2242,7 @@ model IpPurchaseOrder {
   id                  String                @id @default(uuid()) @db.Uuid
   orderNo             String                @map("order_no") @db.VarChar(64)
   userId              String                @map("user_id") @db.VarChar(64)
-  workspaceId         String?               @map("workspace_id") @db.Uuid
-  subjectType         BillingSubjectType    @map("subject_type")
-  subjectId           String                @map("subject_id") @db.VarChar(64)
-  titleId             String                @map("title_id") @db.Uuid
+  ipId                String                @map("ip_id") @db.Uuid
   episodeId           String?               @map("episode_id") @db.Uuid
   targetType          IpTargetType          @map("target_type")
   status              IpPurchaseOrderStatus @default(pending)
@@ -2219,8 +2266,7 @@ model IpPurchaseOrder {
   createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  workspace         Workspace?         @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
-  ipTitle           IpTitle            @relation(fields: [titleId], references: [id], onDelete: Restrict)
+  ip                Ip                 @relation(fields: [ipId], references: [id], onDelete: Restrict)
   episode           IpEpisode?         @relation(fields: [episodeId], references: [id], onDelete: Restrict)
   priceRule         IpPriceRule?       @relation(fields: [priceRuleId], references: [id], onDelete: SetNull)
   campaign          IpCampaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
@@ -2228,14 +2274,12 @@ model IpPurchaseOrder {
   walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
 
   entitlements         IpContentEntitlement[]
-  revenueEntries       IpRevenueLedgerEntry[]
   referralAttributions IpReferralAttribution[]
 
   @@unique([orderNo], map: "ip_purchase_orders_order_no_unique")
   @@unique([userId, idempotencyKey], map: "ip_purchase_orders_user_idem_unique")
   @@index([userId, createdAt(sort: Desc)], map: "ip_purchase_orders_user_recent_idx")
-  @@index([subjectType, subjectId, createdAt(sort: Desc)], map: "ip_purchase_orders_subject_recent_idx")
-  @@index([titleId, status, createdAt(sort: Desc)], map: "ip_purchase_orders_title_status_idx")
+  @@index([ipId, status, createdAt(sort: Desc)], map: "ip_purchase_orders_ip_status_idx")
   @@index([episodeId, status, createdAt(sort: Desc)], map: "ip_purchase_orders_episode_status_idx")
   @@index([status, updatedAt(sort: Desc)], map: "ip_purchase_orders_status_recent_idx")
   @@map("ip_purchase_orders")
@@ -2243,9 +2287,8 @@ model IpPurchaseOrder {
 
 model IpContentEntitlement {
   id            String              @id @default(uuid()) @db.Uuid
-  subjectType   BillingSubjectType  @map("subject_type")
-  subjectId     String              @map("subject_id") @db.VarChar(64)
-  titleId       String              @map("title_id") @db.Uuid
+  userId        String              @map("user_id") @db.VarChar(64)
+  ipId          String              @map("ip_id") @db.Uuid
   episodeId     String?             @map("episode_id") @db.Uuid
   targetType    IpTargetType        @map("target_type")
   status        IpEntitlementStatus @default(active)
@@ -2259,14 +2302,14 @@ model IpContentEntitlement {
   updatedAt     DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   revokedAt     DateTime?           @map("revoked_at") @db.Timestamptz(6)
 
-  ipTitle         IpTitle            @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  ip              Ip                 @relation(fields: [ipId], references: [id], onDelete: Cascade)
   episode         IpEpisode?         @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   sourceOrder     IpPurchaseOrder?   @relation(fields: [sourceOrderId], references: [id], onDelete: SetNull)
   collectionItems IpCollectionItem[]
 
   @@unique([sourceType, sourceId], map: "ip_entitlements_source_unique")
-  @@index([subjectType, subjectId, status, startsAt], map: "ip_entitlements_subject_status_idx")
-  @@index([titleId, targetType, status], map: "ip_entitlements_title_target_idx")
+  @@index([userId, status, startsAt], map: "ip_entitlements_user_status_idx")
+  @@index([ipId, targetType, status], map: "ip_entitlements_ip_target_idx")
   @@index([episodeId, status], map: "ip_entitlements_episode_idx")
   @@map("ip_content_entitlements")
 }
@@ -2274,7 +2317,7 @@ model IpContentEntitlement {
 model IpCollectionItem {
   id            String                 @id @default(uuid()) @db.Uuid
   userId        String                 @map("user_id") @db.VarChar(64)
-  titleId       String                 @map("title_id") @db.Uuid
+  ipId          String                 @map("ip_id") @db.Uuid
   episodeId     String?                @map("episode_id") @db.Uuid
   entitlementId String?                @map("entitlement_id") @db.Uuid
   targetType    IpTargetType           @map("target_type")
@@ -2285,146 +2328,70 @@ model IpCollectionItem {
   lastViewedAt  DateTime?              @map("last_viewed_at") @db.Timestamptz(6)
   removedAt     DateTime?              @map("removed_at") @db.Timestamptz(6)
 
-  ipTitle     IpTitle               @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  ip          Ip                    @relation(fields: [ipId], references: [id], onDelete: Cascade)
   episode     IpEpisode?            @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   entitlement IpContentEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
 
   /// Active uniqueness is enforced by partial unique SQL:
-  /// (user_id, target_type, title_id, coalesce(episode_id, nil_uuid))
+  /// (user_id, target_type, ip_id, coalesce(episode_id, nil_uuid))
   /// WHERE removed_at IS NULL.
   @@index([userId, status, addedAt(sort: Desc)], map: "ip_collection_items_user_recent_idx")
-  @@index([titleId, status], map: "ip_collection_items_title_idx")
+  @@index([ipId, status], map: "ip_collection_items_ip_idx")
   @@map("ip_collection_items")
 }
 
 model IpContributor {
-  id              String            @id @default(uuid()) @db.Uuid
-  titleId         String            @map("title_id") @db.Uuid
-  userId          String?           @map("user_id") @db.VarChar(64)
-  displayName     String            @map("display_name") @db.VarChar(120)
-  role            IpContributorRole
-  customRole      String?           @map("custom_role") @db.VarChar(80)
-  isPublic        Boolean           @default(true) @map("is_public")
-  revenueEligible Boolean           @default(false) @map("revenue_eligible")
-  displayOrder    Int               @default(0) @map("display_order")
-  metadata        Json              @default("{}") @db.JsonB
-  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  removedAt       DateTime?         @map("removed_at") @db.Timestamptz(6)
+  id           String            @id @default(uuid()) @db.Uuid
+  ipId         String            @map("ip_id") @db.Uuid
+  userId       String?           @map("user_id") @db.VarChar(64)
+  displayName  String            @map("display_name") @db.VarChar(120)
+  role         IpContributorRole
+  customRole   String?           @map("custom_role") @db.VarChar(80)
+  isPublic     Boolean           @default(true) @map("is_public")
+  displayOrder Int               @default(0) @map("display_order")
+  metadata     Json              @default("{}") @db.JsonB
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  removedAt    DateTime?         @map("removed_at") @db.Timestamptz(6)
 
-  ipTitle      IpTitle         @relation(fields: [titleId], references: [id], onDelete: Cascade)
-  revenueRules IpRevenueRule[]
+  ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
 
-  @@index([titleId, displayOrder], map: "ip_contributors_title_order_idx")
+  @@index([ipId, displayOrder], map: "ip_contributors_ip_order_idx")
   @@index([userId, removedAt], map: "ip_contributors_user_idx")
   @@map("ip_contributors")
 }
 
-model IpRevenueRule {
-  id                String              @id @default(uuid()) @db.Uuid
-  titleId           String              @map("title_id") @db.Uuid
-  episodeId         String?             @map("episode_id") @db.Uuid
-  contributorId     String?             @map("contributor_id") @db.Uuid
-  beneficiaryUserId String?             @map("beneficiary_user_id") @db.VarChar(64)
-  ruleType          IpRevenueRuleType   @map("rule_type")
-  status            IpRevenueRuleStatus @default(draft)
-  currency          WalletCurrencyType  @default(community_point)
-  balanceKind       WalletBalanceKind   @default(withdrawable) @map("balance_kind")
-  shareBps          Int?                @map("share_bps")
-  fixedAmount       BigInt?             @map("fixed_amount")
-  startsAt          DateTime?           @map("starts_at") @db.Timestamptz(6)
-  endsAt            DateTime?           @map("ends_at") @db.Timestamptz(6)
-  contractSnapshot  Json                @default("{}") @map("contract_snapshot") @db.JsonB
-  metadata          Json                @default("{}") @db.JsonB
-  createdById       String              @map("created_by_id") @db.VarChar(64)
-  updatedById       String?             @map("updated_by_id") @db.VarChar(64)
-  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  archivedAt        DateTime?           @map("archived_at") @db.Timestamptz(6)
-
-  ipTitle     IpTitle        @relation(fields: [titleId], references: [id], onDelete: Cascade)
-  episode     IpEpisode?     @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  contributor IpContributor? @relation(fields: [contributorId], references: [id], onDelete: SetNull)
-
-  revenueEntries    IpRevenueLedgerEntry[]
-  reviewSubmissions IpReviewSubmission[]
-
-  @@index([titleId, status, ruleType], map: "ip_revenue_rules_title_status_idx")
-  @@index([beneficiaryUserId, status], map: "ip_revenue_rules_beneficiary_idx")
-  @@map("ip_revenue_rules")
-}
-
-model IpRevenueLedgerEntry {
-  id                  String                   @id @default(uuid()) @db.Uuid
-  userId              String                   @map("user_id") @db.VarChar(64)
-  titleId             String                   @map("title_id") @db.Uuid
-  episodeId           String?                  @map("episode_id") @db.Uuid
-  orderId             String?                  @map("order_id") @db.Uuid
-  ruleId              String?                  @map("rule_id") @db.Uuid
-  referralLinkId      String?                  @map("referral_link_id") @db.Uuid
-  walletTransactionId String?                  @map("wallet_transaction_id") @db.Uuid
-  entryType           IpRevenueLedgerEntryType @map("entry_type")
-  status              IpRevenueLedgerStatus    @default(pending)
-  currency            WalletCurrencyType       @default(community_point)
-  balanceKind         WalletBalanceKind        @default(withdrawable) @map("balance_kind")
-  amount              BigInt
-  sourceAmount        BigInt?                  @map("source_amount")
-  shareBps            Int?                     @map("share_bps")
-  metadata            Json                     @default("{}") @db.JsonB
-  createdAt           DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  postedAt            DateTime?                @map("posted_at") @db.Timestamptz(6)
-  voidedAt            DateTime?                @map("voided_at") @db.Timestamptz(6)
-
-  ipTitle           IpTitle            @relation(fields: [titleId], references: [id], onDelete: Cascade)
-  episode           IpEpisode?         @relation(fields: [episodeId], references: [id], onDelete: SetNull)
-  order             IpPurchaseOrder?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  rule              IpRevenueRule?     @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  referralLink      IpReferralLink?    @relation(fields: [referralLinkId], references: [id], onDelete: SetNull)
-  walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id], onDelete: SetNull)
-
-  @@index([userId, status, createdAt(sort: Desc)], map: "ip_revenue_entries_user_recent_idx")
-  @@index([titleId, status, createdAt(sort: Desc)], map: "ip_revenue_entries_title_recent_idx")
-  @@index([orderId], map: "ip_revenue_entries_order_idx")
-  @@map("ip_revenue_ledger_entries")
-}
-
 model IpReferralLink {
-  id            String               @id @default(uuid()) @db.Uuid
-  titleId       String               @map("title_id") @db.Uuid
-  episodeId     String?              @map("episode_id") @db.Uuid
-  userId        String               @map("user_id") @db.VarChar(64)
-  code          String               @db.VarChar(64)
-  status        IpReferralLinkStatus @default(active)
-  commissionBps Int                  @default(1000) @map("commission_bps")
-  landingPath   String?              @map("landing_path") @db.VarChar(512)
-  posterAssetId String?              @map("poster_asset_id") @db.Uuid
-  qrAssetId     String?              @map("qr_asset_id") @db.Uuid
-  metadata      Json                 @default("{}") @db.JsonB
-  startsAt      DateTime?            @map("starts_at") @db.Timestamptz(6)
-  endsAt        DateTime?            @map("ends_at") @db.Timestamptz(6)
-  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  disabledAt    DateTime?            @map("disabled_at") @db.Timestamptz(6)
+  id          String               @id @default(uuid()) @db.Uuid
+  ipId        String               @map("ip_id") @db.Uuid
+  episodeId   String?              @map("episode_id") @db.Uuid
+  userId      String               @map("user_id") @db.VarChar(64)
+  code        String               @db.VarChar(64)
+  status      IpReferralLinkStatus @default(active)
+  landingPath String?              @map("landing_path") @db.VarChar(512)
+  metadata    Json                 @default("{}") @db.JsonB
+  startsAt    DateTime?            @map("starts_at") @db.Timestamptz(6)
+  endsAt      DateTime?            @map("ends_at") @db.Timestamptz(6)
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  disabledAt  DateTime?            @map("disabled_at") @db.Timestamptz(6)
 
-  ipTitle     IpTitle     @relation(fields: [titleId], references: [id], onDelete: Cascade)
-  episode     IpEpisode?  @relation(fields: [episodeId], references: [id], onDelete: SetNull)
-  posterAsset MediaAsset? @relation("IpReferralPosterAsset", fields: [posterAssetId], references: [id], onDelete: SetNull)
-  qrAsset     MediaAsset? @relation("IpReferralQrAsset", fields: [qrAssetId], references: [id], onDelete: SetNull)
+  ip      Ip         @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  episode IpEpisode? @relation(fields: [episodeId], references: [id], onDelete: SetNull)
 
   purchaseOrders IpPurchaseOrder[]
   attributions   IpReferralAttribution[]
-  revenueEntries IpRevenueLedgerEntry[]
 
   @@unique([code], map: "ip_referral_links_code_unique")
   @@index([userId, status, createdAt(sort: Desc)], map: "ip_referral_links_user_recent_idx")
-  @@index([titleId, status], map: "ip_referral_links_title_status_idx")
+  @@index([ipId, status], map: "ip_referral_links_ip_status_idx")
   @@map("ip_referral_links")
 }
 
 model IpReferralAttribution {
   id             String   @id @default(uuid()) @db.Uuid
   referralLinkId String   @map("referral_link_id") @db.Uuid
-  titleId        String   @map("title_id") @db.Uuid
+  ipId           String   @map("ip_id") @db.Uuid
   episodeId      String?  @map("episode_id") @db.Uuid
   orderId        String?  @map("order_id") @db.Uuid
   buyerUserId    String?  @map("buyer_user_id") @db.VarChar(64)
@@ -2433,7 +2400,7 @@ model IpReferralAttribution {
   attributedAt   DateTime @default(now()) @map("attributed_at") @db.Timestamptz(6)
 
   referralLink IpReferralLink   @relation(fields: [referralLinkId], references: [id], onDelete: Cascade)
-  ipTitle      IpTitle          @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  ip           Ip               @relation(fields: [ipId], references: [id], onDelete: Cascade)
   episode      IpEpisode?       @relation(fields: [episodeId], references: [id], onDelete: SetNull)
   order        IpPurchaseOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
 
@@ -2447,11 +2414,10 @@ model IpReviewSubmission {
   id             String             @id @default(uuid()) @db.Uuid
   targetType     IpReviewTargetType @map("target_type")
   targetId       String             @map("target_id") @db.VarChar(64)
-  titleId        String?            @map("title_id") @db.Uuid
+  ipId           String?            @map("ip_id") @db.Uuid
   episodeId      String?            @map("episode_id") @db.Uuid
   campaignId     String?            @map("campaign_id") @db.Uuid
   priceRuleId    String?            @map("price_rule_id") @db.Uuid
-  revenueRuleId  String?            @map("revenue_rule_id") @db.Uuid
   status         IpReviewStatus     @default(submitted)
   snapshot       Json               @db.JsonB
   changeSummary  String?            @map("change_summary") @db.Text
@@ -2463,16 +2429,15 @@ model IpReviewSubmission {
   reviewedAt     DateTime?          @map("reviewed_at") @db.Timestamptz(6)
   canceledAt     DateTime?          @map("canceled_at") @db.Timestamptz(6)
 
-  ipTitle     IpTitle?        @relation(fields: [titleId], references: [id], onDelete: SetNull)
-  episode     IpEpisode?      @relation(fields: [episodeId], references: [id], onDelete: SetNull)
-  campaign    IpCampaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  priceRule   IpPriceRule?    @relation(fields: [priceRuleId], references: [id], onDelete: SetNull)
-  revenueRule IpRevenueRule?  @relation(fields: [revenueRuleId], references: [id], onDelete: SetNull)
-  events      IpReviewEvent[]
+  ip        Ip?             @relation(fields: [ipId], references: [id], onDelete: SetNull)
+  episode   IpEpisode?      @relation(fields: [episodeId], references: [id], onDelete: SetNull)
+  campaign  IpCampaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  priceRule IpPriceRule?    @relation(fields: [priceRuleId], references: [id], onDelete: SetNull)
+  events    IpReviewEvent[]
 
   @@index([status, submittedAt(sort: Asc)], map: "ip_review_submissions_queue_idx")
   @@index([targetType, targetId, submittedAt(sort: Desc)], map: "ip_review_submissions_target_idx")
-  @@index([titleId, submittedAt(sort: Desc)], map: "ip_review_submissions_title_idx")
+  @@index([ipId, submittedAt(sort: Desc)], map: "ip_review_submissions_ip_idx")
   @@map("ip_review_submissions")
 }
 
@@ -2494,7 +2459,7 @@ model IpReviewEvent {
 model IpRightsDeclaration {
   id             String                    @id @default(uuid()) @db.Uuid
   targetType     IpRightsTargetType        @map("target_type")
-  titleId        String                    @map("title_id") @db.Uuid
+  ipId           String                    @map("ip_id") @db.Uuid
   episodeId      String?                   @map("episode_id") @db.Uuid
   status         IpRightsDeclarationStatus @default(draft)
   ownershipType  IpRightsOwnershipType     @map("ownership_type")
@@ -2511,32 +2476,32 @@ model IpRightsDeclaration {
   createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  ipTitle IpTitle    @relation(fields: [titleId], references: [id], onDelete: Cascade)
+  ip      Ip         @relation(fields: [ipId], references: [id], onDelete: Cascade)
   episode IpEpisode? @relation(fields: [episodeId], references: [id], onDelete: Cascade)
 
-  @@index([titleId, targetType, status], map: "ip_rights_declarations_title_idx")
+  @@index([ipId, targetType, status], map: "ip_rights_declarations_ip_idx")
   @@index([status, submittedAt(sort: Asc)], map: "ip_rights_declarations_queue_idx")
   @@map("ip_rights_declarations")
 }
 
 model IpContentReport {
-  id              String                 @id @default(uuid()) @db.Uuid
-  targetType      IpModerationTargetType @map("target_type")
-  targetId        String                 @map("target_id") @db.VarChar(64)
-  titleId         String?                @map("title_id") @db.Uuid
-  episodeId       String?                @map("episode_id") @db.Uuid
-  reporterUserId  String?                @map("reporter_user_id") @db.VarChar(64)
+  id              String         @id @default(uuid()) @db.Uuid
+  targetType      IpTargetType   @map("target_type")
+  targetId        String         @map("target_id") @db.VarChar(64)
+  ipId            String?        @map("ip_id") @db.Uuid
+  episodeId       String?        @map("episode_id") @db.Uuid
+  reporterUserId  String?        @map("reporter_user_id") @db.VarChar(64)
   reason          IpReportReason
-  status          IpReportStatus         @default(submitted)
-  description     String?                @db.Text
-  evidenceAssetId String?                @map("evidence_asset_id") @db.Uuid
-  metadata        Json                   @default("{}") @db.JsonB
-  resolvedById    String?                @map("resolved_by_id") @db.VarChar(64)
-  resolutionNote  String?                @map("resolution_note") @db.Text
-  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  resolvedAt      DateTime?              @map("resolved_at") @db.Timestamptz(6)
+  status          IpReportStatus @default(submitted)
+  description     String?        @db.Text
+  evidenceAssetId String?        @map("evidence_asset_id") @db.Uuid
+  metadata        Json           @default("{}") @db.JsonB
+  resolvedById    String?        @map("resolved_by_id") @db.VarChar(64)
+  resolutionNote  String?        @map("resolution_note") @db.Text
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt      DateTime?      @map("resolved_at") @db.Timestamptz(6)
 
-  ipTitle       IpTitle?    @relation(fields: [titleId], references: [id], onDelete: SetNull)
+  ip            Ip?         @relation(fields: [ipId], references: [id], onDelete: SetNull)
   episode       IpEpisode?  @relation(fields: [episodeId], references: [id], onDelete: SetNull)
   evidenceAsset MediaAsset? @relation("IpReportEvidenceAsset", fields: [evidenceAssetId], references: [id], onDelete: SetNull)
 
@@ -2570,12 +2535,12 @@ model IpUserContentBlock {
   userId      String                @map("user_id") @db.VarChar(64)
   targetType  IpUserBlockTargetType @map("target_type")
   targetId    String                @map("target_id") @db.VarChar(64)
-  titleId     String?               @map("title_id") @db.Uuid
+  ipId        String?               @map("ip_id") @db.Uuid
   reason      String?               @db.VarChar(160)
   createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   unblockedAt DateTime?             @map("unblocked_at") @db.Timestamptz(6)
 
-  ipTitle IpTitle? @relation(fields: [titleId], references: [id], onDelete: SetNull)
+  ip Ip? @relation(fields: [ipId], references: [id], onDelete: SetNull)
 
   /// Active uniqueness is enforced by partial unique SQL:
   /// (user_id, target_type, target_id) WHERE unblocked_at IS NULL.
@@ -3879,15 +3844,12 @@ model MediaAsset {
   deletedAt       DateTime?            @map("deleted_at") @db.Timestamptz(6)
 
   certificateImages UserCertificate[] @relation("UserCertificateImage")
-  ipTitleCovers     IpTitle[]         @relation("IpTitleCoverAsset")
-  ipTitleHeroes     IpTitle[]         @relation("IpTitleHeroAsset")
-  ipTitleTrailers   IpTitle[]         @relation("IpTitleTrailerAsset")
+  ipCovers          Ip[]              @relation("IpCoverAsset")
+  ipTrailers        Ip[]              @relation("IpTrailerAsset")
   ipEpisodeCovers   IpEpisode[]       @relation("IpEpisodeCoverAsset")
   ipEpisodeMedia    IpEpisode[]       @relation("IpEpisodeMediaAsset")
   ipEpisodeTrailers IpEpisode[]       @relation("IpEpisodeTrailerAsset")
-  ipStoryNodeMedia  IpStoryNode[]     @relation("IpStoryNodeMediaAsset")
-  ipReferralPosters IpReferralLink[]  @relation("IpReferralPosterAsset")
-  ipReferralQrCodes IpReferralLink[]  @relation("IpReferralQrAsset")
+  ipLibraryAssets   IpAsset[]         @relation("IpLibraryMediaAsset")
   ipReportEvidence  IpContentReport[] @relation("IpReportEvidenceAsset")
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")

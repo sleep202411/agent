@@ -440,9 +440,8 @@
     "detailCreativeTeam": "创作团队",
     "detailLike": "点赞",
     "detailSave": "收藏",
-    "detailProducer": "制片人",
+    "detailProducer": "出品人",
     "detailViewProfile": "查看主页",
-    "share": "分享",
     "shareCopied": "链接已复制",
     "shareCopyFailed": "复制链接失败",
     "forYou": "为你推荐",
@@ -452,12 +451,10 @@
     "detailWatchTrailer": "播放预告片",
     "detailFollow": "关注",
     "detailEpisodesTitle": "剧集",
-    "detailPurchaseWatch": "购买观看",
     "detailShare": "分享",
     "detailShareHint": "把《{title}》分享给你的社区。",
     "detailShareCopyLink": "复制链接",
     "detailShareCopied": "已复制",
-    "detailProducer": "出品人",
     "detailProducerLabel": "项目主理",
     "detailEpisodeCount": "{count} 集",
     "detailNoEpisodes": "还没有发布剧集。",
@@ -896,6 +893,684 @@
     "goToStudio": "前往 Studio",
     "viewIPPlaza": "查看 IP 广场"
   },
+  "newIpCreate": {
+    "close": "关闭",
+    "pageTitle": "创建 IP",
+    "heroEyebrow": "新版 IP",
+    "heroSubtitle": "先保存一个干净的 IP 草稿，后续设定、剧集、资产和商业化都归入同一个工作台。",
+    "fieldName": "IP 名称",
+    "fieldNamePlaceholder": "请输入 IP 名称",
+    "fieldIpType": "IP 类型",
+    "fieldIpTypePlaceholder": "请选择 IP 类型",
+    "ipType": {
+      "series": "剧集 / 系列",
+      "film_short": "电影 / 短片",
+      "other": "其他"
+    },
+    "fieldDescription": "短简介",
+    "fieldDescriptionPlaceholder": "一两句话讲清楚：你的 IP 凭什么吸引人？",
+    "dropzoneIdleTitle": "把剧本、提案或大纲拖到这里",
+    "dropzoneIdleHint": "我们会自动读取并填入下方表单。支持 PDF / DOCX / TXT / MD，单个不超过 10MB。",
+    "dropzoneActive": "松开以分析",
+    "dropzoneBrowse": "浏览文件",
+    "dropzoneAnalyzing": "正在解析你的文件…",
+    "dropzoneSuccess": "已根据 {name} 自动填充",
+    "dropzoneFailed": "无法解析此文件，换一个试试？",
+    "dropzoneClear": "撤销",
+    "dropzoneRetry": "重试",
+    "aiSuggested": "AI 建议",
+    "fileTooLarge": "文件过大，单个不超过 10MB。",
+    "fileTypeUnsupported": "暂不支持此格式。",
+    "createSuccess": "IP 草稿已创建",
+    "createFailed": "IP 草稿创建失败",
+    "creating": "创建中...",
+    "createDraft": "创建草稿"
+  },
+  "newIpWorkbench": {
+    "backToProfile": "返回个人中心",
+    "eyebrow": "IP 工作台",
+    "emptySummary": "暂未填写简介。",
+    "notFoundTitle": "没有找到这个 IP 草稿",
+    "notFoundBody": "它可能不存在、已被删除，或者当前账号没有访问权限。",
+    "retry": "重试",
+    "lastEdited": "最后编辑 {time}",
+    "preview": "预览",
+    "publish": "准备发布",
+    "reviewSubmit": {
+      "defaultSummary": "提交 IP 草稿进入发布审核。",
+      "submitting": "提交中...",
+      "success": "已提交审核",
+      "failed": "提交审核失败",
+      "requirements": "提交前先补齐：{items}"
+    },
+    "navTitle": "工作区",
+    "flowTitle": "创作流程",
+    "flowBody": "按阶段推进，但每个阶段都可以独立补齐；圆环显示当前完成度。",
+    "comingSoon": "即将开放",
+    "editBasics": "编辑基础信息",
+    "profileEdit": {
+      "title": "编辑 IP 基础信息",
+      "body": "这里保存的是新版 IP 的名称、类型和短简介，后续剧集、资产、协作和商业化都会引用这份基础信息。",
+      "save": "保存修改",
+      "saving": "保存中...",
+      "saved": "IP 基础信息已保存",
+      "failed": "IP 基础信息保存失败",
+      "description": "公开详情",
+      "descriptionPlaceholder": "补充更完整的公开介绍：世界、看点、风格，以及为什么观众值得关注。",
+      "visibility": "可见范围",
+      "visibilityHelp": "是否真正公开仍由审核和发布状态决定。",
+      "ageRating": "年龄分级",
+      "genres": "类型",
+      "genresPlaceholder": "科幻、悬疑",
+      "tags": "标签",
+      "tagsPlaceholder": "AI 动画、互动剧情",
+      "taxonomyHelp": "{count}/{max}，用逗号分隔"
+    },
+    "progressTitle": "完善进度",
+    "nextTitle": "下一步",
+    "completionHelp": "用于判断这个 IP 是否已经具备进入公开展示、协作或商业化配置的基础条件。",
+    "fields": {
+      "name": "IP 名称",
+      "summary": "短简介",
+      "asset": "封面或预告片",
+      "rights": "版权主体和权利说明",
+      "aiDisclosure": "AI 使用说明"
+    },
+    "metrics": {
+      "completion": "资料完整度",
+      "modules": "工作模块",
+      "version": "版本"
+    },
+    "sections": {
+      "overview": {
+        "title": "概览",
+        "status": "当前编辑"
+      },
+      "episodes": {
+        "title": "剧集管理",
+        "status": "待补充"
+      },
+      "rights": {
+        "title": "版权声明",
+        "status": "待确认"
+      },
+      "pricing": {
+        "title": "定价",
+        "status": "待配置"
+      },
+      "collaboration": {
+        "title": "协作与剧组",
+        "status": "待补充"
+      },
+      "commerce": {
+        "title": "商业化",
+        "status": "待配置"
+      }
+    },
+    "panels": {
+      "overview": {
+        "eyebrow": "Overview",
+        "title": "IP 总览",
+        "body": "把 IP 的身份、当前状态和后续工作模块放在同一个起点，先让创作者知道下一步该补什么。",
+        "action": "编辑基础信息"
+      },
+      "collaboration": {
+        "eyebrow": "Crew",
+        "title": "协作与剧组",
+        "body": "围绕 IP 组织成员、角色、权限、任务和外部合作，未来可扩展到合作方房间和项目协作。",
+        "action": "邀请成员"
+      },
+      "commerce": {
+        "eyebrow": "Commerce",
+        "title": "商业化",
+        "body": "把访问权益、价格、促销、订单履约和收益记录串起来，先展示产品结构，后续接真实交易能力。",
+        "action": "配置权益"
+      }
+    },
+    "overview": {
+      "identityEyebrow": "当前草稿",
+      "displayAssets": {
+        "title": "展示素材",
+        "body": "封面和推广片是 IP 对外展示的第一层识别资产，只能上传到 FizzDragon 对象存储后绑定。"
+      },
+      "next": {
+        "eyebrow": "推荐下一步",
+        "profile": {
+          "title": "完善 IP 档案",
+          "body": "先补齐名称、类型和一句能被观众、协作者、合作方理解的短简介。",
+          "action": "编辑档案"
+        },
+        "assets": {
+          "title": "添加首批视觉资产",
+          "body": "封面或推广片会让 IP 更容易被识别和展示。",
+          "action": "管理资产"
+        },
+        "commerce": {
+          "title": "配置商业规则",
+          "body": "在开放售卖前，先确认访问权益、价格、促销和收益记录方式。",
+          "action": "配置商业化"
+        },
+        "publish": {
+          "title": "准备发布",
+          "body": "核心内容已具备，可以进入发布前检查、审核和公开展示流程。",
+          "action": "检查发布"
+        }
+      },
+      "moduleStatus": {
+        "ready": "已有内容",
+        "missing": "待补充",
+        "planned": "已预留"
+      },
+      "modules": {
+        "collaboration": {
+          "title": "协作关系",
+          "body": "剧组、权限、任务和外部合作。"
+        },
+        "commerce": {
+          "title": "商业化结构",
+          "body": "权益、价格、促销和收益记录。"
+        }
+      }
+    },
+    "episodesPanel": {
+      "managementTitle": "剧集管理",
+      "managementBody": "这里专门处理剧集上传、封面、标题简介、排序、发布状态和单集商业状态。定价入口保留在同一屏，但规则仍由定价模块统一维护。",
+      "lifecycleTitle": "发布流程",
+      "lifecycleBody": "剧集不是一次上传就结束，后续会进入审核、发布、替换和商业配置。",
+      "status": {
+        "empty": "暂无剧集"
+      },
+      "lifecycle": {
+        "draft": {
+          "title": "草稿编辑",
+          "body": "填写标题、简介、封面和视频源，保存后进入列表排序。"
+        },
+        "review": {
+          "title": "审核与替换",
+          "body": "公开视频、付费剧集和推广内容上线前需要审核，替换视频也需要重新记录。"
+        },
+        "publish": {
+          "title": "发布与定价",
+          "body": "发布状态和定价规则分开维护，但在剧集列表里展示商业状态。"
+        }
+      },
+      "episodeCountLabel": "剧集数",
+      "episodeUpload": {
+        "hasContent": "已有剧集",
+        "addButton": "添加剧集",
+        "addRowTitle": "新增一集",
+        "addRowBody": "填写剧集标题和简介，再上传视频源、封面图，保存后进入排序和发布设置。",
+        "dialogTitle": "剧集编辑弹窗",
+        "dialogBody": "点击添加剧集后会进入这个结构：基础信息在左，上传区在右，避免边填边丢失。",
+        "titleLabel": "剧集标题",
+        "titlePlaceholder": "例如：第 1 集 觉醒",
+        "summaryLabel": "剧集简介",
+        "summaryPlaceholder": "一句话说明这一集发生了什么。",
+        "coverTitle": "封面图",
+        "coverBody": "用于剧集列表、播放页和分享卡片。",
+        "videoTitle": "视频文件",
+        "videoBody": "上传正片、短片或互动片段的视频源。",
+        "uploadDisabled": "在剧集编辑器中上传"
+      },
+      "episodePricing": {
+        "title": "剧集定价",
+        "body": "剧集默认跟随 IP 访问规则；需要免费试看、单集付费或会员可看时，在定价工作区配置，不污染剧集内容字段。",
+        "defaultRule": "跟随 IP 定价",
+        "noEpisodes": "创建剧集后可配置",
+        "openPricing": "打开定价"
+      },
+      "create": {
+        "title": "新增剧集",
+        "body": "先创建剧集，再在剧集行里上传封面、正片或预告。这里不接受外部链接。",
+        "nextNumber": "第 {number} 集",
+        "creating": "创建中",
+        "action": "创建剧集"
+      },
+      "form": {
+        "title": "剧集标题",
+        "summary": "剧集简介",
+        "freePreview": "设为免费试看",
+        "episodeNumber": "第 {number} 集",
+        "duration": "时长（秒）",
+        "durationPlaceholder": "例如 360",
+        "coverUploadTitle": "剧集封面",
+        "coverUploadBody": "用于剧集列表、公开详情和分享预览。",
+        "mediaUploadTitle": "剧集正片",
+        "mediaUploadBody": "实际播放的视频源文件，只能上传进入 FizzDragon 对象存储。",
+        "trailerUploadTitle": "剧集预告",
+        "trailerUploadBody": "可选短预告，用于推广和预售。",
+        "uploading": "上传中",
+        "uploadCover": "上传封面",
+        "uploadMedia": "上传正片",
+        "uploadTrailer": "上传预告",
+        "save": "保存剧集",
+        "saving": "保存中",
+        "delete": "删除"
+      },
+      "toasts": {
+        "created": "剧集已创建",
+        "createFailed": "剧集创建失败",
+        "saved": "剧集已保存",
+        "saveFailed": "剧集保存失败",
+        "uploadSaved": "剧集素材已上传并绑定",
+        "uploadFailed": "剧集素材上传失败",
+        "deleted": "剧集已删除",
+        "deleteFailed": "剧集删除失败"
+      },
+      "empty": {
+        "title": "还没有剧集",
+        "body": "创建第一集后，公开详情页、定价和 admin 审核都会读取同一份剧集数据。"
+      }
+    },
+    "assetsPanel": {
+      "ready": "已配置",
+      "missing": "待补充",
+      "toasts": {
+        "uploadSaved": "素材已上传并绑定",
+        "uploadFailed": "素材上传失败"
+      },
+      "form": {
+        "uploadHint": "点击或拖入本地文件。文件会上传到对象存储，并自动绑定到当前 IP。",
+        "uploading": "上传中",
+        "uploadCover": "上传封面",
+        "uploadTrailer": "上传推广片"
+      },
+      "slots": {
+        "cover": {
+          "title": "封面",
+          "body": "用于个人中心、IP 广场、收藏、分享和站内推荐。",
+          "action": "已接入"
+        },
+        "trailer": {
+          "title": "推广片",
+          "body": "30 秒到 2 分钟的视频，用于快速表达 IP 气质和故事张力。",
+          "action": "已接入"
+        }
+      },
+      "rightsTitle": "版权声明",
+      "rightsBody": "确认版权方、授权范围和 AI 使用披露。这里决定 IP 是否具备公开展示、商业化和审核流转的基础权利信息。",
+      "rightsForm": {
+        "owner": "版权方 / 权利人",
+        "ownerPlaceholder": "例如：FizzDragon Studio 或创作者姓名",
+        "aiUsage": "AI 使用披露",
+        "generatedVisuals": "包含 AI 生成视觉",
+        "generatedCopy": "包含 AI 辅助文本",
+        "rightsStatement": "权利说明",
+        "rightsPlaceholder": "说明素材来源、授权范围、是否可商用、是否允许二创或公开展示。",
+        "aiStatement": "AI 说明",
+        "aiPlaceholder": "说明哪些视觉、文本或视频内容由 AI 生成或辅助生成。",
+        "save": "保存权利链",
+        "saving": "保存中",
+        "saved": "权利链已保存",
+        "saveFailed": "权利链保存失败"
+      }
+    },
+    "pricingPanel": {
+      "action": "配置定价",
+      "accessTitle": "访问与定价规则",
+      "accessBody": "定价是商业规则，不写进剧集内容本身。整部 IP、单集覆盖、会员权益和促销都从统一规则出发，后续才能接订单、退款和账本。",
+      "ruleStatus": {
+        "notConfigured": "未配置",
+        "available": "可配置",
+        "needsEpisodes": "需先有剧集",
+        "reserved": "已预留",
+        "free": "免费",
+        "preview": "试看",
+        "episodePaid": "单集付费",
+        "inherit": "继承整部"
+      },
+      "form": {
+        "amount": "价格（社区积分）",
+        "amountPlaceholder": "例如 99",
+        "originalAmount": "划线价",
+        "originalAmountPlaceholder": "可选，例如 199",
+        "startsAt": "开始时间",
+        "startsAtPlaceholder": "可选",
+        "endsAt": "结束时间",
+        "endsAtPlaceholder": "可选",
+        "maxPerUser": "单用户限购",
+        "maxPerUserPlaceholder": "可选",
+        "invalidWindow": "结束时间必须晚于开始时间。",
+        "enablePaid": "整部 IP 付费访问",
+        "overrideEpisode": "为这一集单独定价",
+        "save": "保存价格",
+        "saving": "保存中"
+      },
+      "toasts": {
+        "saved": "价格规则已保存",
+        "saveFailed": "价格规则保存失败"
+      },
+      "rules": {
+        "ipDefault": {
+          "title": "整部 IP 默认价",
+          "body": "定义用户购买整部 IP 或默认观看权益时的基础价格。单集没有覆盖规则时自动继承这里。"
+        },
+        "episodeOverride": {
+          "title": "单集定价覆盖",
+          "body": "用于免费试看、单集独立售卖、限时开放或特殊活动，不改变剧集内容结构。"
+        },
+        "membership": {
+          "title": "会员可看",
+          "body": "后续可绑定订阅会员、创作者会员或平台权益，和一次性购买并存。"
+        },
+        "promotion": {
+          "title": "优惠与兑换",
+          "body": "优惠券、兑换码和免费授权走商业履约，不直接修改用户积分余额。"
+        }
+      },
+      "episodeTitle": "剧集价格表",
+      "episodeBody": "剧集列表只展示商业状态：跟随 IP、免费试看、单集付费或会员可看。具体金额和规则在这里维护。",
+      "episodeListTitle": "单集覆盖状态",
+      "episodeListReady": "当前已有 {count} 个剧集，后续会在这里逐集配置覆盖规则。",
+      "episodeListEmpty": "当前还没有剧集。先在剧集管理里创建剧集，再配置单集价格。",
+      "episodeEmptyTitle": "暂无可定价剧集",
+      "episodeEmptyBody": "创建第一集后，这里会出现每集的商业状态和快捷配置入口。",
+      "guardrailTitle": "订单影响",
+      "guardrailBody": "价格一旦对外生效，就必须和订单、退款、审计保持一致，不能只改前端显示。",
+      "guardrails": {
+        "orders": {
+          "title": "订单快照",
+          "body": "下单时锁定当时的价格、权益和优惠，后续改价不影响历史订单。"
+        },
+        "refunds": {
+          "title": "退款边界",
+          "body": "退款按订单与履约状态判断，不能只按当前价格反推。"
+        },
+        "audit": {
+          "title": "审计记录",
+          "body": "价格、免费规则和会员权益变更需要留痕，便于运营排查争议。"
+        }
+      }
+    },
+    "collaborationPanel": {
+      "crewTitle": "剧组席位",
+      "crewBody": "先定义围绕 IP 的协作角色，后续再接邀请、权限、任务和外部合作。",
+      "roles": {
+        "owner": {
+          "title": "拥有者",
+          "body": "负责 IP 基础档案、发布、商业化和最终审核。",
+          "status": "已占位"
+        },
+        "writer": {
+          "title": "编剧 / 策划",
+          "body": "维护世界观、剧情、对白、分支和版本修订。",
+          "status": "待邀请"
+        },
+        "visual": {
+          "title": "视觉 / 资产",
+          "body": "管理封面、设定图、预告、视频和素材权利链。",
+          "status": "待邀请"
+        },
+        "producer": {
+          "title": "制片 / 商务",
+          "body": "跟进预算、合作资料、商业化和外部授权。",
+          "status": "待邀请"
+        }
+      },
+      "permissions": {
+        "title": "权限模板",
+        "body": "后续按模块拆分查看、编辑、发布、审核和商业化权限。"
+      },
+      "investor": {
+        "title": "投资人房间",
+        "body": "未来可给投资人开放只读材料、进度、数据和商业计划。"
+      },
+      "activity": {
+        "title": "协作动态",
+        "body": "记录谁修改了故事、资产、权限、价格和发布状态。"
+      }
+    },
+    "commercePanel": {
+      "metrics": {
+        "priceRules": "价格规则",
+        "campaigns": "促销活动",
+        "reports": "举报 / 风险"
+      },
+      "stackTitle": "商业化结构",
+      "stackBody": "先把商业能力拆成清晰模块，之后接入积分、订单、优惠券、履约和资金账本。",
+      "stack": {
+        "entitlement": {
+          "title": "访问权益",
+          "body": "定义用户买到的是整部 IP、单集、会员权益还是限时访问。"
+        },
+        "pricing": {
+          "title": "价格规则",
+          "body": "支持社区积分、算力积分或后续会员套餐的统一定价入口。"
+        },
+        "promotion": {
+          "title": "促销券",
+          "body": "付费折扣走供应商同步，免费券和内部赠送走零元履约。"
+        },
+        "ledger": {
+          "title": "资金账本",
+          "body": "记录订单、退款、履约、收益分配和后续可提现余额。"
+        }
+      }
+    },
+    "progress": {
+      "profile": {
+        "title": "建立 IP 档案",
+        "body": "名称、类型和基础状态已生成。"
+      },
+      "assets": {
+        "title": "添加首批资产",
+        "body": "封面、设定图、预告或素材会提升识别度。"
+      },
+      "rights": {
+        "title": "补齐权利链",
+        "body": "填写版权主体、权利说明；如果使用 AI 生成素材，也要补充 AI 使用说明。"
+      },
+      "commerce": {
+        "title": "配置商业规则",
+        "body": "先确认权益和价格，再开放付费或促销。"
+      },
+      "publish": {
+        "title": "准备发布",
+        "body": "确认公开范围、审核状态和商业化配置。"
+      },
+      "episodes": {
+        "title": "添加首批剧集",
+        "body": "先创建或上传第一集，再继续配置定价和发布。"
+      }
+    },
+    "meta": {
+      "ipType": "IP 类型",
+      "sourceLocale": "源语言",
+      "status": "状态",
+      "visibility": "可见性",
+      "ageRating": "年龄分级",
+      "version": "版本"
+    },
+    "status": {
+      "draft": "草稿",
+      "submitted": "已提交",
+      "in_review": "审核中",
+      "changes_requested": "需修改",
+      "approved": "已通过",
+      "scheduled": "已排期",
+      "published": "已发布",
+      "archived": "已归档",
+      "suspended": "已暂停"
+    },
+    "visibility": {
+      "private": "私密",
+      "unlisted": "仅链接可见",
+      "public": "公开"
+    },
+    "ageRating": {
+      "general": "全年龄",
+      "teen": "青少年",
+      "mature": "成人向",
+      "restricted": "限制级"
+    }
+  },
+  "newIpDetail": {
+    "loading": "正在加载 IP 详情...",
+    "back": "返回 IP 广场",
+    "previewBadge": "仅本人可见的公开页预览",
+    "eyebrow": "IP 详情",
+    "emptySummary": "创作者还没有填写简介。",
+    "ready": "已就绪",
+    "missing": "待补充",
+    "dateUnset": "待定",
+    "durationUnset": "时长待定",
+    "durationMinutes": "{minutes} 分钟",
+    "priceValue": "{amount} {unit}",
+    "units": {
+      "communityPoint": "社区积分",
+      "bubble": "算力积分"
+    },
+    "actions": {
+      "watch": "查看剧集",
+      "explore": "了解 IP",
+      "collect": "收藏",
+      "collected": "已收藏",
+      "collectSuccess": "已加入收藏",
+      "collectFailed": "收藏失败，请稍后重试",
+      "uncollectSuccess": "已取消收藏",
+      "uncollectFailed": "取消收藏失败，请稍后重试",
+      "report": "举报",
+      "share": "分享",
+      "shared": "链接已复制",
+      "shareFailed": "分享失败，请稍后重试"
+    },
+    "report": {
+      "title": "举报内容",
+      "body": "举报 {type}「{target}」，运营会在后台审核并保留处理记录。",
+      "targetTypes": {
+        "ip": "IP",
+        "episode": "剧集"
+      },
+      "reason": "举报原因",
+      "description": "补充说明",
+      "descriptionPlaceholder": "说明你看到的问题、侵权依据或风险细节。",
+      "blockIp": "提交后同时屏蔽这个 IP，后续不再在列表和详情中展示。",
+      "cancel": "取消",
+      "submit": "提交举报",
+      "submitting": "提交中...",
+      "success": "举报已提交",
+      "successBlocked": "举报已提交，并已屏蔽该 IP",
+      "failed": "举报失败，请稍后重试",
+      "reasons": {
+        "copyright": "版权或授权问题",
+        "unsafe_content": "不安全或违规内容",
+        "fraud": "欺诈或虚假交易",
+        "misleading": "误导性描述",
+        "privacy": "隐私泄露",
+        "harassment": "骚扰或恶意内容",
+        "other": "其他问题"
+      }
+    },
+    "tabs": {
+      "story": "简介",
+      "episodes": "剧集",
+      "access": "权益"
+    },
+    "metrics": {
+      "episodes": "剧集",
+      "status": "状态",
+      "updated": "上线时间"
+    },
+    "visual": {
+      "emptyTitle": "封面待补充",
+      "emptyBody": "公开详情页会先使用 AI 质感舞台占位，创作者补齐素材后自动替换。",
+      "video": "正在播放正片",
+      "trailer": "正在展示推广片",
+      "cover": "正在展示封面",
+      "placeholder": "视觉占位"
+    },
+    "access": {
+      "eyebrow": "访问权益",
+      "body": "公开页只展示可购买或可观看的权益，真实扣费、解锁和履约由订单系统处理。",
+      "previewBody": "这是创作者预览模式，草稿不会被其他用户看到，也不会产生订单。",
+      "visibility": "可见范围",
+      "language": "源语言",
+      "preview": "创作者预览",
+      "public": "公开可访问"
+    },
+    "creatorTeam": {
+      "titleFallback": "创作者团队",
+      "subtitle": "{count} 集内容 · IP 团队",
+      "action": "查看更多",
+      "menu": "更多创作者操作",
+      "bannerAlt": "{name} 的团队横幅"
+    },
+    "story": {
+      "eyebrow": "Story",
+      "title": "故事看点",
+      "body": "其他用户先看到的是这个 IP 为什么值得进入，而不是后台配置字段。",
+      "hook": "一句话吸引点",
+      "description": "故事介绍",
+      "descriptionEmpty": "详细故事介绍还没有公开。",
+      "tags": "标签与风格",
+      "tagsEmpty": "创作者还没有公开标签。"
+    },
+    "ai": {
+      "eyebrow": "AI Signal",
+      "title": "内容信号",
+      "body": "用轻量信号告诉观众：这个 IP 是否已经具备封面、推广片和可观看内容。",
+      "signals": {
+        "visual": "封面",
+        "trailer": "推广片",
+        "episodes": "可观看剧集"
+      }
+    },
+    "episodes": {
+      "eyebrow": "Episodes",
+      "title": "剧集与内容",
+      "body": "公开视频、试看内容和付费内容都在这里展示，定价和解锁状态保持清晰。",
+      "count": "{count} 集",
+      "number": "第 {number} 集",
+      "playlist": "剧集列表",
+      "freePreview": "免费试看",
+      "summaryEmpty": "本集简介待补充。",
+      "emptyTitle": "暂无公开剧集",
+      "emptyBody": "这个 IP 已经建立档案，但创作者还没有发布可观看剧集。"
+    },
+    "assets": {
+      "eyebrow": "Assets",
+      "title": "视觉资产",
+      "body": "封面和推广片会决定公开详情页的第一印象。",
+      "kinds": {
+        "cover": "封面",
+        "trailer": "推广片"
+      }
+    },
+    "commerce": {
+      "eyebrow": "Access",
+      "title": "价格与权益",
+      "body": "公开页只呈现用户需要理解的价格、活动和解锁节奏，不暴露后台账务细节。",
+      "free": "免费访问",
+      "price": "当前价格",
+      "campaign": "活动",
+      "noCampaign": "暂无活动",
+      "unlock": "解锁时间",
+      "now": "立即可看",
+      "lockedVideo": "购买后观看正片",
+      "accessState": "观看状态",
+      "checking": "正在确认",
+      "walletBalance": "可用余额",
+      "unlocked": "已解锁",
+      "locked": "未解锁",
+      "readyToWatch": "可直接观看",
+      "needUnlock": "需要解锁",
+      "walletChecking": "正在读取社区积分余额...",
+      "walletLine": "可用余额 {balance}",
+      "loginToUnlock": "登录后解锁",
+      "purchase": "立即解锁",
+      "purchasing": "正在解锁...",
+      "purchaseSuccess": "已解锁，可开始观看。",
+      "purchaseFailed": "解锁失败，请稍后重试。",
+      "notForSale": "暂未开放购买",
+      "disclaimerTitle": "订单履约",
+      "disclaimerBody": "用户购买后获得的是内容访问权益，积分扣减、退款和账本记录由后端闭环处理。"
+    },
+    "notFound": {
+      "title": "这个 IP 暂不可访问",
+      "body": "它可能还没有公开、已下架，或者当前账号没有预览权限。",
+      "action": "返回 IP 广场"
+    }
+  },
   "crew": {
     "plaza": "剧组大厅",
     "allCrewsTitle": "全部剧组",
@@ -1240,7 +1915,12 @@
       "emptyVisitorTitle": "暂无公开 IP",
       "emptyVisitorBody": "该创作者还没有公开任何 IP。",
       "createCta": "新建 IP",
-      "editIp": "编辑 IP"
+      "editIp": "编辑 IP",
+      "newIpBadge": "新版 IP",
+      "enterStudio": "进入工作台",
+      "loadFailedTitle": "IP 列表加载失败",
+      "loadFailedBody": "新版 IP 服务暂时不可用，已有草稿没有被删除。",
+      "retry": "重试"
     },
     "crews": {
       "emptyOwnerTitle": "加入或筹组剧组",
@@ -2945,7 +3625,7 @@
     "applicantStatusRejected": "已拒绝",
     "viewPortfolio": "查看作品集",
     "approve": "通过",
-    "reject": "拒绝",
+    "reject": "退回",
     "reviewDialogTitle": "审批申请",
     "reviewDialogPositionSection": "招聘岗位",
     "reviewDialogApplicantSection": "申请人",
@@ -3102,7 +3782,6 @@
     "rejectEpisode": "退回本集",
     "submitForReview": "提交审核",
     "fullEpisodeReject": "整集退回",
-    "reject": "退回",
     "rejectReason": "退回原因",
     "rejectReasonPlaceholder": "请描述退回原因...",
     "rejectSuggestion": "修改建议",
@@ -5364,20 +6043,27 @@
     "hero": {
       "eyebrow": "新版 IP 商业化系统",
       "title": "把 IP 上架、售卖、解锁和结算放进同一条闭环。",
-      "body": "新的产品壳覆盖公开 IP、剧集、预售活动、社区积分购买、创作者收益、审核风控和旧系统导入。"
+      "body": "新的产品壳覆盖公开 IP、剧集、预售活动、社区积分购买、权益履约、审核风控和旧系统导入。"
     },
     "actions": {
       "create": "创建 IP",
       "import": "导入旧内容",
-      "revenue": "收益看板",
       "openStorefront": "打开售卖页",
       "startImport": "开始导入"
     },
     "metrics": {
-      "published": { "label": "已发布 IP", "hint": "公开或已排期的售卖内容" },
-      "presale": { "label": "预售积分", "hint": "已锁定的社区积分价值" },
-      "review": { "label": "审核队列", "hint": "等待内容或版权审核" },
-      "revenue": { "label": "创作者待结算", "hint": "待结算的收益流水" }
+      "published": {
+        "label": "已发布 IP",
+        "hint": "公开或已排期的售卖内容"
+      },
+      "presale": {
+        "label": "预售积分",
+        "hint": "已锁定的社区积分价值"
+      },
+      "review": {
+        "label": "审核队列",
+        "hint": "等待内容或版权审核"
+      }
     },
     "status": {
       "draft": "草稿",
@@ -5405,10 +6091,10 @@
       "now": "当前可看",
       "countdown": "{date} 解锁"
     },
-    "titles": {
+    "ips": {
       "hawParVilla": {
         "title": "虎豹别墅夜游",
-        "body": "AI 沉浸式影游，支持剧情分支、预售、创作者收益追踪和引荐链接。"
+        "body": "AI 沉浸式影游，支持剧情分支、预售、社区积分购买和引荐归因。"
       },
       "moonMarket": {
         "title": "月亮市集",
@@ -5446,34 +6132,48 @@
       "score": "准备度",
       "scoreHint": "发布前拦截高风险路径。",
       "items": {
-        "content": { "title": "内容包", "body": "标题、剧集、头图、预告片" },
-        "pricing": { "title": "价格规则", "body": "整套价和单集解锁价" },
-        "rights": { "title": "版权声明", "body": "权属、来源、AI 生成说明" },
-        "revenue": { "title": "收益规则", "body": "制作费、分润、引荐佣金" },
-        "review": { "title": "审核通过", "body": "内容、价格、版权快照" }
+        "content": {
+          "title": "内容包",
+          "body": "标题、剧集、头图、预告片"
+        },
+        "pricing": {
+          "title": "价格规则",
+          "body": "整套价和单集解锁价"
+        },
+        "rights": {
+          "title": "版权声明",
+          "body": "权属、来源、AI 生成说明"
+        },
+        "review": {
+          "title": "审核通过",
+          "body": "内容、价格、版权快照"
+        }
       }
     },
     "commerce": {
       "eyebrow": "购买链路",
       "title": "社区积分订单路径",
       "steps": {
-        "priceRule": { "title": "价格规则", "body": "按站点和活动解析整 IP 或单集价格。" },
-        "order": { "title": "订单", "body": "创建可幂等重试的内容购买订单。" },
-        "wallet": { "title": "钱包流水", "body": "通过钱包交易扣减社区积分。" },
-        "entitlement": { "title": "访问权益", "body": "订单完成后发放观看权益。" },
-        "collection": { "title": "收藏夹", "body": "把已购内容加入用户内容库。" },
-        "revenue": { "title": "收益流水", "body": "写入创作者分润、引荐佣金和平台费用。" }
-      }
-    },
-    "revenue": {
-      "eyebrow": "创作者收入",
-      "title": "收益来源",
-      "ledger": "待结算流水",
-      "pending": "待结算",
-      "sources": {
-        "productionFee": { "title": "制作费", "body": "剧集交付并通过后的固定费用" },
-        "share": { "title": "销售分润", "body": "按配置比例获得销售收益" },
-        "referral": { "title": "引荐佣金", "body": "归因链接产生引荐收益" }
+        "priceRule": {
+          "title": "价格规则",
+          "body": "按站点和活动解析整 IP 或单集价格。"
+        },
+        "order": {
+          "title": "订单",
+          "body": "创建可幂等重试的内容购买订单。"
+        },
+        "wallet": {
+          "title": "钱包流水",
+          "body": "通过钱包交易扣减社区积分。"
+        },
+        "entitlement": {
+          "title": "访问权益",
+          "body": "订单完成后发放观看权益。"
+        },
+        "collection": {
+          "title": "收藏夹",
+          "body": "把已购内容加入用户内容库。"
+        }
       }
     },
     "review": {
@@ -5485,9 +6185,18 @@
         "blocked": "已阻塞"
       },
       "items": {
-        "rights": { "title": "版权声明", "body": "标题和剧集售卖版权已通过" },
-        "aiDisclosure": { "title": "AI 生成声明", "body": "生成媒体声明等待确认" },
-        "report": { "title": "用户举报", "body": "版权举报需要风控处理" }
+        "rights": {
+          "title": "版权声明",
+          "body": "标题和剧集售卖版权已通过"
+        },
+        "aiDisclosure": {
+          "title": "AI 生成声明",
+          "body": "生成媒体声明等待确认"
+        },
+        "report": {
+          "title": "用户举报",
+          "body": "版权举报需要风控处理"
+        }
       }
     },
     "entitlement": {

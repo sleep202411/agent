@@ -11,6 +11,36 @@ description: |
   consequential CTA. Photography of contributors and example outputs is
   square-ish with mid-radius corners; everything else is borderless or hairline.
 
+mode:
+  policy: "dark-only"
+  rationale: |
+    FizzDragon Web no longer supports a user-selectable light/dark theme.
+    New public creator surfaces must render on the dark root canvas, and UI
+    must not expose theme settings or depend on persisted theme preferences.
+    Historical warm/cream tokens in this document are reference material only;
+    when they conflict with dark-only product direction, dark-only wins.
+
+surface_policy:
+  public_cards: |
+    On dark public creator surfaces, cards should not depend on visible box
+    borders for structure. Prefer spacing, media aspect ratio, background
+    depth, typography, and active/hover states. Use borders only as subtle
+    hairline dividers inside dense lists, form controls, selected states, or
+    separators where removing the line would make the hierarchy ambiguous.
+    Avoid stacking bordered cards; repeated content such as IP details,
+    episode lists, creator modules, and public media rails should feel like
+    clean content groups rather than boxed dashboard panels.
+  content_detail_pages: |
+    IP detail, episode playback, and other watch/read pages follow a
+    YouTube-style consumption layout, not a marketing hero layout. The primary
+    media sits left and large; the right rail is a dense 360-430px column for
+    creator/team identity, episode lists, access, and recommendations. Titles
+    are compact: page/video title 20-24px, section headers 14-16px, right-rail
+    item titles 13-14px, metadata and descriptions 12-14px. Do not use
+    display-xl, display-xxl, text-5xl, text-6xl, text-7xl, or negative tracking
+    on content detail pages unless it is a true landing hero. Use media scale,
+    thumbnails, spacing, and active row states to create hierarchy.
+
 colors:
   primary: "#ea2804"
   primary-deep: "#c01f00"
@@ -314,6 +344,19 @@ soft: every interactive surface (buttons, inputs, tags, avatars) uses
 or `{rounded.lg}`. There are no sharp corners on Replicate; the system reads
 as friendly precision.
 
+FizzDragon's dark public creator pages add one important override: visible
+card borders are not the default way to create structure. Use spacing, content
+alignment, media scale, background depth, and typography first; reserve
+hairline borders for form controls, selected rows, dividers, and dense list
+separation.
+
+Content detail pages add a second override: they are consumption interfaces,
+not editorial landing pages. IP details and episode playback should feel closer
+to YouTube's mature player layout: large 16:9 media on the left, compact title
+and actions below, creator/team identity at the top of the right rail, and a
+dense episode/recommendation list underneath. Display typography belongs to
+marketing openers, not watch pages.
+
 **Key Characteristics:**
 
 - A warm cream canvas (`{colors.canvas}` — `#f9f7f3`) replaces the typical white background, paired with `{colors.surface-bone}` for inset cards.
@@ -590,6 +633,12 @@ Drop shadows exist in the extracted tokens but are restrained — used sparingly
 - Use `rb-freigeist-neue` for all display, `basier-square` for UI/body, `jetbrains-mono` for code. Keep the lanes strict.
 - Render code in `{component.code-block}` with a `{colors.surface-dark}` background — code is print, not an inline grey box.
 - Pair photography with `{rounded.md}` corners and full-bleed crop inside cards.
+- Keep public creator surfaces visually open: episode rails, IP details, media
+  viewers, and profile modules should read as content groups, not as bordered
+  admin panels.
+- On IP detail and episode playback pages, keep typography compact: 20-24px
+  for the main title, 14-16px for section labels, and 12-14px for rail metadata.
+  Let the player and thumbnails carry visual weight.
 
 ### Don't
 
@@ -598,6 +647,11 @@ Drop shadows exist in the extracted tokens but are restrained — used sparingly
 - Don't loosen display `lineHeight` past 1.0. Tight stacking is structural.
 - Don't bump body weight to 500 for emphasis — change family (`basier-square` → `rb-freigeist-neue`) instead.
 - Don't apply `{rounded.full}` to content cards. Pill-shaped cards break the rhythm.
+- Don't wrap every public content group in a visible border. Bordered cards are
+  the exception on FizzDragon Web, not the baseline.
+- Don't use marketing display sizes (`display-xl`, `display-xxl`, `text-5xl+`)
+  on IP detail, episode playback, profile content modules, or workbench panels.
+  Those surfaces need scan speed and content density.
 - Don't put code in a light grey box. Code wells are always `{colors.surface-dark}` or `{colors.surface-deep}`.
 - Don't use orange on body text or large surfaces — it loses its stamp quality immediately.
 - Don't add drop shadows on cream surfaces. Elevation is colour-blocking; shadows are reserved for floating thumbnails.

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const upstream = await fetch(adminPathWithSearch(request, "/ip-commerce/titles"), {
+    const upstream = await fetch(adminPathWithSearch(request, "/ip-commerce/ips"), {
       headers: adminForwardHeaders(request),
       cache: "no-store",
     });

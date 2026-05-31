@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { SiteUserMenu } from "@/components/layout/site-user-menu";
@@ -13,10 +13,7 @@ import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { getStudioHref } from "@/src/lib/region/cell";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
-import { useTheme } from "next-themes";
 import {
-  IconMoon,
-  IconSun,
   IconLanguage,
   IconCheck,
   IconWand,
@@ -49,12 +46,6 @@ export function GlobalNav() {
   const router = useRouter();
   const t = useTranslations("nav");
   const locale = useLocale();
-  const { theme, setTheme } = useTheme();
-  const mounted = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false
-  );
 
   const { user } = useCurrentUser();
   const logout = useLogout();
@@ -62,12 +53,18 @@ export function GlobalNav() {
   // Background fades in as the user scrolls past the first ~80px so the
   // hero backdrop sits behind a fully transparent nav at rest.
   const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileDrawer, setMobileDrawer] = useState(() => ({
+    pathname,
+    open: false,
+  }));
+  const mobileOpen = mobileDrawer.pathname === pathname && mobileDrawer.open;
+  const closeMobile = () => setMobileDrawer({ pathname, open: false });
+  const toggleMobile = () =>
+    setMobileDrawer((state) => ({
+      pathname,
+      open: !(state.pathname === pathname && state.open),
+    }));
 
-  // Close the mobile drawer whenever the route changes.
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);
     onScroll();
@@ -143,12 +140,6 @@ export function GlobalNav() {
 
   const isActive = (href: string) => pathname.startsWith(href);
 
-  const isDark = mounted && theme === "dark";
-
-  const toggleTheme = () => {
-    setTheme(isDark ? "light" : "dark");
-  };
-
   const switchLocale = (next: Locale) => {
     if (next === locale) return;
     setCurrentLocale(next);
@@ -160,10 +151,6 @@ export function GlobalNav() {
     const target = localizePath(stripped, next);
     router.replace(target);
   };
-
-  if (!mounted) {
-    return <header className="fixed inset-x-0 top-0 z-50 h-16" />;
-  }
 
   return (
     <header
@@ -206,7 +193,7 @@ export function GlobalNav() {
           })}
         </nav>
 
-        {/* Right cluster — desktop: user guide / theme / language / CTA */}
+        {/* Right cluster — desktop: user guide / language / CTA */}
         <div className="ml-auto hidden items-center gap-1 lg:flex">
           <a
             href={USER_GUIDE_URL}
@@ -217,15 +204,6 @@ export function GlobalNav() {
             <IconBook2 className="size-4" />
             <span>{t("userGuide")}</span>
           </a>
-
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label={t("language")}
-            className="flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-          >
-            {isDark ? <IconMoon className="size-4" /> : <IconSun className="size-4" />}
-          </button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -369,7 +347,7 @@ export function GlobalNav() {
           )}
           <button
             type="button"
-            onClick={() => setMobileOpen((v) => !v)}
+            onClick={toggleMobile}
             aria-label={t("menu")}
             aria-expanded={mobileOpen}
             className="flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -379,7 +357,7 @@ export function GlobalNav() {
         </div>
       </div>
 
-      {/* Mobile drawer — nav links + theme / language / account, all in one place.
+      {/* Mobile drawer — nav links + language / account, all in one place.
           Cap to viewport height (minus the h-16 nav) and allow internal scroll —
           on short screens (landscape phone, iPhone SE) the language + account
           rows otherwise sit below the fold with no way to reach them. Use 100dvh
@@ -394,7 +372,7 @@ export function GlobalNav() {
               href={studioItem.linkHref}
               onClick={(e) => {
                 onNavClick(e, studioItem);
-                setMobileOpen(false);
+                closeMobile();
               }}
               className={cn(
                 "group relative mb-2 inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl px-5 text-base font-semibold",
@@ -430,7 +408,7 @@ export function GlobalNav() {
                   href={target}
                   onClick={(e) => {
                     onNavClick(e, item);
-                    setMobileOpen(false);
+                    closeMobile();
                   }}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
@@ -449,7 +427,7 @@ export function GlobalNav() {
               href={USER_GUIDE_URL}
               target="_blank"
               rel="noopener noreferrer"
-              onClick={() => setMobileOpen(false)}
+              onClick={closeMobile}
               className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
             >
               <IconBook2 className="size-4" />
@@ -457,16 +435,6 @@ export function GlobalNav() {
             </a>
 
             <div className="my-2 h-px bg-border/50" />
-
-            {/* Theme toggle */}
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-            >
-              {isDark ? <IconSun className="size-4" /> : <IconMoon className="size-4" />}
-              <span>{isDark ? "Light" : "Dark"}</span>
-            </button>
 
             {/* Language */}
             <div className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
@@ -479,7 +447,7 @@ export function GlobalNav() {
                   key={opt.value}
                   type="button"
                   onClick={() => {
-                    setMobileOpen(false);
+                    closeMobile();
                     switchLocale(opt.value);
                   }}
                   className={cn(
@@ -508,14 +476,14 @@ export function GlobalNav() {
                 <CommunityCreditsChip layout="row" />
                 <Link
                   href={localizePath("/messages", locale as Locale)}
-                  onClick={() => setMobileOpen(false)}
+                  onClick={closeMobile}
                   className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
                 >
                   <MobileInboxLine />
                 </Link>
                 <Link
                   href={localizePath("/profile", locale as Locale)}
-                  onClick={() => setMobileOpen(false)}
+                  onClick={closeMobile}
                   className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
                 >
                   <IconUser className="size-4" />
@@ -524,7 +492,7 @@ export function GlobalNav() {
                 <button
                   type="button"
                   onClick={() => {
-                    setMobileOpen(false);
+                    closeMobile();
                     void logout();
                   }}
                   className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
@@ -537,7 +505,7 @@ export function GlobalNav() {
               <button
                 type="button"
                 onClick={() => {
-                  setMobileOpen(false);
+                  closeMobile();
                   router.push(localizePath("/login", locale as Locale));
                 }}
                 className="mt-1 flex h-10 items-center justify-center rounded-full border border-border/40 bg-foreground/5 px-4 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"

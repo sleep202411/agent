@@ -1,13 +1,13 @@
 import { api } from "@/src/lib/api";
 
-export type IpTargetType = "title" | "episode";
+export type IpTargetType = "ip" | "episode";
 export type IpCommerceAccess =
   | "free"
   | "free_preview"
   | "locked"
   | "locked_bundle"
   | "owned"
-  | "owned_title"
+  | "owned_ip"
   | "owned_episode";
 
 export interface IpCommerceAsset {
@@ -18,16 +18,28 @@ export interface IpCommerceAsset {
   region: string | null;
   objectKey: string | null;
   externalUrl: string | null;
+  url: string | null;
   contentType: string;
   width: number | null;
   height: number | null;
   durationSeconds: number | null;
 }
 
+export interface IpCommerceLibraryAsset {
+  id: string;
+  purpose: "source_material" | "reference_art" | "production_asset";
+  title: string | null;
+  description: string | null;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  asset: IpCommerceAsset | null;
+}
+
 export interface IpCommercePriceRule {
   id: string;
   targetType: IpTargetType;
-  currency: "community_point" | "bubble";
+  currency: "community_point";
   amount: string;
   originalAmount: string | null;
   campaignId: string | null;
@@ -35,6 +47,15 @@ export interface IpCommercePriceRule {
   endsAt: string | null;
   unlocksAt: string | null;
   maxPerUser: number | null;
+}
+
+export interface IpCommerceLocalizationMeta {
+  requestedLocale: string;
+  locale: string;
+  sourceLocale: string;
+  isFallback: boolean;
+  availableLocales: string[];
+  status: string | null;
 }
 
 export interface IpCommerceEpisode {
@@ -45,20 +66,21 @@ export interface IpCommerceEpisode {
   title: string;
   subtitle: string | null;
   summary: string | null;
+  localization: IpCommerceLocalizationMeta;
   durationSeconds: number | null;
   isFreePreview: boolean;
   coverAsset: IpCommerceAsset | null;
+  mediaAsset?: IpCommerceAsset | null;
   trailerAsset: IpCommerceAsset | null;
   scheduledAt: string | null;
   publishedAt: string | null;
   price: IpCommercePriceRule | null;
 }
 
-export interface IpCommerceTitle {
+export interface IpCommerceIp {
   id: string;
-  workspaceId: string;
   slug: string | null;
-  contentType: string;
+  ipType: string;
   status: string;
   listingVisibility: string;
   ageRating: string;
@@ -66,14 +88,14 @@ export interface IpCommerceTitle {
   subtitle: string | null;
   summary: string;
   description: string | null;
-  language: string;
+  sourceLocale: string;
+  localization: IpCommerceLocalizationMeta;
   genres: string[];
   tags: string[];
   copyrightOwner: string | null;
   rightsSummary: Record<string, unknown>;
   aiDisclosure: Record<string, unknown>;
   coverAsset: IpCommerceAsset | null;
-  heroAsset: IpCommerceAsset | null;
   trailerAsset: IpCommerceAsset | null;
   publishedAt: string | null;
   scheduledAt: string | null;
@@ -84,6 +106,7 @@ export interface IpCommerceTitle {
     status: string;
     code: string;
     name: string;
+    localization: IpCommerceLocalizationMeta;
     startsAt: string | null;
     endsAt: string | null;
     unlocksAt: string | null;
@@ -91,9 +114,52 @@ export interface IpCommerceTitle {
   episodes: IpCommerceEpisode[];
 }
 
+export interface IpCreatorIp {
+  id: string;
+  title: string;
+  summary: string;
+  description: string | null;
+  genres: string[];
+  tags: string[];
+  localization: IpCommerceLocalizationMeta;
+  ipType: string;
+  status: string;
+  listingVisibility: string;
+  ageRating: string;
+  sourceLocale: string;
+  version: number;
+  coverAsset: IpCommerceAsset | null;
+  trailerAsset: IpCommerceAsset | null;
+  price?: IpCommercePriceRule | null;
+  campaigns?: IpCommerceIp["campaigns"];
+  episodes?: IpCommerceEpisode[];
+  contributors?: Array<{
+    id: string;
+    userId: string;
+    displayName: string | null;
+    role: string;
+    customRole: string | null;
+    isPublic: boolean;
+    displayOrder: number;
+  }>;
+  priceRules?: Array<IpCommercePriceRule & { status?: string; priority?: number }>;
+  copyrightOwner?: string | null;
+  rightsSummary?: Record<string, unknown>;
+  aiDisclosure?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  counts: {
+    episodes: number;
+    assets: number;
+    campaigns: number;
+    priceRules: number;
+    reports: number;
+  };
+}
+
 export interface IpCommerceWalletAccount {
   id: string;
-  ownerType: "user" | "workspace";
+  ownerType: "user";
   ownerId: string;
   currency: "bubble" | "community_point";
   balanceKind: "consumable" | "withdrawable";
@@ -103,7 +169,7 @@ export interface IpCommerceWalletAccount {
   updatedAt: string;
 }
 
-export interface IpTitleAccess {
+export interface IpAccess {
   authenticated: boolean;
   wallet: {
     currency: "community_point";
@@ -112,7 +178,7 @@ export interface IpTitleAccess {
     availableBalance: string;
     heldBalance: string;
   } | null;
-  title: {
+  ip: {
     id: string;
     owned: boolean;
     access: Extract<IpCommerceAccess, "free" | "locked" | "owned">;
@@ -130,9 +196,8 @@ export interface IpTitleAccess {
 
 export interface IpContentEntitlement {
   id: string;
-  subjectType: "user" | "workspace";
-  subjectId: string;
-  titleId: string;
+  userId: string;
+  ipId: string;
   episodeId: string | null;
   targetType: IpTargetType;
   status: string;
@@ -147,8 +212,7 @@ export interface IpPurchaseOrder {
   orderNo: string;
   status: string;
   userId: string;
-  workspaceId: string | null;
-  titleId: string;
+  ipId: string;
   episodeId: string | null;
   targetType: IpTargetType;
   currency: string;
@@ -165,8 +229,41 @@ export interface IpPurchaseOrder {
   updatedAt: string;
 }
 
+export interface IpCollectionItem {
+  id: string;
+  targetType: IpTargetType;
+  status: "active" | "removed";
+  addedAt: string;
+  lastViewedAt?: string | null;
+  removedAt?: string | null;
+  userId?: string;
+  ipId?: string;
+  episodeId?: string | null;
+  ip?: {
+    id: string;
+    title: string;
+    subtitle: string | null;
+    localization?: IpCommerceLocalizationMeta;
+    coverAsset: IpCommerceAsset | null;
+  };
+  episode?: {
+    id: string;
+    episodeNo: number;
+    title: string;
+    localization?: IpCommerceLocalizationMeta;
+    coverAsset: IpCommerceAsset | null;
+    mediaAsset?: IpCommerceAsset | null;
+  } | null;
+  entitlement?: {
+    id: string;
+    status: string;
+    startsAt: string;
+    endsAt: string | null;
+  } | null;
+}
+
 export interface CreateIpPurchaseInput {
-  titleId: string;
+  ipId: string;
   targetType: IpTargetType;
   episodeId?: string;
   priceRuleId?: string;
@@ -174,8 +271,120 @@ export interface CreateIpPurchaseInput {
   idempotencyKey: string;
 }
 
+export interface CreateIpDraftInput {
+  title: string;
+  summary?: string;
+  ipType: "series" | "film_short" | "other";
+  sourceLocale: string;
+}
+
+export interface UpdateIpProfileInput {
+  ipId: string;
+  title?: string;
+  summary?: string;
+  description?: string | null;
+  ipType?: CreateIpDraftInput["ipType"];
+  listingVisibility?: "private" | "unlisted" | "public";
+  ageRating?: "general" | "teen" | "mature" | "restricted";
+  genres?: string[];
+  tags?: string[];
+  copyrightOwner?: string | null;
+  rightsSummary?: {
+    statement?: string;
+  };
+  aiDisclosure?: {
+    generatedVisuals?: boolean;
+    generatedCopy?: boolean;
+    statement?: string;
+  };
+  expectedVersion?: number;
+}
+
+export interface UpdateIpAssetsInput {
+  ipId: string;
+  coverAssetId?: string | null;
+  trailerAssetId?: string | null;
+  expectedVersion?: number;
+}
+
+export interface CreateIpEpisodeInput {
+  ipId: string;
+  title: string;
+  summary?: string;
+  episodeNo?: number;
+  sortOrder?: number;
+  durationSeconds?: number;
+  isFreePreview?: boolean;
+  coverAssetId?: string;
+  mediaAssetId?: string;
+  trailerAssetId?: string;
+  expectedVersion?: number;
+}
+
+export interface UpdateIpEpisodeInput {
+  ipId: string;
+  episodeId: string;
+  title?: string;
+  summary?: string;
+  episodeNo?: number;
+  sortOrder?: number;
+  durationSeconds?: number | null;
+  isFreePreview?: boolean;
+  status?: string;
+  coverAssetId?: string | null;
+  mediaAssetId?: string | null;
+  trailerAssetId?: string | null;
+  expectedVersion?: number;
+}
+
+export interface UploadIpMediaInput {
+  ipId: string;
+  file: File;
+  kind: "image" | "video" | "audio" | "document" | "other";
+  purpose:
+    | "cover"
+    | "trailer"
+    | "episode_cover"
+    | "episode_media"
+    | "episode_trailer"
+    | "source_material"
+    | "report_evidence";
+}
+
+export interface DeleteIpAssetInput {
+  ipId: string;
+  assetId: string;
+}
+
+export interface DeleteIpEpisodeInput {
+  ipId: string;
+  episodeId: string;
+}
+
+export interface UpsertIpPriceRuleInput {
+  ipId: string;
+  targetType: IpTargetType;
+  episodeId?: string;
+  status?: "draft" | "active" | "disabled" | "archived";
+  currency?: "community_point";
+  amount?: string;
+  originalAmount?: string | null;
+  priority?: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  unlocksAt?: string | null;
+  maxPerUser?: number | null;
+  expectedVersion?: number;
+}
+
+export interface SubmitIpReviewInput {
+  ipId: string;
+  expectedVersion?: number;
+  changeSummary?: string;
+}
+
 export interface CreateIpReportInput {
-  targetType: "title" | "episode";
+  targetType: "ip" | "episode";
   targetId: string;
   reason:
     | "copyright"
@@ -189,46 +398,167 @@ export interface CreateIpReportInput {
   evidenceAssetId?: string;
 }
 
+export interface UpsertIpCollectionInput {
+  targetType: IpTargetType;
+  ipId: string;
+  episodeId?: string;
+}
+
 export interface UpsertIpBlockInput {
-  targetType: "title" | "creator";
+  targetType: "ip" | "creator";
   targetId: string;
   reason?: string;
 }
 
-export function listIpCommerceTitles(params?: {
-  contentType?: string;
+export function listIpCommerceIps(params?: {
+  ipType?: string;
+  locale?: string;
   cursor?: string;
   limit?: number;
 }) {
-  return api.get<{ items: IpCommerceTitle[]; nextCursor: string | null }>(
-    "/aurora/ip-commerce/titles",
+  return api.get<{ items: IpCommerceIp[]; nextCursor: string | null }>("/aurora/ip-commerce/ips", {
+    params,
+  });
+}
+
+export function listMyIpCommerceIps(params?: { locale?: string; cursor?: string; limit?: number }) {
+  return api.get<{ items: IpCreatorIp[]; nextCursor: string | null }>(
+    "/aurora/ip-commerce/me/ips",
     { params }
   );
 }
 
-export function getIpCommerceTitle(titleId: string) {
-  return api.get<{ title: IpCommerceTitle }>(
-    `/aurora/ip-commerce/titles/${encodeURIComponent(titleId)}`
+export function getMyIpCommerceIp(ipId: string, params?: { locale?: string }) {
+  return api.get<{ ip: IpCreatorIp }>(`/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}`, {
+    params,
+  });
+}
+
+export function listMyIpCommerceIpAssets(
+  ipId: string,
+  params?: { purpose?: IpCommerceLibraryAsset["purpose"] }
+) {
+  return api.get<{ items: IpCommerceLibraryAsset[] }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/assets`,
+    { params }
   );
 }
 
-export function getIpTitleAccess(titleId: string, params?: { episodeIds?: string[] }) {
-  return api.get<IpTitleAccess>(
-    `/aurora/ip-commerce/titles/${encodeURIComponent(titleId)}/access`,
-    {
-      params: {
-        episodeIds: params?.episodeIds?.join(","),
-      },
-    }
+export function createIpCommerceIp(input: CreateIpDraftInput) {
+  return api.post<{ ip: IpCreatorIp }>("/aurora/ip-commerce/ips", { data: input });
+}
+
+export function updateIpCommerceIpProfile(input: UpdateIpProfileInput) {
+  const { ipId, ...data } = input;
+  return api.put<{ ip: IpCreatorIp }>(`/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}`, {
+    data,
+  });
+}
+
+export function updateIpCommerceIpAssets(input: UpdateIpAssetsInput) {
+  const { ipId, ...data } = input;
+  return api.put<{ ip: IpCreatorIp }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/assets`,
+    { data }
   );
+}
+
+export function uploadIpCommerceMedia(input: UploadIpMediaInput) {
+  const params = new URLSearchParams({
+    kind: input.kind,
+    purpose: input.purpose,
+  });
+  return api.upload<{ asset: IpCommerceAsset; ipAsset: IpCommerceLibraryAsset | null }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(input.ipId)}/media?${params.toString()}`,
+    input.file,
+    "file",
+    { timeout: 10 * 60_000 }
+  );
+}
+
+export function deleteIpCommerceAsset(input: DeleteIpAssetInput) {
+  return api.delete<{ asset: IpCommerceLibraryAsset }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(input.ipId)}/assets/${encodeURIComponent(
+      input.assetId
+    )}`
+  );
+}
+
+export function createIpCommerceEpisode(input: CreateIpEpisodeInput) {
+  const { ipId, ...data } = input;
+  return api.post<{ ip: IpCreatorIp }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/episodes`,
+    { data }
+  );
+}
+
+export function updateIpCommerceEpisode(input: UpdateIpEpisodeInput) {
+  const { ipId, episodeId, ...data } = input;
+  return api.put<{ ip: IpCreatorIp }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/episodes/${encodeURIComponent(
+      episodeId
+    )}`,
+    { data }
+  );
+}
+
+export function deleteIpCommerceEpisode(input: DeleteIpEpisodeInput) {
+  return api.delete<{ ip: IpCreatorIp }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(input.ipId)}/episodes/${encodeURIComponent(
+      input.episodeId
+    )}`
+  );
+}
+
+export function upsertIpCommercePriceRule(input: UpsertIpPriceRuleInput) {
+  const { ipId, ...data } = input;
+  return api.put<{ ip: IpCreatorIp }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/price-rules`,
+    { data }
+  );
+}
+
+export function submitIpCommerceIpForReview(input: SubmitIpReviewInput) {
+  const { ipId, ...data } = input;
+  return api.post<{ ip: IpCreatorIp }>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/review-submissions`,
+    { data }
+  );
+}
+
+export function getIpCommerceIp(ipId: string, params?: { locale?: string }) {
+  return api.get<{ ip: IpCommerceIp }>(`/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}`, {
+    params,
+  });
+}
+
+export function getIpAccess(ipId: string, params?: { episodeIds?: string[]; locale?: string }) {
+  return api.get<IpAccess>(`/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}/access`, {
+    params: {
+      episodeIds: params?.episodeIds?.join(","),
+      locale: params?.locale,
+    },
+  });
 }
 
 export function getIpCommerceWallet() {
   return api.get<{ accounts: IpCommerceWalletAccount[] }>("/aurora/ip-commerce/wallet");
 }
 
-export function listIpCommerceCollection() {
-  return api.get<{ items: unknown[] }>("/aurora/ip-commerce/me/collection");
+export function listIpCommerceCollection(params?: { locale?: string }) {
+  return api.get<{ items: IpCollectionItem[] }>("/aurora/ip-commerce/me/collection", { params });
+}
+
+export function saveIpCommerceCollection(input: UpsertIpCollectionInput) {
+  return api.post<{ item: IpCollectionItem }>("/aurora/ip-commerce/me/collection", {
+    data: input,
+  });
+}
+
+export function removeIpCommerceCollection(input: UpsertIpCollectionInput) {
+  return api.post<{ item: IpCollectionItem | null }>("/aurora/ip-commerce/me/collection/remove", {
+    data: input,
+  });
 }
 
 export function purchaseIpContent(input: CreateIpPurchaseInput) {

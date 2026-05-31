@@ -5,7 +5,8 @@
  * `useCreatorProjects` hook into a grid layout that matches the
  * style of WorksTab and ServicesTab.
  */
-import { IconBook2, IconEdit, IconLoader2 } from "@tabler/icons-react";
+import { useState } from "react";
+import { IconBook2, IconEdit, IconLoader2, IconSparkles } from "@tabler/icons-react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -13,6 +14,9 @@ import type { Locale } from "@/src/i18n/config";
 import { env } from "@/src/env";
 import { useCreatorProjects, type Creator } from "@/app/(site)/creators/_hooks/use-creator";
 import type { Project } from "@/src/services/project";
+import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
+import type { IpCreatorIp } from "@/src/lib/ip-commerce/api";
+import { useMyIpCommerceIps } from "@/src/lib/ip-commerce/hooks";
 
 interface IpsTabProps {
   creator: Creator;
@@ -21,11 +25,15 @@ interface IpsTabProps {
 
 export function IpsTab({ creator, isOwner }: IpsTabProps) {
   const t = useTranslations("creatorCenter");
+  const typeT = useTranslations("newIpCreate");
   const locale = useLocale() as Locale;
   const { data, isLoading } = useCreatorProjects(creator.id);
+  const myNewIps = useMyIpCommerceIps(isOwner, { locale, limit: 50 });
   const projects = (data ?? []).filter((p): p is Project => !!p);
+  const newIps = isOwner ? (myNewIps.data?.items ?? []) : [];
+  const [createOpen, setCreateOpen] = useState(false);
 
-  if (isLoading) {
+  if (isLoading || myNewIps.isLoading) {
     return (
       <div className="flex h-40 items-center justify-center">
         <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
@@ -33,37 +41,140 @@ export function IpsTab({ creator, isOwner }: IpsTabProps) {
     );
   }
 
-  if (projects.length === 0) {
+  if (isOwner && myNewIps.isError && newIps.length === 0) {
     return (
-      <EmptyShell
-        title={isOwner ? t("ips.emptyOwnerTitle") : t("ips.emptyVisitorTitle")}
-        body={isOwner ? t("ips.emptyOwnerBody") : t("ips.emptyVisitorBody")}
-        cta={
-          isOwner ? (
-            <Link
-              href={localizePath("/ips/create", locale)}
+      <>
+        <EmptyShell
+          title={t("ips.loadFailedTitle")}
+          body={t("ips.loadFailedBody")}
+          cta={
+            <button
+              type="button"
+              onClick={() => void myNewIps.refetch()}
               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-secondary"
             >
-              {t("ips.createCta")}
-            </Link>
-          ) : null
-        }
-      />
+              {t("ips.retry")}
+            </button>
+          }
+        />
+        <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      </>
+    );
+  }
+
+  if (projects.length === 0 && newIps.length === 0) {
+    return (
+      <>
+        <EmptyShell
+          title={isOwner ? t("ips.emptyOwnerTitle") : t("ips.emptyVisitorTitle")}
+          body={isOwner ? t("ips.emptyOwnerBody") : t("ips.emptyVisitorBody")}
+          cta={
+            isOwner ? (
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-secondary"
+              >
+                {t("ips.createCta")}
+              </button>
+            ) : null
+          }
+        />
+        <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      </>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
-      {projects.map((p) => (
-        <IpCard
-          key={p.id}
-          project={p}
-          locale={locale}
-          isOwner={isOwner}
-          editLabel={t("ips.editIp")}
-        />
-      ))}
-    </div>
+    <>
+      {isOwner ? (
+        <div className="mb-4 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-secondary"
+          >
+            {t("ips.createCta")}
+          </button>
+        </div>
+      ) : null}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
+        {newIps.map((ip) => (
+          <NewIpCard
+            key={ip.id}
+            ip={ip}
+            locale={locale}
+            typeLabel={typeT(`ipType.${ip.ipType}`)}
+            badge={t("ips.newIpBadge")}
+            enterLabel={t("ips.enterStudio")}
+          />
+        ))}
+        {projects.map((p) => (
+          <IpCard
+            key={p.id}
+            project={p}
+            locale={locale}
+            isOwner={isOwner}
+            editLabel={t("ips.editIp")}
+          />
+        ))}
+      </div>
+      <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+    </>
+  );
+}
+
+function NewIpCard({
+  ip,
+  locale,
+  typeLabel,
+  badge,
+  enterLabel,
+}: {
+  ip: IpCreatorIp;
+  locale: Locale;
+  typeLabel: string;
+  badge: string;
+  enterLabel: string;
+}) {
+  const title = ip.title.trim() || "—";
+  const summary = ip.summary.trim();
+  const href = localizePath(`/ip-studio/${ip.id}`, locale);
+
+  return (
+    <Link
+      href={href}
+      className="group relative flex min-h-[228px] flex-col overflow-hidden rounded-2xl bg-card ring-1 ring-border/60 transition-all duration-300 hover:-translate-y-1 hover:ring-border hover:shadow-lg hover:shadow-black/20"
+    >
+      <div className="relative flex flex-1 flex-col justify-between overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(229,34,39,0.28),transparent_36%),linear-gradient(135deg,rgba(255,255,255,0.09),rgba(255,255,255,0.02))] p-4">
+        <div className="pointer-events-none absolute -right-10 -top-10 size-36 rounded-full bg-[#e52227]/20 blur-3xl transition group-hover:bg-[#e52227]/30" />
+        <div className="relative flex items-center justify-between gap-3">
+          <span className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#e52227] px-2.5 text-[11px] font-semibold text-white">
+            <IconSparkles className="size-3.5" />
+            {badge}
+          </span>
+          <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-medium text-white/55">
+            {typeLabel}
+          </span>
+        </div>
+
+        <div className="relative mt-8 space-y-2">
+          <h3 className="line-clamp-2 text-lg font-semibold tracking-tight text-foreground">
+            {title}
+          </h3>
+          {summary ? (
+            <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">{summary}</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3">
+        <span className="text-xs text-muted-foreground">{enterLabel}</span>
+        <span className="inline-flex size-8 items-center justify-center rounded-lg bg-background/85 text-foreground shadow-sm ring-1 ring-border backdrop-blur-sm transition group-hover:scale-105">
+          <IconEdit className="size-4" />
+        </span>
+      </div>
+    </Link>
   );
 }
 

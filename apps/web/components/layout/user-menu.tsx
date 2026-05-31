@@ -1,20 +1,16 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   IconCredits,
   IconCrown,
   IconCoin,
-  IconSun,
-  IconMoon,
-  IconDeviceDesktop,
   IconSettings,
   IconLogout,
   IconRosetteDiscountCheckFilled,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useTheme } from "next-themes";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +20,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 import { useLogout } from "@/src/hooks/use-logout";
 import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import { UpgradeDialog } from "@/components/payment/upgrade-dialog";
@@ -36,12 +31,6 @@ export function UserMenu() {
   const tc = useTranslations("common");
   const logout = useLogout();
   const { user } = useCurrentUser();
-  const { theme, setTheme } = useTheme();
-  const mounted = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false
-  );
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [rechargeOpen, setRechargeOpen] = useState(false);
@@ -168,50 +157,6 @@ export function UserMenu() {
               </Button>
             </div>
           </div>
-
-          <DropdownMenuSeparator />
-
-          {/* Theme */}
-          {mounted && (
-            <div className="flex items-center justify-between px-4 py-2.5">
-              <div className="flex items-center gap-2">
-                <IconMoon className="size-4 text-muted-foreground" />
-                <span className="text-sm">{tc("theme")}</span>
-              </div>
-              <div className="flex rounded-lg border border-border">
-                <button
-                  type="button"
-                  onClick={() => setTheme("light")}
-                  className={cn(
-                    "flex size-8 items-center justify-center rounded-l-lg transition-colors",
-                    theme === "light" ? "bg-accent text-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  <IconSun className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTheme("dark")}
-                  className={cn(
-                    "flex size-8 items-center justify-center transition-colors",
-                    theme === "dark" ? "bg-accent text-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  <IconMoon className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTheme("system")}
-                  className={cn(
-                    "flex size-8 items-center justify-center rounded-r-lg transition-colors",
-                    theme === "system" ? "bg-accent text-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  <IconDeviceDesktop className="size-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
 
           <DropdownMenuSeparator />
 

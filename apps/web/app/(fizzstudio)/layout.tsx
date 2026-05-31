@@ -6,9 +6,5 @@ export const metadata: Metadata = {
 };
 
 export default function FizzStudioLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-[#f9f7f3] text-[#202020] dark:bg-[#f9f7f3] dark:text-[#202020]">
-      {children}
-    </div>
-  );
+  return <div className="min-h-screen bg-[#050608] text-white">{children}</div>;
 }

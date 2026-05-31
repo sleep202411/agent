@@ -442,7 +442,6 @@
     "detailSave": "Save",
     "detailProducer": "Producer",
     "detailViewProfile": "View Profile",
-    "share": "Share",
     "shareCopied": "Link copied",
     "shareCopyFailed": "Couldn't copy link",
     "forYou": "For you",
@@ -452,12 +451,10 @@
     "detailWatchTrailer": "Watch Trailer",
     "detailFollow": "Follow",
     "detailEpisodesTitle": "Episodes",
-    "detailPurchaseWatch": "Purchase & Watch",
     "detailShare": "Share",
     "detailShareHint": "Share \"{title}\" with your community.",
     "detailShareCopyLink": "Copy link",
     "detailShareCopied": "Link copied",
-    "detailProducer": "Producer",
     "detailProducerLabel": "Project owner",
     "detailEpisodeCount": "{count} episodes",
     "detailNoEpisodes": "No episodes published yet.",
@@ -896,6 +893,684 @@
     "goToStudio": "Go to Studio",
     "viewIPPlaza": "View IP Plaza"
   },
+  "newIpCreate": {
+    "close": "Close",
+    "pageTitle": "Create IP",
+    "heroEyebrow": "New IP",
+    "heroSubtitle": "Save a clean IP draft first. Settings, episodes, assets, and commerce will live in one workspace.",
+    "fieldName": "IP Name",
+    "fieldNamePlaceholder": "Enter IP name",
+    "fieldIpType": "IP type",
+    "fieldIpTypePlaceholder": "Select IP type",
+    "ipType": {
+      "series": "Series",
+      "film_short": "Film / short",
+      "other": "Other"
+    },
+    "fieldDescription": "Short description",
+    "fieldDescriptionPlaceholder": "A short pitch — what makes this IP stand out?",
+    "dropzoneIdleTitle": "Drop a script, treatment, or outline",
+    "dropzoneIdleHint": "We'll read it and auto-fill the form for you. PDF, DOCX, TXT, MD up to 10MB.",
+    "dropzoneActive": "Drop to analyze",
+    "dropzoneBrowse": "Browse files",
+    "dropzoneAnalyzing": "Analyzing your document…",
+    "dropzoneSuccess": "Auto-filled from {name}",
+    "dropzoneFailed": "Couldn't read this file. Try another?",
+    "dropzoneClear": "Undo",
+    "dropzoneRetry": "Retry",
+    "aiSuggested": "AI-suggested",
+    "fileTooLarge": "File too large. Max 10MB.",
+    "fileTypeUnsupported": "Unsupported file type.",
+    "createSuccess": "IP draft created",
+    "createFailed": "IP draft creation failed",
+    "creating": "Creating...",
+    "createDraft": "Create Draft"
+  },
+  "newIpWorkbench": {
+    "backToProfile": "Back to profile",
+    "eyebrow": "IP Workspace",
+    "emptySummary": "No short description yet.",
+    "notFoundTitle": "IP draft not found",
+    "notFoundBody": "It may not exist, may have been deleted, or the current account may not have access.",
+    "retry": "Retry",
+    "lastEdited": "Last edited {time}",
+    "preview": "Preview",
+    "publish": "Prepare publish",
+    "reviewSubmit": {
+      "defaultSummary": "Submit this IP draft for publication review.",
+      "submitting": "Submitting...",
+      "success": "Submitted for review",
+      "failed": "Failed to submit for review",
+      "requirements": "Complete before submitting: {items}"
+    },
+    "navTitle": "Workspace",
+    "flowTitle": "Creation flow",
+    "flowBody": "Move by stages, but complete each stage independently. The rings show current readiness.",
+    "comingSoon": "Coming soon",
+    "editBasics": "Edit basics",
+    "profileEdit": {
+      "title": "Edit IP basics",
+      "body": "Episodes, assets, collaboration, and commerce modules all reference these basics.",
+      "save": "Save changes",
+      "saving": "Saving...",
+      "saved": "IP basics saved",
+      "failed": "Failed to save IP basics",
+      "description": "Public description",
+      "descriptionPlaceholder": "Write the longer public-facing introduction: world, appeal, tone, and why audiences should follow it.",
+      "visibility": "Visibility",
+      "visibilityHelp": "Public visibility still depends on review and publication status.",
+      "ageRating": "Age rating",
+      "genres": "Genres",
+      "genresPlaceholder": "Sci-fi, suspense",
+      "tags": "Tags",
+      "tagsPlaceholder": "AI animation, interactive story",
+      "taxonomyHelp": "{count}/{max}, separate with commas"
+    },
+    "progressTitle": "Completion",
+    "nextTitle": "Next step",
+    "completionHelp": "Use this to judge whether the IP is ready for public display, collaboration, or monetization setup.",
+    "fields": {
+      "name": "IP name",
+      "summary": "Short description",
+      "asset": "Cover or trailer",
+      "rights": "Copyright owner and rights statement",
+      "aiDisclosure": "AI disclosure statement"
+    },
+    "metrics": {
+      "completion": "Profile",
+      "modules": "Modules",
+      "version": "Version"
+    },
+    "sections": {
+      "overview": {
+        "title": "Overview",
+        "status": "Editing now"
+      },
+      "episodes": {
+        "title": "Episodes",
+        "status": "To complete"
+      },
+      "rights": {
+        "title": "Copyright statement",
+        "status": "Needs review"
+      },
+      "pricing": {
+        "title": "Pricing",
+        "status": "To configure"
+      },
+      "collaboration": {
+        "title": "Collaboration",
+        "status": "To complete"
+      },
+      "commerce": {
+        "title": "Commerce",
+        "status": "To configure"
+      }
+    },
+    "panels": {
+      "overview": {
+        "eyebrow": "Overview",
+        "title": "IP overview",
+        "body": "Put the IP identity, current state, and work modules in one starting point so creators can see what to complete next.",
+        "action": "Edit basics"
+      },
+      "collaboration": {
+        "eyebrow": "Crew",
+        "title": "Collaboration",
+        "body": "Organize members, roles, permissions, tasks, and external partnerships around the IP. This can later expand into partnership rooms and project collaboration.",
+        "action": "Invite member"
+      },
+      "commerce": {
+        "eyebrow": "Commerce",
+        "title": "Commerce",
+        "body": "Connect entitlements, prices, promotions, order fulfillment, and revenue records. The UI defines the product structure before live transactions are wired in.",
+        "action": "Configure access"
+      }
+    },
+    "overview": {
+      "identityEyebrow": "Current draft",
+      "displayAssets": {
+        "title": "Display assets",
+        "body": "Cover art and trailers are the IP's first public identity assets. They must be uploaded to FizzDragon object storage before binding."
+      },
+      "next": {
+        "eyebrow": "Recommended next",
+        "profile": {
+          "title": "Complete the IP profile",
+          "body": "Start with the name, type, and a short pitch that audiences, collaborators, and partners can understand.",
+          "action": "Edit profile"
+        },
+        "assets": {
+          "title": "Add first visual assets",
+          "body": "Cover art or a trailer makes the IP easier to recognize and present.",
+          "action": "Manage assets"
+        },
+        "commerce": {
+          "title": "Configure commerce rules",
+          "body": "Before selling access, confirm entitlements, prices, promotions, and revenue records.",
+          "action": "Configure commerce"
+        },
+        "publish": {
+          "title": "Prepare to publish",
+          "body": "The core setup is ready for pre-publish checks, review, and public display.",
+          "action": "Review publish"
+        }
+      },
+      "moduleStatus": {
+        "ready": "Has content",
+        "missing": "Missing",
+        "planned": "Reserved"
+      },
+      "modules": {
+        "collaboration": {
+          "title": "Collaboration graph",
+          "body": "Crew, permissions, task ownership, and external partners."
+        },
+        "commerce": {
+          "title": "Commerce structure",
+          "body": "Entitlements, prices, promotions, and revenue records."
+        }
+      }
+    },
+    "episodesPanel": {
+      "managementTitle": "Episode management",
+      "managementBody": "This area handles episode upload, cover art, title and summary, ordering, publish state, and per-episode commerce state. Pricing is visible here, but rules still stay centralized in Pricing.",
+      "lifecycleTitle": "Release workflow",
+      "lifecycleBody": "An episode is not finished after one upload. It later moves through review, publishing, replacement, and commerce setup.",
+      "status": {
+        "empty": "No episodes"
+      },
+      "lifecycle": {
+        "draft": {
+          "title": "Draft editing",
+          "body": "Fill in title, summary, cover art, and source video, then save it into the ordered list."
+        },
+        "review": {
+          "title": "Review and replacement",
+          "body": "Public videos, paid episodes, and promotional content need review before going live. Video replacement is recorded again."
+        },
+        "publish": {
+          "title": "Publish and pricing",
+          "body": "Publishing state and pricing rules stay separate, while the episode list shows commerce state."
+        }
+      },
+      "episodeCountLabel": "Episodes",
+      "episodeUpload": {
+        "hasContent": "Has episodes",
+        "addButton": "Add episode",
+        "addRowTitle": "Add a new episode",
+        "addRowBody": "Enter the episode title and description, upload source video and cover art, then save it for ordering and publishing settings.",
+        "dialogTitle": "Episode edit dialog",
+        "dialogBody": "When Add episode is enabled, this structure opens in a dialog: basic fields on the left, upload slots on the right, so work is not lost while filling it in.",
+        "titleLabel": "Episode title",
+        "titlePlaceholder": "Example: Episode 1 · Awakening",
+        "summaryLabel": "Episode description",
+        "summaryPlaceholder": "Summarize what happens in this episode.",
+        "coverTitle": "Cover art",
+        "coverBody": "Used in episode lists, playback pages, and share cards.",
+        "videoTitle": "Video file",
+        "videoBody": "Upload the source video for an episode, short, or interactive clip.",
+        "uploadDisabled": "Upload handled in the episode editor"
+      },
+      "episodePricing": {
+        "title": "Episode pricing",
+        "body": "Episodes follow the IP access rule by default. Configure free previews, paid episodes, or membership access in Pricing without polluting episode content fields.",
+        "defaultRule": "Follows IP pricing",
+        "noEpisodes": "Create episodes first",
+        "openPricing": "Open pricing"
+      },
+      "create": {
+        "title": "Add episode",
+        "body": "Create the episode first, then upload cover art, full video, or trailer from the episode row. External links are not accepted.",
+        "nextNumber": "Episode {number}",
+        "creating": "Creating",
+        "action": "Create episode"
+      },
+      "form": {
+        "title": "Episode title",
+        "summary": "Episode summary",
+        "freePreview": "Mark as free preview",
+        "episodeNumber": "Episode {number}",
+        "duration": "Duration (seconds)",
+        "durationPlaceholder": "Example: 360",
+        "coverUploadTitle": "Episode cover",
+        "coverUploadBody": "Used by the episode list, public detail, and share previews.",
+        "mediaUploadTitle": "Episode video",
+        "mediaUploadBody": "The playable source file. Upload only files that should be stored in FizzDragon storage.",
+        "trailerUploadTitle": "Episode trailer",
+        "trailerUploadBody": "Optional short preview for promotion and pre-sale.",
+        "uploading": "Uploading",
+        "uploadCover": "Upload cover",
+        "uploadMedia": "Upload video",
+        "uploadTrailer": "Upload trailer",
+        "save": "Save episode",
+        "saving": "Saving",
+        "delete": "Delete"
+      },
+      "toasts": {
+        "created": "Episode created",
+        "createFailed": "Failed to create episode",
+        "saved": "Episode saved",
+        "saveFailed": "Failed to save episode",
+        "uploadSaved": "Episode asset uploaded and bound",
+        "uploadFailed": "Failed to upload episode asset",
+        "deleted": "Episode deleted",
+        "deleteFailed": "Failed to delete episode"
+      },
+      "empty": {
+        "title": "No episodes yet",
+        "body": "Once the first episode is created, public detail, pricing, and admin review will all read the same episode data."
+      }
+    },
+    "assetsPanel": {
+      "ready": "Configured",
+      "missing": "Missing",
+      "toasts": {
+        "uploadSaved": "Asset uploaded and bound",
+        "uploadFailed": "Failed to upload asset"
+      },
+      "form": {
+        "uploadHint": "Click or drag a local file here. The file is uploaded to storage and bound to this IP automatically.",
+        "uploading": "Uploading",
+        "uploadCover": "Upload cover",
+        "uploadTrailer": "Upload trailer"
+      },
+      "slots": {
+        "cover": {
+          "title": "Cover",
+          "body": "Used in profile, IP plaza, collections, sharing, and recommendations.",
+          "action": "Configured"
+        },
+        "trailer": {
+          "title": "Trailer",
+          "body": "A 30-second to 2-minute video that quickly expresses tone and story tension.",
+          "action": "Configured"
+        }
+      },
+      "rightsTitle": "Copyright statement",
+      "rightsBody": "Confirm the copyright owner, license scope, and AI usage disclosure. This is the rights baseline for public display, commerce, and review.",
+      "rightsForm": {
+        "owner": "Copyright owner / rights holder",
+        "ownerPlaceholder": "Example: FizzDragon Studio or creator name",
+        "aiUsage": "AI usage disclosure",
+        "generatedVisuals": "Includes AI-generated visuals",
+        "generatedCopy": "Includes AI-assisted text",
+        "rightsStatement": "Rights statement",
+        "rightsPlaceholder": "Describe source, license scope, commercial use, derivative use, or public display rights.",
+        "aiStatement": "AI statement",
+        "aiPlaceholder": "Describe which visuals, copy, or video materials were generated or assisted by AI.",
+        "save": "Save rights chain",
+        "saving": "Saving",
+        "saved": "Rights chain saved",
+        "saveFailed": "Failed to save rights chain"
+      }
+    },
+    "pricingPanel": {
+      "action": "Configure pricing",
+      "accessTitle": "Access and pricing rules",
+      "accessBody": "Pricing is a commerce rule, not episode content. Whole-IP access, per-episode overrides, memberships, and promotions share one rule model so orders, refunds, and ledgers can stay consistent later.",
+      "ruleStatus": {
+        "notConfigured": "Not configured",
+        "available": "Available",
+        "needsEpisodes": "Needs episodes",
+        "reserved": "Reserved",
+        "free": "Free",
+        "preview": "Preview",
+        "episodePaid": "Paid episode",
+        "inherit": "Inherits IP"
+      },
+      "form": {
+        "amount": "Price (community points)",
+        "amountPlaceholder": "Example: 99",
+        "originalAmount": "Compare-at price",
+        "originalAmountPlaceholder": "Optional, e.g. 199",
+        "startsAt": "Starts",
+        "startsAtPlaceholder": "Optional",
+        "endsAt": "Ends",
+        "endsAtPlaceholder": "Optional",
+        "maxPerUser": "Limit per user",
+        "maxPerUserPlaceholder": "Optional",
+        "invalidWindow": "The end time must be later than the start time.",
+        "enablePaid": "Paid access for the whole IP",
+        "overrideEpisode": "Set a separate price for this episode",
+        "save": "Save price",
+        "saving": "Saving"
+      },
+      "toasts": {
+        "saved": "Price rule saved",
+        "saveFailed": "Failed to save price rule"
+      },
+      "rules": {
+        "ipDefault": {
+          "title": "Whole IP default price",
+          "body": "Set the base price for buying or viewing the whole IP. Episodes without override rules inherit this."
+        },
+        "episodeOverride": {
+          "title": "Episode price override",
+          "body": "Use this for free previews, paid individual episodes, limited access, or special campaigns without changing episode content."
+        },
+        "membership": {
+          "title": "Membership access",
+          "body": "Later this can bind to subscriptions, creator memberships, or platform benefits alongside one-time purchases."
+        },
+        "promotion": {
+          "title": "Coupons and redemption",
+          "body": "Coupons, redemption codes, and free grants go through commerce fulfillment instead of directly editing user balances."
+        }
+      },
+      "episodeTitle": "Episode price table",
+      "episodeBody": "The episode table only shows commerce state: follows IP, free preview, paid episode, or membership access. Amounts and rules live here.",
+      "episodeListTitle": "Per-episode override state",
+      "episodeListReady": "There are {count} episodes. Later this table will configure override rules per episode.",
+      "episodeListEmpty": "There are no episodes yet. Create episodes in Episodes before configuring episode pricing.",
+      "episodeEmptyTitle": "No episodes to price",
+      "episodeEmptyBody": "After the first episode is created, this area will show each episode's commerce state and quick configuration entry.",
+      "guardrailTitle": "Order impact",
+      "guardrailBody": "Once a price goes live, it must stay consistent with orders, refunds, and audit records. It cannot be a display-only edit.",
+      "guardrails": {
+        "orders": {
+          "title": "Order snapshot",
+          "body": "Orders lock the price, entitlement, and promotion at purchase time. Later price changes do not alter historical orders."
+        },
+        "refunds": {
+          "title": "Refund boundary",
+          "body": "Refunds depend on the order and fulfillment state, not on reverse-calculating from the current price."
+        },
+        "audit": {
+          "title": "Audit trail",
+          "body": "Price, free-access, and membership changes need records so operations can resolve disputes."
+        }
+      }
+    },
+    "collaborationPanel": {
+      "crewTitle": "Crew seats",
+      "crewBody": "Define the collaboration roles around an IP first. Invitations, permissions, tasks, and external partnerships can be connected next.",
+      "roles": {
+        "owner": {
+          "title": "Owner",
+          "body": "Owns profile, publishing, commerce, and final approval.",
+          "status": "Reserved"
+        },
+        "writer": {
+          "title": "Writer / planner",
+          "body": "Maintains worldbuilding, story, dialogue, branches, and revisions.",
+          "status": "To invite"
+        },
+        "visual": {
+          "title": "Visual / assets",
+          "body": "Manages covers, concept art, trailers, videos, and rights chain.",
+          "status": "To invite"
+        },
+        "producer": {
+          "title": "Producer / business",
+          "body": "Tracks budget, partnership materials, commerce, and external licensing.",
+          "status": "To invite"
+        }
+      },
+      "permissions": {
+        "title": "Permission templates",
+        "body": "Later this splits view, edit, publish, review, and commerce permissions by module."
+      },
+      "investor": {
+        "title": "Investor room",
+        "body": "Future read-only rooms can expose materials, progress, data, and commercial plans to investors."
+      },
+      "activity": {
+        "title": "Collaboration activity",
+        "body": "Track who changed story, assets, permissions, prices, and publish state."
+      }
+    },
+    "commercePanel": {
+      "metrics": {
+        "priceRules": "Price rules",
+        "campaigns": "Campaigns",
+        "reports": "Reports / risk"
+      },
+      "stackTitle": "Commerce structure",
+      "stackBody": "Split commercial capability into clear modules before connecting points, orders, coupons, fulfillment, and ledgers.",
+      "stack": {
+        "entitlement": {
+          "title": "Access entitlements",
+          "body": "Define whether users buy the whole IP, one episode, membership access, or time-limited access."
+        },
+        "pricing": {
+          "title": "Pricing rules",
+          "body": "One pricing entry point for community points, compute points, and future membership packages."
+        },
+        "promotion": {
+          "title": "Promotion coupons",
+          "body": "Paid discounts sync to providers. Free coupons and internal grants use zero-value fulfillment."
+        },
+        "ledger": {
+          "title": "Financial ledger",
+          "body": "Record orders, refunds, fulfillment, revenue allocation, and future withdrawable balances."
+        }
+      }
+    },
+    "progress": {
+      "profile": {
+        "title": "Create IP record",
+        "body": "Name, type, and base state are ready."
+      },
+      "assets": {
+        "title": "Add first assets",
+        "body": "Cover art, concept images, trailers, or materials improve recognition."
+      },
+      "rights": {
+        "title": "Complete rights chain",
+        "body": "Add the copyright owner, rights statement, and AI disclosure when generated materials are used."
+      },
+      "commerce": {
+        "title": "Configure commerce rules",
+        "body": "Confirm entitlements and pricing before enabling paid access or campaigns."
+      },
+      "publish": {
+        "title": "Prepare publishing",
+        "body": "Confirm visibility, review state, and monetization settings."
+      },
+      "episodes": {
+        "title": "Add episodes",
+        "body": "Create or upload the first episode before pricing or publishing content."
+      }
+    },
+    "meta": {
+      "ipType": "IP type",
+      "sourceLocale": "Source locale",
+      "status": "Status",
+      "visibility": "Visibility",
+      "ageRating": "Age rating",
+      "version": "Version"
+    },
+    "status": {
+      "draft": "Draft",
+      "submitted": "Submitted",
+      "in_review": "In review",
+      "changes_requested": "Changes requested",
+      "approved": "Approved",
+      "scheduled": "Scheduled",
+      "published": "Published",
+      "archived": "Archived",
+      "suspended": "Suspended"
+    },
+    "visibility": {
+      "private": "Private",
+      "unlisted": "Unlisted",
+      "public": "Public"
+    },
+    "ageRating": {
+      "general": "General",
+      "teen": "Teen",
+      "mature": "Mature",
+      "restricted": "Restricted"
+    }
+  },
+  "newIpDetail": {
+    "loading": "Loading IP detail...",
+    "back": "Back to IP plaza",
+    "previewBadge": "Public-page preview visible only to you",
+    "eyebrow": "IP Detail",
+    "emptySummary": "The creator has not added a short description yet.",
+    "ready": "Ready",
+    "missing": "Missing",
+    "dateUnset": "TBD",
+    "durationUnset": "Duration TBD",
+    "durationMinutes": "{minutes} min",
+    "priceValue": "{amount} {unit}",
+    "units": {
+      "communityPoint": "community points",
+      "bubble": "compute points"
+    },
+    "actions": {
+      "watch": "View episodes",
+      "explore": "Explore IP",
+      "collect": "Collect",
+      "collected": "Collected",
+      "collectSuccess": "Added to collection",
+      "collectFailed": "Collection failed. Please try again later.",
+      "uncollectSuccess": "Removed from collection",
+      "uncollectFailed": "Remove failed. Please try again later.",
+      "report": "Report",
+      "share": "Share",
+      "shared": "Link copied",
+      "shareFailed": "Share failed. Please try again later."
+    },
+    "report": {
+      "title": "Report content",
+      "body": "Report {type} \"{target}\". Operations will review it in admin and keep an audit trail.",
+      "targetTypes": {
+        "ip": "IP",
+        "episode": "episode"
+      },
+      "reason": "Reason",
+      "description": "Details",
+      "descriptionPlaceholder": "Describe the issue, copyright basis, or risk details you observed.",
+      "blockIp": "Also block this IP after submitting so it no longer appears in lists or detail pages.",
+      "cancel": "Cancel",
+      "submit": "Submit report",
+      "submitting": "Submitting...",
+      "success": "Report submitted",
+      "successBlocked": "Report submitted and this IP has been blocked",
+      "failed": "Report failed. Please try again later.",
+      "reasons": {
+        "copyright": "Copyright or authorization issue",
+        "unsafe_content": "Unsafe or policy-violating content",
+        "fraud": "Fraud or false transaction",
+        "misleading": "Misleading description",
+        "privacy": "Privacy exposure",
+        "harassment": "Harassment or abusive content",
+        "other": "Other issue"
+      }
+    },
+    "tabs": {
+      "story": "Overview",
+      "episodes": "Episodes",
+      "access": "Access"
+    },
+    "metrics": {
+      "episodes": "Episodes",
+      "status": "Status",
+      "updated": "Launch"
+    },
+    "visual": {
+      "emptyTitle": "Cover missing",
+      "emptyBody": "The public detail page uses an AI stage placeholder until the creator adds visual assets.",
+      "video": "Playing full episode",
+      "trailer": "Showing trailer",
+      "cover": "Showing cover",
+      "placeholder": "Visual placeholder"
+    },
+    "access": {
+      "eyebrow": "Access",
+      "body": "The public page only shows purchasable or watchable access. Real charges, unlocks, and fulfillment stay in the order system.",
+      "previewBody": "This is creator preview mode. The draft is not visible to other users and cannot create orders.",
+      "visibility": "Visibility",
+      "language": "Source language",
+      "preview": "Creator preview",
+      "public": "Public access"
+    },
+    "creatorTeam": {
+      "titleFallback": "Creator team",
+      "subtitle": "{count} episodes · IP team",
+      "action": "See more",
+      "menu": "More creator actions",
+      "bannerAlt": "{name} team banner"
+    },
+    "story": {
+      "eyebrow": "Story",
+      "title": "Story appeal",
+      "body": "Other users first need to understand why this IP is worth entering, not its backend configuration fields.",
+      "hook": "One-line appeal",
+      "description": "Story introduction",
+      "descriptionEmpty": "No public story introduction yet.",
+      "tags": "Tags and style",
+      "tagsEmpty": "The creator has not published tags yet."
+    },
+    "ai": {
+      "eyebrow": "AI Signal",
+      "title": "Content signals",
+      "body": "Lightweight signals tell viewers whether the IP already has a cover, trailer, and watchable content.",
+      "signals": {
+        "visual": "Cover",
+        "trailer": "Trailer",
+        "episodes": "Watchable episodes"
+      }
+    },
+    "episodes": {
+      "eyebrow": "Episodes",
+      "title": "Episodes and content",
+      "body": "Public videos, previews, and paid content are shown here with clear pricing and unlock state.",
+      "count": "{count} episodes",
+      "number": "Episode {number}",
+      "playlist": "Episode list",
+      "freePreview": "Free preview",
+      "summaryEmpty": "Episode summary is missing.",
+      "emptyTitle": "No public episodes yet",
+      "emptyBody": "This IP profile exists, but the creator has not published watchable episodes yet."
+    },
+    "assets": {
+      "eyebrow": "Assets",
+      "title": "Visual assets",
+      "body": "Cover art and trailers define the public page's first impression.",
+      "kinds": {
+        "cover": "Cover",
+        "trailer": "Trailer"
+      }
+    },
+    "commerce": {
+      "eyebrow": "Access",
+      "title": "Price and access",
+      "body": "The public page presents only what users need to understand: price, campaigns, and unlock timing.",
+      "free": "Free access",
+      "price": "Current price",
+      "campaign": "Campaign",
+      "noCampaign": "No campaign",
+      "unlock": "Unlock time",
+      "now": "Available now",
+      "lockedVideo": "Unlock to watch the full episode",
+      "accessState": "Watch state",
+      "checking": "Checking",
+      "walletBalance": "Available balance",
+      "unlocked": "Unlocked",
+      "locked": "Locked",
+      "readyToWatch": "Ready to watch",
+      "needUnlock": "Unlock required",
+      "walletChecking": "Checking community point balance...",
+      "walletLine": "Available balance {balance}",
+      "loginToUnlock": "Sign in to unlock",
+      "purchase": "Unlock now",
+      "purchasing": "Unlocking...",
+      "purchaseSuccess": "Unlocked. You can start watching.",
+      "purchaseFailed": "Unlock failed. Please try again later.",
+      "notForSale": "Not available for purchase",
+      "disclaimerTitle": "Order fulfillment",
+      "disclaimerBody": "After purchase, users receive content access. Point deduction, refunds, and ledger records are handled by the backend loop."
+    },
+    "notFound": {
+      "title": "This IP is not available",
+      "body": "It may not be public yet, may have been removed, or the current account may not have preview access.",
+      "action": "Back to IP plaza"
+    }
+  },
   "crew": {
     "plaza": "Crew Hall",
     "allCrewsTitle": "All Crews",
@@ -1240,7 +1915,12 @@
       "emptyVisitorTitle": "No IPs yet",
       "emptyVisitorBody": "This creator hasn't created any public IPs.",
       "createCta": "Create IP",
-      "editIp": "Edit IP"
+      "editIp": "Edit IP",
+      "newIpBadge": "New IP",
+      "enterStudio": "Open studio",
+      "loadFailedTitle": "IP list failed to load",
+      "loadFailedBody": "The new IP service is temporarily unavailable. Existing drafts were not deleted.",
+      "retry": "Retry"
     },
     "crews": {
       "emptyOwnerTitle": "Join a crew",
@@ -3102,7 +3782,6 @@
     "rejectEpisode": "Reject Episode",
     "submitForReview": "Submit for Review",
     "fullEpisodeReject": "Full Episode Rejection",
-    "reject": "Reject",
     "rejectReason": "Rejection Reason",
     "rejectReasonPlaceholder": "Please describe the reason for rejection...",
     "rejectSuggestion": "Revision Suggestions",
@@ -5364,20 +6043,27 @@
     "hero": {
       "eyebrow": "New IP commerce system",
       "title": "Launch, sell, unlock, and settle IP content in one flow.",
-      "body": "A clean product shell for public IP titles, episodes, presale campaigns, community point purchases, creator revenue, review, and migration."
+      "body": "A clean product shell for public IP titles, episodes, presale campaigns, community point purchases, entitlement fulfillment, review, and migration."
     },
     "actions": {
       "create": "Create IP",
       "import": "Import legacy content",
-      "revenue": "Revenue view",
       "openStorefront": "Open storefront",
       "startImport": "Start import"
     },
     "metrics": {
-      "published": { "label": "Published IPs", "hint": "Public or scheduled storefront items" },
-      "presale": { "label": "Presale points", "hint": "Community point value locked" },
-      "review": { "label": "Review queue", "hint": "Waiting for product or rights review" },
-      "revenue": { "label": "Creator payable", "hint": "Pending creator ledger entries" }
+      "published": {
+        "label": "Published IPs",
+        "hint": "Public or scheduled storefront items"
+      },
+      "presale": {
+        "label": "Presale points",
+        "hint": "Community point value locked"
+      },
+      "review": {
+        "label": "Review queue",
+        "hint": "Waiting for product or rights review"
+      }
     },
     "status": {
       "draft": "Draft",
@@ -5405,10 +6091,10 @@
       "now": "Available now",
       "countdown": "Unlocks on {date}"
     },
-    "titles": {
+    "ips": {
       "hawParVilla": {
         "title": "Haw Par Villa After Dark",
-        "body": "An AI immersive film game with branching choices, presale access, creator revenue tracking, and referral links."
+        "body": "An AI immersive film game with branching choices, presale access, community-point purchases, and referral attribution."
       },
       "moonMarket": {
         "title": "Moon Market",
@@ -5446,11 +6132,22 @@
       "score": "Readiness score",
       "scoreHint": "Blocks risky launch paths before publishing.",
       "items": {
-        "content": { "title": "Content package", "body": "Title, episodes, hero media, trailer" },
-        "pricing": { "title": "Price rules", "body": "Bundle and episode unlock rules" },
-        "rights": { "title": "Rights declaration", "body": "Ownership, source, AI disclosure" },
-        "revenue": { "title": "Revenue rules", "body": "Production fee, share, referral" },
-        "review": { "title": "Review approval", "body": "Content, price, rights snapshot" }
+        "content": {
+          "title": "Content package",
+          "body": "Title, episodes, hero media, trailer"
+        },
+        "pricing": {
+          "title": "Price rules",
+          "body": "Bundle and episode unlock rules"
+        },
+        "rights": {
+          "title": "Rights declaration",
+          "body": "Ownership, source, AI disclosure"
+        },
+        "review": {
+          "title": "Review approval",
+          "body": "Content, price, rights snapshot"
+        }
       }
     },
     "commerce": {
@@ -5461,36 +6158,21 @@
           "title": "Price rule",
           "body": "Resolve active title or episode price by site and campaign."
         },
-        "order": { "title": "Order", "body": "Create an idempotent content purchase order." },
+        "order": {
+          "title": "Order",
+          "body": "Create an idempotent content purchase order."
+        },
         "wallet": {
           "title": "Wallet ledger",
           "body": "Debit community points through wallet transaction history."
         },
-        "entitlement": { "title": "Entitlement", "body": "Grant access from the completed order." },
+        "entitlement": {
+          "title": "Entitlement",
+          "body": "Grant access from the completed order."
+        },
         "collection": {
           "title": "Collection",
           "body": "Add purchased content to the viewer library."
-        },
-        "revenue": {
-          "title": "Revenue ledger",
-          "body": "Post creator share, referral commission, and platform fee."
-        }
-      }
-    },
-    "revenue": {
-      "eyebrow": "Creator income",
-      "title": "Revenue sources",
-      "ledger": "Pending ledger",
-      "pending": "Pending settlement",
-      "sources": {
-        "productionFee": {
-          "title": "Production fee",
-          "body": "Fixed fee for approved episode delivery"
-        },
-        "share": { "title": "Sales share", "body": "Creator receives configured sales share" },
-        "referral": {
-          "title": "Referral commission",
-          "body": "Attribution links generate commission"
         }
       }
     },
@@ -5503,9 +6185,18 @@
         "blocked": "Blocked"
       },
       "items": {
-        "rights": { "title": "Rights declaration", "body": "Approved for title and episode sale" },
-        "aiDisclosure": { "title": "AI disclosure", "body": "Generated media declaration pending" },
-        "report": { "title": "User report", "body": "Copyright report requires moderation" }
+        "rights": {
+          "title": "Rights declaration",
+          "body": "Approved for title and episode sale"
+        },
+        "aiDisclosure": {
+          "title": "AI disclosure",
+          "body": "Generated media declaration pending"
+        },
+        "report": {
+          "title": "User report",
+          "body": "Copyright report requires moderation"
+        }
       }
     },
     "entitlement": {

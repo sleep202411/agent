@@ -73,6 +73,7 @@ playwright-report/
 # Throwaway dev artifacts at repo root (screenshots / preview HTML).
 # These accumulate from manual browser work and should never enter
 # the repo. Put intentional docs under docs/ instead.
+/outputs/
 /image.png
 /image*.png
 /image*.jpg
