@@ -254,6 +254,7 @@ export class BillingService {
       paymentFailures7d,
       revenue7d,
       walletAccounts,
+      walletLedgerEntries,
       recentOrders,
     ] = await Promise.all([
       this.prisma.billingCatalogItem.count({
@@ -314,8 +315,19 @@ export class BillingService {
         _sum: { amountMinor: true },
       }),
       this.prisma.walletAccount.findMany({
+        include: {
+          _count: { select: { ledgerEntries: true } },
+        },
         orderBy: { updatedAt: 'desc' },
-        take: 8,
+        take: 50,
+      }),
+      this.prisma.walletLedgerEntry.findMany({
+        include: {
+          account: true,
+          transaction: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 12,
       }),
       this.prisma.billingOrder.findMany({
         include: {
@@ -376,7 +388,29 @@ export class BillingService {
         status: account.status,
         availableBalance: account.availableBalance.toString(),
         heldBalance: account.heldBalance.toString(),
+        ledgerEntryCount: account._count.ledgerEntries,
         updatedAt: account.updatedAt.toISOString(),
+      })),
+      walletLedgerEntries: walletLedgerEntries.map((entry) => ({
+        id: entry.id,
+        transactionId: entry.transactionId,
+        accountId: entry.accountId,
+        ownerType: entry.account.ownerType,
+        ownerId: entry.account.ownerId,
+        entryType: entry.entryType,
+        currency: entry.currency,
+        balanceKind: entry.balanceKind,
+        amount: entry.amount.toString(),
+        availableDelta: entry.availableDelta.toString(),
+        heldDelta: entry.heldDelta.toString(),
+        availableBalanceAfter: entry.availableBalanceAfter.toString(),
+        heldBalanceAfter: entry.heldBalanceAfter.toString(),
+        reason: entry.reason,
+        sourceType: entry.transaction.sourceType,
+        sourceId: entry.transaction.sourceId,
+        idempotencyKey: entry.transaction.idempotencyKey,
+        description: entry.transaction.description,
+        createdAt: entry.createdAt.toISOString(),
       })),
       recentOrders: recentOrders.map((order) => this.adminOrderDto(order)),
     };
@@ -465,11 +499,12 @@ export class BillingService {
   }
 
   async createAdminPrice(adminId: string, input: CreateAdminBillingPriceInput) {
+    const itemCode = input.itemCode ?? buildBillingItemCode(input);
     return this.prisma.$transaction(async (tx) => {
       const item = await tx.billingCatalogItem.upsert({
-        where: { code: input.itemCode },
+        where: { code: itemCode },
         create: {
-          code: input.itemCode,
+          code: itemCode,
           name: input.itemName,
           description: input.itemDescription ?? null,
           productType: input.productType as BillingProductType,
@@ -4112,6 +4147,37 @@ function isPaymentFailedEvent(
 function grantEndsAt(now: Date, days: number | null): Date | null {
   if (!days) return null;
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function buildBillingItemCode(input: CreateAdminBillingPriceInput): string {
+  const prefixes: Record<string, string> = {
+    community_point_pack: 'COMMUNITY_POINT',
+    bubble_pack: 'BUBBLE',
+    membership_plan: 'MEMBERSHIP',
+    team_membership_plan: 'TEAM_MEMBERSHIP',
+  };
+  const prefix = prefixes[input.productType] ?? 'BILLING';
+  const benefit = sanitizeCodeToken(
+    input.grantsWalletAmount?.toString() ?? input.grantsPlanKey ?? 'PACKAGE',
+  );
+  const fiatCurrency = sanitizeCodeToken(input.currency || 'CUR');
+  const fiatAmount = sanitizeCodeToken(
+    input.amountMinor.toString() || 'AMOUNT',
+  );
+  return [prefix, benefit, fiatCurrency, fiatAmount]
+    .join('_')
+    .replace(/_+/g, '_')
+    .slice(0, 96)
+    .replace(/_+$/g, '');
+}
+
+function sanitizeCodeToken(value: string): string {
+  const token = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return token || 'AUTO';
 }
 
 function createOrderNo(): string {

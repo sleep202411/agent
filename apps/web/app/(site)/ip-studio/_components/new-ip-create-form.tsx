@@ -9,6 +9,7 @@ import {
   IconLoader2,
   IconRefresh,
   IconSparkles,
+  IconTags,
   IconX,
 } from "@tabler/icons-react";
 import posthog from "posthog-js";
@@ -27,15 +28,9 @@ import {
   DialogFooter,
   DialogHero,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useNewIpSparkAnalyze } from "@/app/(site)/ip-studio/_hooks/use-new-ip-spark";
-import { useCreateIpCommerceIp } from "@/src/lib/ip-commerce/hooks";
+import { useCreateIpCommerceIp, useIpCommerceTaxonomyTerms } from "@/src/lib/ip-commerce/hooks";
+import type { IpTaxonomyTerm } from "@/src/lib/ip-commerce/api";
 
 // Hero image lives on the shared static CDN (separate from the OSS
 // avatar / banner buckets we use for user-generated content).
@@ -52,9 +47,6 @@ const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".md"];
 const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.join(",");
 
 type AnalyzeStatus = "idle" | "analyzing" | "success" | "error";
-type IpCreateType = "series" | "film_short" | "other";
-
-const IP_TYPE_OPTIONS: IpCreateType[] = ["series", "film_short", "other"];
 
 interface NewIpCreateFormProps {
   onClose?: () => void;
@@ -96,25 +88,26 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
   const defaultSourceLocale = localeFromPathname(pathname);
 
   const [name, setName] = useState("");
-  const [ipType, setIpType] = useState<IpCreateType | "">("");
+  const [genreCodes, setGenreCodes] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const create = useCreateIpCommerceIp();
   const creating = create.isPending;
   const sparkAnalyze = useNewIpSparkAnalyze();
+  const taxonomy = useIpCommerceTaxonomyTerms({ locale: defaultSourceLocale });
+  const taxonomyItems = taxonomy.data?.items ?? [];
+  const genreOptions = taxonomyItems.filter((item) => item.type === "genre");
 
   // AI-fill state
   const [analyzeStatus, setAnalyzeStatus] = useState<AnalyzeStatus>("idle");
   const [analyzedFileName, setAnalyzedFileName] = useState("");
-  const [aiFilledFields, setAiFilledFields] = useState<Set<"name" | "ipType" | "description">>(
-    new Set()
-  );
+  const [aiFilledFields, setAiFilledFields] = useState<Set<"name" | "description">>(new Set());
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const analyzeAbortRef = useRef<AbortController | null>(null);
 
   const resetForm = () => {
     setName("");
-    setIpType("");
+    setGenreCodes([]);
     setDescription("");
     setAnalyzeStatus("idle");
     setAnalyzedFileName("");
@@ -125,14 +118,14 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
   };
 
   // ─── Field-level AI marker helpers ───────────────────
-  const markAi = (field: "name" | "ipType" | "description") => {
+  const markAi = (field: "name" | "description") => {
     setAiFilledFields((prev) => {
       const next = new Set(prev);
       next.add(field);
       return next;
     });
   };
-  const clearAi = (field: "name" | "ipType" | "description") => {
+  const clearAi = (field: "name" | "description") => {
     setAiFilledFields((prev) => {
       if (!prev.has(field)) return prev;
       const next = new Set(prev);
@@ -203,18 +196,17 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
     setAnalyzedFileName("");
     // Only clear fields that were AI-filled and haven't been edited by the user.
     if (aiFilledFields.has("name")) setName("");
-    if (aiFilledFields.has("ipType")) setIpType("");
     if (aiFilledFields.has("description")) setDescription("");
     setAiFilledFields(new Set());
   };
 
   // ─── Create ─────────────────────────────────────────
   const handleCreate = () => {
-    if (!name.trim() || !ipType || creating) return;
+    if (!name.trim() || !genreCodes.length || creating) return;
     create.mutate(
       {
         title: name.trim(),
-        ipType,
+        genreCodes,
         sourceLocale: defaultSourceLocale,
         summary: description.trim() || undefined,
       },
@@ -222,7 +214,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
         onSuccess: ({ ip }) => {
           posthog.capture("ip_created", {
             ip_id: ip.id,
-            ip_type: ipType,
+            genre_codes: genreCodes,
             source_locale: defaultSourceLocale,
             used_spark_analysis: analyzeStatus === "success",
           });
@@ -301,28 +293,18 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
           </Field>
 
           <Field>
-            <FieldLabel required>
-              {t("fieldIpType")}
-              {aiFilledFields.has("ipType") && <AiSuggestedChip label={t("aiSuggested")} />}
-            </FieldLabel>
-            <Select
-              value={ipType}
-              onValueChange={(v) => {
-                setIpType(v as IpCreateType);
-                clearAi("ipType");
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={t("fieldIpTypePlaceholder")} />
-              </SelectTrigger>
-              <SelectContent>
-                {IP_TYPE_OPTIONS.map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {t(`ipType.${value}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <FieldLabel required>{t("fieldGenres")}</FieldLabel>
+            <TaxonomyPicker
+              items={genreOptions}
+              selectedCodes={genreCodes}
+              max={8}
+              loading={taxonomy.isLoading}
+              emptyLabel={t("taxonomyEmpty")}
+              onChange={setGenreCodes}
+            />
+            <FieldDescription>
+              {t("taxonomyHelp", { count: genreCodes.length, max: 8 })}
+            </FieldDescription>
           </Field>
 
           <Field>
@@ -346,7 +328,11 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
         </FieldGroup>
       </DialogBody>
       <DialogFooter>
-        <Button type="button" onClick={handleCreate} disabled={!name.trim() || !ipType || creating}>
+        <Button
+          type="button"
+          onClick={handleCreate}
+          disabled={!name.trim() || !genreCodes.length || creating}
+        >
           {creating ? t("creating") : t("createDraft")}
         </Button>
       </DialogFooter>
@@ -354,6 +340,73 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
   );
 
   return formContent;
+}
+
+function TaxonomyPicker({
+  items,
+  selectedCodes,
+  max,
+  loading,
+  emptyLabel,
+  onChange,
+}: {
+  items: IpTaxonomyTerm[];
+  selectedCodes: string[];
+  max: number;
+  loading: boolean;
+  emptyLabel: string;
+  onChange: (codes: string[]) => void;
+}) {
+  const selected = new Set(selectedCodes);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground">
+        <IconLoader2 className="size-4 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!items.length) {
+    return (
+      <div className="flex min-h-10 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm text-muted-foreground">
+        <IconTags className="size-4" />
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => {
+        const active = selected.has(item.code);
+        const disabled = !active && selectedCodes.length >= max;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              if (active) {
+                onChange(selectedCodes.filter((code) => code !== item.code));
+              } else if (!disabled) {
+                onChange([...selectedCodes, item.code]);
+              }
+            }}
+            className={cn(
+              "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition",
+              active
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-card text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+              disabled && "cursor-not-allowed opacity-45"
+            )}
+          >
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function CharacterCount({ value, max }: { value: number; max: number }) {

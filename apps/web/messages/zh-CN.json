@@ -900,13 +900,10 @@
     "heroSubtitle": "先保存一个干净的 IP 草稿，后续设定、剧集、资产和商业化都归入同一个工作台。",
     "fieldName": "IP 名称",
     "fieldNamePlaceholder": "请输入 IP 名称",
-    "fieldIpType": "IP 类型",
-    "fieldIpTypePlaceholder": "请选择 IP 类型",
-    "ipType": {
-      "series": "剧集 / 系列",
-      "film_short": "电影 / 短片",
-      "other": "其他"
-    },
+    "fieldGenres": "类型",
+    "fieldTags": "标签",
+    "taxonomyHelp": "已选 {count}/{max}",
+    "taxonomyEmpty": "暂无可用类型标签",
     "fieldDescription": "短简介",
     "fieldDescriptionPlaceholder": "一两句话讲清楚：你的 IP 凭什么吸引人？",
     "dropzoneIdleTitle": "把剧本、提案或大纲拖到这里",
@@ -964,7 +961,8 @@
       "genresPlaceholder": "科幻、悬疑",
       "tags": "标签",
       "tagsPlaceholder": "AI 动画、互动剧情",
-      "taxonomyHelp": "{count}/{max}，用逗号分隔"
+      "taxonomyHelp": "已选 {count}/{max}",
+      "taxonomyEmpty": "暂无可用类型标签"
     },
     "progressTitle": "完善进度",
     "nextTitle": "下一步",
@@ -972,6 +970,7 @@
     "fields": {
       "name": "IP 名称",
       "summary": "短简介",
+      "genre": "类型",
       "asset": "封面或预告片",
       "rights": "版权主体和权利说明",
       "aiDisclosure": "AI 使用说明"
@@ -1124,7 +1123,17 @@
         "body": "先创建剧集，再在剧集行里上传封面、正片或预告。这里不接受外部链接。",
         "nextNumber": "第 {number} 集",
         "creating": "创建中",
+        "addAction": "添加剧集",
+        "cancel": "取消添加",
         "action": "创建剧集"
+      },
+      "edit": {
+        "title": "编辑剧集",
+        "cancel": "取消编辑",
+        "action": "保存剧集"
+      },
+      "validation": {
+        "titleRequired": "请填写剧集标题"
       },
       "form": {
         "title": "剧集标题",
@@ -1209,6 +1218,58 @@
       "action": "配置定价",
       "accessTitle": "访问与定价规则",
       "accessBody": "定价是商业规则，不写进剧集内容本身。整部 IP、单集覆盖、会员权益和促销都从统一规则出发，后续才能接订单、退款和账本。",
+      "commerceTitle": "商业化运营",
+      "commerceBody": "从真实购买、已授权权益、待解锁和定价健康度看闭环，和用户侧购买使用同一套权益系统。",
+      "commerce": {
+        "statusTitle": "销售健康度",
+        "statusBody": "这里展示运营口径的总销售和权益记录；结算单独展示，避免把未配置的收入误报为可提现。",
+        "refresh": "刷新",
+        "loading": "正在加载商业化数据",
+        "loadFailed": "商业化数据加载失败",
+        "orders": "有效订单",
+        "points": "总积分",
+        "buyers": "购买用户",
+        "entitlements": "有效权益",
+        "last7Days": "近 7 日 {count} 单",
+        "pointsLast7Days": "近 7 日 {amount}",
+        "totalOrders": "累计 {count} 单",
+        "pendingUnlocks": "{count} 个待解锁",
+        "healthTitle": "定价健康度",
+        "healthSummary": "{prices} 个有效单集价 · {episodes} 个公开剧集",
+        "healthReadyBody": "定价链路可对用户售卖。后续改价不会影响历史订单快照。",
+        "health": {
+          "ready": "可售卖",
+          "attention": "需关注",
+          "blocked": "已阻塞"
+        },
+        "warnings": {
+          "not_public": "IP 尚未公开上架，用户还无法自然发现。",
+          "no_episodes": "这个 IP 还没有创建剧集。",
+          "no_published_episodes": "暂无已发布或已排期的公开剧集。",
+          "no_active_price": "没有可购买的整部或单集有效价格。",
+          "missing_bundle_price": "已有单集价格，但还没有整部 IP 打包价。",
+          "all_free_preview": "所有公开剧集都是试看，且没有付费路径。",
+          "unknown": "有一条商业化提醒需要检查。"
+        },
+        "settlementTitle": "创作者结算",
+        "settlementNotConfigured": "创作者结算暂未配置。",
+        "settlementBody": "上方数据是用户支付和权益履约的运营口径。提现收入需要等分账、结算和付款审计完整落地后再展示。",
+        "recentOrders": "最近订单",
+        "noOrders": "暂无订单",
+        "orderTarget": {
+          "ip": "整部 IP 权益",
+          "episode": "单集权益"
+        },
+        "orderStatus": {
+          "pending": "待支付",
+          "paid": "已支付",
+          "fulfilled": "已履约",
+          "canceled": "已取消",
+          "failed": "失败",
+          "refunded": "已退款",
+          "partially_refunded": "部分退款"
+        }
+      },
       "ruleStatus": {
         "notConfigured": "未配置",
         "available": "可配置",
@@ -1374,7 +1435,6 @@
       }
     },
     "meta": {
-      "ipType": "IP 类型",
       "sourceLocale": "源语言",
       "status": "状态",
       "visibility": "可见性",
@@ -1485,6 +1545,7 @@
       "previewBody": "这是创作者预览模式，草稿不会被其他用户看到，也不会产生订单。",
       "visibility": "可见范围",
       "language": "源语言",
+      "genres": "类型",
       "preview": "创作者预览",
       "public": "公开可访问"
     },
@@ -1542,6 +1603,8 @@
       "body": "公开页只呈现用户需要理解的价格、活动和解锁节奏，不暴露后台账务细节。",
       "free": "免费访问",
       "price": "当前价格",
+      "ipBundle": "整包权益",
+      "singleEpisode": "当前剧集",
       "campaign": "活动",
       "noCampaign": "暂无活动",
       "unlock": "解锁时间",
@@ -1552,13 +1615,20 @@
       "walletBalance": "可用余额",
       "unlocked": "已解锁",
       "locked": "未解锁",
+      "pendingUnlock": "已购买，等待解锁",
+      "pendingUnlockAt": "已购买，将于 {date} 解锁",
+      "pendingUnlockShort": "待解锁",
+      "pendingUnlockBody": "订单已履约，正片会在解锁时间自动开放。",
       "readyToWatch": "可直接观看",
       "needUnlock": "需要解锁",
       "walletChecking": "正在读取社区积分余额...",
       "walletLine": "可用余额 {balance}",
+      "shortBalanceLine": "还差 {amount} 才能解锁。",
       "loginToUnlock": "登录后解锁",
       "purchase": "立即解锁",
       "purchasing": "正在解锁...",
+      "topUpToUnlock": "充值积分",
+      "rechargeSuccess": "社区积分余额已更新。",
       "purchaseSuccess": "已解锁，可开始观看。",
       "purchaseFailed": "解锁失败，请稍后重试。",
       "notForSale": "暂未开放购买",

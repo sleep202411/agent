@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   Req,
   UseGuards,
@@ -21,17 +22,35 @@ import {
 import { Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
+  AdminIpTaxonomyTermParamsSchema,
+  CreateAdminIpTaxonomyTermSchema,
+  GrantAdminIpEntitlementSchema,
+  IpEntitlementParamsSchema,
   IpReportParamsSchema,
   IpLocaleQuerySchema,
   IpParamsSchema,
+  ListAdminIpEntitlementsQuerySchema,
   ListAdminIpsQuerySchema,
+  ListAdminIpOrdersQuerySchema,
+  ListIpTaxonomyTermsQuerySchema,
+  RevokeAdminIpEntitlementSchema,
   ResolveAdminIpReportSchema,
+  UpdateAdminIpTaxonomyTermSchema,
   UpdateAdminIpPublicationSchema,
+  type AdminIpTaxonomyTermParams,
+  type CreateAdminIpTaxonomyTermInput,
+  type GrantAdminIpEntitlementInput,
+  type IpEntitlementParams,
   type IpLocaleQuery,
   type IpReportParams,
   type IpParams,
+  type ListAdminIpEntitlementsQuery,
   type ListAdminIpsQuery,
+  type ListAdminIpOrdersQuery,
+  type ListIpTaxonomyTermsQuery,
+  type RevokeAdminIpEntitlementInput,
   type ResolveAdminIpReportInput,
+  type UpdateAdminIpTaxonomyTermInput,
   type UpdateAdminIpPublicationInput,
 } from './dto';
 import { IpCommerceService } from './ip-commerce.service';
@@ -70,6 +89,147 @@ export class IpCommerceAdminController {
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('orders')
+  async listOrders(
+    @Query(new ZodValidationPipe(ListAdminIpOrdersQuerySchema))
+    query: ListAdminIpOrdersQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listAdminPurchaseOrders(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('entitlements')
+  async listEntitlements(
+    @Query(new ZodValidationPipe(ListAdminIpEntitlementsQuerySchema))
+    query: ListAdminIpEntitlementsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listAdminEntitlements(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Post('entitlements/grants')
+  async grantEntitlement(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(GrantAdminIpEntitlementSchema))
+    body: GrantAdminIpEntitlementInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.grantAdminEntitlement(
+      adminToAuthUser(admin),
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.entitlement.grant',
+      resourceType: 'ip_entitlement',
+      resourceId: data.entitlement.id,
+      metadata: {
+        ipId: body.ipId,
+        episodeId: body.episodeId ?? null,
+        userId: body.userId,
+        targetType: body.targetType,
+        reason: body.reason,
+        alreadyGranted: data.alreadyGranted,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('taxonomy')
+  async listTaxonomy(
+    @Query(new ZodValidationPipe(ListIpTaxonomyTermsQuerySchema))
+    query: ListIpTaxonomyTermsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listAdminTaxonomyTerms(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Post('taxonomy')
+  async createTaxonomyTerm(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminIpTaxonomyTermSchema))
+    body: CreateAdminIpTaxonomyTermInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.createAdminTaxonomyTerm(
+      adminToAuthUser(admin),
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.taxonomy.create',
+      resourceType: 'ip_taxonomy_term',
+      resourceId: data.term.id,
+      metadata: {
+        type: body.type,
+        code: data.term.code,
+        status: data.term.status,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('taxonomy/:termId')
+  async updateTaxonomyTerm(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(AdminIpTaxonomyTermParamsSchema))
+    params: AdminIpTaxonomyTermParams,
+    @Body(new ZodValidationPipe(UpdateAdminIpTaxonomyTermSchema))
+    body: UpdateAdminIpTaxonomyTermInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.updateAdminTaxonomyTerm(
+      adminToAuthUser(admin),
+      params.termId,
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.taxonomy.update',
+      resourceType: 'ip_taxonomy_term',
+      resourceId: params.termId,
+      metadata: {
+        status: body.status ?? null,
+        displayOrder: body.displayOrder ?? null,
+        localizationCount: body.localizations?.length ?? null,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
   @Get('ips/:ipId')
   async getIp(
     @Param(new ZodValidationPipe(IpParamsSchema))
@@ -80,6 +240,40 @@ export class IpCommerceAdminController {
     return {
       code: 200,
       data: await this.ipCommerce.getAdminIp(params.ipId, query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('entitlements/:entitlementId/revoke')
+  async revokeEntitlement(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(IpEntitlementParamsSchema))
+    params: IpEntitlementParams,
+    @Body(new ZodValidationPipe(RevokeAdminIpEntitlementSchema))
+    body: RevokeAdminIpEntitlementInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.revokeAdminEntitlement(
+      adminToAuthUser(admin),
+      params.entitlementId,
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.entitlement.revoke',
+      resourceType: 'ip_entitlement',
+      resourceId: params.entitlementId,
+      metadata: {
+        reason: body.reason,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data,
     };
   }
 

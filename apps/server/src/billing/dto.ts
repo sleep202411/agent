@@ -145,7 +145,8 @@ export const CreateAdminBillingPriceSchema = z
       .trim()
       .min(3)
       .max(96)
-      .transform((value) => value.toUpperCase()),
+      .transform((value) => value.toUpperCase())
+      .optional(),
     itemName: z.string().trim().min(2).max(160),
     itemDescription: z.string().trim().max(2000).optional(),
     productType: BillingProductTypeSchema,

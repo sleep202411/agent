@@ -116,7 +116,7 @@ export class BillingAdminController {
       'billing_price',
       data.id,
       {
-        code: body.itemCode,
+        code: data.code,
         productType: body.productType,
         currency: body.currency,
       },

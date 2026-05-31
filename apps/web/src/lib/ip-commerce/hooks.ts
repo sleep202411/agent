@@ -9,12 +9,14 @@ import {
   deleteIpCommerceEpisode,
   getIpCommerceIp,
   getMyIpCommerceIp,
+  getMyIpCommerceOverview,
   getIpCommerceWallet,
   getIpAccess,
   listIpCommerceCollection,
   listMyIpCommerceIpAssets,
   listMyIpCommerceIps,
   listIpCommerceIps,
+  listIpCommerceTaxonomyTerms,
   purchaseIpContent,
   reportIpContent,
   removeIpCommerceCollection,
@@ -40,12 +42,20 @@ import {
   type UpsertIpCollectionInput,
   type UpsertIpPriceRuleInput,
   type UpsertIpBlockInput,
+  type IpTaxonomyTermType,
 } from "./api";
 
 export const ipCommerceKeys = {
   all: ["ip-commerce"] as const,
-  ips: (params?: { ipType?: string; locale?: string; cursor?: string; limit?: number }) =>
-    ["ip-commerce", "ips", params ?? {}] as const,
+  taxonomy: (params?: { type?: IpTaxonomyTermType; locale?: string }) =>
+    ["ip-commerce", "taxonomy", params ?? {}] as const,
+  ips: (params?: {
+    genreCodes?: string[];
+    tagCodes?: string[];
+    locale?: string;
+    cursor?: string;
+    limit?: number;
+  }) => ["ip-commerce", "ips", params ?? {}] as const,
   ip: (ipId: string, params?: { locale?: string }) =>
     ["ip-commerce", "ips", ipId, params ?? {}] as const,
   myIpsRoot: ["ip-commerce", "me", "ips"] as const,
@@ -53,6 +63,8 @@ export const ipCommerceKeys = {
     ["ip-commerce", "me", "ips", params ?? {}] as const,
   myIp: (ipId: string, params?: { locale?: string }) =>
     ["ip-commerce", "me", "ips", ipId, params ?? {}] as const,
+  myIpCommerce: (ipId: string, params?: { locale?: string }) =>
+    ["ip-commerce", "me", "ips", ipId, "commerce", params ?? {}] as const,
   myIpAssets: (ipId: string, params?: { purpose?: string }) =>
     ["ip-commerce", "me", "ips", ipId, "assets", params ?? {}] as const,
   ipAccess: (ipId: string, params?: { episodeIds?: readonly string[]; locale?: string }) =>
@@ -69,7 +81,8 @@ export const ipCommerceKeys = {
 };
 
 export function useIpCommerceIps(params?: {
-  ipType?: string;
+  genreCodes?: string[];
+  tagCodes?: string[];
   locale?: string;
   cursor?: string;
   limit?: number;
@@ -78,6 +91,17 @@ export function useIpCommerceIps(params?: {
     queryKey: ipCommerceKeys.ips(params),
     queryFn: () => listIpCommerceIps(params),
     staleTime: 60_000,
+  });
+}
+
+export function useIpCommerceTaxonomyTerms(params?: {
+  type?: IpTaxonomyTermType;
+  locale?: string;
+}) {
+  return useQuery({
+    queryKey: ipCommerceKeys.taxonomy(params),
+    queryFn: () => listIpCommerceTaxonomyTerms(params),
+    staleTime: 5 * 60_000,
   });
 }
 
@@ -107,6 +131,18 @@ export function useMyIpCommerceIp(ipId: string | null | undefined, params?: { lo
   return useQuery({
     queryKey: ipCommerceKeys.myIp(ipId ?? "", params),
     queryFn: () => getMyIpCommerceIp(ipId!, params),
+    enabled: Boolean(ipId),
+    staleTime: 30_000,
+  });
+}
+
+export function useMyIpCommerceOverview(
+  ipId: string | null | undefined,
+  params?: { locale?: string }
+) {
+  return useQuery({
+    queryKey: ipCommerceKeys.myIpCommerce(ipId ?? "", params),
+    queryFn: () => getMyIpCommerceOverview(ipId!, params),
     enabled: Boolean(ipId),
     staleTime: 30_000,
   });
@@ -242,6 +278,7 @@ export function useUpsertIpCommercePriceRule() {
         qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpsRoot }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "ips"] }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId] }),
+        qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpCommerce(input.ipId) }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "ip-access", input.ipId] }),
       ]);
     },
@@ -344,6 +381,7 @@ export function usePurchaseIpContent() {
         qc.invalidateQueries({ queryKey: ipCommerceKeys.wallet }),
         qc.invalidateQueries({ queryKey: ipCommerceKeys.collectionRoot }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "ip-access", input.ipId] }),
+        qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId, "commerce"] }),
       ]);
     },
   });

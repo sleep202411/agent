@@ -900,13 +900,10 @@
     "heroSubtitle": "Save a clean IP draft first. Settings, episodes, assets, and commerce will live in one workspace.",
     "fieldName": "IP Name",
     "fieldNamePlaceholder": "Enter IP name",
-    "fieldIpType": "IP type",
-    "fieldIpTypePlaceholder": "Select IP type",
-    "ipType": {
-      "series": "Series",
-      "film_short": "Film / short",
-      "other": "Other"
-    },
+    "fieldGenres": "Genres",
+    "fieldTags": "Tags",
+    "taxonomyHelp": "{count}/{max} selected",
+    "taxonomyEmpty": "No taxonomy terms available",
     "fieldDescription": "Short description",
     "fieldDescriptionPlaceholder": "A short pitch — what makes this IP stand out?",
     "dropzoneIdleTitle": "Drop a script, treatment, or outline",
@@ -964,7 +961,8 @@
       "genresPlaceholder": "Sci-fi, suspense",
       "tags": "Tags",
       "tagsPlaceholder": "AI animation, interactive story",
-      "taxonomyHelp": "{count}/{max}, separate with commas"
+      "taxonomyHelp": "{count}/{max} selected",
+      "taxonomyEmpty": "No taxonomy terms available"
     },
     "progressTitle": "Completion",
     "nextTitle": "Next step",
@@ -972,6 +970,7 @@
     "fields": {
       "name": "IP name",
       "summary": "Short description",
+      "genre": "Genre",
       "asset": "Cover or trailer",
       "rights": "Copyright owner and rights statement",
       "aiDisclosure": "AI disclosure statement"
@@ -1124,7 +1123,17 @@
         "body": "Create the episode first, then upload cover art, full video, or trailer from the episode row. External links are not accepted.",
         "nextNumber": "Episode {number}",
         "creating": "Creating",
+        "addAction": "Add episode",
+        "cancel": "Cancel",
         "action": "Create episode"
+      },
+      "edit": {
+        "title": "Edit episode",
+        "cancel": "Cancel",
+        "action": "Save episode"
+      },
+      "validation": {
+        "titleRequired": "Enter an episode title"
       },
       "form": {
         "title": "Episode title",
@@ -1209,6 +1218,58 @@
       "action": "Configure pricing",
       "accessTitle": "Access and pricing rules",
       "accessBody": "Pricing is a commerce rule, not episode content. Whole-IP access, per-episode overrides, memberships, and promotions share one rule model so orders, refunds, and ledgers can stay consistent later.",
+      "commerceTitle": "Commerce operations",
+      "commerceBody": "Track real purchases, granted access, pending unlocks, and pricing health from the same entitlement system buyers use.",
+      "commerce": {
+        "statusTitle": "Sales health",
+        "statusBody": "These metrics are operational gross sales and access records. Settlement is shown separately so revenue is not overstated.",
+        "refresh": "Refresh",
+        "loading": "Loading commerce data",
+        "loadFailed": "Failed to load commerce data",
+        "orders": "Paid orders",
+        "points": "Gross points",
+        "buyers": "Buyers",
+        "entitlements": "Active access",
+        "last7Days": "{count} in the last 7 days",
+        "pointsLast7Days": "{amount} in the last 7 days",
+        "totalOrders": "{count} total orders",
+        "pendingUnlocks": "{count} pending unlocks",
+        "healthTitle": "Pricing health",
+        "healthSummary": "{prices} active episode prices · {episodes} public episodes",
+        "healthReadyBody": "Pricing is ready for buyers. Historical orders keep their original snapshot after future edits.",
+        "health": {
+          "ready": "Ready",
+          "attention": "Needs attention",
+          "blocked": "Blocked"
+        },
+        "warnings": {
+          "not_public": "The IP is not publicly listed, so buyers cannot discover it yet.",
+          "no_episodes": "No episodes have been created for this IP.",
+          "no_published_episodes": "No episode is published or scheduled for public playback.",
+          "no_active_price": "No active bundle or episode price is available for purchase.",
+          "missing_bundle_price": "Episode prices exist, but there is no whole-IP bundle price.",
+          "all_free_preview": "All public episodes are free previews and no paid path exists.",
+          "unknown": "A commerce warning needs review."
+        },
+        "settlementTitle": "Settlement",
+        "settlementNotConfigured": "Creator settlement is not configured yet.",
+        "settlementBody": "The values above are buyer payments and entitlement activity. Withdrawable revenue will stay empty until settlement, revenue split, and payout audit are implemented.",
+        "recentOrders": "Recent orders",
+        "noOrders": "No orders yet",
+        "orderTarget": {
+          "ip": "Whole IP access",
+          "episode": "Episode access"
+        },
+        "orderStatus": {
+          "pending": "Pending",
+          "paid": "Paid",
+          "fulfilled": "Fulfilled",
+          "canceled": "Canceled",
+          "failed": "Failed",
+          "refunded": "Refunded",
+          "partially_refunded": "Partially refunded"
+        }
+      },
       "ruleStatus": {
         "notConfigured": "Not configured",
         "available": "Available",
@@ -1374,7 +1435,6 @@
       }
     },
     "meta": {
-      "ipType": "IP type",
       "sourceLocale": "Source locale",
       "status": "Status",
       "visibility": "Visibility",
@@ -1485,6 +1545,7 @@
       "previewBody": "This is creator preview mode. The draft is not visible to other users and cannot create orders.",
       "visibility": "Visibility",
       "language": "Source language",
+      "genres": "Genres",
       "preview": "Creator preview",
       "public": "Public access"
     },
@@ -1542,6 +1603,8 @@
       "body": "The public page presents only what users need to understand: price, campaigns, and unlock timing.",
       "free": "Free access",
       "price": "Current price",
+      "ipBundle": "IP bundle",
+      "singleEpisode": "This episode",
       "campaign": "Campaign",
       "noCampaign": "No campaign",
       "unlock": "Unlock time",
@@ -1552,13 +1615,20 @@
       "walletBalance": "Available balance",
       "unlocked": "Unlocked",
       "locked": "Locked",
+      "pendingUnlock": "Purchased. Waiting for unlock",
+      "pendingUnlockAt": "Purchased. Unlocks {date}",
+      "pendingUnlockShort": "Unlocks later",
+      "pendingUnlockBody": "Your order is fulfilled. Full access opens automatically at the unlock time.",
       "readyToWatch": "Ready to watch",
       "needUnlock": "Unlock required",
       "walletChecking": "Checking community point balance...",
       "walletLine": "Available balance {balance}",
+      "shortBalanceLine": "Need {amount} more to unlock.",
       "loginToUnlock": "Sign in to unlock",
       "purchase": "Unlock now",
       "purchasing": "Unlocking...",
+      "topUpToUnlock": "Top up points",
+      "rechargeSuccess": "Community point balance updated.",
       "purchaseSuccess": "Unlocked. You can start watching.",
       "purchaseFailed": "Unlock failed. Please try again later.",
       "notForSale": "Not available for purchase",

@@ -17,9 +17,11 @@ import {
   IconSparkles,
   IconTicket,
   IconVideo,
+  IconWallet,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
 import {
   Dialog,
   DialogBody,
@@ -34,12 +36,14 @@ import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import { useCurrentUser } from "@/src/hooks/use-user";
+import { ApiRequestError } from "@/src/lib/api";
 import type {
   IpCommerceAsset,
   IpCommerceAccess,
   IpCommerceEpisode,
   IpCommerceIp,
   IpCommercePriceRule,
+  IpContentEntitlement,
   IpCreatorIp,
   CreateIpReportInput,
   IpTargetType,
@@ -67,7 +71,6 @@ interface DetailIp {
   subtitle: string | null;
   summary: string;
   description: string | null;
-  ipType: string;
   status: string;
   listingVisibility: string;
   ageRating: string;
@@ -92,7 +95,6 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const t = useTranslations("newIpDetail");
-  const typeT = useTranslations("newIpCreate");
   const statusT = useTranslations("newIpWorkbench");
   const { user, isLoading: userLoading } = useCurrentUser();
   const publicQuery = useIpCommerceIp(ipId, { locale });
@@ -101,6 +103,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   });
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [rechargeOpen, setRechargeOpen] = useState(false);
 
   const detailIp = publicQuery.data?.ip
     ? normalizePublicIp(publicQuery.data.ip)
@@ -139,7 +142,6 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
     detailIp.episodes.find((episode) => episode.id === selectedEpisodeId) ??
     detailIp.episodes[0] ??
     null;
-  const typeLabel = typeT(`ipType.${detailIp.ipType}`);
   const statusLabel = statusT(`status.${detailIp.status}`);
   const visibilityLabel = statusT(`visibility.${detailIp.listingVisibility}`);
   const ipCoverUrl = getAssetUrl(detailIp.coverAsset);
@@ -154,11 +156,20 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const activePrice = activeAccess?.price ?? selectedEpisode?.price ?? detailIp.price;
   const activeAccessCode: IpCommerceAccess =
     activeAccess?.access ?? (detailIp.previewMode || !activePrice ? "owned" : "locked");
+  const pendingUnlockAt = getPendingUnlockAt(
+    accessQuery.data?.entitlements ?? [],
+    selectedEpisode
+      ? { targetType: "episode", episodeId: selectedEpisode.id }
+      : { targetType: "ip", episodeId: null }
+  );
   const canWatchSelected =
     detailIp.previewMode ||
     !selectedEpisode ||
     selectedEpisode.isFreePreview ||
     isAccessGranted(activeAccessCode);
+  const lockedMediaLabel = isAccessPending(activeAccessCode)
+    ? formatPendingUnlockLabel(pendingUnlockAt, locale, t)
+    : undefined;
   const mediaPosterUrl = episodeCoverUrl ?? ipCoverUrl;
   const mediaTrailerUrl = canWatchSelected
     ? (episodeMediaUrl ?? episodeTrailerUrl ?? ipTrailerUrl)
@@ -166,9 +177,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const mediaTitle = selectedEpisode ? selectedEpisode.title : detailIp.title;
   const mediaSummary = selectedEpisode?.summary || detailIp.summary || t("emptySummary");
   const storyText = detailIp.description?.trim() || detailIp.summary || t("emptySummary");
-  const tagItems = Array.from(
-    new Set([...detailIp.genres, ...detailIp.tags].map((item) => item.trim()).filter(Boolean))
-  );
+  const tagItems = Array.from(new Set(detailIp.genres.map((item) => item.trim()).filter(Boolean)));
   const loginHref = localizePath(
     `/login?redirect=${encodeURIComponent(localizePath(`/ip-commerce/${detailIp.id}`, locale))}`,
     locale
@@ -267,6 +276,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
               posterUrl={mediaPosterUrl}
               videoUrl={mediaTrailerUrl}
               locked={Boolean(selectedEpisode && !canWatchSelected)}
+              lockedLabel={lockedMediaLabel}
               t={t}
             />
 
@@ -282,8 +292,12 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
 
               <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
-                  <span>{typeLabel}</span>
-                  <span className="text-muted-foreground/50">·</span>
+                  {detailIp.genres.slice(0, 2).map((genre) => (
+                    <span key={genre}>{genre}</span>
+                  ))}
+                  {detailIp.genres.length > 0 ? (
+                    <span className="text-muted-foreground/50">·</span>
+                  ) : null}
                   <span>{statusLabel}</span>
                   <span className="text-muted-foreground/50">·</span>
                   <span>{visibilityLabel}</span>
@@ -332,19 +346,28 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                 locale={locale}
                 t={t}
                 purchasePending={purchase.isPending}
+                pendingUnlockAt={pendingUnlockAt}
+                onRecharge={() => setRechargeOpen(true)}
                 onPurchase={async () => {
                   if (!activePrice || purchase.isPending || !user) return;
+                  const purchaseTarget = resolvePurchaseTarget(activePrice, selectedEpisode);
                   try {
                     await purchase.mutateAsync({
                       ipId: detailIp.id,
-                      targetType: selectedEpisode ? "episode" : "ip",
-                      episodeId: selectedEpisode?.id,
+                      targetType: purchaseTarget.targetType,
+                      episodeId: purchaseTarget.episodeId,
                       priceRuleId: activePrice.id,
                       idempotencyKey: crypto.randomUUID(),
                     });
                     toast.success(t("commerce.purchaseSuccess"));
                   } catch (err) {
                     const msg = err instanceof Error ? err.message : "";
+                    if (
+                      err instanceof ApiRequestError &&
+                      err.code === "INSUFFICIENT_COMMUNITY_POINTS"
+                    ) {
+                      setRechargeOpen(true);
+                    }
                     toast.error(msg || t("commerce.purchaseFailed"));
                   }
                 }}
@@ -385,13 +408,13 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
             <AccessSummary
               ip={detailIp}
               locale={locale}
-              typeLabel={typeLabel}
               statusLabel={statusLabel}
               visibilityLabel={visibilityLabel}
               access={activeAccessCode}
               price={activePrice ?? null}
               walletBalance={walletQuery.balance}
               accessLoading={accessQuery.isLoading}
+              pendingUnlockAt={pendingUnlockAt}
               t={t}
             />
           </aside>
@@ -404,6 +427,15 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
           pending={reportContent.isPending || blockContent.isPending}
           t={t}
           onSubmit={handleReportSubmit}
+        />
+        <CreditsRechargeDialog
+          open={rechargeOpen}
+          onOpenChange={setRechargeOpen}
+          kind="community"
+          onSuccess={() => {
+            void walletQuery.refetch();
+            toast.success(t("commerce.rechargeSuccess"));
+          }}
         />
       </main>
     </div>
@@ -425,7 +457,6 @@ function normalizeCreatorIp(ip: IpCreatorIp): DetailIp {
     subtitle: null,
     summary: ip.summary,
     description: ip.description,
-    ipType: ip.ipType,
     status: ip.status,
     listingVisibility: ip.listingVisibility,
     ageRating: ip.ageRating,
@@ -439,7 +470,7 @@ function normalizeCreatorIp(ip: IpCreatorIp): DetailIp {
     campaigns: ip.campaigns ?? [],
     episodes: ip.episodes ?? [],
     genres: ip.genres ?? [],
-    tags: ip.tags ?? [],
+    tags: [],
     copyrightOwner: ip.copyrightOwner ?? null,
     previewMode: true,
   };
@@ -482,12 +513,14 @@ function MediaFrame({
   posterUrl,
   videoUrl,
   locked,
+  lockedLabel,
   t,
 }: {
   title: string;
   posterUrl?: string;
   videoUrl?: string;
   locked?: boolean;
+  lockedLabel?: string;
   t: Translate;
 }) {
   return (
@@ -526,7 +559,7 @@ function MediaFrame({
         <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/50">
           <div className="flex items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-sm font-semibold text-white">
             <IconLock className="size-4 text-primary" />
-            {t("commerce.lockedVideo")}
+            {lockedLabel ?? t("commerce.lockedVideo")}
           </div>
         </div>
       ) : null}
@@ -708,9 +741,11 @@ function EpisodePlaylistItem({
           <span className="mt-2 inline-flex rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
             {episode.isFreePreview
               ? t("episodes.freePreview")
-              : isAccessGranted(access)
-                ? t("commerce.unlocked")
-                : t("commerce.locked")}
+              : isAccessPending(access)
+                ? t("commerce.pendingUnlockShort")
+                : isAccessGranted(access)
+                  ? t("commerce.unlocked")
+                  : t("commerce.locked")}
           </span>
         ) : null}
       </div>
@@ -721,27 +756,34 @@ function EpisodePlaylistItem({
 function AccessSummary({
   ip,
   locale,
-  typeLabel,
   statusLabel,
   visibilityLabel,
   access,
   price,
   walletBalance,
   accessLoading,
+  pendingUnlockAt,
   t,
 }: {
   ip: DetailIp;
   locale: Locale;
-  typeLabel: string;
   statusLabel: string;
   visibilityLabel: string;
   access: IpCommerceAccess;
   price: IpCommercePriceRule | null;
   walletBalance: string;
   accessLoading: boolean;
+  pendingUnlockAt?: string | null;
   t: Translate;
 }) {
   const priceLabel = price ? formatPrice(price, locale, t) : t("commerce.free");
+  const accessLabel = accessLoading
+    ? t("commerce.checking")
+    : isAccessGranted(access)
+      ? t("commerce.unlocked")
+      : isAccessPending(access)
+        ? formatPendingUnlockLabel(pendingUnlockAt, locale, t)
+        : t("commerce.locked");
   return (
     <section className="rounded-xl bg-secondary/45 p-3">
       <div className="mb-3 flex items-start gap-3">
@@ -754,16 +796,7 @@ function AccessSummary({
         </div>
       </div>
       <div className="mt-3 divide-y divide-border/50">
-        <InfoRow
-          label={t("commerce.accessState")}
-          value={
-            accessLoading
-              ? t("commerce.checking")
-              : isAccessGranted(access)
-                ? t("commerce.unlocked")
-                : t("commerce.locked")
-          }
-        />
+        <InfoRow label={t("commerce.accessState")} value={accessLabel} />
         <InfoRow
           label={t("commerce.walletBalance")}
           value={t("priceValue", {
@@ -771,7 +804,7 @@ function AccessSummary({
             unit: t("units.communityPoint"),
           })}
         />
-        <InfoRow label={t("eyebrow")} value={typeLabel} />
+        <InfoRow label={t("access.genres")} value={ip.genres.join(" / ") || "—"} />
         <InfoRow label={t("metrics.status")} value={statusLabel} />
         <InfoRow
           label={t("access.visibility")}
@@ -795,6 +828,8 @@ function PurchasePanel({
   locale,
   t,
   purchasePending,
+  pendingUnlockAt,
+  onRecharge,
   onPurchase,
 }: {
   ip: DetailIp;
@@ -808,6 +843,8 @@ function PurchasePanel({
   locale: Locale;
   t: Translate;
   purchasePending: boolean;
+  pendingUnlockAt?: string | null;
+  onRecharge: () => void;
   onPurchase: () => Promise<void>;
 }) {
   if (ip.previewMode) {
@@ -819,11 +856,29 @@ function PurchasePanel({
   }
 
   const granted = selectedEpisode?.isFreePreview || isAccessGranted(access);
+  const pendingUnlock = isAccessPending(access);
   const priceLabel = price ? formatPrice(price, locale, t) : t("commerce.free");
   const balanceLabel = t("priceValue", {
     amount: formatIntegerAmount(walletBalance, locale),
     unit: t("units.communityPoint"),
   });
+  const priceAmount = price ? parseIntegerAmount(price.amount) : null;
+  const walletAmount = parseIntegerAmount(walletBalance);
+  const missingAmount =
+    !walletLoading && priceAmount !== null && walletAmount !== null && walletAmount < priceAmount
+      ? priceAmount - walletAmount
+      : null;
+  const balanceLine =
+    missingAmount !== null
+      ? t("commerce.shortBalanceLine", {
+          amount: t("priceValue", {
+            amount: formatBigIntAmount(missingAmount, locale),
+            unit: t("units.communityPoint"),
+          }),
+        })
+      : walletLoading
+        ? t("commerce.walletChecking")
+        : t("commerce.walletLine", { balance: balanceLabel });
   const loginHref = localizePath(
     `/login?redirect=${encodeURIComponent(localizePath(`/ip-commerce/${ip.id}`, locale))}`,
     locale
@@ -834,14 +889,26 @@ function PurchasePanel({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-foreground">
           <IconPlayerPlay className="size-4 text-primary" />
-          <span>{granted ? t("commerce.readyToWatch") : t("commerce.needUnlock")}</span>
+          <span>
+            {granted
+              ? t("commerce.readyToWatch")
+              : pendingUnlock
+                ? formatPendingUnlockLabel(pendingUnlockAt, locale, t)
+                : t("commerce.needUnlock")}
+          </span>
           <span className="text-muted-foreground/50">·</span>
           <span>{priceLabel}</span>
+          {price ? (
+            <>
+              <span className="text-muted-foreground/50">·</span>
+              <span>
+                {price.targetType === "ip" ? t("commerce.ipBundle") : t("commerce.singleEpisode")}
+              </span>
+            </>
+          ) : null}
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          {walletLoading
-            ? t("commerce.walletChecking")
-            : t("commerce.walletLine", { balance: balanceLabel })}
+          {pendingUnlock ? t("commerce.pendingUnlockBody") : balanceLine}
         </p>
       </div>
 
@@ -849,15 +916,24 @@ function PurchasePanel({
         <span className="inline-flex h-9 items-center justify-center rounded-full bg-primary/10 px-4 text-sm font-semibold text-primary">
           {t("commerce.unlocked")}
         </span>
+      ) : pendingUnlock ? (
+        <span className="inline-flex h-9 items-center justify-center rounded-full bg-primary/10 px-4 text-sm font-semibold text-primary">
+          {t("commerce.pendingUnlockShort")}
+        </span>
       ) : !authenticated ? (
         <Button asChild size="sm">
           <Link href={loginHref}>{t("commerce.loginToUnlock")}</Link>
+        </Button>
+      ) : missingAmount !== null ? (
+        <Button type="button" size="sm" onClick={onRecharge}>
+          <IconWallet className="size-4" />
+          {t("commerce.topUpToUnlock")}
         </Button>
       ) : price ? (
         <Button
           type="button"
           size="sm"
-          disabled={accessLoading || purchasePending}
+          disabled={accessLoading || walletLoading || purchasePending}
           onClick={() => void onPurchase()}
         >
           {purchasePending ? t("commerce.purchasing") : t("commerce.purchase")}
@@ -1065,7 +1141,7 @@ function formatDuration(seconds: number | null | undefined, t: Translate) {
 
 function formatPrice(rule: IpCommercePriceRule, locale: Locale, t: Translate) {
   const amount = formatIntegerAmount(rule.amount, locale);
-  const unit = rule.currency === "bubble" ? t("units.bubble") : t("units.communityPoint");
+  const unit = t("units.communityPoint");
   return t("priceValue", { amount, unit });
 }
 
@@ -1077,6 +1153,70 @@ function formatIntegerAmount(value: string, locale: Locale) {
   }
 }
 
+function formatBigIntAmount(value: bigint, locale: Locale) {
+  return value.toLocaleString(locale);
+}
+
+function parseIntegerAmount(value: string | null | undefined) {
+  try {
+    return BigInt(value ?? "0");
+  } catch {
+    return null;
+  }
+}
+
+function formatDateTime(value: string | null | undefined, locale: Locale, t: Translate) {
+  if (!value) return t("dateUnset");
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+function formatPendingUnlockLabel(value: string | null | undefined, locale: Locale, t: Translate) {
+  return value
+    ? t("commerce.pendingUnlockAt", { date: formatDateTime(value, locale, t) })
+    : t("commerce.pendingUnlock");
+}
+
+function getPendingUnlockAt(
+  entitlements: IpContentEntitlement[],
+  target: { targetType: IpTargetType; episodeId: string | null }
+) {
+  const now = Date.now();
+  const ipEntitlement = entitlements.find(
+    (item) =>
+      item.targetType === "ip" && item.episodeId === null && new Date(item.startsAt).getTime() > now
+  );
+  if (ipEntitlement) return ipEntitlement.startsAt;
+  if (target.targetType !== "episode") return null;
+  return (
+    entitlements.find(
+      (item) =>
+        item.targetType === "episode" &&
+        item.episodeId === target.episodeId &&
+        new Date(item.startsAt).getTime() > now
+    )?.startsAt ?? null
+  );
+}
+
+function resolvePurchaseTarget(
+  price: IpCommercePriceRule,
+  selectedEpisode: IpCommerceEpisode | null
+): { targetType: IpTargetType; episodeId?: string } {
+  if (price.targetType === "ip") return { targetType: "ip" };
+  return {
+    targetType: "episode",
+    episodeId: selectedEpisode?.id,
+  };
+}
+
 function isAccessGranted(access: IpCommerceAccess | undefined) {
   return (
     access === "free" ||
@@ -1084,6 +1224,14 @@ function isAccessGranted(access: IpCommerceAccess | undefined) {
     access === "owned" ||
     access === "owned_ip" ||
     access === "owned_episode"
+  );
+}
+
+function isAccessPending(access: IpCommerceAccess | undefined) {
+  return (
+    access === "pending_unlock" ||
+    access === "pending_unlock_ip" ||
+    access === "pending_unlock_episode"
   );
 }
 

@@ -1,6 +1,11 @@
 import { z } from 'zod';
-export const IpTypeSchema = z.enum(['series', 'film_short', 'other']);
 export const IpTargetTypeSchema = z.enum(['ip', 'episode']);
+export const IpTaxonomyTermTypeSchema = z.enum(['genre', 'tag']);
+export const IpTaxonomyTermStatusSchema = z.enum([
+  'active',
+  'hidden',
+  'archived',
+]);
 export const IpMediaUploadKindSchema = z.enum([
   'image',
   'video',
@@ -79,7 +84,12 @@ export const IpModerationActionTypeSchema = z.enum([
   'approve',
 ]);
 
-const IpTaxonomyItemSchema = z.string().trim().min(1).max(32);
+const TaxonomyCodeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z0-9][a-z0-9_-]*$/);
 
 function queryValueParts(value: unknown): string[] {
   if (value == null || value === '') return [];
@@ -103,22 +113,87 @@ const UuidListFromQuerySchema = z.preprocess(
   queryValueParts,
   z.array(z.string().uuid()).max(100).default([]),
 );
+const TaxonomyCodeListFromQuerySchema = (max: number) =>
+  z.preprocess(
+    queryValueParts,
+    z.array(TaxonomyCodeSchema).max(max).default([]),
+  );
 
-export const LocaleQuerySchema = z
-  .string()
-  .trim()
-  .min(2)
-  .max(16)
-  .regex(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/)
-  .optional();
+const GenreCodesSchema = z.array(TaxonomyCodeSchema).min(1).max(8);
+const TagCodesSchema = z.array(TaxonomyCodeSchema).max(20);
+export const SupportedIpLocaleSchema = z.enum(['en-US', 'zh-CN', 'zh-HK']);
+
+export const LocaleQuerySchema = SupportedIpLocaleSchema.optional();
 
 export const ListIpsQuerySchema = z.object({
-  ipType: IpTypeSchema.optional(),
+  genreCodes: TaxonomyCodeListFromQuerySchema(8),
+  tagCodes: TaxonomyCodeListFromQuerySchema(20),
   locale: LocaleQuerySchema,
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 export type ListIpsQuery = z.infer<typeof ListIpsQuerySchema>;
+
+export const ListIpTaxonomyTermsQuerySchema = z.object({
+  type: IpTaxonomyTermTypeSchema.optional(),
+  locale: LocaleQuerySchema,
+});
+export type ListIpTaxonomyTermsQuery = z.infer<
+  typeof ListIpTaxonomyTermsQuerySchema
+>;
+
+export const AdminIpTaxonomyTermParamsSchema = z.object({
+  termId: z.string().uuid(),
+});
+export type AdminIpTaxonomyTermParams = z.infer<
+  typeof AdminIpTaxonomyTermParamsSchema
+>;
+
+export const AdminIpTaxonomyLocalizationSchema = z
+  .object({
+    locale: SupportedIpLocaleSchema,
+    label: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(300).nullable().optional(),
+    aliases: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+  })
+  .strict();
+
+export const CreateAdminIpTaxonomyTermSchema = z
+  .object({
+    type: IpTaxonomyTermTypeSchema,
+    code: TaxonomyCodeSchema.optional(),
+    status: IpTaxonomyTermStatusSchema.default('active'),
+    displayOrder: z.number().int().min(0).max(1_000_000).default(0),
+    localizations: z.array(AdminIpTaxonomyLocalizationSchema).min(1).max(12),
+  })
+  .strict();
+export type CreateAdminIpTaxonomyTermInput = z.infer<
+  typeof CreateAdminIpTaxonomyTermSchema
+>;
+
+export const UpdateAdminIpTaxonomyTermSchema = z
+  .object({
+    status: IpTaxonomyTermStatusSchema.optional(),
+    displayOrder: z.number().int().min(0).max(1_000_000).optional(),
+    localizations: z
+      .array(AdminIpTaxonomyLocalizationSchema)
+      .min(1)
+      .max(12)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.status !== undefined ||
+      value.displayOrder !== undefined ||
+      value.localizations !== undefined,
+    {
+      message: 'At least one taxonomy field is required.',
+    },
+  );
+export type UpdateAdminIpTaxonomyTermInput = z.infer<
+  typeof UpdateAdminIpTaxonomyTermSchema
+>;
 
 export const ListCreatorIpsQuerySchema = z.object({
   locale: LocaleQuerySchema,
@@ -131,13 +206,9 @@ export const CreateIpDraftSchema = z
   .object({
     title: z.string().trim().min(1).max(80),
     summary: z.string().trim().max(280).optional(),
-    ipType: IpTypeSchema,
-    sourceLocale: z
-      .string()
-      .trim()
-      .min(2)
-      .max(16)
-      .regex(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/),
+    genreCodes: GenreCodesSchema,
+    tagCodes: TagCodesSchema.default([]),
+    sourceLocale: SupportedIpLocaleSchema,
   })
   .strict();
 export type CreateIpDraftInput = z.infer<typeof CreateIpDraftSchema>;
@@ -147,11 +218,10 @@ export const UpdateCreatorIpProfileSchema = z
     title: z.string().trim().min(1).max(80).optional(),
     summary: z.string().trim().max(280).optional(),
     description: z.string().trim().max(3000).nullable().optional(),
-    ipType: IpTypeSchema.optional(),
     listingVisibility: IpListingVisibilitySchema.optional(),
     ageRating: IpAgeRatingSchema.optional(),
-    genres: z.array(IpTaxonomyItemSchema).max(8).optional(),
-    tags: z.array(IpTaxonomyItemSchema).max(20).optional(),
+    genreCodes: GenreCodesSchema.optional(),
+    tagCodes: TagCodesSchema.optional(),
     copyrightOwner: z.string().trim().max(160).nullable().optional(),
     rightsSummary: z
       .object({
@@ -175,11 +245,10 @@ export const UpdateCreatorIpProfileSchema = z
       value.title !== undefined ||
       value.summary !== undefined ||
       value.description !== undefined ||
-      value.ipType !== undefined ||
       value.listingVisibility !== undefined ||
       value.ageRating !== undefined ||
-      value.genres !== undefined ||
-      value.tags !== undefined ||
+      value.genreCodes !== undefined ||
+      value.tagCodes !== undefined ||
       value.copyrightOwner !== undefined ||
       value.rightsSummary !== undefined ||
       value.aiDisclosure !== undefined,
@@ -382,7 +451,8 @@ export type UpsertCreatorIpPriceRuleInput = z.infer<
 >;
 
 export const ListAdminIpsQuerySchema = z.object({
-  ipType: IpTypeSchema.optional(),
+  genreCodes: TaxonomyCodeListFromQuerySchema(8),
+  tagCodes: TaxonomyCodeListFromQuerySchema(20),
   status: IpPublicationStatusSchema.optional(),
   listingVisibility: IpListingVisibilitySchema.optional(),
   q: z.string().trim().min(1).max(120).optional(),
@@ -391,6 +461,48 @@ export const ListAdminIpsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
 export type ListAdminIpsQuery = z.infer<typeof ListAdminIpsQuerySchema>;
+
+export const IpPurchaseOrderStatusSchema = z.enum([
+  'pending',
+  'paid',
+  'fulfilled',
+  'canceled',
+  'failed',
+  'refunded',
+  'partially_refunded',
+]);
+export const IpEntitlementStatusSchema = z.enum([
+  'active',
+  'expired',
+  'revoked',
+  'refunded',
+]);
+
+export const ListAdminIpOrdersQuerySchema = z.object({
+  ipId: z.string().uuid().optional(),
+  userId: z.string().trim().min(1).max(64).optional(),
+  status: IpPurchaseOrderStatusSchema.optional(),
+  q: z.string().trim().min(1).max(120).optional(),
+  locale: LocaleQuerySchema,
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListAdminIpOrdersQuery = z.infer<
+  typeof ListAdminIpOrdersQuerySchema
+>;
+
+export const ListAdminIpEntitlementsQuerySchema = z.object({
+  ipId: z.string().uuid().optional(),
+  userId: z.string().trim().min(1).max(64).optional(),
+  targetType: IpTargetTypeSchema.optional(),
+  status: IpEntitlementStatusSchema.optional(),
+  locale: LocaleQuerySchema,
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type ListAdminIpEntitlementsQuery = z.infer<
+  typeof ListAdminIpEntitlementsQuerySchema
+>;
 
 export const IpParamsSchema = z.object({
   ipId: z.string().uuid(),
@@ -416,6 +528,58 @@ export const IpReportParamsSchema = z.object({
   reportId: z.string().uuid(),
 });
 export type IpReportParams = z.infer<typeof IpReportParamsSchema>;
+
+export const IpEntitlementParamsSchema = z.object({
+  entitlementId: z.string().uuid(),
+});
+export type IpEntitlementParams = z.infer<typeof IpEntitlementParamsSchema>;
+
+export const GrantAdminIpEntitlementSchema = z
+  .object({
+    userId: z.string().trim().min(1).max(64),
+    ipId: z.string().uuid(),
+    targetType: IpTargetTypeSchema,
+    episodeId: z.string().uuid().optional(),
+    startsAt: z.coerce.date().optional(),
+    endsAt: z.coerce.date().nullable().optional(),
+    reason: z.string().trim().min(1).max(1000),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.targetType === 'episode' && !value.episodeId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['episodeId'],
+        message: 'episodeId is required when targetType is episode.',
+      });
+    }
+    if (value.targetType === 'ip' && value.episodeId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['episodeId'],
+        message: 'episodeId must be empty when targetType is ip.',
+      });
+    }
+    if (value.startsAt && value.endsAt && value.endsAt <= value.startsAt) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endsAt'],
+        message: 'endsAt must be after startsAt.',
+      });
+    }
+  });
+export type GrantAdminIpEntitlementInput = z.infer<
+  typeof GrantAdminIpEntitlementSchema
+>;
+
+export const RevokeAdminIpEntitlementSchema = z
+  .object({
+    reason: z.string().trim().min(1).max(1000),
+  })
+  .strict();
+export type RevokeAdminIpEntitlementInput = z.infer<
+  typeof RevokeAdminIpEntitlementSchema
+>;
 
 export const UpdateAdminIpPublicationSchema = z
   .object({

@@ -900,13 +900,10 @@
     "heroSubtitle": "先儲存一個乾淨的 IP 草稿，後續設定、劇集、資產和商業化都歸入同一個工作台。",
     "fieldName": "IP 名稱",
     "fieldNamePlaceholder": "請輸入 IP 名稱",
-    "fieldIpType": "IP 類型",
-    "fieldIpTypePlaceholder": "請選擇 IP 類型",
-    "ipType": {
-      "series": "劇集 / 系列",
-      "film_short": "電影 / 短片",
-      "other": "其他"
-    },
+    "fieldGenres": "類型",
+    "fieldTags": "標籤",
+    "taxonomyHelp": "已選 {count}/{max}",
+    "taxonomyEmpty": "暫無可用類型標籤",
     "fieldDescription": "短簡介",
     "fieldDescriptionPlaceholder": "一兩句話講清楚：你的 IP 憑什麼吸引人？",
     "dropzoneIdleTitle": "把劇本、提案或大綱拖到這裡",
@@ -964,7 +961,8 @@
       "genresPlaceholder": "科幻、懸疑",
       "tags": "標籤",
       "tagsPlaceholder": "AI 動畫、互動劇情",
-      "taxonomyHelp": "{count}/{max}，用逗號分隔"
+      "taxonomyHelp": "已選 {count}/{max}",
+      "taxonomyEmpty": "暫無可用類型標籤"
     },
     "progressTitle": "完善進度",
     "nextTitle": "下一步",
@@ -972,6 +970,7 @@
     "fields": {
       "name": "IP 名稱",
       "summary": "短簡介",
+      "genre": "類型",
       "asset": "封面或預告片",
       "rights": "版權主體和權利說明",
       "aiDisclosure": "AI 使用說明"
@@ -1124,7 +1123,17 @@
         "body": "先建立劇集，再在劇集列裏上傳封面、正片或預告。這裏不接受外部連結。",
         "nextNumber": "第 {number} 集",
         "creating": "建立中",
+        "addAction": "添加劇集",
+        "cancel": "取消添加",
         "action": "建立劇集"
+      },
+      "edit": {
+        "title": "編輯劇集",
+        "cancel": "取消編輯",
+        "action": "保存劇集"
+      },
+      "validation": {
+        "titleRequired": "請填寫劇集標題"
       },
       "form": {
         "title": "劇集標題",
@@ -1209,6 +1218,58 @@
       "action": "配置定價",
       "accessTitle": "訪問與定價規則",
       "accessBody": "定價是商業規則，不寫進劇集內容本身。整部 IP、單集覆蓋、會員權益和促銷都從統一規則出發，後續才能接訂單、退款和帳本。",
+      "commerceTitle": "商業化營運",
+      "commerceBody": "從真實購買、已授權權益、待解鎖和定價健康度看閉環，和用戶側購買使用同一套權益系統。",
+      "commerce": {
+        "statusTitle": "銷售健康度",
+        "statusBody": "這裡展示營運口徑的總銷售和權益記錄；結算單獨展示，避免把未配置的收入誤報為可提現。",
+        "refresh": "刷新",
+        "loading": "正在載入商業化數據",
+        "loadFailed": "商業化數據載入失敗",
+        "orders": "有效訂單",
+        "points": "總積分",
+        "buyers": "購買用戶",
+        "entitlements": "有效權益",
+        "last7Days": "近 7 日 {count} 單",
+        "pointsLast7Days": "近 7 日 {amount}",
+        "totalOrders": "累計 {count} 單",
+        "pendingUnlocks": "{count} 個待解鎖",
+        "healthTitle": "定價健康度",
+        "healthSummary": "{prices} 個有效單集價 · {episodes} 個公開劇集",
+        "healthReadyBody": "定價鏈路可對用戶售賣。後續改價不會影響歷史訂單快照。",
+        "health": {
+          "ready": "可售賣",
+          "attention": "需關注",
+          "blocked": "已阻塞"
+        },
+        "warnings": {
+          "not_public": "IP 尚未公開上架，用戶還無法自然發現。",
+          "no_episodes": "這個 IP 還沒有建立劇集。",
+          "no_published_episodes": "暫無已發佈或已排期的公開劇集。",
+          "no_active_price": "沒有可購買的整部或單集有效價格。",
+          "missing_bundle_price": "已有單集價格，但還沒有整部 IP 打包價。",
+          "all_free_preview": "所有公開劇集都是試看，且沒有付費路徑。",
+          "unknown": "有一條商業化提醒需要檢查。"
+        },
+        "settlementTitle": "創作者結算",
+        "settlementNotConfigured": "創作者結算暫未配置。",
+        "settlementBody": "上方數據是用戶支付和權益履約的營運口徑。提現收入需要等分帳、結算和付款審計完整落地後再展示。",
+        "recentOrders": "最近訂單",
+        "noOrders": "暫無訂單",
+        "orderTarget": {
+          "ip": "整部 IP 權益",
+          "episode": "單集權益"
+        },
+        "orderStatus": {
+          "pending": "待支付",
+          "paid": "已支付",
+          "fulfilled": "已履約",
+          "canceled": "已取消",
+          "failed": "失敗",
+          "refunded": "已退款",
+          "partially_refunded": "部分退款"
+        }
+      },
       "ruleStatus": {
         "notConfigured": "未配置",
         "available": "可配置",
@@ -1374,7 +1435,6 @@
       }
     },
     "meta": {
-      "ipType": "IP 類型",
       "sourceLocale": "源語言",
       "status": "狀態",
       "visibility": "可見性",
@@ -1485,6 +1545,7 @@
       "previewBody": "這是創作者預覽模式，草稿不會被其他用戶看到，也不會產生訂單。",
       "visibility": "可見範圍",
       "language": "源語言",
+      "genres": "類型",
       "preview": "創作者預覽",
       "public": "公開可訪問"
     },
@@ -1542,6 +1603,8 @@
       "body": "公開頁只呈現用戶需要理解的價格、活動和解鎖節奏，不暴露後台帳務細節。",
       "free": "免費訪問",
       "price": "當前價格",
+      "ipBundle": "整包權益",
+      "singleEpisode": "當前劇集",
       "campaign": "活動",
       "noCampaign": "暫無活動",
       "unlock": "解鎖時間",
@@ -1552,13 +1615,20 @@
       "walletBalance": "可用餘額",
       "unlocked": "已解鎖",
       "locked": "未解鎖",
+      "pendingUnlock": "已購買，等待解鎖",
+      "pendingUnlockAt": "已購買，將於 {date} 解鎖",
+      "pendingUnlockShort": "待解鎖",
+      "pendingUnlockBody": "訂單已履約，正片會在解鎖時間自動開放。",
       "readyToWatch": "可直接觀看",
       "needUnlock": "需要解鎖",
       "walletChecking": "正在讀取社區積分餘額...",
       "walletLine": "可用餘額 {balance}",
+      "shortBalanceLine": "還差 {amount} 才能解鎖。",
       "loginToUnlock": "登入後解鎖",
       "purchase": "立即解鎖",
       "purchasing": "正在解鎖...",
+      "topUpToUnlock": "充值積分",
+      "rechargeSuccess": "社區積分餘額已更新。",
       "purchaseSuccess": "已解鎖，可開始觀看。",
       "purchaseFailed": "解鎖失敗，請稍後重試。",
       "notForSale": "暫未開放購買",

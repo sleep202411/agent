@@ -9,7 +9,6 @@ import {
   IpCampaignStatus,
   IpAgeRating,
   IpAssetPurpose,
-  IpType,
   IpTargetType,
   IpCollectionItemStatus,
   IpEntitlementStatus,
@@ -25,6 +24,9 @@ import {
   IpReviewEventType,
   IpReviewStatus,
   IpReviewTargetType,
+  IpTaxonomyAssignmentSource,
+  IpTaxonomyTermStatus,
+  IpTaxonomyTermType,
   IpUserBlockTargetType,
   MediaAssetKind,
   MediaAssetStatus,
@@ -46,17 +48,24 @@ import { WalletLedgerService } from '../workspaces';
 import type {
   CreateIpDraftInput,
   CreateCreatorIpEpisodeInput,
+  CreateAdminIpTaxonomyTermInput,
   CreateIpContentReportInput,
   CreateIpPurchaseInput,
+  GrantAdminIpEntitlementInput,
   IpAccessQuery,
+  ListIpTaxonomyTermsQuery,
+  ListAdminIpEntitlementsQuery,
+  ListAdminIpOrdersQuery,
   ListCreatorIpAssetsQuery,
   ListCreatorIpsQuery,
   ListAdminIpsQuery,
   ListIpsQuery,
+  RevokeAdminIpEntitlementInput,
   ResolveAdminIpReportInput,
   SubmitCreatorIpReviewInput,
   UploadCreatorIpMediaQuery,
   UpdateCreatorIpAssetsInput,
+  UpdateAdminIpTaxonomyTermInput,
   UpdateCreatorIpEpisodeInput,
   UpdateAdminIpPublicationInput,
   UpdateCreatorIpProfileInput,
@@ -87,12 +96,37 @@ const IP_MEDIA_UPLOAD_LIMITS: Record<MediaAssetKind, number> = {
 };
 const DEFAULT_AZURE_BLOB_CONTAINER = 'foundry-outputs';
 
+const taxonomyAssignmentInclude = {
+  term: {
+    include: {
+      localizations: {
+        orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+      },
+    },
+  },
+} satisfies Prisma.IpTaxonomyAssignmentInclude;
+
+const adminTaxonomyTermInclude = {
+  localizations: {
+    orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+  },
+  _count: {
+    select: {
+      assignments: true,
+    },
+  },
+} satisfies Prisma.IpTaxonomyTermInclude;
+
 const ipInclude = {
   coverAsset: true,
   trailerAsset: true,
   localizations: {
     where: { archivedAt: null },
     orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+  },
+  taxonomyAssignments: {
+    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    include: taxonomyAssignmentInclude,
   },
   episodes: {
     where: {
@@ -149,6 +183,10 @@ const adminIpInclude = {
   localizations: {
     where: { archivedAt: null },
     orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+  },
+  taxonomyAssignments: {
+    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    include: taxonomyAssignmentInclude,
   },
   episodes: {
     where: { deletedAt: null },
@@ -225,6 +263,54 @@ type AdminIpWithCommerce = Prisma.IpGetPayload<{
   include: typeof adminIpInclude;
 }>;
 
+const commerceOrderInclude = {
+  ip: {
+    include: {
+      localizations: {
+        where: { archivedAt: null },
+        orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+      },
+    },
+  },
+  episode: {
+    include: {
+      localizations: {
+        where: { archivedAt: null },
+        orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+      },
+    },
+  },
+  entitlements: true,
+} satisfies Prisma.IpPurchaseOrderInclude;
+
+type CommerceOrderWithRefs = Prisma.IpPurchaseOrderGetPayload<{
+  include: typeof commerceOrderInclude;
+}>;
+
+const commerceEntitlementInclude = {
+  ip: {
+    include: {
+      localizations: {
+        where: { archivedAt: null },
+        orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+      },
+    },
+  },
+  episode: {
+    include: {
+      localizations: {
+        where: { archivedAt: null },
+        orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+      },
+    },
+  },
+  sourceOrder: true,
+} satisfies Prisma.IpContentEntitlementInclude;
+
+type CommerceEntitlementWithRefs = Prisma.IpContentEntitlementGetPayload<{
+  include: typeof commerceEntitlementInclude;
+}>;
+
 @Injectable()
 export class IpCommerceService {
   constructor(
@@ -232,6 +318,162 @@ export class IpCommerceService {
     private readonly walletLedger: WalletLedgerService,
     private readonly outputStorage: OutputStorageService,
   ) {}
+
+  async listTaxonomyTerms(query: ListIpTaxonomyTermsQuery) {
+    const locale = normalizeLocale(query.locale);
+    const rows = await this.prisma.ipTaxonomyTerm.findMany({
+      where: {
+        ...(query.type ? { type: query.type as IpTaxonomyTermType } : {}),
+        status: IpTaxonomyTermStatus.active,
+        archivedAt: null,
+      },
+      include: {
+        localizations: {
+          orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+        },
+      },
+      orderBy: [{ type: 'asc' }, { displayOrder: 'asc' }, { code: 'asc' }],
+    });
+
+    return {
+      items: rows.map((term) => taxonomyTermDto(term, locale)),
+    };
+  }
+
+  async listAdminTaxonomyTerms(query: ListIpTaxonomyTermsQuery) {
+    const locale = normalizeLocale(query.locale);
+    const rows = await this.prisma.ipTaxonomyTerm.findMany({
+      where: {
+        ...(query.type ? { type: query.type as IpTaxonomyTermType } : {}),
+      },
+      include: adminTaxonomyTermInclude,
+      orderBy: [{ type: 'asc' }, { displayOrder: 'asc' }, { code: 'asc' }],
+    });
+
+    return {
+      items: rows.map((term) => adminTaxonomyTermDto(term, locale)),
+    };
+  }
+
+  async createAdminTaxonomyTerm(
+    user: AuthUser,
+    input: CreateAdminIpTaxonomyTermInput,
+  ) {
+    const localizations = normalizeAdminTaxonomyLocalizations(
+      input.localizations,
+    );
+    const code =
+      normalizeTaxonomyCodes(input.code ? [input.code] : [], 1)[0] ??
+      generateTaxonomyCode(input.type as IpTaxonomyTermType, localizations);
+
+    const existing = await this.prisma.ipTaxonomyTerm.findUnique({
+      where: {
+        type_code: {
+          type: input.type as IpTaxonomyTermType,
+          code,
+        },
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException({
+        code: 'IP_TAXONOMY_TERM_CODE_EXISTS',
+        msg: `Taxonomy code already exists: ${code}.`,
+      });
+    }
+
+    const term = await this.prisma.ipTaxonomyTerm.create({
+      data: {
+        type: input.type as IpTaxonomyTermType,
+        code,
+        status: input.status as IpTaxonomyTermStatus,
+        displayOrder: input.displayOrder,
+        createdById: user.userId,
+        updatedById: user.userId,
+        archivedAt:
+          input.status === IpTaxonomyTermStatus.archived ? new Date() : null,
+        localizations: {
+          createMany: {
+            data: localizations,
+          },
+        },
+      },
+      include: adminTaxonomyTermInclude,
+    });
+
+    return {
+      term: adminTaxonomyTermDto(term, input.localizations[0]?.locale),
+    };
+  }
+
+  async updateAdminTaxonomyTerm(
+    user: AuthUser,
+    termId: string,
+    input: UpdateAdminIpTaxonomyTermInput,
+  ) {
+    const existing = await this.prisma.ipTaxonomyTerm.findUnique({
+      where: { id: termId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'IP_TAXONOMY_TERM_NOT_FOUND',
+        msg: 'Taxonomy term not found.',
+      });
+    }
+
+    const term = await this.prisma.$transaction(async (tx) => {
+      const localizations = input.localizations
+        ? normalizeAdminTaxonomyLocalizations(input.localizations)
+        : [];
+
+      if (localizations.length) {
+        for (const localization of localizations) {
+          await tx.ipTaxonomyTermLocalization.upsert({
+            where: {
+              termId_locale: {
+                termId,
+                locale: localization.locale,
+              },
+            },
+            create: {
+              termId,
+              ...localization,
+            },
+            update: {
+              label: localization.label,
+              description: localization.description,
+              aliases: localization.aliases,
+            },
+          });
+        }
+      }
+
+      return tx.ipTaxonomyTerm.update({
+        where: { id: termId },
+        data: {
+          ...(input.status !== undefined
+            ? {
+                status: input.status as IpTaxonomyTermStatus,
+                archivedAt:
+                  input.status === IpTaxonomyTermStatus.archived
+                    ? new Date()
+                    : null,
+              }
+            : {}),
+          ...(input.displayOrder !== undefined
+            ? { displayOrder: input.displayOrder }
+            : {}),
+          updatedById: user.userId,
+        },
+        include: adminTaxonomyTermInclude,
+      });
+    });
+
+    return {
+      term: adminTaxonomyTermDto(term, input.localizations?.[0]?.locale),
+    };
+  }
 
   async listCreatorIps(user: AuthUser, query: ListCreatorIpsQuery) {
     const rows = await this.prisma.ip.findMany({
@@ -277,28 +519,177 @@ export class IpCommerceService {
     return { ip: creatorIpDetailDto(ip, query.locale) };
   }
 
+  async getCreatorIpCommerce(
+    user: AuthUser,
+    ipId: string,
+    query: { locale?: string } = {},
+  ) {
+    const ip = await this.prisma.ip.findFirst({
+      where: {
+        id: ipId,
+        createdById: user.userId,
+        deletedAt: null,
+      },
+      include: adminIpInclude,
+    });
+
+    if (!ip) {
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    }
+
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const recognizedOrderStatuses: IpPurchaseOrderStatus[] = [
+      IpPurchaseOrderStatus.paid,
+      IpPurchaseOrderStatus.fulfilled,
+      IpPurchaseOrderStatus.partially_refunded,
+    ];
+
+    const [
+      totalOrders,
+      recognizedOrders,
+      gross,
+      last7Gross,
+      last7Orders,
+      uniqueBuyers,
+      activeEntitlements,
+      pendingUnlocks,
+      recentOrders,
+      recentEntitlements,
+    ] = await Promise.all([
+      this.prisma.ipPurchaseOrder.count({ where: { ipId: ip.id } }),
+      this.prisma.ipPurchaseOrder.count({
+        where: { ipId: ip.id, status: { in: recognizedOrderStatuses } },
+      }),
+      this.prisma.ipPurchaseOrder.aggregate({
+        where: { ipId: ip.id, status: { in: recognizedOrderStatuses } },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.ipPurchaseOrder.aggregate({
+        where: {
+          ipId: ip.id,
+          status: { in: recognizedOrderStatuses },
+          createdAt: { gte: sevenDaysAgo },
+        },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.ipPurchaseOrder.count({
+        where: {
+          ipId: ip.id,
+          status: { in: recognizedOrderStatuses },
+          createdAt: { gte: sevenDaysAgo },
+        },
+      }),
+      this.prisma.ipPurchaseOrder.findMany({
+        where: { ipId: ip.id, status: { in: recognizedOrderStatuses } },
+        distinct: ['userId'],
+        select: { userId: true },
+      }),
+      this.prisma.ipContentEntitlement.count({
+        where: {
+          ipId: ip.id,
+          status: IpEntitlementStatus.active,
+          startsAt: { lte: now },
+          OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+        },
+      }),
+      this.prisma.ipContentEntitlement.count({
+        where: {
+          ipId: ip.id,
+          status: IpEntitlementStatus.active,
+          startsAt: { gt: now },
+          OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+        },
+      }),
+      this.prisma.ipPurchaseOrder.findMany({
+        where: { ipId: ip.id },
+        include: commerceOrderInclude,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 12,
+      }),
+      this.prisma.ipContentEntitlement.findMany({
+        where: { ipId: ip.id },
+        include: commerceEntitlementInclude,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 12,
+      }),
+    ]);
+
+    return {
+      ip: ipReferenceDto(ip, query.locale),
+      metrics: {
+        totalOrders,
+        recognizedOrders,
+        grossCommunityPoints: (gross._sum.totalAmount ?? 0n).toString(),
+        ordersLast7Days: last7Orders,
+        grossCommunityPointsLast7Days: (
+          last7Gross._sum.totalAmount ?? 0n
+        ).toString(),
+        uniqueBuyers: uniqueBuyers.length,
+        activeEntitlements,
+        pendingUnlocks,
+      },
+      pricingHealth: ipCommerceHealthDto(ip),
+      settlement: {
+        status: 'not_configured',
+        currency: WalletCurrencyType.community_point,
+        withdrawableBalance: '0',
+        note: 'Creator settlement is not configured yet. These figures are operational gross sales, not withdrawable revenue.',
+      },
+      recentOrders: recentOrders.map((order) =>
+        commercePurchaseOrderDto(order, query.locale),
+      ),
+      recentEntitlements: recentEntitlements.map((entitlement) =>
+        commerceEntitlementDto(entitlement, query.locale),
+      ),
+    };
+  }
+
   async createCreatorIp(user: AuthUser, input: CreateIpDraftInput) {
     const sourceLocale = normalizeLocale(input.sourceLocale);
     const summary = input.summary?.trim() || input.title;
 
-    const ip = await this.prisma.ip.create({
-      data: {
-        ipType: input.ipType as IpType,
-        status: IpPublicationStatus.draft,
-        listingVisibility: IpListingVisibility.private,
-        sourceLocale,
-        createdById: user.userId,
-        localizations: {
-          create: {
-            locale: sourceLocale,
-            status: IpLocalizationStatus.draft,
-            title: input.title,
-            summary,
-            description: input.summary?.trim() || null,
+    const ip = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.ip.create({
+        data: {
+          status: IpPublicationStatus.draft,
+          listingVisibility: IpListingVisibility.private,
+          sourceLocale,
+          createdById: user.userId,
+          localizations: {
+            create: {
+              locale: sourceLocale,
+              status: IpLocalizationStatus.draft,
+              title: input.title,
+              summary,
+              description: input.summary?.trim() || null,
+            },
           },
         },
-      },
-      include: adminIpInclude,
+      });
+
+      await replaceIpTaxonomyAssignmentsTx(tx, {
+        ipId: created.id,
+        type: IpTaxonomyTermType.genre,
+        codes: input.genreCodes,
+        source: IpTaxonomyAssignmentSource.creator,
+        createdById: user.userId,
+      });
+      await replaceIpTaxonomyAssignmentsTx(tx, {
+        ipId: created.id,
+        type: IpTaxonomyTermType.tag,
+        codes: input.tagCodes,
+        source: IpTaxonomyAssignmentSource.creator,
+        createdById: user.userId,
+      });
+
+      return tx.ip.findUniqueOrThrow({
+        where: { id: created.id },
+        include: adminIpInclude,
+      });
     });
 
     return { ip: creatorIpDetailDto(ip, sourceLocale) };
@@ -351,20 +742,14 @@ export class IpCommerceService {
       input.description === undefined
         ? undefined
         : input.description?.trim() || null;
-    const genres =
-      input.genres === undefined
-        ? undefined
-        : normalizeTaxonomy(input.genres, 8);
-    const tags =
-      input.tags === undefined ? undefined : normalizeTaxonomy(input.tags, 20);
+    const genreCodes = input.genreCodes;
+    const tagCodes = input.tagCodes;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (
         title !== undefined ||
         summary !== undefined ||
-        description !== undefined ||
-        genres !== undefined ||
-        tags !== undefined
+        description !== undefined
       ) {
         await tx.ipLocalization.upsert({
           where: {
@@ -383,15 +768,11 @@ export class IpCommerceService {
               description !== undefined
                 ? description
                 : (sourceCopy?.description ?? null),
-            genres: genres ?? sourceCopy?.genres ?? [],
-            tags: tags ?? sourceCopy?.tags ?? [],
           },
           update: {
             ...(title !== undefined ? { title } : {}),
             ...(summary !== undefined ? { summary } : {}),
             ...(description !== undefined ? { description } : {}),
-            ...(genres !== undefined ? { genres } : {}),
-            ...(tags !== undefined ? { tags } : {}),
             ...(sourceCopy?.status === IpLocalizationStatus.published
               ? { status: IpLocalizationStatus.draft }
               : {}),
@@ -399,12 +780,28 @@ export class IpCommerceService {
         });
       }
 
+      if (genreCodes !== undefined) {
+        await replaceIpTaxonomyAssignmentsTx(tx, {
+          ipId: ip.id,
+          type: IpTaxonomyTermType.genre,
+          codes: genreCodes,
+          source: IpTaxonomyAssignmentSource.creator,
+          createdById: user.userId,
+        });
+      }
+      if (tagCodes !== undefined) {
+        await replaceIpTaxonomyAssignmentsTx(tx, {
+          ipId: ip.id,
+          type: IpTaxonomyTermType.tag,
+          codes: tagCodes,
+          source: IpTaxonomyAssignmentSource.creator,
+          createdById: user.userId,
+        });
+      }
+
       return tx.ip.update({
         where: { id: ip.id },
         data: {
-          ...(input.ipType !== undefined
-            ? { ipType: input.ipType as IpType }
-            : {}),
           ...(input.listingVisibility !== undefined
             ? {
                 listingVisibility:
@@ -1286,6 +1683,44 @@ export class IpCommerceService {
     };
   }
 
+  async listAdminPurchaseOrders(query: ListAdminIpOrdersQuery) {
+    const rows = await this.prisma.ipPurchaseOrder.findMany({
+      where: adminPurchaseOrderWhere(query),
+      cursor: query.cursor ? { id: query.cursor } : undefined,
+      skip: query.cursor ? 1 : 0,
+      include: commerceOrderInclude,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+    });
+
+    const items = rows.slice(0, query.limit);
+    return {
+      items: items.map((order) =>
+        commercePurchaseOrderDto(order, query.locale),
+      ),
+      nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
+    };
+  }
+
+  async listAdminEntitlements(query: ListAdminIpEntitlementsQuery) {
+    const rows = await this.prisma.ipContentEntitlement.findMany({
+      where: adminEntitlementWhere(query),
+      cursor: query.cursor ? { id: query.cursor } : undefined,
+      skip: query.cursor ? 1 : 0,
+      include: commerceEntitlementInclude,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+    });
+
+    const items = rows.slice(0, query.limit);
+    return {
+      items: items.map((entitlement) =>
+        commerceEntitlementDto(entitlement, query.locale),
+      ),
+      nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
+    };
+  }
+
   async getAdminIp(ipId: string, query: { locale?: string }) {
     const ip = await this.prisma.ip.findFirst({
       where: { id: ipId, deletedAt: null },
@@ -1298,6 +1733,172 @@ export class IpCommerceService {
       });
     }
     return { ip: adminIpDetailDto(ip, query.locale) };
+  }
+
+  async grantAdminEntitlement(
+    user: AuthUser,
+    input: GrantAdminIpEntitlementInput,
+  ) {
+    const targetType = input.targetType as IpTargetType;
+    const now = new Date();
+    const ip = await this.prisma.ip.findFirst({
+      where: { id: input.ipId, deletedAt: null },
+      include: {
+        episodes: {
+          where: input.episodeId ? { id: input.episodeId } : undefined,
+          include: {
+            localizations: {
+              where: { archivedAt: null },
+              orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+            },
+          },
+        },
+        localizations: {
+          where: { archivedAt: null },
+          orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+        },
+      },
+    });
+    if (!ip) {
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    }
+    if (targetType === IpTargetType.episode) {
+      const episode = ip.episodes.find((item) => item.id === input.episodeId);
+      if (!episode) {
+        throw new NotFoundException({
+          code: 'IP_EPISODE_NOT_FOUND',
+          msg: 'Episode not found for this IP.',
+        });
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const existing = await findCurrentOrPendingEntitlementTx(tx, {
+        userId: input.userId,
+        ipId: ip.id,
+        targetType,
+        episodeId: input.episodeId ?? null,
+        now,
+      });
+      if (existing) {
+        return {
+          entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
+            where: { id: existing.id },
+            include: commerceEntitlementInclude,
+          }),
+          alreadyGranted: true,
+        };
+      }
+
+      const entitlement = await tx.ipContentEntitlement.create({
+        data: {
+          userId: input.userId,
+          ipId: ip.id,
+          episodeId:
+            targetType === IpTargetType.episode
+              ? (input.episodeId ?? null)
+              : null,
+          targetType,
+          status: IpEntitlementStatus.active,
+          sourceType: 'admin_grant',
+          sourceId: randomUUID(),
+          startsAt: input.startsAt ?? now,
+          endsAt: input.endsAt ?? null,
+          metadata: {
+            reason: input.reason,
+            grantedById: user.userId,
+            grantedByName: user.userName ?? user.email ?? null,
+          },
+        },
+      });
+      await ensureCollectionItemTx(tx, input.userId, entitlement);
+      return {
+        entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
+          where: { id: entitlement.id },
+          include: commerceEntitlementInclude,
+        }),
+        alreadyGranted: false,
+      };
+    });
+
+    return {
+      entitlement: commerceEntitlementDto(result.entitlement, ip.sourceLocale),
+      alreadyGranted: result.alreadyGranted,
+    };
+  }
+
+  async revokeAdminEntitlement(
+    user: AuthUser,
+    entitlementId: string,
+    input: RevokeAdminIpEntitlementInput,
+  ) {
+    const entitlement = await this.prisma.ipContentEntitlement.findUnique({
+      where: { id: entitlementId },
+      include: commerceEntitlementInclude,
+    });
+    if (!entitlement) {
+      throw new NotFoundException({
+        code: 'IP_ENTITLEMENT_NOT_FOUND',
+        msg: 'IP entitlement not found.',
+      });
+    }
+    if (entitlement.status === IpEntitlementStatus.revoked) {
+      return {
+        entitlement: commerceEntitlementDto(
+          entitlement,
+          entitlement.ip.sourceLocale,
+        ),
+        alreadyRevoked: true,
+      };
+    }
+    if (entitlement.status !== IpEntitlementStatus.active) {
+      throw new BadRequestException({
+        code: 'IP_ENTITLEMENT_NOT_ACTIVE',
+        msg: 'Only active IP entitlements can be revoked.',
+      });
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.ipContentEntitlement.update({
+        where: { id: entitlement.id },
+        data: {
+          status: IpEntitlementStatus.revoked,
+          revokedAt: now,
+          endsAt:
+            entitlement.endsAt && entitlement.endsAt < now
+              ? entitlement.endsAt
+              : now,
+          metadata: {
+            ...(isRecord(entitlement.metadata) ? entitlement.metadata : {}),
+            revokeReason: input.reason,
+            revokedById: user.userId,
+            revokedByName: user.userName ?? user.email ?? null,
+          },
+        },
+        include: commerceEntitlementInclude,
+      });
+      await tx.ipCollectionItem.updateMany({
+        where: {
+          entitlementId: entitlement.id,
+          status: IpCollectionItemStatus.active,
+          removedAt: null,
+        },
+        data: {
+          status: IpCollectionItemStatus.removed,
+          removedAt: now,
+        },
+      });
+      return row;
+    });
+
+    return {
+      entitlement: commerceEntitlementDto(updated, updated.ip.sourceLocale),
+      alreadyRevoked: false,
+    };
   }
 
   async updateAdminIpPublication(
@@ -1512,13 +2113,13 @@ export class IpCommerceService {
         deletedAt: null,
         status: { in: PUBLIC_IP_STATUSES },
         listingVisibility: 'public',
-        ipType: query.ipType,
         localizations: {
           some: {
             archivedAt: null,
             status: { in: PUBLIC_LOCALIZATION_STATUSES },
           },
         },
+        ...ipTaxonomyFilterWhere(query.genreCodes, query.tagCodes),
         ...viewerBlockWhere,
         ...(cursorDate
           ? {
@@ -1619,19 +2220,38 @@ export class IpCommerceService {
             userId: user.userId,
             ipId,
             status: IpEntitlementStatus.active,
-            OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+            ...currentOrPendingEntitlementWhere(now),
           },
         })
       : [];
-    const ipEntitlement = entitlements.find(
+    const activeEntitlements = entitlements.filter((entitlement) =>
+      isEntitlementActiveForAccess(entitlement, now),
+    );
+    const ipEntitlement = activeEntitlements.find(
       (entitlement) =>
         entitlement.targetType === IpTargetType.ip &&
         entitlement.episodeId === null,
     );
+    const pendingIpEntitlement = entitlements.find(
+      (entitlement) =>
+        entitlement.targetType === IpTargetType.ip &&
+        entitlement.episodeId === null &&
+        !isEntitlementActiveForAccess(entitlement, now),
+    );
     const ownedEpisodeIds = new Set(
-      entitlements
+      activeEntitlements
         .filter(
           (entitlement) => entitlement.targetType === IpTargetType.episode,
+        )
+        .map((entitlement) => entitlement.episodeId)
+        .filter(Boolean) as string[],
+    );
+    const pendingEpisodeIds = new Set(
+      entitlements
+        .filter(
+          (entitlement) =>
+            entitlement.targetType === IpTargetType.episode &&
+            !isEntitlementActiveForAccess(entitlement, now),
         )
         .map((entitlement) => entitlement.episodeId)
         .filter(Boolean) as string[],
@@ -1663,23 +2283,35 @@ export class IpCommerceService {
       ip: {
         id: ip.id,
         owned: Boolean(ipEntitlement),
-        access: ipEntitlement ? 'owned' : ipPrice ? 'locked' : 'free',
+        access: ipEntitlement
+          ? 'owned'
+          : pendingIpEntitlement
+            ? 'pending_unlock'
+            : ipPrice
+              ? 'locked'
+              : 'free',
         price: ipPrice ? priceRuleDto(ipPrice) : null,
       },
       episodes: episodes.map((episode) => {
         const episodePrice = selectActivePrice(episode.priceRules, now);
         const owned = Boolean(ipEntitlement) || ownedEpisodeIds.has(episode.id);
+        const pending =
+          Boolean(pendingIpEntitlement) || pendingEpisodeIds.has(episode.id);
         const access = owned
           ? ipEntitlement
             ? 'owned_ip'
             : 'owned_episode'
           : episode.isFreePreview
             ? 'free_preview'
-            : episodePrice
-              ? 'locked'
-              : ipPrice
-                ? 'locked_bundle'
-                : 'free';
+            : pending
+              ? pendingIpEntitlement
+                ? 'pending_unlock_ip'
+                : 'pending_unlock_episode'
+              : episodePrice
+                ? 'locked'
+                : ipPrice
+                  ? 'locked_bundle'
+                  : 'free';
         return {
           id: episode.id,
           episodeNo: episode.episodeNo,
@@ -1942,6 +2574,10 @@ export class IpCommerceService {
           msg: 'IP is not available for purchase.',
         });
       }
+      assertIpPurchaserAllowed({
+        buyerUserId: user.userId,
+        creatorUserId: ip.createdById,
+      });
 
       const episode =
         input.targetType === 'episode'
@@ -1967,7 +2603,7 @@ export class IpCommerceService {
         });
       }
 
-      const existingEntitlement = await findActiveEntitlementTx(tx, {
+      const existingEntitlement = await findCurrentOrPendingEntitlementTx(tx, {
         userId: user.userId,
         ipId: input.ipId,
         targetType: input.targetType,
@@ -2065,6 +2701,7 @@ export class IpCommerceService {
             })
           : null;
 
+      const entitlementWindow = resolveIpEntitlementWindow(priceRule, now);
       const entitlement = await tx.ipContentEntitlement.upsert({
         where: {
           sourceType_sourceId: {
@@ -2081,11 +2718,8 @@ export class IpCommerceService {
           sourceType: 'ip_purchase_order',
           sourceId: order.id,
           sourceOrderId: order.id,
-          startsAt: now,
-          endsAt:
-            priceRule.unlocksAt && priceRule.unlocksAt > now
-              ? priceRule.unlocksAt
-              : null,
+          startsAt: entitlementWindow.startsAt,
+          endsAt: entitlementWindow.endsAt,
           metadata: {
             orderNo: order.orderNo,
             priceRuleId: priceRule.id,
@@ -2094,11 +2728,8 @@ export class IpCommerceService {
         },
         update: {
           status: IpEntitlementStatus.active,
-          startsAt: now,
-          endsAt:
-            priceRule.unlocksAt && priceRule.unlocksAt > now
-              ? priceRule.unlocksAt
-              : null,
+          startsAt: entitlementWindow.startsAt,
+          endsAt: entitlementWindow.endsAt,
         },
       });
 
@@ -2665,7 +3296,49 @@ export class IpCommerceService {
   }
 }
 
-async function findActiveEntitlementTx(
+export function assertIpPurchaserAllowed(input: {
+  buyerUserId: string;
+  creatorUserId: string;
+}) {
+  if (input.buyerUserId !== input.creatorUserId) return;
+  throw new ConflictException({
+    code: 'IP_OWNER_CANNOT_PURCHASE',
+    msg: 'Creators cannot purchase their own IP content.',
+  });
+}
+
+export function resolveIpEntitlementWindow(
+  priceRule: { unlocksAt: Date | null },
+  now: Date,
+): { startsAt: Date; endsAt: Date | null } {
+  return {
+    startsAt:
+      priceRule.unlocksAt && priceRule.unlocksAt > now
+        ? priceRule.unlocksAt
+        : now,
+    endsAt: null,
+  };
+}
+
+function currentOrPendingEntitlementWhere(
+  now: Date,
+): Prisma.IpContentEntitlementWhereInput {
+  return {
+    OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+  };
+}
+
+export function isEntitlementActiveForAccess(
+  entitlement: { startsAt: Date; endsAt: Date | null },
+  now: Date,
+): boolean {
+  return (
+    entitlement.startsAt <= now &&
+    (entitlement.endsAt === null || entitlement.endsAt > now)
+  );
+}
+
+async function findCurrentOrPendingEntitlementTx(
   tx: Prisma.TransactionClient,
   input: {
     userId: string;
@@ -2682,7 +3355,7 @@ async function findActiveEntitlementTx(
       targetType: IpTargetType.ip,
       episodeId: null,
       status: IpEntitlementStatus.active,
-      OR: [{ endsAt: null }, { endsAt: { gt: input.now } }],
+      ...currentOrPendingEntitlementWhere(input.now),
     },
   });
   if (titleEntitlement) return titleEntitlement;
@@ -2695,7 +3368,7 @@ async function findActiveEntitlementTx(
       episodeId: input.episodeId,
       targetType: IpTargetType.episode,
       status: IpEntitlementStatus.active,
-      OR: [{ endsAt: null }, { endsAt: { gt: input.now } }],
+      ...currentOrPendingEntitlementWhere(input.now),
     },
   });
 }
@@ -2862,11 +3535,11 @@ function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {
   const search = query.q?.trim();
   return {
     deletedAt: null,
-    ipType: query.ipType as IpType | undefined,
     status: query.status as IpPublicationStatus | undefined,
     listingVisibility: query.listingVisibility as
       | IpListingVisibility
       | undefined,
+    ...ipTaxonomyFilterWhere(query.genreCodes, query.tagCodes),
     ...(search
       ? {
           OR: [
@@ -2889,6 +3562,65 @@ function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {
   };
 }
 
+function adminPurchaseOrderWhere(
+  query: ListAdminIpOrdersQuery,
+): Prisma.IpPurchaseOrderWhereInput {
+  const search = query.q?.trim();
+  return {
+    ipId: query.ipId,
+    userId: query.userId,
+    status: query.status as IpPurchaseOrderStatus | undefined,
+    ...(search
+      ? {
+          OR: [
+            { orderNo: { contains: search, mode: 'insensitive' } },
+            { userId: { contains: search, mode: 'insensitive' } },
+            {
+              ip: {
+                localizations: {
+                  some: {
+                    archivedAt: null,
+                    OR: [
+                      { title: { contains: search, mode: 'insensitive' } },
+                      { subtitle: { contains: search, mode: 'insensitive' } },
+                      { summary: { contains: search, mode: 'insensitive' } },
+                      { slug: { contains: search, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
+            },
+            {
+              episode: {
+                localizations: {
+                  some: {
+                    archivedAt: null,
+                    OR: [
+                      { title: { contains: search, mode: 'insensitive' } },
+                      { subtitle: { contains: search, mode: 'insensitive' } },
+                      { summary: { contains: search, mode: 'insensitive' } },
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+        }
+      : {}),
+  };
+}
+
+function adminEntitlementWhere(
+  query: ListAdminIpEntitlementsQuery,
+): Prisma.IpContentEntitlementWhereInput {
+  return {
+    ipId: query.ipId,
+    userId: query.userId,
+    targetType: query.targetType as IpTargetType | undefined,
+    status: query.status as IpEntitlementStatus | undefined,
+  };
+}
+
 type LocalizationBase = {
   locale: string;
   status: IpLocalizationStatus;
@@ -2903,8 +3635,29 @@ type IpLocalizationLike = LocalizationBase & {
   subtitle: string | null;
   summary: string;
   description: string | null;
-  genres: string[];
-  tags: string[];
+};
+
+type TaxonomyTermLocalizationLike = {
+  locale: string;
+  label: string;
+  description: string | null;
+  aliases: string[];
+};
+
+type TaxonomyAssignmentLike = {
+  displayOrder: number;
+  term: {
+    id: string;
+    type: IpTaxonomyTermType;
+    code: string;
+    status: IpTaxonomyTermStatus;
+    localizations: TaxonomyTermLocalizationLike[];
+  };
+};
+
+type IpTaxonomyHost = {
+  sourceLocale: string;
+  taxonomyAssignments: TaxonomyAssignmentLike[];
 };
 
 type EpisodeLocalizationLike = LocalizationBase & {
@@ -2932,12 +3685,202 @@ function normalizeLocale(locale?: string | null) {
   ].join('-');
 }
 
-function normalizeTaxonomy(values: string[], maxItems: number) {
+function normalizeTaxonomyCodes(values: readonly string[], maxItems: number) {
   const normalized = values
-    .map((value) => value.trim())
+    .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
-    .map((value) => value.slice(0, 32));
+    .filter((value) => /^[a-z0-9][a-z0-9_-]*$/.test(value))
+    .map((value) => value.slice(0, 80));
   return Array.from(new Set(normalized)).slice(0, maxItems);
+}
+
+function normalizeAdminTaxonomyLocalizations(
+  localizations: readonly {
+    locale: string;
+    label: string;
+    description?: string | null;
+    aliases?: readonly string[];
+  }[],
+) {
+  const byLocale = new Map<
+    string,
+    {
+      locale: string;
+      label: string;
+      description: string | null;
+      aliases: string[];
+    }
+  >();
+
+  for (const localization of localizations) {
+    const locale = normalizeLocale(localization.locale);
+    const label = localization.label.trim();
+    if (!label) continue;
+    byLocale.set(locale, {
+      locale,
+      label,
+      description: localization.description?.trim() || null,
+      aliases: Array.from(
+        new Set(
+          (localization.aliases ?? [])
+            .map((alias) => alias.trim())
+            .filter(Boolean),
+        ),
+      ).slice(0, 20),
+    });
+  }
+
+  const normalized = Array.from(byLocale.values());
+  if (!normalized.length) {
+    throw new BadRequestException({
+      code: 'IP_TAXONOMY_LOCALIZATION_REQUIRED',
+      msg: 'At least one taxonomy localization is required.',
+    });
+  }
+  return normalized;
+}
+
+function generateTaxonomyCode(
+  type: IpTaxonomyTermType,
+  localizations: ReturnType<typeof normalizeAdminTaxonomyLocalizations>,
+) {
+  const preferred =
+    localizations.find((item) => item.locale === 'en-US')?.label ??
+    localizations.find((item) => item.locale === DEFAULT_IP_LOCALE)?.label ??
+    localizations[0]?.label ??
+    type;
+  const slug = preferred
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48);
+  if (slug) return slug;
+
+  const digest = createHash('sha1')
+    .update(`${type}:${preferred}`)
+    .digest('hex')
+    .slice(0, 12);
+  return `${type}_${digest}`;
+}
+
+function ipTaxonomyFilterWhere(
+  genreCodes?: readonly string[],
+  tagCodes?: readonly string[],
+): Prisma.IpWhereInput {
+  const genreFilter = normalizeTaxonomyCodes(genreCodes ?? [], 8);
+  const tagFilter = normalizeTaxonomyCodes(tagCodes ?? [], 20);
+  const AND: Prisma.IpWhereInput[] = [];
+
+  if (genreFilter.length) {
+    AND.push({
+      taxonomyAssignments: {
+        some: {
+          term: {
+            is: {
+              type: IpTaxonomyTermType.genre,
+              code: { in: genreFilter },
+              status: IpTaxonomyTermStatus.active,
+              archivedAt: null,
+            },
+          },
+        },
+      },
+    });
+  }
+  if (tagFilter.length) {
+    AND.push({
+      taxonomyAssignments: {
+        some: {
+          term: {
+            is: {
+              type: IpTaxonomyTermType.tag,
+              code: { in: tagFilter },
+              status: IpTaxonomyTermStatus.active,
+              archivedAt: null,
+            },
+          },
+        },
+      },
+    });
+  }
+
+  return AND.length ? { AND } : {};
+}
+
+async function replaceIpTaxonomyAssignmentsTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    ipId: string;
+    type: IpTaxonomyTermType;
+    codes: readonly string[];
+    source: IpTaxonomyAssignmentSource;
+    createdById: string;
+  },
+) {
+  const maxItems = input.type === IpTaxonomyTermType.genre ? 8 : 20;
+  const codes = normalizeTaxonomyCodes(input.codes, maxItems);
+
+  if (input.type === IpTaxonomyTermType.genre && codes.length === 0) {
+    throw new BadRequestException({
+      code: 'IP_GENRE_REQUIRED',
+      msg: 'Select at least one genre.',
+    });
+  }
+
+  const terms = codes.length
+    ? await tx.ipTaxonomyTerm.findMany({
+        where: {
+          type: input.type,
+          status: IpTaxonomyTermStatus.active,
+          archivedAt: null,
+          code: { in: codes },
+        },
+        select: { id: true, code: true },
+      })
+    : [];
+  const byCode = new Map(terms.map((term) => [term.code, term]));
+  const missing = codes.filter((code) => !byCode.has(code));
+
+  if (missing.length) {
+    throw new BadRequestException({
+      code: 'IP_TAXONOMY_TERM_INVALID',
+      msg: `Invalid ${input.type} code(s): ${missing.join(', ')}.`,
+      missing,
+    });
+  }
+
+  const existing = await tx.ipTaxonomyAssignment.findMany({
+    where: {
+      ipId: input.ipId,
+      term: {
+        is: {
+          type: input.type,
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (existing.length) {
+    await tx.ipTaxonomyAssignment.deleteMany({
+      where: { id: { in: existing.map((item) => item.id) } },
+    });
+  }
+
+  if (!codes.length) return;
+
+  await tx.ipTaxonomyAssignment.createMany({
+    data: codes.map((code, index) => ({
+      ipId: input.ipId,
+      termId: byCode.get(code)!.id,
+      source: input.source,
+      displayOrder:
+        input.type === IpTaxonomyTermType.tag ? 1000 + index : index,
+      createdById: input.createdById,
+    })),
+    skipDuplicates: true,
+  });
 }
 
 function localeCandidates(
@@ -3027,6 +3970,122 @@ function selectLocalization<T extends LocalizationBase>(
   };
 }
 
+function selectTaxonomyLocalization(
+  localizations: TaxonomyTermLocalizationLike[] | undefined,
+  requestedLocale?: string | null,
+) {
+  const requested = normalizeLocale(requestedLocale);
+  const baseLanguage = requested.split('-')[0];
+  const candidates = Array.from(
+    new Set([requested, baseLanguage, 'en-US', DEFAULT_IP_LOCALE, 'zh-HK']),
+  );
+  const available = localizations ?? [];
+  const selected =
+    candidates
+      .map((candidate) =>
+        available.find(
+          (item) => normalizeLocale(item.locale) === normalizeLocale(candidate),
+        ),
+      )
+      .find(Boolean) ??
+    available[0] ??
+    null;
+
+  return {
+    value: selected,
+    meta: {
+      requestedLocale: requested,
+      locale: selected ? normalizeLocale(selected.locale) : requested,
+      sourceLocale: DEFAULT_IP_LOCALE,
+      isFallback: !selected || normalizeLocale(selected.locale) !== requested,
+      availableLocales: Array.from(
+        new Set(available.map((item) => normalizeLocale(item.locale))),
+      ),
+      status: null,
+    },
+  };
+}
+
+function taxonomyTermDto(
+  term: {
+    id: string;
+    type: IpTaxonomyTermType;
+    code: string;
+    status?: IpTaxonomyTermStatus;
+    localizations: TaxonomyTermLocalizationLike[];
+  },
+  requestedLocale?: string | null,
+) {
+  const copy = selectTaxonomyLocalization(term.localizations, requestedLocale);
+  return {
+    id: term.id,
+    type: term.type,
+    code: term.code,
+    label: copy.value?.label ?? term.code,
+    description: copy.value?.description ?? null,
+    aliases: copy.value?.aliases ?? [],
+    localization: copy.meta,
+  };
+}
+
+function adminTaxonomyTermDto(
+  term: {
+    id: string;
+    type: IpTaxonomyTermType;
+    code: string;
+    status: IpTaxonomyTermStatus;
+    displayOrder: number;
+    archivedAt?: Date | null;
+    createdAt?: Date;
+    updatedAt?: Date;
+    localizations: TaxonomyTermLocalizationLike[];
+    _count?: {
+      assignments: number;
+    };
+  },
+  requestedLocale?: string | null,
+) {
+  return {
+    ...taxonomyTermDto(term, requestedLocale),
+    status: term.status,
+    displayOrder: term.displayOrder,
+    archivedAt: term.archivedAt?.toISOString() ?? null,
+    createdAt: term.createdAt?.toISOString() ?? null,
+    updatedAt: term.updatedAt?.toISOString() ?? null,
+    assignmentCount: term._count?.assignments ?? 0,
+    localizations: term.localizations.map((localization) => ({
+      locale: normalizeLocale(localization.locale),
+      label: localization.label,
+      description: localization.description,
+      aliases: localization.aliases,
+    })),
+  };
+}
+
+function taxonomyBundleDto(
+  ip: IpTaxonomyHost,
+  requestedLocale?: string | null,
+) {
+  const items = (ip.taxonomyAssignments ?? [])
+    .filter(
+      (assignment) => assignment.term.status === IpTaxonomyTermStatus.active,
+    )
+    .map((assignment) => taxonomyTermDto(assignment.term, requestedLocale));
+  const genres = items.filter((item) => item.type === IpTaxonomyTermType.genre);
+  const tags = items.filter((item) => item.type === IpTaxonomyTermType.tag);
+
+  return {
+    genres: genres.map((item) => item.label),
+    tags: tags.map((item) => item.label),
+    genreCodes: genres.map((item) => item.code),
+    tagCodes: tags.map((item) => item.code),
+    taxonomy: {
+      genres,
+      tags,
+    },
+  };
+}
+
 function selectIpLocalization(
   ip: { sourceLocale: string; localizations: IpLocalizationLike[] },
   requestedLocale?: string | null,
@@ -3052,6 +4111,9 @@ function getIpPublicationRequirementMissing(ip: AdminIpWithCommerce) {
 
   if (!copy?.title?.trim()) missing.push('title');
   if (!copy?.summary?.trim()) missing.push('short summary');
+  if (!taxonomyBundleDto(ip, sourceLocale).genreCodes.length) {
+    missing.push('genre');
+  }
   if (!ip.coverAssetId && !ip.trailerAssetId) {
     missing.push('cover or trailer asset');
   }
@@ -3177,6 +4239,7 @@ function adminIpSummaryDto(
     .map((episode) => selectActivePrice(episode.priceRules))
     .filter(Boolean);
   const copy = selectIpLocalization(title, requestedLocale, false);
+  const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
     slug: copy.value?.slug ?? null,
@@ -3184,13 +4247,11 @@ function adminIpSummaryDto(
     subtitle: copy.value?.subtitle ?? null,
     summary: copy.value?.summary ?? '',
     localization: copy.meta,
-    ipType: title.ipType,
     status: title.status,
     listingVisibility: title.listingVisibility,
     ageRating: title.ageRating,
     sourceLocale: title.sourceLocale,
-    genres: copy.value?.genres ?? [],
-    tags: copy.value?.tags ?? [],
+    ...taxonomy,
     version: title.version,
     coverAsset: assetDto(title.coverAsset),
     trailerAsset: assetDto(title.trailerAsset),
@@ -3236,15 +4297,14 @@ function creatorIpSummaryDto(
   requestedLocale?: string | null,
 ) {
   const copy = selectIpLocalization(title, requestedLocale, false);
+  const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
     title: copy.value?.title ?? title.id,
     summary: copy.value?.summary ?? '',
     description: copy.value?.description ?? null,
-    genres: copy.value?.genres ?? [],
-    tags: copy.value?.tags ?? [],
+    ...taxonomy,
     localization: copy.meta,
-    ipType: title.ipType,
     status: title.status,
     listingVisibility: title.listingVisibility,
     ageRating: title.ageRating,
@@ -3811,9 +4871,9 @@ function creatorReviewSnapshot(
   ip: AdminIpWithCommerce,
 ): Record<string, unknown> {
   const sourceCopy = selectIpLocalization(ip, ip.sourceLocale, false).value;
+  const taxonomy = taxonomyBundleDto(ip, ip.sourceLocale);
   return {
     id: ip.id,
-    ipType: ip.ipType,
     status: ip.status,
     listingVisibility: ip.listingVisibility,
     ageRating: ip.ageRating,
@@ -3821,6 +4881,8 @@ function creatorReviewSnapshot(
     title: sourceCopy?.title ?? null,
     summary: sourceCopy?.summary ?? null,
     description: sourceCopy?.description ?? null,
+    genreCodes: taxonomy.genreCodes,
+    tagCodes: taxonomy.tagCodes,
     version: ip.version,
     coverAssetId: ip.coverAssetId,
     trailerAssetId: ip.trailerAssetId,
@@ -3839,10 +4901,10 @@ function ipDto(title: IpWithCommerce, requestedLocale?: string | null) {
     title.priceRules.filter((rule) => rule.targetType === IpTargetType.ip),
   );
   const copy = selectIpLocalization(title, requestedLocale, true);
+  const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
     slug: copy.value?.slug ?? null,
-    ipType: title.ipType,
     status: title.status,
     listingVisibility: title.listingVisibility,
     ageRating: title.ageRating,
@@ -3852,8 +4914,7 @@ function ipDto(title: IpWithCommerce, requestedLocale?: string | null) {
     description: copy.value?.description ?? null,
     sourceLocale: title.sourceLocale,
     localization: copy.meta,
-    genres: copy.value?.genres ?? [],
-    tags: copy.value?.tags ?? [],
+    ...taxonomy,
     copyrightOwner: title.copyrightOwner,
     rightsSummary: title.rightsSummary,
     aiDisclosure: title.aiDisclosure,
@@ -3941,8 +5002,7 @@ function mockPublicIpDto(ipId: string, requestedLocale?: string | null) {
           '一间锁住的档案室展示同一段童年场景的三个互相冲突版本。',
           '紧凑说明记忆经济、阵营、世界规则和后续扩展钩子。',
         ],
-        genres: ['科幻', '互动叙事', '悬疑'],
-        tags: ['AI 动画', '选择驱动', '可扩展'],
+        genres: ['科幻', '悬疑'],
         owner: 'FizzDragon Originals',
       }
     : {
@@ -3966,18 +5026,23 @@ function mockPublicIpDto(ipId: string, requestedLocale?: string | null) {
           'A locked archive shows the same childhood scene from three incompatible perspectives.',
           'A compact worldbuilding episode explains the memory economy, factions, and expansion hooks.',
         ],
-        genres: ['Sci-fi', 'Interactive', 'Mystery'],
-        tags: ['AI animation', 'Choice-driven', 'Expandable'],
+        genres: ['Sci-fi', 'Mystery'],
         owner: 'FizzDragon Originals',
       };
 
   const localization = mockLocalizationMeta(locale);
   const publishedAt = '2026-05-18T10:00:00.000Z';
+  const genreCodes = ['sci_fi', 'mystery'];
+  const taxonomy = {
+    genres: genreCodes.map((code, index) =>
+      mockTaxonomyTerm('genre', code, copy.genres[index] ?? code, localization),
+    ),
+    tags: [],
+  };
 
   return {
     id: ipId,
     slug: 'mock-neon-memory-archive',
-    ipType: IpType.series,
     status: IpPublicationStatus.published,
     listingVisibility: IpListingVisibility.public,
     ageRating: 'teen',
@@ -3988,7 +5053,10 @@ function mockPublicIpDto(ipId: string, requestedLocale?: string | null) {
     sourceLocale: locale,
     localization,
     genres: copy.genres,
-    tags: copy.tags,
+    tags: [],
+    genreCodes,
+    tagCodes: [],
+    taxonomy,
     copyrightOwner: copy.owner,
     rightsSummary: { source: 'mock', license: 'sample_preview' },
     aiDisclosure: { generatedVisuals: true, generatedCopy: false },
@@ -4135,6 +5203,23 @@ function mockLocalizationMeta(locale: string) {
     isFallback: false,
     availableLocales: [locale],
     status: IpLocalizationStatus.published,
+  };
+}
+
+function mockTaxonomyTerm(
+  type: 'genre' | 'tag',
+  code: string,
+  label: string,
+  localization: ReturnType<typeof mockLocalizationMeta>,
+) {
+  return {
+    id: `mock-${type}-${code}`,
+    type,
+    code,
+    label,
+    description: null,
+    aliases: [],
+    localization,
   };
 }
 
@@ -4348,6 +5433,133 @@ function entitlementDto(entitlement: {
     sourceId: entitlement.sourceId,
     startsAt: entitlement.startsAt.toISOString(),
     endsAt: entitlement.endsAt?.toISOString() ?? null,
+  };
+}
+
+function commercePurchaseOrderDto(
+  order: CommerceOrderWithRefs,
+  requestedLocale?: string | null,
+) {
+  return {
+    ...purchaseOrderDto(order),
+    ip: ipReferenceDto(order.ip, requestedLocale),
+    episode: episodeReferenceDto(
+      order.episode,
+      requestedLocale,
+      order.ip.sourceLocale,
+    ),
+    entitlementCount: order.entitlements.length,
+  };
+}
+
+function commerceEntitlementDto(
+  entitlement: CommerceEntitlementWithRefs,
+  requestedLocale?: string | null,
+) {
+  return {
+    ...entitlementDto(entitlement),
+    sourceOrderId: entitlement.sourceOrderId,
+    sourceOrderNo: entitlement.sourceOrder?.orderNo ?? null,
+    ip: ipReferenceDto(entitlement.ip, requestedLocale),
+    episode: episodeReferenceDto(
+      entitlement.episode,
+      requestedLocale,
+      entitlement.ip.sourceLocale,
+    ),
+    createdAt: entitlement.createdAt.toISOString(),
+    updatedAt: entitlement.updatedAt.toISOString(),
+    revokedAt: entitlement.revokedAt?.toISOString() ?? null,
+  };
+}
+
+function ipCommerceHealthDto(ip: AdminIpWithCommerce) {
+  const activeBundlePrice = selectActivePrice(
+    ip.priceRules.filter((rule) => rule.targetType === IpTargetType.ip),
+  );
+  const publishedEpisodes = ip.episodes.filter((episode) =>
+    PUBLIC_EPISODE_STATUSES.includes(episode.status),
+  );
+  const activeEpisodePriceCount = ip.episodes.filter((episode) =>
+    Boolean(selectActivePrice(episode.priceRules)),
+  ).length;
+  const pricedEpisodeCount = publishedEpisodes.filter((episode) =>
+    Boolean(selectActivePrice(episode.priceRules)),
+  ).length;
+  const freePreviewEpisodeCount = publishedEpisodes.filter(
+    (episode) => episode.isFreePreview,
+  ).length;
+  const warnings: Array<{
+    code: string;
+    severity: 'blocker' | 'warning';
+    message: string;
+  }> = [];
+
+  if (
+    ip.listingVisibility !== IpListingVisibility.public ||
+    !PUBLIC_IP_STATUSES.includes(ip.status)
+  ) {
+    warnings.push({
+      code: 'not_public',
+      severity: 'warning',
+      message: 'IP is not publicly listed, so buyers cannot discover it.',
+    });
+  }
+  if (!ip.episodes.length) {
+    warnings.push({
+      code: 'no_episodes',
+      severity: 'warning',
+      message: 'No episodes have been created for this IP.',
+    });
+  } else if (!publishedEpisodes.length) {
+    warnings.push({
+      code: 'no_published_episodes',
+      severity: 'warning',
+      message: 'No episode is published or scheduled for public playback.',
+    });
+  }
+  if (!activeBundlePrice && activeEpisodePriceCount === 0) {
+    warnings.push({
+      code: 'no_active_price',
+      severity: 'blocker',
+      message: 'No active bundle or episode price is available for purchase.',
+    });
+  }
+  if (
+    publishedEpisodes.length > 1 &&
+    !activeBundlePrice &&
+    pricedEpisodeCount > 0
+  ) {
+    warnings.push({
+      code: 'missing_bundle_price',
+      severity: 'warning',
+      message: 'Episode prices exist, but there is no IP bundle price.',
+    });
+  }
+  if (
+    publishedEpisodes.length > 0 &&
+    freePreviewEpisodeCount === publishedEpisodes.length &&
+    !activeBundlePrice &&
+    activeEpisodePriceCount === 0
+  ) {
+    warnings.push({
+      code: 'all_free_preview',
+      severity: 'warning',
+      message: 'All public episodes are free previews and no paid path exists.',
+    });
+  }
+
+  return {
+    status: warnings.some((warning) => warning.severity === 'blocker')
+      ? 'blocked'
+      : warnings.length
+        ? 'attention'
+        : 'ready',
+    bundlePriceActive: Boolean(activeBundlePrice),
+    activeEpisodePriceCount,
+    pricedEpisodeCount,
+    publishedEpisodeCount: publishedEpisodes.length,
+    freePreviewEpisodeCount,
+    warnings,
   };
 }
 

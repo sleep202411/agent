@@ -30,6 +30,7 @@ import {
   IpParamsSchema,
   ListCreatorIpAssetsQuerySchema,
   ListCreatorIpsQuerySchema,
+  ListIpTaxonomyTermsQuerySchema,
   ListIpsQuerySchema,
   UpsertCreatorIpPriceRuleSchema,
   UpsertIpCollectionItemSchema,
@@ -50,6 +51,7 @@ import {
   type IpParams,
   type ListCreatorIpAssetsQuery,
   type ListCreatorIpsQuery,
+  type ListIpTaxonomyTermsQuery,
   type ListIpsQuery,
   type UpsertCreatorIpPriceRuleInput,
   type UpsertIpCollectionItemInput,
@@ -69,6 +71,18 @@ type UploadedIpMediaFile = {
 @Controller('ip-commerce')
 export class IpCommerceController {
   constructor(private readonly ipCommerce: IpCommerceService) {}
+
+  @Public()
+  @Get('taxonomy')
+  async listTaxonomyTerms(
+    @Query(new ZodValidationPipe(ListIpTaxonomyTermsQuerySchema))
+    query: ListIpTaxonomyTermsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listTaxonomyTerms(query),
+    };
+  }
 
   @Get('me/ips')
   async listMyIps(
@@ -93,6 +107,24 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.getCreatorIp(user, params.ipId, query),
+    };
+  }
+
+  @Get('me/ips/:ipId/commerce')
+  async getMyIpCommerce(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(IpParamsSchema))
+    params: IpParams,
+    @Query(new ZodValidationPipe(IpLocaleQuerySchema))
+    query: IpLocaleQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.getCreatorIpCommerce(
+        user,
+        params.ipId,
+        query,
+      ),
     };
   }
 

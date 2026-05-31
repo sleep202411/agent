@@ -43,14 +43,12 @@ entitlement。任何服务都不能直接改余额或直接把内容标记为已
 
 ### `ips`
 
-公开 IP 聚合根。只保存业务事实、发布事实和治理事实：IP 类型、封面、
-trailer、AI 生成声明、版权摘要、发布状态、来源语言等。
-标题、简介、slug、SEO 文案、分类和标签不放在主表里，统一进入 localization 表。
+公开 IP 聚合根。只保存业务事实、发布事实和治理事实：封面、trailer、
+AI 生成声明、版权摘要、发布状态、来源语言等。标题、简介、slug、SEO
+文案不放在主表里，统一进入 localization 表；题材和后续可选标签进入 taxonomy 表。
 
 重要字段：
 
-- `ip_type`：运营筛选和创建入口分类。当前只保留 `series`、`film_short`、
-  `other`。它不会切换编辑器能力，也不会改变发布流程。
 - `source_locale`：源文案语言，用于翻译、fallback 和审核基准。
 - `status`：draft / review / published / suspended 等发布状态。
 - `listing_visibility`：private / unlisted / public。
@@ -61,13 +59,43 @@ IP 的公开展示文案。每个 `ip_id + locale` 唯一，包含：
 
 - `slug`：locale 维度的 SEO slug；发布态唯一由 partial unique index 保证。
 - `title` / `subtitle` / `summary` / `description`：公开文案。
-- `genres` / `tags`：该语言下的展示分类和标签。
 - `seo_title` / `seo_description`：搜索和分享专用文案。
 - `status`：draft / machine_translated / needs_review / approved /
   published / outdated / archived。
 
 公开接口只读取 `published` localization；后台可以看到草稿、机器翻译稿和
 待审核稿。机器翻译只能生成草稿或待审核稿，不能直接发布。
+
+### `ip_taxonomy_terms`
+
+平台治理的 IP 分类词库。`type = genre` 表示受控内容类型 / 题材，适合作为
+创建入口、发现筛选和运营统计；`type = tag` 预留给后续更灵活的风格、能力、
+卖点或推荐信号。当前产品入口只要求并展示 genre，不初始化 tag seed。
+两者共用同一套词库结构，但产品含义不同：
+
+- `code`：稳定业务编码，不随展示语言变化。
+- `status`：active / hidden / archived，用于上架、隐藏和历史保留。
+- `display_order`：前台选择器和后台筛选排序。
+- `metadata`：迁移来源、运营配置、推荐权重等扩展信息。
+
+### `ip_taxonomy_term_localizations`
+
+词条多语言文案。每个 `term_id + locale` 唯一，包含：
+
+- `label`：当前语言的展示名。
+- `description`：给创建器、筛选器或运营后台使用的解释。
+- `aliases`：迁移、搜索和同义词匹配使用，不作为主展示名。
+
+### `ip_taxonomy_assignments`
+
+IP 与 taxonomy term 的绑定表。一个 IP 可以绑定多个 genre；tag 作为预留能力
+可以为空。创建和发布至少要求一个 genre。`source` 记录 creator / admin /
+migration / system，用于审计和后续治理。
+
+taxonomy 不应再通过代码枚举扩展。admin-ui 需要提供词库治理入口：读取全量
+genre 和未来 tag、按 locale 查看展示名、创建新词条、维护 `active / hidden /
+archived` 状态、调整排序并写入审计日志。创作者端和公开筛选只读取 active
+词条；hidden/archived 只用于后台治理、历史数据回显和迁移追溯。
 
 ### `ip_episodes`
 
@@ -95,14 +123,18 @@ IP 级素材库。它把上传到 `media_assets` 的文件绑定回具体 IP，�
 
 多语言不是实时翻译缓存，也不是通用 JSON 字段。产品级做法是：
 
-1. 主表保存事实，localization 表保存可展示文案。
-2. 公开 API 接收 `locale`，按 requested locale -> 基础语言 -> source
+1. `supported_locales` 是 DB 级语言白名单。第一期只启用 `en-US`、`zh-CN`、
+   `zh-HK`；`ips.source_locale`、各 localization 表的 `locale` /
+   `translated_from_locale`、`ip_translation_jobs.source_locale` /
+   `target_locale` 都通过外键引用它。未来新增语言先治理白名单，再开放 UI。
+2. 主表保存事实，localization 表保存可展示文案。
+3. 公开 API 接收 `locale`，按 requested locale -> 基础语言 -> source
    locale -> 默认 locale 逐级 fallback。
-3. `IpTranslationJob` 记录机器翻译任务、provider、input hash、幂等键、
+4. `IpTranslationJob` 记录机器翻译任务、provider、input hash、幂等键、
    目标对象和状态。
-4. 翻译结果只写入对应 localization 表，并标记为 `machine_translated`
+5. 翻译结果只写入对应 localization 表，并标记为 `machine_translated`
    或 `needs_review`。
-5. 后台审核通过后才能改为 `published`；公开站点只展示 `published`。
+6. 后台审核通过后才能改为 `published`；公开站点只展示 `published`。
 
 未来剧组、用户服务、创作者档案等其他模块如果需要多语言，应各自建立强类型
 localization 表，例如 `CrewLocalization`、`CreatorServiceLocalization`。

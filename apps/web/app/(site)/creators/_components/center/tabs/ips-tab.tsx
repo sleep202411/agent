@@ -25,7 +25,6 @@ interface IpsTabProps {
 
 export function IpsTab({ creator, isOwner }: IpsTabProps) {
   const t = useTranslations("creatorCenter");
-  const typeT = useTranslations("newIpCreate");
   const locale = useLocale() as Locale;
   const { data, isLoading } = useCreatorProjects(creator.id);
   const myNewIps = useMyIpCommerceIps(isOwner, { locale, limit: 50 });
@@ -104,7 +103,6 @@ export function IpsTab({ creator, isOwner }: IpsTabProps) {
             key={ip.id}
             ip={ip}
             locale={locale}
-            typeLabel={typeT(`ipType.${ip.ipType}`)}
             badge={t("ips.newIpBadge")}
             enterLabel={t("ips.enterStudio")}
           />
@@ -127,13 +125,11 @@ export function IpsTab({ creator, isOwner }: IpsTabProps) {
 function NewIpCard({
   ip,
   locale,
-  typeLabel,
   badge,
   enterLabel,
 }: {
   ip: IpCreatorIp;
   locale: Locale;
-  typeLabel: string;
   badge: string;
   enterLabel: string;
 }) {
@@ -153,9 +149,11 @@ function NewIpCard({
             <IconSparkles className="size-3.5" />
             {badge}
           </span>
-          <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-medium text-white/55">
-            {typeLabel}
-          </span>
+          {ip.genres[0] ? (
+            <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] font-medium text-white/55">
+              {ip.genres[0]}
+            </span>
+          ) : null}
         </div>
 
         <div className="relative mt-8 space-y-2">

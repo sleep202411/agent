@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   IconActivity,
   IconAlertTriangle,
@@ -17,6 +17,7 @@ import {
   IconSearch,
   IconTicket,
   IconWallet,
+  IconX,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -328,7 +329,30 @@ type WalletAccountRow = {
   status: string;
   availableBalance: string;
   heldBalance: string;
+  ledgerEntryCount: number;
   updatedAt: string;
+};
+
+type WalletLedgerEntryRow = {
+  id: string;
+  transactionId: string;
+  accountId: string;
+  ownerType: string;
+  ownerId: string;
+  entryType: string;
+  currency: string;
+  balanceKind: string;
+  amount: string;
+  availableDelta: string;
+  heldDelta: string;
+  availableBalanceAfter: string;
+  heldBalanceAfter: string;
+  reason: string;
+  sourceType: string;
+  sourceId: string | null;
+  idempotencyKey: string;
+  description: string | null;
+  createdAt: string;
 };
 
 type BillingLedgerAccountRow = {
@@ -498,6 +522,7 @@ export type AdminBillingOverviewData = {
   };
   providerBindings: BillingProviderBinding[];
   walletAccounts: WalletAccountRow[];
+  walletLedgerEntries: WalletLedgerEntryRow[];
   recentOrders: BillingOrderRow[];
 };
 
@@ -565,6 +590,7 @@ const emptyOverview: AdminBillingOverviewData = {
   },
   providerBindings: [],
   walletAccounts: [],
+  walletLedgerEntries: [],
   recentOrders: [],
 };
 
@@ -671,6 +697,7 @@ export function AdminBillingPanel({
   const [ledgerType, setLedgerType] = useState("");
   const [ledgerProvider, setLedgerProvider] = useState("");
   const [ledgerCurrency, setLedgerCurrency] = useState("");
+  const [createPriceDialogOpen, setCreatePriceDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
 
@@ -895,20 +922,30 @@ export function AdminBillingPanel({
     event.preventDefault();
     setLoading(true);
     setError(null);
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const provider = stringField(form, "provider");
     const walletCurrency = stringField(form, "grantsWalletCurrency");
     const walletAmount = stringField(form, "grantsWalletAmount");
     const planKey = stringField(form, "grantsPlanKey");
     const grantDurationDays = stringField(form, "grantDurationDays");
+    const productType = stringField(form, "productType");
+    const currency = stringField(form, "currency").toUpperCase();
+    const amountMinor = stringField(form, "amountMinor");
     try {
       await mutateEnvelope("/api/admin/billing/prices", {
-        itemCode: stringField(form, "itemCode"),
+        itemCode: buildBillingItemCode({
+          productType,
+          walletAmount,
+          planKey,
+          currency,
+          amountMinor,
+        }),
         itemName: stringField(form, "itemName"),
         itemDescription: stringField(form, "itemDescription") || undefined,
-        productType: stringField(form, "productType"),
-        currency: stringField(form, "currency").toUpperCase(),
-        amountMinor: stringField(form, "amountMinor"),
+        productType,
+        currency,
+        amountMinor,
         interval: stringField(form, "interval"),
         subjectType: stringField(form, "subjectType"),
         grantsWalletCurrency: walletCurrency || undefined,
@@ -924,7 +961,8 @@ export function AdminBillingPanel({
             ]
           : [],
       });
-      event.currentTarget.reset();
+      formElement.reset();
+      setCreatePriceDialogOpen(false);
       await refresh();
     } catch (err) {
       setError(toErrorMessage(err));
@@ -1134,56 +1172,62 @@ export function AdminBillingPanel({
 
       <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="inline-flex w-fit rounded-lg border border-slate-200 bg-slate-50 p-1">
-            <TabButton
-              active={activeTab === "catalog"}
-              onClick={() => setActiveTab("catalog")}
-              icon={IconDatabase}
-            >
-              商品价格
-            </TabButton>
-            <TabButton
-              active={activeTab === "promotions"}
-              onClick={() => setActiveTab("promotions")}
-              icon={IconTicket}
-            >
-              促销券
-            </TabButton>
-            <TabButton
-              active={activeTab === "orders"}
-              onClick={() => setActiveTab("orders")}
-              icon={IconCreditCard}
-            >
-              订单支付
-            </TabButton>
-            <TabButton
-              active={activeTab === "refunds"}
-              onClick={() => setActiveTab("refunds")}
-              icon={IconReceiptRefund}
-            >
-              退款
-            </TabButton>
-            <TabButton
-              active={activeTab === "events"}
-              onClick={() => setActiveTab("events")}
-              icon={IconActivity}
-            >
-              支付事件
-            </TabButton>
-            <TabButton
-              active={activeTab === "wallet"}
-              onClick={() => setActiveTab("wallet")}
-              icon={IconWallet}
-            >
-              钱包流水
-            </TabButton>
-            <TabButton
-              active={activeTab === "ledger"}
-              onClick={() => setActiveTab("ledger")}
-              icon={IconScale}
-            >
-              资金账本
-            </TabButton>
+          <div className="grid gap-2 xl:grid-cols-[auto_auto_auto]">
+            <BillingNavGroup label="配置">
+              <TabButton
+                active={activeTab === "catalog"}
+                onClick={() => setActiveTab("catalog")}
+                icon={IconDatabase}
+              >
+                商品价格
+              </TabButton>
+              <TabButton
+                active={activeTab === "promotions"}
+                onClick={() => setActiveTab("promotions")}
+                icon={IconTicket}
+              >
+                促销券
+              </TabButton>
+            </BillingNavGroup>
+            <BillingNavGroup label="交易">
+              <TabButton
+                active={activeTab === "orders"}
+                onClick={() => setActiveTab("orders")}
+                icon={IconCreditCard}
+              >
+                订单支付
+              </TabButton>
+              <TabButton
+                active={activeTab === "refunds"}
+                onClick={() => setActiveTab("refunds")}
+                icon={IconReceiptRefund}
+              >
+                退款
+              </TabButton>
+              <TabButton
+                active={activeTab === "events"}
+                onClick={() => setActiveTab("events")}
+                icon={IconActivity}
+              >
+                支付事件
+              </TabButton>
+            </BillingNavGroup>
+            <BillingNavGroup label="账务">
+              <TabButton
+                active={activeTab === "wallet"}
+                onClick={() => setActiveTab("wallet")}
+                icon={IconWallet}
+              >
+                积分钱包
+              </TabButton>
+              <TabButton
+                active={activeTab === "ledger"}
+                onClick={() => setActiveTab("ledger")}
+                icon={IconScale}
+              >
+                资金账本
+              </TabButton>
+            </BillingNavGroup>
           </div>
           <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
             <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
@@ -1200,8 +1244,10 @@ export function AdminBillingPanel({
           productType={priceProductType}
           provider={priceProvider}
           loading={loading}
+          createDialogOpen={createPriceDialogOpen}
           onProductTypeChange={setPriceProductType}
           onProviderChange={setPriceProvider}
+          onCreateDialogOpenChange={setCreatePriceDialogOpen}
           onRefresh={() => void refreshPrices()}
           onCreatePrice={handleCreatePrice}
           onSyncBinding={handleSyncPriceBinding}
@@ -1281,6 +1327,7 @@ export function AdminBillingPanel({
       {activeTab === "wallet" ? (
         <WalletView
           accounts={overview.walletAccounts}
+          entries={overview.walletLedgerEntries}
           metrics={overview.metrics}
           recentOrders={overview.recentOrders}
         />
@@ -1306,13 +1353,76 @@ export function AdminBillingPanel({
   );
 }
 
+function AdminDialog({
+  open,
+  title,
+  description,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  description?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-billing-dialog-title"
+        className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+      >
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 id="admin-billing-dialog-title" className="text-base font-semibold text-slate-950">
+              {title}
+            </h3>
+            {description ? (
+              <p className="mt-1 max-w-xl text-sm leading-5 text-slate-600">{description}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
+            aria-label="关闭"
+          >
+            <IconX className="size-4" />
+          </button>
+        </header>
+        <div className="overflow-y-auto px-5 py-5">{children}</div>
+      </section>
+    </div>
+  );
+}
+
 function CatalogView({
   prices,
   productType,
   provider,
   loading,
+  createDialogOpen,
   onProductTypeChange,
   onProviderChange,
+  onCreateDialogOpenChange,
   onRefresh,
   onCreatePrice,
   onSyncBinding,
@@ -1321,14 +1431,16 @@ function CatalogView({
   productType: string;
   provider: string;
   loading: boolean;
+  createDialogOpen: boolean;
   onProductTypeChange: (value: string) => void;
   onProviderChange: (value: string) => void;
+  onCreateDialogOpenChange: (open: boolean) => void;
   onRefresh: () => void;
   onCreatePrice: (event: React.FormEvent<HTMLFormElement>) => void;
   onSyncBinding: (bindingId: string) => void;
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+    <>
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-200 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1338,7 +1450,7 @@ function CatalogView({
                 社区积分、算力积分和会员套餐统一从内部价格出发。
               </p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-[180px_160px_auto]">
+            <div className="grid gap-2 sm:grid-cols-[180px_160px_auto_auto]">
               <Select
                 value={productType}
                 onChange={onProductTypeChange}
@@ -1386,6 +1498,10 @@ function CatalogView({
               <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
                 <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
                 应用
+              </Button>
+              <Button size="sm" onClick={() => onCreateDialogOpenChange(true)} disabled={loading}>
+                <IconPlus className="size-3.5" />
+                新建套餐
               </Button>
             </div>
           </div>
@@ -1454,133 +1570,207 @@ function CatalogView({
           </table>
         </div>
       </section>
-      <CreatePriceForm loading={loading} onSubmit={onCreatePrice} />
-    </div>
+
+      <AdminDialog
+        open={createDialogOpen}
+        title="新建套餐"
+        description="创建内部商品价格；支付供应商只通过 binding 同步，套餐权益直接进入当前 billing 钱包账本。"
+        onClose={() => onCreateDialogOpenChange(false)}
+      >
+        <CreatePriceForm
+          loading={loading}
+          onSubmit={onCreatePrice}
+          onCancel={() => onCreateDialogOpenChange(false)}
+        />
+      </AdminDialog>
+    </>
   );
 }
 
 function CreatePriceForm({
   loading,
   onSubmit,
+  onCancel,
 }: {
   loading: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCancel: () => void;
 }) {
+  const [productType, setProductType] = useState("community_point_pack");
+  const [walletCurrency, setWalletCurrency] = useState("community_point");
+  const [walletAmount, setWalletAmount] = useState("");
+  const [planKey, setPlanKey] = useState("");
+  const [currency, setCurrency] = useState("USD");
+  const [amountMinor, setAmountMinor] = useState("");
+
+  const generatedItemCode = buildBillingItemCode({
+    productType,
+    walletAmount,
+    planKey,
+    currency,
+    amountMinor,
+  });
+
+  function handleProductTypeChange(value: string) {
+    setProductType(value);
+    if (value === "community_point_pack") {
+      setWalletCurrency("community_point");
+    } else if (value === "bubble_pack") {
+      setWalletCurrency("bubble");
+    } else {
+      setWalletCurrency("");
+    }
+  }
+
+  function handleWalletCurrencyChange(value: string) {
+    setWalletCurrency(value);
+    if (!value) setWalletAmount("");
+  }
+
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-950">新建价格</h3>
-          <p className="mt-1 text-[12px] text-slate-500">
-            商品目录为事实源，渠道价格通过 binding 同步。
-          </p>
-        </div>
-        <IconPlus className="size-4 text-slate-400" />
+    <form onSubmit={onSubmit} className="grid gap-4">
+      <FormLabel
+        label="商品名称"
+        help="运营后台展示名，不等同于支付供应商侧商品名；同步时会复制到 provider payload。"
+      >
+        <TextInput name="itemName" required placeholder="1000 社区积分" />
+      </FormLabel>
+      <FormLabel
+        label="商品类型"
+        help="决定订单类型和履约方向：算力积分、社区积分、个人会员或团队会员。"
+      >
+        <Select name="productType" value={productType} onChange={handleProductTypeChange}>
+          <option value="community_point_pack" title={productTypeHelp("community_point_pack")}>
+            社区积分
+          </option>
+          <option value="bubble_pack" title={productTypeHelp("bubble_pack")}>
+            算力积分
+          </option>
+          <option value="membership_plan" title={productTypeHelp("membership_plan")}>
+            会员套餐
+          </option>
+          <option value="team_membership_plan" title={productTypeHelp("team_membership_plan")}>
+            团队会员
+          </option>
+        </Select>
+      </FormLabel>
+      <div className="grid grid-cols-2 gap-2">
+        <FormLabel
+          label="币种"
+          help="订单法币币种，使用 ISO 4217 三位码，例如 USD、CNY。不是平台积分币种。"
+        >
+          <TextInput
+            name="currency"
+            required
+            maxLength={3}
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+            placeholder="USD"
+          />
+        </FormLabel>
+        <FormLabel
+          label="金额 minor"
+          help="法币最小单位金额。USD 9900 表示 99.00 美元，CNY 9900 表示 99.00 元。"
+        >
+          <TextInput
+            name="amountMinor"
+            required
+            inputMode="numeric"
+            value={amountMinor}
+            onChange={(event) => setAmountMinor(event.target.value)}
+            placeholder="9900"
+          />
+        </FormLabel>
       </div>
-      <form onSubmit={onSubmit} className="mt-4 grid gap-3">
-        <FormLabel
-          label="商品编码"
-          help="内部稳定编码。后续报表、对账和供应商同步都依赖它，创建后不要随意改语义。"
-        >
-          <TextInput name="itemCode" required placeholder="BUBBLE_1000_USD" />
-        </FormLabel>
-        <FormLabel
-          label="商品名称"
-          help="运营后台展示名，不等同于支付供应商侧商品名；同步时会复制到 provider payload。"
-        >
-          <TextInput name="itemName" required placeholder="1000 算力积分" />
-        </FormLabel>
-        <FormLabel
-          label="商品类型"
-          help="决定订单类型和履约方向：算力积分、社区积分、个人会员或团队会员。"
-        >
-          <Select name="productType" defaultValue="bubble_pack">
-            <option value="bubble_pack" title={productTypeHelp("bubble_pack")}>
-              算力积分
-            </option>
-            <option value="community_point_pack" title={productTypeHelp("community_point_pack")}>
-              社区积分
-            </option>
-            <option value="membership_plan" title={productTypeHelp("membership_plan")}>
-              会员套餐
-            </option>
-            <option value="team_membership_plan" title={productTypeHelp("team_membership_plan")}>
-              团队会员
-            </option>
+      <div className="grid grid-cols-2 gap-2">
+        <FormLabel label="周期" help="一次性适用于积分包；月付/年付适用于会员订阅价格。">
+          <Select name="interval" defaultValue="one_time">
+            <option value="one_time">一次性</option>
+            <option value="month">月付</option>
+            <option value="year">年付</option>
           </Select>
         </FormLabel>
-        <div className="grid grid-cols-2 gap-2">
-          <FormLabel
-            label="币种"
-            help="订单法币币种，使用 ISO 4217 三位码，例如 USD、CNY。不是平台积分币种。"
-          >
-            <TextInput name="currency" required maxLength={3} placeholder="USD" />
-          </FormLabel>
-          <FormLabel
-            label="金额 minor"
-            help="法币最小单位金额。USD 9900 表示 99.00 美元，CNY 9900 表示 99.00 元。"
-          >
-            <TextInput name="amountMinor" required inputMode="numeric" placeholder="9900" />
-          </FormLabel>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <FormLabel label="周期" help="一次性适用于积分包；月付/年付适用于会员订阅价格。">
-            <Select name="interval" defaultValue="one_time">
-              <option value="one_time">一次性</option>
-              <option value="month">月付</option>
-              <option value="year">年付</option>
-            </Select>
-          </FormLabel>
-          <FormLabel
-            label="主体"
-            help="权益归属对象。个人会员/积分通常归用户，团队会员可归工作区。"
-          >
-            <Select name="subjectType" defaultValue="user">
-              <option value="user">用户</option>
-              <option value="workspace">工作区</option>
-            </Select>
-          </FormLabel>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="flex items-center gap-1.5">
-            <p className="text-[12px] font-semibold text-slate-500">履约权益</p>
-            <InfoTip text="支付完成后系统自动发放的权益。社区积分/算力积分进入可消费余额；可提现社区积分只能由创作者收入产生，不允许通过商品或券发放。" />
-          </div>
-          <div className="mt-2 grid gap-2">
-            <Select name="grantsWalletCurrency" defaultValue="">
-              <option value="">不发放积分</option>
-              <option value="bubble">算力积分</option>
-              <option value="community_point">社区积分</option>
-            </Select>
-            <TextInput name="grantsWalletAmount" inputMode="numeric" placeholder="发放数量" />
-            <TextInput name="grantsPlanKey" placeholder="会员 plan key" />
-            <TextInput name="grantDurationDays" inputMode="numeric" placeholder="会员天数" />
-          </div>
-        </div>
-        <FormLabel
-          label="供应商"
-          help="选择后创建 provider binding。线下确认用于线下收款补单；兑换码请在促销券里创建。"
-        >
-          <Select name="provider" defaultValue="airwallex">
-            <option value="">稍后配置</option>
-            <option value="airwallex" title={providerHelp("airwallex")}>
-              Airwallex
-            </option>
-            <option value="wechat_pay" title={providerHelp("wechat_pay")}>
-              微信支付
-            </option>
-            <option value="manual" title={providerHelp("manual")}>
-              线下确认
-            </option>
+        <FormLabel label="主体" help="权益归属对象。个人会员/积分通常归用户，团队会员可归工作区。">
+          <Select name="subjectType" defaultValue="user">
+            <option value="user">用户</option>
+            <option value="workspace">工作区</option>
           </Select>
         </FormLabel>
-        <TextInput name="itemDescription" placeholder="内部备注，可选" />
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-center gap-1.5">
+          <p className="text-[12px] font-semibold text-slate-500">履约权益</p>
+          <InfoTip text="支付完成后系统自动发放的权益。社区积分/算力积分进入可消费余额；可提现社区积分只能由创作者收入产生，不允许通过商品或券发放。" />
+        </div>
+        <div className="mt-2 grid gap-2">
+          <Select
+            name="grantsWalletCurrency"
+            value={walletCurrency}
+            onChange={handleWalletCurrencyChange}
+          >
+            <option value="">不发放积分</option>
+            <option value="bubble">算力积分</option>
+            <option value="community_point">社区积分</option>
+          </Select>
+          <TextInput
+            name="grantsWalletAmount"
+            inputMode="numeric"
+            required={Boolean(walletCurrency)}
+            disabled={!walletCurrency}
+            value={walletAmount}
+            onChange={(event) => setWalletAmount(event.target.value)}
+            placeholder="发放数量"
+          />
+          <TextInput
+            name="grantsPlanKey"
+            value={planKey}
+            onChange={(event) => setPlanKey(event.target.value)}
+            placeholder="会员 plan key"
+          />
+          <TextInput name="grantDurationDays" inputMode="numeric" placeholder="会员天数" />
+        </div>
+      </div>
+      <FormLabel
+        label="供应商"
+        help="选择后创建 provider binding。线下确认用于线下收款补单；兑换码请在促销券里创建。"
+      >
+        <Select name="provider" defaultValue="airwallex">
+          <option value="">稍后配置</option>
+          <option value="airwallex" title={providerHelp("airwallex")}>
+            Airwallex
+          </option>
+          <option value="wechat_pay" title={providerHelp("wechat_pay")}>
+            微信支付
+          </option>
+          <option value="manual" title={providerHelp("manual")}>
+            线下确认
+          </option>
+        </Select>
+      </FormLabel>
+      <TextInput name="itemDescription" placeholder="内部备注，可选" />
+      <AutoCodePreview code={generatedItemCode} />
+      <div className="-mx-5 -mb-5 mt-1 flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          取消
+        </Button>
         <Button type="submit" disabled={loading}>
           <IconPlus className="size-3.5" />
-          创建
+          {loading ? "创建中" : "创建套餐"}
         </Button>
-      </form>
-    </section>
+      </div>
+    </form>
+  );
+}
+
+function AutoCodePreview({ code }: { code: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[12px] font-semibold text-slate-500">商品编码</span>
+        <StatusPill tone="muted">自动生成</StatusPill>
+      </div>
+      <p className="mt-1 break-all font-mono text-[12px] font-semibold text-slate-900">{code}</p>
+    </div>
   );
 }
 
@@ -2593,24 +2783,32 @@ function PayloadLine({ label, value }: { label: string; value?: string | null })
 
 function WalletView({
   accounts,
+  entries,
   metrics,
   recentOrders,
 }: {
   accounts: WalletAccountRow[];
+  entries: WalletLedgerEntryRow[];
   metrics: AdminBillingOverviewData["metrics"];
   recentOrders: BillingOrderRow[];
 }) {
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? null;
+  const selectedAccountEntries = selectedAccount
+    ? entries.filter((entry) => entry.accountId === selectedAccount.id)
+    : [];
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-200 p-4">
-          <h3 className="text-sm font-semibold text-slate-950">钱包账户最近变动</h3>
+          <h3 className="text-sm font-semibold text-slate-950">钱包账户余额</h3>
           <p className="mt-1 text-[12px] text-slate-500">
-            余额、冻结金额和账户状态只读展示；人工调账必须走审计和双人复核。
+            每行是一个用户或工作区的钱包账户；点击查看可打开余额详情和真实流水。
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] border-separate border-spacing-0 text-left">
+          <table className="w-full min-w-[940px] border-separate border-spacing-0 text-left">
             <thead>
               <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                 <Th>账户</Th>
@@ -2620,8 +2818,10 @@ function WalletView({
                 </Th>
                 <Th>可用余额</Th>
                 <Th>冻结</Th>
+                <Th>流水</Th>
                 <Th>状态</Th>
                 <Th>更新时间</Th>
+                <Th>操作</Th>
               </tr>
             </thead>
             <tbody>
@@ -2629,7 +2829,7 @@ function WalletView({
                 <tr key={account.id}>
                   <Td>
                     <p className="text-sm font-medium text-slate-950">{account.ownerType}</p>
-                    <p className="max-w-[240px] truncate text-[11px] text-slate-500">
+                    <p className="max-w-[220px] truncate text-[11px] text-slate-500">
                       {account.ownerId}
                     </p>
                   </Td>
@@ -2637,47 +2837,184 @@ function WalletView({
                   <Td>{balanceKindLabel(account.balanceKind)}</Td>
                   <Td>{formatInteger(account.availableBalance)}</Td>
                   <Td>{formatInteger(account.heldBalance)}</Td>
+                  <Td>{formatInteger(String(account.ledgerEntryCount))}</Td>
                   <Td>
                     <StatusPill tone={account.status === "active" ? "success" : "muted"}>
                       {account.status}
                     </StatusPill>
                   </Td>
                   <Td>{formatDate(account.updatedAt)}</Td>
+                  <Td>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedAccountId(account.id)}
+                    >
+                      查看
+                    </Button>
+                  </Td>
                 </tr>
               ))}
-              {!accounts.length ? <EmptyRow colSpan={7} label="暂无钱包账户" /> : null}
+              {!accounts.length ? <EmptyRow colSpan={9} label="暂无钱包账户" /> : null}
             </tbody>
           </table>
         </div>
       </section>
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <h3 className="text-sm font-semibold text-slate-950">7 日账单状态</h3>
-        <div className="mt-4 grid gap-2">
-          <Metric label="已履约订单" value={metrics.fulfilledOrders7d} />
-          <Metric label="失败订单" value={metrics.failedOrders7d} tone="risk" />
-          <Metric label="支付失败事件" value={metrics.paymentFailures7d} tone="risk" />
-        </div>
-        <div className="mt-4 border-t border-slate-200 pt-4">
-          <p className="text-[12px] font-semibold text-slate-500">最近订单</p>
+
+      <div className="space-y-4">
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <h3 className="text-sm font-semibold text-slate-950">最近钱包流水</h3>
+          <p className="mt-1 text-[12px] leading-5 text-slate-500">
+            最近已记账的 wallet ledger entry，不包含仅初始化的空账户。
+          </p>
           <div className="mt-3 space-y-2">
-            {recentOrders.slice(0, 5).map((order) => (
-              <div key={order.id} className="rounded-lg border border-slate-200 px-3 py-2">
+            {entries.slice(0, 6).map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-slate-200 px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-[12px] font-medium text-slate-950">
-                    {order.item.name}
-                  </p>
-                  <OrderStatusPill status={order.status} />
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] font-semibold text-slate-950">
+                      {walletEntryTypeLabel(entry.entryType)} · {currencyLabel(entry.currency)}
+                    </p>
+                    <p className="truncate text-[11px] text-slate-500">
+                      {entry.ownerType}:{entry.ownerId}
+                    </p>
+                  </div>
+                  <span className="text-[12px] font-semibold text-slate-950">
+                    {formatSignedInteger(entry.availableDelta)}
+                  </span>
                 </div>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {formatMoneyMinor(order.amountMinor, order.currency)} ·{" "}
-                  {formatDate(order.createdAt)}
-                </p>
+                <p className="mt-1 text-[11px] text-slate-500">{formatDate(entry.createdAt)}</p>
               </div>
             ))}
+            {!entries.length ? (
+              <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-[12px] text-slate-500">
+                暂无钱包流水
+              </div>
+            ) : null}
           </div>
-        </div>
-      </section>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <h3 className="text-sm font-semibold text-slate-950">7 日账单状态</h3>
+          <div className="mt-4 grid gap-2">
+            <Metric label="已履约订单" value={metrics.fulfilledOrders7d} />
+            <Metric label="失败订单" value={metrics.failedOrders7d} tone="risk" />
+            <Metric label="支付失败事件" value={metrics.paymentFailures7d} tone="risk" />
+          </div>
+          <div className="mt-4 border-t border-slate-200 pt-4">
+            <p className="text-[12px] font-semibold text-slate-500">最近订单</p>
+            <div className="mt-3 space-y-2">
+              {recentOrders.slice(0, 5).map((order) => (
+                <div key={order.id} className="rounded-lg border border-slate-200 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-[12px] font-medium text-slate-950">
+                      {order.item.name}
+                    </p>
+                    <OrderStatusPill status={order.status} />
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {formatMoneyMinor(order.amountMinor, order.currency)} ·{" "}
+                    {formatDate(order.createdAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <WalletAccountDetailDialog
+        account={selectedAccount}
+        entries={selectedAccountEntries}
+        onClose={() => setSelectedAccountId(null)}
+      />
     </div>
+  );
+}
+
+function WalletAccountDetailDialog({
+  account,
+  entries,
+  onClose,
+}: {
+  account: WalletAccountRow | null;
+  entries: WalletLedgerEntryRow[];
+  onClose: () => void;
+}) {
+  return (
+    <AdminDialog
+      open={Boolean(account)}
+      title="钱包账户详情"
+      description={
+        account
+          ? `${account.ownerType}:${account.ownerId} · ${currencyLabel(account.currency)} · ${balanceKindLabel(account.balanceKind)}`
+          : undefined
+      }
+      onClose={onClose}
+    >
+      {account ? (
+        <div className="space-y-4">
+          <section className="grid gap-2 sm:grid-cols-3">
+            <Metric label="可用余额" value={formatInteger(account.availableBalance)} />
+            <Metric label="冻结余额" value={formatInteger(account.heldBalance)} />
+            <Metric label="流水条数" value={account.ledgerEntryCount} />
+          </section>
+          <section className="rounded-lg border border-slate-200">
+            <div className="border-b border-slate-200 px-3 py-2">
+              <h4 className="text-sm font-semibold text-slate-950">账户流水</h4>
+            </div>
+            <div className="max-h-[420px] overflow-auto">
+              <table className="w-full min-w-[780px] border-separate border-spacing-0 text-left">
+                <thead>
+                  <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    <Th>时间</Th>
+                    <Th>动作</Th>
+                    <Th>可用变动</Th>
+                    <Th>冻结变动</Th>
+                    <Th>余额后</Th>
+                    <Th>来源</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((entry) => (
+                    <tr key={entry.id}>
+                      <Td>{formatDate(entry.createdAt)}</Td>
+                      <Td>
+                        <p className="text-sm font-medium text-slate-950">
+                          {walletEntryTypeLabel(entry.entryType)}
+                        </p>
+                        <p className="text-[11px] text-slate-500">{entry.reason}</p>
+                      </Td>
+                      <Td>{formatSignedInteger(entry.availableDelta)}</Td>
+                      <Td>{formatSignedInteger(entry.heldDelta)}</Td>
+                      <Td>
+                        <p className="text-sm text-slate-700">
+                          {formatInteger(entry.availableBalanceAfter)}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          冻结 {formatInteger(entry.heldBalanceAfter)}
+                        </p>
+                      </Td>
+                      <Td>
+                        <p className="text-sm text-slate-700">{entry.sourceType}</p>
+                        <p
+                          className="max-w-[180px] truncate font-mono text-[11px] text-slate-500"
+                          title={entry.sourceId ?? entry.idempotencyKey}
+                        >
+                          {entry.sourceId ?? entry.idempotencyKey}
+                        </p>
+                      </Td>
+                    </tr>
+                  ))}
+                  {!entries.length ? <EmptyRow colSpan={6} label="暂无该账户流水" /> : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </AdminDialog>
   );
 }
 
@@ -3100,7 +3437,7 @@ function Metric({
   tone = "default",
 }: {
   label: string;
-  value: number;
+  value: number | string;
   tone?: "default" | "risk";
 }) {
   return (
@@ -3153,6 +3490,15 @@ function TabButton({
       <Icon className="size-4" />
       {children}
     </button>
+  );
+}
+
+function BillingNavGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+      <span className="px-2 text-[11px] font-semibold text-slate-400">{label}</span>
+      <div className="flex flex-wrap gap-1">{children}</div>
+    </div>
   );
 }
 
@@ -3554,6 +3900,45 @@ function providerHelp(provider: string) {
   return labels[provider] ?? provider;
 }
 
+function buildBillingItemCode({
+  productType,
+  walletAmount,
+  planKey,
+  currency,
+  amountMinor,
+}: {
+  productType: string;
+  walletAmount: string;
+  planKey: string;
+  currency: string;
+  amountMinor: string;
+}) {
+  const prefixes: Record<string, string> = {
+    community_point_pack: "COMMUNITY_POINT",
+    bubble_pack: "BUBBLE",
+    membership_plan: "MEMBERSHIP",
+    team_membership_plan: "TEAM_MEMBERSHIP",
+  };
+  const prefix = prefixes[productType] ?? "BILLING";
+  const benefit = sanitizeCodeToken(walletAmount || planKey || "PACKAGE");
+  const fiatCurrency = sanitizeCodeToken(currency || "CUR");
+  const fiatAmount = sanitizeCodeToken(amountMinor || "AMOUNT");
+  return [prefix, benefit, fiatCurrency, fiatAmount]
+    .join("_")
+    .replace(/_+/g, "_")
+    .slice(0, 96)
+    .replace(/_+$/g, "");
+}
+
+function sanitizeCodeToken(value: string) {
+  const token = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return token || "AUTO";
+}
+
 function productTypeLabel(value: string) {
   const labels: Record<string, string> = {
     community_point_pack: "社区积分",
@@ -3744,6 +4129,19 @@ function balanceKindLabel(value: string) {
   return labels[value] ?? value;
 }
 
+function walletEntryTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    credit: "入账",
+    debit: "扣款",
+    hold: "冻结",
+    release: "释放",
+    settle: "结算",
+    refund: "退款",
+    adjustment: "调整",
+  };
+  return labels[value] ?? value;
+}
+
 function formatMoneyMinor(amountMinor: string, currency: string) {
   const value = BigInt(amountMinor);
   const zero = BigInt(0);
@@ -3761,6 +4159,13 @@ function formatNullableMoneyMinor(amountMinor: string | null, currency: string) 
 
 function formatInteger(value: string) {
   return new Intl.NumberFormat("zh-CN").format(Number(value));
+}
+
+function formatSignedInteger(value: string) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric === 0) return "0";
+  const formatted = new Intl.NumberFormat("zh-CN").format(Math.abs(numeric));
+  return numeric > 0 ? `+${formatted}` : `-${formatted}`;
 }
 
 function formatBpsPercent(value: number) {

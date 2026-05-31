@@ -434,7 +434,7 @@ async function inspectSnapshot(path: string): Promise<void> {
 async function importLocal(path: string, options: CliOptions): Promise<void> {
   const snapshot = await readSnapshot(path);
   const prisma: PrismaClient = buildPrisma();
-  const sourceLocale = env('LEGACY_SOURCE_LOCALE', 'zh-CN');
+  const sourceLocale = supportedLocale(env('LEGACY_SOURCE_LOCALE', 'zh-CN'));
   const importUserId = env('LEGACY_IMPORT_USER_ID', 'legacy-java-import');
   const rows = options.limit
     ? snapshot.projects.slice(0, options.limit)
@@ -458,10 +458,11 @@ async function importLocal(path: string, options: CliOptions): Promise<void> {
       const createdById = stringId(detail.ownerId) || importUserId;
       const typeId = stringId(detail.typeId);
       const typeName = typeId ? snapshot.dictionaries.types[typeId] : '';
-      const tags = unique([
-        ...(typeName ? [typeName] : []),
-        ...parseLegacyTagNames(detail.tag, snapshot.dictionaries.tags),
-      ]);
+      const genreLabels = typeName ? [typeName] : [];
+      const tagLabels = parseLegacyTagNames(
+        detail.tag,
+        snapshot.dictionaries.tags,
+      );
       const status = mapPublicationStatus(detail, project.listRow);
       const coverAssetId = await maybeUpsertAsset({
         prisma,
@@ -482,7 +483,6 @@ async function importLocal(path: string, options: CliOptions): Promise<void> {
         await prisma.ip.upsert({
           where: { id: ipId },
           update: {
-            ipType: mapIpType(typeName),
             status,
             listingVisibility: status === 'published' ? 'public' : 'private',
             sourceLocale,
@@ -492,7 +492,6 @@ async function importLocal(path: string, options: CliOptions): Promise<void> {
           },
           create: {
             id: ipId,
-            ipType: mapIpType(typeName),
             status,
             listingVisibility: status === 'published' ? 'public' : 'private',
             sourceLocale,
@@ -515,8 +514,6 @@ async function importLocal(path: string, options: CliOptions): Promise<void> {
             title,
             summary,
             description,
-            genres: typeName ? [typeName] : [],
-            tags,
             status: status === 'published' ? 'published' : 'draft',
           },
           create: {
@@ -529,11 +526,18 @@ async function importLocal(path: string, options: CliOptions): Promise<void> {
             title,
             summary,
             description,
-            genres: typeName ? [typeName] : [],
-            tags,
             status: status === 'published' ? 'published' : 'draft',
             publishedAt: status === 'published' ? new Date() : undefined,
           },
+        });
+
+        await replaceLegacyTaxonomyAssignments({
+          prisma,
+          ipId,
+          sourceLocale,
+          importUserId,
+          genres: genreLabels,
+          tags: tagLabels,
         });
       }
 
@@ -1095,14 +1099,167 @@ function legacyUuid(kind: string, value: string): string {
   )}-${hex.slice(20, 32)}`;
 }
 
-function mapIpType(
-  typeName: string | undefined,
-): 'series' | 'film_short' | 'other' {
-  if (!typeName) return 'series';
-  if (/短片|电影|广告|宣传|纪录片|动画|视频|影视/.test(typeName))
-    return 'film_short';
-  if (/其他|收藏/.test(typeName)) return 'other';
-  return 'series';
+async function replaceLegacyTaxonomyAssignments(input: {
+  prisma: PrismaClient;
+  ipId: string;
+  sourceLocale: string;
+  importUserId: string;
+  genres: string[];
+  tags: string[];
+}): Promise<void> {
+  await replaceLegacyTaxonomyTypeAssignments({
+    ...input,
+    type: 'genre',
+    labels: input.genres,
+  });
+  await replaceLegacyTaxonomyTypeAssignments({
+    ...input,
+    type: 'tag',
+    labels: input.tags,
+  });
+}
+
+async function replaceLegacyTaxonomyTypeAssignments(input: {
+  prisma: PrismaClient;
+  ipId: string;
+  sourceLocale: string;
+  importUserId: string;
+  type: 'genre' | 'tag';
+  labels: string[];
+}): Promise<void> {
+  const labels = unique(input.labels.map((label) => clamp(label, 80))).filter(
+    Boolean,
+  );
+  const termIds: string[] = [];
+
+  for (const [index, label] of labels.entries()) {
+    const code = taxonomyCodeFromLabel(input.type, label);
+    const term = await input.prisma.ipTaxonomyTerm.upsert({
+      where: {
+        type_code: {
+          type: input.type,
+          code,
+        },
+      },
+      update: {
+        status: 'active',
+        archivedAt: null,
+        displayOrder: input.type === 'tag' ? 1000 + index : index,
+      },
+      create: {
+        id: legacyUuid('taxonomy-term', `${input.type}:${code}`),
+        type: input.type,
+        code,
+        status: 'active',
+        displayOrder: input.type === 'tag' ? 1000 + index : index,
+        metadata: {
+          legacyLabel: label,
+        },
+        createdById: input.importUserId,
+      },
+    });
+    await input.prisma.ipTaxonomyTermLocalization.upsert({
+      where: {
+        termId_locale: {
+          termId: term.id,
+          locale: input.sourceLocale,
+        },
+      },
+      update: {
+        label,
+      },
+      create: {
+        id: legacyUuid(
+          'taxonomy-localization',
+          `${input.type}:${code}:${input.sourceLocale}`,
+        ),
+        termId: term.id,
+        locale: input.sourceLocale,
+        label,
+      },
+    });
+    termIds.push(term.id);
+  }
+
+  const existing = await input.prisma.ipTaxonomyAssignment.findMany({
+    where: {
+      ipId: input.ipId,
+      term: {
+        is: {
+          type: input.type,
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (existing.length) {
+    await input.prisma.ipTaxonomyAssignment.deleteMany({
+      where: { id: { in: existing.map((item) => item.id) } },
+    });
+  }
+  if (!termIds.length) return;
+
+  await input.prisma.ipTaxonomyAssignment.createMany({
+    data: termIds.map((termId, index) => ({
+      id: legacyUuid(
+        'taxonomy-assignment',
+        `${input.ipId}:${input.type}:${termId}`,
+      ),
+      ipId: input.ipId,
+      termId,
+      source: 'migration',
+      displayOrder: input.type === 'tag' ? 1000 + index : index,
+      createdById: input.importUserId,
+    })),
+    skipDuplicates: true,
+  });
+}
+
+function taxonomyCodeFromLabel(type: 'genre' | 'tag', label: string): string {
+  const normalized = label.trim().toLowerCase();
+  const known: Record<string, string> = {
+    'genre:科幻': 'sci_fi',
+    'genre:sci-fi': 'sci_fi',
+    'genre:sci fi': 'sci_fi',
+    'genre:奇幻': 'fantasy',
+    'genre:fantasy': 'fantasy',
+    'genre:悬疑': 'mystery',
+    'genre:懸疑': 'mystery',
+    'genre:mystery': 'mystery',
+    'genre:爱情': 'romance',
+    'genre:愛情': 'romance',
+    'genre:romance': 'romance',
+    'genre:冒险': 'adventure',
+    'genre:冒險': 'adventure',
+    'genre:adventure': 'adventure',
+    'genre:动作': 'action',
+    'genre:動作': 'action',
+    'genre:action': 'action',
+    'genre:喜剧': 'comedy',
+    'genre:喜劇': 'comedy',
+    'genre:comedy': 'comedy',
+    'genre:剧情': 'drama',
+    'genre:劇情': 'drama',
+    'genre:drama': 'drama',
+    'genre:纪录片': 'documentary',
+    'genre:紀錄片': 'documentary',
+    'genre:documentary': 'documentary',
+    'tag:ai 动画': 'ai_animation',
+    'tag:ai 動畫': 'ai_animation',
+    'tag:ai animation': 'ai_animation',
+    'tag:互动叙事': 'interactive_story',
+    'tag:互動敘事': 'interactive_story',
+    'tag:interactive story': 'interactive_story',
+    'tag:赛博朋克': 'cyberpunk',
+    'tag:賽博朋克': 'cyberpunk',
+    'tag:cyberpunk': 'cyberpunk',
+    'tag:短剧': 'short_drama',
+    'tag:短劇': 'short_drama',
+    'tag:short drama': 'short_drama',
+  };
+  const mapped = known[`${type}:${normalized}`];
+  if (mapped) return mapped;
+  return `legacy_${createHash('sha1').update(`${type}:${normalized}`).digest('hex').slice(0, 16)}`;
 }
 
 function mapPublicationStatus(
@@ -1300,6 +1457,33 @@ function env(name: string, fallback: undefined): string | undefined;
 function env(name: string, fallback: string | undefined): string | undefined {
   const value = process.env[name];
   return value && value.trim() ? value.trim() : fallback;
+}
+
+function supportedLocale(value: string): 'en-US' | 'zh-CN' | 'zh-HK' {
+  const normalized = value.trim().replaceAll('_', '-').toLowerCase();
+  switch (normalized) {
+    case 'en':
+    case 'en-us':
+      return 'en-US';
+    case 'zh':
+    case 'zh-cn':
+    case 'zh-hans':
+    case 'zh-hans-cn':
+    case 'cn':
+      return 'zh-CN';
+    case 'zh-hk':
+    case 'zh-tw':
+    case 'zh-hant':
+    case 'zh-hant-hk':
+    case 'zh-hant-tw':
+    case 'hk':
+    case 'tw':
+      return 'zh-HK';
+    default:
+      throw new Error(
+        `Unsupported LEGACY_SOURCE_LOCALE: ${value}. Use en-US, zh-CN, or zh-HK.`,
+      );
+  }
 }
 
 function message(error: unknown): string {

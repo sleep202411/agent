@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   IconAlertTriangle,
   IconBook2,
@@ -8,8 +8,12 @@ import {
   IconClipboardCheck,
   IconEye,
   IconFlag,
+  IconKey,
   IconRefresh,
   IconSearch,
+  IconShoppingBag,
+  IconTags,
+  IconUserPlus,
   IconX,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -83,7 +87,6 @@ type IpRow = {
   title: string;
   subtitle: string | null;
   summary: string;
-  ipType: string;
   status: IpStatus;
   listingVisibility: "private" | "unlisted" | "public";
   ageRating: string;
@@ -91,6 +94,8 @@ type IpRow = {
   localization: LocalizationMeta;
   genres: string[];
   tags: string[];
+  genreCodes?: string[];
+  tagCodes?: string[];
   version: number;
   coverAsset: IpMediaAsset | null;
   trailerAsset: IpMediaAsset | null;
@@ -120,6 +125,42 @@ type IpRow = {
     openReportCount: number;
   };
 };
+
+type IpTaxonomyLocalization = {
+  locale: string;
+  label: string;
+  description: string | null;
+  aliases: string[];
+};
+
+type IpTaxonomyTerm = {
+  id: string;
+  type: "genre" | "tag";
+  code: string;
+  status: "active" | "hidden" | "archived";
+  displayOrder: number;
+  label: string;
+  description: string | null;
+  aliases: string[];
+  localization: LocalizationMeta;
+  localizations: IpTaxonomyLocalization[];
+  assignmentCount: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+  archivedAt: string | null;
+};
+
+type CreateTaxonomyTermDraft = {
+  type: "genre" | "tag";
+  code?: string;
+  status: "active" | "hidden" | "archived";
+  displayOrder: number;
+  localizations: IpTaxonomyLocalization[];
+};
+
+type UpdateTaxonomyTermDraft = Partial<
+  Pick<CreateTaxonomyTermDraft, "status" | "displayOrder" | "localizations">
+>;
 
 type ReviewQueueRow = {
   id: string;
@@ -198,7 +239,59 @@ type IpPurchaseOrderRow = {
   targetType: string;
   currency: string;
   totalAmount: string;
+  priceAmount?: string;
+  discountAmount?: string;
+  paidAt?: string | null;
+  fulfilledAt?: string | null;
   createdAt: string;
+  updatedAt?: string;
+  ip?: {
+    id: string;
+    title: string;
+    status: string;
+    listingVisibility: string;
+    localization?: LocalizationMeta;
+  } | null;
+  episode?: {
+    id: string;
+    episodeNo: number;
+    title: string;
+    status: string;
+    localization?: LocalizationMeta;
+  } | null;
+  entitlementCount?: number;
+};
+
+type IpEntitlementRow = {
+  id: string;
+  userId: string;
+  ipId: string;
+  episodeId: string | null;
+  targetType: "ip" | "episode";
+  status: string;
+  sourceType: string;
+  sourceId: string;
+  sourceOrderId: string | null;
+  sourceOrderNo: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt: string | null;
+  ip: {
+    id: string;
+    title: string;
+    status: string;
+    listingVisibility: string;
+    localization?: LocalizationMeta;
+  } | null;
+  episode: {
+    id: string;
+    episodeNo: number;
+    title: string;
+    status: string;
+    localization?: LocalizationMeta;
+  } | null;
 };
 
 type IpContributorRow = {
@@ -256,6 +349,20 @@ export type AdminIpsData = {
   nextCursor: string | null;
 };
 
+export type AdminIpOrdersData = {
+  items: IpPurchaseOrderRow[];
+  nextCursor: string | null;
+};
+
+export type AdminIpEntitlementsData = {
+  items: IpEntitlementRow[];
+  nextCursor: string | null;
+};
+
+export type AdminIpTaxonomyData = {
+  items: IpTaxonomyTerm[];
+};
+
 const emptyOverview: AdminIpOverviewData = {
   generatedAt: new Date(0).toISOString(),
   metrics: {
@@ -273,25 +380,38 @@ const emptyOverview: AdminIpOverviewData = {
 };
 
 const emptyIps: AdminIpsData = { items: [], nextCursor: null };
+const emptyOrders: AdminIpOrdersData = { items: [], nextCursor: null };
+const emptyEntitlements: AdminIpEntitlementsData = { items: [], nextCursor: null };
+const emptyTaxonomy: AdminIpTaxonomyData = { items: [] };
 
 export function AdminIpCommercePanel({
   siteLabel,
   databaseLabel,
   initialOverview,
   initialIps,
+  initialOrders,
+  initialEntitlements,
+  initialTaxonomy,
   initialError,
 }: {
   siteLabel: string;
   databaseLabel: string;
   initialOverview: AdminIpOverviewData | null;
   initialIps: AdminIpsData | null;
+  initialOrders: AdminIpOrdersData | null;
+  initialEntitlements: AdminIpEntitlementsData | null;
+  initialTaxonomy: AdminIpTaxonomyData | null;
   initialError?: string | null;
 }) {
   const [overview, setOverview] = useState(initialOverview ?? emptyOverview);
   const [ips, setIps] = useState(initialIps ?? emptyIps);
+  const [orders, setOrders] = useState(initialOrders ?? emptyOrders);
+  const [entitlements, setEntitlements] = useState(initialEntitlements ?? emptyEntitlements);
+  const [taxonomy, setTaxonomy] = useState(initialTaxonomy ?? emptyTaxonomy);
   const [status, setStatus] = useState("");
-  const [ipType, setIpType] = useState("");
   const [visibility, setVisibility] = useState("");
+  const [genreCode, setGenreCode] = useState("");
+  const [tagCode, setTagCode] = useState("");
   const [locale, setLocale] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -299,17 +419,32 @@ export function AdminIpCommercePanel({
   const [selectedIp, setSelectedIp] = useState<AdminIpDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [commerceActionLoading, setCommerceActionLoading] = useState(false);
 
   async function refreshAll() {
     setLoading(true);
     setError(null);
     try {
-      const [nextOverview, nextIps] = await Promise.all([
-        requestEnvelope<AdminIpOverviewData>(`/api/admin/ip-commerce/overview${queryString()}`),
-        requestEnvelope<AdminIpsData>(`/api/admin/ip-commerce/ips${queryString()}`),
-      ]);
+      const [nextOverview, nextIps, nextOrders, nextEntitlements, nextTaxonomy] = await Promise.all(
+        [
+          requestEnvelope<AdminIpOverviewData>(`/api/admin/ip-commerce/overview${queryString()}`),
+          requestEnvelope<AdminIpsData>(`/api/admin/ip-commerce/ips${queryString()}`),
+          requestEnvelope<AdminIpOrdersData>(
+            `/api/admin/ip-commerce/orders${commerceQueryString()}`
+          ),
+          requestEnvelope<AdminIpEntitlementsData>(
+            `/api/admin/ip-commerce/entitlements${commerceQueryString()}`
+          ),
+          requestEnvelope<AdminIpTaxonomyData>(
+            `/api/admin/ip-commerce/taxonomy${localeQueryString()}`
+          ),
+        ]
+      );
       setOverview(nextOverview);
       setIps(nextIps);
+      setOrders(nextOrders);
+      setEntitlements(nextEntitlements);
+      setTaxonomy(nextTaxonomy);
     } catch (err) {
       setError(toErrorMessage(err));
     } finally {
@@ -329,11 +464,66 @@ export function AdminIpCommercePanel({
     }
   }
 
+  async function refreshTaxonomy() {
+    setLoading(true);
+    setError(null);
+    try {
+      setTaxonomy(
+        await requestEnvelope<AdminIpTaxonomyData>(
+          `/api/admin/ip-commerce/taxonomy${localeQueryString()}`
+        )
+      );
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function createTaxonomyTerm(input: CreateTaxonomyTermDraft) {
+    setLoading(true);
+    setError(null);
+    try {
+      await requestEnvelope<{ term: IpTaxonomyTerm }>("/api/admin/ip-commerce/taxonomy", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      await refreshTaxonomy();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updateTaxonomyTerm(termId: string, input: UpdateTaxonomyTermDraft) {
+    setLoading(true);
+    setError(null);
+    try {
+      await requestEnvelope<{ term: IpTaxonomyTerm }>(
+        `/api/admin/ip-commerce/taxonomy/${encodeURIComponent(termId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        }
+      );
+      await refreshTaxonomy();
+      await refreshIps();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function queryString() {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
-    if (ipType) params.set("ipType", ipType);
     if (visibility) params.set("listingVisibility", visibility);
+    if (genreCode) params.set("genreCodes", genreCode);
+    if (tagCode) params.set("tagCodes", tagCode);
     if (locale) params.set("locale", locale);
     if (query.trim()) params.set("q", query.trim());
     const text = params.toString();
@@ -343,6 +533,15 @@ export function AdminIpCommercePanel({
   function localeQueryString() {
     const params = new URLSearchParams();
     if (locale) params.set("locale", locale);
+    const text = params.toString();
+    return text ? `?${text}` : "";
+  }
+
+  function commerceQueryString() {
+    const params = new URLSearchParams();
+    params.set("limit", "12");
+    if (locale) params.set("locale", locale);
+    if (query.trim()) params.set("q", query.trim());
     const text = params.toString();
     return text ? `?${text}` : "";
   }
@@ -406,6 +605,52 @@ export function AdminIpCommercePanel({
     await refreshAll();
   }
 
+  async function grantEntitlement(input: {
+    userId: string;
+    ipId: string;
+    targetType: "ip" | "episode";
+    episodeId?: string;
+    reason: string;
+  }) {
+    setCommerceActionLoading(true);
+    setError(null);
+    try {
+      await requestEnvelope<unknown>("/api/admin/ip-commerce/entitlements/grants", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      await refreshAll();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setCommerceActionLoading(false);
+    }
+  }
+
+  async function revokeEntitlement(entitlementId: string) {
+    setCommerceActionLoading(true);
+    setError(null);
+    try {
+      await requestEnvelope<unknown>(
+        `/api/admin/ip-commerce/entitlements/${encodeURIComponent(entitlementId)}/revoke`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reason: "运营手动撤销 IP 权益。" }),
+        }
+      );
+      await refreshAll();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setCommerceActionLoading(false);
+    }
+  }
+
+  const taxonomyGenres = taxonomy.items.filter((term) => term.type === "genre");
+  const taxonomyTags = taxonomy.items.filter((term) => term.type === "tag");
+
   return (
     <div className="space-y-4">
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -462,6 +707,23 @@ export function AdminIpCommercePanel({
         />
       </section>
 
+      <CommerceOpsPanel
+        orders={orders.items}
+        entitlements={entitlements.items}
+        ips={ips.items}
+        loading={loading || commerceActionLoading}
+        onGrant={(input) => void grantEntitlement(input)}
+        onRevoke={(entitlementId) => void revokeEntitlement(entitlementId)}
+      />
+
+      <TaxonomyOpsPanel
+        terms={taxonomy.items}
+        loading={loading}
+        onCreate={(input) => void createTaxonomyTerm(input)}
+        onUpdate={(termId, input) => void updateTaxonomyTerm(termId, input)}
+        onRefresh={() => void refreshTaxonomy()}
+      />
+
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-200 p-4">
           <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
@@ -471,7 +733,7 @@ export function AdminIpCommercePanel({
                 列表直接反映当前站点数据库的发布、销售和审核状态。
               </p>
             </div>
-            <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_130px_150px_150px_150px_auto] 2xl:min-w-[940px]">
+            <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_120px_130px_130px_130px_130px_auto] 2xl:min-w-[1080px]">
               <label className="relative block">
                 <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -488,6 +750,22 @@ export function AdminIpCommercePanel({
                 <option value="zh-HK">繁體中文</option>
                 <option value="ja-JP">日本語</option>
               </Select>
+              <Select value={genreCode} onChange={setGenreCode}>
+                <option value="">全部题材</option>
+                {taxonomyGenres.map((term) => (
+                  <option key={term.id} value={term.code}>
+                    {term.label}
+                  </option>
+                ))}
+              </Select>
+              <Select value={tagCode} onChange={setTagCode}>
+                <option value="">全部标签</option>
+                {taxonomyTags.map((term) => (
+                  <option key={term.id} value={term.code}>
+                    {term.label}
+                  </option>
+                ))}
+              </Select>
               <Select value={status} onChange={setStatus}>
                 <option value="">全部状态</option>
                 <option value="submitted">待提交审核</option>
@@ -497,12 +775,6 @@ export function AdminIpCommercePanel({
                 <option value="published">已发布</option>
                 <option value="hidden">隐藏</option>
                 <option value="suspended">暂停销售</option>
-              </Select>
-              <Select value={ipType} onChange={setIpType}>
-                <option value="">全部 IP 类型</option>
-                <option value="series">剧集</option>
-                <option value="film_short">电影/短片</option>
-                <option value="other">其他</option>
               </Select>
               <Select value={visibility} onChange={setVisibility}>
                 <option value="">全部可见性</option>
@@ -594,7 +866,9 @@ export function AdminIpCommercePanel({
                     <p className="mt-1 text-[11px] text-slate-500">v{ip.version}</p>
                   </Td>
                   <Td>
-                    <p className="text-sm text-slate-700">{ipTypeLabel(ip.ipType)}</p>
+                    <p className="max-w-[180px] truncate text-sm text-slate-700">
+                      {ip.genres.length ? ip.genres.join(" / ") : "未设置题材"}
+                    </p>
                     <p className="text-[12px] text-slate-500">
                       {ip.counts.episodes} 集 · {ip.localization.locale}
                       {ip.localization.isFallback ? " · 回退" : ""}
@@ -671,36 +945,49 @@ function IpDetailDrawer({
     }
   ) => Promise<void>;
 }) {
-  const [status, setStatus] = useState<IpStatus>("in_review");
-  const [visibility, setVisibility] = useState<IpRow["listingVisibility"]>("private");
-  const [reason, setReason] = useState("");
+  const [draft, setDraft] = useState<{
+    ipId: string;
+    status: IpStatus;
+    visibility: IpRow["listingVisibility"];
+    reason: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [reportSavingId, setReportSavingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!ip) return;
-    setStatus(ip.status === "draft" ? "in_review" : ip.status);
-    setVisibility(ip.listingVisibility);
-    setReason(defaultReviewReason(ip.status));
-    setActionError(null);
-  }, [ip]);
-
   if (!ip && !loading && !error) return null;
+
+  const status =
+    ip && draft?.ipId === ip.id ? draft.status : ip?.status === "draft" ? "in_review" : ip?.status;
+  const visibility = ip && draft?.ipId === ip.id ? draft.visibility : ip?.listingVisibility;
+  const reason =
+    ip && draft?.ipId === ip.id ? draft.reason : ip ? defaultReviewReason(ip.status) : "";
+
+  function updateDraft(next: Partial<NonNullable<typeof draft>>) {
+    if (!ip) return;
+    setDraft({
+      ipId: ip.id,
+      status: status ?? "in_review",
+      visibility: visibility ?? "private",
+      reason,
+      ...next,
+    });
+  }
 
   async function submitAction(nextStatus?: IpStatus) {
     if (!ip || saving) return;
-    const finalStatus = nextStatus ?? status;
+    const finalStatus = nextStatus ?? status ?? "in_review";
+    const draftVisibility = visibility ?? "private";
     const finalVisibility =
       finalStatus === "published" || finalStatus === "scheduled"
         ? "public"
         : finalStatus === "approved"
-          ? visibility
+          ? draftVisibility
           : finalStatus === "in_review"
-            ? visibility
+            ? draftVisibility
             : finalStatus === "changes_requested"
               ? "private"
-              : visibility;
+              : draftVisibility;
     const finalReason = reason.trim();
     if (!finalReason) {
       setActionError("请填写审核原因或发布说明。");
@@ -779,7 +1066,10 @@ function IpDetailDrawer({
               <section className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-2">
                 <DetailCell label="状态" value={statusLabel(ip.status)} />
                 <DetailCell label="可见性" value={visibilityLabel(ip.listingVisibility)} />
-                <DetailCell label="IP 类型" value={ipTypeLabel(ip.ipType)} />
+                <DetailCell
+                  label="题材"
+                  value={ip.genres.length ? ip.genres.join(" / ") : "未设置"}
+                />
                 <DetailCell label="源语言" value={ip.sourceLocale} />
               </section>
 
@@ -883,6 +1173,39 @@ function IpDetailDrawer({
                   ))}
                   {!ip.episodes.length ? (
                     <p className="py-4 text-sm text-slate-500">暂无剧集，仍可审核 IP 档案本身。</p>
+                  ) : null}
+                </div>
+              </section>
+
+              <section className="rounded-xl border border-slate-200 p-4">
+                <h4 className="text-sm font-semibold text-slate-950">交易与权益</h4>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <Metric label="订单" value={ip.counts.purchaseOrders} />
+                  <Metric label="权益" value={ip.counts.entitlements} />
+                  <Metric
+                    label="有效价格"
+                    value={ip.pricing.activePriceCount}
+                    tone={ip.pricing.activePriceCount ? "default" : "warn"}
+                  />
+                </div>
+                <div className="mt-3 divide-y divide-slate-100">
+                  {ip.recentOrders.map((order) => (
+                    <div key={order.id} className="flex items-center justify-between gap-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-950">
+                          {order.orderNo}
+                        </p>
+                        <p className="text-[12px] text-slate-500">
+                          {targetTypeLabel(order.targetType)} · {orderStatusLabel(order.status)}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-sm font-medium text-slate-950">
+                        {formatAmount(order.totalAmount)}
+                      </span>
+                    </div>
+                  ))}
+                  {!ip.recentOrders.length ? (
+                    <p className="py-4 text-sm text-slate-500">暂无交易记录。</p>
                   ) : null}
                 </div>
               </section>
@@ -1014,7 +1337,10 @@ function IpDetailDrawer({
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <label className="space-y-1.5">
                     <span className="text-[12px] font-medium text-slate-600">目标状态</span>
-                    <Select value={status} onChange={(value) => setStatus(value as IpStatus)}>
+                    <Select
+                      value={status ?? "in_review"}
+                      onChange={(value) => updateDraft({ status: value as IpStatus })}
+                    >
                       <option value="in_review">审核中</option>
                       <option value="changes_requested">退回修改</option>
                       <option value="approved">批准</option>
@@ -1027,8 +1353,10 @@ function IpDetailDrawer({
                   <label className="space-y-1.5">
                     <span className="text-[12px] font-medium text-slate-600">可见性</span>
                     <Select
-                      value={visibility}
-                      onChange={(value) => setVisibility(value as IpRow["listingVisibility"])}
+                      value={visibility ?? "private"}
+                      onChange={(value) =>
+                        updateDraft({ visibility: value as IpRow["listingVisibility"] })
+                      }
                     >
                       <option value="private">私有</option>
                       <option value="unlisted">仅链接</option>
@@ -1040,7 +1368,7 @@ function IpDetailDrawer({
                   <span className="text-[12px] font-medium text-slate-600">原因 / 说明</span>
                   <textarea
                     value={reason}
-                    onChange={(event) => setReason(event.target.value)}
+                    onChange={(event) => updateDraft({ reason: event.target.value })}
                     className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
                     placeholder="写清楚审核决定，方便创作者和运营追溯。"
                   />
@@ -1138,6 +1466,429 @@ function QueuePanel({
   );
 }
 
+type TaxonomyFormState = {
+  id: string | null;
+  type: "genre" | "tag";
+  code: string;
+  status: "active" | "hidden" | "archived";
+  displayOrder: string;
+  zhCN: string;
+  enUS: string;
+  zhHK: string;
+  description: string;
+};
+
+function TaxonomyOpsPanel({
+  terms,
+  loading,
+  onCreate,
+  onUpdate,
+  onRefresh,
+}: {
+  terms: IpTaxonomyTerm[];
+  loading: boolean;
+  onCreate: (input: CreateTaxonomyTermDraft) => void;
+  onUpdate: (termId: string, input: UpdateTaxonomyTermDraft) => void;
+  onRefresh: () => void;
+}) {
+  const [form, setForm] = useState<TaxonomyFormState>(() => emptyTaxonomyForm());
+  const genres = terms.filter((term) => term.type === "genre");
+  const tags = terms.filter((term) => term.type === "tag");
+  const editing = Boolean(form.id);
+  const canSubmit = Boolean(form.zhCN.trim() || form.enUS.trim() || form.zhHK.trim()) && !loading;
+
+  function editTerm(term: IpTaxonomyTerm) {
+    setForm({
+      id: term.id,
+      type: term.type,
+      code: term.code,
+      status: term.status,
+      displayOrder: String(term.displayOrder),
+      zhCN: taxonomyLabel(term, "zh-CN"),
+      enUS: taxonomyLabel(term, "en-US"),
+      zhHK: taxonomyLabel(term, "zh-HK"),
+      description: term.description ?? "",
+    });
+  }
+
+  function submit() {
+    if (!canSubmit) return;
+    const displayOrder = Number.parseInt(form.displayOrder, 10);
+    const localizations = taxonomyLocalizationsFromForm(form);
+    if (!localizations.length) return;
+
+    if (form.id) {
+      onUpdate(form.id, {
+        status: form.status,
+        displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+        localizations,
+      });
+    } else {
+      onCreate({
+        type: form.type,
+        code: form.code.trim() || undefined,
+        status: form.status,
+        displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+        localizations,
+      });
+      setForm(emptyTaxonomyForm(form.type));
+    }
+  }
+
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <IconTags className="size-4 text-slate-500" />
+            <h3 className="text-sm font-semibold text-slate-950">题材与标签词库</h3>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+            <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
+            刷新词库
+          </Button>
+        </div>
+        <div className="grid gap-0 lg:grid-cols-2">
+          <TaxonomyList title="题材" terms={genres} onEdit={editTerm} />
+          <TaxonomyList title="标签" terms={tags} onEdit={editTerm} />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950">
+              {editing ? "编辑词条" : "新增词条"}
+            </h3>
+            <p className="mt-1 text-[12px] leading-5 text-slate-500">
+              code 是系统稳定标识；留空时后端按英文或标签内容自动生成。
+            </p>
+          </div>
+          {editing ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setForm(emptyTaxonomyForm(form.type))}
+              disabled={loading}
+            >
+              新增
+            </Button>
+          ) : null}
+        </div>
+        <div className="mt-3 grid gap-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Select
+              value={form.type}
+              onChange={(value) => setForm((prev) => ({ ...prev, type: value as "genre" | "tag" }))}
+            >
+              <option value="genre">题材</option>
+              <option value="tag">标签</option>
+            </Select>
+            <Select
+              value={form.status}
+              onChange={(value) =>
+                setForm((prev) => ({
+                  ...prev,
+                  status: value as "active" | "hidden" | "archived",
+                }))
+              }
+            >
+              <option value="active">启用</option>
+              <option value="hidden">隐藏</option>
+              <option value="archived">归档</option>
+            </Select>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px]">
+            <InputLike
+              value={form.code}
+              onChange={(value) => setForm((prev) => ({ ...prev, code: value }))}
+              placeholder="code，可留空自动生成"
+              disabled={editing}
+            />
+            <InputLike
+              value={form.displayOrder}
+              onChange={(value) => setForm((prev) => ({ ...prev, displayOrder: value }))}
+              placeholder="排序"
+            />
+          </div>
+          <InputLike
+            value={form.zhCN}
+            onChange={(value) => setForm((prev) => ({ ...prev, zhCN: value }))}
+            placeholder="简体中文名称"
+          />
+          <InputLike
+            value={form.enUS}
+            onChange={(value) => setForm((prev) => ({ ...prev, enUS: value }))}
+            placeholder="English label"
+          />
+          <InputLike
+            value={form.zhHK}
+            onChange={(value) => setForm((prev) => ({ ...prev, zhHK: value }))}
+            placeholder="繁體中文名稱"
+          />
+          <textarea
+            value={form.description}
+            onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+            className="min-h-20 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+            placeholder="内部说明或运营口径"
+          />
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button type="button" size="sm" onClick={submit} disabled={!canSubmit}>
+            {editing ? "保存词条" : "创建词条"}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TaxonomyList({
+  title,
+  terms,
+  onEdit,
+}: {
+  title: string;
+  terms: IpTaxonomyTerm[];
+  onEdit: (term: IpTaxonomyTerm) => void;
+}) {
+  return (
+    <div className="border-b border-slate-200 p-4 lg:border-b-0 lg:border-r last:lg:border-r-0">
+      <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+        {title}
+      </h4>
+      <div className="mt-2 divide-y divide-slate-100">
+        {terms.map((term) => (
+          <div key={term.id} className="flex items-center justify-between gap-3 py-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="truncate text-sm font-medium text-slate-950">{term.label}</p>
+                <StatusPill tone={term.status === "active" ? "success" : "muted"}>
+                  {taxonomyStatusLabel(term.status)}
+                </StatusPill>
+              </div>
+              <p className="mt-0.5 truncate text-[12px] text-slate-500">
+                {term.code} · {term.assignmentCount} IP · 排序 {term.displayOrder}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onEdit(term)}
+              className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+            >
+              编辑
+            </button>
+          </div>
+        ))}
+        {!terms.length ? <p className="py-6 text-sm text-slate-500">暂无词条</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function CommerceOpsPanel({
+  orders,
+  entitlements,
+  ips,
+  loading,
+  onGrant,
+  onRevoke,
+}: {
+  orders: IpPurchaseOrderRow[];
+  entitlements: IpEntitlementRow[];
+  ips: IpRow[];
+  loading: boolean;
+  onGrant: (input: {
+    userId: string;
+    ipId: string;
+    targetType: "ip" | "episode";
+    episodeId?: string;
+    reason: string;
+  }) => void;
+  onRevoke: (entitlementId: string) => void;
+}) {
+  const [userId, setUserId] = useState("");
+  const [ipId, setIpId] = useState("");
+  const [targetType, setTargetType] = useState<"ip" | "episode">("ip");
+  const [episodeId, setEpisodeId] = useState("");
+  const [reason, setReason] = useState("运营补发权益。");
+  const canGrant = Boolean(
+    userId.trim() &&
+    ipId.trim() &&
+    reason.trim() &&
+    (targetType === "ip" || episodeId.trim()) &&
+    !loading
+  );
+
+  function submitGrant() {
+    if (!canGrant) return;
+    onGrant({
+      userId: userId.trim(),
+      ipId: ipId.trim(),
+      targetType,
+      episodeId: targetType === "episode" ? episodeId.trim() : undefined,
+      reason: reason.trim(),
+    });
+  }
+
+  return (
+    <section className="grid gap-4 2xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+      <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+          <IconShoppingBag className="size-4 text-slate-500" />
+          <h3 className="text-sm font-semibold text-slate-950">交易流水</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left">
+            <thead>
+              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                <Th>订单</Th>
+                <Th>用户</Th>
+                <Th>内容</Th>
+                <Th>状态</Th>
+                <Th>金额</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((order) => (
+                <tr key={order.id}>
+                  <Td>
+                    <p className="font-medium text-slate-950">{order.orderNo}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {formatDate(order.createdAt)}
+                    </p>
+                  </Td>
+                  <Td>
+                    <p className="max-w-[140px] truncate text-sm text-slate-700">{order.userId}</p>
+                  </Td>
+                  <Td>
+                    <p className="max-w-[220px] truncate text-sm font-medium text-slate-950">
+                      {order.episode?.title ?? order.ip?.title ?? order.ipId}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {targetTypeLabel(order.targetType)} · {order.entitlementCount ?? 0} 权益
+                    </p>
+                  </Td>
+                  <Td>
+                    <StatusPill tone={order.status === "fulfilled" ? "success" : "muted"}>
+                      {orderStatusLabel(order.status)}
+                    </StatusPill>
+                  </Td>
+                  <Td>
+                    <p className="font-medium text-slate-950">{formatAmount(order.totalAmount)}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {currencyLabel(order.currency)}
+                    </p>
+                  </Td>
+                </tr>
+              ))}
+              {!orders.length ? <EmptyRow colSpan={5} label="暂无订单流水" /> : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="grid gap-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-2">
+            <IconUserPlus className="size-4 text-slate-500" />
+            <h3 className="text-sm font-semibold text-slate-950">补发权益</h3>
+          </div>
+          <p className="mt-1 text-[12px] leading-5 text-slate-500">
+            用于客服补偿、人工恢复和运营白名单。写入权益表和收藏表，并进入后台审计。
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <InputLike value={userId} onChange={setUserId} placeholder="用户 ID" />
+            <InputLike
+              value={ipId}
+              onChange={setIpId}
+              placeholder="IP ID"
+              list="admin-ip-id-list"
+            />
+            <datalist id="admin-ip-id-list">
+              {ips.map((ip) => (
+                <option key={ip.id} value={ip.id}>
+                  {ip.title}
+                </option>
+              ))}
+            </datalist>
+            <Select
+              value={targetType}
+              onChange={(value) => setTargetType(value as "ip" | "episode")}
+            >
+              <option value="ip">整部 IP</option>
+              <option value="episode">单集</option>
+            </Select>
+            <InputLike
+              value={episodeId}
+              onChange={setEpisodeId}
+              placeholder="Episode ID（单集必填）"
+              disabled={targetType === "ip"}
+            />
+            <div className="sm:col-span-2">
+              <InputLike value={reason} onChange={setReason} placeholder="补发原因" />
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <Button type="button" size="sm" onClick={submitGrant} disabled={!canGrant}>
+              <IconKey className="size-3.5" />
+              补发权益
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+            <IconKey className="size-4 text-slate-500" />
+            <h3 className="text-sm font-semibold text-slate-950">权益状态</h3>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {entitlements.map((entitlement) => (
+              <div
+                key={entitlement.id}
+                className="flex items-start justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-950">
+                    {entitlement.episode?.title ?? entitlement.ip?.title ?? entitlement.ipId}
+                  </p>
+                  <p className="mt-0.5 truncate text-[12px] text-slate-500">
+                    {entitlement.userId} · {targetTypeLabel(entitlement.targetType)} ·{" "}
+                    {entitlement.sourceOrderNo ?? sourceTypeLabel(entitlement.sourceType)}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    {formatDate(entitlement.startsAt)}
+                    {entitlement.endsAt ? ` - ${formatDate(entitlement.endsAt)}` : " - 长期"}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <StatusPill tone={entitlement.status === "active" ? "success" : "muted"}>
+                    {entitlementStatusLabel(entitlement.status)}
+                  </StatusPill>
+                  {entitlement.status === "active" ? (
+                    <button
+                      type="button"
+                      onClick={() => onRevoke(entitlement.id)}
+                      disabled={loading}
+                      className="mt-2 block rounded-md border border-red-200 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      撤销
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+            {!entitlements.length ? (
+              <div className="px-4 py-10 text-center text-sm text-slate-500">暂无权益记录</div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Metric({
   label,
   value,
@@ -1193,6 +1944,31 @@ function Select({
     >
       {children}
     </select>
+  );
+}
+
+function InputLike({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  list,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+  list?: string;
+}) {
+  return (
+    <input
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      disabled={disabled}
+      list={list}
+      className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10 disabled:bg-slate-50 disabled:text-slate-400"
+    />
   );
 }
 
@@ -1279,11 +2055,43 @@ function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
 }
 
-function ipTypeLabel(value: string) {
+function emptyTaxonomyForm(type: "genre" | "tag" = "genre"): TaxonomyFormState {
+  return {
+    id: null,
+    type,
+    code: "",
+    status: "active",
+    displayOrder: type === "genre" ? "100" : "1100",
+    zhCN: "",
+    enUS: "",
+    zhHK: "",
+    description: "",
+  };
+}
+
+function taxonomyLabel(term: IpTaxonomyTerm, locale: string) {
+  return term.localizations.find((item) => item.locale === locale)?.label ?? "";
+}
+
+function taxonomyLocalizationsFromForm(form: TaxonomyFormState): IpTaxonomyLocalization[] {
+  return [
+    { locale: "zh-CN", label: form.zhCN.trim() },
+    { locale: "en-US", label: form.enUS.trim() },
+    { locale: "zh-HK", label: form.zhHK.trim() },
+  ]
+    .filter((item) => item.label)
+    .map((item) => ({
+      ...item,
+      description: form.description.trim() || null,
+      aliases: [],
+    }));
+}
+
+function taxonomyStatusLabel(value: string) {
   const labels: Record<string, string> = {
-    series: "剧集",
-    film_short: "电影/短片",
-    other: "其他",
+    active: "启用",
+    hidden: "隐藏",
+    archived: "归档",
   };
   return labels[value] ?? value;
 }
@@ -1335,12 +2143,59 @@ function reasonLabel(value: string) {
   return labels[value] ?? value;
 }
 
+function targetTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    ip: "整部 IP",
+    episode: "单集",
+  };
+  return labels[value] ?? value;
+}
+
+function orderStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    pending: "待支付",
+    paid: "已支付",
+    fulfilled: "已履约",
+    canceled: "已取消",
+    failed: "失败",
+    refunded: "已退款",
+    partially_refunded: "部分退款",
+  };
+  return labels[value] ?? value;
+}
+
+function entitlementStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    active: "有效",
+    expired: "已过期",
+    revoked: "已撤销",
+    refunded: "已退款",
+  };
+  return labels[value] ?? value;
+}
+
+function sourceTypeLabel(value: string) {
+  const labels: Record<string, string> = {
+    purchase: "购买",
+    admin_grant: "后台补发",
+  };
+  return labels[value] ?? value;
+}
+
 function currencyLabel(value: string) {
   const labels: Record<string, string> = {
     community_point: "社区积分",
     bubble: "算力积分",
   };
   return labels[value] ?? value;
+}
+
+function formatAmount(value: string) {
+  try {
+    return new Intl.NumberFormat("zh-CN").format(Number(BigInt(value)));
+  } catch {
+    return value;
+  }
 }
 
 function defaultReviewReason(status: string) {

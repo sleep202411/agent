@@ -6,6 +6,9 @@ export type IpCommerceAccess =
   | "free_preview"
   | "locked"
   | "locked_bundle"
+  | "pending_unlock"
+  | "pending_unlock_ip"
+  | "pending_unlock_episode"
   | "owned"
   | "owned_ip"
   | "owned_episode";
@@ -58,6 +61,23 @@ export interface IpCommerceLocalizationMeta {
   status: string | null;
 }
 
+export type IpTaxonomyTermType = "genre" | "tag";
+
+export interface IpTaxonomyTerm {
+  id: string;
+  type: IpTaxonomyTermType;
+  code: string;
+  label: string;
+  description: string | null;
+  aliases: string[];
+  localization: IpCommerceLocalizationMeta;
+}
+
+export interface IpTaxonomyBundle {
+  genres: IpTaxonomyTerm[];
+  tags: IpTaxonomyTerm[];
+}
+
 export interface IpCommerceEpisode {
   id: string;
   episodeNo: number;
@@ -80,7 +100,6 @@ export interface IpCommerceEpisode {
 export interface IpCommerceIp {
   id: string;
   slug: string | null;
-  ipType: string;
   status: string;
   listingVisibility: string;
   ageRating: string;
@@ -92,6 +111,9 @@ export interface IpCommerceIp {
   localization: IpCommerceLocalizationMeta;
   genres: string[];
   tags: string[];
+  genreCodes: string[];
+  tagCodes: string[];
+  taxonomy: IpTaxonomyBundle;
   copyrightOwner: string | null;
   rightsSummary: Record<string, unknown>;
   aiDisclosure: Record<string, unknown>;
@@ -121,8 +143,10 @@ export interface IpCreatorIp {
   description: string | null;
   genres: string[];
   tags: string[];
+  genreCodes: string[];
+  tagCodes: string[];
+  taxonomy: IpTaxonomyBundle;
   localization: IpCommerceLocalizationMeta;
-  ipType: string;
   status: string;
   listingVisibility: string;
   ageRating: string;
@@ -181,7 +205,7 @@ export interface IpAccess {
   ip: {
     id: string;
     owned: boolean;
-    access: Extract<IpCommerceAccess, "free" | "locked" | "owned">;
+    access: Extract<IpCommerceAccess, "free" | "locked" | "owned" | "pending_unlock">;
     price: IpCommercePriceRule | null;
   };
   episodes: Array<{
@@ -229,6 +253,66 @@ export interface IpPurchaseOrder {
   updatedAt: string;
 }
 
+export interface IpCommerceReference {
+  id: string;
+  title: string;
+  status: string;
+  listingVisibility?: string;
+  episodeNo?: number;
+  localization?: IpCommerceLocalizationMeta;
+}
+
+export interface IpCreatorCommerceOrder extends IpPurchaseOrder {
+  ip: IpCommerceReference | null;
+  episode: IpCommerceReference | null;
+  entitlementCount: number;
+}
+
+export interface IpCreatorCommerceEntitlement extends IpContentEntitlement {
+  sourceOrderId: string | null;
+  sourceOrderNo: string | null;
+  ip: IpCommerceReference | null;
+  episode: IpCommerceReference | null;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt: string | null;
+}
+
+export interface IpCreatorCommerceOverview {
+  ip: IpCommerceReference | null;
+  metrics: {
+    totalOrders: number;
+    recognizedOrders: number;
+    grossCommunityPoints: string;
+    ordersLast7Days: number;
+    grossCommunityPointsLast7Days: string;
+    uniqueBuyers: number;
+    activeEntitlements: number;
+    pendingUnlocks: number;
+  };
+  pricingHealth: {
+    status: "ready" | "attention" | "blocked";
+    bundlePriceActive: boolean;
+    activeEpisodePriceCount: number;
+    pricedEpisodeCount: number;
+    publishedEpisodeCount: number;
+    freePreviewEpisodeCount: number;
+    warnings: Array<{
+      code: string;
+      severity: "blocker" | "warning";
+      message: string;
+    }>;
+  };
+  settlement: {
+    status: "not_configured";
+    currency: "community_point";
+    withdrawableBalance: string;
+    note: string;
+  };
+  recentOrders: IpCreatorCommerceOrder[];
+  recentEntitlements: IpCreatorCommerceEntitlement[];
+}
+
 export interface IpCollectionItem {
   id: string;
   targetType: IpTargetType;
@@ -274,7 +358,8 @@ export interface CreateIpPurchaseInput {
 export interface CreateIpDraftInput {
   title: string;
   summary?: string;
-  ipType: "series" | "film_short" | "other";
+  genreCodes: string[];
+  tagCodes?: string[];
   sourceLocale: string;
 }
 
@@ -283,11 +368,10 @@ export interface UpdateIpProfileInput {
   title?: string;
   summary?: string;
   description?: string | null;
-  ipType?: CreateIpDraftInput["ipType"];
   listingVisibility?: "private" | "unlisted" | "public";
   ageRating?: "general" | "teen" | "mature" | "restricted";
-  genres?: string[];
-  tags?: string[];
+  genreCodes?: string[];
+  tagCodes?: string[];
   copyrightOwner?: string | null;
   rightsSummary?: {
     statement?: string;
@@ -411,14 +495,26 @@ export interface UpsertIpBlockInput {
 }
 
 export function listIpCommerceIps(params?: {
-  ipType?: string;
+  genreCodes?: string[];
+  tagCodes?: string[];
   locale?: string;
   cursor?: string;
   limit?: number;
 }) {
   return api.get<{ items: IpCommerceIp[]; nextCursor: string | null }>("/aurora/ip-commerce/ips", {
-    params,
+    params: {
+      ...params,
+      genreCodes: params?.genreCodes?.join(","),
+      tagCodes: params?.tagCodes?.join(","),
+    },
   });
+}
+
+export function listIpCommerceTaxonomyTerms(params?: {
+  type?: IpTaxonomyTermType;
+  locale?: string;
+}) {
+  return api.get<{ items: IpTaxonomyTerm[] }>("/aurora/ip-commerce/taxonomy", { params });
 }
 
 export function listMyIpCommerceIps(params?: { locale?: string; cursor?: string; limit?: number }) {
@@ -432,6 +528,13 @@ export function getMyIpCommerceIp(ipId: string, params?: { locale?: string }) {
   return api.get<{ ip: IpCreatorIp }>(`/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}`, {
     params,
   });
+}
+
+export function getMyIpCommerceOverview(ipId: string, params?: { locale?: string }) {
+  return api.get<IpCreatorCommerceOverview>(
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/commerce`,
+    { params }
+  );
 }
 
 export function listMyIpCommerceIpAssets(

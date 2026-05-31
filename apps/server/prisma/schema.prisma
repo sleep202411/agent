@@ -449,10 +449,10 @@ enum AdminLoginAttemptOutcome {
   blocked
 }
 
-enum IpType {
-  series
-  film_short
-  other
+enum SupportedLocaleStatus {
+  active
+  hidden
+  archived
 }
 
 enum IpPublicationStatus {
@@ -490,6 +490,24 @@ enum IpTranslationTargetType {
   ip
   episode
   campaign
+}
+
+enum IpTaxonomyTermType {
+  genre
+  tag
+}
+
+enum IpTaxonomyTermStatus {
+  active
+  hidden
+  archived
+}
+
+enum IpTaxonomyAssignmentSource {
+  creator
+  admin
+  migration
+  system
 }
 
 enum IpListingVisibility {
@@ -1944,9 +1962,33 @@ model AdminAuditLog {
 // row. Unlock state is always derived from entitlements and wallet
 // ledger history.
 
+model SupportedLocale {
+  code         String                @id @db.VarChar(16)
+  status       SupportedLocaleStatus @default(active)
+  displayName  String                @map("display_name") @db.VarChar(80)
+  nativeName   String                @map("native_name") @db.VarChar(80)
+  displayOrder Int                   @default(0) @map("display_order")
+  metadata     Json                  @default("{}") @db.JsonB
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  ipsAsSource                         Ip[]                         @relation("IpSourceLocale")
+  taxonomyTermLocalizations           IpTaxonomyTermLocalization[] @relation("IpTaxonomyTermLocalizationLocale")
+  ipLocalizations                     IpLocalization[]             @relation("IpLocalizationLocale")
+  ipLocalizationsTranslatedFrom       IpLocalization[]             @relation("IpLocalizationTranslatedFromLocale")
+  episodeLocalizations                IpEpisodeLocalization[]      @relation("IpEpisodeLocalizationLocale")
+  episodeLocalizationsTranslatedFrom  IpEpisodeLocalization[]      @relation("IpEpisodeLocalizationTranslatedFromLocale")
+  campaignLocalizations               IpCampaignLocalization[]     @relation("IpCampaignLocalizationLocale")
+  campaignLocalizationsTranslatedFrom IpCampaignLocalization[]     @relation("IpCampaignLocalizationTranslatedFromLocale")
+  translationJobsAsSource             IpTranslationJob[]           @relation("IpTranslationJobSourceLocale")
+  translationJobsAsTarget             IpTranslationJob[]           @relation("IpTranslationJobTargetLocale")
+
+  @@index([status, displayOrder], map: "supported_locales_status_order_idx")
+  @@map("supported_locales")
+}
+
 model Ip {
   id                String              @id @default(uuid()) @db.Uuid
-  ipType            IpType              @default(series) @map("ip_type")
   status            IpPublicationStatus @default(draft)
   listingVisibility IpListingVisibility @default(private) @map("listing_visibility")
   ageRating         IpAgeRating         @default(general) @map("age_rating")
@@ -1967,10 +2009,12 @@ model Ip {
   updatedAt         DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt         DateTime?           @map("deleted_at") @db.Timestamptz(6)
 
-  coverAsset   MediaAsset? @relation("IpCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
-  trailerAsset MediaAsset? @relation("IpTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
+  coverAsset      MediaAsset?     @relation("IpCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  trailerAsset    MediaAsset?     @relation("IpTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
+  sourceLocaleRef SupportedLocale @relation("IpSourceLocale", fields: [sourceLocale], references: [code], onDelete: Restrict)
 
   localizations        IpLocalization[]
+  taxonomyAssignments  IpTaxonomyAssignment[]
   episodes             IpEpisode[]
   assets               IpAsset[]
   campaigns            IpCampaign[]
@@ -1990,8 +2034,65 @@ model Ip {
   /// IpLocalization by partial unique SQL.
   @@index([createdById, status, updatedAt(sort: Desc)], map: "ips_creator_recent_idx")
   @@index([status, listingVisibility, publishedAt(sort: Desc)], map: "ips_public_feed_idx")
-  @@index([ipType, status, publishedAt(sort: Desc)], map: "ips_ip_type_feed_idx")
   @@map("ips")
+}
+
+model IpTaxonomyTerm {
+  id           String               @id @default(uuid()) @db.Uuid
+  type         IpTaxonomyTermType
+  code         String               @db.VarChar(80)
+  status       IpTaxonomyTermStatus @default(active)
+  displayOrder Int                  @default(0) @map("display_order")
+  metadata     Json                 @default("{}") @db.JsonB
+  createdById  String?              @map("created_by_id") @db.VarChar(64)
+  updatedById  String?              @map("updated_by_id") @db.VarChar(64)
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt   DateTime?            @map("archived_at") @db.Timestamptz(6)
+
+  localizations IpTaxonomyTermLocalization[]
+  assignments   IpTaxonomyAssignment[]
+
+  @@unique([type, code], map: "ip_taxonomy_terms_type_code_unique")
+  @@index([type, status, displayOrder], map: "ip_taxonomy_terms_type_status_order_idx")
+  @@map("ip_taxonomy_terms")
+}
+
+model IpTaxonomyTermLocalization {
+  id          String   @id @default(uuid()) @db.Uuid
+  termId      String   @map("term_id") @db.Uuid
+  locale      String   @db.VarChar(16)
+  label       String   @db.VarChar(80)
+  description String?  @db.VarChar(300)
+  aliases     String[] @default([])
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  term      IpTaxonomyTerm  @relation(fields: [termId], references: [id], onDelete: Cascade)
+  localeRef SupportedLocale @relation("IpTaxonomyTermLocalizationLocale", fields: [locale], references: [code], onDelete: Restrict)
+
+  @@unique([termId, locale], map: "ip_taxonomy_term_l10n_term_locale_unique")
+  @@index([locale, label], map: "ip_taxonomy_term_l10n_locale_label_idx")
+  @@map("ip_taxonomy_term_localizations")
+}
+
+model IpTaxonomyAssignment {
+  id           String                     @id @default(uuid()) @db.Uuid
+  ipId         String                     @map("ip_id") @db.Uuid
+  termId       String                     @map("term_id") @db.Uuid
+  source       IpTaxonomyAssignmentSource @default(creator)
+  displayOrder Int                        @default(0) @map("display_order")
+  metadata     Json                       @default("{}") @db.JsonB
+  createdById  String?                    @map("created_by_id") @db.VarChar(64)
+  createdAt    DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ip   Ip             @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  term IpTaxonomyTerm @relation(fields: [termId], references: [id], onDelete: Restrict)
+
+  @@unique([ipId, termId], map: "ip_taxonomy_assignments_ip_term_unique")
+  @@index([ipId, displayOrder], map: "ip_taxonomy_assignments_ip_order_idx")
+  @@index([termId, ipId], map: "ip_taxonomy_assignments_term_ip_idx")
+  @@map("ip_taxonomy_assignments")
 }
 
 model IpAsset {
@@ -2100,8 +2201,6 @@ model IpLocalization {
   subtitle             String?              @db.VarChar(160)
   summary              String               @db.VarChar(500)
   description          String?              @db.Text
-  genres               String[]             @default([])
-  tags                 String[]             @default([])
   seoTitle             String?              @map("seo_title") @db.VarChar(180)
   seoDescription       String?              @map("seo_description") @db.VarChar(300)
   sourceHash           String?              @map("source_hash") @db.VarChar(64)
@@ -2113,7 +2212,9 @@ model IpLocalization {
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  ip                      Ip               @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  localeRef               SupportedLocale  @relation("IpLocalizationLocale", fields: [locale], references: [code], onDelete: Restrict)
+  translatedFromLocaleRef SupportedLocale? @relation("IpLocalizationTranslatedFromLocale", fields: [translatedFromLocale], references: [code], onDelete: Restrict)
 
   /// Public slug uniqueness is enforced by partial unique SQL:
   /// (locale, slug) WHERE slug IS NOT NULL AND archived_at IS NULL AND status = 'published'.
@@ -2141,7 +2242,9 @@ model IpEpisodeLocalization {
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  episode IpEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  episode                 IpEpisode        @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  localeRef               SupportedLocale  @relation("IpEpisodeLocalizationLocale", fields: [locale], references: [code], onDelete: Restrict)
+  translatedFromLocaleRef SupportedLocale? @relation("IpEpisodeLocalizationTranslatedFromLocale", fields: [translatedFromLocale], references: [code], onDelete: Restrict)
 
   @@unique([episodeId, locale], map: "ip_episode_localizations_episode_locale_unique")
   @@index([locale, status, publishedAt(sort: Desc)], map: "ip_episode_localizations_public_locale_idx")
@@ -2165,7 +2268,9 @@ model IpCampaignLocalization {
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  campaign IpCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign                IpCampaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  localeRef               SupportedLocale  @relation("IpCampaignLocalizationLocale", fields: [locale], references: [code], onDelete: Restrict)
+  translatedFromLocaleRef SupportedLocale? @relation("IpCampaignLocalizationTranslatedFromLocale", fields: [translatedFromLocale], references: [code], onDelete: Restrict)
 
   @@unique([campaignId, locale], map: "ip_campaign_localizations_campaign_locale_unique")
   @@index([locale, status, publishedAt(sort: Desc)], map: "ip_campaign_localizations_public_locale_idx")
@@ -2193,6 +2298,9 @@ model IpTranslationJob {
   startedAt            DateTime?               @map("started_at") @db.Timestamptz(6)
   completedAt          DateTime?               @map("completed_at") @db.Timestamptz(6)
   updatedAt            DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  sourceLocaleRef SupportedLocale @relation("IpTranslationJobSourceLocale", fields: [sourceLocale], references: [code], onDelete: Restrict)
+  targetLocaleRef SupportedLocale @relation("IpTranslationJobTargetLocale", fields: [targetLocale], references: [code], onDelete: Restrict)
 
   @@index([targetType, targetId, targetLocale, status], map: "ip_translation_jobs_target_idx")
   @@index([status, requestedAt(sort: Desc)], map: "ip_translation_jobs_queue_idx")
