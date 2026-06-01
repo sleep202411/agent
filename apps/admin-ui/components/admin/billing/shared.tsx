@@ -136,12 +136,15 @@ export function AdminDialog({
   description,
   onClose,
   children,
+  footer,
 }: {
   open: boolean;
   title: string;
   description?: string;
   onClose: () => void;
   children: React.ReactNode;
+  /** Pinned footer rendered OUTSIDE the scroll area (stays visible). */
+  footer?: React.ReactNode;
 }) {
   return (
     <Dialog
@@ -161,7 +164,12 @@ export function AdminDialog({
             ) : null}
           </div>
         </DialogHeader>
-        <div className="overflow-y-auto px-5 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        {footer ? (
+          <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+            {footer}
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

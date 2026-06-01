@@ -349,25 +349,23 @@ export function BillingPricesPanel({
         title="新建套餐"
         description="创建内部商品价格；支付供应商只通过 binding 同步，套餐权益直接进入当前 billing 钱包账本。"
         onClose={() => setCreatePriceDialogOpen(false)}
+        footer={
+          <CreatePriceFormFooter
+            loading={loading}
+            onCancel={() => setCreatePriceDialogOpen(false)}
+          />
+        }
       >
-        <CreatePriceForm
-          loading={loading}
-          onSubmit={handleCreatePrice}
-          onCancel={() => setCreatePriceDialogOpen(false)}
-        />
+        <CreatePriceForm onSubmit={handleCreatePrice} />
       </AdminDialog>
     </div>
   );
 }
 
 function CreatePriceForm({
-  loading,
   onSubmit,
-  onCancel,
 }: {
-  loading: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
-  onCancel: () => void;
 }) {
   const [productType, setProductType] = useState("community_point_pack");
   const [walletCurrency, setWalletCurrency] = useState("community_point");
@@ -401,7 +399,7 @@ function CreatePriceForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-4">
+    <form id="create-price-form" onSubmit={onSubmit} className="grid gap-4">
       <FormLabel
         label="商品名称"
         help="运营后台展示名，不等同于支付供应商侧商品名；同步时会复制到 provider payload。"
@@ -522,15 +520,26 @@ function CreatePriceForm({
       </FormLabel>
       <TextInput name="itemDescription" placeholder="内部备注，可选" />
       <AutoCodePreview code={generatedItemCode} />
-      <div className="-mx-5 -mb-5 mt-1 flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
-          取消
-        </Button>
-        <Button type="submit" disabled={loading}>
-          <IconPlus className="size-3.5" />
-          {loading ? "创建中" : "创建套餐"}
-        </Button>
-      </div>
     </form>
+  );
+}
+
+export function CreatePriceFormFooter({
+  loading,
+  onCancel,
+}: {
+  loading: boolean;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+        取消
+      </Button>
+      <Button type="submit" form="create-price-form" disabled={loading}>
+        <IconPlus className="size-3.5" />
+        {loading ? "创建中" : "创建套餐"}
+      </Button>
+    </>
   );
 }

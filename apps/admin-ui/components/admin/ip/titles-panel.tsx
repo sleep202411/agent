@@ -571,9 +571,9 @@ function IpDetailDrawer({
         side="right"
         showCloseButton={false}
         aria-describedby={undefined}
-        className="w-full gap-0 bg-white p-0 sm:max-w-3xl"
+        className="flex w-full flex-col gap-0 overflow-hidden bg-white p-0 sm:max-w-3xl"
       >
-        <SheetHeader className="flex flex-row items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+        <SheetHeader className="flex shrink-0 flex-row items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
             <p className="text-[12px] font-medium text-slate-500">IP 审核详情</p>
             <SheetTitle className="mt-1 text-lg font-semibold text-slate-950">
@@ -596,7 +596,7 @@ function IpDetailDrawer({
           </SheetClose>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {loading ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
               正在加载 IP 详情...

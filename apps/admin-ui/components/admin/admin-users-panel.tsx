@@ -846,25 +846,25 @@ export function AdminUsersPanel({
         {resetTarget ? (
           <DialogContent
             showCloseButton={false}
-            className="max-w-md gap-0 rounded-2xl border border-slate-200 bg-white p-5 ring-0 shadow-2xl"
+            className="flex max-h-[calc(100vh-2rem)] max-w-md flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 ring-0 shadow-2xl"
           >
-            <form onSubmit={submitPasswordReset}>
-              <DialogHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-                <div>
-                  <DialogTitle className="text-base font-semibold text-slate-950">
-                    重置登录密码
-                  </DialogTitle>
-                  <DialogDescription className="mt-1 text-sm text-slate-600">
-                    {resetTarget.id === currentUserId
-                      ? "当前会话会保留，其他会话会被撤销。"
-                      : `${resetTarget.displayName} 的旧会话会被撤销，需要使用新密码重新登录。`}
-                  </DialogDescription>
-                </div>
-                <DialogClose className="rounded-md px-2 py-1 text-[12px] text-slate-500 hover:bg-slate-100">
-                  关闭
-                </DialogClose>
-              </DialogHeader>
-              <div className="mt-4 space-y-3">
+            <DialogHeader className="flex flex-row items-start justify-between gap-4 space-y-0 border-b border-slate-200 px-5 py-4">
+              <div>
+                <DialogTitle className="text-base font-semibold text-slate-950">
+                  重置登录密码
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-slate-600">
+                  {resetTarget.id === currentUserId
+                    ? "当前会话会保留，其他会话会被撤销。"
+                    : `${resetTarget.displayName} 的旧会话会被撤销，需要使用新密码重新登录。`}
+                </DialogDescription>
+              </div>
+              <DialogClose className="rounded-md px-2 py-1 text-[12px] text-slate-500 hover:bg-slate-100">
+                关闭
+              </DialogClose>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+              <form id="password-reset-form" onSubmit={submitPasswordReset} className="space-y-3">
                 <FieldLabel label="新密码">
                   <Input
                     type="password"
@@ -885,24 +885,28 @@ export function AdminUsersPanel({
                     placeholder="再次输入新密码"
                   />
                 </FieldLabel>
-              </div>
-              <div className="mt-5 flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setResetTarget(null);
-                    setResetPassword("");
-                    setResetPasswordConfirm("");
-                  }}
-                >
-                  取消
-                </Button>
-                <Button type="submit" disabled={pendingKey === `${resetTarget.id}:reset-password`}>
-                  确认重置
-                </Button>
-              </div>
-            </form>
+              </form>
+            </div>
+            <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setResetTarget(null);
+                  setResetPassword("");
+                  setResetPasswordConfirm("");
+                }}
+              >
+                取消
+              </Button>
+              <Button
+                type="submit"
+                form="password-reset-form"
+                disabled={pendingKey === `${resetTarget.id}:reset-password`}
+              >
+                确认重置
+              </Button>
+            </div>
           </DialogContent>
         ) : null}
       </Dialog>
@@ -919,9 +923,9 @@ export function AdminUsersPanel({
         {sessionTarget ? (
           <DialogContent
             showCloseButton={false}
-            className="max-w-3xl gap-0 rounded-2xl border border-slate-200 bg-white p-5 ring-0 shadow-2xl"
+            className="flex max-h-[calc(100vh-2rem)] max-w-3xl flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 ring-0 shadow-2xl"
           >
-            <DialogHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+            <DialogHeader className="flex flex-row items-start justify-between gap-4 space-y-0 border-b border-slate-200 px-5 py-4">
               <div>
                 <DialogTitle className="text-base font-semibold text-slate-950">
                   会话治理
@@ -930,19 +934,25 @@ export function AdminUsersPanel({
                   {sessionTarget.displayName} 的最近 50 个后台会话。
                 </DialogDescription>
               </div>
-              <DialogClose className="rounded-md px-2 py-1 text-[12px] text-slate-500 hover:bg-slate-100">
-                关闭
-              </DialogClose>
             </DialogHeader>
-            <div className="mt-4 max-h-[420px] overflow-auto rounded-lg border border-slate-200">
-              <DataTable
-                columns={sessionColumns}
-                data={sessions}
-                loading={sessionsLoading}
-                minWidth={720}
-                emptyLabel="暂无会话"
-                className="rounded-none border-0"
-              />
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+              <div className="overflow-auto rounded-lg border border-slate-200">
+                <DataTable
+                  columns={sessionColumns}
+                  data={sessions}
+                  loading={sessionsLoading}
+                  minWidth={720}
+                  emptyLabel="暂无会话"
+                  className="rounded-none border-0"
+                />
+              </div>
+            </div>
+            <div className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  关闭
+                </Button>
+              </DialogClose>
             </div>
           </DialogContent>
         ) : null}
