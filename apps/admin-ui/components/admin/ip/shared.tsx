@@ -4,30 +4,9 @@ import { IconAlertTriangle } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { AdminIpDetail, IpStatus } from "./types";
 
-export function PageHeader({
-  eyebrow,
-  title,
-  description,
-  children,
-}: {
-  eyebrow?: string;
-  title: string;
-  description: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          {eyebrow ? <p className="text-[12px] font-medium text-slate-500">{eyebrow}</p> : null}
-          <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950">{title}</h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
-        </div>
-        {children ? <div className="shrink-0">{children}</div> : null}
-      </div>
-    </section>
-  );
-}
+// Canonical PageHeader now lives in components/admin/page-header.tsx.
+// Re-exported here so existing IP panels keep importing from "./shared".
+export { PageHeader } from "../page-header";
 
 export function Metric({
   label,
@@ -67,76 +46,6 @@ export function Metric({
       </p>
       {helper ? <p className="mt-0.5 truncate text-[11px] text-slate-500">{helper}</p> : null}
     </div>
-  );
-}
-
-export function Select({
-  value,
-  onChange,
-  children,
-  "aria-label": ariaLabel,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  children: React.ReactNode;
-  "aria-label"?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      aria-label={ariaLabel}
-      className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none transition focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
-    >
-      {children}
-    </select>
-  );
-}
-
-export function InputLike({
-  value,
-  onChange,
-  placeholder,
-  disabled,
-  list,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  disabled?: boolean;
-  list?: string;
-}) {
-  return (
-    <input
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      placeholder={placeholder}
-      disabled={disabled}
-      list={list}
-      className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10 disabled:bg-slate-50 disabled:text-slate-400"
-    />
-  );
-}
-
-export function Th({ children }: { children: React.ReactNode }) {
-  return <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">{children}</th>;
-}
-
-export function Td({ children }: { children: React.ReactNode }) {
-  return (
-    <td className="border-b border-slate-100 px-3 py-3 align-top text-sm text-slate-700">
-      {children}
-    </td>
-  );
-}
-
-export function EmptyRow({ colSpan, label }: { colSpan: number; label: string }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="px-4 py-12 text-center text-sm text-slate-500">
-        {label}
-      </td>
-    </tr>
   );
 }
 

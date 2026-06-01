@@ -12,8 +12,22 @@ import {
   IconUserPlus,
   IconUsersGroup,
 } from "@tabler/icons-react";
+import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { Input } from "@/components/ui/input";
+import {
+  Select as ShadSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+
+// Sentinel for the shadcn Select "全部" option, since SelectItem value cannot be
+// an empty string. Mapped back to "" in the Select wrapper's onValueChange.
+const ALL_VALUE = "__all__";
 
 type AdminUserStatus = "invited" | "active" | "suspended" | "disabled";
 type AdminRoleKey = "super_admin" | "admin" | "operations";
@@ -322,43 +336,280 @@ export function AdminUsersPanel({
     }
   }
 
-  return (
-    <div className="space-y-4">
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-slate-950 text-white">
-                <IconUsersGroup className="size-4" />
-              </span>
-              <div>
-                <p className="text-[12px] font-medium text-slate-500">后台访问控制</p>
-                <h2 className="text-lg font-semibold tracking-tight text-slate-950">账号权限</h2>
+  const userColumns = useMemo<ColumnDef<AdminUserRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "displayName",
+        header: "管理员",
+        cell: ({ row }) => {
+          const user = row.original;
+          const isSelf = user.id === currentUserId;
+          return (
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[12px] font-semibold text-slate-700">
+                {user.displayName.slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-sm font-medium text-slate-950">{user.displayName}</p>
+                  {isSelf ? (
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                      当前账号
+                    </span>
+                  ) : null}
+                </div>
+                <p className="truncate text-[12px] text-slate-500">{user.email}</p>
               </div>
             </div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              当前页面只管理 {siteLabel}{" "}
-              这一套数据库里的后台账号。国际站和中国站账号不在同一张表里，
-              需要分别登录对应站点进行维护。
-            </p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:min-w-[220px]">
-            <div className="flex items-center gap-2">
-              <IconDatabase className="size-4 text-slate-500" />
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                当前数据源
-              </p>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => {
+          const user = row.original;
+          const isSelf = user.id === currentUserId;
+          return (
+            <>
+              <Select
+                value={user.status}
+                onChange={(value) => void updateUser(user, { status: value as AdminUserStatus })}
+                disabled={isSelf || pendingKey === `${user.id}:status`}
+                options={statusOptions}
+                className="h-8 min-w-[104px]"
+              />
+              <StatusPill status={user.status} />
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "roleKey",
+        header: "角色",
+        cell: ({ row }) => {
+          const user = row.original;
+          const isSelf = user.id === currentUserId;
+          const roleSelectOptions =
+            user.roleKey === "super_admin" ? roleOptions : assignableRoleOptions;
+          return (
+            <Select
+              value={user.roleKey}
+              onChange={(value) => void updateUser(user, { roleKey: value as AdminRoleKey })}
+              disabled={
+                isSelf || user.roleKey === "super_admin" || pendingKey === `${user.id}:roleKey`
+              }
+              options={roleSelectOptions}
+              className="h-8 min-w-[112px]"
+            />
+          );
+        },
+      },
+      {
+        id: "mfa",
+        header: "MFA",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const user = row.original;
+          const isSelf = user.id === currentUserId;
+          return (
+            <>
+              <label className="flex items-center gap-2 text-[12px] text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={user.requireMfa}
+                  disabled={isSelf || pendingKey === `${user.id}:requireMfa`}
+                  onChange={(event) => void updateUser(user, { requireMfa: event.target.checked })}
+                  className="size-4 rounded border-slate-300"
+                />
+                {user.mfaEnabledAt ? "已绑定" : user.requireMfa ? "待绑定" : "未要求"}
+              </label>
+              {user.lockedUntil ? (
+                <p className="mt-1 text-[11px] text-amber-700">登录锁定中</p>
+              ) : null}
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "activeSessionCount",
+        header: "会话",
+        cell: ({ row }) => {
+          const user = row.original;
+          return (
+            <button
+              type="button"
+              className="rounded-md px-2 py-1 text-left text-sm font-medium text-slate-950 hover:bg-slate-100"
+              onClick={() => void openSessions(user)}
+            >
+              {user.activeSessionCount}
+              <span className="ml-1 text-[12px] text-slate-500">活跃</span>
+            </button>
+          );
+        },
+      },
+      {
+        accessorKey: "lastLoginAt",
+        header: "最近登录",
+        cell: ({ row }) => {
+          const user = row.original;
+          return (
+            <>
+              <DateText value={user.lastLoginAt} />
+              <p className="mt-0.5 text-[11px] text-slate-400">更新 {formatDate(user.updatedAt)}</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => {
+          const user = row.original;
+          const isSelf = user.id === currentUserId;
+          return (
+            <div className="flex justify-end gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setResetTarget(user)}
+                disabled={pendingKey === `${user.id}:reset-password`}
+              >
+                <IconKey className="size-3.5" />
+                {isSelf ? "改密码" : "重置密码"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void resetMfa(user)}
+                disabled={pendingKey === `${user.id}:reset-mfa`}
+              >
+                MFA
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void revokeSessions(user)}
+                disabled={user.activeSessionCount === 0 || pendingKey === `${user.id}:revoke`}
+              >
+                撤销
+              </Button>
             </div>
-            <p className="mt-1 text-sm font-semibold text-slate-950">{databaseLabel}</p>
-            <p className="mt-0.5 text-[12px] text-slate-500">{siteDomain}</p>
+          );
+        },
+      },
+    ],
+    // updateUser / openSessions / resetMfa / revokeSessions / setResetTarget are
+    // render-stable closures used only in onClick / onChange; columns only need to
+    // rebuild when currentUserId or the pending action key changes the disabled state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentUserId, pendingKey]
+  );
+
+  const sessionColumns = useMemo<ColumnDef<AdminSessionRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
+            {sessionStatusLabel(row.original.status)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "ipAddress",
+        header: "IP",
+        cell: ({ row }) => {
+          const session = row.original;
+          return (
+            <>
+              <p className="text-slate-900">{session.ipAddress ?? "-"}</p>
+              <p className="max-w-[280px] truncate text-[11px] text-slate-400">
+                {session.userAgent ?? "unknown"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "lastSeenAt",
+        header: "最近活跃",
+        cell: ({ row }) => (
+          <span className="text-slate-600">{formatDate(row.original.lastSeenAt)}</span>
+        ),
+      },
+      {
+        accessorKey: "expiresAt",
+        header: "过期时间",
+        cell: ({ row }) => (
+          <span className="text-slate-600">{formatDate(row.original.expiresAt)}</span>
+        ),
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => {
+          const session = row.original;
+          return (
+            <div className="text-right">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  session.status !== "active" || pendingKey === `${session.id}:revoke-session`
+                }
+                onClick={() => void revokeSingleSession(session)}
+              >
+                撤销
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    // revokeSingleSession is a render-stable closure used only in onClick; columns
+    // only rebuild when the pending action key changes the disabled state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pendingKey]
+  );
+
+  return (
+    <div className="space-y-4">
+      <PageHeader
+        icon={<IconUsersGroup className="size-4" />}
+        eyebrow="后台访问控制"
+        title="账号权限"
+        description={
+          <>
+            当前页面只管理 {siteLabel} 这一套数据库里的后台账号。国际站和中国站账号不在同一张表里，
+            需要分别登录对应站点进行维护。
+          </>
+        }
+        actions={
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:min-w-[220px]">
+              <div className="flex items-center gap-2">
+                <IconDatabase className="size-4 text-slate-500" />
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  当前数据源
+                </p>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-slate-950">{databaseLabel}</p>
+              <p className="mt-0.5 text-[12px] text-slate-500">{siteDomain}</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
+              <MetricCard label="账号总数" value={data.total} />
+              <MetricCard label="启用账号" value={metrics.active} />
+              <MetricCard label="活跃会话" value={metrics.sessions} />
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 sm:min-w-[360px]">
-            <MetricCard label="账号总数" value={data.total} />
-            <MetricCard label="启用账号" value={metrics.active} />
-            <MetricCard label="活跃会话" value={metrics.sessions} />
-          </div>
-        </div>
-      </section>
+        }
+      />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -384,7 +635,7 @@ export function AdminUsersPanel({
             <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(220px,1fr)_140px]">
               <label className="relative block">
                 <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                <input
+                <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
@@ -401,158 +652,15 @@ export function AdminUsersPanel({
 
           <Feedback error={error} notice={notice} />
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] border-separate border-spacing-0 text-left">
-              <thead>
-                <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  <TableHead>管理员</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>角色</TableHead>
-                  <TableHead>MFA</TableHead>
-                  <TableHead>会话</TableHead>
-                  <TableHead>最近登录</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </tr>
-              </thead>
-              <tbody>
-                {data.items.map((user) => {
-                  const isSelf = user.id === currentUserId;
-                  const roleSelectOptions =
-                    user.roleKey === "super_admin" ? roleOptions : assignableRoleOptions;
-                  return (
-                    <tr key={user.id} className="group border-t border-slate-100">
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[12px] font-semibold text-slate-700">
-                            {user.displayName.slice(0, 1).toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="truncate text-sm font-medium text-slate-950">
-                                {user.displayName}
-                              </p>
-                              {isSelf ? (
-                                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                                  当前账号
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="truncate text-[12px] text-slate-500">{user.email}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={user.status}
-                          onChange={(value) =>
-                            void updateUser(user, { status: value as AdminUserStatus })
-                          }
-                          disabled={isSelf || pendingKey === `${user.id}:status`}
-                          options={statusOptions}
-                          className="h-8 min-w-[104px]"
-                        />
-                        <StatusPill status={user.status} />
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={user.roleKey}
-                          onChange={(value) =>
-                            void updateUser(user, { roleKey: value as AdminRoleKey })
-                          }
-                          disabled={
-                            isSelf ||
-                            user.roleKey === "super_admin" ||
-                            pendingKey === `${user.id}:roleKey`
-                          }
-                          options={roleSelectOptions}
-                          className="h-8 min-w-[112px]"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <label className="flex items-center gap-2 text-[12px] text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={user.requireMfa}
-                            disabled={isSelf || pendingKey === `${user.id}:requireMfa`}
-                            onChange={(event) =>
-                              void updateUser(user, { requireMfa: event.target.checked })
-                            }
-                            className="size-4 rounded border-slate-300"
-                          />
-                          {user.mfaEnabledAt ? "已绑定" : user.requireMfa ? "待绑定" : "未要求"}
-                        </label>
-                        {user.lockedUntil ? (
-                          <p className="mt-1 text-[11px] text-amber-700">登录锁定中</p>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>
-                        <button
-                          type="button"
-                          className="rounded-md px-2 py-1 text-left text-sm font-medium text-slate-950 hover:bg-slate-100"
-                          onClick={() => void openSessions(user)}
-                        >
-                          {user.activeSessionCount}
-                          <span className="ml-1 text-[12px] text-slate-500">活跃</span>
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        <DateText value={user.lastLoginAt} />
-                        <p className="mt-0.5 text-[11px] text-slate-400">
-                          更新 {formatDate(user.updatedAt)}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setResetTarget(user)}
-                            disabled={pendingKey === `${user.id}:reset-password`}
-                          >
-                            <IconKey className="size-3.5" />
-                            {isSelf ? "改密码" : "重置密码"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void resetMfa(user)}
-                            disabled={pendingKey === `${user.id}:reset-mfa`}
-                          >
-                            MFA
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void revokeSessions(user)}
-                            disabled={
-                              user.activeSessionCount === 0 || pendingKey === `${user.id}:revoke`
-                            }
-                          >
-                            撤销
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </tr>
-                  );
-                })}
-                {!data.items.length ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center">
-                      <div className="mx-auto flex max-w-sm flex-col items-center">
-                        <IconShieldCheck className="size-8 text-slate-300" />
-                        <p className="mt-2 text-sm font-medium text-slate-950">
-                          没有匹配的后台账号
-                        </p>
-                        <p className="mt-1 text-[12px] text-slate-500">
-                          调整筛选条件，或在当前站点数据库中创建新的管理员。
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={userColumns}
+            data={data.items}
+            loading={loading}
+            minWidth={920}
+            pageSize={20}
+            emptyLabel="没有匹配的后台账号"
+            className="rounded-none border-0"
+          />
         </section>
 
         <aside className="space-y-4">
@@ -617,7 +725,7 @@ export function AdminUsersPanel({
             </div>
             <form className="mt-4 space-y-3" onSubmit={createAdminUser}>
               <FieldLabel label="邮箱">
-                <input
+                <Input
                   required
                   type="email"
                   value={createForm.email}
@@ -629,7 +737,7 @@ export function AdminUsersPanel({
                 />
               </FieldLabel>
               <FieldLabel label="显示名称">
-                <input
+                <Input
                   required
                   value={createForm.displayName}
                   onChange={(event) =>
@@ -640,7 +748,7 @@ export function AdminUsersPanel({
                 />
               </FieldLabel>
               <FieldLabel label="初始密码">
-                <input
+                <Input
                   required
                   minLength={12}
                   type="password"
@@ -746,7 +854,7 @@ export function AdminUsersPanel({
             </div>
             <div className="mt-4 space-y-3">
               <FieldLabel label="新密码">
-                <input
+                <Input
                   type="password"
                   minLength={12}
                   value={resetPassword}
@@ -756,7 +864,7 @@ export function AdminUsersPanel({
                 />
               </FieldLabel>
               <FieldLabel label="确认新密码">
-                <input
+                <Input
                   type="password"
                   minLength={12}
                   value={resetPasswordConfirm}
@@ -808,59 +916,14 @@ export function AdminUsersPanel({
               </button>
             </div>
             <div className="mt-4 max-h-[420px] overflow-auto rounded-lg border border-slate-200">
-              {sessionsLoading ? (
-                <div className="px-4 py-8 text-center text-sm text-slate-500">加载中</div>
-              ) : sessions.length ? (
-                <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">状态</th>
-                      <th className="px-3 py-2">IP</th>
-                      <th className="px-3 py-2">最近活跃</th>
-                      <th className="px-3 py-2">过期时间</th>
-                      <th className="px-3 py-2 text-right">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessions.map((session) => (
-                      <tr key={session.id} className="border-t border-slate-100">
-                        <td className="px-3 py-2">
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
-                            {sessionStatusLabel(session.status)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2">
-                          <p className="text-slate-900">{session.ipAddress ?? "-"}</p>
-                          <p className="max-w-[280px] truncate text-[11px] text-slate-400">
-                            {session.userAgent ?? "unknown"}
-                          </p>
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {formatDate(session.lastSeenAt)}
-                        </td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {formatDate(session.expiresAt)}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={
-                              session.status !== "active" ||
-                              pendingKey === `${session.id}:revoke-session`
-                            }
-                            onClick={() => void revokeSingleSession(session)}
-                          >
-                            撤销
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="px-4 py-8 text-center text-sm text-slate-500">暂无会话</div>
-              )}
+              <DataTable
+                columns={sessionColumns}
+                data={sessions}
+                loading={sessionsLoading}
+                minWidth={720}
+                emptyLabel="暂无会话"
+                className="rounded-none border-0"
+              />
             </div>
           </div>
         </div>
@@ -898,22 +961,6 @@ function Feedback({ error, notice }: { error: string | null; notice: string | nu
   );
 }
 
-function TableHead({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <th className={cn("border-b border-slate-200 bg-slate-50 px-3 py-2.5", className)}>
-      {children}
-    </th>
-  );
-}
-
-function TableCell({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <td className={cn("border-b border-slate-100 px-3 py-3 align-middle", className)}>
-      {children}
-    </td>
-  );
-}
-
 function Select({
   value,
   onChange,
@@ -928,21 +975,30 @@ function Select({
   className?: string;
 }) {
   return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
+    <ShadSelect
+      value={value === "" ? ALL_VALUE : value}
+      onValueChange={(next) => onChange(next === ALL_VALUE ? "" : next)}
       disabled={disabled}
-      className={cn(
-        "h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400",
-        className
-      )}
     >
-      {options.map((option) => (
-        <option key={`${option.value || "any"}-${option.label}`} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger
+        className={cn(
+          "h-9 w-full rounded-lg border-slate-200 bg-white px-2.5 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400",
+          className
+        )}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem
+            key={`${option.value || "any"}-${option.label}`}
+            value={option.value === "" ? ALL_VALUE : option.value}
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </ShadSelect>
   );
 }
 

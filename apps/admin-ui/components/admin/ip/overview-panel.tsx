@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import {
   IconBook2,
@@ -8,9 +9,9 @@ import {
   IconFlag,
   IconShoppingBag,
 } from "@tabler/icons-react";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import {
   currencyLabel,
-  EmptyRow,
   ErrorBanner,
   formatAmount,
   formatDate,
@@ -20,10 +21,8 @@ import {
   reasonLabel,
   StatusPill,
   targetTypeLabel,
-  Td,
-  Th,
 } from "./shared";
-import type { AdminIpOverviewData } from "./types";
+import type { AdminIpOverviewData, IpRow } from "./types";
 import { emptyIpOverview } from "./types";
 
 export function IpOverviewPanel({
@@ -38,6 +37,65 @@ export function IpOverviewPanel({
   error: string | null;
 }) {
   const data = overview ?? emptyIpOverview;
+
+  const recentIpColumns = useMemo<ColumnDef<IpRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "title",
+        header: "IP",
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              <p className="max-w-[260px] truncate font-medium text-slate-950">{ip.title}</p>
+              <p className="mt-0.5 max-w-[260px] truncate text-[11px] text-slate-500">
+                {ip.slug ?? ip.id}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              <IpStatusPill status={ip.status} />
+              <p className="mt-1 text-[11px] text-slate-500">
+                v{ip.version} · {ip.listingVisibility}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "content",
+        header: "内容",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">{ip.counts.episodes} 集</p>
+              <p className="text-[11px] text-slate-500">
+                {ip.genres.length ? ip.genres.join(" / ") : "未设置题材"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "updatedAt",
+        header: "更新时间",
+        cell: ({ row }) => (
+          <p className="text-[12px] text-slate-700">{formatDate(row.original.updatedAt)}</p>
+        ),
+      },
+    ],
+    []
+  );
 
   return (
     <div className="space-y-4">
@@ -106,48 +164,14 @@ export function IpOverviewPanel({
               <IconExternalLink className="size-3.5" />
             </Link>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left">
-              <thead>
-                <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  <Th>IP</Th>
-                  <Th>状态</Th>
-                  <Th>内容</Th>
-                  <Th>更新时间</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentIps.map((ip) => (
-                  <tr key={ip.id}>
-                    <Td>
-                      <p className="max-w-[260px] truncate font-medium text-slate-950">
-                        {ip.title}
-                      </p>
-                      <p className="mt-0.5 max-w-[260px] truncate text-[11px] text-slate-500">
-                        {ip.slug ?? ip.id}
-                      </p>
-                    </Td>
-                    <Td>
-                      <IpStatusPill status={ip.status} />
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        v{ip.version} · {ip.listingVisibility}
-                      </p>
-                    </Td>
-                    <Td>
-                      <p className="text-sm text-slate-700">{ip.counts.episodes} 集</p>
-                      <p className="text-[11px] text-slate-500">
-                        {ip.genres.length ? ip.genres.join(" / ") : "未设置题材"}
-                      </p>
-                    </Td>
-                    <Td>
-                      <p className="text-[12px] text-slate-700">{formatDate(ip.updatedAt)}</p>
-                    </Td>
-                  </tr>
-                ))}
-                {!data.recentIps.length ? <EmptyRow colSpan={4} label="暂无 IP 数据" /> : null}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={recentIpColumns}
+            data={data.recentIps}
+            minWidth={760}
+            pageSize={20}
+            emptyLabel="暂无 IP 数据"
+            className="rounded-none border-0"
+          />
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Children, isValidElement, useEffect, useMemo, useState } from "react";
 import {
   IconActivity,
   IconAlertTriangle,
@@ -20,6 +20,16 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { Input } from "@/components/ui/input";
+import {
+  Select as ShadSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { PageHeader } from "@/components/admin/page-header";
 import { cn } from "@/lib/utils";
 
 type PaymentProvider = "airwallex" | "wechat_pay" | "manual" | "internal";
@@ -1144,19 +1154,15 @@ export function AdminBillingPanel({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <p className="text-[12px] font-medium text-slate-500">
-              {siteLabel} · {databaseLabel}
-            </p>
-            <h2 className="mt-1 text-lg font-semibold tracking-tight text-slate-950">
-              订单积分运营台
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              内部商品和价格是事实源，Airwallex 与微信支付只作为 provider binding。
-            </p>
-          </div>
+      <PageHeader
+        eyebrow={
+          <>
+            {siteLabel} · {databaseLabel}
+          </>
+        }
+        title="订单积分运营台"
+        description="内部商品和价格是事实源，Airwallex 与微信支付只作为 provider binding。"
+        actions={
           <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[620px] xl:grid-cols-4">
             <Metric label="有效商品" value={overview.metrics.activeCatalogItems} />
             <Metric label="有效价格" value={overview.metrics.activePrices} />
@@ -1167,8 +1173,8 @@ export function AdminBillingPanel({
               tone="risk"
             />
           </div>
-        </div>
-      </section>
+        }
+      />
 
       <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1439,6 +1445,117 @@ function CatalogView({
   onCreatePrice: (event: React.FormEvent<HTMLFormElement>) => void;
   onSyncBinding: (bindingId: string) => void;
 }) {
+  const columns = useMemo<ColumnDef<BillingPriceRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "name",
+        header: "商品",
+        cell: ({ row }) => {
+          const price = row.original;
+          return (
+            <>
+              <p className="text-sm font-medium text-slate-950">{price.name}</p>
+              <p className="mt-0.5 text-[12px] text-slate-500">
+                {price.code} · {productTypeLabel(price.productType)}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "price",
+        header: "价格",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const price = row.original;
+          return (
+            <>
+              <p className="text-sm font-semibold text-slate-950">
+                {formatMoneyMinor(price.amountMinor, price.currency)}
+              </p>
+              <p className="text-[12px] text-slate-500">
+                {intervalLabel(price.interval)} · {price.subjectType}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "grant",
+        header: () => (
+          <ColumnHeader help="订单支付成功后的履约结果：积分到账、会员权益开通，或无自动权益。">
+            权益
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const price = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">{grantLabel(price)}</p>
+              <p className="text-[12px] text-slate-500">
+                {price.grantDurationDays ? `${price.grantDurationDays} 天` : "长期/一次性"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "binding",
+        header: () => (
+          <ColumnHeader help="内部价格和支付供应商价格/商品 ID 的绑定。Airwallex/微信需要同步，线下确认和内部发放不需要。">
+            Provider Binding
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const price = row.original;
+          return (
+            <div className="flex max-w-[360px] flex-wrap gap-1.5">
+              {price.providerBindings.map((binding) => (
+                <ProviderBadge key={binding.id} binding={binding} onSync={onSyncBinding} />
+              ))}
+              {!price.providerBindings.length ? <RiskText>未配置渠道</RiskText> : null}
+            </div>
+          );
+        },
+      },
+      {
+        id: "sales",
+        header: "销售",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const price = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">{price.counts.orders} 订单</p>
+              <p className="text-[12px] text-slate-500">{price.counts.subscriptions} 订阅</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "isActive",
+        header: "状态",
+        cell: ({ row }) => {
+          const price = row.original;
+          return (
+            <>
+              <StatusPill tone={price.isActive && !price.archivedAt ? "success" : "muted"}>
+                {price.isActive && !price.archivedAt ? "active" : "inactive"}
+              </StatusPill>
+              <p className="mt-1 text-[11px] text-slate-400">{formatDate(price.updatedAt)}</p>
+            </>
+          );
+        },
+      },
+    ],
+    // onSyncBinding is a render-stable closure used only in an onClick; the
+    // column defs never need to rebuild for it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   return (
     <>
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -1506,69 +1623,15 @@ function CatalogView({
             </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <Th>商品</Th>
-                <Th>价格</Th>
-                <Th help="订单支付成功后的履约结果：积分到账、会员权益开通，或无自动权益。">
-                  权益
-                </Th>
-                <Th help="内部价格和支付供应商价格/商品 ID 的绑定。Airwallex/微信需要同步，线下确认和内部发放不需要。">
-                  Provider Binding
-                </Th>
-                <Th>销售</Th>
-                <Th>状态</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {prices.map((price) => (
-                <tr key={price.id}>
-                  <Td>
-                    <p className="text-sm font-medium text-slate-950">{price.name}</p>
-                    <p className="mt-0.5 text-[12px] text-slate-500">
-                      {price.code} · {productTypeLabel(price.productType)}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="text-sm font-semibold text-slate-950">
-                      {formatMoneyMinor(price.amountMinor, price.currency)}
-                    </p>
-                    <p className="text-[12px] text-slate-500">
-                      {intervalLabel(price.interval)} · {price.subjectType}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="text-sm text-slate-700">{grantLabel(price)}</p>
-                    <p className="text-[12px] text-slate-500">
-                      {price.grantDurationDays ? `${price.grantDurationDays} 天` : "长期/一次性"}
-                    </p>
-                  </Td>
-                  <Td>
-                    <div className="flex max-w-[360px] flex-wrap gap-1.5">
-                      {price.providerBindings.map((binding) => (
-                        <ProviderBadge key={binding.id} binding={binding} onSync={onSyncBinding} />
-                      ))}
-                      {!price.providerBindings.length ? <RiskText>未配置渠道</RiskText> : null}
-                    </div>
-                  </Td>
-                  <Td>
-                    <p className="text-sm text-slate-700">{price.counts.orders} 订单</p>
-                    <p className="text-[12px] text-slate-500">{price.counts.subscriptions} 订阅</p>
-                  </Td>
-                  <Td>
-                    <StatusPill tone={price.isActive && !price.archivedAt ? "success" : "muted"}>
-                      {price.isActive && !price.archivedAt ? "active" : "inactive"}
-                    </StatusPill>
-                    <p className="mt-1 text-[11px] text-slate-400">{formatDate(price.updatedAt)}</p>
-                  </Td>
-                </tr>
-              ))}
-              {!prices.length ? <EmptyRow colSpan={6} label="暂无商品价格" /> : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={prices}
+          loading={loading}
+          minWidth={1120}
+          pageSize={20}
+          emptyLabel="暂无商品价格"
+          className="rounded-none border-0"
+        />
       </section>
 
       <AdminDialog
@@ -1801,6 +1864,147 @@ function PromotionsView({
   onPromotionStatus: (promotionId: string, status: BillingPromotionStatus) => void;
   onSyncBinding: (bindingId: string) => void;
 }) {
+  const columns = useMemo<ColumnDef<BillingPromotionRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "code",
+        header: "券码",
+        cell: ({ row }) => {
+          const promotion = row.original;
+          return (
+            <>
+              <p className="font-mono text-[12px] font-semibold text-slate-950">{promotion.code}</p>
+              <p className="mt-0.5 text-sm font-medium text-slate-800">{promotion.name}</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "discount",
+        header: "折扣",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const promotion = row.original;
+          return (
+            <>
+              <p className="text-sm font-semibold text-slate-950">
+                {promotionDiscountLabel(promotion)}
+              </p>
+              <p className="text-[12px] text-slate-500">{promotion.durationType}</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "scope",
+        header: "适用范围",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const promotion = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">{promotionScopeLabel(promotion)}</p>
+              <p className="text-[12px] text-slate-500">
+                {promotion.startsAt ? formatDate(promotion.startsAt) : "立即"} -{" "}
+                {promotion.endsAt ? formatDate(promotion.endsAt) : "长期"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "coupon",
+        header: () => (
+          <ColumnHeader help="支付供应商侧的优惠券 ID。100% 免费兑换码可不绑定供应商，系统内部创建零元订单并履约。">
+            Provider Coupon
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const promotion = row.original;
+          return (
+            <div className="flex max-w-[360px] flex-wrap gap-1.5">
+              {promotion.providerBindings.map((binding) => (
+                <PromotionProviderBadge key={binding.id} binding={binding} onSync={onSyncBinding} />
+              ))}
+              {!promotion.providerBindings.length ? (
+                isInternalFreePromotion(promotion) ? (
+                  <StatusPill tone="muted">内部零元券</StatusPill>
+                ) : (
+                  <RiskText>未配置渠道券</RiskText>
+                )
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        id: "redemptions",
+        header: "限制/核销",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const promotion = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">
+                {promotion.redemptionCount} / {promotion.maxRedemptions ?? "∞"}
+              </p>
+              <p className="text-[12px] text-slate-500">
+                单用户 {promotion.maxRedemptionsPerUser ?? "∞"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => {
+          const promotion = row.original;
+          return (
+            <>
+              <PromotionStatusPill status={promotion.status} />
+              <p className="mt-1 text-[11px] text-slate-400">{formatDate(promotion.updatedAt)}</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => {
+          const promotion = row.original;
+          return (
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || promotion.status === "active"}
+                onClick={() => onPromotionStatus(promotion.id, "active")}
+              >
+                启用
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading || promotion.status === "paused"}
+                onClick={() => onPromotionStatus(promotion.id, "paused")}
+              >
+                暂停
+              </Button>
+            </div>
+          );
+        },
+      },
+    ],
+    // onPromotionStatus / onSyncBinding are render-stable closures used only in
+    // onClick; the column defs only need to rebuild when loading toggles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loading]
+  );
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -1808,10 +2012,10 @@ function PromotionsView({
           <div className="grid gap-2 lg:grid-cols-[minmax(240px,1fr)_150px_150px_auto]">
             <label className="relative block">
               <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input
+              <TextInput
                 value={query}
                 onChange={(event) => onQueryChange(event.target.value)}
-                className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                className="pl-9 pr-3"
                 placeholder="搜索券码、名称"
               />
             </label>
@@ -1844,101 +2048,15 @@ function PromotionsView({
             </Button>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1160px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <Th>券码</Th>
-                <Th>折扣</Th>
-                <Th>适用范围</Th>
-                <Th help="支付供应商侧的优惠券 ID。100% 免费兑换码可不绑定供应商，系统内部创建零元订单并履约。">
-                  Provider Coupon
-                </Th>
-                <Th>限制/核销</Th>
-                <Th>状态</Th>
-                <Th>操作</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {promotions.map((promotion) => (
-                <tr key={promotion.id}>
-                  <Td>
-                    <p className="font-mono text-[12px] font-semibold text-slate-950">
-                      {promotion.code}
-                    </p>
-                    <p className="mt-0.5 text-sm font-medium text-slate-800">{promotion.name}</p>
-                  </Td>
-                  <Td>
-                    <p className="text-sm font-semibold text-slate-950">
-                      {promotionDiscountLabel(promotion)}
-                    </p>
-                    <p className="text-[12px] text-slate-500">{promotion.durationType}</p>
-                  </Td>
-                  <Td>
-                    <p className="text-sm text-slate-700">{promotionScopeLabel(promotion)}</p>
-                    <p className="text-[12px] text-slate-500">
-                      {promotion.startsAt ? formatDate(promotion.startsAt) : "立即"} -{" "}
-                      {promotion.endsAt ? formatDate(promotion.endsAt) : "长期"}
-                    </p>
-                  </Td>
-                  <Td>
-                    <div className="flex max-w-[360px] flex-wrap gap-1.5">
-                      {promotion.providerBindings.map((binding) => (
-                        <PromotionProviderBadge
-                          key={binding.id}
-                          binding={binding}
-                          onSync={onSyncBinding}
-                        />
-                      ))}
-                      {!promotion.providerBindings.length ? (
-                        isInternalFreePromotion(promotion) ? (
-                          <StatusPill tone="muted">内部零元券</StatusPill>
-                        ) : (
-                          <RiskText>未配置渠道券</RiskText>
-                        )
-                      ) : null}
-                    </div>
-                  </Td>
-                  <Td>
-                    <p className="text-sm text-slate-700">
-                      {promotion.redemptionCount} / {promotion.maxRedemptions ?? "∞"}
-                    </p>
-                    <p className="text-[12px] text-slate-500">
-                      单用户 {promotion.maxRedemptionsPerUser ?? "∞"}
-                    </p>
-                  </Td>
-                  <Td>
-                    <PromotionStatusPill status={promotion.status} />
-                    <p className="mt-1 text-[11px] text-slate-400">
-                      {formatDate(promotion.updatedAt)}
-                    </p>
-                  </Td>
-                  <Td>
-                    <div className="flex flex-wrap gap-1.5">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={loading || promotion.status === "active"}
-                        onClick={() => onPromotionStatus(promotion.id, "active")}
-                      >
-                        启用
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={loading || promotion.status === "paused"}
-                        onClick={() => onPromotionStatus(promotion.id, "paused")}
-                      >
-                        暂停
-                      </Button>
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-              {!promotions.length ? <EmptyRow colSpan={7} label="暂无促销券" /> : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={promotions}
+          loading={loading}
+          minWidth={1160}
+          pageSize={20}
+          emptyLabel="暂无促销券"
+          className="rounded-none border-0"
+        />
       </section>
       <CreatePromotionForm loading={loading} onSubmit={onCreatePromotion} />
     </div>
@@ -2061,16 +2179,141 @@ function OrdersView({
   onQueryChange: (value: string) => void;
   onRefresh: () => void;
 }) {
+  const columns = useMemo<ColumnDef<BillingOrderRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "orderNo",
+        header: "订单",
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="font-mono text-[12px] font-medium text-slate-950">{order.orderNo}</p>
+              <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-500">
+                {order.idempotencyKey}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "item",
+        header: "商品",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="text-sm font-medium text-slate-950">{order.item.name}</p>
+              <p className="text-[12px] text-slate-500">
+                {order.item.code} · {order.orderType}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "amount",
+        header: "金额",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="text-sm font-semibold text-slate-950">
+                {formatMoneyMinor(order.amountMinor, order.currency)}
+              </p>
+              <p className="text-[12px] text-slate-500">
+                {order.refundedAmountMinor !== "0"
+                  ? `已退 ${formatMoneyMinor(order.refundedAmountMinor, order.currency)}`
+                  : order.discountAmountMinor !== "0"
+                    ? `原价 ${formatMoneyMinor(order.subtotalAmountMinor, order.currency)}`
+                    : `x ${order.quantity}`}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "provider",
+        header: () => (
+          <ColumnHeader help="实际支付或履约来源；优惠码/兑换码会体现在折扣和订单履约，不作为渠道。">
+            支付渠道
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">{providerLabel(order.provider)}</p>
+              <p className="max-w-[180px] truncate text-[11px] text-slate-500">
+                {order.paymentIntent?.providerStatus ?? "-"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <OrderStatusPill status={order.status} />
+              <p className="mt-1 text-[11px] text-slate-500">
+                {order.paymentIntent?.status ?? "no_intent"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "user",
+        header: "用户/主体",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="max-w-[180px] truncate text-[12px] text-slate-700">{order.userId}</p>
+              <p className="max-w-[180px] truncate text-[11px] text-slate-500">
+                {order.subjectType}:{order.subjectId}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "createdAt",
+        header: "时间",
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">{formatDate(order.createdAt)}</p>
+              <p className="text-[11px] text-slate-500">
+                {order.fulfilledAt ? `履约 ${formatDate(order.fulfilledAt)}` : "未履约"}
+              </p>
+            </>
+          );
+        },
+      },
+    ],
+    []
+  );
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="border-b border-slate-200 p-4">
         <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_160px_150px_auto]">
           <label className="relative block">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-            <input
+            <TextInput
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
-              className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+              className="pl-9 pr-3"
               placeholder="搜索订单号、用户、主体"
             />
           </label>
@@ -2105,82 +2348,15 @@ function OrdersView({
           </Button>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1140px] border-separate border-spacing-0 text-left">
-          <thead>
-            <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-              <Th>订单</Th>
-              <Th>商品</Th>
-              <Th>金额</Th>
-              <Th help="实际支付或履约来源；优惠码/兑换码会体现在折扣和订单履约，不作为渠道。">
-                支付渠道
-              </Th>
-              <Th>状态</Th>
-              <Th>用户/主体</Th>
-              <Th>时间</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {orders.map((order) => (
-              <tr key={order.id}>
-                <Td>
-                  <p className="font-mono text-[12px] font-medium text-slate-950">
-                    {order.orderNo}
-                  </p>
-                  <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-500">
-                    {order.idempotencyKey}
-                  </p>
-                </Td>
-                <Td>
-                  <p className="text-sm font-medium text-slate-950">{order.item.name}</p>
-                  <p className="text-[12px] text-slate-500">
-                    {order.item.code} · {order.orderType}
-                  </p>
-                </Td>
-                <Td>
-                  <p className="text-sm font-semibold text-slate-950">
-                    {formatMoneyMinor(order.amountMinor, order.currency)}
-                  </p>
-                  <p className="text-[12px] text-slate-500">
-                    {order.refundedAmountMinor !== "0"
-                      ? `已退 ${formatMoneyMinor(order.refundedAmountMinor, order.currency)}`
-                      : order.discountAmountMinor !== "0"
-                        ? `原价 ${formatMoneyMinor(order.subtotalAmountMinor, order.currency)}`
-                        : `x ${order.quantity}`}
-                  </p>
-                </Td>
-                <Td>
-                  <p className="text-sm text-slate-700">{providerLabel(order.provider)}</p>
-                  <p className="max-w-[180px] truncate text-[11px] text-slate-500">
-                    {order.paymentIntent?.providerStatus ?? "-"}
-                  </p>
-                </Td>
-                <Td>
-                  <OrderStatusPill status={order.status} />
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    {order.paymentIntent?.status ?? "no_intent"}
-                  </p>
-                </Td>
-                <Td>
-                  <p className="max-w-[180px] truncate text-[12px] text-slate-700">
-                    {order.userId}
-                  </p>
-                  <p className="max-w-[180px] truncate text-[11px] text-slate-500">
-                    {order.subjectType}:{order.subjectId}
-                  </p>
-                </Td>
-                <Td>
-                  <p className="text-[12px] text-slate-700">{formatDate(order.createdAt)}</p>
-                  <p className="text-[11px] text-slate-500">
-                    {order.fulfilledAt ? `履约 ${formatDate(order.fulfilledAt)}` : "未履约"}
-                  </p>
-                </Td>
-              </tr>
-            ))}
-            {!orders.length ? <EmptyRow colSpan={7} label="暂无订单" /> : null}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={orders}
+        loading={loading}
+        minWidth={1140}
+        pageSize={20}
+        emptyLabel="暂无订单"
+        className="rounded-none border-0"
+      />
     </section>
   );
 }
@@ -2215,6 +2391,138 @@ function RefundsView({
   const [refundMode, setRefundMode] = useState("suggested");
   const canSubmitRefund = Boolean(quote && quote.blockers.length === 0);
 
+  const columns = useMemo<ColumnDef<BillingRefundRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "refundNo",
+        header: "退款",
+        cell: ({ row }) => {
+          const refund = row.original;
+          return (
+            <>
+              <p className="font-mono text-[12px] font-medium text-slate-950">{refund.refundNo}</p>
+              <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-500">
+                {refund.providerRefundId ?? refund.requestId}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "orderNo",
+        header: "订单",
+        cell: ({ row }) => {
+          const refund = row.original;
+          return (
+            <>
+              <p className="font-mono text-[12px] font-medium text-slate-950">{refund.orderNo}</p>
+              <p className="text-[12px] text-slate-500">
+                {refund.order.item.name} · {refund.order.userId}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "amount",
+        header: "金额",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const refund = row.original;
+          return (
+            <>
+              <p className="text-sm font-semibold text-slate-950">
+                {formatMoneyMinor(refund.amountMinor, refund.currency)}
+              </p>
+              <p className="text-[12px] text-slate-500">{refund.reasonCode}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: () => (
+          <ColumnHeader help="内部状态决定是否已记账；provider 状态保留 Airwallex/微信原始状态。">
+            状态
+          </ColumnHeader>
+        ),
+        cell: ({ row }) => {
+          const refund = row.original;
+          return (
+            <>
+              <RefundStatusPill status={refund.status} />
+              <p className="mt-1 text-[11px] text-slate-500">
+                {refund.providerStatus ?? "provider_pending"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "reversal",
+        header: () => (
+          <ColumnHeader help="已履约订单退款前会先冲回可用积分或撤销会员权益，避免退款后权益仍可消费。">
+            权益冲回
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const refund = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">
+                {refund.walletReversalAmount
+                  ? `${walletCurrencyLabel(refund.walletReversalCurrency)} -${refund.walletReversalAmount}`
+                  : refund.entitlementGrantId
+                    ? "会员权益已撤销"
+                    : "无虚拟权益"}
+              </p>
+              <p className="max-w-[180px] truncate text-[11px] text-slate-500">
+                {refund.walletTransactionId ?? refund.entitlementGrantId ?? "-"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "failure",
+        header: "失败原因",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const refund = row.original;
+          return (
+            <>
+              <p className="max-w-[240px] truncate text-[12px] text-slate-700">
+                {refund.failureMessage ?? refund.operatorNote ?? "-"}
+              </p>
+              <p className="text-[11px] text-slate-500">{refund.failureCode ?? "-"}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "createdAt",
+        header: "时间",
+        cell: ({ row }) => {
+          const refund = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">{formatDate(refund.createdAt)}</p>
+              <p className="text-[11px] text-slate-500">
+                {refund.succeededAt
+                  ? `成功 ${formatDate(refund.succeededAt)}`
+                  : refund.failedAt
+                    ? `失败 ${formatDate(refund.failedAt)}`
+                    : "未完成"}
+              </p>
+            </>
+          );
+        },
+      },
+    ],
+    []
+  );
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -2222,10 +2530,10 @@ function RefundsView({
           <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_170px_150px_auto]">
             <label className="relative block">
               <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input
+              <TextInput
                 value={query}
                 onChange={(event) => onQueryChange(event.target.value)}
-                className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                className="pl-9 pr-3"
                 placeholder="搜索退款号、订单号、用户"
               />
             </label>
@@ -2249,88 +2557,15 @@ function RefundsView({
             </Button>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <Th>退款</Th>
-                <Th>订单</Th>
-                <Th>金额</Th>
-                <Th help="内部状态决定是否已记账；provider 状态保留 Airwallex/微信原始状态。">
-                  状态
-                </Th>
-                <Th help="已履约订单退款前会先冲回可用积分或撤销会员权益，避免退款后权益仍可消费。">
-                  权益冲回
-                </Th>
-                <Th>失败原因</Th>
-                <Th>时间</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {refunds.map((refund) => (
-                <tr key={refund.id}>
-                  <Td>
-                    <p className="font-mono text-[12px] font-medium text-slate-950">
-                      {refund.refundNo}
-                    </p>
-                    <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-500">
-                      {refund.providerRefundId ?? refund.requestId}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="font-mono text-[12px] font-medium text-slate-950">
-                      {refund.orderNo}
-                    </p>
-                    <p className="text-[12px] text-slate-500">
-                      {refund.order.item.name} · {refund.order.userId}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="text-sm font-semibold text-slate-950">
-                      {formatMoneyMinor(refund.amountMinor, refund.currency)}
-                    </p>
-                    <p className="text-[12px] text-slate-500">{refund.reasonCode}</p>
-                  </Td>
-                  <Td>
-                    <RefundStatusPill status={refund.status} />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      {refund.providerStatus ?? "provider_pending"}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="text-[12px] text-slate-700">
-                      {refund.walletReversalAmount
-                        ? `${walletCurrencyLabel(refund.walletReversalCurrency)} -${refund.walletReversalAmount}`
-                        : refund.entitlementGrantId
-                          ? "会员权益已撤销"
-                          : "无虚拟权益"}
-                    </p>
-                    <p className="max-w-[180px] truncate text-[11px] text-slate-500">
-                      {refund.walletTransactionId ?? refund.entitlementGrantId ?? "-"}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="max-w-[240px] truncate text-[12px] text-slate-700">
-                      {refund.failureMessage ?? refund.operatorNote ?? "-"}
-                    </p>
-                    <p className="text-[11px] text-slate-500">{refund.failureCode ?? "-"}</p>
-                  </Td>
-                  <Td>
-                    <p className="text-[12px] text-slate-700">{formatDate(refund.createdAt)}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {refund.succeededAt
-                        ? `成功 ${formatDate(refund.succeededAt)}`
-                        : refund.failedAt
-                          ? `失败 ${formatDate(refund.failedAt)}`
-                          : "未完成"}
-                    </p>
-                  </Td>
-                </tr>
-              ))}
-              {!refunds.length ? <EmptyRow colSpan={7} label="暂无退款" /> : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={refunds}
+          loading={loading}
+          minWidth={1180}
+          pageSize={20}
+          emptyLabel="暂无退款"
+          className="rounded-none border-0"
+        />
       </section>
 
       <section className="h-fit rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -2555,6 +2790,220 @@ function ProviderEventsView({
   onReprocess: (eventId: string) => void;
   onIgnore: (eventId: string) => void;
 }) {
+  const columns = useMemo<ColumnDef<BillingProviderEventRow, unknown>[]>(
+    () => [
+      {
+        id: "event",
+        header: () => (
+          <ColumnHeader help="供应商事件 ID 是 webhook 幂等键，同一个事件只能处理一次。">
+            事件
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const event = row.original;
+          return (
+            <>
+              <p className="text-sm font-medium text-slate-950">{providerLabel(event.provider)}</p>
+              <p className="mt-0.5 font-mono text-[12px] text-slate-700">{event.eventType}</p>
+              <p
+                className="mt-0.5 max-w-[260px] truncate font-mono text-[11px] text-slate-500"
+                title={event.providerEventId}
+              >
+                {event.providerEventId}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: () => (
+          <ColumnHeader help="received 表示已入库待处理，failed 表示处理异常已保留，ignored 表示人工关闭。">
+            状态
+          </ColumnHeader>
+        ),
+        cell: ({ row }) => {
+          const event = row.original;
+          return (
+            <>
+              <ProviderEventStatusPill status={event.status} />
+              <p className="mt-1 text-[11px] text-slate-500">
+                {event.processedAt ? `处理 ${formatDate(event.processedAt)}` : "待处理"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "business",
+        header: () => (
+          <ColumnHeader help="事件匹配到的内部订单、payment intent 或退款记录。">
+            关联业务
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const event = row.original;
+          return (
+            <>
+              {event.order ? (
+                <>
+                  <p className="font-mono text-[12px] font-medium text-slate-950">
+                    {event.order.orderNo}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {orderStatusLabel(event.order.status)} · {event.order.userId}
+                  </p>
+                </>
+              ) : (
+                <p className="text-[12px] text-slate-500">未匹配订单</p>
+              )}
+              {event.refund ? (
+                <p className="mt-1 text-[12px] text-slate-700">
+                  退款 {event.refund.refundNo} · {refundStatusLabel(event.refund.status)}
+                </p>
+              ) : null}
+              {event.paymentIntent ? (
+                <p
+                  className="mt-1 max-w-[220px] truncate font-mono text-[11px] text-slate-500"
+                  title={event.paymentIntent.providerPaymentIntentId ?? event.paymentIntent.id}
+                >
+                  PI {event.paymentIntent.providerStatus ?? event.paymentIntent.status}
+                </p>
+              ) : null}
+            </>
+          );
+        },
+      },
+      {
+        id: "payload",
+        header: () => (
+          <ColumnHeader help="供应商 payload 中关键定位字段，便于和 Airwallex 后台交叉检索。">
+            Payload 摘要
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const event = row.original;
+          return (
+            <div className="space-y-1 text-[12px] text-slate-700">
+              <PayloadLine label="data" value={event.payloadSummary?.dataId} />
+              <PayloadLine label="status" value={event.payloadSummary?.dataStatus} />
+              <PayloadLine label="checkout" value={event.payloadSummary?.billingCheckoutId} />
+              <PayloadLine label="request" value={event.payloadSummary?.requestId} />
+              <PayloadLine
+                label="refund"
+                value={event.payloadSummary?.refundId ?? event.refund?.providerRefundId}
+              />
+            </div>
+          );
+        },
+      },
+      {
+        id: "error",
+        header: () => <ColumnHeader help="处理失败原因或人工忽略原因。">异常/原因</ColumnHeader>,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const event = row.original;
+          return (
+            <p
+              className={cn(
+                "max-w-[260px] text-[12px] leading-5",
+                event.status === "failed" ? "text-red-700" : "text-slate-600"
+              )}
+              title={event.error ?? undefined}
+            >
+              {event.error ?? "-"}
+            </p>
+          );
+        },
+      },
+      {
+        id: "ledger",
+        header: () => (
+          <ColumnHeader help="事件触发的账务 journal；支付、履约、退款都必须可追溯。">
+            账务
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const event = row.original;
+          return (
+            <div className="space-y-1">
+              {event.ledgerJournals.map((journal) => (
+                <p key={journal.id} className="text-[12px] text-slate-700">
+                  {ledgerJournalTypeLabel(journal.journalType)} · {journal.journalNo}
+                </p>
+              ))}
+              {!event.ledgerJournals.length ? (
+                <p className="text-[12px] text-slate-500">无 journal</p>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "receivedAt",
+        header: "时间",
+        cell: ({ row }) => {
+          const event = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">{formatDate(event.receivedAt)}</p>
+              <p className="text-[11px] text-slate-500">接收</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => {
+          const event = row.original;
+          const canOperate = event.status !== "processed";
+          return canOperate ? (
+            <div className="grid min-w-[230px] gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading}
+                onClick={() => onReprocess(event.id)}
+              >
+                <IconRefresh className="size-3.5" />
+                重放
+              </Button>
+              <TextInput
+                value={ignoreReasons[event.id] ?? ""}
+                onChange={(inputEvent) => onIgnoreReasonChange(event.id, inputEvent.target.value)}
+                placeholder="忽略原因"
+                title="忽略会写入审计。只用于确认无需再处理的重复、测试或无法匹配事件。"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading}
+                onClick={() => onIgnore(event.id)}
+              >
+                <IconCircleCheck className="size-3.5" />
+                忽略
+              </Button>
+            </div>
+          ) : (
+            <StatusPill tone="success">已完成</StatusPill>
+          );
+        },
+      },
+    ],
+    // onReprocess / onIgnore / onIgnoreReasonChange are render-stable closures
+    // used only in onClick/onChange; the action cell also reads loading and the
+    // ignoreReasons map, so rebuild on those.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [loading, ignoreReasons]
+  );
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="border-b border-slate-200 p-4">
@@ -2568,10 +3017,10 @@ function ProviderEventsView({
           <div className="grid gap-2 xl:grid-cols-[minmax(220px,1fr)_145px_150px_210px_auto]">
             <label className="relative block">
               <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input
+              <TextInput
                 value={query}
                 onChange={(event) => onQueryChange(event.target.value)}
-                className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                className="pl-9 pr-3"
                 placeholder="搜索 event id、订单号、退款号、错误"
               />
             </label>
@@ -2612,159 +3061,15 @@ function ProviderEventsView({
           </div>
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1360px] border-separate border-spacing-0 text-left">
-          <thead>
-            <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-              <Th help="供应商事件 ID 是 webhook 幂等键，同一个事件只能处理一次。">事件</Th>
-              <Th help="received 表示已入库待处理，failed 表示处理异常已保留，ignored 表示人工关闭。">
-                状态
-              </Th>
-              <Th help="事件匹配到的内部订单、payment intent 或退款记录。">关联业务</Th>
-              <Th help="供应商 payload 中关键定位字段，便于和 Airwallex 后台交叉检索。">
-                Payload 摘要
-              </Th>
-              <Th help="处理失败原因或人工忽略原因。">异常/原因</Th>
-              <Th help="事件触发的账务 journal；支付、履约、退款都必须可追溯。">账务</Th>
-              <Th>时间</Th>
-              <Th>操作</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map((event) => {
-              const canOperate = event.status !== "processed";
-              return (
-                <tr key={event.id}>
-                  <Td>
-                    <p className="text-sm font-medium text-slate-950">
-                      {providerLabel(event.provider)}
-                    </p>
-                    <p className="mt-0.5 font-mono text-[12px] text-slate-700">{event.eventType}</p>
-                    <p
-                      className="mt-0.5 max-w-[260px] truncate font-mono text-[11px] text-slate-500"
-                      title={event.providerEventId}
-                    >
-                      {event.providerEventId}
-                    </p>
-                  </Td>
-                  <Td>
-                    <ProviderEventStatusPill status={event.status} />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      {event.processedAt ? `处理 ${formatDate(event.processedAt)}` : "待处理"}
-                    </p>
-                  </Td>
-                  <Td>
-                    {event.order ? (
-                      <>
-                        <p className="font-mono text-[12px] font-medium text-slate-950">
-                          {event.order.orderNo}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-500">
-                          {orderStatusLabel(event.order.status)} · {event.order.userId}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-[12px] text-slate-500">未匹配订单</p>
-                    )}
-                    {event.refund ? (
-                      <p className="mt-1 text-[12px] text-slate-700">
-                        退款 {event.refund.refundNo} · {refundStatusLabel(event.refund.status)}
-                      </p>
-                    ) : null}
-                    {event.paymentIntent ? (
-                      <p
-                        className="mt-1 max-w-[220px] truncate font-mono text-[11px] text-slate-500"
-                        title={
-                          event.paymentIntent.providerPaymentIntentId ?? event.paymentIntent.id
-                        }
-                      >
-                        PI {event.paymentIntent.providerStatus ?? event.paymentIntent.status}
-                      </p>
-                    ) : null}
-                  </Td>
-                  <Td>
-                    <div className="space-y-1 text-[12px] text-slate-700">
-                      <PayloadLine label="data" value={event.payloadSummary?.dataId} />
-                      <PayloadLine label="status" value={event.payloadSummary?.dataStatus} />
-                      <PayloadLine
-                        label="checkout"
-                        value={event.payloadSummary?.billingCheckoutId}
-                      />
-                      <PayloadLine label="request" value={event.payloadSummary?.requestId} />
-                      <PayloadLine
-                        label="refund"
-                        value={event.payloadSummary?.refundId ?? event.refund?.providerRefundId}
-                      />
-                    </div>
-                  </Td>
-                  <Td>
-                    <p
-                      className={cn(
-                        "max-w-[260px] text-[12px] leading-5",
-                        event.status === "failed" ? "text-red-700" : "text-slate-600"
-                      )}
-                      title={event.error ?? undefined}
-                    >
-                      {event.error ?? "-"}
-                    </p>
-                  </Td>
-                  <Td>
-                    <div className="space-y-1">
-                      {event.ledgerJournals.map((journal) => (
-                        <p key={journal.id} className="text-[12px] text-slate-700">
-                          {ledgerJournalTypeLabel(journal.journalType)} · {journal.journalNo}
-                        </p>
-                      ))}
-                      {!event.ledgerJournals.length ? (
-                        <p className="text-[12px] text-slate-500">无 journal</p>
-                      ) : null}
-                    </div>
-                  </Td>
-                  <Td>
-                    <p className="text-[12px] text-slate-700">{formatDate(event.receivedAt)}</p>
-                    <p className="text-[11px] text-slate-500">接收</p>
-                  </Td>
-                  <Td>
-                    {canOperate ? (
-                      <div className="grid min-w-[230px] gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={loading}
-                          onClick={() => onReprocess(event.id)}
-                        >
-                          <IconRefresh className="size-3.5" />
-                          重放
-                        </Button>
-                        <TextInput
-                          value={ignoreReasons[event.id] ?? ""}
-                          onChange={(inputEvent) =>
-                            onIgnoreReasonChange(event.id, inputEvent.target.value)
-                          }
-                          placeholder="忽略原因"
-                          title="忽略会写入审计。只用于确认无需再处理的重复、测试或无法匹配事件。"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={loading}
-                          onClick={() => onIgnore(event.id)}
-                        >
-                          <IconCircleCheck className="size-3.5" />
-                          忽略
-                        </Button>
-                      </div>
-                    ) : (
-                      <StatusPill tone="success">已完成</StatusPill>
-                    )}
-                  </Td>
-                </tr>
-              );
-            })}
-            {!events.length ? <EmptyRow colSpan={8} label="暂无支付供应商事件" /> : null}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={events}
+        loading={loading}
+        minWidth={1360}
+        pageSize={20}
+        emptyLabel="暂无支付供应商事件"
+        className="rounded-none border-0"
+      />
     </section>
   );
 }
@@ -2798,6 +3103,92 @@ function WalletView({
     ? entries.filter((entry) => entry.accountId === selectedAccount.id)
     : [];
 
+  const columns = useMemo<ColumnDef<WalletAccountRow, unknown>[]>(
+    () => [
+      {
+        id: "account",
+        header: "账户",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const account = row.original;
+          return (
+            <>
+              <p className="text-sm font-medium text-slate-950">{account.ownerType}</p>
+              <p className="max-w-[220px] truncate text-[11px] text-slate-500">{account.ownerId}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "currency",
+        header: () => (
+          <ColumnHeader help="平台钱包币种，不是法币。算力积分和社区积分相互隔离。">
+            币种
+          </ColumnHeader>
+        ),
+        cell: ({ row }) => currencyLabel(row.original.currency),
+      },
+      {
+        accessorKey: "balanceKind",
+        header: () => (
+          <ColumnHeader help="可消费余额用于购买内容/服务；可提现余额只来自创作者收入，暂不开放提现流程。">
+            余额类型
+          </ColumnHeader>
+        ),
+        cell: ({ row }) => balanceKindLabel(row.original.balanceKind),
+      },
+      {
+        accessorKey: "availableBalance",
+        header: "可用余额",
+        cell: ({ row }) => formatInteger(row.original.availableBalance),
+      },
+      {
+        accessorKey: "heldBalance",
+        header: "冻结",
+        cell: ({ row }) => formatInteger(row.original.heldBalance),
+      },
+      {
+        accessorKey: "ledgerEntryCount",
+        header: "流水",
+        cell: ({ row }) => formatInteger(String(row.original.ledgerEntryCount)),
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => {
+          const account = row.original;
+          return (
+            <StatusPill tone={account.status === "active" ? "success" : "muted"}>
+              {account.status}
+            </StatusPill>
+          );
+        },
+      },
+      {
+        accessorKey: "updatedAt",
+        header: "更新时间",
+        cell: ({ row }) => formatDate(row.original.updatedAt),
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setSelectedAccountId(row.original.id)}
+          >
+            查看
+          </Button>
+        ),
+      },
+    ],
+    []
+  );
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -2807,59 +3198,14 @@ function WalletView({
             每行是一个用户或工作区的钱包账户；点击查看可打开余额详情和真实流水。
           </p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[940px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <Th>账户</Th>
-                <Th help="平台钱包币种，不是法币。算力积分和社区积分相互隔离。">币种</Th>
-                <Th help="可消费余额用于购买内容/服务；可提现余额只来自创作者收入，暂不开放提现流程。">
-                  余额类型
-                </Th>
-                <Th>可用余额</Th>
-                <Th>冻结</Th>
-                <Th>流水</Th>
-                <Th>状态</Th>
-                <Th>更新时间</Th>
-                <Th>操作</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {accounts.map((account) => (
-                <tr key={account.id}>
-                  <Td>
-                    <p className="text-sm font-medium text-slate-950">{account.ownerType}</p>
-                    <p className="max-w-[220px] truncate text-[11px] text-slate-500">
-                      {account.ownerId}
-                    </p>
-                  </Td>
-                  <Td>{currencyLabel(account.currency)}</Td>
-                  <Td>{balanceKindLabel(account.balanceKind)}</Td>
-                  <Td>{formatInteger(account.availableBalance)}</Td>
-                  <Td>{formatInteger(account.heldBalance)}</Td>
-                  <Td>{formatInteger(String(account.ledgerEntryCount))}</Td>
-                  <Td>
-                    <StatusPill tone={account.status === "active" ? "success" : "muted"}>
-                      {account.status}
-                    </StatusPill>
-                  </Td>
-                  <Td>{formatDate(account.updatedAt)}</Td>
-                  <Td>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedAccountId(account.id)}
-                    >
-                      查看
-                    </Button>
-                  </Td>
-                </tr>
-              ))}
-              {!accounts.length ? <EmptyRow colSpan={9} label="暂无钱包账户" /> : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={accounts}
+          minWidth={940}
+          pageSize={20}
+          emptyLabel="暂无钱包账户"
+          className="rounded-none border-0"
+        />
       </section>
 
       <div className="space-y-4">
@@ -2942,6 +3288,78 @@ function WalletAccountDetailDialog({
   entries: WalletLedgerEntryRow[];
   onClose: () => void;
 }) {
+  const columns = useMemo<ColumnDef<WalletLedgerEntryRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "createdAt",
+        header: "时间",
+        cell: ({ row }) => formatDate(row.original.createdAt),
+      },
+      {
+        id: "action",
+        header: "动作",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <>
+              <p className="text-sm font-medium text-slate-950">
+                {walletEntryTypeLabel(entry.entryType)}
+              </p>
+              <p className="text-[11px] text-slate-500">{entry.reason}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "availableDelta",
+        header: "可用变动",
+        cell: ({ row }) => formatSignedInteger(row.original.availableDelta),
+      },
+      {
+        accessorKey: "heldDelta",
+        header: "冻结变动",
+        cell: ({ row }) => formatSignedInteger(row.original.heldDelta),
+      },
+      {
+        id: "balanceAfter",
+        header: "余额后",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">{formatInteger(entry.availableBalanceAfter)}</p>
+              <p className="text-[11px] text-slate-500">
+                冻结 {formatInteger(entry.heldBalanceAfter)}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "source",
+        header: "来源",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">{entry.sourceType}</p>
+              <p
+                className="max-w-[180px] truncate font-mono text-[11px] text-slate-500"
+                title={entry.sourceId ?? entry.idempotencyKey}
+              >
+                {entry.sourceId ?? entry.idempotencyKey}
+              </p>
+            </>
+          );
+        },
+      },
+    ],
+    []
+  );
+
   return (
     <AdminDialog
       open={Boolean(account)}
@@ -2965,51 +3383,13 @@ function WalletAccountDetailDialog({
               <h4 className="text-sm font-semibold text-slate-950">账户流水</h4>
             </div>
             <div className="max-h-[420px] overflow-auto">
-              <table className="w-full min-w-[780px] border-separate border-spacing-0 text-left">
-                <thead>
-                  <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                    <Th>时间</Th>
-                    <Th>动作</Th>
-                    <Th>可用变动</Th>
-                    <Th>冻结变动</Th>
-                    <Th>余额后</Th>
-                    <Th>来源</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry) => (
-                    <tr key={entry.id}>
-                      <Td>{formatDate(entry.createdAt)}</Td>
-                      <Td>
-                        <p className="text-sm font-medium text-slate-950">
-                          {walletEntryTypeLabel(entry.entryType)}
-                        </p>
-                        <p className="text-[11px] text-slate-500">{entry.reason}</p>
-                      </Td>
-                      <Td>{formatSignedInteger(entry.availableDelta)}</Td>
-                      <Td>{formatSignedInteger(entry.heldDelta)}</Td>
-                      <Td>
-                        <p className="text-sm text-slate-700">
-                          {formatInteger(entry.availableBalanceAfter)}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          冻结 {formatInteger(entry.heldBalanceAfter)}
-                        </p>
-                      </Td>
-                      <Td>
-                        <p className="text-sm text-slate-700">{entry.sourceType}</p>
-                        <p
-                          className="max-w-[180px] truncate font-mono text-[11px] text-slate-500"
-                          title={entry.sourceId ?? entry.idempotencyKey}
-                        >
-                          {entry.sourceId ?? entry.idempotencyKey}
-                        </p>
-                      </Td>
-                    </tr>
-                  ))}
-                  {!entries.length ? <EmptyRow colSpan={6} label="暂无该账户流水" /> : null}
-                </tbody>
-              </table>
+              <DataTable
+                columns={columns}
+                data={entries}
+                minWidth={780}
+                emptyLabel="暂无该账户流水"
+                className="rounded-none border-0"
+              />
             </div>
           </section>
         </div>
@@ -3045,6 +3425,136 @@ function LedgerView({
   onCurrencyChange: (value: string) => void;
   onRefresh: () => void;
 }) {
+  const journalColumns = useMemo<ColumnDef<BillingLedgerJournalRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "journalNo",
+        header: "Journal",
+        cell: ({ row }) => {
+          const journal = row.original;
+          return (
+            <>
+              <p className="font-mono text-[12px] font-medium text-slate-950">
+                {journal.journalNo}
+              </p>
+              <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-500">
+                {journal.description ?? journal.id}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "journalType",
+        header: () => (
+          <ColumnHeader help="journal 类型描述资金事件的业务来源，例如支付入账、履约分配、结算或退款。">
+            类型
+          </ColumnHeader>
+        ),
+        cell: ({ row }) => {
+          const journal = row.original;
+          return (
+            <>
+              <StatusPill tone={journal.status === "posted" ? "success" : "muted"}>
+                {ledgerJournalTypeLabel(journal.journalType)}
+              </StatusPill>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {journal.provider ? providerLabel(journal.provider) : "platform"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "debit",
+        header: () => <ColumnHeader help="双分录借方合计，必须等于贷方合计。">借方</ColumnHeader>,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const journal = row.original;
+          return (
+            <p className="text-sm font-semibold text-slate-950">
+              {formatMoneyMinor(journal.totalDebitMinor, journal.currency)}
+            </p>
+          );
+        },
+      },
+      {
+        id: "credit",
+        header: () => <ColumnHeader help="双分录贷方合计，必须等于借方合计。">贷方</ColumnHeader>,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const journal = row.original;
+          return (
+            <p className="text-sm font-semibold text-slate-950">
+              {formatMoneyMinor(journal.totalCreditMinor, journal.currency)}
+            </p>
+          );
+        },
+      },
+      {
+        id: "source",
+        header: "来源",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const journal = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">{journal.sourceType}</p>
+              <p className="max-w-[180px] truncate text-[11px] text-slate-500">
+                {journal.sourceId ?? journal.orderId ?? "-"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "entries",
+        header: () => (
+          <ColumnHeader help="具体账户分录和账户余额。余额按账户正常方向计算，不是用户积分余额。">
+            分录
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const journal = row.original;
+          return (
+            <div className="space-y-1.5">
+              {journal.entries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="grid grid-cols-[52px_minmax(170px,1fr)_120px] gap-2 text-[12px]"
+                >
+                  <span
+                    className={cn(
+                      "w-fit rounded-full border px-2 py-0.5",
+                      entry.direction === "debit"
+                        ? "border-sky-200 bg-sky-50 text-sky-700"
+                        : "border-violet-200 bg-violet-50 text-violet-700"
+                    )}
+                  >
+                    {entry.direction === "debit" ? "借" : "贷"}
+                  </span>
+                  <span className="truncate text-slate-600" title={entry.account.code}>
+                    {entry.account.name}
+                  </span>
+                  <span className="text-right font-mono text-slate-950">
+                    {formatMoneyMinor(entry.amountMinor, journal.currency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "postedAt",
+        header: "时间",
+        cell: ({ row }) => formatDate(row.original.postedAt),
+      },
+    ],
+    []
+  );
+
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <div className="space-y-4">
@@ -3108,10 +3618,10 @@ function LedgerView({
                     内部发放
                   </option>
                 </Select>
-                <input
+                <TextInput
                   value={currency}
                   onChange={(event) => onCurrencyChange(event.target.value.toUpperCase())}
-                  className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm uppercase outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                  className="uppercase"
                   maxLength={3}
                   placeholder="USD"
                 />
@@ -3122,92 +3632,15 @@ function LedgerView({
               </div>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left">
-              <thead>
-                <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  <Th>Journal</Th>
-                  <Th help="journal 类型描述资金事件的业务来源，例如支付入账、履约分配、结算或退款。">
-                    类型
-                  </Th>
-                  <Th help="双分录借方合计，必须等于贷方合计。">借方</Th>
-                  <Th help="双分录贷方合计，必须等于借方合计。">贷方</Th>
-                  <Th>来源</Th>
-                  <Th help="具体账户分录和账户余额。余额按账户正常方向计算，不是用户积分余额。">
-                    分录
-                  </Th>
-                  <Th>时间</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {journals.map((journal) => (
-                  <tr key={journal.id}>
-                    <Td>
-                      <p className="font-mono text-[12px] font-medium text-slate-950">
-                        {journal.journalNo}
-                      </p>
-                      <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-slate-500">
-                        {journal.description ?? journal.id}
-                      </p>
-                    </Td>
-                    <Td>
-                      <StatusPill tone={journal.status === "posted" ? "success" : "muted"}>
-                        {ledgerJournalTypeLabel(journal.journalType)}
-                      </StatusPill>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        {journal.provider ? providerLabel(journal.provider) : "platform"}
-                      </p>
-                    </Td>
-                    <Td>
-                      <p className="text-sm font-semibold text-slate-950">
-                        {formatMoneyMinor(journal.totalDebitMinor, journal.currency)}
-                      </p>
-                    </Td>
-                    <Td>
-                      <p className="text-sm font-semibold text-slate-950">
-                        {formatMoneyMinor(journal.totalCreditMinor, journal.currency)}
-                      </p>
-                    </Td>
-                    <Td>
-                      <p className="text-[12px] text-slate-700">{journal.sourceType}</p>
-                      <p className="max-w-[180px] truncate text-[11px] text-slate-500">
-                        {journal.sourceId ?? journal.orderId ?? "-"}
-                      </p>
-                    </Td>
-                    <Td>
-                      <div className="space-y-1.5">
-                        {journal.entries.map((entry) => (
-                          <div
-                            key={entry.id}
-                            className="grid grid-cols-[52px_minmax(170px,1fr)_120px] gap-2 text-[12px]"
-                          >
-                            <span
-                              className={cn(
-                                "w-fit rounded-full border px-2 py-0.5",
-                                entry.direction === "debit"
-                                  ? "border-sky-200 bg-sky-50 text-sky-700"
-                                  : "border-violet-200 bg-violet-50 text-violet-700"
-                              )}
-                            >
-                              {entry.direction === "debit" ? "借" : "贷"}
-                            </span>
-                            <span className="truncate text-slate-600" title={entry.account.code}>
-                              {entry.account.name}
-                            </span>
-                            <span className="text-right font-mono text-slate-950">
-                              {formatMoneyMinor(entry.amountMinor, journal.currency)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </Td>
-                    <Td>{formatDate(journal.postedAt)}</Td>
-                  </tr>
-                ))}
-                {!journals.length ? <EmptyRow colSpan={7} label="暂无资金账本分录" /> : null}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={journalColumns}
+            data={journals}
+            loading={loading}
+            minWidth={1180}
+            pageSize={20}
+            emptyLabel="暂无资金账本分录"
+            className="rounded-none border-0"
+          />
         </section>
         <SettlementsTable settlements={settlements} />
         <ReconciliationRunsTable runs={reconciliationRuns} />
@@ -3255,6 +3688,95 @@ function LedgerView({
 }
 
 function SettlementsTable({ settlements }: { settlements: BillingSettlementRow[] }) {
+  const columns = useMemo<ColumnDef<BillingSettlementRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "providerSettlementId",
+        header: () => (
+          <ColumnHeader help="支付供应商侧 settlement/payout 批次 ID，用于和渠道后台对账。">
+            结算批次
+          </ColumnHeader>
+        ),
+        cell: ({ row }) => {
+          const settlement = row.original;
+          return (
+            <>
+              <p className="font-mono text-[12px] font-medium text-slate-950">
+                {settlement.providerSettlementId}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                {providerLabel(settlement.provider)}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: () => <ColumnHeader help="结算批次与内部账本的对账状态。">状态</ColumnHeader>,
+        cell: ({ row }) => {
+          const settlement = row.original;
+          return (
+            <StatusPill tone={settlement.status === "failed" ? "risk" : "muted"}>
+              {settlementStatusLabel(settlement.status)}
+            </StatusPill>
+          );
+        },
+      },
+      {
+        id: "gross",
+        header: () => <ColumnHeader help="渠道结算总金额，未扣手续费。">总额</ColumnHeader>,
+        enableSorting: false,
+        cell: ({ row }) => formatMoneyMinor(row.original.grossAmountMinor, row.original.currency),
+      },
+      {
+        id: "fee",
+        header: () => (
+          <ColumnHeader help="渠道从结算中扣除的手续费。后续会生成 provider_fee journal。">
+            手续费
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => formatMoneyMinor(row.original.feeAmountMinor, row.original.currency),
+      },
+      {
+        id: "net",
+        header: () => <ColumnHeader help="渠道实际打款金额，等于总额减手续费。">净额</ColumnHeader>,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const settlement = row.original;
+          return (
+            <p className="font-semibold text-slate-950">
+              {formatMoneyMinor(settlement.netAmountMinor, settlement.currency)}
+            </p>
+          );
+        },
+      },
+      {
+        id: "links",
+        header: "关联",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const settlement = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">Journal {settlement.journalCount}</p>
+              <p className="text-[11px] text-slate-500">
+                对账项 {settlement.reconciliationItemCount}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "settledAt",
+        header: "时间",
+        cell: ({ row }) => (row.original.settledAt ? formatDate(row.original.settledAt) : "-"),
+      },
+    ],
+    []
+  );
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="border-b border-slate-200 p-4">
@@ -3263,60 +3785,162 @@ function SettlementsTable({ settlements }: { settlements: BillingSettlementRow[]
           用于核对支付渠道打款、手续费和内部 journal 是否一致。
         </p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left">
-          <thead>
-            <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-              <Th help="支付供应商侧 settlement/payout 批次 ID，用于和渠道后台对账。">结算批次</Th>
-              <Th help="结算批次与内部账本的对账状态。">状态</Th>
-              <Th help="渠道结算总金额，未扣手续费。">总额</Th>
-              <Th help="渠道从结算中扣除的手续费。后续会生成 provider_fee journal。">手续费</Th>
-              <Th help="渠道实际打款金额，等于总额减手续费。">净额</Th>
-              <Th>关联</Th>
-              <Th>时间</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {settlements.map((settlement) => (
-              <tr key={settlement.id}>
-                <Td>
-                  <p className="font-mono text-[12px] font-medium text-slate-950">
-                    {settlement.providerSettlementId}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    {providerLabel(settlement.provider)}
-                  </p>
-                </Td>
-                <Td>
-                  <StatusPill tone={settlement.status === "failed" ? "risk" : "muted"}>
-                    {settlementStatusLabel(settlement.status)}
-                  </StatusPill>
-                </Td>
-                <Td>{formatMoneyMinor(settlement.grossAmountMinor, settlement.currency)}</Td>
-                <Td>{formatMoneyMinor(settlement.feeAmountMinor, settlement.currency)}</Td>
-                <Td>
-                  <p className="font-semibold text-slate-950">
-                    {formatMoneyMinor(settlement.netAmountMinor, settlement.currency)}
-                  </p>
-                </Td>
-                <Td>
-                  <p className="text-[12px] text-slate-700">Journal {settlement.journalCount}</p>
-                  <p className="text-[11px] text-slate-500">
-                    对账项 {settlement.reconciliationItemCount}
-                  </p>
-                </Td>
-                <Td>{settlement.settledAt ? formatDate(settlement.settledAt) : "-"}</Td>
-              </tr>
-            ))}
-            {!settlements.length ? <EmptyRow colSpan={7} label="暂无渠道结算记录" /> : null}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={settlements}
+        minWidth={900}
+        pageSize={20}
+        emptyLabel="暂无渠道结算记录"
+        className="rounded-none border-0"
+      />
     </section>
   );
 }
 
 function ReconciliationRunsTable({ runs }: { runs: BillingReconciliationRunRow[] }) {
+  const columns = useMemo<ColumnDef<BillingReconciliationRunRow, unknown>[]>(
+    () => [
+      {
+        id: "run",
+        header: "运行",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const run = row.original;
+          return (
+            <>
+              <p className="font-mono text-[12px] font-medium text-slate-950">
+                {run.id.slice(0, 8)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                {providerLabel(run.provider)} {run.currency ?? ""}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: () => (
+          <ColumnHeader help="本次对账任务是否仍在运行、完成或失败。">状态</ColumnHeader>
+        ),
+        cell: ({ row }) => {
+          const run = row.original;
+          const issueCount =
+            run.mismatchCount + run.missingInternalCount + run.missingProviderCount;
+          return (
+            <>
+              <StatusPill
+                tone={
+                  run.status === "failed"
+                    ? "risk"
+                    : run.status === "completed" && issueCount === 0
+                      ? "success"
+                      : "muted"
+                }
+              >
+                {reconciliationStatusLabel(run.status)}
+              </StatusPill>
+              {run.error ? (
+                <p className="mt-1 max-w-[180px] truncate text-[11px] text-red-600">{run.error}</p>
+              ) : null}
+            </>
+          );
+        },
+      },
+      {
+        id: "period",
+        header: "周期",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const run = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">{formatDate(run.periodStart)}</p>
+              <p className="text-[11px] text-slate-500">{formatDate(run.periodEnd)}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "matchedCount",
+        header: "匹配",
+        cell: ({ row }) => formatInteger(String(row.original.matchedCount)),
+      },
+      {
+        id: "diff",
+        header: () => (
+          <ColumnHeader help="金额不一致、内部缺失、渠道缺失三类异常合计。">差异</ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const run = row.original;
+          const issueCount =
+            run.mismatchCount + run.missingInternalCount + run.missingProviderCount;
+          return (
+            <>
+              <p
+                className={cn(
+                  "text-sm font-semibold",
+                  issueCount ? "text-red-700" : "text-slate-950"
+                )}
+              >
+                {formatInteger(String(issueCount))}
+              </p>
+              <p className="text-[11px] text-slate-500">总项 {run.itemCount}</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "samples",
+        header: () => (
+          <ColumnHeader help="最多展示近期未匹配样本，便于定位漏单、重复回调或渠道金额不一致。">
+            异常样本
+          </ColumnHeader>
+        ),
+        enableSorting: false,
+        cell: ({ row }) => {
+          const run = row.original;
+          return (
+            <div className="space-y-1.5">
+              {run.openItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="grid grid-cols-[92px_minmax(120px,1fr)_110px] gap-2 text-[12px]"
+                >
+                  <span className="truncate text-red-700">
+                    {reconciliationItemStatusLabel(item.status)}
+                  </span>
+                  <span
+                    className="truncate text-slate-600"
+                    title={item.providerReference ?? item.orderId ?? undefined}
+                  >
+                    {item.providerReference ?? item.orderId ?? "-"}
+                  </span>
+                  <span className="text-right font-mono text-slate-950">
+                    {formatNullableMoneyMinor(
+                      item.differenceMinor ?? item.providerAmountMinor ?? item.internalAmountMinor,
+                      item.currency
+                    )}
+                  </span>
+                </div>
+              ))}
+              {!run.openItems.length ? (
+                <span className="text-[12px] text-slate-500">无未处理异常</span>
+              ) : null}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "updatedAt",
+        header: "更新时间",
+        cell: ({ row }) => formatDate(row.original.updatedAt),
+      },
+    ],
+    []
+  );
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <div className="border-b border-slate-200 p-4">
@@ -3325,108 +3949,14 @@ function ReconciliationRunsTable({ runs }: { runs: BillingReconciliationRunRow[]
           对账运行、差异数量和未匹配项集中展示，后续处理退款、拒付和渠道漏单。
         </p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1050px] border-separate border-spacing-0 text-left">
-          <thead>
-            <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-              <Th>运行</Th>
-              <Th help="本次对账任务是否仍在运行、完成或失败。">状态</Th>
-              <Th>周期</Th>
-              <Th>匹配</Th>
-              <Th help="金额不一致、内部缺失、渠道缺失三类异常合计。">差异</Th>
-              <Th help="最多展示近期未匹配样本，便于定位漏单、重复回调或渠道金额不一致。">
-                异常样本
-              </Th>
-              <Th>更新时间</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs.map((run) => {
-              const issueCount =
-                run.mismatchCount + run.missingInternalCount + run.missingProviderCount;
-              return (
-                <tr key={run.id}>
-                  <Td>
-                    <p className="font-mono text-[12px] font-medium text-slate-950">
-                      {run.id.slice(0, 8)}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
-                      {providerLabel(run.provider)} {run.currency ?? ""}
-                    </p>
-                  </Td>
-                  <Td>
-                    <StatusPill
-                      tone={
-                        run.status === "failed"
-                          ? "risk"
-                          : run.status === "completed" && issueCount === 0
-                            ? "success"
-                            : "muted"
-                      }
-                    >
-                      {reconciliationStatusLabel(run.status)}
-                    </StatusPill>
-                    {run.error ? (
-                      <p className="mt-1 max-w-[180px] truncate text-[11px] text-red-600">
-                        {run.error}
-                      </p>
-                    ) : null}
-                  </Td>
-                  <Td>
-                    <p className="text-[12px] text-slate-700">{formatDate(run.periodStart)}</p>
-                    <p className="text-[11px] text-slate-500">{formatDate(run.periodEnd)}</p>
-                  </Td>
-                  <Td>{formatInteger(String(run.matchedCount))}</Td>
-                  <Td>
-                    <p
-                      className={cn(
-                        "text-sm font-semibold",
-                        issueCount ? "text-red-700" : "text-slate-950"
-                      )}
-                    >
-                      {formatInteger(String(issueCount))}
-                    </p>
-                    <p className="text-[11px] text-slate-500">总项 {run.itemCount}</p>
-                  </Td>
-                  <Td>
-                    <div className="space-y-1.5">
-                      {run.openItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className="grid grid-cols-[92px_minmax(120px,1fr)_110px] gap-2 text-[12px]"
-                        >
-                          <span className="truncate text-red-700">
-                            {reconciliationItemStatusLabel(item.status)}
-                          </span>
-                          <span
-                            className="truncate text-slate-600"
-                            title={item.providerReference ?? item.orderId ?? undefined}
-                          >
-                            {item.providerReference ?? item.orderId ?? "-"}
-                          </span>
-                          <span className="text-right font-mono text-slate-950">
-                            {formatNullableMoneyMinor(
-                              item.differenceMinor ??
-                                item.providerAmountMinor ??
-                                item.internalAmountMinor,
-                              item.currency
-                            )}
-                          </span>
-                        </div>
-                      ))}
-                      {!run.openItems.length ? (
-                        <span className="text-[12px] text-slate-500">无未处理异常</span>
-                      ) : null}
-                    </div>
-                  </Td>
-                  <Td>{formatDate(run.updatedAt)}</Td>
-                </tr>
-              );
-            })}
-            {!runs.length ? <EmptyRow colSpan={7} label="暂无对账运行" /> : null}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={runs}
+        minWidth={1050}
+        pageSize={20}
+        emptyLabel="暂无对账运行"
+        className="rounded-none border-0"
+      />
     </section>
   );
 }
@@ -3502,6 +4032,37 @@ function BillingNavGroup({ label, children }: { label: string; children: React.R
   );
 }
 
+// Sentinel mapped to "" — shadcn/radix SelectItem cannot use an empty string
+// value, so the 全部/不发放/稍后配置 "all/none" options round-trip through this.
+const SELECT_ALL_SENTINEL = "__all__";
+
+type SelectOption = {
+  value: string;
+  label: React.ReactNode;
+  title?: string;
+};
+
+// Parse the existing <option> children into shadcn SelectItem props so call
+// sites keep their verbatim labels + per-option title tooltips while rendering
+// through the composable Select primitives.
+function optionsFromChildren(children: React.ReactNode): SelectOption[] {
+  const options: SelectOption[] = [];
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child) || child.type !== "option") return;
+    const props = child.props as {
+      value?: string;
+      title?: string;
+      children?: React.ReactNode;
+    };
+    options.push({
+      value: props.value ?? "",
+      label: props.children,
+      title: props.title,
+    });
+  });
+  return options;
+}
+
 function Select({
   name,
   value,
@@ -3517,33 +4078,57 @@ function Select({
   title?: string;
   children: React.ReactNode;
 }) {
-  const controlProps =
+  const options = optionsFromChildren(children);
+  const toSentinel = (raw: string) => (raw === "" ? SELECT_ALL_SENTINEL : raw);
+  const fromSentinel = (raw: string) => (raw === SELECT_ALL_SENTINEL ? "" : raw);
+
+  // Track the current value internally so the FormData-backed hidden input
+  // submits the real (de-sentineled) string. radix's own `name` is not used so
+  // an empty "all/none" option submits "" rather than the sentinel.
+  const [internalValue, setInternalValue] = useState(defaultValue ?? "");
+  const currentValue = value !== undefined ? value : internalValue;
+
+  const rootProps =
     value !== undefined
       ? {
-          value,
-          onChange: onChange
-            ? (event: React.ChangeEvent<HTMLSelectElement>) => onChange(event.target.value)
-            : undefined,
+          value: toSentinel(value),
+          onValueChange: onChange ? (next: string) => onChange(fromSentinel(next)) : undefined,
         }
-      : { defaultValue };
+      : {
+          defaultValue: defaultValue !== undefined ? toSentinel(defaultValue) : undefined,
+          onValueChange: (next: string) => setInternalValue(fromSentinel(next)),
+        };
+
   return (
-    <select
-      name={name}
-      title={title}
-      {...controlProps}
-      className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none transition focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
-    >
-      {children}
-    </select>
+    <ShadSelect {...rootProps}>
+      {name ? <input type="hidden" name={name} value={currentValue} /> : null}
+      <SelectTrigger
+        title={title}
+        className="h-9 w-full rounded-lg border-slate-200 bg-white px-2.5 text-sm text-slate-700 focus-visible:border-slate-950 focus-visible:ring-2 focus-visible:ring-slate-950/10"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem
+            key={option.value || SELECT_ALL_SENTINEL}
+            value={toSentinel(option.value)}
+            title={option.title}
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </ShadSelect>
   );
 }
 
-function TextInput({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+function TextInput({ className, ...props }: React.ComponentProps<"input">) {
   return (
-    <input
+    <Input
       {...props}
       className={cn(
-        "h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10",
+        "h-9 rounded-lg border-slate-200 bg-white px-2.5 text-sm placeholder:text-slate-400 focus-visible:border-slate-950 focus-visible:ring-2 focus-visible:ring-slate-950/10",
         className
       )}
     />
@@ -3570,17 +4155,6 @@ function FormLabel({
   );
 }
 
-function Th({ children, help }: { children: React.ReactNode; help?: string }) {
-  return (
-    <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">
-      <span className="inline-flex items-center gap-1.5">
-        {children}
-        {help ? <InfoTip text={help} /> : null}
-      </span>
-    </th>
-  );
-}
-
 function InfoTip({ text }: { text: string }) {
   return (
     <span
@@ -3601,21 +4175,14 @@ function InfoTip({ text }: { text: string }) {
   );
 }
 
-function Td({ children }: { children: React.ReactNode }) {
+// Column header with an inline help tooltip, mirroring the old <Th help> markup
+// so DataTable header cells keep their InfoTip affordance.
+function ColumnHeader({ children, help }: { children: React.ReactNode; help?: string }) {
   return (
-    <td className="border-b border-slate-100 px-3 py-3 align-top text-sm text-slate-700">
+    <span className="inline-flex items-center gap-1.5">
       {children}
-    </td>
-  );
-}
-
-function EmptyRow({ colSpan, label }: { colSpan: number; label: string }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="px-4 py-12 text-center text-sm text-slate-500">
-        {label}
-      </td>
-    </tr>
+      {help ? <InfoTip text={help} /> : null}
+    </span>
   );
 }
 

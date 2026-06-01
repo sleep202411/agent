@@ -1,30 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { IconKey, IconRefresh, IconShoppingBag, IconUserPlus } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   currencyLabel,
-  EmptyRow,
   entitlementStatusLabel,
   ErrorBanner,
   formatAmount,
   formatDate,
-  InputLike,
   orderStatusLabel,
   PageHeader,
   requestEnvelope,
-  Select,
   sourceTypeLabel,
   StatusPill,
   targetTypeLabel,
-  Td,
-  Th,
   toErrorMessage,
 } from "./shared";
-import type { AdminIpEntitlementsData, AdminIpOrdersData, AdminIpsData } from "./types";
+import type {
+  AdminIpEntitlementsData,
+  AdminIpOrdersData,
+  AdminIpsData,
+  IpPurchaseOrderRow,
+} from "./types";
 import { emptyIpEntitlements, emptyIpOrders, emptyIps } from "./types";
+
+const LOCALE_ALL = "__all__";
 
 export function IpOrdersPanel({
   siteLabel,
@@ -62,6 +73,90 @@ export function IpOrdersPanel({
     }
   }
 
+  const columns = useMemo<ColumnDef<IpPurchaseOrderRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "orderNo",
+        header: "订单",
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="font-medium text-slate-950">{order.orderNo}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{order.id}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "userId",
+        header: "用户",
+        cell: ({ row }) => (
+          <p className="max-w-[160px] truncate text-sm text-slate-700">{row.original.userId}</p>
+        ),
+      },
+      {
+        id: "content",
+        header: "内容",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
+                {order.episode?.title ?? order.ip?.title ?? order.ipId}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                {targetTypeLabel(order.targetType)} · {order.entitlementCount ?? 0} 权益
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <StatusPill tone={order.status === "fulfilled" ? "success" : "muted"}>
+              {orderStatusLabel(order.status)}
+            </StatusPill>
+          );
+        },
+      },
+      {
+        accessorKey: "totalAmount",
+        header: "金额",
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="font-medium text-slate-950">{formatAmount(order.totalAmount)}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{currencyLabel(order.currency)}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "createdAt",
+        header: "时间",
+        cell: ({ row }) => {
+          const order = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">{formatDate(order.createdAt)}</p>
+              <p className="text-[11px] text-slate-500">
+                {order.fulfilledAt ? `履约 ${formatDate(order.fulfilledAt)}` : "未履约"}
+              </p>
+            </>
+          );
+        },
+      },
+    ],
+    []
+  );
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -77,12 +172,25 @@ export function IpOrdersPanel({
             <h3 className="text-sm font-semibold text-slate-950">订单列表</h3>
           </div>
           <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_130px_auto] lg:min-w-[520px]">
-            <InputLike value={query} onChange={setQuery} placeholder="订单号、用户、IP" />
-            <Select value={locale} onChange={setLocale} aria-label="语言">
-              <option value="">默认语言</option>
-              <option value="zh-CN">简体中文</option>
-              <option value="en-US">English</option>
-              <option value="zh-HK">繁體中文</option>
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="订单号、用户、IP"
+              className="h-9"
+            />
+            <Select
+              value={locale || LOCALE_ALL}
+              onValueChange={(value) => setLocale(value === LOCALE_ALL ? "" : value)}
+            >
+              <SelectTrigger className="h-9 w-full" aria-label="语言">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={LOCALE_ALL}>默认语言</SelectItem>
+                <SelectItem value="zh-CN">简体中文</SelectItem>
+                <SelectItem value="en-US">English</SelectItem>
+                <SelectItem value="zh-HK">繁體中文</SelectItem>
+              </SelectContent>
             </Select>
             <Button
               type="button"
@@ -96,59 +204,15 @@ export function IpOrdersPanel({
             </Button>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <Th>订单</Th>
-                <Th>用户</Th>
-                <Th>内容</Th>
-                <Th>状态</Th>
-                <Th>金额</Th>
-                <Th>时间</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.items.map((order) => (
-                <tr key={order.id}>
-                  <Td>
-                    <p className="font-medium text-slate-950">{order.orderNo}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{order.id}</p>
-                  </Td>
-                  <Td>
-                    <p className="max-w-[160px] truncate text-sm text-slate-700">{order.userId}</p>
-                  </Td>
-                  <Td>
-                    <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
-                      {order.episode?.title ?? order.ip?.title ?? order.ipId}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
-                      {targetTypeLabel(order.targetType)} · {order.entitlementCount ?? 0} 权益
-                    </p>
-                  </Td>
-                  <Td>
-                    <StatusPill tone={order.status === "fulfilled" ? "success" : "muted"}>
-                      {orderStatusLabel(order.status)}
-                    </StatusPill>
-                  </Td>
-                  <Td>
-                    <p className="font-medium text-slate-950">{formatAmount(order.totalAmount)}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
-                      {currencyLabel(order.currency)}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="text-[12px] text-slate-700">{formatDate(order.createdAt)}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {order.fulfilledAt ? `履约 ${formatDate(order.fulfilledAt)}` : "未履约"}
-                    </p>
-                  </Td>
-                </tr>
-              ))}
-              {!orders.items.length ? <EmptyRow colSpan={6} label="暂无订单流水" /> : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={orders.items}
+          loading={loading}
+          minWidth={900}
+          pageSize={20}
+          emptyLabel="暂无订单流水"
+          className="rounded-none border-0"
+        />
       </section>
     </div>
   );
@@ -266,12 +330,25 @@ export function IpEntitlementsPanel({
               <h3 className="text-sm font-semibold text-slate-950">权益列表</h3>
             </div>
             <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_130px_auto] lg:min-w-[520px]">
-              <InputLike value={query} onChange={setQuery} placeholder="用户、IP、订单" />
-              <Select value={locale} onChange={setLocale} aria-label="语言">
-                <option value="">默认语言</option>
-                <option value="zh-CN">简体中文</option>
-                <option value="en-US">English</option>
-                <option value="zh-HK">繁體中文</option>
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="用户、IP、订单"
+                className="h-9"
+              />
+              <Select
+                value={locale || LOCALE_ALL}
+                onValueChange={(value) => setLocale(value === LOCALE_ALL ? "" : value)}
+              >
+                <SelectTrigger className="h-9 w-full" aria-label="语言">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={LOCALE_ALL}>默认语言</SelectItem>
+                  <SelectItem value="zh-CN">简体中文</SelectItem>
+                  <SelectItem value="en-US">English</SelectItem>
+                  <SelectItem value="zh-HK">繁體中文</SelectItem>
+                </SelectContent>
               </Select>
               <Button
                 type="button"
@@ -336,12 +413,18 @@ export function IpEntitlementsPanel({
             用于客服补偿、人工恢复和运营白名单。补发原因必须可审计。
           </p>
           <div className="mt-3 grid gap-2">
-            <InputLike value={userId} onChange={setUserId} placeholder="用户 ID" />
-            <InputLike
+            <Input
+              value={userId}
+              onChange={(event) => setUserId(event.target.value)}
+              placeholder="用户 ID"
+              className="h-9"
+            />
+            <Input
               value={ipId}
-              onChange={setIpId}
+              onChange={(event) => setIpId(event.target.value)}
               placeholder="IP ID"
               list="admin-ip-id-list"
+              className="h-9"
             />
             <datalist id="admin-ip-id-list">
               {ipList.items.map((ip) => (
@@ -352,18 +435,29 @@ export function IpEntitlementsPanel({
             </datalist>
             <Select
               value={targetType}
-              onChange={(value) => setTargetType(value as "ip" | "episode")}
+              onValueChange={(value) => setTargetType(value as "ip" | "episode")}
             >
-              <option value="ip">整部 IP</option>
-              <option value="episode">单集</option>
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ip">整部 IP</SelectItem>
+                <SelectItem value="episode">单集</SelectItem>
+              </SelectContent>
             </Select>
-            <InputLike
+            <Input
               value={episodeId}
-              onChange={setEpisodeId}
+              onChange={(event) => setEpisodeId(event.target.value)}
               placeholder="Episode ID（单集必填）"
               disabled={targetType === "ip"}
+              className="h-9"
             />
-            <InputLike value={reason} onChange={setReason} placeholder="补发原因" />
+            <Input
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="补发原因"
+              className="h-9"
+            />
           </div>
           <div className="mt-3 flex justify-end">
             <Button

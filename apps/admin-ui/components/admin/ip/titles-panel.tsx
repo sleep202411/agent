@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   IconAlertTriangle,
   IconBook2,
@@ -11,12 +11,21 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   assetPurposeLabel,
   currencyLabel,
   defaultReviewReason,
-  EmptyRow,
   ErrorBanner,
   formatAmount,
   formatDate,
@@ -26,12 +35,9 @@ import {
   PageHeader,
   reasonLabel,
   requestEnvelope,
-  Select,
   statusLabel,
   StatusPill,
   targetTypeLabel,
-  Td,
-  Th,
   toErrorMessage,
   visibilityLabel,
 } from "./shared";
@@ -44,6 +50,10 @@ import type {
   ReportRow,
 } from "./types";
 import { emptyIps, emptyIpTaxonomy } from "./types";
+
+// shadcn SelectItem value cannot be an empty string, so the "全部/默认" filter
+// options use this sentinel and map back to "" in the onValueChange handler.
+const ALL_VALUE = "__all__";
 
 export function IpTitlesPanel({
   siteLabel,
@@ -156,6 +166,158 @@ export function IpTitlesPanel({
     await refreshIps();
   }
 
+  const columns = useMemo<ColumnDef<IpRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "title",
+        header: "IP",
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <div className="flex items-start gap-3">
+              <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500">
+                <IconBook2 className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
+                  {ip.title}
+                </p>
+                <p className="mt-0.5 max-w-[260px] truncate text-[12px] text-slate-500">
+                  {ip.slug ?? ip.id}
+                </p>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              <IpStatusPill status={ip.status} />
+              <p className="mt-1 text-[11px] text-slate-500">
+                {visibilityLabel(ip.listingVisibility)}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "pricing",
+        header: "定价",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              <p className="text-sm font-medium text-slate-950">
+                {ip.pricing.bundle
+                  ? `${formatAmount(ip.pricing.bundle.amount)} ${currencyLabel(
+                      ip.pricing.bundle.currency
+                    )}`
+                  : "免费/未定价"}
+              </p>
+              <p className="text-[12px] text-slate-500">{ip.pricing.activePriceCount} 条有效价格</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "sales",
+        header: "销售/权益",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              <p className="text-sm text-slate-700">{ip.counts.purchaseOrders} 订单</p>
+              <p className="text-[12px] text-slate-500">{ip.counts.entitlements} 权益</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "review",
+        header: "审核风险",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              {ip.review.needsAttention || ip.review.openReportCount ? (
+                <StatusPill tone={ip.review.openReportCount ? "risk" : "warn"}>
+                  {ip.review.openReportCount ? `${ip.review.openReportCount} 举报` : "待处理"}
+                </StatusPill>
+              ) : (
+                <StatusPill tone="success">正常</StatusPill>
+              )}
+              <p className="mt-1 text-[11px] text-slate-500">v{ip.version}</p>
+            </>
+          );
+        },
+      },
+      {
+        id: "content",
+        header: "内容",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              <p className="max-w-[180px] truncate text-sm text-slate-700">
+                {ip.genres.length ? ip.genres.join(" / ") : "未设置题材"}
+              </p>
+              <p className="text-[12px] text-slate-500">
+                {ip.counts.episodes} 集 · {ip.localization.locale}
+                {ip.localization.isFallback ? " · 回退" : ""}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "updatedAt",
+        header: "更新时间",
+        cell: ({ row }) => {
+          const ip = row.original;
+          return (
+            <>
+              <p className="text-[12px] text-slate-700">{formatDate(ip.updatedAt)}</p>
+              <p className="text-[11px] text-slate-500">
+                {ip.publishedAt ? `发布 ${formatDate(ip.publishedAt)}` : "未发布"}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        id: "actions",
+        header: "操作",
+        enableSorting: false,
+        meta: { pin: "right" },
+        cell: ({ row }) => (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void openIpDetail(row.original.id)}
+            disabled={detailLoading}
+          >
+            <IconEye className="size-3.5" />
+            查看
+          </Button>
+        ),
+      },
+    ],
+    // openIpDetail is a render-stable closure used only in an onClick; the
+    // column defs only need to rebuild when the disabled state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [detailLoading]
+  );
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -170,43 +332,75 @@ export function IpTitlesPanel({
         <div className="border-b border-slate-200 p-4">
           <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_120px_140px_140px_140px_auto]">
             <label className="relative block">
-              <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input
+              <IconSearch className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-400" />
+              <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                className="h-9 w-full pl-9"
                 placeholder="搜索标题、slug、简介"
               />
             </label>
-            <Select value={locale} onChange={setLocale} aria-label="语言">
-              <option value="">默认语言</option>
-              <option value="zh-CN">简体中文</option>
-              <option value="en-US">English</option>
-              <option value="zh-HK">繁體中文</option>
+            <Select
+              value={locale || ALL_VALUE}
+              onValueChange={(value) => setLocale(value === ALL_VALUE ? "" : value)}
+            >
+              <SelectTrigger className="h-9 w-full" aria-label="语言">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_VALUE}>默认语言</SelectItem>
+                <SelectItem value="zh-CN">简体中文</SelectItem>
+                <SelectItem value="en-US">English</SelectItem>
+                <SelectItem value="zh-HK">繁體中文</SelectItem>
+              </SelectContent>
             </Select>
-            <Select value={genreCode} onChange={setGenreCode} aria-label="题材">
-              <option value="">全部题材</option>
-              {genreTerms.map((term) => (
-                <option key={term.id} value={term.code}>
-                  {term.label}
-                </option>
-              ))}
+            <Select
+              value={genreCode || ALL_VALUE}
+              onValueChange={(value) => setGenreCode(value === ALL_VALUE ? "" : value)}
+            >
+              <SelectTrigger className="h-9 w-full" aria-label="题材">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_VALUE}>全部题材</SelectItem>
+                {genreTerms.map((term) => (
+                  <SelectItem key={term.id} value={term.code}>
+                    {term.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-            <Select value={status} onChange={setStatus} aria-label="状态">
-              <option value="">全部状态</option>
-              <option value="submitted">待审核</option>
-              <option value="in_review">审核中</option>
-              <option value="approved">已批准</option>
-              <option value="scheduled">已排期</option>
-              <option value="published">已发布</option>
-              <option value="hidden">隐藏</option>
-              <option value="suspended">暂停销售</option>
+            <Select
+              value={status || ALL_VALUE}
+              onValueChange={(value) => setStatus(value === ALL_VALUE ? "" : value)}
+            >
+              <SelectTrigger className="h-9 w-full" aria-label="状态">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_VALUE}>全部状态</SelectItem>
+                <SelectItem value="submitted">待审核</SelectItem>
+                <SelectItem value="in_review">审核中</SelectItem>
+                <SelectItem value="approved">已批准</SelectItem>
+                <SelectItem value="scheduled">已排期</SelectItem>
+                <SelectItem value="published">已发布</SelectItem>
+                <SelectItem value="hidden">隐藏</SelectItem>
+                <SelectItem value="suspended">暂停销售</SelectItem>
+              </SelectContent>
             </Select>
-            <Select value={visibility} onChange={setVisibility} aria-label="可见性">
-              <option value="">全部可见性</option>
-              <option value="public">公开</option>
-              <option value="unlisted">仅链接</option>
-              <option value="private">私有</option>
+            <Select
+              value={visibility || ALL_VALUE}
+              onValueChange={(value) => setVisibility(value === ALL_VALUE ? "" : value)}
+            >
+              <SelectTrigger className="h-9 w-full" aria-label="可见性">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_VALUE}>全部可见性</SelectItem>
+                <SelectItem value="public">公开</SelectItem>
+                <SelectItem value="unlisted">仅链接</SelectItem>
+                <SelectItem value="private">私有</SelectItem>
+              </SelectContent>
             </Select>
             <div className="flex gap-2">
               <Button
@@ -228,103 +422,15 @@ export function IpTitlesPanel({
             </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <Th>IP</Th>
-                <Th>状态</Th>
-                <Th>定价</Th>
-                <Th>销售/权益</Th>
-                <Th>审核风险</Th>
-                <Th>内容</Th>
-                <Th>更新时间</Th>
-                <Th>操作</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {ips.items.map((ip) => (
-                <tr key={ip.id}>
-                  <Td>
-                    <div className="flex items-start gap-3">
-                      <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500">
-                        <IconBook2 className="size-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
-                          {ip.title}
-                        </p>
-                        <p className="mt-0.5 max-w-[260px] truncate text-[12px] text-slate-500">
-                          {ip.slug ?? ip.id}
-                        </p>
-                      </div>
-                    </div>
-                  </Td>
-                  <Td>
-                    <IpStatusPill status={ip.status} />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      {visibilityLabel(ip.listingVisibility)}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="text-sm font-medium text-slate-950">
-                      {ip.pricing.bundle
-                        ? `${formatAmount(ip.pricing.bundle.amount)} ${currencyLabel(
-                            ip.pricing.bundle.currency
-                          )}`
-                        : "免费/未定价"}
-                    </p>
-                    <p className="text-[12px] text-slate-500">
-                      {ip.pricing.activePriceCount} 条有效价格
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="text-sm text-slate-700">{ip.counts.purchaseOrders} 订单</p>
-                    <p className="text-[12px] text-slate-500">{ip.counts.entitlements} 权益</p>
-                  </Td>
-                  <Td>
-                    {ip.review.needsAttention || ip.review.openReportCount ? (
-                      <StatusPill tone={ip.review.openReportCount ? "risk" : "warn"}>
-                        {ip.review.openReportCount ? `${ip.review.openReportCount} 举报` : "待处理"}
-                      </StatusPill>
-                    ) : (
-                      <StatusPill tone="success">正常</StatusPill>
-                    )}
-                    <p className="mt-1 text-[11px] text-slate-500">v{ip.version}</p>
-                  </Td>
-                  <Td>
-                    <p className="max-w-[180px] truncate text-sm text-slate-700">
-                      {ip.genres.length ? ip.genres.join(" / ") : "未设置题材"}
-                    </p>
-                    <p className="text-[12px] text-slate-500">
-                      {ip.counts.episodes} 集 · {ip.localization.locale}
-                      {ip.localization.isFallback ? " · 回退" : ""}
-                    </p>
-                  </Td>
-                  <Td>
-                    <p className="text-[12px] text-slate-700">{formatDate(ip.updatedAt)}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {ip.publishedAt ? `发布 ${formatDate(ip.publishedAt)}` : "未发布"}
-                    </p>
-                  </Td>
-                  <Td>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void openIpDetail(ip.id)}
-                      disabled={detailLoading}
-                    >
-                      <IconEye className="size-3.5" />
-                      查看
-                    </Button>
-                  </Td>
-                </tr>
-              ))}
-              {!ips.items.length ? <EmptyRow colSpan={8} label="暂无 IP 内容" /> : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={ips.items}
+          loading={loading}
+          minWidth={1180}
+          pageSize={20}
+          emptyLabel="暂无 IP 内容"
+          className="rounded-none border-0"
+        />
       </section>
 
       <IpDetailDrawer
@@ -747,37 +853,47 @@ function IpDetailDrawer({
                     <span className="text-[12px] font-medium text-slate-600">目标状态</span>
                     <Select
                       value={status ?? "in_review"}
-                      onChange={(value) => updateDraft({ status: value as IpStatus })}
+                      onValueChange={(value) => updateDraft({ status: value as IpStatus })}
                     >
-                      <option value="in_review">审核中</option>
-                      <option value="changes_requested">退回修改</option>
-                      <option value="approved">批准</option>
-                      <option value="published">发布</option>
-                      <option value="hidden">隐藏</option>
-                      <option value="suspended">暂停销售</option>
-                      <option value="archived">归档</option>
+                      <SelectTrigger className="h-9 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="in_review">审核中</SelectItem>
+                        <SelectItem value="changes_requested">退回修改</SelectItem>
+                        <SelectItem value="approved">批准</SelectItem>
+                        <SelectItem value="published">发布</SelectItem>
+                        <SelectItem value="hidden">隐藏</SelectItem>
+                        <SelectItem value="suspended">暂停销售</SelectItem>
+                        <SelectItem value="archived">归档</SelectItem>
+                      </SelectContent>
                     </Select>
                   </label>
                   <label className="space-y-1.5">
                     <span className="text-[12px] font-medium text-slate-600">可见性</span>
                     <Select
                       value={visibility ?? "private"}
-                      onChange={(value) =>
+                      onValueChange={(value) =>
                         updateDraft({ visibility: value as IpRow["listingVisibility"] })
                       }
                     >
-                      <option value="private">私有</option>
-                      <option value="unlisted">仅链接</option>
-                      <option value="public">公开</option>
+                      <SelectTrigger className="h-9 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="private">私有</SelectItem>
+                        <SelectItem value="unlisted">仅链接</SelectItem>
+                        <SelectItem value="public">公开</SelectItem>
+                      </SelectContent>
                     </Select>
                   </label>
                 </div>
                 <label className="mt-3 block space-y-1.5">
                   <span className="text-[12px] font-medium text-slate-600">原因 / 说明</span>
-                  <textarea
+                  <Textarea
                     value={reason}
                     onChange={(event) => updateDraft({ reason: event.target.value })}
-                    className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                    className="min-h-24"
                     placeholder="写清楚审核决定，方便创作者和运营追溯。"
                   />
                 </label>

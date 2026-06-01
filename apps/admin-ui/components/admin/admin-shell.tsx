@@ -161,49 +161,49 @@ export function AdminShell({
             ))}
           </nav>
 
-          <div className="mt-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
-            <div className="mb-3 rounded-md border border-slate-200 bg-white px-2 py-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                数据源
-              </p>
-              <p className="mt-0.5 truncate text-[12px] font-semibold text-slate-950">
-                {session.site.label}
-              </p>
-              <p className="truncate text-[11px] text-slate-500">{session.site.domain}</p>
+          <div className="mt-auto border-t border-slate-200 pt-2">
+            <div className="mb-1 flex items-center gap-1.5 px-1 text-[11px] text-slate-500">
+              <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
+              <span className="truncate font-medium text-slate-600">{session.site.label}</span>
+              <span className="truncate text-slate-400">· {session.site.domain}</span>
             </div>
-            <Link
-              href="/account"
-              className="flex items-center gap-2 rounded-md px-1 py-1 transition hover:bg-slate-100"
-            >
-              <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-[12px] font-semibold text-white">
-                {session.user.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={session.user.avatarUrl} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  session.user.displayName.slice(0, 1).toUpperCase()
-                )}
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-[12px] font-medium text-slate-900">
-                  {session.user.displayName}
+            <div className="flex items-center gap-2">
+              <Link
+                href="/account"
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 transition hover:bg-slate-100"
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-[11px] font-semibold text-white">
+                  {session.user.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={session.user.avatarUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    session.user.displayName.slice(0, 1).toUpperCase()
+                  )}
                 </span>
-                <span className="block truncate text-[11px] text-slate-500">
-                  {session.user.email}
+                <span className="min-w-0">
+                  <span className="block truncate text-[12px] font-medium text-slate-900">
+                    {session.user.displayName}
+                  </span>
+                  <span className="block truncate text-[11px] text-slate-500">
+                    {session.user.email}
+                  </span>
                 </span>
-              </span>
-            </Link>
-            <p className="mt-1 text-[11px] text-slate-500">
-              {session.user.permissions.length} 项权限
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 h-7 w-full justify-start text-[12px]"
-              onClick={logout}
-            >
-              <IconLogout className="size-3.5" />
-              退出登录
-            </Button>
+              </Link>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0 text-slate-500 hover:text-slate-900"
+                onClick={logout}
+                title="退出登录"
+                aria-label="退出登录"
+              >
+                <IconLogout className="size-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </aside>

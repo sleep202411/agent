@@ -1,5 +1,7 @@
 import { IconArrowRight, IconChecklist } from "@tabler/icons-react";
 
+import { PageHeader } from "@/components/admin/page-header";
+
 export function ModulePlaceholder({
   title,
   description,
@@ -11,11 +13,7 @@ export function ModulePlaceholder({
 }) {
   return (
     <div className="space-y-4">
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/50">
-        <p className="text-[12px] font-medium tracking-[0.16em] text-slate-500">后台模块</p>
-        <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">{title}</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{description}</p>
-      </section>
+      <PageHeader eyebrow="后台模块" title={title} description={description} />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between">

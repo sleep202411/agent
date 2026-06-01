@@ -1,11 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconAlertTriangle, IconCircleCheck, IconRefresh, IconSearch } from "@tabler/icons-react";
+import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 type AuditOutcome = "success" | "failure";
+
+const OUTCOME_ALL = "__all__";
 
 export type AdminAuditRow = {
   id: string;
@@ -79,17 +91,111 @@ export function AdminAuditPanel({
     }
   }
 
+  const columns = useMemo<ColumnDef<AdminAuditRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "createdAt",
+        header: "时间",
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-700">{formatDate(row.original.createdAt)}</span>
+        ),
+      },
+      {
+        id: "actor",
+        header: "操作者",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const item = row.original;
+          return (
+            <>
+              <p className="text-sm font-medium text-slate-950">
+                {item.actor?.displayName ?? "系统"}
+              </p>
+              <p className="text-[12px] text-slate-500">{item.actor?.email ?? "-"}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "action",
+        header: "动作",
+        cell: ({ row }) => (
+          <code className="rounded bg-slate-100 px-2 py-1 text-[12px] text-slate-700">
+            {row.original.action}
+          </code>
+        ),
+      },
+      {
+        id: "resource",
+        header: "资源",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const item = row.original;
+          return (
+            <div className="text-sm text-slate-600">
+              <p>{item.resourceType}</p>
+              <p className="max-w-[180px] truncate text-[11px] text-slate-400">
+                {item.resourceId ?? "-"}
+              </p>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "outcome",
+        header: "结果",
+        cell: ({ row }) => {
+          const item = row.original;
+          return (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
+                item.outcome === "success"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-red-200 bg-red-50 text-red-700"
+              )}
+            >
+              {item.outcome === "success" ? (
+                <IconCircleCheck className="size-3" />
+              ) : (
+                <IconAlertTriangle className="size-3" />
+              )}
+              {item.outcome === "success" ? "成功" : "失败"}
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: "ipAddress",
+        header: "IP",
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-600">{row.original.ipAddress ?? "-"}</span>
+        ),
+      },
+      {
+        id: "detail",
+        header: "详情",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const item = row.original;
+          return (
+            <p className="max-w-[280px] truncate text-[12px] text-slate-500">
+              {item.reason ?? compactJson(item.metadata)}
+            </p>
+          );
+        },
+      },
+    ],
+    []
+  );
+
   return (
     <div className="space-y-4">
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[12px] font-medium text-slate-500">系统审计</p>
-            <h2 className="text-lg font-semibold tracking-tight text-slate-950">后台操作日志</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              当前数据源：{databaseLabel}。登录、MFA、账号、密码、会话和权限变更都会进入审计。
-            </p>
-          </div>
+      <PageHeader
+        eyebrow="系统审计"
+        title="后台操作日志"
+        description={`当前数据源：${databaseLabel}。登录、MFA、账号、密码、会话和权限变更都会进入审计。`}
+        actions={
           <div className="grid grid-cols-2 gap-2 sm:min-w-[260px]">
             <Metric label="日志总数" value={data.total} />
             <Metric
@@ -97,31 +203,37 @@ export function AdminAuditPanel({
               value={data.items.filter((item) => item.outcome === "failure").length}
             />
           </div>
-        </div>
-      </section>
+        }
+      />
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-200 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="grid flex-1 gap-2 lg:grid-cols-[minmax(220px,1fr)_140px]">
               <label className="relative block">
-                <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                <input
+                <IconSearch className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-400" />
+                <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+                  className="h-9 w-full rounded-lg border-slate-200 bg-white pl-9 pr-3 text-sm focus-visible:border-slate-950 focus-visible:ring-2 focus-visible:ring-slate-950/10"
                   placeholder="搜索操作、资源或操作者"
                 />
               </label>
-              <select
-                value={outcome}
-                onChange={(event) => setOutcome(event.target.value as AuditOutcome | "")}
-                className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm"
+              <Select
+                value={outcome === "" ? OUTCOME_ALL : outcome}
+                onValueChange={(value) =>
+                  setOutcome(value === OUTCOME_ALL ? "" : (value as AuditOutcome))
+                }
               >
-                <option value="">全部结果</option>
-                <option value="success">成功</option>
-                <option value="failure">失败</option>
-              </select>
+                <SelectTrigger className="h-9 w-full rounded-lg border-slate-200 bg-white px-2.5 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={OUTCOME_ALL}>全部结果</SelectItem>
+                  <SelectItem value="success">成功</SelectItem>
+                  <SelectItem value="failure">失败</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
               <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
@@ -139,79 +251,15 @@ export function AdminAuditPanel({
           </div>
         ) : null}
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">时间</th>
-                <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">操作者</th>
-                <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">动作</th>
-                <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">资源</th>
-                <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">结果</th>
-                <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">IP</th>
-                <th className="border-b border-slate-200 bg-slate-50 px-3 py-2.5">详情</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((item) => (
-                <tr key={item.id} className="border-t border-slate-100">
-                  <td className="border-b border-slate-100 px-3 py-3 text-sm text-slate-700">
-                    {formatDate(item.createdAt)}
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-3">
-                    <p className="text-sm font-medium text-slate-950">
-                      {item.actor?.displayName ?? "系统"}
-                    </p>
-                    <p className="text-[12px] text-slate-500">{item.actor?.email ?? "-"}</p>
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-3">
-                    <code className="rounded bg-slate-100 px-2 py-1 text-[12px] text-slate-700">
-                      {item.action}
-                    </code>
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-3 text-sm text-slate-600">
-                    <p>{item.resourceType}</p>
-                    <p className="max-w-[180px] truncate text-[11px] text-slate-400">
-                      {item.resourceId ?? "-"}
-                    </p>
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-3">
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]",
-                        item.outcome === "success"
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-red-200 bg-red-50 text-red-700"
-                      )}
-                    >
-                      {item.outcome === "success" ? (
-                        <IconCircleCheck className="size-3" />
-                      ) : (
-                        <IconAlertTriangle className="size-3" />
-                      )}
-                      {item.outcome === "success" ? "成功" : "失败"}
-                    </span>
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-3 text-sm text-slate-600">
-                    {item.ipAddress ?? "-"}
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-3">
-                    <p className="max-w-[280px] truncate text-[12px] text-slate-500">
-                      {item.reason ?? compactJson(item.metadata)}
-                    </p>
-                  </td>
-                </tr>
-              ))}
-              {!data.items.length ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">
-                    暂无审计记录
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={data.items}
+          loading={loading}
+          minWidth={980}
+          pageSize={20}
+          emptyLabel="暂无审计记录"
+          className="rounded-none border-0"
+        />
       </section>
     </div>
   );

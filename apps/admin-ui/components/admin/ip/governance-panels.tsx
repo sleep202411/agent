@@ -1,17 +1,16 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { IconClipboardCheck, IconExternalLink, IconFlag } from "@tabler/icons-react";
+import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import {
-  EmptyRow,
   ErrorBanner,
   formatDate,
   PageHeader,
   reasonLabel,
   statusLabel,
   StatusPill,
-  Td,
-  Th,
   visibilityLabel,
 } from "./shared";
 import type { AdminIpOverviewData, ReportRow, ReviewQueueRow } from "./types";
@@ -88,6 +87,138 @@ function GovernanceTable({
   kind: "review" | "report";
   rows: ReviewQueueRow[] | ReportRow[];
 }) {
+  const reviewColumns = useMemo<ColumnDef<ReviewQueueRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "targetId",
+        header: "内容",
+        cell: ({ row }) => {
+          const item = row.original;
+          const targetTitle = item.ip?.title ?? item.episode?.title ?? item.targetId;
+          return (
+            <>
+              <p className="max-w-[260px] truncate font-medium text-slate-950">{targetTitle}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                {item.ip
+                  ? `${visibilityLabel(item.ip.listingVisibility)} · ${statusLabel(item.ip.status)}`
+                  : item.targetId}
+              </p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "targetType",
+        header: "类型",
+        cell: ({ row }) => row.original.targetType,
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => (
+          <StatusPill tone={row.original.status === "changes_requested" ? "risk" : "warn"}>
+            {statusLabel(row.original.status)}
+          </StatusPill>
+        ),
+      },
+      {
+        accessorKey: "changeSummary",
+        header: "说明",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <p className="max-w-[360px] truncate text-sm text-slate-700">
+            {row.original.changeSummary ?? "未填写变更说明"}
+          </p>
+        ),
+      },
+      {
+        accessorKey: "submittedById",
+        header: "提交人",
+        cell: ({ row }) => (
+          <p className="max-w-[160px] truncate text-sm text-slate-700">
+            {row.original.submittedById}
+          </p>
+        ),
+      },
+      {
+        accessorKey: "submittedAt",
+        header: "时间",
+        cell: ({ row }) => (
+          <p className="text-[12px] text-slate-700">{formatDate(row.original.submittedAt)}</p>
+        ),
+      },
+    ],
+    []
+  );
+
+  const reportColumns = useMemo<ColumnDef<ReportRow, unknown>[]>(
+    () => [
+      {
+        accessorKey: "targetId",
+        header: "内容",
+        cell: ({ row }) => {
+          const item = row.original;
+          const targetTitle = item.ip?.title ?? item.episode?.title ?? item.targetId;
+          return (
+            <>
+              <p className="max-w-[260px] truncate font-medium text-slate-950">{targetTitle}</p>
+              <p className="mt-0.5 text-[11px] text-slate-500">{item.targetId}</p>
+            </>
+          );
+        },
+      },
+      {
+        accessorKey: "reason",
+        header: "类型",
+        cell: ({ row }) => reasonLabel(row.original.reason),
+      },
+      {
+        accessorKey: "status",
+        header: "状态",
+        cell: ({ row }) => (
+          <StatusPill
+            tone={
+              row.original.status === "submitted"
+                ? "risk"
+                : row.original.status === "triaged"
+                  ? "warn"
+                  : "muted"
+            }
+          >
+            {row.original.status}
+          </StatusPill>
+        ),
+      },
+      {
+        accessorKey: "description",
+        header: "说明",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <p className="max-w-[360px] truncate text-sm text-slate-700">
+            {row.original.description ?? "举报人未填写详细说明"}
+          </p>
+        ),
+      },
+      {
+        accessorKey: "reporterUserId",
+        header: "提交人",
+        cell: ({ row }) => (
+          <p className="max-w-[160px] truncate text-sm text-slate-700">
+            {row.original.reporterUserId ?? "匿名"}
+          </p>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: "时间",
+        cell: ({ row }) => (
+          <p className="text-[12px] text-slate-700">{formatDate(row.original.createdAt)}</p>
+        ),
+      },
+    ],
+    []
+  );
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -113,95 +244,26 @@ function GovernanceTable({
             <IconExternalLink className="size-3.5" />
           </Link>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <Th>内容</Th>
-                <Th>类型</Th>
-                <Th>状态</Th>
-                <Th>说明</Th>
-                <Th>提交人</Th>
-                <Th>时间</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {kind === "review"
-                ? (rows as ReviewQueueRow[]).map((row) => <ReviewRowView key={row.id} row={row} />)
-                : (rows as ReportRow[]).map((row) => <ReportRowView key={row.id} row={row} />)}
-              {!rows.length ? (
-                <EmptyRow colSpan={6} label={kind === "review" ? "暂无待审核内容" : "暂无举报"} />
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        {kind === "review" ? (
+          <DataTable
+            columns={reviewColumns}
+            data={rows as ReviewQueueRow[]}
+            minWidth={980}
+            pageSize={20}
+            emptyLabel="暂无待审核内容"
+            className="rounded-none border-0"
+          />
+        ) : (
+          <DataTable
+            columns={reportColumns}
+            data={rows as ReportRow[]}
+            minWidth={980}
+            pageSize={20}
+            emptyLabel="暂无举报"
+            className="rounded-none border-0"
+          />
+        )}
       </section>
     </div>
-  );
-}
-
-function ReviewRowView({ row }: { row: ReviewQueueRow }) {
-  const targetTitle = row.ip?.title ?? row.episode?.title ?? row.targetId;
-  return (
-    <tr>
-      <Td>
-        <p className="max-w-[260px] truncate font-medium text-slate-950">{targetTitle}</p>
-        <p className="mt-0.5 text-[11px] text-slate-500">
-          {row.ip
-            ? `${visibilityLabel(row.ip.listingVisibility)} · ${statusLabel(row.ip.status)}`
-            : row.targetId}
-        </p>
-      </Td>
-      <Td>{row.targetType}</Td>
-      <Td>
-        <StatusPill tone={row.status === "changes_requested" ? "risk" : "warn"}>
-          {statusLabel(row.status)}
-        </StatusPill>
-      </Td>
-      <Td>
-        <p className="max-w-[360px] truncate text-sm text-slate-700">
-          {row.changeSummary ?? "未填写变更说明"}
-        </p>
-      </Td>
-      <Td>
-        <p className="max-w-[160px] truncate text-sm text-slate-700">{row.submittedById}</p>
-      </Td>
-      <Td>
-        <p className="text-[12px] text-slate-700">{formatDate(row.submittedAt)}</p>
-      </Td>
-    </tr>
-  );
-}
-
-function ReportRowView({ row }: { row: ReportRow }) {
-  const targetTitle = row.ip?.title ?? row.episode?.title ?? row.targetId;
-  return (
-    <tr>
-      <Td>
-        <p className="max-w-[260px] truncate font-medium text-slate-950">{targetTitle}</p>
-        <p className="mt-0.5 text-[11px] text-slate-500">{row.targetId}</p>
-      </Td>
-      <Td>{reasonLabel(row.reason)}</Td>
-      <Td>
-        <StatusPill
-          tone={row.status === "submitted" ? "risk" : row.status === "triaged" ? "warn" : "muted"}
-        >
-          {row.status}
-        </StatusPill>
-      </Td>
-      <Td>
-        <p className="max-w-[360px] truncate text-sm text-slate-700">
-          {row.description ?? "举报人未填写详细说明"}
-        </p>
-      </Td>
-      <Td>
-        <p className="max-w-[160px] truncate text-sm text-slate-700">
-          {row.reporterUserId ?? "匿名"}
-        </p>
-      </Td>
-      <Td>
-        <p className="text-[12px] text-slate-700">{formatDate(row.createdAt)}</p>
-      </Td>
-    </tr>
   );
 }

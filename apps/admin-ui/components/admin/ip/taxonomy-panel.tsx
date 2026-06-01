@@ -3,13 +3,20 @@
 import { useState } from "react";
 import { IconRefresh, IconTags } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   ErrorBanner,
-  InputLike,
   PageHeader,
   requestEnvelope,
-  Select,
   StatusPill,
   taxonomyStatusLabel,
   toErrorMessage,
@@ -22,6 +29,10 @@ import type {
   UpdateTaxonomyTermDraft,
 } from "./types";
 import { emptyIpTaxonomy } from "./types";
+
+// shadcn SelectItem value cannot be an empty string, so the "默认语言" option uses
+// this sentinel and maps back to "" in the onValueChange handler.
+const LOCALE_ALL = "__all__";
 
 type TaxonomyFormState = {
   id: string | null;
@@ -162,11 +173,19 @@ export function IpTaxonomyPanel({
         description="维护跨语言题材和标签词条。code 是稳定业务标识，展示文案通过本地化记录承载。"
       >
         <div className="flex items-center gap-2">
-          <Select value={locale} onChange={setLocale} aria-label="词库语言">
-            <option value="">默认语言</option>
-            <option value="zh-CN">简体中文</option>
-            <option value="en-US">English</option>
-            <option value="zh-HK">繁體中文</option>
+          <Select
+            value={locale || LOCALE_ALL}
+            onValueChange={(value) => setLocale(value === LOCALE_ALL ? "" : value)}
+          >
+            <SelectTrigger className="h-9 w-full" aria-label="词库语言">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={LOCALE_ALL}>默认语言</SelectItem>
+              <SelectItem value="zh-CN">简体中文</SelectItem>
+              <SelectItem value="en-US">English</SelectItem>
+              <SelectItem value="zh-HK">繁體中文</SelectItem>
+            </SelectContent>
           </Select>
           <Button
             type="button"
@@ -220,61 +239,78 @@ export function IpTaxonomyPanel({
             <div className="grid gap-2 sm:grid-cols-2">
               <Select
                 value={form.type}
-                onChange={(value) =>
+                onValueChange={(value) =>
                   setForm((prev) => ({ ...prev, type: value as "genre" | "tag" }))
                 }
               >
-                <option value="genre">题材</option>
-                <option value="tag">标签</option>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="genre">题材</SelectItem>
+                  <SelectItem value="tag">标签</SelectItem>
+                </SelectContent>
               </Select>
               <Select
                 value={form.status}
-                onChange={(value) =>
+                onValueChange={(value) =>
                   setForm((prev) => ({
                     ...prev,
                     status: value as "active" | "hidden" | "archived",
                   }))
                 }
               >
-                <option value="active">启用</option>
-                <option value="hidden">隐藏</option>
-                <option value="archived">归档</option>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">启用</SelectItem>
+                  <SelectItem value="hidden">隐藏</SelectItem>
+                  <SelectItem value="archived">归档</SelectItem>
+                </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px]">
-              <InputLike
+              <Input
                 value={form.code}
-                onChange={(value) => setForm((prev) => ({ ...prev, code: value }))}
+                onChange={(event) => setForm((prev) => ({ ...prev, code: event.target.value }))}
                 placeholder="code，可留空自动生成"
                 disabled={editing}
+                className="h-9"
               />
-              <InputLike
+              <Input
                 value={form.displayOrder}
-                onChange={(value) => setForm((prev) => ({ ...prev, displayOrder: value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, displayOrder: event.target.value }))
+                }
                 placeholder="排序"
+                className="h-9"
               />
             </div>
-            <InputLike
+            <Input
               value={form.zhCN}
-              onChange={(value) => setForm((prev) => ({ ...prev, zhCN: value }))}
+              onChange={(event) => setForm((prev) => ({ ...prev, zhCN: event.target.value }))}
               placeholder="简体中文名称"
+              className="h-9"
             />
-            <InputLike
+            <Input
               value={form.enUS}
-              onChange={(value) => setForm((prev) => ({ ...prev, enUS: value }))}
+              onChange={(event) => setForm((prev) => ({ ...prev, enUS: event.target.value }))}
               placeholder="English label"
+              className="h-9"
             />
-            <InputLike
+            <Input
               value={form.zhHK}
-              onChange={(value) => setForm((prev) => ({ ...prev, zhHK: value }))}
+              onChange={(event) => setForm((prev) => ({ ...prev, zhHK: event.target.value }))}
               placeholder="繁體中文名稱"
+              className="h-9"
             />
-            <textarea
+            <Textarea
               value={form.description}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, description: event.target.value }))
               }
-              className="min-h-20 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+              className="min-h-20"
               placeholder="内部说明或运营口径"
             />
           </div>
