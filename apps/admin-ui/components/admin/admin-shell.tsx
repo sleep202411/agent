@@ -3,14 +3,19 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  IconBook2,
   IconChevronRight,
   IconCoins,
   IconDatabase,
   IconDashboard,
   IconFileAnalytics,
+  IconFlag,
   IconLogout,
   IconPhoto,
+  IconReceipt2,
   IconShieldLock,
+  IconStar,
+  IconTags,
   IconUserCog,
   IconUsersGroup,
   IconVersions,
@@ -21,15 +26,58 @@ import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import type { AdminSession } from "@/lib/admin-session";
 
-const navItems = [
-  { href: "/", label: "运营总览", icon: IconDashboard },
-  { href: "/ip", label: "IP 内容", icon: IconVersions, permission: "ip.read" },
-  { href: "/reviews", label: "审核队列", icon: IconShieldLock, permission: "ip.moderate" },
-  { href: "/billing", label: "订单积分", icon: IconCoins, permission: "billing.read" },
-  { href: "/media", label: "媒体资产", icon: IconPhoto, permission: "media.read" },
-  { href: "/users", label: "账号权限", icon: IconUsersGroup, permission: "admin.manage" },
-  { href: "/audit", label: "系统审计", icon: IconFileAnalytics, permission: "audit.read" },
-  { href: "/account", label: "我的账户", icon: IconUserCog },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof IconDashboard;
+  permission?: string;
+};
+
+const navSections: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: "总览",
+    items: [
+      { href: "/", label: "运营总览", icon: IconDashboard },
+      { href: "/ip/overview", label: "IP 总览", icon: IconVersions, permission: "ip.read" },
+    ],
+  },
+  {
+    label: "IP 内容",
+    items: [
+      { href: "/ip/titles", label: "标题库", icon: IconBook2, permission: "ip.read" },
+      { href: "/ip/reviews", label: "审核队列", icon: IconShieldLock, permission: "ip.moderate" },
+      { href: "/ip/reports", label: "举报处理", icon: IconFlag, permission: "ip.moderate" },
+    ],
+  },
+  {
+    label: "IP 配置",
+    items: [
+      { href: "/ip/taxonomy", label: "题材词库", icon: IconTags, permission: "ip.read" },
+      { href: "/ip/discovery", label: "广场运营位", icon: IconStar, permission: "ip.read" },
+    ],
+  },
+  {
+    label: "IP 商业化",
+    items: [
+      { href: "/ip/commerce/orders", label: "IP 订单", icon: IconReceipt2, permission: "ip.read" },
+      {
+        href: "/ip/commerce/entitlements",
+        label: "IP 权益",
+        icon: IconCoins,
+        permission: "ip.read",
+      },
+    ],
+  },
+  {
+    label: "平台治理",
+    items: [
+      { href: "/billing", label: "订单积分", icon: IconCoins, permission: "billing.read" },
+      { href: "/media", label: "媒体资产", icon: IconPhoto, permission: "media.read" },
+      { href: "/users", label: "账号权限", icon: IconUsersGroup, permission: "admin.manage" },
+      { href: "/audit", label: "系统审计", icon: IconFileAnalytics, permission: "audit.read" },
+      { href: "/account", label: "我的账户", icon: IconUserCog },
+    ],
+  },
 ];
 
 export function AdminShell({
@@ -41,13 +89,27 @@ export function AdminShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const visibleNavItems = navItems.filter((item) =>
+  const visibleNavSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) =>
+        item.permission ? session.user.permissions.includes(item.permission) : true
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
+  const visibleNavItems = visibleNavSections.flatMap((section) => section.items);
+  const activeItem =
+    visibleNavItems
+      .filter((item) =>
+        item.href === "/"
+          ? pathname === "/"
+          : pathname === item.href || pathname.startsWith(`${item.href}/`)
+      )
+      .sort((left, right) => right.href.length - left.href.length)[0] ?? visibleNavItems[0];
+
+  const mobileNavItems = visibleNavItems.filter((item) =>
     item.permission ? session.user.permissions.includes(item.permission) : true
   );
-  const activeItem =
-    visibleNavItems.find((item) =>
-      item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
-    ) ?? visibleNavItems[0];
 
   async function logout() {
     await fetch(adminUiApiPath("/api/admin/auth/logout"), { method: "POST" });
@@ -57,7 +119,7 @@ export function AdminShell({
 
   return (
     <div className="min-h-dvh bg-[#f6f7f9] text-slate-950">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[204px] border-r border-slate-200 bg-white/95 px-3 py-4 backdrop-blur md:block">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] border-r border-slate-200 bg-white/95 px-3 py-4 backdrop-blur md:block">
         <div className="flex h-full flex-col">
           <Link href="/" className="block px-2 pb-5 pt-1">
             <BrandLogo compact className="w-[142px]" />
@@ -66,25 +128,37 @@ export function AdminShell({
             </span>
           </Link>
 
-          <nav className="space-y-1">
-            {visibleNavItems.map((item) => {
-              const Icon = item.icon;
-              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "group flex h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-slate-600 transition",
-                    active ? "bg-slate-950 text-white" : "hover:bg-slate-100 hover:text-slate-950"
-                  )}
-                >
-                  <Icon className="size-4" />
-                  <span className="flex-1">{item.label}</span>
-                  {active ? <IconChevronRight className="size-3.5" /> : null}
-                </Link>
-              );
-            })}
+          <nav className="space-y-4 overflow-y-auto pr-1">
+            {visibleNavSections.map((section) => (
+              <div key={section.label} className="space-y-1">
+                <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  {section.label}
+                </p>
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const active =
+                    item.href === "/"
+                      ? pathname === "/"
+                      : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "group flex h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-slate-600 transition",
+                        active
+                          ? "bg-slate-950 text-white"
+                          : "hover:bg-slate-100 hover:text-slate-950"
+                      )}
+                    >
+                      <Icon className="size-4" />
+                      <span className="flex-1">{item.label}</span>
+                      {active ? <IconChevronRight className="size-3.5" /> : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
 
           <div className="mt-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
@@ -134,7 +208,7 @@ export function AdminShell({
         </div>
       </aside>
 
-      <div className="md:pl-[204px]">
+      <div className="md:pl-[236px]">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
           <div className="flex h-12 items-center justify-between px-4">
             <div className="min-w-0">
@@ -161,9 +235,12 @@ export function AdminShell({
             </div>
           </div>
           <nav className="flex gap-1 overflow-x-auto border-t border-slate-100 px-3 py-2 md:hidden">
-            {visibleNavItems.map((item) => {
+            {mobileNavItems.map((item) => {
               const Icon = item.icon;
-              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+              const active =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
                   key={item.href}
