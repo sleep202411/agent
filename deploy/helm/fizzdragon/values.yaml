@@ -215,6 +215,11 @@ server:
     AUTH_DISABLED: "false"
     PAYMENT_PROVIDER: airwallex
     AIRWALLEX_API_BASE_URL: https://api.airwallex.com
+    # Billing checkout success/back URLs must originate from one of these. The
+    # AKS web host (fizzstudio.fizzdragon.com) is NOT in the code's hardcoded
+    # allowlist, so it must be listed here. localhost:9527 is for local testing
+    # against prod — remove once recharge is validated.
+    BILLING_ALLOWED_RETURN_ORIGINS: "https://fizzstudio.fizzdragon.com,https://fizzdragon.com,http://localhost:9527"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 1000m, memory: 1Gi }
