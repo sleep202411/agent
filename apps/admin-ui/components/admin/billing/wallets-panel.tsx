@@ -6,8 +6,10 @@
 // 人工调整 is DEFERRED to P3 — do NOT add it here.
 
 import { useMemo, useState } from "react";
+import { IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import {
   AdminDialog,
   ColumnHeader,
@@ -22,6 +24,8 @@ import {
   formatInteger,
   formatMoneyMinor,
   formatSignedInteger,
+  requestEnvelope,
+  toErrorMessage,
   walletEntryTypeLabel,
 } from "./shared";
 import type {
@@ -42,6 +46,25 @@ export function BillingWalletsPanel({
   initialOverview: AdminBillingOverviewData | null;
   initialError?: string | null;
 }) {
+  const [overview, setOverview] = useState<AdminBillingOverviewData | null>(initialOverview);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(initialError ?? null);
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      const nextOverview = await requestEnvelope<AdminBillingOverviewData>(
+        "/api/admin/billing/overview"
+      );
+      setOverview(nextOverview);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -52,14 +75,21 @@ export function BillingWalletsPanel({
         }
         title="用户钱包"
         description="算力积分与社区积分钱包余额，明细在钱包详情内查看。"
+        actions={
+          <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
+            <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
+            刷新
+          </Button>
+        }
       />
-      {initialError ? <ErrorBanner message={initialError} /> : null}
-      {initialOverview ? (
+      {error ? <ErrorBanner message={error} /> : null}
+      {overview ? (
         <WalletView
-          accounts={initialOverview.walletAccounts}
-          entries={initialOverview.walletLedgerEntries}
-          metrics={initialOverview.metrics}
-          recentOrders={initialOverview.recentOrders}
+          accounts={overview.walletAccounts}
+          entries={overview.walletLedgerEntries}
+          metrics={overview.metrics}
+          recentOrders={overview.recentOrders}
+          loading={loading}
         />
       ) : null}
     </div>
@@ -71,11 +101,13 @@ function WalletView({
   entries,
   metrics,
   recentOrders,
+  loading,
 }: {
   accounts: WalletAccountRow[];
   entries: WalletLedgerEntryRow[];
   metrics: AdminBillingOverviewData["metrics"];
   recentOrders: BillingOrderRow[];
+  loading: boolean;
 }) {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? null;
@@ -181,6 +213,7 @@ function WalletView({
         <DataTable
           columns={columns}
           data={accounts}
+          loading={loading}
           minWidth={940}
           pageSize={20}
           emptyLabel="暂无钱包账户"

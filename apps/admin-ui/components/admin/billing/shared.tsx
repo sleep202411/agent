@@ -49,44 +49,6 @@ import type {
 export { PageHeader };
 
 // ---------------------------------------------------------------------------
-// Stage-1 scaffold stub — REMOVE in Stage 2 once each page renders its real
-// panel. Establishes the page<->panel contract (site labels + error) so routes
-// resolve and the second rail is navigable before the views are wired.
-// ---------------------------------------------------------------------------
-
-export function BillingPanelStub({
-  siteLabel,
-  databaseLabel,
-  title,
-  description,
-  error,
-}: {
-  siteLabel: string;
-  databaseLabel: string;
-  title: string;
-  description: string;
-  error?: string | null;
-}) {
-  return (
-    <div className="space-y-4">
-      <PageHeader
-        eyebrow={
-          <>
-            {siteLabel} · {databaseLabel}
-          </>
-        }
-        title={title}
-        description={description}
-      />
-      {error ? <ErrorBanner message={error} /> : null}
-      <section className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 px-4 py-8 text-center text-sm text-slate-500">
-        本页正在从订单积分运营台拆分（P2 Stage 2 填充真实视图）。
-      </section>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Layout / metric primitives
 // ---------------------------------------------------------------------------
 
@@ -251,6 +213,7 @@ export function Select({
       {name ? <input type="hidden" name={name} value={currentValue} /> : null}
       <SelectTrigger
         title={title}
+        aria-label={title}
         className="h-9 w-full rounded-lg border-slate-200 bg-white px-2.5 text-sm text-slate-700 focus-visible:border-slate-950 focus-visible:ring-2 focus-visible:ring-slate-950/10"
       >
         <SelectValue />
@@ -374,6 +337,7 @@ export function ProviderBadge({
           onClick={() => onSync(binding.id)}
           className="inline-flex size-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
           title="同步供应商价格"
+          aria-label="同步供应商价格"
         >
           <IconCloudUpload className="size-3.5" />
         </button>
@@ -413,6 +377,7 @@ export function PromotionProviderBadge({
           onClick={() => onSync(binding.id)}
           className="inline-flex size-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
           title="同步供应商优惠券"
+          aria-label="同步供应商优惠券"
         >
           <IconCloudUpload className="size-3.5" />
         </button>
@@ -1038,10 +1003,12 @@ export function formatBpsPercent(value: number) {
 }
 
 export function formatDate(value: string) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  }).format(date);
 }

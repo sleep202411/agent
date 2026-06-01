@@ -6,8 +6,11 @@
 // verbatim. Shared primitives come from "./shared"; the page server component
 // fetches /billing/ledger/settlements and passes the rows in.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { IconRefresh } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import {
   ColumnHeader,
   ErrorBanner,
@@ -16,7 +19,9 @@ import {
   formatDate,
   formatMoneyMinor,
   providerLabel,
+  requestEnvelope,
   settlementStatusLabel,
+  toErrorMessage,
 } from "./shared";
 import type { AdminBillingSettlementsData, BillingSettlementRow } from "./types";
 
@@ -31,7 +36,26 @@ export function BillingSettlementsPanel({
   initialSettlements: AdminBillingSettlementsData | null;
   initialError?: string | null;
 }) {
-  const settlements = initialSettlements?.items ?? [];
+  const [settlements, setSettlements] = useState<BillingSettlementRow[]>(
+    initialSettlements?.items ?? []
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(initialError ?? null);
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      const nextSettlements = await requestEnvelope<AdminBillingSettlementsData>(
+        "/api/admin/billing/ledger/settlements"
+      );
+      setSettlements(nextSettlements.items);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -43,14 +67,26 @@ export function BillingSettlementsPanel({
         }
         title="结算批次"
         description="支付渠道打款结算，用于核对 provider payout 与手续费。"
+        actions={
+          <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
+            <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
+            刷新
+          </Button>
+        }
       />
-      {initialError ? <ErrorBanner message={initialError} /> : null}
-      <SettlementsTable settlements={settlements} />
+      {error ? <ErrorBanner message={error} /> : null}
+      <SettlementsTable settlements={settlements} loading={loading} />
     </div>
   );
 }
 
-function SettlementsTable({ settlements }: { settlements: BillingSettlementRow[] }) {
+function SettlementsTable({
+  settlements,
+  loading,
+}: {
+  settlements: BillingSettlementRow[];
+  loading: boolean;
+}) {
   const columns = useMemo<ColumnDef<BillingSettlementRow, unknown>[]>(
     () => [
       {
@@ -151,6 +187,7 @@ function SettlementsTable({ settlements }: { settlements: BillingSettlementRow[]
       <DataTable
         columns={columns}
         data={settlements}
+        loading={loading}
         minWidth={900}
         pageSize={20}
         emptyLabel="暂无渠道结算记录"

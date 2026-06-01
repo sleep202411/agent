@@ -4,7 +4,9 @@
 // (admin-billing-panel.tsx:3800). Run rows + open-item differences, with the
 // page header layered on top (mirrors the IP module per-page panels).
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { IconRefresh } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
 import {
@@ -17,7 +19,9 @@ import {
   providerLabel,
   reconciliationItemStatusLabel,
   reconciliationStatusLabel,
+  requestEnvelope,
   StatusPill,
+  toErrorMessage,
 } from "./shared";
 import type { AdminBillingReconciliationRunsData, BillingReconciliationRunRow } from "./types";
 
@@ -32,7 +36,26 @@ export function BillingReconciliationPanel({
   initialReconciliationRuns: AdminBillingReconciliationRunsData | null;
   initialError?: string | null;
 }) {
-  const runs = initialReconciliationRuns?.items ?? [];
+  const [runs, setRuns] = useState<BillingReconciliationRunRow[]>(
+    initialReconciliationRuns?.items ?? []
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(initialError ?? null);
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      const nextRuns = await requestEnvelope<AdminBillingReconciliationRunsData>(
+        "/api/admin/billing/ledger/reconciliation-runs"
+      );
+      setRuns(nextRuns.items);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -44,14 +67,26 @@ export function BillingReconciliationPanel({
         }
         title="对账任务"
         description="内部账与渠道账的自动对账运行，列出不一致与缺失明细。"
+        actions={
+          <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
+            <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
+            刷新
+          </Button>
+        }
       />
-      {initialError ? <ErrorBanner message={initialError} /> : null}
-      <ReconciliationRunsTable runs={runs} />
+      {error ? <ErrorBanner message={error} /> : null}
+      <ReconciliationRunsTable runs={runs} loading={loading} />
     </div>
   );
 }
 
-function ReconciliationRunsTable({ runs }: { runs: BillingReconciliationRunRow[] }) {
+function ReconciliationRunsTable({
+  runs,
+  loading,
+}: {
+  runs: BillingReconciliationRunRow[];
+  loading: boolean;
+}) {
   const columns = useMemo<ColumnDef<BillingReconciliationRunRow, unknown>[]>(
     () => [
       {
@@ -206,6 +241,7 @@ function ReconciliationRunsTable({ runs }: { runs: BillingReconciliationRunRow[]
       <DataTable
         columns={columns}
         data={runs}
+        loading={loading}
         minWidth={1050}
         pageSize={20}
         emptyLabel="暂无对账运行"

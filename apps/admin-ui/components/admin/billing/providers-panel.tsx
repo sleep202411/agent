@@ -16,8 +16,11 @@
 // metrics reuse the monolith's bindingRiskCount + incompleteProviderBindings
 // computation (admin-billing-panel.tsx:714-724 / 1170-1173).
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { IconRefresh } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import { cn } from "@/lib/utils";
 import {
   ColumnHeader,
   ErrorBanner,
@@ -27,8 +30,10 @@ import {
   ProviderBadge,
   providerHelp,
   providerLabel,
+  requestEnvelope,
   RiskText,
   StatusPill,
+  toErrorMessage,
 } from "./shared";
 import type { AdminBillingOverviewData, BillingProviderBinding, PaymentProvider } from "./types";
 
@@ -71,10 +76,26 @@ export function BillingProvidersPanel({
   initialOverview: AdminBillingOverviewData | null;
   initialError?: string | null;
 }) {
-  const providerBindings = useMemo(
-    () => initialOverview?.providerBindings ?? [],
-    [initialOverview]
-  );
+  const [overview, setOverview] = useState<AdminBillingOverviewData | null>(initialOverview);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(initialError ?? null);
+
+  async function refresh() {
+    setLoading(true);
+    setError(null);
+    try {
+      const nextOverview = await requestEnvelope<AdminBillingOverviewData>(
+        "/api/admin/billing/overview"
+      );
+      setOverview(nextOverview);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const providerBindings = useMemo(() => overview?.providerBindings ?? [], [overview]);
 
   // Aggregate per-provider health from the overview providerBindings summary.
   const rows = useMemo<ProviderHealthRow[]>(() => {
@@ -100,8 +121,8 @@ export function BillingProvidersPanel({
   // Aggregate header metrics — reuse the monolith's 支付映射 / 映射风险 numbers
   // verbatim (admin-billing-panel.tsx:1169-1173). 映射风险 is the per-binding
   // risk count plus the overview incompleteProviderBindings count.
-  const activeProviderBindings = initialOverview?.metrics.activeProviderBindings ?? 0;
-  const incompleteProviderBindings = initialOverview?.metrics.incompleteProviderBindings ?? 0;
+  const activeProviderBindings = overview?.metrics.activeProviderBindings ?? 0;
+  const incompleteProviderBindings = overview?.metrics.incompleteProviderBindings ?? 0;
   const bindingRiskCount = useMemo(
     () => providerBindings.filter(isBindingRisky).length,
     [providerBindings]
@@ -118,25 +139,29 @@ export function BillingProvidersPanel({
         title="支付方式"
         description="平台启用的支付供应商及其用途说明。内部商品和价格是事实源，支付供应商只作为 provider binding。"
         actions={
-          <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[320px]">
+          <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[460px]">
             <Metric label="支付映射" value={activeProviderBindings} />
             <Metric
               label="映射风险"
               value={bindingRiskCount + incompleteProviderBindings}
               tone="risk"
             />
+            <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
+              <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
+              刷新
+            </Button>
           </div>
         }
       />
 
-      {initialError ? <ErrorBanner message={initialError} /> : null}
+      {error ? <ErrorBanner message={error} /> : null}
 
-      <ProvidersTable rows={rows} />
+      <ProvidersTable rows={rows} loading={loading} />
     </div>
   );
 }
 
-function ProvidersTable({ rows }: { rows: ProviderHealthRow[] }) {
+function ProvidersTable({ rows, loading }: { rows: ProviderHealthRow[]; loading: boolean }) {
   const columns = useMemo<ColumnDef<ProviderHealthRow, unknown>[]>(
     () => [
       {
@@ -243,6 +268,7 @@ function ProvidersTable({ rows }: { rows: ProviderHealthRow[] }) {
       <DataTable
         columns={columns}
         data={rows}
+        loading={loading}
         minWidth={960}
         pageSize={20}
         emptyLabel="暂无支付供应商"
