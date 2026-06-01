@@ -1,84 +1,28 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  IconBook2,
-  IconChevronRight,
-  IconCoins,
-  IconDatabase,
-  IconDashboard,
-  IconFileAnalytics,
-  IconFlag,
-  IconLogout,
-  IconPhoto,
-  IconReceipt2,
-  IconShieldLock,
-  IconStar,
-  IconTags,
-  IconUserCog,
-  IconUsersGroup,
-  IconVersions,
-} from "@tabler/icons-react";
+import { IconChevronRight, IconDatabase, IconLogout, IconMenu2, IconX } from "@tabler/icons-react";
 import { BrandLogo } from "@/components/admin/brand-logo";
+import {
+  activeModule,
+  GLOBAL_NAV,
+  MODULE_NAV,
+  type GlobalNavEntry,
+  type ModuleNavGroup,
+} from "@/components/admin/nav-config";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 import type { AdminSession } from "@/lib/admin-session";
 
-type NavItem = {
-  href: string;
-  label: string;
-  icon: typeof IconDashboard;
-  permission?: string;
-};
+const GLOBAL_RAIL_WIDTH = "w-[60px]";
 
-const navSections: Array<{ label: string; items: NavItem[] }> = [
-  {
-    label: "总览",
-    items: [
-      { href: "/", label: "运营总览", icon: IconDashboard },
-      { href: "/ip/overview", label: "IP 总览", icon: IconVersions, permission: "ip.read" },
-    ],
-  },
-  {
-    label: "IP 内容",
-    items: [
-      { href: "/ip/titles", label: "标题库", icon: IconBook2, permission: "ip.read" },
-      { href: "/ip/reviews", label: "审核队列", icon: IconShieldLock, permission: "ip.moderate" },
-      { href: "/ip/reports", label: "举报处理", icon: IconFlag, permission: "ip.moderate" },
-    ],
-  },
-  {
-    label: "IP 配置",
-    items: [
-      { href: "/ip/taxonomy", label: "题材词库", icon: IconTags, permission: "ip.read" },
-      { href: "/ip/discovery", label: "广场运营位", icon: IconStar, permission: "ip.read" },
-    ],
-  },
-  {
-    label: "IP 商业化",
-    items: [
-      { href: "/ip/commerce/orders", label: "IP 订单", icon: IconReceipt2, permission: "ip.read" },
-      {
-        href: "/ip/commerce/entitlements",
-        label: "IP 权益",
-        icon: IconCoins,
-        permission: "ip.read",
-      },
-    ],
-  },
-  {
-    label: "平台治理",
-    items: [
-      { href: "/billing", label: "订单积分", icon: IconCoins, permission: "billing.read" },
-      { href: "/media", label: "媒体资产", icon: IconPhoto, permission: "media.read" },
-      { href: "/users", label: "账号权限", icon: IconUsersGroup, permission: "admin.manage" },
-      { href: "/audit", label: "系统审计", icon: IconFileAnalytics, permission: "audit.read" },
-      { href: "/account", label: "我的账户", icon: IconUserCog },
-    ],
-  },
-];
+function hasPermission(session: AdminSession, permission?: string) {
+  return permission ? session.user.permissions.includes(permission) : true;
+}
 
 export function AdminShell({
   session,
@@ -89,27 +33,28 @@ export function AdminShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const visibleNavSections = navSections
-    .map((section) => ({
-      ...section,
-      items: section.items.filter((item) =>
-        item.permission ? session.user.permissions.includes(item.permission) : true
-      ),
-    }))
-    .filter((section) => section.items.length > 0);
-  const visibleNavItems = visibleNavSections.flatMap((section) => section.items);
-  const activeItem =
-    visibleNavItems
-      .filter((item) =>
-        item.href === "/"
-          ? pathname === "/"
-          : pathname === item.href || pathname.startsWith(`${item.href}/`)
-      )
-      .sort((left, right) => right.href.length - left.href.length)[0] ?? visibleNavItems[0];
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  const mobileNavItems = visibleNavItems.filter((item) =>
-    item.permission ? session.user.permissions.includes(item.permission) : true
-  );
+  const visibleGlobalNav = GLOBAL_NAV.filter((entry) => hasPermission(session, entry.permission));
+
+  const currentModule = activeModule(pathname);
+  const activeGlobalEntry =
+    visibleGlobalNav.find((entry) => entry.key === currentModule) ?? visibleGlobalNav[0];
+
+  const moduleGroups: ModuleNavGroup[] = (MODULE_NAV[currentModule] ?? [])
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => hasPermission(session, item.permission)),
+    }))
+    .filter((group) => group.items.length > 0);
+  const hasModuleRail = moduleGroups.length > 0;
+
+  const activeModuleItem = moduleGroups
+    .flatMap((group) => group.items)
+    .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+    .sort((left, right) => right.href.length - left.href.length)[0];
+
+  const headerTitle = activeModuleItem?.label ?? activeGlobalEntry?.label ?? "管理工作台";
 
   async function logout() {
     await fetch(adminUiApiPath("/api/admin/auth/logout"), { method: "POST" });
@@ -117,29 +62,105 @@ export function AdminShell({
     router.refresh();
   }
 
+  function isGlobalActive(entry: GlobalNavEntry) {
+    return entry.key === currentModule;
+  }
+
+  function isModuleItemActive(href: string) {
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
+  // Combined desktop rail offset so the content area clears both rails.
+  const contentOffset = hasModuleRail ? "md:pl-[268px]" : "md:pl-[60px]";
+
   return (
     <div className="min-h-dvh bg-[#f6f7f9] text-slate-950">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[236px] border-r border-slate-200 bg-white/95 px-3 py-4 backdrop-blur md:block">
-        <div className="flex h-full flex-col">
-          <Link href="/" className="block px-2 pb-5 pt-1">
-            <BrandLogo compact className="w-[142px]" />
-            <span>
-              <span className="mt-1 block text-[11px] font-medium text-slate-500">管理后台</span>
-            </span>
-          </Link>
+      {/* GLOBAL narrow rail (desktop) */}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-slate-200 bg-white/95 px-1.5 py-3 backdrop-blur md:flex",
+          GLOBAL_RAIL_WIDTH
+        )}
+      >
+        <Link href="/" className="mb-3 flex items-center justify-center px-1" title="管理后台">
+          <BrandLogo compact className="w-[40px]" />
+        </Link>
 
+        <TooltipProvider delayDuration={0}>
+          <nav className="flex flex-1 flex-col items-center gap-1.5 overflow-y-auto">
+            {visibleGlobalNav.map((entry) => {
+              const Icon = entry.icon;
+              const active = isGlobalActive(entry);
+              return (
+                <Tooltip key={entry.key}>
+                  <TooltipTrigger asChild>
+                    <Link
+                      href={entry.href}
+                      aria-label={entry.label}
+                      className={cn(
+                        "flex size-10 items-center justify-center rounded-lg transition",
+                        active
+                          ? "bg-slate-950 text-white"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+                      )}
+                    >
+                      <Icon className="size-5" />
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    {entry.label}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </nav>
+        </TooltipProvider>
+
+        <div className="mt-auto flex flex-col items-center gap-1.5 border-t border-slate-200 pt-2">
+          <span
+            className="size-1.5 rounded-full bg-emerald-500"
+            title={`${session.site.label} · ${session.site.domain}`}
+          />
+          <Link
+            href="/account"
+            className="flex size-8 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-[11px] font-semibold text-white transition hover:opacity-90"
+            title={`${session.user.displayName} · ${session.user.email}`}
+          >
+            {session.user.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={session.user.avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              session.user.displayName.slice(0, 1).toUpperCase()
+            )}
+          </Link>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 text-slate-500 hover:text-slate-900"
+            onClick={logout}
+            title="退出登录"
+            aria-label="退出登录"
+          >
+            <IconLogout className="size-4" />
+          </Button>
+        </div>
+      </aside>
+
+      {/* SECOND module rail (desktop) — only when the active module has secondary nav */}
+      {hasModuleRail ? (
+        <aside className="fixed inset-y-0 left-[60px] z-30 hidden w-[208px] flex-col border-r border-slate-200 bg-white/95 px-3 py-4 backdrop-blur md:flex">
+          <p className="px-2 pb-3 text-sm font-semibold text-slate-900">
+            {activeGlobalEntry?.label}
+          </p>
           <nav className="space-y-4 overflow-y-auto pr-1">
-            {visibleNavSections.map((section) => (
-              <div key={section.label} className="space-y-1">
+            {moduleGroups.map((group) => (
+              <div key={group.label} className="space-y-1">
                 <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  {section.label}
+                  {group.label}
                 </p>
-                {section.items.map((item) => {
+                {group.items.map((item) => {
                   const Icon = item.icon;
-                  const active =
-                    item.href === "/"
-                      ? pathname === "/"
-                      : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const active = isModuleItemActive(item.href);
                   return (
                     <Link
                       key={item.href}
@@ -160,65 +181,29 @@ export function AdminShell({
               </div>
             ))}
           </nav>
+        </aside>
+      ) : null}
 
-          <div className="mt-auto border-t border-slate-200 pt-2">
-            <div className="mb-1 flex items-center gap-1.5 px-1 text-[11px] text-slate-500">
-              <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-              <span className="truncate font-medium text-slate-600">{session.site.label}</span>
-              <span className="truncate text-slate-400">· {session.site.domain}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/account"
-                className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 transition hover:bg-slate-100"
-              >
-                <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-[11px] font-semibold text-white">
-                  {session.user.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={session.user.avatarUrl}
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    session.user.displayName.slice(0, 1).toUpperCase()
-                  )}
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-[12px] font-medium text-slate-900">
-                    {session.user.displayName}
-                  </span>
-                  <span className="block truncate text-[11px] text-slate-500">
-                    {session.user.email}
-                  </span>
-                </span>
-              </Link>
+      <div className={contentOffset}>
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
+          <div className="flex h-12 items-center justify-between px-4">
+            <div className="flex min-w-0 items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0 text-slate-500 hover:text-slate-900"
-                onClick={logout}
-                title="退出登录"
-                aria-label="退出登录"
+                className="size-8 text-slate-600 md:hidden"
+                onClick={() => setMobileNavOpen((open) => !open)}
+                aria-label="切换导航"
               >
-                <IconLogout className="size-4" />
+                {mobileNavOpen ? <IconX className="size-5" /> : <IconMenu2 className="size-5" />}
               </Button>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <div className="md:pl-[236px]">
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-          <div className="flex h-12 items-center justify-between px-4">
-            <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500">
-                <IconDatabase className="size-3.5" />
-                <span className="truncate">{session.site.databaseLabel}</span>
-              </p>
-              <h1 className="truncate text-sm font-semibold">
-                {activeItem?.label ?? "管理工作台"}
-              </h1>
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500">
+                  <IconDatabase className="size-3.5" />
+                  <span className="truncate">{session.site.databaseLabel}</span>
+                </p>
+                <h1 className="truncate text-sm font-semibold">{headerTitle}</h1>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <span className="hidden rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 sm:inline">
@@ -234,29 +219,80 @@ export function AdminShell({
               </Button>
             </div>
           </div>
-          <nav className="flex gap-1 overflow-x-auto border-t border-slate-100 px-3 py-2 md:hidden">
-            {mobileNavItems.map((item) => {
-              const Icon = item.icon;
-              const active =
-                item.href === "/"
-                  ? pathname === "/"
-                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium",
-                    active ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600"
-                  )}
-                >
-                  <Icon className="size-3.5" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+
+          {/* Mobile module nav — horizontal scroll under the header */}
+          {hasModuleRail ? (
+            <nav className="flex gap-1 overflow-x-auto border-t border-slate-100 px-3 py-2 md:hidden">
+              {moduleGroups
+                .flatMap((group) => group.items)
+                .map((item) => {
+                  const Icon = item.icon;
+                  const active = isModuleItemActive(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium",
+                        active ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-600"
+                      )}
+                    >
+                      <Icon className="size-3.5" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+            </nav>
+          ) : null}
         </header>
+
+        {/* Mobile global nav drawer */}
+        {mobileNavOpen ? (
+          <div className="md:hidden">
+            <button
+              type="button"
+              aria-label="关闭导航"
+              className="fixed inset-0 z-30 bg-slate-950/30"
+              onClick={() => setMobileNavOpen(false)}
+            />
+            <nav className="fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col gap-1 border-r border-slate-200 bg-white px-3 py-4 shadow-xl">
+              <Link href="/" className="mb-3 block px-1" onClick={() => setMobileNavOpen(false)}>
+                <BrandLogo compact className="w-[132px]" />
+                <span className="mt-1 block text-[11px] font-medium text-slate-500">管理后台</span>
+              </Link>
+              {visibleGlobalNav.map((entry) => {
+                const Icon = entry.icon;
+                const active = isGlobalActive(entry);
+                return (
+                  <Link
+                    key={entry.key}
+                    href={entry.href}
+                    onClick={() => setMobileNavOpen(false)}
+                    className={cn(
+                      "flex h-9 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition",
+                      active
+                        ? "bg-slate-950 text-white"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                    )}
+                  >
+                    <Icon className="size-4" />
+                    <span className="flex-1">{entry.label}</span>
+                    {active ? <IconChevronRight className="size-3.5" /> : null}
+                  </Link>
+                );
+              })}
+              <div className="mt-auto border-t border-slate-200 pt-2 text-[11px] text-slate-500">
+                <span className="block truncate font-medium text-slate-600">
+                  {session.user.displayName}
+                </span>
+                <span className="block truncate">
+                  {session.site.label} · {session.site.domain}
+                </span>
+              </div>
+            </nav>
+          </div>
+        ) : null}
+
         <main className="w-full px-4 py-5 lg:px-6">{children}</main>
       </div>
     </div>
