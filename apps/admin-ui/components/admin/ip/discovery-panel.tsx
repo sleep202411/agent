@@ -466,6 +466,15 @@ function RecommendationDrawer({
         // the 位置 field's info button, and a focused Tooltip trigger pops its
         // tooltip immediately. Keep focus on the opener; Tab/hover still work.
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // The base-ui IP combobox popup is portaled to <body>, outside this
+        // modal layer, so clicking an option reads as an "outside" interaction
+        // and would dismiss the Sheet. Keep it open for combobox interactions.
+        onInteractOutside={(event) => {
+          const target = event.detail.originalEvent.target as Element | null;
+          if (target?.closest?.('[data-slot="combobox-content"]')) {
+            event.preventDefault();
+          }
+        }}
         className="!w-[min(520px,calc(100vw-24px))] !max-w-[min(520px,calc(100vw-24px))] sm:!max-w-[min(520px,calc(100vw-24px))]"
       >
         <SheetHeader className="border-b border-slate-200">

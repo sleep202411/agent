@@ -49,7 +49,10 @@ function ComboboxContent({
         <ComboboxPrimitive.Popup
           data-slot="combobox-content"
           className={cn(
-            "max-h-72 min-w-(--anchor-width) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10",
+            // `pointer-events-auto` is required when this popup is portaled out
+            // of a modal Radix dialog (e.g. Sheet), which sets the body to
+            // `pointer-events: none`; without it the options are unclickable.
+            "pointer-events-auto max-h-72 min-w-(--anchor-width) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10",
             className
           )}
           {...props}
@@ -68,7 +71,9 @@ function ComboboxList({
   return (
     <ComboboxPrimitive.List
       data-slot="combobox-list"
-      className={cn("max-h-72 overflow-y-auto p-1", className)}
+      // `overscroll-contain` stops the inner scroll from chaining to the parent
+      // (the Sheet body) once the list hits its top/bottom edge.
+      className={cn("max-h-72 overflow-y-auto overscroll-contain p-1", className)}
       {...props}
     />
   );
