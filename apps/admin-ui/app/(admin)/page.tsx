@@ -1,98 +1,106 @@
-import {
-  IconAlertTriangle,
-  IconArrowUpRight,
-  IconChecks,
-  IconClockHour4,
-} from "@tabler/icons-react";
+import Link from "next/link";
+import { IconAlertTriangle, IconArrowRight, IconChecks, IconClockHour4 } from "@tabler/icons-react";
 
-const metrics = [
-  { label: "待审核 IP", value: "12", delta: "含 3 个预售内容" },
-  { label: "开放举报", value: "4", delta: "最早 2 小时前提交" },
-  { label: "今日订单", value: "86", delta: "社区积分成交" },
-  { label: "资产异常", value: "1", delta: "等待重新上传" },
-];
+import { PageHeader } from "@/components/admin/page-header";
+import { ErrorBanner, Metric, formatDate, statusLabel } from "@/components/admin/ip/shared";
+import { fetchAdminIpOverview } from "@/lib/admin-ip-commerce";
+import { fetchAdminBillingOverview } from "@/lib/admin-billing";
+import { getAdminSession } from "@/lib/admin-session";
 
-const tasks = [
-  {
-    title: "中元节影游预售配置",
-    detail: "检查早鸟价、倒计时、权益解锁时间和举报入口。",
-    status: "高优先级",
-  },
-  {
-    title: "IP 内容审核队列",
-    detail: "上线前需完成版权声明、AI 生成声明、年龄分级核对。",
-    status: "今天",
-  },
-  {
-    title: "社区积分订单监控",
-    detail: "关注充值到账、余额扣减和内容解锁链路。",
-    status: "持续",
-  },
-];
+export default async function AdminHomePage() {
+  const [session, ip, billing] = await Promise.all([
+    getAdminSession(),
+    fetchAdminIpOverview(),
+    fetchAdminBillingOverview(),
+  ]);
 
-export default function AdminHomePage() {
+  const ipMetrics = ip.data?.metrics;
+  const billingMetrics = billing.error ? null : (billing.data?.metrics ?? null);
+  const reviewQueue = ip.data?.reviewQueue ?? [];
+
   return (
     <div className="space-y-5">
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/50">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-[12px] font-medium tracking-[0.16em] text-slate-500">运营控制台</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-              内容、积分、订单和审核的统一后台入口
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              后台权限独立于普通用户登录，所有敏感操作会写入审计日志。 当前先承接 IP
-              商业化和社区积分上线所需的核心运营链路。
-            </p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
-            <span className="font-medium text-slate-950">会话安全：</span>
-            安全 Cookie / 角色权限 / 审计留痕
-          </div>
-        </div>
-      </section>
+      <PageHeader
+        eyebrow={
+          session ? (
+            <>
+              {session.site.label} · {session.site.databaseLabel}
+            </>
+          ) : undefined
+        }
+        title="运营总览"
+        description="内容审核、IP 商业化和计费财务的核心运营指标，数据来自当前站点后台数据库。"
+      />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((item) => (
-          <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-4">
-            <p className="text-[12px] font-medium text-slate-500">{item.label}</p>
-            <div className="mt-3 flex items-end justify-between gap-3">
-              <span className="text-2xl font-semibold text-slate-950">{item.value}</span>
-              <IconArrowUpRight className="size-4 text-slate-400" />
-            </div>
-            <p className="mt-2 text-[12px] text-slate-500">{item.delta}</p>
-          </div>
-        ))}
-      </section>
+      {/* IP / content metrics — real data from the IP overview endpoint */}
+      {ip.error ? (
+        <ErrorBanner message={ip.error} />
+      ) : (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="待审核 IP" value={ipMetrics?.pendingReviewIps ?? 0} tone="warn" />
+          <Metric label="开放举报" value={ipMetrics?.openReports ?? 0} tone="risk" />
+          <Metric label="已发布 IP" value={ipMetrics?.publishedIps ?? 0} />
+          <Metric label="近 7 日 IP 订单" value={ipMetrics?.ordersLast7Days ?? 0} />
+        </section>
+      )}
+
+      {/* Billing metrics — only when the viewer can read billing (else omitted) */}
+      {billingMetrics ? (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="待处理订单" value={billingMetrics.pendingOrders} tone="warn" />
+          <Metric label="近 7 日完成订单" value={billingMetrics.fulfilledOrders7d} />
+          <Metric label="近 7 日支付失败" value={billingMetrics.paymentFailures7d} tone="risk" />
+          <Metric
+            label="渠道绑定待完善"
+            value={billingMetrics.incompleteProviderBindings}
+            tone={billingMetrics.incompleteProviderBindings > 0 ? "warn" : "default"}
+          />
+        </section>
+      ) : null}
 
       <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-950">上线任务</h3>
-            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-500">
-              运营闭环
-            </span>
+            <h3 className="text-sm font-semibold text-slate-950">待审核队列</h3>
+            <Link
+              href="/ip/reviews"
+              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+            >
+              进入审核
+              <IconArrowRight className="size-3" />
+            </Link>
           </div>
           <div className="mt-4 space-y-3">
-            {tasks.map((task) => (
-              <div
-                key={task.title}
-                className="flex gap-3 rounded-lg border border-slate-100 bg-slate-50/70 p-3"
-              >
-                <span className="mt-0.5 grid size-7 place-items-center rounded-md bg-white text-slate-500">
-                  <IconClockHour4 className="size-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-[13px] font-medium text-slate-950">{task.title}</p>
-                    <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-500">
-                      {task.status}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[12px] leading-5 text-slate-500">{task.detail}</p>
-                </div>
+            {reviewQueue.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-3 py-8 text-center text-[13px] text-slate-500">
+                {ip.error ? "无法加载审核队列。" : "暂无待审核内容。"}
               </div>
-            ))}
+            ) : (
+              reviewQueue.slice(0, 6).map((item) => (
+                <Link
+                  key={item.id}
+                  href="/ip/reviews"
+                  className="flex gap-3 rounded-lg border border-slate-100 bg-slate-50/70 p-3 transition hover:border-slate-200 hover:bg-slate-50"
+                >
+                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-white text-slate-500">
+                    <IconClockHour4 className="size-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-[13px] font-medium text-slate-950">
+                        {item.ip?.title ?? item.targetId}
+                      </p>
+                      <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-500">
+                        {statusLabel(item.status)}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-[12px] leading-5 text-slate-500">
+                      {item.changeSummary ?? "提交于"} · {formatDate(item.submittedAt)}
+                    </p>
+                  </div>
+                </Link>
+              ))
+            )}
           </div>
         </div>
 
@@ -109,7 +117,7 @@ export default function AdminHomePage() {
             </p>
             <p className="flex gap-2">
               <IconAlertTriangle className="mt-0.5 size-4 text-amber-600" />
-              正式启用前需要配置首个 bootstrap 管理员。
+              所有敏感操作写入审计日志，可在系统审计中追溯。
             </p>
           </div>
         </div>
