@@ -697,7 +697,7 @@ export class IpCommerceService {
           deletedAt: null,
         },
       },
-      include: adminIpDiscoveryInclude,
+      include: publicIpDiscoveryInclude,
       orderBy: [{ sortOrder: 'asc' }, { updatedAt: 'desc' }],
     });
 
@@ -4385,6 +4385,21 @@ type AdminIpDiscoveryRow = Prisma.IpDiscoveryRecommendationGetPayload<{
   include: typeof adminIpDiscoveryInclude;
 }>;
 
+// Public placements need the IP's native card data (cover, episode count,
+// taxonomy) so non-hero placements (e.g. `ip_plaza_for_you`) — which carry no
+// curated media of their own — can render the IP's own card on the plaza.
+const publicIpDiscoveryInclude = {
+  ip: { include: ipInclude },
+  localizations: { orderBy: { locale: 'asc' } },
+  imageAsset: { select: discoveryAssetSelect },
+  mobileImageAsset: { select: discoveryAssetSelect },
+  trailerAsset: { select: discoveryAssetSelect },
+} satisfies Prisma.IpDiscoveryRecommendationInclude;
+
+type PublicIpDiscoveryRow = Prisma.IpDiscoveryRecommendationGetPayload<{
+  include: typeof publicIpDiscoveryInclude;
+}>;
+
 function normalizeDiscoveryLocalizations(
   localizations: readonly {
     locale: string;
@@ -4442,7 +4457,7 @@ function selectDiscoveryLocalization(
   );
 }
 
-function isPublicDiscoveryRenderable(row: AdminIpDiscoveryRow) {
+function isPublicDiscoveryRenderable(row: PublicIpDiscoveryRow) {
   if (row.placementKey !== IpDiscoveryPlacementKey.ip_plaza_hero) return true;
   const image = row.imageAsset;
   const imageReady =
@@ -4487,7 +4502,7 @@ function adminIpDiscoveryDto(
 }
 
 function publicIpDiscoveryDto(
-  rec: AdminIpDiscoveryRow,
+  rec: PublicIpDiscoveryRow,
   requestedLocale?: string | null,
 ) {
   const copy = selectDiscoveryLocalization(rec.localizations, requestedLocale);
@@ -4496,6 +4511,9 @@ function publicIpDiscoveryDto(
     placementKey: rec.placementKey,
     ipId: rec.ipId,
     ip: ipReferenceDto(rec.ip, requestedLocale),
+    // Native IP card — drives non-hero placements (for-you rail) and enriches
+    // the hero (episode count / genres) where the curated copy leaves gaps.
+    ipCard: rec.ip ? ipDto(rec.ip, requestedLocale) : null,
     sortOrder: rec.sortOrder,
     eyebrow: copy?.eyebrow ?? null,
     title: copy?.title ?? null,
