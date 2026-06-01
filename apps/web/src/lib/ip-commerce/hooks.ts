@@ -13,6 +13,7 @@ import {
   getIpCommerceWallet,
   getIpAccess,
   listIpCommerceCollection,
+  listIpCommerceDiscovery,
   listMyIpCommerceIpAssets,
   listMyIpCommerceIps,
   listIpCommerceIps,
@@ -43,12 +44,15 @@ import {
   type UpsertIpPriceRuleInput,
   type UpsertIpBlockInput,
   type IpTaxonomyTermType,
+  type IpDiscoveryPlacementKey,
 } from "./api";
 
 export const ipCommerceKeys = {
   all: ["ip-commerce"] as const,
   taxonomy: (params?: { type?: IpTaxonomyTermType; locale?: string }) =>
     ["ip-commerce", "taxonomy", params ?? {}] as const,
+  discovery: (placementKey: IpDiscoveryPlacementKey, locale?: string) =>
+    ["ip-commerce", "discovery", placementKey, locale ?? ""] as const,
   ips: (params?: {
     genreCodes?: string[];
     tagCodes?: string[];
@@ -129,6 +133,20 @@ export function useIpCommerceTaxonomyTerms(params?: {
     queryKey: ipCommerceKeys.taxonomy(params),
     queryFn: () => listIpCommerceTaxonomyTerms(params),
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useIpCommerceDiscovery(params: {
+  placementKey: IpDiscoveryPlacementKey;
+  locale?: string;
+  enabled?: boolean;
+}) {
+  return useQuery({
+    queryKey: ipCommerceKeys.discovery(params.placementKey, params.locale),
+    queryFn: () =>
+      listIpCommerceDiscovery({ placementKey: params.placementKey, locale: params.locale }),
+    staleTime: 60_000,
+    enabled: params.enabled ?? true,
   });
 }
 

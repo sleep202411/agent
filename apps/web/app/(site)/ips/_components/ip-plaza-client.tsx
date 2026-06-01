@@ -16,8 +16,16 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
-import type { IpCommerceAsset, IpCommerceIp } from "@/src/lib/ip-commerce/api";
-import { useInfiniteIpCommerceIps, useIpCommerceTaxonomyTerms } from "@/src/lib/ip-commerce/hooks";
+import type {
+  IpCommerceAsset,
+  IpCommerceDiscoveryItem,
+  IpCommerceIp,
+} from "@/src/lib/ip-commerce/api";
+import {
+  useInfiniteIpCommerceIps,
+  useIpCommerceDiscovery,
+  useIpCommerceTaxonomyTerms,
+} from "@/src/lib/ip-commerce/hooks";
 import { IPCinematicHero } from "./ip-cinematic-hero";
 import { IPPlazaCard } from "./ip-plaza-card";
 import { TVStream } from "./tv-stream";
@@ -130,11 +138,19 @@ export function IpPlazaClient() {
     limit: PAGE_SIZE,
   });
   const { data: taxonomyData } = useIpCommerceTaxonomyTerms({ type: "genre", locale });
+  const { data: heroData } = useIpCommerceDiscovery({ placementKey: "ip_plaza_hero", locale });
 
   const rawProjects = useMemo<PlazaProject[]>(
     () => (listData?.pages.flatMap((page) => page.items) ?? []).map((ip) => toPlazaProject(ip, t)),
     [listData, t]
   );
+
+  // Hero is operator-curated via the discovery `ip_plaza_hero` placement; fall
+  // back to the first listings when nothing is configured so it's never empty.
+  const heroProjects = useMemo<PlazaProject[]>(() => {
+    const curated = (heroData?.items ?? []).map((item) => discoveryToPlazaProject(item, t));
+    return curated.length > 0 ? curated : rawProjects.slice(0, 5);
+  }, [heroData?.items, rawProjects, t]);
 
   const projects = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
@@ -188,8 +204,8 @@ export function IpPlazaClient() {
       <div className="-mt-16">
         <IPCinematicHero
           loading={loading}
-          slides={rawProjects.slice(0, 5)}
-          rail={rawProjects.slice(0, 10)}
+          slides={heroProjects.slice(0, 5)}
+          rail={heroProjects.slice(0, 10)}
         />
       </div>
 
@@ -342,6 +358,26 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,
     eyebrow: primaryGenre || t("featured"),
+  };
+}
+
+function discoveryToPlazaProject(
+  item: IpCommerceDiscoveryItem,
+  t: ReturnType<typeof useTranslations>
+): PlazaProject {
+  return {
+    id: item.ipId,
+    name: item.title || item.ip?.title || t("detailUntitled"),
+    subtitle: "",
+    description: item.description || "",
+    cover: getAssetUrl(item.image),
+    trailer: getAssetUrl(item.trailer),
+    ownerName: "",
+    ownerAvatar: "",
+    genres: [],
+    tags: [],
+    episodes: 0,
+    eyebrow: item.eyebrow || t("featured"),
   };
 }
 

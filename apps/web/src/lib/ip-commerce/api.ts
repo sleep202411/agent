@@ -517,6 +517,37 @@ export function listIpCommerceTaxonomyTerms(params?: {
   return api.get<{ items: IpTaxonomyTerm[] }>("/aurora/ip-commerce/taxonomy", { params });
 }
 
+export type IpDiscoveryPlacementKey = "ip_plaza_hero" | "ip_plaza_for_you" | "ip_plaza_list_pinned";
+
+export interface IpCommerceDiscoveryItem {
+  id: string;
+  placementKey: IpDiscoveryPlacementKey;
+  ipId: string;
+  ip: {
+    id: string;
+    title: string;
+    status: string;
+    listingVisibility: string;
+  } | null;
+  sortOrder: number;
+  eyebrow: string | null;
+  title: string | null;
+  description: string | null;
+  ctaLabel: string | null;
+  image: IpCommerceAsset | null;
+  mobileImage: IpCommerceAsset | null;
+  trailer: IpCommerceAsset | null;
+}
+
+export function listIpCommerceDiscovery(params: {
+  placementKey: IpDiscoveryPlacementKey;
+  locale?: string;
+}) {
+  return api.get<{ items: IpCommerceDiscoveryItem[] }>("/aurora/ip-commerce/discovery", {
+    params,
+  });
+}
+
 export function listMyIpCommerceIps(params?: { locale?: string; cursor?: string; limit?: number }) {
   return api.get<{ items: IpCreatorIp[]; nextCursor: string | null }>(
     "/aurora/ip-commerce/me/ips",
