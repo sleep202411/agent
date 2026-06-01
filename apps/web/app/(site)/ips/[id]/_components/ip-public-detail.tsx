@@ -21,7 +21,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
+import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
 import {
   Dialog,
   DialogBody,
@@ -428,10 +428,9 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
           t={t}
           onSubmit={handleReportSubmit}
         />
-        <CreditsRechargeDialog
+        <CommunityRechargeDialog
           open={rechargeOpen}
           onOpenChange={setRechargeOpen}
-          kind="community"
           onSuccess={() => {
             void walletQuery.refetch();
             toast.success(t("commerce.rechargeSuccess"));

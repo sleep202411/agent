@@ -4336,6 +4336,7 @@
     "selectPlan": "選擇套餐",
     "wechatPay": "微信支付",
     "payNow": "立即支付",
+    "noPackages": "No top-up packages available yet.",
     "scanToPay": "請使用微信掃描二維碼完成支付",
     "paymentSuccess": "支付成功",
     "paymentSuccessDesc": "你的套餐已啟用，享受更多功能吧！",

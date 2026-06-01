@@ -28,7 +28,7 @@ import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCommunityPointBalance } from "@/src/lib/ip-commerce";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CreditsRechargeDialog } from "@/components/payment/credits-recharge-dialog";
+import { CommunityRechargeDialog } from "@/components/payment/community-recharge-dialog";
 import { cn } from "@/lib/utils";
 
 interface CommunityCreditsChipProps {
@@ -57,10 +57,9 @@ export function CommunityCreditsChip({ layout = "chip", className }: CommunityCr
   };
 
   const dialog = (
-    <CreditsRechargeDialog
+    <CommunityRechargeDialog
       open={rechargeOpen}
       onOpenChange={setRechargeOpen}
-      kind="community"
       onSuccess={() => void refetch()}
     />
   );

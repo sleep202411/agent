@@ -4336,6 +4336,7 @@
     "selectPlan": "Select Plan",
     "wechatPay": "WeChat Pay",
     "payNow": "Pay Now",
+    "noPackages": "No top-up packages available yet.",
     "scanToPay": "Scan the QR code with WeChat to complete payment",
     "paymentSuccess": "Payment Successful",
     "paymentSuccessDesc": "Your plan is now active. Enjoy the extra features!",

@@ -89,6 +89,9 @@ export interface IpCommerceEpisode {
   localization: IpCommerceLocalizationMeta;
   durationSeconds: number | null;
   isFreePreview: boolean;
+  // True when the viewer hasn't unlocked this paid episode — the server then
+  // withholds `mediaAsset` (it is null). Cover + trailer remain for promo.
+  mediaLocked?: boolean;
   coverAsset: IpCommerceAsset | null;
   mediaAsset?: IpCommerceAsset | null;
   trailerAsset: IpCommerceAsset | null;

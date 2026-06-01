@@ -427,6 +427,9 @@ export function usePurchaseIpContent() {
         qc.invalidateQueries({ queryKey: ipCommerceKeys.collectionRoot }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "ip-access", input.ipId] }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId, "commerce"] }),
+        // Public detail carries the (now entitlement-gated) episode media URLs —
+        // refetch so just-unlocked content becomes playable without a reload.
+        qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] }),
       ]);
     },
   });
