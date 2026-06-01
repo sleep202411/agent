@@ -15,6 +15,14 @@ import {
 import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select as ShadSelect,
@@ -825,96 +833,107 @@ export function AdminUsersPanel({
         </aside>
       </div>
 
-      {resetTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm">
-          <form
-            onSubmit={submitPasswordReset}
-            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+      <Dialog
+        open={resetTarget !== null}
+        onOpenChange={(value) => {
+          if (!value) {
+            setResetTarget(null);
+            setResetPassword("");
+            setResetPasswordConfirm("");
+          }
+        }}
+      >
+        {resetTarget ? (
+          <DialogContent
+            showCloseButton={false}
+            className="max-w-md gap-0 rounded-2xl border border-slate-200 bg-white p-5 ring-0 shadow-2xl"
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-base font-semibold text-slate-950">重置登录密码</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  {resetTarget.id === currentUserId
-                    ? "当前会话会保留，其他会话会被撤销。"
-                    : `${resetTarget.displayName} 的旧会话会被撤销，需要使用新密码重新登录。`}
-                </p>
+            <form onSubmit={submitPasswordReset}>
+              <DialogHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+                <div>
+                  <DialogTitle className="text-base font-semibold text-slate-950">
+                    重置登录密码
+                  </DialogTitle>
+                  <DialogDescription className="mt-1 text-sm text-slate-600">
+                    {resetTarget.id === currentUserId
+                      ? "当前会话会保留，其他会话会被撤销。"
+                      : `${resetTarget.displayName} 的旧会话会被撤销，需要使用新密码重新登录。`}
+                  </DialogDescription>
+                </div>
+                <DialogClose className="rounded-md px-2 py-1 text-[12px] text-slate-500 hover:bg-slate-100">
+                  关闭
+                </DialogClose>
+              </DialogHeader>
+              <div className="mt-4 space-y-3">
+                <FieldLabel label="新密码">
+                  <Input
+                    type="password"
+                    minLength={12}
+                    value={resetPassword}
+                    onChange={(event) => setResetPassword(event.target.value)}
+                    className={inputClassName}
+                    placeholder="至少 12 位，含大小写数字符号"
+                  />
+                </FieldLabel>
+                <FieldLabel label="确认新密码">
+                  <Input
+                    type="password"
+                    minLength={12}
+                    value={resetPasswordConfirm}
+                    onChange={(event) => setResetPasswordConfirm(event.target.value)}
+                    className={inputClassName}
+                    placeholder="再次输入新密码"
+                  />
+                </FieldLabel>
               </div>
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-[12px] text-slate-500 hover:bg-slate-100"
-                onClick={() => {
-                  setResetTarget(null);
-                  setResetPassword("");
-                  setResetPasswordConfirm("");
-                }}
-              >
-                关闭
-              </button>
-            </div>
-            <div className="mt-4 space-y-3">
-              <FieldLabel label="新密码">
-                <Input
-                  type="password"
-                  minLength={12}
-                  value={resetPassword}
-                  onChange={(event) => setResetPassword(event.target.value)}
-                  className={inputClassName}
-                  placeholder="至少 12 位，含大小写数字符号"
-                />
-              </FieldLabel>
-              <FieldLabel label="确认新密码">
-                <Input
-                  type="password"
-                  minLength={12}
-                  value={resetPasswordConfirm}
-                  onChange={(event) => setResetPasswordConfirm(event.target.value)}
-                  className={inputClassName}
-                  placeholder="再次输入新密码"
-                />
-              </FieldLabel>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setResetTarget(null);
-                  setResetPassword("");
-                  setResetPasswordConfirm("");
-                }}
-              >
-                取消
-              </Button>
-              <Button type="submit" disabled={pendingKey === `${resetTarget.id}:reset-password`}>
-                确认重置
-              </Button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+              <div className="mt-5 flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setResetTarget(null);
+                    setResetPassword("");
+                    setResetPasswordConfirm("");
+                  }}
+                >
+                  取消
+                </Button>
+                <Button type="submit" disabled={pendingKey === `${resetTarget.id}:reset-password`}>
+                  确认重置
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        ) : null}
+      </Dialog>
 
-      {sessionTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
+      <Dialog
+        open={sessionTarget !== null}
+        onOpenChange={(value) => {
+          if (!value) {
+            setSessionTarget(null);
+            setSessions([]);
+          }
+        }}
+      >
+        {sessionTarget ? (
+          <DialogContent
+            showCloseButton={false}
+            className="max-w-3xl gap-0 rounded-2xl border border-slate-200 bg-white p-5 ring-0 shadow-2xl"
+          >
+            <DialogHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
               <div>
-                <h3 className="text-base font-semibold text-slate-950">会话治理</h3>
-                <p className="mt-1 text-sm text-slate-600">
+                <DialogTitle className="text-base font-semibold text-slate-950">
+                  会话治理
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-slate-600">
                   {sessionTarget.displayName} 的最近 50 个后台会话。
-                </p>
+                </DialogDescription>
               </div>
-              <button
-                type="button"
-                className="rounded-md px-2 py-1 text-[12px] text-slate-500 hover:bg-slate-100"
-                onClick={() => {
-                  setSessionTarget(null);
-                  setSessions([]);
-                }}
-              >
+              <DialogClose className="rounded-md px-2 py-1 text-[12px] text-slate-500 hover:bg-slate-100">
                 关闭
-              </button>
-            </div>
+              </DialogClose>
+            </DialogHeader>
             <div className="mt-4 max-h-[420px] overflow-auto rounded-lg border border-slate-200">
               <DataTable
                 columns={sessionColumns}
@@ -925,9 +944,9 @@ export function AdminUsersPanel({
                 className="rounded-none border-0"
               />
             </div>
-          </div>
-        </div>
-      ) : null}
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
 }

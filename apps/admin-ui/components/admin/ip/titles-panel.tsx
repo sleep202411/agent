@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
@@ -488,7 +489,7 @@ function IpDetailDrawer({
   const [reportSavingId, setReportSavingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  if (!ip && !loading && !error) return null;
+  const open = Boolean(ip || loading || error);
 
   const status =
     ip && draft?.ipId === ip.id ? draft.status : ip?.status === "draft" ? "in_review" : ip?.status;
@@ -560,27 +561,40 @@ function IpDetailDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/30 backdrop-blur-[1px]">
-      <div className="flex h-full w-full max-w-3xl flex-col bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+    <Sheet
+      open={open}
+      onOpenChange={(value) => {
+        if (!value) onClose();
+      }}
+    >
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="w-full gap-0 bg-white p-0 sm:max-w-3xl"
+      >
+        <SheetHeader className="flex flex-row items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
             <p className="text-[12px] font-medium text-slate-500">IP 审核详情</p>
-            <h3 className="mt-1 text-lg font-semibold text-slate-950">{ip?.title ?? "正在加载"}</h3>
+            <SheetTitle className="mt-1 text-lg font-semibold text-slate-950">
+              {ip?.title ?? "正在加载"}
+            </SheetTitle>
             {ip ? (
               <p className="mt-1 text-[12px] text-slate-500">
                 {ip.id} · v{ip.version}
               </p>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid size-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950"
-            aria-label="关闭"
-          >
-            <IconX className="size-4" />
-          </button>
-        </div>
+          <SheetClose asChild>
+            <button
+              type="button"
+              className="grid size-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+              aria-label="关闭"
+            >
+              <IconX className="size-4" />
+            </button>
+          </SheetClose>
+        </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {loading ? (
@@ -930,8 +944,8 @@ function IpDetailDrawer({
             </div>
           ) : null}
         </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

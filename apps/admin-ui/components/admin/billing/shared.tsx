@@ -8,14 +8,20 @@
 // NOTE: the old in-panel tab nav (TabButton / BillingNavGroup) is intentionally
 // NOT moved here — the dual-sidebar second rail replaces it.
 
-import { Children, isValidElement, useEffect, useState } from "react";
+import { Children, isValidElement, useState } from "react";
 import {
   IconAlertTriangle,
   IconCircleCheck,
   IconCloudUpload,
   IconInfoCircle,
-  IconX,
 } from "@tabler/icons-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select as ShadSelect,
@@ -137,51 +143,27 @@ export function AdminDialog({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, open]);
-
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
     >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="admin-billing-dialog-title"
-        className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-      >
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+      <DialogContent className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl ring-0 sm:max-w-2xl">
+        <DialogHeader className="flex flex-row items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
-            <h3 id="admin-billing-dialog-title" className="text-base font-semibold text-slate-950">
-              {title}
-            </h3>
+            <DialogTitle className="text-base font-semibold text-slate-950">{title}</DialogTitle>
             {description ? (
-              <p className="mt-1 max-w-xl text-sm leading-5 text-slate-600">{description}</p>
+              <DialogDescription className="mt-1 max-w-xl text-sm leading-5 text-slate-600">
+                {description}
+              </DialogDescription>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid size-8 shrink-0 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
-            aria-label="关闭"
-          >
-            <IconX className="size-4" />
-          </button>
-        </header>
+        </DialogHeader>
         <div className="overflow-y-auto px-5 py-5">{children}</div>
-      </section>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
