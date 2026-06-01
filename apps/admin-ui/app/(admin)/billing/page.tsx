@@ -14,14 +14,12 @@ import {
 } from "@/components/admin/admin-billing-panel";
 import {
   ADMIN_SESSION_COOKIE,
-  ADMIN_SITE_COOKIE,
   adminApiUrl,
-  adminSiteByKey,
   cookieHeader,
-  normalizeAdminSiteKey,
   parseAdminEnvelope,
 } from "@/lib/admin-api";
 import { getAdminSession } from "@/lib/admin-session";
+import { currentAdminSite } from "@/lib/admin-sites";
 
 export default async function BillingAdminPage() {
   const session = await getAdminSession();
@@ -61,7 +59,6 @@ async function getInitialBillingData(): Promise<{
 }> {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  const siteKey = normalizeAdminSiteKey(cookieStore.get(ADMIN_SITE_COOKIE)?.value);
   if (!sessionToken) {
     return {
       overview: null,
@@ -92,43 +89,43 @@ async function getInitialBillingData(): Promise<{
       settlementsResponse,
       reconciliationRunsResponse,
     ] = await Promise.all([
-      fetch(adminApiUrl("/billing/overview", siteKey), {
+      fetch(adminApiUrl("/billing/overview"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/prices", siteKey), {
+      fetch(adminApiUrl("/billing/prices"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/promotions", siteKey), {
+      fetch(adminApiUrl("/billing/promotions"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/orders", siteKey), {
+      fetch(adminApiUrl("/billing/orders"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/refunds", siteKey), {
+      fetch(adminApiUrl("/billing/refunds"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/provider-events", siteKey), {
+      fetch(adminApiUrl("/billing/provider-events"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/ledger/overview", siteKey), {
+      fetch(adminApiUrl("/billing/ledger/overview"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/ledger/journals", siteKey), {
+      fetch(adminApiUrl("/billing/ledger/journals"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/ledger/settlements", siteKey), {
+      fetch(adminApiUrl("/billing/ledger/settlements"), {
         headers,
         cache: "no-store",
       }),
-      fetch(adminApiUrl("/billing/ledger/reconciliation-runs", siteKey), {
+      fetch(adminApiUrl("/billing/ledger/reconciliation-runs"), {
         headers,
         cache: "no-store",
       }),
@@ -182,9 +179,7 @@ async function getInitialBillingData(): Promise<{
       settlements: null,
       reconciliationRuns: null,
       error:
-        error instanceof Error
-          ? error.message
-          : `${adminSiteByKey(siteKey).label} 账单数据加载失败。`,
+        error instanceof Error ? error.message : `${currentAdminSite().label} 账单数据加载失败。`,
     };
   }
 }

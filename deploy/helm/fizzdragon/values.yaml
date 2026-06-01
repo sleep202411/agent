@@ -182,7 +182,7 @@ adminUi:
     PORT: "3000"
     HOSTNAME: "0.0.0.0"
     NEXT_PUBLIC_ADMIN_UI_BASE_PATH: /admin
-    NEXT_PUBLIC_ADMIN_ENABLED_SITES: global
+    ADMIN_SITE: global
     ADMIN_GLOBAL_API_BASE_URL: http://fizzdragon-server:3001/admin
     ADMIN_API_BASE_URL: http://fizzdragon-server:3001/admin
   resources:

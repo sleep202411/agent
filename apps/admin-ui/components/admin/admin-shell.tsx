@@ -257,7 +257,7 @@ export function AdminShell({
             })}
           </nav>
         </header>
-        <main className="mx-auto w-full max-w-[1440px] px-4 py-5 lg:px-6">{children}</main>
+        <main className="w-full px-4 py-5 lg:px-6">{children}</main>
       </div>
     </div>
   );

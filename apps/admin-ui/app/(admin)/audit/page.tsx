@@ -2,14 +2,12 @@ import { cookies } from "next/headers";
 import { AdminAuditPanel, type AdminAuditListData } from "@/components/admin/admin-audit-panel";
 import {
   ADMIN_SESSION_COOKIE,
-  ADMIN_SITE_COOKIE,
   adminApiUrl,
-  adminSiteByKey,
   cookieHeader,
-  normalizeAdminSiteKey,
   parseAdminEnvelope,
 } from "@/lib/admin-api";
 import { getAdminSession } from "@/lib/admin-session";
+import { currentAdminSite } from "@/lib/admin-sites";
 
 export default async function AuditAdminPage() {
   const session = await getAdminSession();
@@ -30,13 +28,12 @@ async function getInitialAudit(): Promise<{
 }> {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  const siteKey = normalizeAdminSiteKey(cookieStore.get(ADMIN_SITE_COOKIE)?.value);
   if (!sessionToken) {
     return { data: null, error: "后台登录已失效，请重新登录。" };
   }
 
   try {
-    const response = await fetch(adminApiUrl("/audit", siteKey), {
+    const response = await fetch(adminApiUrl("/audit"), {
       headers: cookieHeader(sessionToken),
       cache: "no-store",
     });
@@ -48,9 +45,7 @@ async function getInitialAudit(): Promise<{
     return {
       data: null,
       error:
-        error instanceof Error
-          ? error.message
-          : `${adminSiteByKey(siteKey).label} 审计日志加载失败。`,
+        error instanceof Error ? error.message : `${currentAdminSite().label} 审计日志加载失败。`,
     };
   }
 }

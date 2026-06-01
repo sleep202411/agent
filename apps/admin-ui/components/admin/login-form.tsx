@@ -13,18 +13,10 @@ import {
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { adminUiApiPath } from "@/lib/admin-api";
-import { cn } from "@/lib/utils";
-import type { AdminSiteKey, AdminSiteOption } from "@/lib/admin-sites";
+import type { AdminSiteOption } from "@/lib/admin-sites";
 
-export function LoginForm({
-  defaultSite,
-  sites,
-}: {
-  defaultSite: AdminSiteKey;
-  sites: AdminSiteOption[];
-}) {
+export function LoginForm({ site }: { site: AdminSiteOption }) {
   const router = useRouter();
-  const [site, setSite] = useState<AdminSiteKey>(defaultSite);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
@@ -37,7 +29,6 @@ export function LoginForm({
     secret?: string;
     otpauthUri?: string;
   } | null>(null);
-  const activeSite = sites.find((item) => item.key === site) ?? sites[0];
 
   useEffect(() => {
     let cancelled = false;
@@ -82,7 +73,6 @@ export function LoginForm({
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        site,
         email: formData.get("email"),
         password: formData.get("password"),
       }),
@@ -132,7 +122,7 @@ export function LoginForm({
           <div className="flex items-start gap-2">
             <IconDatabase className="mt-0.5 size-4 shrink-0 text-slate-500" />
             <span>
-              正在登录 {activeSite.shortLabel}，验证码将在{" "}
+              正在登录 {site.shortLabel}，验证码将在{" "}
               {new Date(mfaChallenge.expiresAt).toLocaleTimeString("zh-CN", {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -229,53 +219,24 @@ export function LoginForm({
     <form onSubmit={onSubmit} className="space-y-5">
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <label className="text-[13px] font-medium text-slate-700">目标站点</label>
+          <label className="text-[13px] font-medium text-slate-700">当前站点</label>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
-            {activeSite.databaseLabel}
+            {site.databaseLabel}
           </span>
         </div>
-        <div className={cn("grid gap-2", sites.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
-          {sites.map((item) => {
-            const selected = item.key === site;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setSite(item.key)}
-                className={cn(
-                  "min-h-[76px] rounded-lg border px-3 py-2 text-left transition",
-                  selected
-                    ? "border-slate-950 bg-slate-950 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                )}
-                aria-pressed={selected}
-              >
-                <span className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold">{item.shortLabel}</span>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                      selected ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"
-                    )}
-                  >
-                    {item.badge}
-                  </span>
-                </span>
-                <span
-                  className={cn(
-                    "mt-1 block truncate text-[12px]",
-                    selected ? "text-slate-300" : "text-slate-500"
-                  )}
-                >
-                  {item.domain}
-                </span>
-              </button>
-            );
-          })}
+        {/* TODO: 当中国站后台部署后，在此处加入跳转到另一站点 admin 域名的链接（目前中国站未部署，暂不展示） */}
+        <div className="min-h-[76px] rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-left text-white">
+          <span className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold">{site.shortLabel}</span>
+            <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-medium text-white">
+              {site.badge}
+            </span>
+          </span>
+          <span className="mt-1 block truncate text-[12px] text-slate-300">{site.domain}</span>
         </div>
         <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
           <IconDatabase className="mt-0.5 size-4 shrink-0 text-slate-500" />
-          <span>登录、账号列表和后续运营页面只访问当前选中的站点数据库。</span>
+          <span>本控制台仅访问 {site.shortLabel} 的后台数据库。</span>
         </div>
       </div>
 

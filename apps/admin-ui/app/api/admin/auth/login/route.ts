@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { adminApiUrl, adminSiteCookie, normalizeAdminSiteKey } from "@/lib/admin-api";
+import { adminApiUrl } from "@/lib/admin-api";
 import {
   adminForwardHeaders,
   adminUnavailableResponse,
@@ -13,10 +13,8 @@ export async function POST(request: NextRequest) {
     const payload = (await request.json().catch(() => null)) as {
       email?: unknown;
       password?: unknown;
-      site?: unknown;
     } | null;
-    const site = normalizeAdminSiteKey(payload?.site);
-    const response = await fetch(adminApiUrl("/auth/login", site), {
+    const response = await fetch(adminApiUrl("/auth/login"), {
       method: "POST",
       headers: adminForwardHeaders(request, { json: true }),
       body: JSON.stringify({
@@ -25,9 +23,7 @@ export async function POST(request: NextRequest) {
       }),
       cache: "no-store",
     });
-    const relayed = await relayAdminResponse(response);
-    relayed.headers.append("set-cookie", adminSiteCookie(site));
-    return relayed;
+    return relayAdminResponse(response);
   } catch {
     return adminUnavailableResponse();
   }

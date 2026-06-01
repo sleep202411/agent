@@ -1,10 +1,5 @@
 import type { NextRequest } from "next/server";
-import {
-  ADMIN_SITE_COOKIE,
-  adminApiUrl,
-  adminCookiePath,
-  normalizeAdminSiteKey,
-} from "./admin-api";
+import { adminApiUrl, adminCookiePath } from "./admin-api";
 
 type ForwardOptions = {
   json?: boolean;
@@ -27,12 +22,8 @@ export function adminPathWithSearch(request: NextRequest, path: string) {
   return `${adminUrlForRequest(request, path)}${search}`;
 }
 
-export function adminUrlForRequest(request: NextRequest, path: string) {
-  return adminApiUrl(path, getAdminSiteFromRequest(request));
-}
-
-export function getAdminSiteFromRequest(request: NextRequest) {
-  return normalizeAdminSiteKey(request.cookies.get(ADMIN_SITE_COOKIE)?.value);
+export function adminUrlForRequest(_request: NextRequest, path: string) {
+  return adminApiUrl(path);
 }
 
 export async function relayAdminResponse(upstream: Response): Promise<Response> {

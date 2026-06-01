@@ -1,13 +1,11 @@
 import { cookies } from "next/headers";
 import {
   ADMIN_SESSION_COOKIE,
-  ADMIN_SITE_COOKIE,
   adminApiUrl,
-  adminSiteByKey,
   cookieHeader,
-  normalizeAdminSiteKey,
   parseAdminEnvelope,
 } from "@/lib/admin-api";
+import { currentAdminSite } from "@/lib/admin-sites";
 import type {
   AdminIpEntitlementsData,
   AdminIpOrdersData,
@@ -64,11 +62,10 @@ async function fetchAdminIpResource<T>(
 ): Promise<AdminIpLoadResult<T>> {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  const siteKey = normalizeAdminSiteKey(cookieStore.get(ADMIN_SITE_COOKIE)?.value);
   if (!sessionToken) return { data: null, error: "后台登录已失效，请重新登录。" };
 
   try {
-    const response = await fetch(adminApiUrl(path, siteKey), {
+    const response = await fetch(adminApiUrl(path), {
       headers: cookieHeader(sessionToken),
       cache: "no-store",
     });
@@ -77,9 +74,7 @@ async function fetchAdminIpResource<T>(
     return {
       data: null,
       error:
-        error instanceof Error
-          ? error.message
-          : `${adminSiteByKey(siteKey).label} ${fallbackMessage}`,
+        error instanceof Error ? error.message : `${currentAdminSite().label} ${fallbackMessage}`,
     };
   }
 }

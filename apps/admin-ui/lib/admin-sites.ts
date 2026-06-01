@@ -1,5 +1,3 @@
-export const ADMIN_SITE_COOKIE = "fd_admin_site";
-
 export type AdminSiteKey = "global" | "cn";
 
 export type AdminSiteOption = {
@@ -11,7 +9,7 @@ export type AdminSiteOption = {
   badge: string;
 };
 
-const ALL_ADMIN_SITE_OPTIONS: AdminSiteOption[] = [
+export const ADMIN_SITE_OPTIONS: AdminSiteOption[] = [
   {
     key: "global",
     label: "FizzDragon.com",
@@ -30,27 +28,15 @@ const ALL_ADMIN_SITE_OPTIONS: AdminSiteOption[] = [
   },
 ];
 
-const enabledSiteKeys = parseEnabledSiteKeys(process.env.NEXT_PUBLIC_ADMIN_ENABLED_SITES);
-
-export const ADMIN_SITE_OPTIONS: AdminSiteOption[] = ALL_ADMIN_SITE_OPTIONS.filter((site) =>
-  enabledSiteKeys.includes(site.key)
-);
-
-export const DEFAULT_ADMIN_SITE_KEY: AdminSiteKey = ADMIN_SITE_OPTIONS[0]?.key ?? "global";
-
-export function normalizeAdminSiteKey(value: unknown): AdminSiteKey {
-  const key = value === "cn" ? "cn" : value === "global" ? "global" : DEFAULT_ADMIN_SITE_KEY;
-  return enabledSiteKeys.includes(key) ? key : DEFAULT_ADMIN_SITE_KEY;
-}
-
 export function adminSiteByKey(key: AdminSiteKey): AdminSiteOption {
   return ADMIN_SITE_OPTIONS.find((site) => site.key === key) ?? ADMIN_SITE_OPTIONS[0];
 }
 
-function parseEnabledSiteKeys(value: string | undefined): AdminSiteKey[] {
-  const keys = (value ?? "global,cn")
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item): item is AdminSiteKey => item === "global" || item === "cn");
-  return keys.length > 0 ? keys : ["global"];
+// Resolves the deploy-time single-site identity from the ADMIN_SITE env.
+// ADMIN_SITE is a server-only env (not NEXT_PUBLIC); currentAdminSite() is only
+// ever called server-side. If the resolved option ever needs client access,
+// pass the AdminSiteOption down as a prop (as the login page already does).
+export function currentAdminSite(): AdminSiteOption {
+  const key: AdminSiteKey = process.env.ADMIN_SITE === "cn" ? "cn" : "global";
+  return adminSiteByKey(key);
 }

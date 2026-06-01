@@ -1,17 +1,15 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { BrandLogo } from "@/components/admin/brand-logo";
 import { LoginForm } from "@/components/admin/login-form";
 import { getAdminSession } from "@/lib/admin-session";
-import { ADMIN_SITE_COOKIE, ADMIN_SITE_OPTIONS, normalizeAdminSiteKey } from "@/lib/admin-sites";
+import { currentAdminSite } from "@/lib/admin-sites";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   const session = await getAdminSession();
   if (session) redirect("/");
-  const cookieStore = await cookies();
-  const defaultSite = normalizeAdminSiteKey(cookieStore.get(ADMIN_SITE_COOKIE)?.value);
+  const site = currentAdminSite();
 
   return (
     <main className="grid min-h-dvh bg-[#f6f7f9] lg:grid-cols-[0.95fr_1.05fr]">
@@ -24,8 +22,8 @@ export default async function LoginPage() {
             </p>
             <h1 className="mt-4 text-4xl font-semibold tracking-tight">FizzDragon 管理后台</h1>
             <p className="mt-4 text-sm leading-6 text-slate-300">
-              登录前先选择目标站点。国际站和中国站连接不同 Admin API 与数据库，
-              后台不会把两套生产数据混在一个列表里。
+              本控制台仅服务 {site.shortLabel}，连接 {site.label} 的 Admin API 与
+              {site.databaseLabel}。每个站点独立部署，不会把两套生产数据混在一个列表里。
             </p>
           </div>
         </div>
@@ -46,10 +44,11 @@ export default async function LoginPage() {
             <div className="mb-5">
               <h2 className="text-lg font-semibold tracking-tight">登录</h2>
               <p className="mt-1 text-[13px] text-slate-500">
-                选择要进入的站点数据库，再使用对应站点的后台账号登录。
+                当前控制台为 {site.shortLabel}，使用对应站点的后台账号登录。
               </p>
             </div>
-            <LoginForm defaultSite={defaultSite} sites={ADMIN_SITE_OPTIONS} />
+            {/* TODO: 当中国站后台部署后，在此处加入跳转到另一站点 admin 域名的链接（目前中国站未部署，暂不展示） */}
+            <LoginForm site={site} />
           </div>
           <p className="mt-4 text-center text-[12px] text-slate-500">
             若没有账号，请先由具备 admin.manage 权限的管理员开通。

@@ -2,14 +2,12 @@ import { cookies } from "next/headers";
 import { AdminUsersPanel, type AdminUsersListData } from "@/components/admin/admin-users-panel";
 import {
   ADMIN_SESSION_COOKIE,
-  ADMIN_SITE_COOKIE,
   adminApiUrl,
-  adminSiteByKey,
   cookieHeader,
-  normalizeAdminSiteKey,
   parseAdminEnvelope,
 } from "@/lib/admin-api";
 import { getAdminSession } from "@/lib/admin-session";
+import { currentAdminSite } from "@/lib/admin-sites";
 
 export default async function UsersAdminPage() {
   const session = await getAdminSession();
@@ -33,13 +31,12 @@ async function getInitialUsers(): Promise<{
 }> {
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
-  const siteKey = normalizeAdminSiteKey(cookieStore.get(ADMIN_SITE_COOKIE)?.value);
   if (!sessionToken) {
     return { data: null, error: "后台登录已失效，请重新登录。" };
   }
 
   try {
-    const response = await fetch(adminApiUrl("/users", siteKey), {
+    const response = await fetch(adminApiUrl("/users"), {
       headers: cookieHeader(sessionToken),
       cache: "no-store",
     });
@@ -51,9 +48,7 @@ async function getInitialUsers(): Promise<{
     return {
       data: null,
       error:
-        error instanceof Error
-          ? error.message
-          : `${adminSiteByKey(siteKey).label} 管理员列表加载失败。`,
+        error instanceof Error ? error.message : `${currentAdminSite().label} 管理员列表加载失败。`,
     };
   }
 }

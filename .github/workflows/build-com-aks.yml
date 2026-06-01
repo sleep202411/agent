@@ -163,7 +163,6 @@ jobs:
             JAVA_STUDIO_URL=${{ env.JAVA_STUDIO_URL }}
             JAVA_CONTENT_URL=${{ env.JAVA_CONTENT_URL }}
             NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/admin
-            NEXT_PUBLIC_ADMIN_ENABLED_SITES=global
           cache-from: type=gha,scope=aks-${{ matrix.service }}
           cache-to: type=gha,scope=aks-${{ matrix.service }},mode=max
 
