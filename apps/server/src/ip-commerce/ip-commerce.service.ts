@@ -507,13 +507,44 @@ export class IpCommerceService {
     return { items: rows.map((row) => adminIpDiscoveryDto(row, locale)) };
   }
 
+  // Whether the IP itself can back a hero placement that omits a curated
+  // image/title (image → IP cover, title → IP localized title).
+  private async resolveIpHeroFallback(
+    client: Prisma.TransactionClient,
+    ipId: string,
+  ): Promise<{ ipCoverReady: boolean; ipHasTitle: boolean }> {
+    const ip = await client.ip.findUnique({
+      where: { id: ipId },
+      select: {
+        coverAsset: { select: { status: true, deletedAt: true } },
+        localizations: { select: { title: true } },
+      },
+    });
+    const cover = ip?.coverAsset;
+    return {
+      ipCoverReady: Boolean(
+        cover && cover.status === MediaAssetStatus.ready && !cover.deletedAt,
+      ),
+      ipHasTitle: Boolean(
+        ip?.localizations.some((l) => l.title && l.title.trim()),
+      ),
+    };
+  }
+
   async createAdminDiscovery(
     user: AuthUser,
     input: CreateAdminIpDiscoveryInput,
   ) {
+    const heroFallback =
+      input.status === IpDiscoveryRecommendationStatus.enabled &&
+      input.placementKey === IpDiscoveryPlacementKey.ip_plaza_hero
+        ? await this.resolveIpHeroFallback(this.prisma, input.ipId)
+        : { ipCoverReady: false, ipHasTitle: false };
     assertDiscoveryEnablement(input.placementKey, input.status, {
       imageAssetId: input.imageAssetId ?? null,
       localizations: input.localizations ?? [],
+      ipCoverReady: heroFallback.ipCoverReady,
+      ipHasTitle: heroFallback.ipHasTitle,
     });
 
     const rec = await this.prisma.ipDiscoveryRecommendation.create({
@@ -566,6 +597,7 @@ export class IpCommerceService {
         placementKey: true,
         status: true,
         imageAssetId: true,
+        ipId: true,
       },
     });
     if (!existing) {
@@ -613,9 +645,15 @@ export class IpCommerceService {
             where: { recommendationId },
             select: { title: true },
           });
+        const heroFallback =
+          existing.placementKey === IpDiscoveryPlacementKey.ip_plaza_hero
+            ? await this.resolveIpHeroFallback(tx, existing.ipId)
+            : { ipCoverReady: false, ipHasTitle: false };
         assertDiscoveryEnablement(existing.placementKey, nextStatus, {
           imageAssetId: nextImageAssetId,
           localizations,
+          ipCoverReady: heroFallback.ipCoverReady,
+          ipHasTitle: heroFallback.ipHasTitle,
         });
       }
 
@@ -4461,23 +4499,29 @@ function assertDiscoveryEnablement(
   data: {
     imageAssetId: string | null;
     localizations: readonly { title?: string | null }[];
+    // Native fallbacks: a hero may omit a curated image/title and instead fall
+    // back to the IP's own cover/title (the web renders ipCard when these are
+    // absent).
+    ipCoverReady?: boolean;
+    ipHasTitle?: boolean;
   },
 ) {
   if (status !== IpDiscoveryRecommendationStatus.enabled) return;
   if (placementKey !== IpDiscoveryPlacementKey.ip_plaza_hero) return;
-  if (!data.imageAssetId) {
+  if (!data.imageAssetId && !data.ipCoverReady) {
     throw new BadRequestException({
       code: 'IP_DISCOVERY_HERO_IMAGE_REQUIRED',
-      msg: 'Enabled hero recommendation requires a default image.',
+      msg: 'Enabled hero needs a default image, or the IP must have a ready cover.',
     });
   }
-  const hasTitle = data.localizations.some((item) =>
-    Boolean(item.title && item.title.trim()),
-  );
+  const hasTitle =
+    data.localizations.some((item) =>
+      Boolean(item.title && item.title.trim()),
+    ) || Boolean(data.ipHasTitle);
   if (!hasTitle) {
     throw new BadRequestException({
       code: 'IP_DISCOVERY_HERO_TITLE_REQUIRED',
-      msg: 'Enabled hero recommendation requires a localized title.',
+      msg: 'Enabled hero needs a localized title, or the IP must have a title.',
     });
   }
 }
@@ -4499,10 +4543,18 @@ function isPublicDiscoveryRenderable(row: PublicIpDiscoveryRow) {
   const image = row.imageAsset;
   const imageReady =
     image && image.status === MediaAssetStatus.ready && !image.deletedAt;
-  const hasTitle = row.localizations.some((item) =>
-    Boolean(item.title && item.title.trim()),
+  // Fall back to the IP's native cover when no curated hero image is set.
+  const ipCover = row.ip?.coverAsset;
+  const ipCoverReady = Boolean(
+    ipCover && ipCover.status === MediaAssetStatus.ready && !ipCover.deletedAt,
   );
-  return Boolean(imageReady && hasTitle);
+  // A published IP always carries a localized title, so the title falls back to
+  // the IP's own; a curated title is optional.
+  const hasTitle =
+    row.localizations.some((item) =>
+      Boolean(item.title && item.title.trim()),
+    ) || Boolean(row.ip);
+  return Boolean((imageReady || ipCoverReady) && hasTitle);
 }
 
 function adminIpDiscoveryDto(
