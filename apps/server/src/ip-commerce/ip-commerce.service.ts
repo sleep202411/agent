@@ -2472,7 +2472,44 @@ export class IpCommerceService {
         msg: 'IP not found.',
       });
     }
-    return { ip: ipDto(ip, query.locale) };
+    // Resolve the viewer's entitlements so ipDto can expose playable media only
+    // for episodes they own (plus free + free-preview), not for paid-locked ones.
+    const now = new Date();
+    const entitlements = user
+      ? await this.prisma.ipContentEntitlement.findMany({
+          where: {
+            userId: user.userId,
+            ipId,
+            status: IpEntitlementStatus.active,
+            ...currentOrPendingEntitlementWhere(now),
+          },
+        })
+      : [];
+    const activeEntitlements = entitlements.filter((entitlement) =>
+      isEntitlementActiveForAccess(entitlement, now),
+    );
+    // The IP's creator always sees their own media — they can't (and the
+    // purchase path won't let them) buy their own content, so entitlement alone
+    // would wrongly lock them out of their own published paid IP.
+    const isCreator = !!user && ip.createdById === user.userId;
+    const mediaAccess = {
+      ipOwned:
+        isCreator ||
+        activeEntitlements.some(
+          (entitlement) =>
+            entitlement.targetType === IpTargetType.ip &&
+            entitlement.episodeId === null,
+        ),
+      ownedEpisodeIds: new Set(
+        activeEntitlements
+          .filter(
+            (entitlement) => entitlement.targetType === IpTargetType.episode,
+          )
+          .map((entitlement) => entitlement.episodeId)
+          .filter(Boolean) as string[],
+      ),
+    };
+    return { ip: ipDto(ip, query.locale, mediaAccess) };
   }
 
   async getIpAccess(
@@ -5359,10 +5396,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function ipDto(title: IpWithCommerce, requestedLocale?: string | null) {
+function ipDto(
+  title: IpWithCommerce,
+  requestedLocale?: string | null,
+  // Entitlement-gated playback: when omitted (list / discovery / unauthenticated
+  // detail) only free + free-preview episodes expose their playable media. When
+  // provided, additionally expose media the viewer has unlocked.
+  mediaAccess?: { ipOwned: boolean; ownedEpisodeIds: ReadonlySet<string> },
+) {
   const activeIpPrice = selectActivePrice(
     title.priceRules.filter((rule) => rule.targetType === IpTargetType.ip),
   );
+  const ipPaid = Boolean(activeIpPrice);
   const copy = selectIpLocalization(title, requestedLocale, true);
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
@@ -5413,6 +5458,14 @@ function ipDto(title: IpWithCommerce, requestedLocale?: string | null) {
         true,
         title.sourceLocale,
       );
+      // Withhold the playable asset for paid, non-preview episodes the viewer
+      // hasn't unlocked — server-side gate so a leaked/guessed URL in the
+      // payload can't bypass the paywall. Cover + trailer (promotional) remain.
+      const mediaUnlocked =
+        !(Boolean(price) || ipPaid) ||
+        episode.isFreePreview ||
+        (mediaAccess?.ipOwned ?? false) ||
+        (mediaAccess?.ownedEpisodeIds.has(episode.id) ?? false);
       return {
         id: episode.id,
         episodeNo: episode.episodeNo,
@@ -5424,8 +5477,9 @@ function ipDto(title: IpWithCommerce, requestedLocale?: string | null) {
         localization: episodeCopy.meta,
         durationSeconds: episode.durationSeconds,
         isFreePreview: episode.isFreePreview,
+        mediaLocked: !mediaUnlocked,
         coverAsset: assetDto(episode.coverAsset),
-        mediaAsset: assetDto(episode.mediaAsset),
+        mediaAsset: mediaUnlocked ? assetDto(episode.mediaAsset) : null,
         trailerAsset: assetDto(episode.trailerAsset),
         scheduledAt: episode.scheduledAt?.toISOString() ?? null,
         publishedAt: episode.publishedAt?.toISOString() ?? null,
